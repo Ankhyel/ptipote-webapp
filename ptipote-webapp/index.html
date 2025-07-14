@@ -57,7 +57,11 @@
   <h1 id="nom">P’tipote</h1>
   <img id="typeImage" class="type-img" src="img/geoda.png" alt="type" />
   <div class="info" id="surnom"></div>
-  <div class="info" id="xpDisplay"></div>
+  <div class="info" id="levelDisplay"></div>
+    <div class="info" id="xpDisplay"></div>
+    <div style="width: 100%; background: #eee; border-radius: 10px; overflow: hidden;">
+      <div id="xpBar" style="height: 20px; background: linear-gradient(to right, #00c896, #009e7a); width: 0%; transition: width 0.5s;"></div>
+    </div>
   <a class="button" id="entrainementBtn">Entraîner</a>
 </div>
 
@@ -81,7 +85,26 @@
   document.getElementById("xpDisplay").textContent = "XP : " + (ptipote.xp || "0");
   document.getElementById("typeImage").src = "img/" + (ptipote.type || "geoda") + ".png";
 
-  // Transfert du hash vers entraînement
+  
+  function calculateLevel(xp) {
+    let level = 1;
+    let required = 100;
+    let remainingXp = xp;
+    while (remainingXp >= required) {
+      remainingXp -= required;
+      level++;
+      required *= 2;
+    }
+    return { level, current: remainingXp, needed: required };
+  }
+
+  const xp = parseInt(ptipote.xp || "0");
+  const levelInfo = calculateLevel(xp);
+  document.getElementById("levelDisplay").textContent = "Niveau : " + levelInfo.level;
+  const xpText = `XP : ${levelInfo.current} / ${levelInfo.needed}`;
+  document.getElementById("xpDisplay").textContent = xpText;
+  document.getElementById("xpBar").style.width = (levelInfo.current / levelInfo.needed * 100) + "%";
+
   document.getElementById("entrainementBtn").href = "entrainement.html#" + btoa(Object.entries(ptipote).map(([k,v]) => `${k}=${v}`).join(";"));
 </script>
 
