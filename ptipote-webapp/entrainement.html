@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Entraînement P’tipote</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Fredoka One', cursive;
+      background: linear-gradient(135deg, #f6d365, #fda085);
+      padding: 2em;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: #222;
+    }
+    .card {
+      background: #fff8dc;
+      border-radius: 20px;
+      padding: 25px;
+      max-width: 400px;
+      width: 100%;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+      text-align: center;
+      border: 5px dashed #ffa500;
+    }
+    h1 {
+      font-size: 26px;
+      color: #ff6f61;
+    }
+    .info {
+      font-size: 18px;
+      margin: 10px 0;
+    }
+    button {
+      font-family: 'Fredoka One', cursive;
+      font-size: 20px;
+      padding: 10px 20px;
+      margin-top: 15px;
+      border: none;
+      border-radius: 10px;
+      background-color: #00c896;
+      color: white;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Entraîner ton P’tipote</h1>
+  <div class="info">Essais restants : <span id="essais">3</span>/3</div>
+  <div class="info">Score : <span id="score">0</span></div>
+  <div class="info">Temps : <span id="timer">0</span>s</div>
+  <button id="actionBtn">Démarrer</button>
+</div>
+
+<script>
+  const MAX_ESSAIS = 3;
+  const ACTION_DURATION = 5;
+  const COOLDOWN = 3000;
+  const essaisDisplay = document.getElementById('essais');
+  const scoreDisplay = document.getElementById('score');
+  const timerDisplay = document.getElementById('timer');
+  const actionBtn = document.getElementById('actionBtn');
+
+  let essais = parseInt(localStorage.getItem('essais')) || MAX_ESSAIS;
+  let lastReset = localStorage.getItem('lastReset');
+  let score = 0;
+  let timeLeft = 0;
+  let timerInterval = null;
+  let inSession = false;
+
+  function getParisMidnight() {
+    const now = new Date();
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    const parisOffset = 2 * 60 * 60000; // UTC+2
+    const parisNow = new Date(utc + parisOffset);
+    parisNow.setHours(0, 1, 0, 0); // minuit + 1 min
+    return parisNow.getTime();
+  }
+
+  function resetEssaisIfNeeded() {
+    const now = Date.now();
+    const midnightParis = getParisMidnight();
+    if (!lastReset || now > midnightParis) {
+      essais = MAX_ESSAIS;
+      localStorage.setItem('essais', essais);
+      localStorage.setItem('lastReset', now.toString());
+    }
+  }
+
+  function updateDisplay() {
+    essaisDisplay.textContent = essais;
+    scoreDisplay.textContent = score;
+  }
+
+  function startGame() {
+    if (essais <= 0 || inSession) return;
+    inSession = true;
+    score = 0;
+    timeLeft = ACTION_DURATION;
+    updateDisplay();
+    actionBtn.textContent = 'Clique !';
+
+    timerInterval = setInterval(() => {
+      timeLeft--;
+      timerDisplay.textContent = timeLeft;
+      if (timeLeft <= 0) {
+        clearInterval(timerInterval);
+        actionBtn.disabled = true;
+        setTimeout(() => {
+          essais--;
+          localStorage.setItem('essais', essais);
+          updateDisplay();
+          actionBtn.disabled = essais === 0;
+          actionBtn.textContent = essais > 0 ? 'Démarrer' : 'Plus d'essais';
+          inSession = false;
+        }, COOLDOWN);
+      }
+    }, 1000);
+  }
+
+  actionBtn.addEventListener('click', () => {
+    if (actionBtn.textContent === 'Démarrer') {
+      startGame();
+    } else if (actionBtn.textContent === 'Clique !') {
+      score++;
+      updateDisplay();
+    }
+  });
+
+  resetEssaisIfNeeded();
+  updateDisplay();
+  timerDisplay.textContent = timeLeft;
+  if (essais === 0) {
+    actionBtn.disabled = true;
+    actionBtn.textContent = 'Plus d'essais';
+  }
+</script>
+
+</body>
+</html>
