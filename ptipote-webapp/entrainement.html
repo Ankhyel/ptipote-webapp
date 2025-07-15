@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Entraînement P’tipote</title>
+  <title>Test Entraînement</title>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
   <style>
     body {
@@ -14,38 +14,14 @@
       align-items: center;
       color: #222;
     }
-    .top-bar {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-    }
-    .top-bar a {
-      background: #fff8dc;
-      padding: 10px 15px;
-      border-radius: 10px;
-      text-decoration: none;
-      color: #222;
-      font-size: 16px;
-      border: 2px solid #ffa500;
-      box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
-    }
     .card {
-      background: #fff8dc;
+      background: #fff;
       border-radius: 20px;
       padding: 25px;
       max-width: 400px;
       width: 100%;
       box-shadow: 0 8px 16px rgba(0,0,0,0.2);
       text-align: center;
-      border: 5px dashed #ffa500;
-    }
-    h1 {
-      font-size: 26px;
-      color: #ff6f61;
-    }
-    .info {
-      font-size: 18px;
-      margin: 10px 0;
     }
     button {
       font-family: 'Fredoka One', cursive;
@@ -59,140 +35,25 @@
       cursor: pointer;
       transition: background 0.3s;
     }
-    button:disabled {
-      background-color: #ccc;
-      cursor: not-allowed;
+    button.click-mode {
+      background-color: #e74c3c;
     }
   </style>
 </head>
 <body>
 
-<audio id="clickSound" src="https://assets.mixkit.co/sfx/preview/mixkit-select-click-1109.mp3" preload="auto"></audio>
-
-<div class="top-bar">
-  <a href="index.html">← Retour</a>
-</div>
-
 <div class="card">
-  <h1>Entraîner ton P’tipote</h1>
-  <div class="info">Essais restants : <span id="essais">3</span>/3</div>
-  <div class="info">Score : <span id="score">0</span></div>
-  <div class="info">Temps : <span id="timer">0</span>s</div>
-  <button id="actionBtn">Démarrer</button>
+  <h1>Mini Test d’Entraînement</h1>
+  <button id="startBtn">Démarrer</button>
 </div>
 
 <script>
-  const clickSound = document.getElementById("clickSound");
-  const MAX_ESSAIS = 3;
-  const ACTION_DURATION = 5;
-  const COOLDOWN = 3000;
-  const essaisDisplay = document.getElementById('essais');
-  const scoreDisplay = document.getElementById('score');
-  const timerDisplay = document.getElementById('timer');
-  const actionBtn = document.getElementById('actionBtn');
+  const startBtn = document.getElementById("startBtn");
 
-  let essais = parseInt(localStorage.getItem('essais')) || MAX_ESSAIS;
-  let lastReset = localStorage.getItem('lastReset');
-  let score = 0;
-  let timeLeft = 0;
-  let timerInterval = null;
-  let inSession = false;
-
-  function parseHashData() {
-    const hash = window.location.hash.slice(1);
-    const decoded = atob(hash);
-    const fields = decoded.split(';');
-    const data = {};
-    fields.forEach(field => {
-      const [key, value] = field.split('=');
-      if (key && value !== undefined) data[key] = value;
-    });
-    return data;
-  }
-
-  function encodeHashData(data) {
-    const str = Object.entries(data).map(([k,v]) => `${k}=${v}`).join(';');
-    return btoa(str);
-  }
-
-  const ptipoteData = parseHashData();
-
-  function getParisMidnight() {
-    const now = new Date();
-    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-    const parisOffset = 2 * 60 * 60000;
-    const parisNow = new Date(utc + parisOffset);
-    parisNow.setHours(0, 1, 0, 0);
-    return parisNow.getTime();
-  }
-
-  function resetEssaisIfNeeded() {
-    const now = Date.now();
-    const midnightParis = getParisMidnight();
-    if (!lastReset || now > midnightParis) {
-      essais = MAX_ESSAIS;
-      localStorage.setItem('essais', essais);
-      localStorage.setItem('lastReset', now.toString());
-    }
-  }
-
-  function updateDisplay() {
-    essaisDisplay.textContent = essais;
-    scoreDisplay.textContent = score;
-  }
-
-  function startGame() {
-    if (essais <= 0 || inSession) return;
-    inSession = true;
-    score = 0;
-    timeLeft = ACTION_DURATION;
-    timerDisplay.textContent = timeLeft;
-    updateDisplay();
-    actionBtn.textContent = 'Clique !';
-
-    timerInterval = setInterval(() => {
-      timeLeft--;
-      timerDisplay.textContent = timeLeft;
-      if (timeLeft <= 0) {
-        clearInterval(timerInterval);
-        actionBtn.disabled = true;
-        setTimeout(() => {
-          essais--;
-          localStorage.setItem('essais', essais);
-
-          let currentXp = parseInt(ptipoteData['xp']) || 0;
-          ptipoteData['xp'] = currentXp + score;
-
-          const newHash = encodeHashData(ptipoteData);
-          window.location.hash = newHash;
-
-          updateDisplay();
-          actionBtn.disabled = essais === 0;
-          actionBtn.textContent = essais > 0 ? 'Démarrer' : 'Plus d'essais';
-          inSession = false;
-        }, COOLDOWN);
-      }
-    }, 1000);
-  }
-
-  actionBtn.addEventListener('click', () => {
-    clickSound.currentTime = 0;
-    clickSound.play();
-    if (actionBtn.textContent === 'Démarrer') {
-      startGame();
-    } else if (actionBtn.textContent === 'Clique !') {
-      score++;
-      updateDisplay();
-    }
+  startBtn.addEventListener("click", () => {
+    startBtn.textContent = "Clique !";
+    startBtn.classList.add("click-mode");
   });
-
-  resetEssaisIfNeeded();
-  updateDisplay();
-  timerDisplay.textContent = timeLeft;
-  if (essais === 0) {
-    actionBtn.disabled = true;
-    actionBtn.textContent = 'Plus d'essais';
-  }
 </script>
 
 </body>
