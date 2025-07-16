@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Test Entraînement</title>
+  <title>Entraînement P’tipote</title>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
   <style>
     body {
@@ -13,6 +13,39 @@
       flex-direction: column;
       align-items: center;
       color: #222;
+      position: relative;
+      overflow: hidden;
+    }
+    .top-bar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+    }
+    .top-bar a {
+      background: #fff8dc;
+      padding: 10px 15px;
+      border-radius: 10px;
+      text-decoration: none;
+      color: #222;
+      font-size: 16px;
+      border: 2px solid #ffa500;
+      box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+    }
+    .score-box {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: #fff8dc;
+      padding: 10px 15px;
+      border-radius: 10px;
+      font-size: 16px;
+      border: 2px solid #ffa500;
+      box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+    }
+    .timer-box {
+      margin-top: 60px;
+      font-size: 20px;
+      color: #333;
     }
     .card {
       background: #fff;
@@ -22,6 +55,7 @@
       width: 100%;
       box-shadow: 0 8px 16px rgba(0,0,0,0.2);
       text-align: center;
+      margin-top: 20px;
     }
     button {
       font-family: 'Fredoka One', cursive;
@@ -33,26 +67,103 @@
       background-color: #00c896;
       color: white;
       cursor: pointer;
-      transition: background 0.3s;
+      transition: transform 0.1s ease, background-color 0.3s;
+    }
+    button:active {
+      transform: scale(0.95);
     }
     button.click-mode {
       background-color: #e74c3c;
+    }
+    .confetti {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: #f39c12;
+      border-radius: 50%;
+      animation: pop 1s ease-out forwards;
+      pointer-events: none;
+    }
+    @keyframes pop {
+      0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(-100px) scale(0.5);
+      }
     }
   </style>
 </head>
 <body>
 
+<div class="top-bar">
+  <a href="index.html">← Retour</a>
+</div>
+<div class="score-box">
+  Score : <span id="scoreDisplay">0</span>
+</div>
+<div class="timer-box">
+  Temps restant : <span id="timer">0</span> sec
+</div>
+
 <div class="card">
-  <h1>Mini Test d’Entraînement</h1>
+  <h1>Mini Jeu d’Entraînement</h1>
   <button id="startBtn">Démarrer</button>
 </div>
 
 <script>
+  let score = 0;
+  let timeLeft = 0;
+  let timerInterval = null;
   const startBtn = document.getElementById("startBtn");
+  const scoreDisplay = document.getElementById("scoreDisplay");
+  const timerDisplay = document.getElementById("timer");
 
-  startBtn.addEventListener("click", () => {
-    startBtn.textContent = "Clique !";
-    startBtn.classList.add("click-mode");
+  function spawnConfetti(x, y) {
+    for (let i = 0; i < 6; i++) {
+      const confetti = document.createElement("div");
+      confetti.className = "confetti";
+      confetti.style.left = (x + Math.random() * 40 - 20) + "px";
+      confetti.style.top = (y + Math.random() * 40 - 20) + "px";
+      confetti.style.background = ["#f39c12", "#e67e22", "#f1c40f", "#d35400"][Math.floor(Math.random()*4)];
+      document.body.appendChild(confetti);
+      setTimeout(() => confetti.remove(), 1000);
+    }
+  }
+
+  function startTimer() {
+    timeLeft = 5;
+    timerDisplay.textContent = timeLeft;
+    timerInterval = setInterval(() => {
+      timeLeft--;
+      timerDisplay.textContent = timeLeft;
+      if (timeLeft <= 0) {
+        clearInterval(timerInterval);
+        startBtn.disabled = true;
+        startBtn.textContent = "Fini !";
+        setTimeout(() => {
+          startBtn.textContent = "Démarrer";
+          startBtn.classList.remove("click-mode");
+          startBtn.disabled = false;
+        }, 3000);
+      }
+    }, 1000);
+  }
+
+  startBtn.addEventListener("click", (e) => {
+    if (startBtn.textContent === "Démarrer") {
+      score = 0;
+      scoreDisplay.textContent = score;
+      startBtn.textContent = "Clique !";
+      startBtn.classList.add("click-mode");
+      startTimer();
+    } else if (startBtn.textContent === "Clique !") {
+      score++;
+      scoreDisplay.textContent = score;
+      spawnConfetti(e.clientX, e.clientY);
+    }
   });
 </script>
 
