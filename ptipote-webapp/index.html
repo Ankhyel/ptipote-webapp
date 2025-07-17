@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>P’tipote</title>
+  <title>Test Entraînement</title>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
   <style>
     body {
@@ -12,6 +12,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      color: #222;
     }
     .card {
       background: #fff;
@@ -22,47 +23,38 @@
       box-shadow: 0 8px 16px rgba(0,0,0,0.2);
       text-align: center;
     }
-    h1 {
-      font-size: 26px;
-      margin-bottom: 10px;
-      color: #ff6f61;
-    }
     .info {
       font-size: 18px;
       margin: 8px 0;
     }
-    .type-img {
-      width: 100px;
-      margin: 10px 0;
-    }
-    a.button {
-      display: inline-block;
-      margin-top: 20px;
-      padding: 12px 20px;
-      font-size: 18px;
+    button {
+      font-family: 'Fredoka One', cursive;
+      font-size: 20px;
+      padding: 10px 20px;
+      margin-top: 15px;
+      border: none;
+      border-radius: 10px;
       background-color: #00c896;
       color: white;
-      border-radius: 12px;
-      text-decoration: none;
+      cursor: pointer;
       transition: background 0.3s;
     }
-    a.button:hover {
-      background-color: #009e7a;
+    button.click-mode {
+      background-color: #e74c3c;
     }
   </style>
 </head>
 <body>
 
 <div class="card">
-  <h1 id="nom">P’tipote</h1>
-  <img id="typeImage" class="type-img" src="img/geoda.png" alt="type" />
-  <div class="info" id="surnom"></div>
+  <h1 id="n">P’tipote</h1>
+  <div class="info" id="nn"></div>
   <div class="info" id="levelDisplay"></div>
-    <div class="info" id="xpDisplay"></div>
-    <div style="width: 100%; background: #eee; border-radius: 10px; overflow: hidden;">
-      <div id="xpBar" style="height: 20px; background: linear-gradient(to right, #00c896, #009e7a); width: 0%; transition: width 0.5s;"></div>
-    </div>
-  <a class="button" id="entrainementBtn">Entraîner</a>
+  <div class="info" id="xpDisplay"></div>
+  <div style="width: 100%; background: #eee; border-radius: 10px; overflow: hidden;">
+    <div id="xpBar" style="height: 20px; background: linear-gradient(to right, #00c896, #009e7a); width: 0%; transition: width 0.5s;"></div>
+  </div>
+  <button id="startBtn">Démarrer</button>
 </div>
 
 <script>
@@ -80,12 +72,12 @@
 
   const ptipote = parseHashData();
 
-  document.getElementById("nom").textContent = ptipote.nom || "P’tipote";
-  document.getElementById("surnom").textContent = "Surnom : " + (ptipote.surnom || "N/A");
-  document.getElementById("xpDisplay").textContent = "XP : " + (ptipote.xp || "0");
-  document.getElementById("typeImage").src = "img/" + (ptipote.type || "geoda") + ".png";
+  document.getElementById("n").textContent = ptipote.n || "P’tipote";
+  document.getElementById("nn").textContent = "Surnom : " + (ptipote.nn || "N/A");
 
-  
+  const xp = parseInt(ptipote.x || "0");
+  let level = parseInt(ptipote.l || "1");
+
   function calculateLevel(xp) {
     let level = 1;
     let required = 100;
@@ -98,14 +90,17 @@
     return { level, current: remainingXp, needed: required };
   }
 
-  const xp = parseInt(ptipote.xp || "0");
   const levelInfo = calculateLevel(xp);
   document.getElementById("levelDisplay").textContent = "Niveau : " + levelInfo.level;
   const xpText = `XP : ${levelInfo.current} / ${levelInfo.needed}`;
   document.getElementById("xpDisplay").textContent = xpText;
   document.getElementById("xpBar").style.width = (levelInfo.current / levelInfo.needed * 100) + "%";
 
-  document.getElementById("entrainementBtn").href = "entrainement.html#" + btoa(Object.entries(ptipote).map(([k,v]) => `${k}=${v}`).join(";"));
+  const startBtn = document.getElementById("startBtn");
+  startBtn.addEventListener("click", () => {
+    startBtn.textContent = "Clique !";
+    startBtn.classList.add("click-mode");
+  });
 </script>
 
 </body>
