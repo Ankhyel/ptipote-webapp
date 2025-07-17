@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Test Entraînement Amélioré</title>
+  <title>Entraînement P’tipote - Final</title>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
   <style>
     body {
@@ -47,6 +47,9 @@
     button.cooldown {
       background-color: #f1c40f;
     }
+    button.recharge {
+      background-color: #3498db;
+    }
     .score-box {
       position: absolute;
       top: 10px;
@@ -57,6 +60,10 @@
       font-size: 16px;
       border: 2px solid #ffa500;
       box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+    }
+    .timer {
+      font-size: 20px;
+      margin-top: 10px;
     }
   </style>
 </head>
@@ -74,6 +81,7 @@
   <div style="width: 100%; background: #eee; border-radius: 10px; overflow: hidden;">
     <div id="xpBar" style="height: 20px; background: linear-gradient(to right, #00c896, #009e7a); width: 0%; transition: width 0.5s;"></div>
   </div>
+  <div class="timer" id="timerDisplay"></div>
   <button id="startBtn">Démarrer</button>
 </div>
 
@@ -94,7 +102,7 @@
   document.getElementById("n").textContent = ptipote.n || "P’tipote";
   document.getElementById("nn").textContent = "Surnom : " + (ptipote.nn || "N/A");
 
-  const xp = parseInt(ptipote.x || "0");
+  let xp = parseInt(ptipote.x || "0");
   function calculateLevel(xp) {
     let level = 1;
     let required = 100;
@@ -107,34 +115,66 @@
     return { level, current: remainingXp, needed: required };
   }
 
-  const levelInfo = calculateLevel(xp);
-  document.getElementById("levelDisplay").textContent = "Niveau : " + levelInfo.level;
-  document.getElementById("xpDisplay").textContent = `XP : ${levelInfo.current} / ${levelInfo.needed}`;
-  document.getElementById("xpBar").style.width = (levelInfo.current / levelInfo.needed * 100) + "%";
+  function updateXPDisplay() {
+    const levelInfo = calculateLevel(xp);
+    document.getElementById("levelDisplay").textContent = "Niveau : " + levelInfo.level;
+    document.getElementById("xpDisplay").textContent = `XP : ${levelInfo.current} / ${levelInfo.needed}`;
+    document.getElementById("xpBar").style.width = (levelInfo.current / levelInfo.needed * 100) + "%";
+  }
+
+  updateXPDisplay();
 
   let score = 0;
   const scoreDisplay = document.getElementById("scoreDisplay");
   const startBtn = document.getElementById("startBtn");
+  const timerDisplay = document.getElementById("timerDisplay");
 
   let onCooldown = false;
+  let clickWindow = false;
+  let countdown = 5;
+  let timerInterval = null;
 
   startBtn.addEventListener("click", () => {
     if (startBtn.textContent === "Démarrer") {
-      startBtn.textContent = "Clique !";
-      startBtn.classList.add("click-mode");
       score = 0;
       scoreDisplay.textContent = score;
-    } else if (startBtn.textContent === "Clique !" && !onCooldown) {
+      startBtn.textContent = "Clique !";
+      startBtn.className = "click-mode";
+      clickWindow = true;
+      countdown = 5;
+      timerDisplay.textContent = "Temps : " + countdown + "s";
+
+      timerInterval = setInterval(() => {
+        countdown--;
+        timerDisplay.textContent = "Temps : " + countdown + "s";
+        if (countdown <= 0) {
+          clearInterval(timerInterval);
+          clickWindow = false;
+          xp += score;
+          score = 0;
+          scoreDisplay.textContent = score;
+          updateXPDisplay();
+          startBtn.textContent = "En recharge";
+          startBtn.className = "recharge";
+          setTimeout(() => {
+            startBtn.textContent = "Démarrer";
+            startBtn.className = "";
+            timerDisplay.textContent = "";
+          }, 5000);
+        }
+      }, 1000);
+
+    } else if (startBtn.textContent === "Clique !" && clickWindow && !onCooldown) {
       onCooldown = true;
       startBtn.classList.remove("click-mode");
       startBtn.classList.add("cooldown");
       setTimeout(() => {
         score++;
         scoreDisplay.textContent = score;
-        onCooldown = false;
         startBtn.classList.remove("cooldown");
         startBtn.classList.add("click-mode");
-      }, 500);
+        onCooldown = false;
+      }, 100);
     }
   });
 </script>
