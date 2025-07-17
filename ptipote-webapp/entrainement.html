@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Test Entraînement</title>
+  <title>Test Entraînement Amélioré</title>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
   <style>
     body {
@@ -13,6 +13,7 @@
       flex-direction: column;
       align-items: center;
       color: #222;
+      position: relative;
     }
     .card {
       background: #fff;
@@ -22,6 +23,7 @@
       width: 100%;
       box-shadow: 0 8px 16px rgba(0,0,0,0.2);
       text-align: center;
+      margin-top: 40px;
     }
     .info {
       font-size: 18px;
@@ -42,9 +44,27 @@
     button.click-mode {
       background-color: #e74c3c;
     }
+    button.cooldown {
+      background-color: #f1c40f;
+    }
+    .score-box {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: #fff8dc;
+      padding: 10px 15px;
+      border-radius: 10px;
+      font-size: 16px;
+      border: 2px solid #ffa500;
+      box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+    }
   </style>
 </head>
 <body>
+
+<div class="score-box">
+  Score : <span id="scoreDisplay">0</span>
+</div>
 
 <div class="card">
   <h1 id="n">P’tipote</h1>
@@ -71,13 +91,10 @@
   }
 
   const ptipote = parseHashData();
-
   document.getElementById("n").textContent = ptipote.n || "P’tipote";
   document.getElementById("nn").textContent = "Surnom : " + (ptipote.nn || "N/A");
 
   const xp = parseInt(ptipote.x || "0");
-  let level = parseInt(ptipote.l || "1");
-
   function calculateLevel(xp) {
     let level = 1;
     let required = 100;
@@ -92,14 +109,33 @@
 
   const levelInfo = calculateLevel(xp);
   document.getElementById("levelDisplay").textContent = "Niveau : " + levelInfo.level;
-  const xpText = `XP : ${levelInfo.current} / ${levelInfo.needed}`;
-  document.getElementById("xpDisplay").textContent = xpText;
+  document.getElementById("xpDisplay").textContent = `XP : ${levelInfo.current} / ${levelInfo.needed}`;
   document.getElementById("xpBar").style.width = (levelInfo.current / levelInfo.needed * 100) + "%";
 
+  let score = 0;
+  const scoreDisplay = document.getElementById("scoreDisplay");
   const startBtn = document.getElementById("startBtn");
+
+  let onCooldown = false;
+
   startBtn.addEventListener("click", () => {
-    startBtn.textContent = "Clique !";
-    startBtn.classList.add("click-mode");
+    if (startBtn.textContent === "Démarrer") {
+      startBtn.textContent = "Clique !";
+      startBtn.classList.add("click-mode");
+      score = 0;
+      scoreDisplay.textContent = score;
+    } else if (startBtn.textContent === "Clique !" && !onCooldown) {
+      onCooldown = true;
+      startBtn.classList.remove("click-mode");
+      startBtn.classList.add("cooldown");
+      setTimeout(() => {
+        score++;
+        scoreDisplay.textContent = score;
+        onCooldown = false;
+        startBtn.classList.remove("cooldown");
+        startBtn.classList.add("click-mode");
+      }, 500);
+    }
   });
 </script>
 
