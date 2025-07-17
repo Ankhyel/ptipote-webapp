@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Entraînement P’tipote</title>
+  <title>Test Entraînement</title>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
   <style>
     body {
@@ -13,39 +13,6 @@
       flex-direction: column;
       align-items: center;
       color: #222;
-      position: relative;
-      overflow: hidden;
-    }
-    .top-bar {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-    }
-    .top-bar a {
-      background: #fff8dc;
-      padding: 10px 15px;
-      border-radius: 10px;
-      text-decoration: none;
-      color: #222;
-      font-size: 16px;
-      border: 2px solid #ffa500;
-      box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
-    }
-    .score-box {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: #fff8dc;
-      padding: 10px 15px;
-      border-radius: 10px;
-      font-size: 16px;
-      border: 2px solid #ffa500;
-      box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
-    }
-    .timer-box {
-      margin-top: 60px;
-      font-size: 20px;
-      color: #333;
     }
     .card {
       background: #fff;
@@ -55,7 +22,10 @@
       width: 100%;
       box-shadow: 0 8px 16px rgba(0,0,0,0.2);
       text-align: center;
-      margin-top: 20px;
+    }
+    .info {
+      font-size: 18px;
+      margin: 8px 0;
     }
     button {
       font-family: 'Fredoka One', cursive;
@@ -67,103 +37,69 @@
       background-color: #00c896;
       color: white;
       cursor: pointer;
-      transition: transform 0.1s ease, background-color 0.3s;
-    }
-    button:active {
-      transform: scale(0.95);
+      transition: background 0.3s;
     }
     button.click-mode {
       background-color: #e74c3c;
-    }
-    .confetti {
-      position: absolute;
-      width: 10px;
-      height: 10px;
-      background: #f39c12;
-      border-radius: 50%;
-      animation: pop 1s ease-out forwards;
-      pointer-events: none;
-    }
-    @keyframes pop {
-      0% {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-      100% {
-        opacity: 0;
-        transform: translateY(-100px) scale(0.5);
-      }
     }
   </style>
 </head>
 <body>
 
-<div class="top-bar">
-  <a href="index.html">← Retour</a>
-</div>
-<div class="score-box">
-  Score : <span id="scoreDisplay">0</span>
-</div>
-<div class="timer-box">
-  Temps restant : <span id="timer">0</span> sec
-</div>
-
 <div class="card">
-  <h1>Mini Jeu d’Entraînement</h1>
+  <h1 id="n">P’tipote</h1>
+  <div class="info" id="nn"></div>
+  <div class="info" id="levelDisplay"></div>
+  <div class="info" id="xpDisplay"></div>
+  <div style="width: 100%; background: #eee; border-radius: 10px; overflow: hidden;">
+    <div id="xpBar" style="height: 20px; background: linear-gradient(to right, #00c896, #009e7a); width: 0%; transition: width 0.5s;"></div>
+  </div>
   <button id="startBtn">Démarrer</button>
 </div>
 
 <script>
-  let score = 0;
-  let timeLeft = 0;
-  let timerInterval = null;
+  function parseHashData() {
+    const hash = window.location.hash.slice(1);
+    const decoded = atob(hash);
+    const fields = decoded.split(';');
+    const data = {};
+    fields.forEach(field => {
+      const [key, value] = field.split('=');
+      if (key && value !== undefined) data[key] = value;
+    });
+    return data;
+  }
+
+  const ptipote = parseHashData();
+
+  document.getElementById("n").textContent = ptipote.n || "P’tipote";
+  document.getElementById("nn").textContent = "Surnom : " + (ptipote.nn || "N/A");
+
+  const xp = parseInt(ptipote.x || "0");
+  let level = parseInt(ptipote.l || "1");
+
+  function calculateLevel(xp) {
+    let level = 1;
+    let required = 100;
+    let remainingXp = xp;
+    while (remainingXp >= required) {
+      remainingXp -= required;
+      level++;
+      required *= 2;
+    }
+    return { level, current: remainingXp, needed: required };
+  }
+
+  const levelInfo = calculateLevel(xp);
+  document.getElementById("levelDisplay").textContent = "Niveau : " + levelInfo.level;
+  const xpText = `XP : ${levelInfo.current} / ${levelInfo.needed}`;
+  document.getElementById("xpDisplay").textContent = xpText;
+  document.getElementById("xpBar").style.width = (levelInfo.current / levelInfo.needed * 100) + "%";
+
   const startBtn = document.getElementById("startBtn");
-  const scoreDisplay = document.getElementById("scoreDisplay");
-  const timerDisplay = document.getElementById("timer");
-
-  function spawnConfetti(x, y) {
-    for (let i = 0; i < 6; i++) {
-      const confetti = document.createElement("div");
-      confetti.className = "confetti";
-      confetti.style.left = (x + Math.random() * 40 - 20) + "px";
-      confetti.style.top = (y + Math.random() * 40 - 20) + "px";
-      confetti.style.background = ["#f39c12", "#e67e22", "#f1c40f", "#d35400"][Math.floor(Math.random()*4)];
-      document.body.appendChild(confetti);
-      setTimeout(() => confetti.remove(), 1000);
-    }
-  }
-
-  function startTimer() {
-    timeLeft = 5;
-    timerDisplay.textContent = timeLeft;
-    timerInterval = setInterval(() => {
-      timeLeft--;
-      timerDisplay.textContent = timeLeft;
-      if (timeLeft <= 0) {
-        clearInterval(timerInterval);
-        startBtn.disabled = true;
-        startBtn.textContent = "Fini !";
-        setTimeout(() => {
-          startBtn.textContent = "Démarrer";
-          startBtn.classList.remove("click-mode");
-          startBtn.disabled = false;
-        }, 3000);
-      }
-    }, 1000);
-  }
-
-  startBtn.addEventListener("click", (e) => {
-    if (startBtn.textContent === "Démarrer") {
-      score = 0;
-      scoreDisplay.textContent = score;
-      startBtn.textContent = "Clique !";
-      startBtn.classList.add("click-mode");
-      startTimer();
-    } else if (startBtn.textContent === "Clique !") {
-      score++;
-      scoreDisplay.textContent = score;
-      spawnConfetti(e.clientX, e.clientY);
-    }
+  startBtn.addEventListener("click", () => {
+    startBtn.textContent = "Clique !";
+    startBtn.classList.add("click-mode");
   });
 </script>
 
