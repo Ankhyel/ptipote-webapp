@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Test Entraînement</title>
+  <title>P’tipote</title>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
   <style>
     body {
@@ -12,7 +12,6 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      color: #222;
     }
     .card {
       background: #fff;
@@ -23,24 +22,32 @@
       box-shadow: 0 8px 16px rgba(0,0,0,0.2);
       text-align: center;
     }
+    h1 {
+      font-size: 26px;
+      margin-bottom: 10px;
+      color: #ff6f61;
+    }
     .info {
       font-size: 18px;
       margin: 8px 0;
     }
-    button {
-      font-family: 'Fredoka One', cursive;
-      font-size: 20px;
-      padding: 10px 20px;
-      margin-top: 15px;
-      border: none;
-      border-radius: 10px;
+    .type-img {
+      width: 100px;
+      margin: 10px 0;
+    }
+    a.button {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 20px;
+      font-size: 18px;
       background-color: #00c896;
       color: white;
-      cursor: pointer;
+      border-radius: 12px;
+      text-decoration: none;
       transition: background 0.3s;
     }
-    button.click-mode {
-      background-color: #e74c3c;
+    a.button:hover {
+      background-color: #009e7a;
     }
   </style>
 </head>
@@ -48,13 +55,15 @@
 
 <div class="card">
   <h1 id="n">P’tipote</h1>
+  <img id="eImage" class="type-img" src="img/geoda.png" alt="type" />
   <div class="info" id="nn"></div>
   <div class="info" id="levelDisplay"></div>
   <div class="info" id="xpDisplay"></div>
   <div style="width: 100%; background: #eee; border-radius: 10px; overflow: hidden;">
     <div id="xpBar" style="height: 20px; background: linear-gradient(to right, #00c896, #009e7a); width: 0%; transition: width 0.5s;"></div>
   </div>
-  <button id="startBtn">Démarrer</button>
+  <div class="info" id="b"></div>
+  <a class="button" id="entrainementBtn">Entraîner</a>
 </div>
 
 <script>
@@ -74,6 +83,8 @@
 
   document.getElementById("n").textContent = ptipote.n || "P’tipote";
   document.getElementById("nn").textContent = "Surnom : " + (ptipote.nn || "N/A");
+  document.getElementById("b").textContent = "Éleveur : " + (ptipote.b || "N/A");
+  document.getElementById("eImage").src = "img/" + (ptipote.e || "geoda") + ".png";
 
   const xp = parseInt(ptipote.x || "0");
   let level = parseInt(ptipote.l || "1");
@@ -96,11 +107,7 @@
   document.getElementById("xpDisplay").textContent = xpText;
   document.getElementById("xpBar").style.width = (levelInfo.current / levelInfo.needed * 100) + "%";
 
-  const startBtn = document.getElementById("startBtn");
-  startBtn.addEventListener("click", () => {
-    startBtn.textContent = "Clique !";
-    startBtn.classList.add("click-mode");
-  });
+  document.getElementById("entrainementBtn").href = "entrainement.html#" + btoa(Object.entries(ptipote).map(([k,v]) => `${k}=${v}`).join(";"));
 </script>
 
 </body>
