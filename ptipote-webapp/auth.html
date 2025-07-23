@@ -1,51 +1,86 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  a.button {
-  display: inline-block;
-  margin-top: 20px;
-  padding: 12px 20px;
-  font-size: 18px;
-  background-color: #00c896;
-  color: white;
-  border-radius: 12px;
-  text-decoration: none;
-  transition: background 0.3s;
-}
-a.button:hover {
-  background-color: #009e7a;
-}
   <meta charset="UTF-8" />
   <title>Connexion P’tipote</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <style>
+    body {
+      font-family: 'Fredoka One', cursive;
+      background: linear-gradient(135deg, #a8edea, #fed6e3);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2em;
+    }
+    h2 {
+      color: #ff6f61;
+    }
+    input {
+      font-size: 16px;
+      padding: 10px;
+      margin: 5px;
+      width: 250px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 18px;
+      background-color: #00c896;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #009e7a;
+    }
+    pre {
+      background: #fff;
+      padding: 1em;
+      margin-top: 20px;
+      border-radius: 10px;
+      width: 280px;
+      font-size: 14px;
+      color: #333;
+      word-wrap: break-word;
+    }
+  </style>
 </head>
 <body>
-  <h2>Connexion ou inscription</h2>
+  <h2>Connexion / Inscription</h2>
   <input type="email" id="email" placeholder="Email" /><br />
   <input type="password" id="password" placeholder="Mot de passe" /><br />
   <button onclick="signUp()">S’inscrire</button>
   <button onclick="signIn()">Se connecter</button>
-
   <pre id="output"></pre>
 
   <script>
     const supabase = supabase.createClient(
-      'https://bzoexixqtvduncuinxqx.supabase.co',
-      'process.env.SUPABASE_KEY'
+      'https://TON-PROJET.supabase.co',
+      'TON-ANON-KEY'
     );
 
     async function signUp() {
       const email = document.getElementById("email").value;
       const password = document.getElementById("password").value;
       const { data, error } = await supabase.auth.signUp({ email, password });
-      document.getElementById("output").textContent = error ? error.message : "Inscription réussie, vérifie tes mails.";
+      document.getElementById("output").textContent = error ? error.message : "Inscription réussie ! Vérifie tes mails.";
     }
 
     async function signIn() {
       const email = document.getElementById("email").value;
       const password = document.getElementById("password").value;
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      document.getElementById("output").textContent = error ? error.message : "Connecté ✅";
+      if (error) {
+        document.getElementById("output").textContent = error.message;
+      } else {
+        document.getElementById("output").textContent = "Connexion réussie ✅";
+        // Ici tu peux rediriger vers une autre page si besoin
+        // window.location.href = "mon-compte.html";
+      }
     }
   </script>
 </body>
