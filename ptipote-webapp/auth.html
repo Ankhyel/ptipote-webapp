@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Connexion P’tipote</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+</head>
+<body>
+  <h2>Connexion ou inscription</h2>
+  <input type="email" id="email" placeholder="Email" /><br />
+  <input type="password" id="password" placeholder="Mot de passe" /><br />
+  <button onclick="signUp()">S’inscrire</button>
+  <button onclick="signIn()">Se connecter</button>
+
+  <pre id="output"></pre>
+
+  <script>
+    const supabase = supabase.createClient(
+      'https://bzoexixqtvduncuinxqx.supabase.co',
+      'process.env.SUPABASE_KEY'
+    );
+
+    async function signUp() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      document.getElementById("output").textContent = error ? error.message : "Inscription réussie, vérifie tes mails.";
+    }
+
+    async function signIn() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      document.getElementById("output").textContent = error ? error.message : "Connecté ✅";
+    }
+  </script>
+</body>
+</html>
