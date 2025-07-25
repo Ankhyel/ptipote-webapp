@@ -1,0 +1,144 @@
+:root {
+  /* Couleurs */
+  --primary-color: #00c896;
+  --primary-hover: #009e7a;
+  --accent-color: #ff6f61;
+  --error-color: #e74c3c;
+  --warning-color: #f1c40f;
+  --info-color: #3498db;
+  --google-red: #db4437;
+  --white: #fff;
+  --light-bg: linear-gradient(135deg, #a8edea, #fed6e3);
+  --text-color: #333;
+  --border-color: #ccc;
+  --shadow: 0 8px 16px rgba(0,0,0,0.2);
+  --score-border: 2px solid #ffa500;
+  
+  /* Espacements */
+  --padding-sm: 10px;
+  --padding-md: 15px;
+  --padding-lg: 20px;
+  --padding-xl: 25px;
+  --margin-sm: 5px;
+  --margin-md: 10px;
+  --margin-lg: 15px;
+  --margin-xl: 20px;
+  
+  /* Tailles */
+  --input-width: 250px;
+  --card-width: 400px;
+  --message-width: 280px;
+  --img-size: 100px;
+  
+  /* Bordures */
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  
+  /* Typographie */
+  --font-main: 'Fredoka One', cursive;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-xxl: 26px;
+}
+
+/* Base */
+body {
+  font-family: var(--font-main);
+  background: var(--light-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--padding-xl);
+  color: var(--text-color);
+}
+
+/* Titres */
+h1, h2 {
+  color: var(--accent-color);
+  margin-bottom: var(--margin-md);
+}
+h1 { font-size: var(--text-xxl); }
+h2 { font-size: var(--text-xl); }
+
+/* Formulaires */
+input {
+  font-size: var(--text-md);
+  padding: var(--padding-sm);
+  margin: var(--margin-sm);
+  width: var(--input-width);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+input.invalid {
+  border-color: var(--error-color);
+}
+
+/* Boutons */
+button, a.button {
+  font-family: var(--font-main);
+  padding: var(--padding-sm) var(--padding-lg);
+  margin: var(--margin-md);
+  font-size: var(--text-lg);
+  background-color: var(--primary-color);
+  color: var(--white);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.3s;
+  text-decoration: none;
+  display: inline-block;
+}
+button:hover, a.button:hover {
+  background-color: var(--primary-hover);
+}
+button.click-mode { background-color: var(--error-color); }
+button.cooldown { background-color: var(--warning-color); }
+button.recharge { background-color: var(--info-color); }
+.google-btn { background-color: var(--google-red); }
+
+/* Cartes & Messages */
+.card, .message {
+  background: var(--white);
+  border-radius: var(--radius-lg);
+  padding: var(--padding-xl);
+  width: 100%;
+  text-align: center;
+}
+.card {
+  max-width: var(--card-width);
+  box-shadow: var(--shadow);
+  margin-top: var(--margin-xl);
+}
+.message {
+  max-width: var(--message-width);
+  margin-top: var(--margin-xl);
+  font-size: var(--text-sm);
+}
+
+/* Éléments divers */
+.info {
+  font-size: var(--text-lg);
+  margin: var(--margin-sm) 0;
+}
+.type-img {
+  width: var(--img-size);
+  margin: var(--margin-md) 0;
+}
+.score-box {
+  position: absolute;
+  top: var(--padding-sm);
+  right: var(--padding-sm);
+  background: #fff8dc;
+  padding: var(--padding-sm) var(--padding-md);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+  border: var(--score-border);
+  box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+}
+.timer {
+  font-size: var(--text-xl);
+  margin-top: var(--margin-md);
+}

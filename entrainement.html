@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Entraînement P’tipote - Final</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="score-box">
+  Score : <span id="scoreDisplay">0</span>
+</div>
+
+<div class="card">
+  <h1 id="n">P’tipote</h1>
+  <div class="info" id="nn"></div>
+  <div class="info" id="levelDisplay"></div>
+  <div class="info" id="xpDisplay"></div>
+  <div style="width: 100%; background: #eee; border-radius: 10px; overflow: hidden;">
+    <div id="xpBar" style="height: 20px; background: linear-gradient(to right, #00c896, #009e7a); width: 0%; transition: width 0.5s;"></div>
+  </div>
+  <div class="timer" id="timerDisplay"></div>
+  <button id="startBtn">Démarrer</button>
+</div>
+
+<script>
+  function parseHashData() {
+    const hash = window.location.hash.slice(1);
+    const decoded = atob(hash);
+    const fields = decoded.split(';');
+    const data = {};
+    fields.forEach(field => {
+      const [key, value] = field.split('=');
+      if (key && value !== undefined) data[key] = value;
+    });
+    return data;
+  }
+
+  const ptipote = parseHashData();
+  document.getElementById("n").textContent = ptipote.n || "P’tipote";
+  document.getElementById("nn").textContent = "Surnom : " + (ptipote.nn || "N/A");
+
+  let xp = parseInt(ptipote.x || "0");
+  function calculateLevel(xp) {
+    let level = 1;
+    let required = 100;
+    let remainingXp = xp;
+    while (remainingXp >= required) {
+      remainingXp -= required;
+      level++;
+      required *= 2;
+    }
+    return { level, current: remainingXp, needed: required };
+  }
+
+  function updateXPDisplay() {
+    const levelInfo = calculateLevel(xp);
+    document.getElementById("levelDisplay").textContent = "Niveau : " + levelInfo.level;
+    document.getElementById("xpDisplay").textContent = `XP : ${levelInfo.current} / ${levelInfo.needed}`;
+    document.getElementById("xpBar").style.width = (levelInfo.current / levelInfo.needed * 100) + "%";
+  }
+
+  updateXPDisplay();
+
+  let score = 0;
+  const scoreDisplay = document.getElementById("scoreDisplay");
+  const startBtn = document.getElementById("startBtn");
+  const timerDisplay = document.getElementById("timerDisplay");
+
+  let onCooldown = false;
+  let clickWindow = false;
+  let countdown = 5;
+  let timerInterval = null;
+
+  startBtn.addEventListener("click", () => {
+    if (startBtn.textContent === "Démarrer") {
+      score = 0;
+      scoreDisplay.textContent = score;
+      startBtn.textContent = "Clique !";
+      startBtn.className = "click-mode";
+      clickWindow = true;
+      countdown = 5;
+      timerDisplay.textContent = "Temps : " + countdown + "s";
+
+      timerInterval = setInterval(() => {
+        countdown--;
+        timerDisplay.textContent = "Temps : " + countdown + "s";
+        if (countdown <= 0) {
+          clearInterval(timerInterval);
+          clickWindow = false;
+          xp += score;
+          score = 0;
+          scoreDisplay.textContent = score;
+          updateXPDisplay();
+          startBtn.textContent = "En recharge";
+          startBtn.className = "recharge";
+          setTimeout(() => {
+            startBtn.textContent = "Démarrer";
+            startBtn.className = "";
+            timerDisplay.textContent = "";
+          }, 5000);
+        }
+      }, 1000);
+
+    } else if (startBtn.textContent === "Clique !" && clickWindow && !onCooldown) {
+      onCooldown = true;
+      startBtn.classList.remove("click-mode");
+      startBtn.classList.add("cooldown");
+      setTimeout(() => {
+        score++;
+        scoreDisplay.textContent = score;
+        startBtn.classList.remove("cooldown");
+        startBtn.classList.add("click-mode");
+        onCooldown = false;
+      }, 100);
+    }
+  });
+</script>
+
+</body>
+</html>
