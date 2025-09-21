@@ -10,7 +10,12 @@ window.onload = () => {
     "4": "Légendaire"
   };
 
-  document.getElementById("name").textContent = `${data.t} (${data.e})`;
+  document.getElementById("name").textContent = `${data.s || "P’tipote"}`;
+  const et = document.createElement("div");
+  et.className = "info";
+  et.textContent = `Espèce : ${data.e} | Type : ${data.t}`;
+  document.querySelector(".ptipote-card").appendChild(et);
+
   document.getElementById("surnom").textContent = "Surnom : " + (data.s || "Aucun");
   document.getElementById("xp").textContent = "XP : " + data.x;
   document.getElementById("level").textContent = "Niveau : " + data.l;
