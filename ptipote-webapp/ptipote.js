@@ -5,8 +5,8 @@ window.onload = () => {
 
   // Simulation des données avec tous les champs
   const data = {
-    e: "veria",      // Espèce
-    t: "alix",       // Type
+    e: "",      // Espèce
+    t: "",       // Type
     s: "",           // Surnom
     r: "1",          // Rareté (1=Commun)
     b: "1",          // Batch
