@@ -17,7 +17,11 @@ window.onload = () => {
   document.getElementById("xp").textContent = "XP : " + data.x;
   document.getElementById("level").textContent = "Niveau : " + data.l;
   document.getElementById("eleveur").textContent = "Éleveur : " + (data.o || "Inconnu");
-  document.getElementById("typeImage").src = "img/" + data.e + ".png";
+
+  // 🔁 Image appelée via le TYPE
+  document.getElementById("typeImage").src = "img/" + data.t + ".png";
+
+  // 🎨 Fond dynamique par espèce
   document.body.classList.add(data.e);
 
   const rarityDiv = document.createElement("div");
