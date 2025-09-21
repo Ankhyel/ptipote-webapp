@@ -11,11 +11,8 @@ window.onload = () => {
   };
 
   document.getElementById("name").textContent = `${data.s || "P’tipote"}`;
-  const et = document.createElement("div");
-  et.className = "info";
-  et.textContent = `Espèce : ${data.e} | Type : ${data.t}`;
-  document.querySelector(".ptipote-card").appendChild(et);
-
+  document.getElementById("espece").textContent = "Espèce : " + (data.e || "N/A");
+  document.getElementById("type").textContent = "Type : " + (data.t || "N/A");
   document.getElementById("surnom").textContent = "Surnom : " + (data.s || "Aucun");
   document.getElementById("xp").textContent = "XP : " + data.x;
   document.getElementById("level").textContent = "Niveau : " + data.l;
