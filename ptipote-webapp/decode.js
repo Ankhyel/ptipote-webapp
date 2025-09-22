@@ -29,7 +29,7 @@ function decodeFromUrlHash() {
     const data = {};
     for (const field of fields) {
       const [key, value] = field.split("=");
-      if (key) data[key] = value ?? "";
+      if (key) data[key.trim()] = value?.trim() ?? "";
     }
 
     return data;

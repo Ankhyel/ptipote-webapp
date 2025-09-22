@@ -18,10 +18,11 @@ body {
   align-items: center;
   min-height: 100vh;
   padding: 2rem;
+  box-sizing: border-box;
 }
 
 .ptipote-card {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px);
   border-radius: 20px;
   padding: 2rem;
@@ -29,15 +30,18 @@ body {
   width: 100%;
   box-shadow: 0 10px 20px rgba(0,0,0,0.4);
   text-align: center;
-  border: 2px solid rgba(255,255,255,0.3);
+  border: 2px solid rgba(255,255,255,0.2);
 }
 
 .ptipote-card img {
-  max-width: 150px;
+  width: 100%;
+  max-width: 200px;
+  height: auto;
   margin-bottom: 1rem;
-  border-radius: 12px;
+  border-radius: 20px;
   background: rgba(255,255,255,0.15);
   padding: 0.5rem;
+  box-shadow: 0 0 10px rgba(0,0,0,0.4);
 }
 
 h1 {
@@ -60,45 +64,40 @@ h1 {
 .btn-adopter {
   padding: 0.8em 1.5em;
   font-size: 1.2em;
-  background-color: #00c896;
+  background-color: #666;
   color: white;
   border: none;
   border-radius: 12px;
   cursor: not-allowed;
-  filter: grayscale(100%) brightness(70%);
-  box-shadow: 0 0 20px #00c89688;
-  transition: all 0.4s ease;
-}
-
-.btn-adopter:hover {
-  box-shadow: 0 0 30px #00c896aa;
+  opacity: 0.6;
+  filter: grayscale(100%);
 }
 
 .disclaimer {
   font-size: 0.9em;
   opacity: 0.8;
   margin-bottom: 0.5em;
+  color: #ccc;
 }
 
-/* 🌿 Arrière-plan par espèce */
-body.geoda {
-  background-image: url('img/bg_geoda.jpg');
-}
-body.ferox {
-  background-image: url('img/bg_ferox.jpg');
-}
-body.mousso {
-  background-image: url('img/bg_mousse.jpg');
-}
-body.monts {
-  background-image: url('img/bg_monts.jpg');
-}
-body.ivy {
-  background-image: url('img/bg_ivy.jpg');
-}
-body.cactin {
-  background-image: url('img/bg_cactin.jpg');
-}
-body.veria {
-  background-image: url('img/bg_veria.jpg');
+/* Arrière-plan selon l'espèce */
+body.geoda { background-image: url('img/bg_geoda.jpg'); }
+body.ferox { background-image: url('img/bg_ferox.jpg'); }
+body.mousse { background-image: url('img/bg_mousse.jpg'); }
+body.monts  { background-image: url('img/bg_monts.jpg'); }
+body.ivy    { background-image: url('img/bg_ivy.jpg'); }
+body.cactin { background-image: url('img/bg_cactin.jpg'); }
+body.veria  { background-image: url('img/bg_veria.jpg'); }
+
+@media screen and (max-width: 480px) {
+  .ptipote-card {
+    padding: 1.2rem;
+  }
+  .info {
+    font-size: 1em;
+  }
+  .btn-adopter {
+    width: 100%;
+    font-size: 1.1em;
+  }
 }
