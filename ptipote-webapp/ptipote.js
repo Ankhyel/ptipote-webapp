@@ -46,6 +46,7 @@
     let bytes = null;
     try { bytes = base32ToBytes(h); } catch (e) {}
 
+    // Tentative LZ-String
     if (bytes && typeof LZString !== "undefined" && LZString.decompressFromUint8Array) {
       try {
         const txt = LZString.decompressFromUint8Array(bytes);
@@ -53,9 +54,21 @@
       } catch (e) {}
     }
 
+    // Tentative TextDecoder
     if (bytes && bytes.length) {
       try {
         const txt = new TextDecoder().decode(bytes);
+        if (txt && txt.includes("=")) return parseKV(txt);
+      } catch (e) {}
+    }
+
+    // ✅ Dernier recours : décoder en ASCII simple
+    if (bytes && bytes.length) {
+      try {
+        let txt = "";
+        for (let b of bytes) {
+          if (b > 31 && b < 127) txt += String.fromCharCode(b);
+        }
         if (txt && txt.includes("=")) return parseKV(txt);
       } catch (e) {}
     }
@@ -95,6 +108,7 @@
 
   window.addEventListener("load", init);
 
+  // Auto-refresh quand l’onglet est actif
   let timer = null;
   function start() { if (!timer) timer = setInterval(() => location.reload(), 5000); }
   function stop()  { if (timer) { clearInterval(timer); timer = null; } }
