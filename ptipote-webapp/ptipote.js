@@ -18,5 +18,6 @@ function renderPtipote(data) {
   document.getElementById("eleveur").textContent = "Éleveur : " + (data.o || "Inconnu");
 
   // Charger l’image en fonction du type (en minuscules)
-  document.getElementById("ptipote-img").src = "img/" + type + ".png";
+  document.getElementById("typeImage").src = "img/" + type + ".png";
 }
+
