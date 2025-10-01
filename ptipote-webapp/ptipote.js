@@ -1,17 +1,22 @@
+function renderPtipote(data) {
+  // Forcer en minuscules si les champs existent
+  const espece = data.e ? data.e.toLowerCase() : "";
+  const type = data.t ? data.t.toLowerCase() : "";
 
-window.onload = () => {
-  const data = decodeFromUrlHash();
-  if (!data) return;
+  // Vérification si les données essentielles sont présentes
+  if (!espece || !type) {
+    alert("❌ Erreur de lecture des données du P’tipote. La page va se recharger.");
+    window.location.reload();
+    return;
+  }
 
-  document.getElementById("name").textContent = data.s || "P’tipote";
-  document.getElementById("espece").textContent = "Espèce : " + (data.e || "N/A");
-  document.getElementById("type").textContent = "Type : " + (data.t || "N/A");
   document.getElementById("surnom").textContent = "Surnom : " + (data.s || "Aucun");
-  document.getElementById("xp").textContent = "XP : " + (data.x || "0");
-  document.getElementById("level").textContent = "Niveau : " + (data.l || "0");
+  document.getElementById("espece").textContent = "Espèce : " + espece;
+  document.getElementById("type").textContent = "Type : " + type;
+  document.getElementById("xp").textContent = "XP : " + (data.x || 0);
+  document.getElementById("niveau").textContent = "Niveau : " + (data.l || 0);
   document.getElementById("eleveur").textContent = "Éleveur : " + (data.o || "Inconnu");
 
-  document.getElementById("typeImage").src = "img/" + (data.t || "placeholder") + ".png";
-
-  document.body.classList.add(data.e || "");
-};
+  // Charger l’image en fonction du type (en minuscules)
+  document.getElementById("ptipote-img").src = "img/" + type + ".png";
+}
