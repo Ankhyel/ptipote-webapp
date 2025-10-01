@@ -1,103 +1,55 @@
-
-@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');
-
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Fredoka One', cursive;
-  background-color: #1e1e2f;
-  background-size: cover;
-  background-position: center;
-  transition: background 0.8s ease;
-  color: #fff;
-}
-
-.container {
+  font-family: 'Fredoka One', sans-serif;
+  background: linear-gradient(135deg, #a8edea, #fed6e3);
+  color: #333;
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  padding: 2rem;
-  box-sizing: border-box;
 }
 
-.ptipote-card {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(10px);
+.card {
+  background: rgba(255, 255, 255, 0.9);
   border-radius: 20px;
   padding: 2rem;
   max-width: 400px;
-  width: 100%;
-  box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+  width: 90%;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.2);
   text-align: center;
-  border: 2px solid rgba(255,255,255,0.2);
 }
 
-.ptipote-card img {
+.ptipote-img {
   width: 100%;
   max-width: 200px;
   height: auto;
-  margin-bottom: 1rem;
   border-radius: 20px;
-  background: rgba(255,255,255,0.15);
-  padding: 0.5rem;
-  box-shadow: 0 0 10px rgba(0,0,0,0.4);
+  margin-bottom: 1rem;
 }
 
 h1 {
   font-size: 2em;
-  margin: 0.3em 0;
-  color: #ffd966;
-  text-shadow: 1px 1px 4px #000;
-}
-
-.info {
   margin: 0.5em 0;
-  font-size: 1.1em;
-  text-shadow: 1px 1px 2px #000;
+  color: #ff6f61;
 }
 
-.action {
-  margin-top: 2em;
+p {
+  margin: 0.5em 0;
 }
 
-.btn-adopter {
+button.adopt-btn {
   padding: 0.8em 1.5em;
-  font-size: 1.2em;
-  background-color: #666;
+  font-size: 1.1em;
+  background-color: #888;
   color: white;
   border: none;
   border-radius: 12px;
   cursor: not-allowed;
-  opacity: 0.6;
-  filter: grayscale(100%);
+  margin-top: 1rem;
 }
 
-.disclaimer {
+.soon {
   font-size: 0.9em;
   opacity: 0.8;
-  margin-bottom: 0.5em;
-  color: #ccc;
-}
-
-/* Arrière-plan selon l'espèce */
-body.geoda { background-image: url('img/bg_geoda.jpg'); }
-body.ferox { background-image: url('img/bg_ferox.jpg'); }
-body.mousse { background-image: url('img/bg_mousse.jpg'); }
-body.monts  { background-image: url('img/bg_monts.jpg'); }
-body.ivy    { background-image: url('img/bg_ivy.jpg'); }
-body.cactin { background-image: url('img/bg_cactin.jpg'); }
-body.veria  { background-image: url('img/bg_veria.jpg'); }
-
-@media screen and (max-width: 480px) {
-  .ptipote-card {
-    padding: 1.2rem;
-  }
-  .info {
-    font-size: 1em;
-  }
-  .btn-adopter {
-    width: 100%;
-    font-size: 1.1em;
-  }
 }
