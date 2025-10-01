@@ -22,7 +22,7 @@ body {
 }
 
 .ptipote-card {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
   border-radius: 20px;
   padding: 2rem;
@@ -30,18 +30,17 @@ body {
   width: 100%;
   box-shadow: 0 10px 20px rgba(0,0,0,0.4);
   text-align: center;
-  border: 2px solid rgba(255,255,255,0.2);
+  border: 2px solid rgba(255,255,255,0.3);
 }
 
 .ptipote-card img {
   width: 100%;
-  max-width: 200px;
+  max-width: 180px;
   height: auto;
   margin-bottom: 1rem;
-  border-radius: 20px;
+  border-radius: 12px;
   background: rgba(255,255,255,0.15);
   padding: 0.5rem;
-  box-shadow: 0 0 10px rgba(0,0,0,0.4);
 }
 
 h1 {
@@ -64,23 +63,26 @@ h1 {
 .btn-adopter {
   padding: 0.8em 1.5em;
   font-size: 1.2em;
-  background-color: #666;
+  background-color: #00c896;
   color: white;
   border: none;
   border-radius: 12px;
   cursor: not-allowed;
-  opacity: 0.6;
-  filter: grayscale(100%);
+  filter: grayscale(100%) brightness(70%);
+  box-shadow: 0 0 20px #00c89688;
+  transition: all 0.4s ease;
+}
+
+.btn-adopter:hover {
+  box-shadow: 0 0 30px #00c896aa;
 }
 
 .disclaimer {
   font-size: 0.9em;
   opacity: 0.8;
   margin-bottom: 0.5em;
-  color: #ccc;
 }
 
-/* Arrière-plan selon l'espèce */
 body.geoda { background-image: url('img/bg_geoda.jpg'); }
 body.ferox { background-image: url('img/bg_ferox.jpg'); }
 body.mousse { background-image: url('img/bg_mousse.jpg'); }
