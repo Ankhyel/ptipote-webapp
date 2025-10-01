@@ -1,56 +1,36 @@
-function slugify(str) {
-  return (str || "").toString()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+function slugify(str){
+  return (str||"").toString()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g,"-")
+    .replace(/^-+|-+$/g,"");
 }
-
-function renderPtipote(data) {
-  const especeAff = data.e || "—";
-  const typeAff = data.t || "—";
-  const especeSlug = slugify(data.e);
-  const typeSlug = slugify(data.t);
-
-  if (!especeSlug || !typeSlug) {
-    alert("❌ Erreur de lecture des données du P’tipote. La page va se recharger.");
-    window.location.reload();
-    return;
+function renderPtipote(data){
+  const eAff = data.e || "—";
+  const tAff = data.t || "—";
+  const eSlug = slugify(data.e);
+  const tSlug = slugify(data.t);
+  if(!eSlug || !tSlug){
+    alert("❌ Erreur de lecture des données. Rechargement...");
+    location.reload(); return;
   }
-
   document.getElementById("surnom").textContent = "Surnom : " + (data.s || "Aucun");
-  document.getElementById("espece").textContent = "Espèce : " + especeAff;
-  document.getElementById("type").textContent = "Type : " + typeAff;
-  document.getElementById("xp").textContent = "XP : " + (data.x || 0);
+  document.getElementById("espece").textContent = "Espèce : " + eAff;
+  document.getElementById("type").textContent   = "Type : " + tAff;
+  document.getElementById("xp").textContent     = "XP : " + (data.x || 0);
   document.getElementById("niveau").textContent = "Niveau : " + (data.l || 0);
-  document.getElementById("eleveur").textContent = "Éleveur : " + (data.o || "Inconnu");
-
+  document.getElementById("eleveur").textContent= "Éleveur : "+ (data.o || "Inconnu");
   const imgEl = document.getElementById("typeImage");
-  imgEl.src = "img/" + typeSlug + ".png";
+  imgEl.src = "img/" + tSlug + ".png";
   imgEl.onerror = () => { imgEl.src = "img/placeholder.png"; };
-
-  const speciesClasses = ["geoda","ferox","mousse","monts","ivy","cactin","veria"];
-  speciesClasses.forEach(c => document.body.classList.remove(c));
-  document.body.classList.add(especeSlug);
 }
-
-let refreshInterval = null;
-function startAutoRefresh() {
-  if (!refreshInterval) {
-    refreshInterval = setInterval(() => { window.location.reload(); }, 5000);
-  }
-}
-function stopAutoRefresh() {
-  if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
-}
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") startAutoRefresh();
-  else stopAutoRefresh();
+let autoTimer=null;
+function startAuto(){ if(!autoTimer){ autoTimer=setInterval(()=>{location.reload();},5000);} }
+function stopAuto(){ if(autoTimer){ clearInterval(autoTimer); autoTimer=null; } }
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "visible") startAuto(); else stopAuto();
 });
-if (document.visibilityState === "visible") startAutoRefresh();
-
-window.onload = () => {
+window.addEventListener("load", ()=>{
   const data = decodeFromUrlHash();
-  if (data) renderPtipote(data);
-};
+  if(data){ renderPtipote(data); if(document.visibilityState==="visible") startAuto(); }
+});

@@ -1,26 +1,35 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>P’tipote</title>
-  <link href="style.css" rel="stylesheet">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="shortcut icon" href="favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="card">
-    <img id="typeImage" src="img/placeholder.png" alt="P’tipote" class="ptipote-img">
-
-    <h1>P’tipote</h1>
-    <p id="surnom">Surnom :</p>
-    <p id="espece">Espèce :</p>
-    <p id="type">Type :</p>
-    <p id="xp">XP :</p>
-    <p id="niveau">Niveau :</p>
-    <p id="eleveur">Éleveur :</p>
-
-    <p class="soon">Fonctionnalité bientôt disponible</p>
-    <button class="adopt-btn" disabled>Adopter</button>
-  </div>
-
+  <main class="container">
+    <section class="card" id="card">
+      <div class="img-wrap">
+        <img id="typeImage" class="ptipote-img" src="img/placeholder.png" alt="P’tipote">
+      </div>
+      <h1 class="title">P’tipote</h1>
+      <div class="fields">
+        <p id="surnom">Surnom :</p>
+        <p id="espece">Espèce :</p>
+        <p id="type">Type :</p>
+        <p id="xp">XP :</p>
+        <p id="niveau">Niveau :</p>
+        <p id="eleveur">Éleveur :</p>
+      </div>
+      <p class="soon">Fonctionnalité bientôt disponible</p>
+      <button class="adopt-btn" disabled>Adopter</button>
+    </section>
+  </main>
   <script src="base32.js"></script>
   <script src="decode.js"></script>
   <script src="ptipote.js"></script>
