@@ -1,36 +1,66 @@
-function slugify(str){
-  return (str||"").toString()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-    .trim().toLowerCase()
-    .replace(/[^a-z0-9]+/g,"-")
-    .replace(/^-+|-+$/g,"");
+function decodeHash() {
+    try {
+        const hash = window.location.hash.substring(1);
+        if (!hash) throw new Error("Aucune donnée trouvée");
+
+        const decoded = LZString.decompressFromEncodedURIComponent(hash);
+        if (!decoded) throw new Error("Décompression échouée");
+
+        const pairs = decoded.split(";");
+        let data = {};
+        pairs.forEach(pair => {
+            if (pair.trim() !== "") {
+                const [key, value] = pair.split("=");
+                data[key.trim()] = value ? value.trim() : "";
+            }
+        });
+
+        afficherPtipote(data);
+    } catch (e) {
+        afficherErreur("Erreur de lecture. Actualisation...");
+    }
 }
-function renderPtipote(data){
-  const eAff = data.e || "—";
-  const tAff = data.t || "—";
-  const eSlug = slugify(data.e);
-  const tSlug = slugify(data.t);
-  if(!eSlug || !tSlug){
-    alert("❌ Erreur de lecture des données. Rechargement...");
-    location.reload(); return;
-  }
-  document.getElementById("surnom").textContent = "Surnom : " + (data.s || "Aucun");
-  document.getElementById("espece").textContent = "Espèce : " + eAff;
-  document.getElementById("type").textContent   = "Type : " + tAff;
-  document.getElementById("xp").textContent     = "XP : " + (data.x || 0);
-  document.getElementById("niveau").textContent = "Niveau : " + (data.l || 0);
-  document.getElementById("eleveur").textContent= "Éleveur : "+ (data.o || "Inconnu");
-  const imgEl = document.getElementById("typeImage");
-  imgEl.src = "img/" + tSlug + ".png";
-  imgEl.onerror = () => { imgEl.src = "img/placeholder.png"; };
+
+function afficherPtipote(data) {
+    // Vérification si espèce et type existent
+    if (!data.e || !data.t) {
+        afficherErreur("Erreur de lecture. Actualisation...");
+        return;
+    }
+
+    // Normalisation pour les images
+    let espece = (data.e || "").toLowerCase();
+    let type = (data.t || "").toLowerCase();
+
+    // Affichage des infos
+    document.getElementById("surnom").textContent = "Surnom : " + (data.s || "Aucun");
+    document.getElementById("espece").textContent = "Espèce : " + (data.e || "Inconnue");
+    document.getElementById("type").textContent = "Type : " + (data.t || "Inconnu");
+    document.getElementById("xp").textContent = "XP : " + (data.x || "0");
+    document.getElementById("niveau").textContent = "Niveau : " + (data.l || "0");
+    document.getElementById("eleveur").textContent = "Éleveur : " + (data.o || "Inconnu");
+
+    // Image en fonction du type
+    let imgElement = document.getElementById("typeImage");
+    imgElement.src = "img/" + type + ".png";
+    imgElement.onerror = () => { imgElement.src = "img/placeholder.png"; };
 }
-let autoTimer=null;
-function startAuto(){ if(!autoTimer){ autoTimer=setInterval(()=>{location.reload();},5000);} }
-function stopAuto(){ if(autoTimer){ clearInterval(autoTimer); autoTimer=null; } }
-document.addEventListener("visibilitychange", ()=>{
-  if(document.visibilityState === "visible") startAuto(); else stopAuto();
-});
-window.addEventListener("load", ()=>{
-  const data = decodeFromUrlHash();
-  if(data){ renderPtipote(data); if(document.visibilityState==="visible") startAuto(); }
+
+function afficherErreur(message) {
+    document.body.innerHTML = `<div style="color:white;text-align:center;margin-top:50px;">${message}</div>`;
+    setTimeout(() => {
+        location.reload();
+    }, 2000);
+}
+
+// Lancer au chargement
+window.onload = decodeHash;
+
+// Auto-refresh si onglet actif
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+        setInterval(() => {
+            location.reload();
+        }, 5000);
+    }
 });
