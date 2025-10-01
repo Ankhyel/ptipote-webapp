@@ -1,31 +1,27 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>P’tipote</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="style.css" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
-  <script defer src="decode.js"></script>
-  <script defer src="ptipote.js"></script>
+  <link href="style.css" rel="stylesheet">
 </head>
 <body>
-  <main class="container">
-    <div class="ptipote-card">
-      <img id="typeImage" src="img/type.png" alt="Type" />
-      <h1 id="name">P’tipote</h1>
-      <div class="info" id="surnom">Surnom :</div>
-      <div class="info" id="espece">Espèce :</div>
-      <div class="info" id="type">Type :</div>
-      <div class="info" id="xp">XP :</div>
-      <div class="info" id="level">Niveau :</div>
-      <div class="info" id="eleveur">Éleveur :</div>
-      <div class="action">
-        <p class="disclaimer">Fonctionnalité bientôt disponible</p>
-        <button class="btn-adopter" disabled>Adopter</button>
-      </div>
-    </div>
-  </main>
+  <div class="card">
+    <img id="typeImage" src="img/placeholder.png" alt="P’tipote" class="ptipote-img">
+
+    <h1>P’tipote</h1>
+    <p id="surnom">Surnom :</p>
+    <p id="espece">Espèce :</p>
+    <p id="type">Type :</p>
+    <p id="xp">XP :</p>
+    <p id="niveau">Niveau :</p>
+    <p id="eleveur">Éleveur :</p>
+
+    <p class="soon">Fonctionnalité bientôt disponible</p>
+    <button class="adopt-btn" disabled>Adopter</button>
+  </div>
+
+  <script src="decode.js"></script>
+  <script src="ptipote.js"></script>
 </body>
 </html>
