@@ -1,7 +1,13 @@
-//dev      /index.html        200
-/dev/*    /index.html        200
+# --- pages autorisées (doivent être AVANT tout le reste)
+/love     /love/index.html            200
+/love/*   /love/index.html            200
 
-/love     /love/index.html   200
-/love/*   /love/index.html   200
+/dev      /index.html                 200
+/dev/*    /index.html                 200
 
+# --- debug temporaire : permet de lire le fichier dans le navigateur
+/_redirects  /_redirects              200
+
+# --- redirections shop
+/         https://shop.ptipotes.com/  301!
 /*        https://shop.ptipotes.com/:splat  301!
