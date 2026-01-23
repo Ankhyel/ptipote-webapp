@@ -1,5 +1,7 @@
-/dev      /index.html  200
-/dev/*    /index.html  200
-/love      /index.html  200
-/love/*    /index.html  200
-/*        https://shop.ptipotes.com  301
+//dev      /index.html        200
+/dev/*    /index.html        200
+
+/love     /love/index.html   200
+/love/*   /love/index.html   200
+
+/*        https://shop.ptipotes.com/:splat  301!
