@@ -1,222 +1,30 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>P'TIPOTE Love</title>
-
-<style>
-:root{
-  --bg:#fde9f3;
-  --card:#ffffff;
-  --accent:#d6006e;
-  --text:#222;
-  --muted:#666;
-}
-
-body{
-  margin:0;
-  min-height:100vh;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:
-    radial-gradient(1200px 800px at 20% 10%, #fff 0%, var(--bg) 55%) fixed;
-  font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-  color:var(--text);
-}
-
-.wrap{width:min(520px,92vw);padding:18px}
-
-.card{
-  background:var(--card);
-  border-radius:18px;
-  padding:16px;
-  box-shadow:0 18px 45px rgba(0,0,0,.12);
-  border:1px solid rgba(214,0,110,.14);
-}
-
-/* THEMES coeur */
-.theme-r{--bg:#ffe6ea;--accent:#d6002a}
-.theme-p{--bg:#fde9f3;--accent:#d6006e}
-.theme-o{--bg:#fff0e6;--accent:#d85a00}
-.theme-y{--bg:#fff7db;--accent:#b88400}
-.theme-g{--bg:#e9f7ef;--accent:#1f8f5f}
-.theme-b{--bg:#e8f1ff;--accent:#2b6bd6}
-.theme-v{--bg:#f1e9ff;--accent:#6a2bd6}
-.theme-w{--bg:#f6f6f6;--accent:#7a4a2b}
-.theme-k{--bg:#e9e9ee;--accent:#1f2430}
-.theme-c{--bg:#eaf7ff;--accent:#1576b8}
-.theme-x{--bg:#ffe6ea;--accent:#b10032}
-.theme-z{--bg:#fff2d6;--accent:#b87700}
-
-/* HERO */
-.hero{
-  position:relative;
-  height:160px;
-  border-radius:16px;
-  background:rgba(214,0,110,.06);
-  border:1px solid rgba(214,0,110,.12);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  overflow:hidden;
-  margin-bottom:12px;
-}
-
-.ptipote{
-  height:128px;
-  filter:drop-shadow(0 10px 14px rgba(0,0,0,.12));
-}
-
-.heart{
-  position:absolute;
-  right:14px;
-  bottom:10px;
-  height:56px;
-  filter:drop-shadow(0 10px 14px rgba(0,0,0,.14));
-}
-
-/* SPARKLES */
-.sparkles{
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-  opacity:0;
-}
-.sparkles.on{opacity:1}
-
-.sparkle{
-  position:absolute;
-  width:10px;
-  height:10px;
-  background:white;
-  transform:rotate(45deg);
-  border-radius:2px;
-  box-shadow:0 0 14px rgba(255,255,255,.9);
-  animation:twinkle 1.6s ease-in-out infinite;
-}
-
-@keyframes twinkle{
-  0%{opacity:.15;transform:translateY(6px) rotate(45deg) scale(.6)}
-  50%{opacity:1;transform:translateY(0) rotate(45deg) scale(1)}
-  100%{opacity:.25;transform:translateY(-6px) rotate(45deg) scale(.7)}
-}
-
-h1{
-  margin:6px 0 8px;
-  color:var(--accent);
-  font-size:22px;
-}
-
-p{font-size:16px;line-height:1.5;margin:8px 0}
-.sig{font-size:14px;color:var(--muted);margin-top:12px}
-.err{
-  background:#fff4f7;
-  border:1px dashed rgba(214,0,110,.35);
-  padding:12px;
-  border-radius:12px;
-  color:#7a003d;
-  font-size:14px;
-  display:none;
-}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>P'TIPOTE Love</title>
+  <meta name="theme-color" content="#d6006e">
+  <link rel="stylesheet" href="./style.css">
 </head>
-
 <body>
-<div class="wrap">
-  <div class="card">
-    <div class="hero">
-      <img id="ptipoteImg" class="ptipote">
-      <img id="heartImg" class="heart">
-      <div id="sparkles" class="sparkles"></div>
+  <div class="wrap">
+    <div class="card">
+      <div class="hero">
+        <img id="ptipoteImg" class="ptipote" alt="P'TIPOTE">
+        <div id="heartEmoji" class="heartEmoji" aria-hidden="true">💗</div>
+        <div id="sparkles" class="sparkles" aria-hidden="true"></div>
+      </div>
+
+      <h1 id="title">Un petit message t'attend 💘</h1>
+      <p id="msg">…</p>
+      <div class="sig" id="sig"></div>
+
+      <div class="err" id="err"></div>
+      <div class="hint" id="hint">Scanne ton P’TIPOTE pour découvrir le message.</div>
     </div>
-
-    <h1 id="title">P'TIPOTE</h1>
-    <p id="msg"></p>
-    <div class="sig" id="sig"></div>
-    <div class="err" id="err"></div>
   </div>
-</div>
 
-<script>
-const ALPH="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-
-function base32DecodeToUtf8(input){
-  const clean=(input||"").toUpperCase().replace(/[^A-Z2-7]/g,"");
-  let bits=0,value=0,bytes=[];
-  for(const c of clean){
-    const v=ALPH.indexOf(c);
-    if(v<0)continue;
-    value=(value<<5)|v;bits+=5;
-    if(bits>=8){
-      bytes.push((value>>(bits-8))&255);
-      bits-=8;
-    }
-  }
-  return new TextDecoder().decode(new Uint8Array(bytes));
-}
-
-function parseDecoded(d){
-  const p=d.split("|");
-  let i=0;
-  let meta={c:"p",p:"i"};
-  if(p[i]?.startsWith("c=")){meta.c=p[i++].slice(2)}
-  if(p[i]?.startsWith("p=")){meta.p=p[i++].slice(2)}
-  return {
-    meta,
-    title:p[i++]||"Bonne Saint-Valentin",
-    msg:p[i++]||"",
-    sig:p[i++]||""
-  };
-}
-
-function applyTheme(c){
-  document.body.classList.add("theme-"+c);
-}
-
-function setImages(meta){
-  document.getElementById("ptipoteImg").src=`/love/assets/ptipote-${meta.p}.png`;
-  document.getElementById("heartImg").src=`/love/assets/heart-${meta.c}.png`;
-}
-
-function sparkles(on){
-  const box=document.getElementById("sparkles");
-  box.innerHTML="";
-  box.classList.toggle("on",on);
-  if(!on)return;
-  for(let i=0;i<10;i++){
-    const s=document.createElement("div");
-    s.className="sparkle";
-    s.style.left=(10+Math.random()*80)+"%";
-    s.style.top=(10+Math.random()*70)+"%";
-    s.style.animationDelay=(Math.random()*1.2)+"s";
-    box.appendChild(s);
-  }
-}
-
-(function init(){
-  const raw=location.hash.replace("#","");
-  if(!raw){
-    err.style.display="block";
-    err.textContent="Aucun message dans l’URL.";
-    return;
-  }
-
-  let decoded;
-  try{decoded=base32DecodeToUtf8(raw)}
-  catch{err.style.display="block";err.textContent="Décodage impossible";return;}
-
-  const {meta,title,msg,sig}=parseDecoded(decoded);
-
-  applyTheme(meta.c);
-  setImages(meta);
-  sparkles(meta.c==="c"||meta.c==="x"||meta.c==="z");
-
-  document.getElementById("title").textContent=title;
-  document.getElementById("msg").textContent=msg;
-  document.getElementById("sig").textContent=sig;
-})();
-</script>
+  <script src="./script.js"></script>
 </body>
 </html>
