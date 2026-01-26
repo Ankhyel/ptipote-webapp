@@ -32,52 +32,105 @@ body{
   color:var(--text);
 }
 
-.wrap{width:min(520px,92vw); padding:18px;}
+.wrap{width:min(560px,92vw); padding:18px;}
 
 .card{
   background:var(--card);
-  border-radius:18px;
+  border-radius:22px;
   padding:16px;
   box-shadow:0 18px 45px rgba(0,0,0,.12);
   border:1px solid rgba(0,0,0,.08);
+  overflow: visible; /* important pour laisser le ptipote déborder */
 }
 
-/* Zone visuelle */
+/* Zone visuelle (sans cadre) */
 .hero{
   position:relative;
-  height:170px;
-  border-radius:16px;
-  background: color-mix(in srgb, var(--accent) 10%, white);
-  border:1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  height:180px;
+  margin-bottom:14px;
+  overflow: visible;
+}
+
+/* Ptipote: 3x plus gros + descend un peu sous la zone message */
+.ptipoteWrap{
+  position:absolute;
+  left:50%;
+  bottom:-34px;           /* <-- décalage vertical du ptipote (plus bas = plus “en dessous”) */
+  transform: translateX(-50%);
+  width: 320px;           /* zone de référence pour centrer le coeur */
+  height: 320px;
   display:flex;
   align-items:center;
   justify-content:center;
-  overflow:hidden;
-  margin-bottom:12px;
+  pointer-events:none;
 }
 
 .ptipote{
-  height:132px;
-  width:auto;
-  filter: drop-shadow(0 10px 14px rgba(0,0,0,.12));
-  transform: translateY(6px);
+  width: 280px;           /* <-- taille du ptipote (ajuste ici si tu veux encore plus grand) */
+  height:auto;
+  filter: drop-shadow(0 14px 18px rgba(0,0,0,.14));
 }
 
-/* Cœur en emoji */
+/* Coeur: centré “entre les mains” */
 .heartEmoji{
   position:absolute;
-  right:12px;
-  bottom:8px;
-  font-size:56px;
+  left:50%;
+  top:62%;                /* <-- position “entre les mains” (baisse/monte cette valeur) */
+  transform: translate(-50%, -50%);
+  font-size:84px;         /* <-- taille du coeur */
   line-height:1;
-  filter: drop-shadow(0 10px 14px rgba(0,0,0,.14));
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,.18));
   user-select:none;
 }
 
-/* Étoiles */
+/* Cadre du message (sous le ptipote) */
+.messageFrame{
+  border-radius:18px;
+  background: rgba(255,255,255,.82);
+  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 10px 24px rgba(0,0,0,.10);
+  padding:16px 16px 14px;
+  margin-top:46px;        /* <-- espace sous le ptipote (car il déborde) */
+}
+
+/* Texte */
+.msg{
+  margin:0;
+  font-size:18px;
+  line-height:1.5;
+  white-space:pre-wrap;
+}
+
+.sig{
+  margin-top:10px;
+  font-size:14px;
+  color:var(--muted);
+  white-space:pre-wrap;
+}
+
+/* Hint + erreurs */
+.hint{
+  margin-top:10px;
+  font-size:12px;
+  color:rgba(0,0,0,.45);
+  text-align:center;
+}
+
+.err{
+  background:#fff4f7;
+  border:1px dashed rgba(214,0,110,.35);
+  padding:12px;
+  border-radius:12px;
+  color:#7a003d;
+  font-size:14px;
+  display:none;
+  margin-top:10px;
+}
+
+/* Sparkles (pour c, x, z) */
 .sparkles{
   position:absolute;
-  inset:0;
+  inset:-12px;
   pointer-events:none;
   opacity:0;
 }
@@ -98,40 +151,4 @@ body{
   0%{opacity:.15;transform:translateY(6px) rotate(45deg) scale(.6)}
   50%{opacity:1;transform:translateY(0) rotate(45deg) scale(1)}
   100%{opacity:.25;transform:translateY(-6px) rotate(45deg) scale(.7)}
-}
-
-h1{
-  margin:6px 0 8px;
-  color:var(--accent);
-  font-size:22px;
-  line-height:1.15;
-}
-p{
-  font-size:16px;
-  line-height:1.5;
-  margin:8px 0;
-  white-space:pre-wrap;
-}
-.sig{
-  font-size:14px;
-  color:var(--muted);
-  margin-top:12px;
-  white-space:pre-wrap;
-}
-.hint{
-  margin-top:10px;
-  font-size:12px;
-  color:rgba(0,0,0,.45);
-  text-align:center;
-}
-
-.err{
-  background:#fff4f7;
-  border:1px dashed rgba(214,0,110,.35);
-  padding:12px;
-  border-radius:12px;
-  color:#7a003d;
-  font-size:14px;
-  display:none;
-  margin-top:10px;
 }
