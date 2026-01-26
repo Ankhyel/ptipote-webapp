@@ -10,15 +10,21 @@
 <body>
   <div class="wrap">
     <div class="card">
-      <div class="hero">
-        <img id="ptipoteImg" class="ptipote" alt="P'TIPOTE">
-        <div id="heartEmoji" class="heartEmoji" aria-hidden="true">💗</div>
-        <div id="sparkles" class="sparkles" aria-hidden="true"></div>
+      <!-- Zone visuelle (sans cadre) -->
+      <div class="hero" aria-hidden="true">
+        <div id="sparkles" class="sparkles"></div>
+
+        <div class="ptipoteWrap">
+          <img id="ptipoteImg" class="ptipote" alt="P'TIPOTE">
+          <div id="heartEmoji" class="heartEmoji" aria-hidden="true">💗</div>
+        </div>
       </div>
 
-      <h1 id="title">Un petit message t'attend 💘</h1>
-      <p id="msg">…</p>
-      <div class="sig" id="sig"></div>
+      <!-- Cadre du message (sous) -->
+      <div class="messageFrame">
+        <p id="msg" class="msg">…</p>
+        <div class="sig" id="sig"></div>
+      </div>
 
       <div class="err" id="err"></div>
       <div class="hint" id="hint">Scanne ton P’TIPOTE pour découvrir le message.</div>
