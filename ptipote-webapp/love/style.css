@@ -37,7 +37,7 @@ body{
 .card{
   background:var(--card);
   border-radius:22px;
-  padding:16px 16px 10px;
+  padding:16px 16px 8px;
   box-shadow:0 18px 45px rgba(0,0,0,.12);
   border:1px solid rgba(0,0,0,.08);
   overflow: visible; /* important pour laisser le ptipote déborder */
@@ -86,7 +86,8 @@ body{
 /* Cadre du message (sous le ptipote) */
 .messageFrame{
   position: relative;
-  top: -60px;                 /* ← C’EST CETTE VALEUR QUI FAIT LE CALAGE */
+  top: -60px;
+  margin-bottom: -52px;   /* 🔥 clé pour supprimer l’espace fantôme */
   border-radius:18px;
   background: rgba(255,255,255,.82);
   border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
@@ -111,7 +112,7 @@ body{
 
 /* Hint + erreurs */
 .hint{
-  margin-top:6px;
+  margin-top:4px;
   font-size:12px;
   color:rgba(0,0,0,.45);
   text-align:center;
