@@ -1,0 +1,137 @@
+:root{
+  --bg:#fde9f3;
+  --card:#ffffff;
+  --accent:#d6006e;
+  --text:#222;
+  --muted:#666;
+}
+
+/* Thèmes (pilotés par c=...) */
+.theme-r{ --bg:#ffe6ea; --accent:#d6002a; } /* rouge */
+.theme-p{ --bg:#fde9f3; --accent:#d6006e; } /* rose */
+.theme-o{ --bg:#fff0e6; --accent:#d85a00; } /* orange */
+.theme-y{ --bg:#fff7db; --accent:#b88400; } /* jaune */
+.theme-g{ --bg:#e9f7ef; --accent:#1f8f5f; } /* vert */
+.theme-b{ --bg:#e8f1ff; --accent:#2b6bd6; } /* bleu */
+.theme-v{ --bg:#f1e9ff; --accent:#6a2bd6; } /* violet */
+.theme-w{ --bg:#f6f6f6; --accent:#7a4a2b; } /* blanc */
+.theme-k{ --bg:#e9e9ee; --accent:#1f2430; } /* noir */
+.theme-c{ --bg:#eaf7ff; --accent:#1576b8; } /* cristal */
+.theme-x{ --bg:#ffe6ea; --accent:#b10032; } /* cristal rouge */
+.theme-z{ --bg:#fff2d6; --accent:#b87700; } /* cristal or */
+
+html,body{height:100%}
+body{
+  margin:0;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: radial-gradient(1200px 800px at 20% 10%, #fff 0%, var(--bg) 55%) fixed;
+  font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  color:var(--text);
+}
+
+.wrap{width:min(520px,92vw); padding:18px;}
+
+.card{
+  background:var(--card);
+  border-radius:18px;
+  padding:16px;
+  box-shadow:0 18px 45px rgba(0,0,0,.12);
+  border:1px solid rgba(0,0,0,.08);
+}
+
+/* Zone visuelle */
+.hero{
+  position:relative;
+  height:170px;
+  border-radius:16px;
+  background: color-mix(in srgb, var(--accent) 10%, white);
+  border:1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  margin-bottom:12px;
+}
+
+.ptipote{
+  height:132px;
+  width:auto;
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,.12));
+  transform: translateY(6px);
+}
+
+/* Cœur en emoji */
+.heartEmoji{
+  position:absolute;
+  right:12px;
+  bottom:8px;
+  font-size:56px;
+  line-height:1;
+  filter: drop-shadow(0 10px 14px rgba(0,0,0,.14));
+  user-select:none;
+}
+
+/* Étoiles */
+.sparkles{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:0;
+}
+.sparkles.on{ opacity:1; }
+
+.sparkle{
+  position:absolute;
+  width:10px;
+  height:10px;
+  background: rgba(255,255,255,.95);
+  transform: rotate(45deg);
+  border-radius:2px;
+  box-shadow:0 0 14px rgba(255,255,255,.9);
+  animation:twinkle 1.6s ease-in-out infinite;
+}
+
+@keyframes twinkle{
+  0%{opacity:.15;transform:translateY(6px) rotate(45deg) scale(.6)}
+  50%{opacity:1;transform:translateY(0) rotate(45deg) scale(1)}
+  100%{opacity:.25;transform:translateY(-6px) rotate(45deg) scale(.7)}
+}
+
+h1{
+  margin:6px 0 8px;
+  color:var(--accent);
+  font-size:22px;
+  line-height:1.15;
+}
+p{
+  font-size:16px;
+  line-height:1.5;
+  margin:8px 0;
+  white-space:pre-wrap;
+}
+.sig{
+  font-size:14px;
+  color:var(--muted);
+  margin-top:12px;
+  white-space:pre-wrap;
+}
+.hint{
+  margin-top:10px;
+  font-size:12px;
+  color:rgba(0,0,0,.45);
+  text-align:center;
+}
+
+.err{
+  background:#fff4f7;
+  border:1px dashed rgba(214,0,110,.35);
+  padding:12px;
+  border-radius:12px;
+  color:#7a003d;
+  font-size:14px;
+  display:none;
+  margin-top:10px;
+}
