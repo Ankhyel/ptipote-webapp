@@ -1,12 +1,58 @@
+/* =========================================================
+   P'TIPOTE LOVE - CSS FINAL (layout + overlap propre)
+   Objectif:
+   - P’TIPOTE gros, qui dépasse
+   - Coeur centré entre les mains (emoji)
+   - Card du message qui chevauche l’image
+   - Pas d’espace "fantôme" entre la card et le texte du bas
+   ========================================================= */
+
+/* -------------------------
+   1) VARIABLES RAPIDES
+   Change ici si tu veux ajuster le rendu en 10 secondes.
+   ------------------------- */
 :root{
   --bg:#fde9f3;
   --card:#ffffff;
   --accent:#d6006e;
   --text:#222;
   --muted:#666;
+
+  /* Hauteur de la zone du haut (derrière le P'TIPOTE) */
+  --hero-h: 120px;
+
+  /* Taille du P'TIPOTE (image) */
+  --ptipote-size: 280px;
+
+  /* Zone de référence pour centrer le P’TIPOTE + coeur */
+  --wrap-size: 320px;
+
+  /* P’TIPOTE descend (plus négatif = descend) */
+  --ptipote-bottom: -34px;
+
+  /* Coeur: place verticalement "entre les mains" */
+  --heart-top: 62%;
+  --heart-size: 84px;
+
+  /* Card message: on la remonte pour chevaucher l’image */
+  --message-lift: -60px;
+
+  /* IMPORTANT: supprime l'espace fantôme créé par top:-Xpx
+     (en général proche de la valeur du lift) */
+  --message-ghost-kill: -52px;
+
+  /* Densité globale */
+  --card-pad-top: 16px;
+  --card-pad-side: 16px;
+  --card-pad-bottom: 8px;
+
+  /* Espacement sous la card du message, avant le hint */
+  --hint-gap: 4px;
 }
 
-/* Thèmes (pilotés par c=...) */
+/* -------------------------
+   2) THEMES (pilotés par c=...)
+   ------------------------- */
 .theme-r{ --bg:#ffe6ea; --accent:#d6002a; } /* rouge */
 .theme-p{ --bg:#fde9f3; --accent:#d6006e; } /* rose */
 .theme-o{ --bg:#fff0e6; --accent:#d85a00; } /* orange */
@@ -32,62 +78,83 @@ body{
   color:var(--text);
 }
 
-.wrap{width:min(560px,92vw); padding:18px;}
+.wrap{ width:min(560px,92vw); padding:18px; }
 
+/* -------------------------
+   3) CARD PRINCIPALE
+   - Padding bas réduit (sinon ça fait "ventre")
+   - overflow visible: autorise le P'TIPOTE à dépasser
+   ------------------------- */
 .card{
   background:var(--card);
   border-radius:22px;
-  padding:16px 16px 8px;
+  padding: var(--card-pad-top) var(--card-pad-side) var(--card-pad-bottom);
   box-shadow:0 18px 45px rgba(0,0,0,.12);
   border:1px solid rgba(0,0,0,.08);
-  overflow: visible; /* important pour laisser le ptipote déborder */
-}
-
-/* Zone visuelle (sans cadre) */
-.hero{
-  position:relative;
-  height:120px;     /* ↓ réduit la zone blanche */
-  margin-bottom:6px;
   overflow: visible;
 }
 
-/* Ptipote: 3x plus gros + descend un peu sous la zone message */
+/* -------------------------
+   4) ZONE HERO (haut)
+   - Juste une "aire" pour accrocher les étoiles
+   - Pas besoin qu’elle soit haute
+   ------------------------- */
+.hero{
+  position:relative;
+  height: var(--hero-h);
+  margin-bottom: 6px;
+  overflow: visible;
+}
+
+/* Le wrap qui centre P’TIPOTE + coeur */
 .ptipoteWrap{
   position:absolute;
   left:50%;
-  bottom:-34px;           /* <-- décalage vertical du ptipote (plus bas = plus “en dessous”) */
+  bottom: var(--ptipote-bottom);
   transform: translateX(-50%);
-  width: 320px;           /* zone de référence pour centrer le coeur */
-  height: 320px;
+  width: var(--wrap-size);
+  height: var(--wrap-size);
   display:flex;
   align-items:center;
   justify-content:center;
   pointer-events:none;
 }
 
+/* Image P’TIPOTE */
 .ptipote{
-  width: 280px;           /* <-- taille du ptipote (ajuste ici si tu veux encore plus grand) */
+  width: var(--ptipote-size);
   height:auto;
+  transform: translateY(6px);
   filter: drop-shadow(0 14px 18px rgba(0,0,0,.14));
 }
 
-/* Coeur: centré “entre les mains” */
+/* Coeur emoji centré “entre les mains”
+   Ajuste seulement --heart-top et --heart-size si besoin */
 .heartEmoji{
   position:absolute;
   left:50%;
-  top:62%;                /* <-- position “entre les mains” (baisse/monte cette valeur) */
+  top: var(--heart-top);
   transform: translate(-50%, -50%);
-  font-size:84px;         /* <-- taille du coeur */
+  font-size: var(--heart-size);
   line-height:1;
   filter: drop-shadow(0 10px 14px rgba(0,0,0,.18));
   user-select:none;
 }
 
-/* Cadre du message (sous le ptipote) */
+/* -------------------------
+   5) CARD MESSAGE (chevauche l’image)
+   - top:-X remonte visuellement
+   - margin-bottom:-Y supprime l’espace fantôme
+   ------------------------- */
 .messageFrame{
   position: relative;
-  top: -60px;
-  margin-bottom: -52px;   /* 🔥 clé pour supprimer l’espace fantôme */
+
+  /* Remonte la card sur l’image */
+  top: var(--message-lift);
+
+  /* IMPORTANT: supprime l’espace "réservé" en dessous */
+  margin-bottom: var(--message-ghost-kill);
+
   border-radius:18px;
   background: rgba(255,255,255,.82);
   border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
@@ -95,7 +162,7 @@ body{
   padding:14px 16px 12px;
 }
 
-/* Texte */
+/* Texte du message */
 .msg{
   margin:0;
   font-size:18px;
@@ -103,6 +170,7 @@ body{
   white-space:pre-wrap;
 }
 
+/* Signature */
 .sig{
   margin-top:10px;
   font-size:14px;
@@ -110,14 +178,15 @@ body{
   white-space:pre-wrap;
 }
 
-/* Hint + erreurs */
+/* Texte du bas (Bravo...) */
 .hint{
-  margin-top:4px;
+  margin-top: var(--hint-gap);
   font-size:12px;
   color:rgba(0,0,0,.45);
   text-align:center;
 }
 
+/* Erreurs */
 .err{
   background:#fff4f7;
   border:1px dashed rgba(214,0,110,.35);
@@ -129,7 +198,9 @@ body{
   margin-top:10px;
 }
 
-/* Sparkles (pour c, x, z) */
+/* -------------------------
+   6) SPARKLES (c, x, z)
+   ------------------------- */
 .sparkles{
   position:absolute;
   inset:-12px;
