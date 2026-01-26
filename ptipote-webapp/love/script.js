@@ -125,4 +125,8 @@ function showError(message) {
 
   document.getElementById("msg").textContent = msg || "…";
   document.getElementById("sig").textContent = sig || "";
+ 
+  document.getElementById("hint").textContent =
+  "Bravo tu as decouvert le message secret. Ce petit message a été écrit avec attention";
+
 })();
