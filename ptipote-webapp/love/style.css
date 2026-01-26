@@ -90,7 +90,7 @@ body{
   border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
   box-shadow: 0 10px 24px rgba(0,0,0,.10);
   padding:16px 16px 14px;
-  margin-top:22px;        /* <-- espace sous le ptipote (car il déborde) */
+  margin-top:2px;        /* <-- espace sous le ptipote (car il déborde) */
 }
 
 /* Texte */
