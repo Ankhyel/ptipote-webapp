@@ -127,6 +127,6 @@ function showError(message) {
   document.getElementById("sig").textContent = sig || "";
  
   document.getElementById("hint").textContent =
-  "Bravo tu as decouvert le message secret. Ce petit message a été écrit avec attention";
+  "Bravo tu as découvert le message secret. Ce petit message a été écrit avec affection";
 
 })();
