@@ -86,10 +86,10 @@ body{
 /* Cadre du message (sous le ptipote) */
 .messageFrame{
   position: relative;
-  top: -68px;                 /* ← C’EST CETTE VALEUR QUI FAIT LE CALAGE */
+  top: -60px;                 /* ← C’EST CETTE VALEUR QUI FAIT LE CALAGE */
   border-radius:18px;
   background: rgba(255,255,255,.82);
-  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   box-shadow: 0 10px 24px rgba(0,0,0,.10);
   padding:16px 16px 14px;
 }
