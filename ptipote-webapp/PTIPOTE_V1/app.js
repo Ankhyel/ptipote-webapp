@@ -180,6 +180,31 @@ function rarityLabel(value) {
   return RARITY_LABELS[raw] || raw;
 }
 
+function xpProgress(rawXp) {
+  const raw = String(rawXp ?? "").trim();
+
+  if (!raw) {
+    return { current: 0, max: 100, percent: 0, text: "0 / 100 XP" };
+  }
+
+  const ratio = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (ratio) {
+    const current = Number(ratio[1]);
+    const max = Math.max(1, Number(ratio[2]));
+    const percent = Math.max(0, Math.min(100, (current / max) * 100));
+    return { current, max, percent, text: `${current} / ${max} XP` };
+  }
+
+  if (/^\d+$/.test(raw)) {
+    const current = Number(raw);
+    const max = Math.max(100, current);
+    const percent = Math.max(0, Math.min(100, (current / max) * 100));
+    return { current, max, percent, text: `${current} / ${max} XP` };
+  }
+
+  return { current: 0, max: 100, percent: 0, text: `${raw} XP` };
+}
+
 function heroColorByRarity(rarity, fallbackColor) {
   const raw = String(rarity ?? "").trim();
   if (raw === "2") return "#ff5cae"; // Spéciale
@@ -257,6 +282,7 @@ function renderInfoCards(model) {
   const hasOwner = ownerRaw.length > 0;
   const accessories = model.accessories.map((v) => String(v ?? "").trim());
   const hasAnyAccessory = accessories.some((v) => v.length > 0);
+  const xp = xpProgress(model.xp);
 
   const cards = [
     {
@@ -266,7 +292,6 @@ function renderInfoCards(model) {
     },
     { label: "Rareté", value: pretty(rarityLabel(model.rarity)) },
     { label: "Niveau", value: pretty(model.level) },
-    { label: "Xp", value: pretty(model.xp) },
     {
       label: "Nom de l’éleveur",
       value: pretty(model.ownerName, DEFAULT_OWNER),
@@ -282,6 +307,16 @@ function renderInfoCards(model) {
       </article>
     `)
     .join("");
+
+  html += `
+    <article class="infoCard xpCard">
+      <div class="label">Xp</div>
+      <div class="xpBarTrack">
+        <div class="xpBarFill" style="width:${xp.percent.toFixed(2)}%"></div>
+      </div>
+      <div class="xpText">${escapeHtml(xp.text)}</div>
+    </article>
+  `;
 
   html += `
     <article class="infoCard action">
