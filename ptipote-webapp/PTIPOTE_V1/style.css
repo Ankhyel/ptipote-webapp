@@ -1,0 +1,373 @@
+:root {
+  --bg: #0a0e18;
+  --card: #121a2b;
+  --text: #ecf2ff;
+  --muted: #afbbd9;
+  --line: rgba(255, 255, 255, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1000px 500px at 15% 0%, rgba(91, 117, 255, 0.22), transparent 60%),
+    radial-gradient(900px 500px at 85% 0%, rgba(35, 208, 181, 0.16), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+.page {
+  width: min(980px, 100% - 24px);
+  margin: 18px auto 42px;
+}
+
+.topActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.shopCard {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(16, 24, 40, 0.86);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+}
+
+.shopCard .emoji {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: linear-gradient(
+    155deg,
+    var(--hero-bg-start, rgba(16, 24, 40, 0.7)),
+    var(--hero-bg-end, rgba(13, 21, 41, 0.7)) 70%
+  );
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  padding: 16px;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: -120px auto auto -120px;
+  width: 260px;
+  height: 260px;
+  border-radius: 999px;
+  background: var(--type-color);
+  opacity: 0.18;
+  filter: blur(22px);
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -45px -65px auto;
+  width: 210px;
+  height: 210px;
+  border-radius: 999px;
+  background: var(--type-color);
+  opacity: 0.25;
+  filter: blur(8px);
+}
+
+.heroMedia {
+  position: relative;
+  z-index: 1;
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  padding: 10px;
+}
+
+.heroMedia img {
+  display: block;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center center;
+  border-radius: 0;
+}
+
+.eyebrow {
+  position: relative;
+  z-index: 1;
+  margin: 4px 0;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+}
+
+.hero h1 {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: clamp(30px, 8vw, 46px);
+  line-height: 1.05;
+}
+
+.heroType {
+  position: relative;
+  z-index: 1;
+  margin: 10px 0 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.status {
+  min-height: 24px;
+  margin: 14px 4px 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.status.ok { color: #8ff7d1; }
+.status.warn { color: #ffd45d; }
+.status.err { color: #ff8ca9; }
+
+.grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.infoCard {
+  background: rgba(16, 24, 40, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 11px 12px;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.value {
+  font-size: 17px;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.value.placeholder {
+  font-weight: 500;
+  color: #d8e2fb;
+}
+
+.infoCard.tiny .label,
+.infoCard.tiny .value {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.infoCard.transfer .value {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  text-align: center;
+}
+
+.infoCard.action .label {
+  margin-bottom: 8px;
+}
+
+.actionBtn {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #e7eeff;
+  font-size: 16px;
+  font-weight: 700;
+  background: rgba(85, 140, 255, 0.24);
+  cursor: not-allowed;
+}
+
+.actionBtn.adopt {
+  background: rgba(52, 211, 153, 0.28);
+  border-color: rgba(52, 211, 153, 0.58);
+}
+
+.actionBtn.embark {
+  background: rgba(85, 140, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.accessories {
+  display: block;
+}
+
+.accessories > summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.accessories > summary::-webkit-details-marker {
+  display: none;
+}
+
+.summaryValue {
+  font-size: 14px;
+  color: #d8e4ff;
+  font-weight: 700;
+}
+
+.summaryRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summaryArrow {
+  display: inline-block;
+  color: #d8e4ff;
+  font-size: 14px;
+  transform: translateY(-1px);
+  transition: transform 160ms ease;
+}
+
+.accessories[open] .summaryArrow {
+  transform: rotate(180deg) translateY(1px);
+}
+
+.accessories ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.accessories li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.accessories li span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.accessories li strong {
+  font-size: 13px;
+  color: #edf3ff;
+}
+
+.infoCard.transfer.pending .value {
+  background: rgba(246, 188, 53, 0.15);
+  border-color: rgba(246, 188, 53, 0.5);
+}
+
+.infoCard.transfer.confirmed .value {
+  background: rgba(52, 211, 153, 0.16);
+  border-color: rgba(52, 211, 153, 0.48);
+}
+
+@media (max-width: 720px) {
+  .page {
+    width: min(100% - 14px, 560px);
+    margin: 10px auto 24px;
+  }
+
+  .topActions {
+    margin-bottom: 8px;
+  }
+
+  .shopCard {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  }
+
+  .shopCard .emoji {
+    font-size: 22px;
+  }
+
+  .hero {
+    gap: 10px;
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .heroMedia {
+    aspect-ratio: 1 / 1;
+    border-radius: 14px;
+    padding: 8px;
+  }
+
+  .hero h1 {
+    font-size: clamp(30px, 10vw, 44px);
+  }
+
+  .heroType {
+    margin-top: 6px;
+    font-size: 21px;
+  }
+
+  .status {
+    margin: 10px 2px 0;
+    font-size: 14px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .infoCard {
+    border-radius: 12px;
+    padding: 10px;
+  }
+
+  .label {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .value {
+    font-size: 16px;
+  }
+
+  .actionBtn {
+    font-size: 15px;
+    padding: 9px 10px;
+  }
+
+  .summaryValue {
+    font-size: 13px;
+  }
+}

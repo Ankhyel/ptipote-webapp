@@ -2,6 +2,9 @@
 /love     /love/index.html            200
 /love/*   /love/index.html            200
 
+/PTIPOTE_V1      /PTIPOTE_V1/index.html   200
+/PTIPOTE_V1/*    /PTIPOTE_V1/:splat       200
+
 /dev      /index.html                 200
 /dev/*    /index.html                 200
 
@@ -9,5 +12,5 @@
 /_redirects  /_redirects              200
 
 # --- redirections shop
-/         https://shop.ptipotes.com/  301!
+/         /PTIPOTE_V1/index.html      200
 /*        https://shop.ptipotes.com/:splat  301!
