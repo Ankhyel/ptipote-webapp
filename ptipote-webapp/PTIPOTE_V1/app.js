@@ -224,10 +224,10 @@ function buildImageCandidates(...names) {
   const candidates = [];
   for (const name of orderedNames) {
     for (const ext of IMAGE_EXTENSIONS) {
-      candidates.push(`../img/${name}.${ext}`);
+      candidates.push(`/img/${name}.${ext}`);
     }
   }
-  candidates.push("../img/bplaceholder.png");
+  candidates.push("/img/bplaceholder.png");
   return candidates;
 }
 
