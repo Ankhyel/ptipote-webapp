@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>P’TIPOTE Decode</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="head">
+      <h1>Décodeur P’TIPOTE</h1>
+      <p>Colle une chaîne Base32 (ou ouvre une URL avec #BASE32)</p>
+    </header>
+
+    <section class="panel">
+      <label class="label" for="input">Chaîne Base32</label>
+      <textarea id="input" rows="3" placeholder="Ex: FGC6BMQPMCXAZYYQ..."></textarea>
+
+      <div class="actions">
+        <button id="btnDecode">Décoder</button>
+        <button id="btnFillExample" class="ghost">Mettre l’exemple</button>
+        <button id="btnClear" class="ghost">Effacer</button>
+      </div>
+
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Texte décodé</h2>
+        <pre id="decodedText" class="pre"></pre>
+      </div>
+
+      <div class="card">
+        <h2>Champs</h2>
+        <div id="fields" class="fields"></div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      Format attendu: e=...;t=...;s=...;r=...;...
+    </footer>
+  </main>
+
+  <script src="lz-string.min.js"></script>
+  <script src="base32.js"></script>
+  <script src="decode.js"></script>
+</body>
+</html>

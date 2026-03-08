@@ -1,1 +1,72 @@
+function decodePayload(b32) {
+  const bytes = base32Bytes(b32);
+  if (!bytes || bytes.length === 0) throw new Error("Chaîne Base32 vide.");
 
+  // Helper: try LZString on a Uint8Array and return text if any
+  const tryLZ = (arr) => {
+    if (typeof LZString === "undefined" || typeof LZString.decompressFromUint8Array !== "function") return null;
+    try {
+      const txt = LZString.decompressFromUint8Array(arr);
+      return txt && txt.trim().length ? txt : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Helper: try UTF-8
+  const tryUTF8 = (arr) => {
+    try {
+      const txt = new TextDecoder("utf-8", { fatal: false }).decode(arr);
+      return txt && txt.trim().length ? txt : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // ⚠️ IMPORTANT:
+  // Ton encodeur Base32 "maison" pad les derniers bits avec des 0 (et ajoute '=' juste pour la longueur).
+  // Au décodage, on peut récupérer 1..N octets en trop à la fin.
+  // Pour être robuste, on tente la décompression en retirant progressivement des octets de fin.
+  const maxTrim = Math.min(24, bytes.length); // on ne trim pas plus de 24 octets
+
+  // 1) LZString (meilleur cas). On cherche idéalement un format KV.
+  if (typeof LZString !== "undefined" && typeof LZString.decompressFromUint8Array === "function") {
+    for (let trim = 0; trim <= maxTrim; trim++) {
+      const arr = trim === 0 ? bytes : bytes.slice(0, bytes.length - trim);
+      const txt = tryLZ(arr);
+      if (!txt) continue;
+
+      // Si on obtient du KV, jackpot.
+      if (looksLikeKV(txt)) return { mode: "lz", text: txt };
+
+      // Sinon, on continue à trim (souvent les derniers octets corrompent la fin)
+    }
+
+    // Si jamais on a une chaîne LZ mais non-KV (cas rare), on garde le premier succès.
+    const first = tryLZ(bytes);
+    if (first) return { mode: "lz", text: first };
+  }
+
+  // 2) UTF-8 fallback avec trim
+  for (let trim = 0; trim <= maxTrim; trim++) {
+    const arr = trim === 0 ? bytes : bytes.slice(0, bytes.length - trim);
+    const txt = tryUTF8(arr);
+    if (!txt) continue;
+    if (looksLikeKV(txt)) return { mode: "utf8", text: txt };
+  }
+
+  const utf8 = tryUTF8(bytes);
+  if (utf8) return { mode: "utf8", text: utf8 };
+
+  throw new Error("Décodage OK mais format inconnu (LZString KO et UTF-8 non interprétable)." );
+}
+
+---
+
+    if (looksLikeKV(res.text)) {
+      renderFields(parseKV(res.text));
+      setStatus(`Décodage OK ✅ (${res.mode.toUpperCase()})`, "ok");
+    } else {
+      renderFields({});
+      setStatus(`Décodage OK ✅ (${res.mode.toUpperCase()}) mais format non-KV (vérifie l’encodeur Base32/padding)`, "warn");
+    }
