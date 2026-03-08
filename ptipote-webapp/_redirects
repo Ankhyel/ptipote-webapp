@@ -4,6 +4,7 @@
 
 /PTIPOTE_V1      /PTIPOTE_V1/index.html   200
 /PTIPOTE_V1/*    /PTIPOTE_V1/:splat       200
+/img/*           /img/:splat              200
 
 /dev      /index.html                 200
 /dev/*    /index.html                 200
