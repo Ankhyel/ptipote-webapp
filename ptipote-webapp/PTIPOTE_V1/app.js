@@ -226,7 +226,9 @@ function buildImageCandidates(...names) {
   const seen = new Set();
 
   function pushName(name) {
-    const clean = String(name || "").trim();
+    const clean = String(name || "")
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .trim();
     if (!clean) return;
     if (seen.has(clean)) return;
     seen.add(clean);
@@ -234,26 +236,67 @@ function buildImageCandidates(...names) {
   }
 
   for (const name of names) {
-    const raw = String(name || "").trim();
+    const raw = String(name || "")
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .trim();
     if (!raw) continue;
 
     pushName(raw);
-    pushName(normalizeKey(raw));
+    const normalized = normalizeKey(raw);
+    pushName(normalized);
 
     const lower = raw.toLowerCase();
     const upperFirst = lower.charAt(0).toUpperCase() + lower.slice(1);
     pushName(lower);
     pushName(upperFirst);
+
+    const normalizedUpperFirst = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    pushName(normalizedUpperFirst);
   }
 
   const candidates = [];
   for (const name of orderedNames) {
     for (const ext of IMAGE_EXTENSIONS) {
-      candidates.push(`/img/${name}.${ext}`);
+      candidates.push(`/img/${encodeURIComponent(name)}.${ext}`);
     }
   }
   candidates.push("/img/bplaceholder.png");
   return candidates;
+}
+
+function inlineFallbackImage(label) {
+  const safe = escapeHtml(String(label || "PTIPOTE"));
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eef3ff"/>
+      <stop offset="100%" stop-color="#dce7ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#g)"/>
+  <circle cx="256" cy="210" r="96" fill="#9cb4ea"/>
+  <rect x="136" y="332" width="240" height="28" rx="14" fill="#90a8de"/>
+  <text x="256" y="418" text-anchor="middle" fill="#4a5f8f" font-family="Arial, sans-serif" font-size="28">${safe}</text>
+</svg>`.trim();
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function applySafeContainLayout(imageEl) {
+  const w = Number(imageEl.naturalWidth || 0);
+  const h = Number(imageEl.naturalHeight || 0);
+  if (!w || !h) return;
+  imageEl.style.objectPosition = "top center";
+
+  // Safari iOS can crop <img> with object-fit in some compositions.
+  // We force a manual contain behavior based on real image ratio.
+  if (w >= h) {
+    imageEl.style.width = "100%";
+    imageEl.style.height = "auto";
+  } else {
+    imageEl.style.width = "auto";
+    imageEl.style.height = "100%";
+  }
 }
 
 function updateSpeciesImage(type, species) {
@@ -262,15 +305,35 @@ function updateSpeciesImage(type, species) {
 
   // Public rule: image is driven by "type" first, then species as fallback.
   const candidates = buildImageCandidates(type, species);
+  const finalFallback = inlineFallbackImage(pretty(type || species, "PTIPOTE"));
 
   let index = 0;
+  const tryNext = () => {
+    if (index >= candidates.length) {
+      imageEl.onerror = null;
+      imageEl.onload = null;
+      imageEl.src = finalFallback;
+      return;
+    }
+    imageEl.src = candidates[index];
+  };
+
+  imageEl.onload = () => {
+    // Safari/iOS can occasionally report a completed image with invalid size.
+    if (!imageEl.naturalWidth || !imageEl.naturalHeight) {
+      index += 1;
+      tryNext();
+      return;
+    }
+    applySafeContainLayout(imageEl);
+  };
+
   imageEl.onerror = () => {
     index += 1;
-    if (index < candidates.length) {
-      imageEl.src = candidates[index];
-    }
+    tryNext();
   };
-  imageEl.src = candidates[index];
+
+  tryNext();
 }
 
 function renderInfoCards(model) {
