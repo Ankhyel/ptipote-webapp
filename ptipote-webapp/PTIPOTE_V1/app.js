@@ -65,7 +65,7 @@ function applyTheme(theme) {
 
 function initTheme() {
   const saved = loadSavedTheme();
-  const initial = saved || getSystemTheme();
+  const initial = saved || "light";
   applyTheme(initial);
 
   const btn = $("themeToggle");
