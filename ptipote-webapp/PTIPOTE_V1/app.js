@@ -1,6 +1,7 @@
-const DEFAULT_NICKNAME = "Ce Ptipote aimerais un surnom";
-const DEFAULT_OWNER = "Ce ptipote n'est pas encore adopter... Qu'attend tu ?";
+const DEFAULT_NICKNAME = "Ce PTIPOTE aimerait un surnom.";
+const DEFAULT_OWNER = "Ce PTIPOTE n'est pas encore adopté... Qu'attends-tu ?";
 const DEFAULT_ACCESSORY = "Aucun";
+const ACTION_SOON_MESSAGE = "La fonctionnalité sera disponible rapidement.";
 
 const TYPE_COLORS = {
   myca: "#6b7bff",
@@ -373,7 +374,7 @@ function renderInfoCards(model) {
 
   html += `
     <article class="infoCard xpCard">
-      <div class="label">Xp</div>
+      <div class="label">XP</div>
       <div class="xpBarTrack">
         <div class="xpBarFill" style="width:${xp.percent.toFixed(2)}%"></div>
       </div>
@@ -381,10 +382,12 @@ function renderInfoCards(model) {
     </article>
   `;
 
+  const actionLabel = hasOwner ? "Embarquer" : "Adopter";
   html += `
     <article class="infoCard action">
       <div class="label">Action</div>
-      <button class="actionBtn ${hasOwner ? "embark" : "adopt"}" type="button" disabled>${hasOwner ? "Embarquer" : "Adopter"}</button>
+      <button class="actionBtn ${hasOwner ? "embark" : "adopt"}" type="button" data-soon="1">${actionLabel}</button>
+      <p class="actionHint">${escapeHtml(ACTION_SOON_MESSAGE)}</p>
     </article>
   `;
 
@@ -411,7 +414,7 @@ function renderInfoCards(model) {
     html += `
       <article class="infoCard transfer ${model.transferConfirmed ? "confirmed" : "pending"}">
         <div class="label">Transfert de l’éleveur</div>
-        <div class="value">${escapeHtml(model.transferConfirmed ? "Transfert confirmer" : "Transfert en cours")}</div>
+        <div class="value">${escapeHtml(model.transferConfirmed ? "Transfert confirmé" : "Transfert en cours")}</div>
       </article>
     `;
   }
@@ -469,7 +472,7 @@ function decodeFromHash() {
   const rawHash = String(location.hash || "").replace(/^#/, "").trim();
 
   if (!rawHash) {
-    setStatus("Scanne une puce NFC pour afficher le Ptipote.", "warn");
+    setStatus("Scanne une puce NFC pour afficher un PTIPOTE.", "warn");
     const emptyModel = normalizeModel({});
     renderHero(emptyModel);
     renderInfoCards(emptyModel);
@@ -487,17 +490,41 @@ function decodeFromHash() {
 
     renderHero(model);
     renderInfoCards(model);
-    setStatus("Lien zone 0 : OK", "ok");
+    setStatus("Lien Zone 0 : OK", "ok");
   } catch (error) {
     console.error(error);
-    setStatus("Erreur décode : Vague en cours ou Ptipote Infecter", "err");
+    setStatus("Erreur de décodage : vague en cours ou PTIPOTE infecté.", "err");
     const emptyModel = normalizeModel({});
     renderHero(emptyModel);
     renderInfoCards(emptyModel);
   }
 }
 
+function showActionToast(message) {
+  const toast = $("actionToast");
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add("show");
+
+  if (showActionToast.timer) {
+    clearTimeout(showActionToast.timer);
+  }
+  showActionToast.timer = setTimeout(() => {
+    toast.classList.remove("show");
+  }, 2200);
+}
+
+function bindActionInfo() {
+  document.addEventListener("click", (event) => {
+    const btn = event.target.closest(".actionBtn[data-soon='1']");
+    if (!btn) return;
+    event.preventDefault();
+    showActionToast(ACTION_SOON_MESSAGE);
+  });
+}
+
 function init() {
+  bindActionInfo();
   decodeFromHash();
   window.addEventListener("hashchange", decodeFromHash);
 }

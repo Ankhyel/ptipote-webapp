@@ -36,15 +36,15 @@ body {
   place-items: center;
   text-decoration: none;
   border-radius: 14px;
-  border: 1px solid rgba(255, 196, 168, 0.62);
-  background: linear-gradient(145deg, #ff7a45, #e54939 62%, #c93d2f);
-  box-shadow: 0 8px 18px rgba(197, 56, 35, 0.45);
+  border: 1px solid rgba(255, 244, 226, 0.95);
+  background: linear-gradient(145deg, #fff9f0, #f5ecde 62%, #ece1d1);
+  box-shadow: 0 8px 18px rgba(41, 28, 12, 0.35);
 }
 
 .shopCard .emoji {
   font-size: 24px;
   line-height: 1;
-  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 1px 0 rgba(83, 65, 45, 0.32));
 }
 
 .hero {
@@ -239,7 +239,16 @@ body {
   font-size: 16px;
   font-weight: 700;
   background: rgba(85, 140, 255, 0.24);
-  cursor: not-allowed;
+  cursor: pointer;
+  transition: filter 120ms ease, transform 120ms ease;
+}
+
+.actionBtn:active {
+  transform: translateY(1px);
+}
+
+.actionBtn:hover {
+  filter: brightness(1.05);
 }
 
 .actionBtn.adopt {
@@ -250,6 +259,13 @@ body {
 .actionBtn.embark {
   background: rgba(85, 140, 255, 0.24);
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+.actionHint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #cdd8f5;
 }
 
 .accessories {
@@ -328,6 +344,32 @@ body {
 .infoCard.transfer.confirmed .value {
   background: rgba(52, 211, 153, 0.16);
   border-color: rgba(52, 211, 153, 0.48);
+}
+
+.actionToast {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%) translateY(10px);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 30;
+  width: min(92vw, 420px);
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(11, 18, 34, 0.96);
+  color: #eaf1ff;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.actionToast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 @media (max-width: 720px) {
@@ -410,7 +452,19 @@ body {
     padding: 9px 10px;
   }
 
+  .actionHint {
+    margin-top: 7px;
+    font-size: 11px;
+  }
+
   .summaryValue {
     font-size: 13px;
+  }
+
+  .actionToast {
+    bottom: 12px;
+    padding: 10px 12px;
+    font-size: 12px;
+    border-radius: 10px;
   }
 }
