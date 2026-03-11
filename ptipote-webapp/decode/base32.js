@@ -1,47 +1,36 @@
-// base32.js — RFC4648 Base32 (A-Z2-7) decode -> Uint8Array
-// Expose: window.Base32.decodeToBytes(str)
+// base32.js — Base32 (RFC 4648) decoder (A–Z, 2–7) -> Uint8Array
+// Compatible avec encodeur.html (alphabet A-Z 2-7 + padding '=')
 
 (() => {
-  const ALPH = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const LOOKUP = (() => {
-    const map = Object.create(null);
-    for (let i = 0; i < ALPH.length; i++) map[ALPH[i]] = i;
-    return map;
-  })();
-
-  function clean(input) {
-    return (input || "")
-      .toString()
-      .trim()
-      .replace(/^#/, "")
-      .replace(/\s+/g, "")
-      .replace(/=+$/g, "")
-      .toUpperCase();
-  }
+  const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
   function decodeToBytes(input) {
-    const s = clean(input);
-    if (!s) return new Uint8Array(0);
+    if (!input) return new Uint8Array();
 
-    let bits = 0;
-    let value = 0;
-    const out = [];
+    const s = String(input)
+      .trim()
+      .replace(/^#/, "")
+      .replace(/[\s-]+/g, "")
+      .toUpperCase()
+      .replace(/=+$/g, "");
 
-    for (let i = 0; i < s.length; i++) {
-      const ch = s[i];
-      const v = LOOKUP[ch];
-      if (v === undefined) continue;
-
-      value = (value << 5) | v;
-      bits += 5;
-
-      if (bits >= 8) {
-        bits -= 8;
-        out.push((value >>> bits) & 0xff);
+    let bits = "";
+    for (const ch of s) {
+      const v = ALPHABET.indexOf(ch);
+      if (v === -1) {
+        if (ch === "0") throw new Error("Base32: '0' invalide. Remplace par 'O'.");
+        if (ch === "1") throw new Error("Base32: '1' invalide. Remplace par 'I'.");
+        throw new Error(`Base32: caractère invalide '${ch}'. Autorisés: A–Z et 2–7.`);
       }
+      bits += v.toString(2).padStart(5, "0");
     }
 
-    return new Uint8Array(out);
+    const byteLen = Math.floor(bits.length / 8);
+    const out = new Uint8Array(byteLen);
+    for (let i = 0; i < byteLen; i++) {
+      out[i] = parseInt(bits.slice(i * 8, i * 8 + 8), 2);
+    }
+    return out;
   }
 
   window.Base32 = { decodeToBytes };
