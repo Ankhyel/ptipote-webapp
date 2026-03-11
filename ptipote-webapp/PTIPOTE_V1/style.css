@@ -16,6 +16,11 @@
   --xp-track-line: rgba(157, 224, 255, 0.24);
   --xp-text: #bfe7ff;
   --toast-text: #eaf1ff;
+  --adopt-green-memory-bg: rgba(52, 211, 153, 0.28);
+  --adopt-green-memory-border: rgba(52, 211, 153, 0.58);
+  --adopt-disabled-bg: rgba(160, 175, 202, 0.2);
+  --adopt-disabled-border: rgba(187, 202, 230, 0.34);
+  --adopt-disabled-text: #cbd6ed;
 }
 
 :root[data-theme="light"] {
@@ -36,6 +41,11 @@
   --xp-track-line: rgba(76, 123, 185, 0.28);
   --xp-text: #2c5f97;
   --toast-text: #1b2a49;
+  --adopt-green-memory-bg: rgba(52, 211, 153, 0.28);
+  --adopt-green-memory-border: rgba(52, 211, 153, 0.58);
+  --adopt-disabled-bg: rgba(196, 206, 224, 0.42);
+  --adopt-disabled-border: rgba(122, 138, 173, 0.36);
+  --adopt-disabled-text: #617297;
 }
 
 * { box-sizing: border-box; }
@@ -309,8 +319,10 @@ body {
 }
 
 .actionBtn.adopt {
-  background: rgba(52, 211, 153, 0.28);
-  border-color: rgba(52, 211, 153, 0.58);
+  background: var(--adopt-disabled-bg);
+  border-color: var(--adopt-disabled-border);
+  color: var(--adopt-disabled-text);
+  cursor: not-allowed;
 }
 
 .actionBtn.embark {
