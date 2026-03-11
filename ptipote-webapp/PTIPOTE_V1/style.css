@@ -1,9 +1,41 @@
 :root {
   --bg: #0a0e18;
-  --card: #121a2b;
+  --bg-spot-a: rgba(91, 117, 255, 0.22);
+  --bg-spot-b: rgba(35, 208, 181, 0.16);
+  --surface: rgba(16, 24, 40, 0.86);
+  --surface-soft: rgba(11, 18, 34, 0.96);
   --text: #ecf2ff;
   --muted: #afbbd9;
+  --soft-text: #d8e4ff;
   --line: rgba(255, 255, 255, 0.12);
+  --placeholder: #d8e2fb;
+  --status-ok: #8ff7d1;
+  --status-warn: #ffd45d;
+  --status-err: #ff8ca9;
+  --xp-track-bg: rgba(6, 16, 34, 0.72);
+  --xp-track-line: rgba(157, 224, 255, 0.24);
+  --xp-text: #bfe7ff;
+  --toast-text: #eaf1ff;
+}
+
+:root[data-theme="light"] {
+  --bg: #f1f5ff;
+  --bg-spot-a: rgba(81, 114, 255, 0.22);
+  --bg-spot-b: rgba(31, 185, 159, 0.2);
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-soft: rgba(246, 250, 255, 0.96);
+  --text: #1b2a49;
+  --muted: #5c6f93;
+  --soft-text: #32486e;
+  --line: rgba(33, 56, 99, 0.14);
+  --placeholder: #6177a3;
+  --status-ok: #0a9b72;
+  --status-warn: #b18200;
+  --status-err: #c23557;
+  --xp-track-bg: rgba(218, 229, 247, 0.95);
+  --xp-track-line: rgba(76, 123, 185, 0.28);
+  --xp-text: #2c5f97;
+  --toast-text: #1b2a49;
 }
 
 * { box-sizing: border-box; }
@@ -11,8 +43,8 @@
 body {
   margin: 0;
   background:
-    radial-gradient(1000px 500px at 15% 0%, rgba(91, 117, 255, 0.22), transparent 60%),
-    radial-gradient(900px 500px at 85% 0%, rgba(35, 208, 181, 0.16), transparent 60%),
+    radial-gradient(1000px 500px at 15% 0%, var(--bg-spot-a), transparent 60%),
+    radial-gradient(900px 500px at 85% 0%, var(--bg-spot-b), transparent 60%),
     var(--bg);
   color: var(--text);
   font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
@@ -26,16 +58,41 @@ body {
 .topActions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
+.themeCard,
 .shopCard {
   width: 56px;
   height: 56px;
   display: grid;
   place-items: center;
+  padding: 0;
   text-decoration: none;
   border-radius: 14px;
+}
+
+.themeCard {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 23px;
+  box-shadow: 0 8px 18px rgba(4, 9, 20, 0.28);
+}
+
+.themeCard:hover {
+  filter: brightness(1.06);
+}
+
+:root[data-theme="light"] .themeCard {
+  box-shadow: 0 8px 18px rgba(75, 97, 146, 0.18);
+}
+
+.shopCard {
   border: 1px solid rgba(255, 244, 226, 0.95);
   background: linear-gradient(145deg, #fff9f0, #f5ecde 62%, #ece1d1);
   box-shadow: 0 8px 18px rgba(41, 28, 12, 0.35);
@@ -123,7 +180,7 @@ body {
   z-index: 1;
   margin: 4px 0;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -139,7 +196,7 @@ body {
   position: relative;
   z-index: 1;
   margin: 10px 0 0;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--soft-text);
   font-size: 24px;
   font-weight: 600;
 }
@@ -151,9 +208,9 @@ body {
   font-weight: 600;
 }
 
-.status.ok { color: #8ff7d1; }
-.status.warn { color: #ffd45d; }
-.status.err { color: #ff8ca9; }
+.status.ok { color: var(--status-ok); }
+.status.warn { color: var(--status-warn); }
+.status.err { color: var(--status-err); }
 
 .grid {
   margin-top: 12px;
@@ -163,7 +220,7 @@ body {
 }
 
 .infoCard {
-  background: rgba(16, 24, 40, 0.86);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 11px 12px;
@@ -183,7 +240,7 @@ body {
 
 .value.placeholder {
   font-weight: 500;
-  color: #d8e2fb;
+  color: var(--placeholder);
 }
 
 .xpCard .label {
@@ -194,8 +251,8 @@ body {
   width: 100%;
   height: 12px;
   border-radius: 999px;
-  border: 1px solid rgba(157, 224, 255, 0.24);
-  background: rgba(6, 16, 34, 0.72);
+  border: 1px solid var(--xp-track-line);
+  background: var(--xp-track-bg);
   overflow: hidden;
 }
 
@@ -210,7 +267,7 @@ body {
   margin-top: 8px;
   font-size: 13px;
   font-weight: 700;
-  color: #bfe7ff;
+  color: var(--xp-text);
 }
 
 .infoCard.tiny .label,
@@ -232,10 +289,10 @@ body {
 
 .actionBtn {
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 12px;
-  color: #e7eeff;
+  color: var(--text);
   font-size: 16px;
   font-weight: 700;
   background: rgba(85, 140, 255, 0.24);
@@ -258,14 +315,14 @@ body {
 
 .actionBtn.embark {
   background: rgba(85, 140, 255, 0.24);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--line);
 }
 
 .actionHint {
   margin: 8px 0 0;
   font-size: 12px;
   line-height: 1.35;
-  color: #cdd8f5;
+  color: var(--soft-text);
 }
 
 .accessories {
@@ -286,7 +343,7 @@ body {
 
 .summaryValue {
   font-size: 14px;
-  color: #d8e4ff;
+  color: var(--soft-text);
   font-weight: 700;
 }
 
@@ -298,7 +355,7 @@ body {
 
 .summaryArrow {
   display: inline-block;
-  color: #d8e4ff;
+  color: var(--soft-text);
   font-size: 14px;
   transform: translateY(-1px);
   transition: transform 160ms ease;
@@ -320,10 +377,10 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 7px 9px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-soft);
 }
 
 .accessories li span {
@@ -333,7 +390,7 @@ body {
 
 .accessories li strong {
   font-size: 13px;
-  color: #edf3ff;
+  color: var(--text);
 }
 
 .infoCard.transfer.pending .value {
@@ -357,9 +414,9 @@ body {
   width: min(92vw, 420px);
   padding: 11px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(11, 18, 34, 0.96);
-  color: #eaf1ff;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--toast-text);
   font-size: 13px;
   font-weight: 600;
   text-align: center;
@@ -382,10 +439,15 @@ body {
     margin-bottom: 8px;
   }
 
+  .themeCard,
   .shopCard {
     width: 48px;
     height: 48px;
     border-radius: 12px;
+  }
+
+  .themeCard {
+    font-size: 21px;
   }
 
   .shopCard .emoji {

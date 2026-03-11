@@ -2,6 +2,7 @@ const DEFAULT_NICKNAME = "Ce PTIPOTE aimerait un surnom.";
 const DEFAULT_OWNER = "Ce PTIPOTE n'est pas encore adopté... Qu'attends-tu ?";
 const DEFAULT_ACCESSORY = "Aucun";
 const ACTION_SOON_MESSAGE = "La fonctionnalité sera disponible rapidement.";
+const THEME_STORAGE_KEY = "ptipote_theme";
 
 const TYPE_COLORS = {
   myca: "#6b7bff",
@@ -21,6 +22,62 @@ const IMAGE_EXTENSIONS = ["png", "jpg", "webp", "jpeg"];
 
 function $(id) {
   return document.getElementById(id);
+}
+
+function getSystemTheme() {
+  const query = "(prefers-color-scheme: light)";
+  return window.matchMedia && window.matchMedia(query).matches ? "light" : "dark";
+}
+
+function loadSavedTheme() {
+  try {
+    const value = localStorage.getItem(THEME_STORAGE_KEY);
+    return value === "light" || value === "dark" ? value : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function saveTheme(theme) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch (_) {
+    // ignore storage errors
+  }
+}
+
+function applyTheme(theme) {
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+
+  const btn = $("themeToggle");
+  if (btn) {
+    const target = next === "light" ? "sombre" : "clair";
+    btn.setAttribute("aria-label", `Activer le mode ${target}`);
+    btn.setAttribute("aria-pressed", next === "light" ? "true" : "false");
+  }
+
+  const icon = $("themeToggleIcon");
+  if (icon) {
+    icon.textContent = next === "light" ? "☀️" : "🌙";
+  }
+}
+
+function initTheme() {
+  const saved = loadSavedTheme();
+  const initial = saved || getSystemTheme();
+  applyTheme(initial);
+
+  const btn = $("themeToggle");
+  if (!btn) return;
+
+  btn.addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+    const next = current === "light" ? "dark" : "light";
+    applyTheme(next);
+    saveTheme(next);
+    decodeFromHash();
+  });
 }
 
 function setStatus(message, kind = "") {
@@ -175,6 +232,10 @@ function typeColor(typeValue) {
   return `hsl(${hue} 78% 58%)`;
 }
 
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
 function rarityLabel(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
@@ -216,9 +277,30 @@ function heroColorByRarity(rarity, fallbackColor) {
 
 function heroBackgroundByRarity(rarity) {
   const raw = String(rarity ?? "").trim();
-  if (raw === "2") return { start: "rgba(255, 92, 174, 0.82)", end: "rgba(156, 36, 102, 0.78)" };
-  if (raw === "3") return { start: "rgba(63, 124, 255, 0.82)", end: "rgba(28, 70, 167, 0.78)" };
-  if (raw === "4") return { start: "rgba(212, 166, 59, 0.84)", end: "rgba(129, 90, 23, 0.8)" };
+  const isLight = currentTheme() === "light";
+
+  if (raw === "2") {
+    return isLight
+      ? { start: "rgba(255, 177, 220, 0.9)", end: "rgba(244, 138, 198, 0.86)" }
+      : { start: "rgba(255, 92, 174, 0.82)", end: "rgba(156, 36, 102, 0.78)" };
+  }
+
+  if (raw === "3") {
+    return isLight
+      ? { start: "rgba(145, 184, 255, 0.9)", end: "rgba(104, 150, 237, 0.86)" }
+      : { start: "rgba(63, 124, 255, 0.82)", end: "rgba(28, 70, 167, 0.78)" };
+  }
+
+  if (raw === "4") {
+    return isLight
+      ? { start: "rgba(244, 217, 138, 0.92)", end: "rgba(227, 192, 92, 0.88)" }
+      : { start: "rgba(212, 166, 59, 0.84)", end: "rgba(129, 90, 23, 0.8)" };
+  }
+
+  if (isLight) {
+    return { start: "rgba(229, 238, 255, 0.92)", end: "rgba(206, 222, 248, 0.9)" };
+  }
+
   return { start: "rgba(16, 24, 40, 0.7)", end: "rgba(13, 21, 41, 0.7)" };
 }
 
@@ -524,6 +606,7 @@ function bindActionInfo() {
 }
 
 function init() {
+  initTheme();
   bindActionInfo();
   decodeFromHash();
   window.addEventListener("hashchange", decodeFromHash);
