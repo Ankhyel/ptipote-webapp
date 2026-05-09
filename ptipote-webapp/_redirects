@@ -12,6 +12,8 @@
 # --- debug temporaire : permet de lire le fichier dans le navigateur
 /_redirects  /_redirects              200
 
-# --- redirections shop
-/         /PTIPOTE_V1/index.html      200
-/*        https://shop.ptipotes.com/:splat  301!
+# --- redirection unique: racine -> Shopify
+/         https://shop.ptipotes.com/  301!
+
+# --- fallback: tout le reste reste sur le site (SPA)
+/*        /index.html                 200
