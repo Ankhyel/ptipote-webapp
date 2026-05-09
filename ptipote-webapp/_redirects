@@ -1,19 +1,26 @@
+# =========================
+# app.ptipotes.com
+# =========================
+# On sert l'app (PTIPOTE_V1) et ses pages autorisées
+# Aucun redirect vers Shopify ici.
+
 # --- pages autorisées (doivent être AVANT tout le reste)
 /love     /love/index.html            200
 /love/*   /love/index.html            200
 
-/PTIPOTE_V1      /PTIPOTE_V1/index.html   200
-/PTIPOTE_V1/*    /PTIPOTE_V1/:splat       200
-/img/*           /img/:splat              200
-
 /dev      /index.html                 200
 /dev/*    /index.html                 200
 
-# --- debug temporaire : permet de lire le fichier dans le navigateur
+/img/*           /img/:splat          200
+
+/PTIPOTE_V1          /PTIPOTE_V1/index.html   200
+/PTIPOTE_V1/*        /PTIPOTE_V1/:splat       200
+
+# --- debug temporaire
 /_redirects  /_redirects              200
 
-# --- redirection unique: racine -> Shopify
-/         https://shop.ptipotes.com/  301!
+# --- racine de app -> PTIPOTE_V1
+/         /PTIPOTE_V1/index.html      200
 
-# --- fallback: tout le reste reste sur le site (SPA)
-/*        /index.html                 200
+# --- fallback SPA: tout le reste -> PTIPOTE_V1
+/*        /PTIPOTE_V1/index.html      200
