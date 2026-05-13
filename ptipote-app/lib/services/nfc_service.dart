@@ -21,6 +21,44 @@ class NfcManagerService implements NfcService {
   NfcManagerService([NfcManager? manager]) : _manager = manager ?? NfcManager.instance;
 
   final NfcManager _manager;
+  static const List<String> _uriPrefixes = <String>[
+    '',
+    'http://www.',
+    'https://www.',
+    'http://',
+    'https://',
+    'tel:',
+    'mailto:',
+    'ftp://anonymous:anonymous@',
+    'ftp://ftp.',
+    'ftps://',
+    'sftp://',
+    'smb://',
+    'nfs://',
+    'ftp://',
+    'dav://',
+    'news:',
+    'telnet://',
+    'imap:',
+    'rtsp://',
+    'urn:',
+    'pop:',
+    'sip:',
+    'sips:',
+    'tftp:',
+    'btspp://',
+    'btl2cap://',
+    'btgoep://',
+    'tcpobex://',
+    'irdaobex://',
+    'file://',
+    'urn:epc:id:',
+    'urn:epc:tag:',
+    'urn:epc:pat:',
+    'urn:epc:raw:',
+    'urn:epc:',
+    'urn:nfc:',
+  ];
 
   Future<void> _ensureAvailable() async {
     final available = await _manager.isAvailable();
@@ -128,6 +166,16 @@ class NfcManagerService implements NfcService {
   String _decodeRecord(NdefRecord record) {
     final payload = record.payload;
     if (payload.isEmpty) return '';
+
+    final isUriRecord =
+        record.typeNameFormat == NdefTypeNameFormat.nfcWellknown &&
+        _sameBytes(record.type, const [0x55]); // 'U'
+    if (isUriRecord) {
+      final prefixIndex = payload.first;
+      final prefix = prefixIndex < _uriPrefixes.length ? _uriPrefixes[prefixIndex] : '';
+      final suffix = utf8.decode(payload.sublist(1), allowMalformed: true);
+      return '$prefix$suffix';
+    }
 
     final isTextRecord =
         record.typeNameFormat == NdefTypeNameFormat.nfcWellknown &&

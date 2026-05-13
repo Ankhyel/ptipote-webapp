@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:lzstring/lzstring.dart';
 
 import '../../services/nfc_service.dart';
 
@@ -15,12 +18,13 @@ class NfcPage extends StatefulWidget {
 
 class _NfcPageState extends State<NfcPage> {
   late final NfcService _service;
-  final TextEditingController _writeController = TextEditingController();
 
   bool _busy = false;
   bool _statusIsError = false;
-  String _status = 'Pret. Pose une puce NFC pour lire ou ecrire.';
-  String _lastRead = 'Aucune lecture pour le moment.';
+  String _status = 'Prêt à scanner une puce PTIPOTE.';
+  String _rawSource = '';
+  String _decodedText = '';
+  Map<String, String> _fields = _emptyFields();
 
   @override
   void initState() {
@@ -28,31 +32,57 @@ class _NfcPageState extends State<NfcPage> {
     _service = widget.service ?? NfcManagerService();
   }
 
-  @override
-  void dispose() {
-    _writeController.dispose();
-    super.dispose();
+  static Map<String, String> _emptyFields() {
+    return <String, String>{
+      'e': '',
+      't': '',
+      's': '',
+      'r': '',
+      'b': '',
+      'l': '',
+      'x': '',
+      'o': '',
+      'on': '',
+      'te': '',
+      'ter': '',
+      'a1': '',
+      'a2': '',
+      'a3': '',
+      'a4': '',
+    };
   }
 
-  Future<void> _readTag() async {
+  Future<void> _readAndDecodeTag() async {
     setState(() {
       _busy = true;
       _statusIsError = false;
       _status = 'Lecture NFC en cours...';
+      _rawSource = '';
+      _decodedText = '';
+      _fields = _emptyFields();
     });
 
     try {
-      final payload = await _service.readTagPayload();
+      final source = await _service.readTagPayload();
+      final raw = (source ?? '').trim();
+      if (raw.isEmpty) {
+        throw NfcServiceException('Aucune donnée trouvée sur la puce.');
+      }
+
+      final payload = _extractPayloadFromSource(raw);
+      final decoded = _decodePayload(payload);
+      final kv = _parseKv(decoded);
+      if (kv.isEmpty) {
+        throw NfcServiceException('Décodage OK mais format non reconnu.');
+      }
+
       setState(() {
         _busy = false;
         _statusIsError = false;
-        _status = 'Lecture terminee.';
-        _lastRead = (payload == null || payload.trim().isEmpty)
-            ? '(Tag vide)'
-            : payload;
-        if (payload != null && payload.isNotEmpty) {
-          _writeController.text = payload;
-        }
+        _status = 'Scan OK ✅';
+        _rawSource = raw;
+        _decodedText = decoded;
+        _fields = _normalizeFields(kv);
       });
     } catch (error) {
       setState(() {
@@ -63,117 +93,248 @@ class _NfcPageState extends State<NfcPage> {
     }
   }
 
-  Future<void> _writeTag() async {
-    final payload = _writeController.text.trim();
-    if (payload.isEmpty) {
-      setState(() {
-        _statusIsError = true;
-        _status = 'Le champ payload est vide.';
-      });
-      return;
+  String _extractPayloadFromSource(String source) {
+    final trimmed = source.trim();
+    if (_looksLikeBase32(trimmed)) {
+      return trimmed;
     }
 
-    setState(() {
-      _busy = true;
-      _statusIsError = false;
-      _status = 'Ecriture NFC en cours...';
-    });
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null) {
+      final fragment = uri.fragment.trim();
+      if (fragment.isNotEmpty) return fragment;
 
-    try {
-      await _service.writeTagPayload(payload);
-      setState(() {
-        _busy = false;
-        _statusIsError = false;
-        _status = 'Ecriture terminee.';
-      });
-    } catch (error) {
-      setState(() {
-        _busy = false;
-        _statusIsError = true;
-        _status = error.toString();
-      });
+      final pathLast = uri.pathSegments.isNotEmpty ? uri.pathSegments.last.trim() : '';
+      if (_looksLikeBase32(pathLast)) return pathLast;
     }
+
+    final hashIndex = trimmed.indexOf('#');
+    if (hashIndex >= 0 && hashIndex + 1 < trimmed.length) {
+      return trimmed.substring(hashIndex + 1).trim();
+    }
+
+    throw NfcServiceException('Payload Base32 introuvable dans la puce.');
+  }
+
+  bool _looksLikeBase32(String value) {
+    final s = value.trim();
+    if (s.length < 20) return false;
+    return RegExp(r'^[A-Z2-7=]+$', caseSensitive: false).hasMatch(s);
+  }
+
+  String _decodePayload(String payload) {
+    final bytes = _decodeBase32ToBytes(payload);
+    return _decodeLz(bytes);
+  }
+
+  Uint8List _decodeBase32ToBytes(String b32) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    var s = b32
+        .trim()
+        .replaceFirst(RegExp(r'^#'), '')
+        .replaceAll(RegExp(r'[\s-]+'), '')
+        .toUpperCase();
+
+    s = s.replaceAll('0', 'O').replaceAll('1', 'I');
+    s = s.replaceAll(RegExp(r'=+$'), '');
+
+    final bits = StringBuffer();
+    for (final ch in s.split('')) {
+      final value = alphabet.indexOf(ch);
+      if (value < 0) {
+        throw NfcServiceException("Base32 invalide: '$ch'");
+      }
+      bits.write(value.toRadixString(2).padLeft(5, '0'));
+    }
+
+    final bitString = bits.toString();
+    final byteLen = bitString.length ~/ 8;
+    final out = Uint8List(byteLen);
+    for (var i = 0; i < byteLen; i++) {
+      final byteBits = bitString.substring(i * 8, i * 8 + 8);
+      out[i] = int.parse(byteBits, radix: 2);
+    }
+    return out;
+  }
+
+  String _decodeLz(Uint8List bytes) {
+    final maxTrim = bytes.length < 24 ? bytes.length : 24;
+    String? fallback;
+
+    for (var trim = 0; trim <= maxTrim; trim++) {
+      final arr = trim == 0 ? bytes : bytes.sublist(0, bytes.length - trim);
+      final text = LZString.decompressFromUint8ArraySync(arr);
+      final clean = (text ?? '').trim();
+
+      if (clean.isNotEmpty && _looksLikeKv(clean)) {
+        return clean;
+      }
+      if (fallback == null && clean.isNotEmpty) {
+        fallback = clean;
+      }
+    }
+
+    if (fallback != null) return fallback;
+    throw NfcServiceException('Payload LZ invalide.');
+  }
+
+  bool _looksLikeKv(String text) {
+    return RegExp(r'(^|;)\s*([a-z]{1,3}|a[1-4])\s*=').hasMatch(text.trim());
+  }
+
+  Map<String, String> _parseKv(String text) {
+    final out = <String, String>{};
+    final parts = text.split(';');
+    for (final part in parts) {
+      if (part.trim().isEmpty) continue;
+      final idx = part.indexOf('=');
+      if (idx < 0) continue;
+      final key = part.substring(0, idx).trim();
+      final value = part.substring(idx + 1).trim();
+      if (key.isNotEmpty) out[key] = value;
+    }
+    return out;
+  }
+
+  Map<String, String> _normalizeFields(Map<String, String> input) {
+    final fields = _emptyFields();
+    for (final key in fields.keys) {
+      fields[key] = (input[key] ?? '').trim();
+    }
+
+    if ((fields['l'] ?? '').isEmpty && (input['n'] ?? '').trim().isNotEmpty) {
+      fields['l'] = input['n']!.trim();
+    }
+    if ((fields['te'] ?? '').isEmpty && (input['ta'] ?? '').trim().isNotEmpty) {
+      fields['te'] = input['ta']!.trim();
+    }
+    return fields;
+  }
+
+  List<_FieldRow> _rows() {
+    return <_FieldRow>[
+      _FieldRow('Espèce (e)', _fields['e'] ?? ''),
+      _FieldRow('Type (t)', _fields['t'] ?? ''),
+      _FieldRow('Surnom (s)', _fields['s'] ?? ''),
+      _FieldRow('Rareté (r)', _fields['r'] ?? ''),
+      _FieldRow('Batch (b)', _fields['b'] ?? ''),
+      _FieldRow('Niveau (l)', _fields['l'] ?? ''),
+      _FieldRow('XP (x)', _fields['x'] ?? ''),
+      _FieldRow('Nom éleveur (o)', _fields['o'] ?? ''),
+      _FieldRow('Numéro éleveur (on)', _fields['on'] ?? ''),
+      _FieldRow('Transfert (te)', _fields['te'] ?? ''),
+      _FieldRow('Transfert confirmé (ter)', _fields['ter'] ?? ''),
+      _FieldRow('Accessoire 1 (a1)', _fields['a1'] ?? ''),
+      _FieldRow('Accessoire 2 (a2)', _fields['a2'] ?? ''),
+      _FieldRow('Accessoire 3 (a3)', _fields['a3'] ?? ''),
+      _FieldRow('Accessoire 4 (a4)', _fields['a4'] ?? ''),
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
+    final rows = _rows();
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan / Ecriture NFC')),
+      appBar: AppBar(title: const Text('Test NFC PTIPOTE')),
       body: ListView(
         padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _status,
-                    style: TextStyle(
-                      color: _statusIsError ? Colors.red.shade700 : Colors.green.shade700,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    _busy ? 'Action en cours, approche la puce du telephone.' : 'En attente.',
-                    style: const TextStyle(color: Colors.black54),
-                  ),
-                ],
-              ),
-            ),
+        children: <Widget>[
+          FilledButton.icon(
+            onPressed: _busy ? null : _readAndDecodeTag,
+            icon: const Icon(Icons.nfc),
+            label: Text(_busy ? 'Scan en cours...' : 'Scanner une puce'),
           ),
           const SizedBox(height: 12),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Dernier payload lu', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  SelectableText(_lastRead),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _readTag,
-                    icon: const Icon(Icons.nfc),
-                    label: const Text('Lire une puce'),
-                  ),
-                ],
+              child: Text(
+                _status,
+                style: TextStyle(
+                  color: _statusIsError ? Colors.red.shade700 : Colors.green.shade700,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
+          if (_rawSource.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            _SectionCard(
+              title: 'Donnée NFC brute',
+              child: SelectableText(_rawSource),
+            ),
+          ],
+          if (_decodedText.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            _SectionCard(
+              title: 'Texte décodé',
+              child: SelectableText(_decodedText),
+            ),
+          ],
           const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Payload a ecrire', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _writeController,
-                    minLines: 3,
-                    maxLines: 6,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: 'Ex: e=Geoda;t=Skadi;... ou Base32',
+          _SectionCard(
+            title: 'Champs PTIPOTE',
+            child: Column(
+              children: rows
+                  .map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Expanded(
+                            flex: 6,
+                            child: Text(
+                              row.label,
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 7,
+                            child: SelectableText(row.value.isEmpty ? '—' : row.value),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: _busy ? null : _writeTag,
-                    icon: const Icon(Icons.edit),
-                    label: const Text('Ecrire sur une puce'),
-                  ),
-                ],
-              ),
+                  )
+                  .toList(),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FieldRow {
+  _FieldRow(this.label, this.value);
+
+  final String label;
+  final String value;
 }
