@@ -65,22 +65,15 @@ body {
   margin: 18px auto 42px;
 }
 
-.topActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
 .themeCard,
 .shopCard {
-  width: 56px;
-  height: 56px;
+  width: 50px;
+  height: 50px;
   display: grid;
   place-items: center;
   padding: 0;
   text-decoration: none;
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .themeCard {
@@ -209,6 +202,27 @@ body {
   color: var(--soft-text);
   font-size: 24px;
   font-weight: 600;
+}
+
+.heroBottom {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.heroText {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.heroActions {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .status {
@@ -447,23 +461,19 @@ body {
     margin: 10px auto 24px;
   }
 
-  .topActions {
-    margin-bottom: 8px;
-  }
-
   .themeCard,
   .shopCard {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
+    width: 44px;
+    height: 44px;
+    border-radius: 11px;
   }
 
   .themeCard {
-    font-size: 21px;
+    font-size: 19px;
   }
 
   .shopCard .emoji {
-    font-size: 22px;
+    font-size: 20px;
   }
 
   .hero {
@@ -485,6 +495,14 @@ body {
   .heroType {
     margin-top: 6px;
     font-size: 21px;
+  }
+
+  .heroBottom {
+    gap: 8px;
+  }
+
+  .heroActions {
+    gap: 6px;
   }
 
   .status {
