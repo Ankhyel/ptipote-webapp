@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:nfc_manager/nfc_manager.dart';
 
@@ -74,6 +75,8 @@ class NfcManagerService implements NfcService {
     final completer = Completer<String?>();
 
     await _manager.startSession(
+      alertMessage: 'Approche le haut de ton iPhone de la puce NFC PTIPOTE.',
+      pollingOptions: Platform.isIOS ? <NfcPollingOption>{NfcPollingOption.iso14443} : null,
       onDiscovered: (NfcTag tag) async {
         try {
           final ndef = Ndef.from(tag);
@@ -81,7 +84,7 @@ class NfcManagerService implements NfcService {
             throw NfcServiceException('Tag NFC non-NDEF.');
           }
 
-          final message = ndef.cachedMessage;
+          final message = ndef.cachedMessage ?? await ndef.read();
           if (message == null || message.records.isEmpty) {
             throw NfcServiceException('Aucune donnee NDEF sur ce tag.');
           }
@@ -102,7 +105,7 @@ class NfcManagerService implements NfcService {
     );
 
     return completer.future.timeout(
-      const Duration(seconds: 20),
+      const Duration(seconds: 30),
       onTimeout: () async {
         await _safeStopWithError(NfcServiceException('Timeout NFC.'));
         throw NfcServiceException('Aucun tag detecte (timeout).');
@@ -123,6 +126,8 @@ class NfcManagerService implements NfcService {
     final completer = Completer<void>();
 
     await _manager.startSession(
+      alertMessage: 'Approche le haut de ton iPhone de la puce NFC PTIPOTE.',
+      pollingOptions: Platform.isIOS ? <NfcPollingOption>{NfcPollingOption.iso14443} : null,
       onDiscovered: (NfcTag tag) async {
         try {
           final ndef = Ndef.from(tag);
@@ -132,14 +137,6 @@ class NfcManagerService implements NfcService {
             }
             await ndef.write(message);
             await _manager.stopSession(alertMessage: 'Ecriture NFC terminee.');
-            if (!completer.isCompleted) completer.complete();
-            return;
-          }
-
-          final formatable = NdefFormatable.from(tag);
-          if (formatable != null) {
-            await formatable.format(message);
-            await _manager.stopSession(alertMessage: 'Tag formate et ecrit.');
             if (!completer.isCompleted) completer.complete();
             return;
           }
@@ -155,7 +152,7 @@ class NfcManagerService implements NfcService {
     );
 
     return completer.future.timeout(
-      const Duration(seconds: 20),
+      const Duration(seconds: 30),
       onTimeout: () async {
         await _safeStopWithError(NfcServiceException('Timeout NFC.'));
         throw NfcServiceException('Aucun tag detecte pour ecriture (timeout).');
