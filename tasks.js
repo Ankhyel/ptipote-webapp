@@ -32,10 +32,10 @@
     state.resources.debris += 3;
     state.resources.organic += 2;
     window.PTIPOTE_STATE.updateSelectedPtipote(state, () => ({
-      xp: ptipote.xp + 12
+      xp: ptipote.xp + 20
     }));
     state.activeTask = null;
-    window.PTIPOTE_STATE.addJournal(state, `${ptipote.name} revient avec +3 Debris, +2 Organique et +12 XP.`);
+    window.PTIPOTE_STATE.addJournal(state, `${ptipote.name} revient avec +3 Debris, +2 Organique et +20 XP.`);
     window.PTIPOTE_STATE.advanceObjective(state, 2);
     return "";
   }
