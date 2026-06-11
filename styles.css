@@ -1,0 +1,368 @@
+:root {
+  --bg: #f4f7f2;
+  --surface: #ffffff;
+  --surface-strong: #eef5e8;
+  --text: #172116;
+  --muted: #66745f;
+  --line: #d8e2d1;
+  --accent: #36a269;
+  --accent-dark: #20784a;
+  --warn: #b56a17;
+  --danger: #b83d4d;
+  --shadow: 0 10px 30px rgba(37, 54, 31, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  padding: 14px 12px 92px;
+}
+
+.top-hud {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  margin: -14px -12px 12px;
+  background: rgba(244, 247, 242, 0.94);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+
+.top-hud h1,
+.section-title h2 {
+  margin: 0;
+  line-height: 1.05;
+}
+
+.top-hud h1 {
+  font-size: 22px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud-stats {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 6px;
+  justify-content: end;
+}
+
+.stat-pill {
+  min-width: 62px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.view {
+  display: none;
+}
+
+.view.active {
+  display: block;
+}
+
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: end;
+  margin: 12px 0;
+}
+
+.ghost-button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.island-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.building-card,
+.ptipote-card,
+.objective-card,
+.journal-entry {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.building-card {
+  min-height: 128px;
+  padding: 12px;
+  text-align: left;
+}
+
+.building-card.active {
+  border-color: var(--accent);
+  background: var(--surface-strong);
+}
+
+.building-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--surface-strong);
+  font-size: 24px;
+}
+
+.building-card h3,
+.ptipote-card h3,
+.sheet-card h3 {
+  margin: 10px 0 4px;
+}
+
+.building-card p,
+.ptipote-card p,
+.journal-entry p,
+.objective-card p,
+.sheet-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.ptipote-list,
+.journal-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ptipote-card,
+.objective-card,
+.journal-entry {
+  padding: 12px;
+}
+
+.ptipote-card.selected {
+  border-color: var(--accent);
+  background: var(--surface-strong);
+}
+
+.meter {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dfe8d8;
+}
+
+.meter span {
+  display: block;
+  height: 100%;
+  width: var(--value, 0%);
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.small-stat {
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.small-stat b {
+  display: block;
+  margin-top: 2px;
+}
+
+.bottom-sheet {
+  position: fixed;
+  right: 0;
+  bottom: 62px;
+  left: 0;
+  z-index: 3;
+  max-height: 48dvh;
+  overflow: auto;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--line);
+  border-radius: 8px 8px 0 0;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 -14px 30px rgba(27, 39, 23, 0.14);
+  transform: translateY(calc(100% - 44px));
+  transition: transform 160ms ease;
+}
+
+.bottom-sheet.open {
+  transform: translateY(0);
+}
+
+.sheet-handle {
+  width: 46px;
+  height: 5px;
+  margin: 0 auto 9px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.sheet-card {
+  display: grid;
+  gap: 10px;
+}
+
+.action-row,
+.quantity-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.primary-button,
+.secondary-button,
+.quantity-button {
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-weight: 850;
+}
+
+.primary-button {
+  background: var(--accent);
+  color: #fff;
+}
+
+.secondary-button,
+.quantity-button {
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.quantity-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.select-field {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.bottom-nav {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+}
+
+.nav-button {
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.nav-button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.empty-state {
+  padding: 18px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (min-width: 720px) {
+  .app-shell {
+    width: min(980px, 100%);
+    margin: 0 auto;
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .top-hud {
+    margin-right: -18px;
+    margin-left: -18px;
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .island-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .bottom-sheet {
+    right: max(16px, calc((100vw - 980px) / 2 + 18px));
+    left: auto;
+    width: min(440px, calc(100vw - 32px));
+    border-left: 1px solid var(--line);
+    border-radius: 8px 8px 0 0;
+  }
+}
