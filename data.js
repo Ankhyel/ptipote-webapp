@@ -33,6 +33,7 @@ window.PTIPOTE_DATA = {
     "Attendre la recolte puis recuperer les gains.",
     "Craft un Repas a l'Atelier.",
     "Soigner Kelo a la Maison.",
-    "Faire progresser Kelo avec l'XP."
+    "Faire progresser Kelo avec l'XP.",
+    "Boucle proto validee : Kelo a recolte, mange et progresse."
   ]
 };
