@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:lzstring/lzstring.dart';
 
+import '../../services/figurine_service.dart';
 import '../../services/nfc_service.dart';
 
 class NfcPage extends StatefulWidget {
@@ -18,10 +19,13 @@ class NfcPage extends StatefulWidget {
 
 class _NfcPageState extends State<NfcPage> {
   late final NfcService _service;
+  late final FigurineService _figurineService;
 
   bool _busy = false;
+  bool _saving = false;
   bool _statusIsError = false;
   String _status = 'Prêt à scanner une puce PTIPOTE.';
+  String _tagUid = '';
   String _rawSource = '';
   String _decodedText = '';
   Map<String, String> _fields = _emptyFields();
@@ -30,6 +34,7 @@ class _NfcPageState extends State<NfcPage> {
   void initState() {
     super.initState();
     _service = widget.service ?? NfcManagerService();
+    _figurineService = FigurineService();
   }
 
   static Map<String, String> _emptyFields() {
@@ -57,14 +62,15 @@ class _NfcPageState extends State<NfcPage> {
       _busy = true;
       _statusIsError = false;
       _status = 'Lecture NFC en cours...';
+      _tagUid = '';
       _rawSource = '';
       _decodedText = '';
       _fields = _emptyFields();
     });
 
     try {
-      final source = await _service.readTagPayload();
-      final raw = (source ?? '').trim();
+      final result = await _service.readTag();
+      final raw = (result.payload ?? '').trim();
       if (raw.isEmpty) {
         throw NfcServiceException('Aucune donnée trouvée sur la puce.');
       }
@@ -80,6 +86,7 @@ class _NfcPageState extends State<NfcPage> {
         _busy = false;
         _statusIsError = false;
         _status = 'Scan OK ✅';
+        _tagUid = result.uid;
         _rawSource = raw;
         _decodedText = decoded;
         _fields = _normalizeFields(kv);
@@ -91,6 +98,86 @@ class _NfcPageState extends State<NfcPage> {
         _status = error.toString();
       });
     }
+  }
+
+  Future<void> _saveFigurine() async {
+    if (_tagUid.isEmpty || _decodedText.isEmpty || _fields.values.every((value) => value.trim().isEmpty)) {
+      setState(() {
+        _statusIsError = true;
+        _status = 'Scanne une puce avant de l’enregistrer.';
+      });
+      return;
+    }
+
+    final nickname = await _askNickname();
+    if (nickname == null) return;
+
+    setState(() {
+      _saving = true;
+      _statusIsError = false;
+    });
+
+    try {
+      await _figurineService.saveScannedFigurine(
+        tagUid: _tagUid,
+        nickname: nickname,
+        rawSource: _rawSource,
+        decodedText: _decodedText,
+        fields: _fields,
+      );
+      setState(() {
+        _saving = false;
+        _statusIsError = false;
+        _status = 'Figurine enregistree dans ton compte.';
+      });
+    } catch (error) {
+      setState(() {
+        _saving = false;
+        _statusIsError = true;
+        _status = error.toString();
+      });
+    }
+  }
+
+  Future<String?> _askNickname() async {
+    final controller = TextEditingController(text: _fields['s'] ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nommer ce PTIPOTE'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Surnom',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    final nickname = result?.trim();
+    if (nickname == null) return null;
+    if (nickname.isEmpty) {
+      setState(() {
+        _statusIsError = true;
+        _status = 'Le surnom est requis pour lier la puce au compte.';
+      });
+      return null;
+    }
+    return nickname;
   }
 
   String _extractPayloadFromSource(String source) {
@@ -245,6 +332,19 @@ class _NfcPageState extends State<NfcPage> {
             icon: const Icon(Icons.nfc),
             label: Text(_busy ? 'Scan en cours...' : 'Scanner une puce'),
           ),
+          if (_decodedText.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _saving ? null : _saveFigurine,
+              icon: _saving
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save),
+              label: Text(_saving ? 'Enregistrement...' : 'Enregistrer dans mon compte'),
+            ),
+          ],
           const SizedBox(height: 12),
           Card(
             child: Padding(
@@ -259,6 +359,11 @@ class _NfcPageState extends State<NfcPage> {
             ),
           ),
           if (_rawSource.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            _SectionCard(
+              title: 'UID de la puce',
+              child: SelectableText(_tagUid),
+            ),
             const SizedBox(height: 12),
             _SectionCard(
               title: 'Donnée NFC brute',

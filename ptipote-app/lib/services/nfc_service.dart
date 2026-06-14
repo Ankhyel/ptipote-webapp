@@ -5,8 +5,19 @@ import 'dart:io';
 import 'package:nfc_manager/nfc_manager.dart';
 
 abstract class NfcService {
+  Future<NfcTagReadResult> readTag();
   Future<String?> readTagPayload();
   Future<void> writeTagPayload(String payload);
+}
+
+class NfcTagReadResult {
+  const NfcTagReadResult({
+    required this.uid,
+    required this.payload,
+  });
+
+  final String uid;
+  final String? payload;
 }
 
 class NfcServiceException implements Exception {
@@ -69,10 +80,10 @@ class NfcManagerService implements NfcService {
   }
 
   @override
-  Future<String?> readTagPayload() async {
+  Future<NfcTagReadResult> readTag() async {
     await _ensureAvailable();
 
-    final completer = Completer<String?>();
+    final completer = Completer<NfcTagReadResult>();
 
     await _manager.startSession(
       alertMessage: 'Approche le haut de ton iPhone de la puce NFC PTIPOTE.',
@@ -90,10 +101,14 @@ class NfcManagerService implements NfcService {
           }
 
           final payload = _decodeRecord(message.records.first);
+          final uid = _extractUid(tag);
+          if (uid.isEmpty) {
+            throw NfcServiceException('UID de puce introuvable.');
+          }
           await _manager.stopSession(alertMessage: 'Lecture NFC terminee.');
 
           if (!completer.isCompleted) {
-            completer.complete(payload);
+            completer.complete(NfcTagReadResult(uid: uid, payload: payload));
           }
         } catch (error) {
           await _safeStopWithError(error);
@@ -111,6 +126,12 @@ class NfcManagerService implements NfcService {
         throw NfcServiceException('Aucun tag detecte (timeout).');
       },
     );
+  }
+
+  @override
+  Future<String?> readTagPayload() async {
+    final result = await readTag();
+    return result.payload;
   }
 
   @override
@@ -187,6 +208,31 @@ class NfcManagerService implements NfcService {
     }
 
     return utf8.decode(payload, allowMalformed: true);
+  }
+
+  String _extractUid(NfcTag tag) {
+    final candidates = <Object?>[
+      tag.data['mifare']?['identifier'],
+      tag.data['nfcA']?['identifier'],
+      tag.data['nfcB']?['identifier'],
+      tag.data['iso7816']?['identifier'],
+      tag.data['iso15693']?['identifier'],
+      tag.data['felica']?['currentIDm'],
+    ];
+
+    for (final candidate in candidates) {
+      final bytes = _asBytes(candidate);
+      if (bytes.isNotEmpty) {
+        return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
+      }
+    }
+    return '';
+  }
+
+  List<int> _asBytes(Object? value) {
+    if (value is List<int>) return value;
+    if (value is List) return value.whereType<int>().toList();
+    return const <int>[];
   }
 
   bool _sameBytes(List<int> left, List<int> right) {

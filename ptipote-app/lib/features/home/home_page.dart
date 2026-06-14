@@ -1,5 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../figurines/figurines_page.dart';
 import '../nfc/nfc_page.dart';
 import '../reprogram/reprogram_page.dart';
 
@@ -11,10 +13,30 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('PTIPOTE App')),
+      appBar: AppBar(
+        title: const Text('PTIPOTE App'),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Deconnexion',
+            onPressed: () => FirebaseAuth.instance.signOut(),
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const Text(
+            'Collection',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          _ActionCard(
+            title: 'Mes PTIPOTE',
+            subtitle: 'Voir les figurines enregistrees dans ton compte',
+            onTap: () => Navigator.of(context).pushNamed(FigurinesPage.route),
+          ),
+          const SizedBox(height: 24),
           const Text(
             'Outils NFC',
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
