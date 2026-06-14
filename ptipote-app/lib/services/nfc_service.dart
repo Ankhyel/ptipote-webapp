@@ -85,7 +85,7 @@ class NfcManagerService implements NfcService {
           }
 
           final message = ndef.cachedMessage ?? await ndef.read();
-          if (message == null || message.records.isEmpty) {
+          if (message.records.isEmpty) {
             throw NfcServiceException('Aucune donnee NDEF sur ce tag.');
           }
 

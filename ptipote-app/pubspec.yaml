@@ -12,6 +12,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   nfc_manager: ^3.5.0
   lzstring: ^2.0.0+2
+  firebase_core: ^4.10.0
 
 dev_dependencies:
   flutter_test:
