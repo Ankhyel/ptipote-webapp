@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../figurines/figurines_page.dart';
 import '../nfc/nfc_page.dart';
@@ -18,7 +19,10 @@ class HomePage extends StatelessWidget {
         actions: <Widget>[
           IconButton(
             tooltip: 'Deconnexion',
-            onPressed: () => FirebaseAuth.instance.signOut(),
+            onPressed: () async {
+              await GoogleSignIn.instance.signOut();
+              await FirebaseAuth.instance.signOut();
+            },
             icon: const Icon(Icons.logout),
           ),
         ],
