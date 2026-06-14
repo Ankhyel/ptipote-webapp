@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NFCReaderUsageDescription</key>
 	<string>Cette application lit les puces NFC PTIPOTE pour afficher les informations du compagnon.</string>
 	<key>UIApplicationSceneManifest</key>
