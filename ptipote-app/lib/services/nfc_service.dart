@@ -30,7 +30,8 @@ class NfcServiceException implements Exception {
 }
 
 class NfcManagerService implements NfcService {
-  NfcManagerService([NfcManager? manager]) : _manager = manager ?? NfcManager.instance;
+  NfcManagerService([NfcManager? manager])
+      : _manager = manager ?? NfcManager.instance;
 
   final NfcManager _manager;
   static const List<String> _uriPrefixes = <String>[
@@ -87,7 +88,8 @@ class NfcManagerService implements NfcService {
 
     await _manager.startSession(
       alertMessage: 'Approche le haut de ton iPhone de la puce NFC PTIPOTE.',
-      pollingOptions: Platform.isIOS ? <NfcPollingOption>{NfcPollingOption.iso14443} : null,
+      pollingOptions:
+          Platform.isIOS ? <NfcPollingOption>{NfcPollingOption.iso14443} : null,
       onDiscovered: (NfcTag tag) async {
         try {
           final ndef = Ndef.from(tag);
@@ -148,7 +150,8 @@ class NfcManagerService implements NfcService {
 
     await _manager.startSession(
       alertMessage: 'Approche le haut de ton iPhone de la puce NFC PTIPOTE.',
-      pollingOptions: Platform.isIOS ? <NfcPollingOption>{NfcPollingOption.iso14443} : null,
+      pollingOptions:
+          Platform.isIOS ? <NfcPollingOption>{NfcPollingOption.iso14443} : null,
       onDiscovered: (NfcTag tag) async {
         try {
           final ndef = Ndef.from(tag);
@@ -187,17 +190,18 @@ class NfcManagerService implements NfcService {
 
     final isUriRecord =
         record.typeNameFormat == NdefTypeNameFormat.nfcWellknown &&
-        _sameBytes(record.type, const [0x55]); // 'U'
+            _sameBytes(record.type, const [0x55]); // 'U'
     if (isUriRecord) {
       final prefixIndex = payload.first;
-      final prefix = prefixIndex < _uriPrefixes.length ? _uriPrefixes[prefixIndex] : '';
+      final prefix =
+          prefixIndex < _uriPrefixes.length ? _uriPrefixes[prefixIndex] : '';
       final suffix = utf8.decode(payload.sublist(1), allowMalformed: true);
       return '$prefix$suffix';
     }
 
     final isTextRecord =
         record.typeNameFormat == NdefTypeNameFormat.nfcWellknown &&
-        _sameBytes(record.type, const [0x54]); // 'T'
+            _sameBytes(record.type, const [0x54]); // 'T'
 
     if (isTextRecord && payload.length > 1) {
       final languageCodeLength = payload.first & 0x3F;
@@ -223,7 +227,10 @@ class NfcManagerService implements NfcService {
     for (final candidate in candidates) {
       final bytes = _asBytes(candidate);
       if (bytes.isNotEmpty) {
-        return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
+        return bytes
+            .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+            .join()
+            .toUpperCase();
       }
     }
     return '';

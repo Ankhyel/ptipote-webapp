@@ -4,7 +4,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import '../figurines/figurines_page.dart';
 import '../nfc/nfc_page.dart';
-import '../reprogram/reprogram_page.dart';
+import '../profile/profile_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -40,6 +40,12 @@ class HomePage extends StatelessWidget {
             subtitle: 'Voir les figurines enregistrees dans ton compte',
             onTap: () => Navigator.of(context).pushNamed(FigurinesPage.route),
           ),
+          const SizedBox(height: 12),
+          _ActionCard(
+            title: 'Profil',
+            subtitle: 'Modifier ton nom utilisateur et ton nom eleveur',
+            onTap: () => Navigator.of(context).pushNamed(ProfilePage.route),
+          ),
           const SizedBox(height: 24),
           const Text(
             'Outils NFC',
@@ -50,12 +56,6 @@ class HomePage extends StatelessWidget {
             title: 'Scanner une puce',
             subtitle: 'Lire et verifier les donnees stockees',
             onTap: () => Navigator.of(context).pushNamed(NfcPage.route),
-          ),
-          const SizedBox(height: 12),
-          _ActionCard(
-            title: 'Reprogrammer une puce',
-            subtitle: 'Modifier niveau, xp et metadonnees',
-            onTap: () => Navigator.of(context).pushNamed(ReprogramPage.route),
           ),
         ],
       ),

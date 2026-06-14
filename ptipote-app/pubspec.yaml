@@ -1,5 +1,5 @@
 name: ptipote_app
-description: PTIPOTE mobile app (Flutter) for NFC scan and chip reprogramming.
+description: PTIPOTE mobile app (Flutter) for NFC scan, account profiles, and figurine collections.
 publish_to: none
 version: 0.1.0+1
 

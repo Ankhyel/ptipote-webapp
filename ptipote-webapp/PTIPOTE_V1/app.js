@@ -464,14 +464,15 @@ function renderInfoCards(model) {
     </article>
   `;
 
-  const actionLabel = hasOwner ? "Embarquer" : "Adopter";
-  html += `
-    <article class="infoCard action">
-      <div class="label">Action</div>
-      <button class="actionBtn ${hasOwner ? "embark" : "adopt"}" type="button" data-soon="1">${actionLabel}</button>
-      <p class="actionHint">${escapeHtml(ACTION_SOON_MESSAGE)}</p>
-    </article>
-  `;
+  if (!hasOwner) {
+    html += `
+      <article class="infoCard action">
+        <div class="label">Action</div>
+        <button class="actionBtn adopt" type="button" data-soon="1">Adopter</button>
+        <p class="actionHint">${escapeHtml(ACTION_SOON_MESSAGE)}</p>
+      </article>
+    `;
+  }
 
   const accessoryRows = accessories
     .map((value, idx) => `<li><span>A${idx + 1}</span><strong>${escapeHtml(pretty(value, DEFAULT_ACCESSORY))}</strong></li>`)

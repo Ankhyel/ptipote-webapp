@@ -4,8 +4,6 @@ class PtipoteFigurine {
     required this.tagUid,
     required this.nickname,
     required this.fields,
-    required this.rawSource,
-    required this.decodedText,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -14,8 +12,6 @@ class PtipoteFigurine {
   final String tagUid;
   final String nickname;
   final Map<String, String> fields;
-  final String rawSource;
-  final String decodedText;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -26,17 +22,25 @@ class PtipoteFigurine {
     final fieldNickname = fields['s']?.trim();
     if (fieldNickname != null && fieldNickname.isNotEmpty) return fieldNickname;
 
-    final species = fields['e']?.trim();
-    final type = fields['t']?.trim();
-    final label = [species, type].where((value) => value != null && value.isNotEmpty).join(' ');
+    final label = [species, type].where((value) => value != '-').join(' ');
     return label.isEmpty ? 'PTIPOTE sans nom' : label;
   }
 
-  String get level => fields['l']?.trim().isNotEmpty == true ? fields['l']!.trim() : '-';
+  String get level =>
+      fields['l']?.trim().isNotEmpty == true ? fields['l']!.trim() : '-';
 
-  String get xp => fields['x']?.trim().isNotEmpty == true ? fields['x']!.trim() : '-';
+  String get xp =>
+      fields['x']?.trim().isNotEmpty == true ? fields['x']!.trim() : '-';
 
-  String get species => fields['e']?.trim().isNotEmpty == true ? fields['e']!.trim() : '-';
+  String get species =>
+      fields['e']?.trim().isNotEmpty == true ? fields['e']!.trim() : '-';
 
-  String get type => fields['t']?.trim().isNotEmpty == true ? fields['t']!.trim() : '-';
+  String get type =>
+      fields['t']?.trim().isNotEmpty == true ? fields['t']!.trim() : '-';
+
+  String get ownerName =>
+      fields['o']?.trim().isNotEmpty == true ? fields['o']!.trim() : '-';
+
+  String get breederNumber =>
+      fields['on']?.trim().isNotEmpty == true ? fields['on']!.trim() : '-';
 }

@@ -4,7 +4,7 @@ Flutter app for PTIPOTE NFC workflows.
 
 ## Current scope
 - Scan NFC and decode payloads.
-- Reprogram chip fields (level/xp and later ownership flows).
+- Save scanned figurines to the connected account and manage profile ownership fields.
 - Connect to backend services (to be added).
 
 ## Project state

@@ -5,6 +5,8 @@ import 'package:lzstring/lzstring.dart';
 
 import '../../services/figurine_service.dart';
 import '../../services/nfc_service.dart';
+import '../../services/user_profile_service.dart';
+import '../figurines/ptipote_image.dart';
 
 class NfcPage extends StatefulWidget {
   const NfcPage({super.key, this.service});
@@ -20,6 +22,7 @@ class NfcPage extends StatefulWidget {
 class _NfcPageState extends State<NfcPage> {
   late final NfcService _service;
   late final FigurineService _figurineService;
+  late final UserProfileService _profileService;
 
   bool _busy = false;
   bool _saving = false;
@@ -35,6 +38,7 @@ class _NfcPageState extends State<NfcPage> {
     super.initState();
     _service = widget.service ?? NfcManagerService();
     _figurineService = FigurineService();
+    _profileService = UserProfileService();
   }
 
   static Map<String, String> _emptyFields() {
@@ -82,14 +86,22 @@ class _NfcPageState extends State<NfcPage> {
         throw NfcServiceException('Décodage OK mais format non reconnu.');
       }
 
+      final normalizedFields = _normalizeFields(kv);
+      final existing = await _figurineService.getMyFigurineByTagUid(result.uid);
+      final profile = await _profileService.getOrCreateMyProfile();
+      normalizedFields['s'] =
+          existing?.displayName ?? normalizedFields['s'] ?? '';
+      normalizedFields['o'] = profile.ownerName;
+      normalizedFields['on'] = profile.breederNumber;
+
       setState(() {
         _busy = false;
         _statusIsError = false;
-        _status = 'Scan OK ✅';
+        _status = 'Scan OK';
         _tagUid = result.uid;
         _rawSource = raw;
         _decodedText = decoded;
-        _fields = _normalizeFields(kv);
+        _fields = normalizedFields;
       });
     } catch (error) {
       setState(() {
@@ -101,7 +113,9 @@ class _NfcPageState extends State<NfcPage> {
   }
 
   Future<void> _saveFigurine() async {
-    if (_tagUid.isEmpty || _decodedText.isEmpty || _fields.values.every((value) => value.trim().isEmpty)) {
+    if (_tagUid.isEmpty ||
+        _decodedText.isEmpty ||
+        _fields.values.every((value) => value.trim().isEmpty)) {
       setState(() {
         _statusIsError = true;
         _status = 'Scanne une puce avant de l’enregistrer.';
@@ -118,12 +132,18 @@ class _NfcPageState extends State<NfcPage> {
     });
 
     try {
+      final profile = await _profileService.getOrCreateMyProfile();
+      final fields = Map<String, String>.from(_fields);
+      fields['o'] = profile.ownerName;
+      fields['on'] = profile.breederNumber;
+
       await _figurineService.saveScannedFigurine(
         tagUid: _tagUid,
         nickname: nickname,
         rawSource: _rawSource,
         decodedText: _decodedText,
-        fields: _fields,
+        fields: fields,
+        ownerProfile: profile,
       );
       setState(() {
         _saving = false;
@@ -191,7 +211,8 @@ class _NfcPageState extends State<NfcPage> {
       final fragment = uri.fragment.trim();
       if (fragment.isNotEmpty) return fragment;
 
-      final pathLast = uri.pathSegments.isNotEmpty ? uri.pathSegments.last.trim() : '';
+      final pathLast =
+          uri.pathSegments.isNotEmpty ? uri.pathSegments.last.trim() : '';
       if (_looksLikeBase32(pathLast)) return pathLast;
     }
 
@@ -307,8 +328,8 @@ class _NfcPageState extends State<NfcPage> {
       _FieldRow('Batch (b)', _fields['b'] ?? ''),
       _FieldRow('Niveau (l)', _fields['l'] ?? ''),
       _FieldRow('XP (x)', _fields['x'] ?? ''),
-      _FieldRow('Nom éleveur (o)', _fields['o'] ?? ''),
-      _FieldRow('Numéro éleveur (on)', _fields['on'] ?? ''),
+      _FieldRow('Nom éleveur', _fields['o'] ?? ''),
+      _FieldRow('Nom utilisateur', _fields['on'] ?? ''),
       _FieldRow('Transfert (te)', _fields['te'] ?? ''),
       _FieldRow('Transfert confirmé (ter)', _fields['ter'] ?? ''),
       _FieldRow('Accessoire 1 (a1)', _fields['a1'] ?? ''),
@@ -323,7 +344,7 @@ class _NfcPageState extends State<NfcPage> {
     final rows = _rows();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Test NFC PTIPOTE')),
+      appBar: AppBar(title: const Text('Scanner un PTIPOTE')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
@@ -342,7 +363,9 @@ class _NfcPageState extends State<NfcPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.save),
-              label: Text(_saving ? 'Enregistrement...' : 'Enregistrer dans mon compte'),
+              label: Text(_saving
+                  ? 'Enregistrement...'
+                  : 'Enregistrer dans mon compte'),
             ),
           ],
           const SizedBox(height: 12),
@@ -352,29 +375,27 @@ class _NfcPageState extends State<NfcPage> {
               child: Text(
                 _status,
                 style: TextStyle(
-                  color: _statusIsError ? Colors.red.shade700 : Colors.green.shade700,
+                  color: _statusIsError
+                      ? Colors.red.shade700
+                      : Colors.green.shade700,
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ),
           ),
-          if (_rawSource.isNotEmpty) ...<Widget>[
+          if (_decodedText.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            _SectionCard(
+              title: 'Image PTIPOTE',
+              child: PtipoteImage(
+                  type: _fields['t'] ?? '', species: _fields['e'] ?? ''),
+            ),
+          ],
+          if (_tagUid.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
             _SectionCard(
               title: 'UID de la puce',
               child: SelectableText(_tagUid),
-            ),
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'Donnée NFC brute',
-              child: SelectableText(_rawSource),
-            ),
-          ],
-          if (_decodedText.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'Texte décodé',
-              child: SelectableText(_decodedText),
             ),
           ],
           const SizedBox(height: 12),
@@ -392,13 +413,15 @@ class _NfcPageState extends State<NfcPage> {
                             flex: 6,
                             child: Text(
                               row.label,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             flex: 7,
-                            child: SelectableText(row.value.isEmpty ? '—' : row.value),
+                            child: SelectableText(
+                                row.value.isEmpty ? '—' : row.value),
                           ),
                         ],
                       ),
@@ -427,7 +450,9 @@ class _SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(title,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             child,
           ],

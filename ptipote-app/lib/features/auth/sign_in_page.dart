@@ -10,7 +10,8 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> {
-  static final Future<void> _googleSignInReady = GoogleSignIn.instance.initialize();
+  static final Future<void> _googleSignInReady =
+      GoogleSignIn.instance.initialize();
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -32,7 +33,8 @@ class _SignInPageState extends State<SignInPage> {
     final password = _passwordController.text;
 
     if (email.isEmpty || password.length < 6) {
-      setState(() => _error = 'Entre un email et un mot de passe de 6 caracteres minimum.');
+      setState(() => _error =
+          'Entre un email et un mot de passe de 6 caracteres minimum.');
       return;
     }
 
@@ -43,9 +45,11 @@ class _SignInPageState extends State<SignInPage> {
 
     try {
       if (_createAccount) {
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(email: email, password: password);
+        await FirebaseAuth.instance
+            .createUserWithEmailAndPassword(email: email, password: password);
       } else {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
+        await FirebaseAuth.instance
+            .signInWithEmailAndPassword(email: email, password: password);
       }
     } on FirebaseAuthException catch (error) {
       setState(() => _error = _readableAuthError(error));
@@ -66,11 +70,13 @@ class _SignInPageState extends State<SignInPage> {
       await _googleSignInReady;
       final googleUser = await GoogleSignIn.instance.authenticate();
       final googleAuth = googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(idToken: googleAuth.idToken);
+      final credential =
+          GoogleAuthProvider.credential(idToken: googleAuth.idToken);
       await FirebaseAuth.instance.signInWithCredential(credential);
     } on GoogleSignInException catch (error) {
       if (error.code == GoogleSignInExceptionCode.canceled) return;
-      setState(() => _error = error.description ?? 'Connexion Google impossible.');
+      setState(
+          () => _error = error.description ?? 'Connexion Google impossible.');
     } on FirebaseAuthException catch (error) {
       setState(() => _error = _readableAuthError(error));
     } catch (error) {
@@ -111,7 +117,9 @@ class _SignInPageState extends State<SignInPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          Text(title, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+          Text(title,
+              style:
+                  const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
           const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: anyBusy ? null : _signInWithGoogle,
@@ -121,7 +129,8 @@ class _SignInPageState extends State<SignInPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.account_circle),
-            label: Text(_googleBusy ? 'Connexion Google...' : 'Continuer avec Google'),
+            label: Text(
+                _googleBusy ? 'Connexion Google...' : 'Continuer avec Google'),
           ),
           const SizedBox(height: 20),
           const Divider(),
@@ -152,11 +161,15 @@ class _SignInPageState extends State<SignInPage> {
             contentPadding: EdgeInsets.zero,
             title: const Text('Créer un nouveau compte'),
             value: _createAccount,
-            onChanged: anyBusy ? null : (value) => setState(() => _createAccount = value),
+            onChanged: anyBusy
+                ? null
+                : (value) => setState(() => _createAccount = value),
           ),
           if (_error != null) ...[
             const SizedBox(height: 8),
-            Text(_error!, style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w700)),
+            Text(_error!,
+                style: TextStyle(
+                    color: Colors.red.shade700, fontWeight: FontWeight.w700)),
           ],
           const SizedBox(height: 16),
           FilledButton.icon(

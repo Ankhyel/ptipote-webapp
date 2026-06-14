@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/figurine_service.dart';
 import 'ptipote_figurine.dart';
+import 'ptipote_image.dart';
 
 class FigurinesPage extends StatelessWidget {
   const FigurinesPage({super.key, this.service});
@@ -46,7 +47,8 @@ class FigurinesPage extends StatelessWidget {
 
           return ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemBuilder: (context, index) => _FigurineCard(figurine: figurines[index]),
+            itemBuilder: (context, index) =>
+                _FigurineCard(figurine: figurines[index]),
             separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemCount: figurines.length,
           );
@@ -69,7 +71,12 @@ class _FigurineCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(figurine.displayName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            PtipoteImage(
+                type: figurine.type, species: figurine.species, height: 160),
+            const SizedBox(height: 12),
+            Text(figurine.displayName,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -80,6 +87,8 @@ class _FigurineCard extends StatelessWidget {
                 _Chip(label: 'Type', value: figurine.type),
                 _Chip(label: 'Niveau', value: figurine.level),
                 _Chip(label: 'XP', value: figurine.xp),
+                _Chip(label: 'Eleveur', value: figurine.ownerName),
+                _Chip(label: 'Numero eleveur', value: figurine.breederNumber),
               ],
             ),
           ],
