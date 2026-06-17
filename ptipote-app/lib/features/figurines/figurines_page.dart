@@ -4,7 +4,7 @@ import '../../services/figurine_service.dart';
 import 'ptipote_figurine.dart';
 import 'ptipote_image.dart';
 
-class FigurinesPage extends StatelessWidget {
+class FigurinesPage extends StatefulWidget {
   const FigurinesPage({super.key, this.service});
 
   static const route = '/figurines';
@@ -12,45 +12,84 @@ class FigurinesPage extends StatelessWidget {
   final FigurineService? service;
 
   @override
-  Widget build(BuildContext context) {
-    final figurineService = service ?? FigurineService();
+  State<FigurinesPage> createState() => _FigurinesPageState();
+}
 
+class _FigurinesPageState extends State<FigurinesPage> {
+  late final FigurineService _figurineService;
+
+  @override
+  void initState() {
+    super.initState();
+    _figurineService = widget.service ?? FigurineService();
+  }
+
+  Future<void> _refresh() => _figurineService.refreshMyFigurinesFromServer();
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Mes PTIPOTE')),
       body: StreamBuilder<List<PtipoteFigurine>>(
-        stream: figurineService.watchMyFigurines(),
+        stream: _figurineService.watchMyFigurines(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const <Widget>[
+                  SizedBox(height: 280),
+                  Center(child: CircularProgressIndicator()),
+                ],
+              ),
+            );
           }
 
           if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('Chargement impossible: ${snapshot.error}'),
+            return RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  Text('Chargement impossible: ${snapshot.error}'),
+                ],
+              ),
             );
           }
 
           final figurines = snapshot.data ?? const <PtipoteFigurine>[];
           if (figurines.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Aucune figurine enregistree.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
+            return RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const <Widget>[
+                  SizedBox(height: 260),
+                  Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Aucune figurine enregistree.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
               ),
             );
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemBuilder: (context, index) =>
-                _FigurineCard(figurine: figurines[index]),
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemCount: figurines.length,
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              itemBuilder: (context, index) =>
+                  _FigurineCard(figurine: figurines[index]),
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemCount: figurines.length,
+            ),
           );
         },
       ),

@@ -312,6 +312,7 @@ body {
 }
 
 .actionBtn {
+  display: block;
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -321,6 +322,8 @@ body {
   font-weight: 700;
   background: rgba(85, 140, 255, 0.24);
   cursor: pointer;
+  text-align: center;
+  text-decoration: none;
   transition: filter 120ms ease, transform 120ms ease;
 }
 
@@ -340,6 +343,11 @@ body {
 }
 
 .actionBtn.embark {
+  background: rgba(85, 140, 255, 0.24);
+  border-color: var(--line);
+}
+
+.actionBtn.discover {
   background: rgba(85, 140, 255, 0.24);
   border-color: var(--line);
 }

@@ -30,6 +30,70 @@ class FigurineService {
         .map((snapshot) => snapshot.docs.map(_fromDoc).toList());
   }
 
+  Future<void> refreshMyFigurinesFromServer() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    await _collectionFor(user.uid)
+        .orderBy('updatedAt', descending: true)
+        .get(const GetOptions(source: Source.server));
+  }
+
+  Future<void> syncOwnerProfileOnMyFigurines(UserProfile profile) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('Connexion requise pour synchroniser les figurines.');
+    }
+
+    final snapshot = await _collectionFor(user.uid)
+        .get(const GetOptions(source: Source.server));
+    final batch = _firestore.batch();
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final fieldsData =
+          data['fields'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+      final fields = fieldsData.map((key, value) => MapEntry(key, '$value'));
+      fields['o'] = profile.ownerName;
+      fields['on'] = profile.breederNumber;
+
+      batch.set(
+        doc.reference,
+        <String, dynamic>{
+          'ownerName': profile.ownerName,
+          'breederNumber': profile.breederNumber,
+          'fields': fields,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      final publicKey =
+          '${data['publicKey'] ?? publicKeyFromSource('${data['rawSource'] ?? ''}')}'
+              .trim();
+      if (publicKey.isEmpty) continue;
+
+      batch.set(
+        _firestore.collection('publicFigurines').doc(publicKey),
+        <String, dynamic>{
+          'ownerUid': user.uid,
+          'tagUid': '${data['tagUid'] ?? doc.id}',
+          'publicKey': publicKey,
+          'species': '${data['species'] ?? fields['e'] ?? ''}',
+          'type': '${data['type'] ?? fields['t'] ?? ''}',
+          'nickname': '${data['nickname'] ?? fields['s'] ?? ''}',
+          'ownerName': profile.ownerName,
+          'breederNumber': profile.breederNumber,
+          'fields': fields,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
   Future<PtipoteFigurine?> getMyFigurineByTagUid(String tagUid) async {
     final user = _auth.currentUser;
     if (user == null || tagUid.trim().isEmpty) return null;

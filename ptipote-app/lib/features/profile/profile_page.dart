@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../services/figurine_service.dart';
 import '../../services/user_profile_service.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -15,6 +16,7 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   late final UserProfileService _service;
+  late final FigurineService _figurineService;
   final _usernameController = TextEditingController();
   final _displayNameController = TextEditingController();
 
@@ -27,6 +29,7 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _service = widget.service ?? UserProfileService();
+    _figurineService = FigurineService();
     _load();
   }
 
@@ -78,7 +81,9 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       await _service.saveMyProfile(
           username: username, displayName: displayName);
-      setState(() => _status = 'Profil enregistre.');
+      final profile = await _service.getOrCreateMyProfile();
+      await _figurineService.syncOwnerProfileOnMyFigurines(profile);
+      setState(() => _status = 'Profil et PTIPOTE synchronises.');
     } catch (error) {
       setState(() => _status = error.toString());
     } finally {

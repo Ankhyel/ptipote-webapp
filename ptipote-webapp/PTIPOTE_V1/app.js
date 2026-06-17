@@ -1,7 +1,8 @@
 const DEFAULT_NICKNAME = "Ce PTIPOTE aimerait un surnom.";
 const DEFAULT_OWNER = "Ce PTIPOTE n'est pas encore adopté... Qu'attends-tu ?";
 const DEFAULT_ACCESSORY = "Aucun";
-const ACTION_SOON_MESSAGE = "La fonctionnalité sera disponible rapidement.";
+const ACTION_SOON_MESSAGE = "La page de découverte PTIPOTE arrive bientôt.";
+const DISCOVER_URL = "https://ptipotes.com";
 const THEME_STORAGE_KEY = "ptipote_theme";
 const FIREBASE_PROJECT_ID = "ptipote-13508";
 const FIREBASE_API_KEY = "AIzaSyCol40AnP-uim5rxMT63ZzuO-E2dfoFTpQ";
@@ -468,15 +469,13 @@ function renderInfoCards(model) {
     </article>
   `;
 
-  if (!hasOwner) {
-    html += `
-      <article class="infoCard action">
-        <div class="label">Action</div>
-        <button class="actionBtn adopt" type="button" data-soon="1">Adopter</button>
-        <p class="actionHint">${escapeHtml(ACTION_SOON_MESSAGE)}</p>
-      </article>
-    `;
-  }
+  html += `
+    <article class="infoCard action">
+      <div class="label">Action</div>
+      <a class="actionBtn discover" href="${DISCOVER_URL}" target="_blank" rel="noopener noreferrer">Découvrir les PTIPOTES</a>
+      <p class="actionHint">${escapeHtml(hasOwner ? "Ce PTIPOTE a déjà trouvé son éleveur." : ACTION_SOON_MESSAGE)}</p>
+    </article>
+  `;
 
   const accessoryRows = accessories
     .map((value, idx) => `<li><span>A${idx + 1}</span><strong>${escapeHtml(pretty(value, DEFAULT_ACCESSORY))}</strong></li>`)
@@ -528,8 +527,8 @@ function normalizeModel(data) {
     batch: getValue(data, ["b"]),
     level: getValue(data, ["l", "n"]),
     xp: getValue(data, ["x"]),
-    ownerName: getValue(data, ["o"]),
-    ownerId: getValue(data, ["on"]),
+    ownerName: getValue(data, ["o", "ownerName", "displayName", "breederName"]),
+    ownerId: getValue(data, ["on", "breederNumber", "username", "ownerId"]),
     transferRequested: boolFlag(transferRequestedRaw),
     transferConfirmed: boolFlag(transferConfirmedRaw),
     accessories: [
@@ -597,8 +596,10 @@ function mergePublicFigurineData(baseData, publicData) {
   const merged = { ...baseData, ...publicFields };
 
   if (publicData.nickname) merged.s = publicData.nickname;
-  if (publicData.ownerName) merged.o = publicData.ownerName;
-  if (publicData.breederNumber) merged.on = publicData.breederNumber;
+  const ownerName = publicData.ownerName || publicData.displayName || publicData.breederName;
+  const breederNumber = publicData.breederNumber || publicData.username || publicData.ownerId;
+  if (ownerName) merged.o = ownerName;
+  if (breederNumber) merged.on = breederNumber;
   if (publicData.species) merged.e = publicData.species;
   if (publicData.type) merged.t = publicData.type;
 
