@@ -26,6 +26,9 @@ class _NfcPageState extends State<NfcPage> {
 
   bool _busy = false;
   bool _saving = false;
+  bool _checkingFirebase = false;
+  bool _alreadyRegistered = false;
+  bool _firebaseLookupFailed = false;
   bool _statusIsError = false;
   String _status = 'Prêt à scanner une puce PTIPOTE.';
   String _tagUid = '';
@@ -71,6 +74,9 @@ class _NfcPageState extends State<NfcPage> {
       _rawSource = '';
       _decodedText = '';
       _diagnostic = const NfcDiagnosticEvent(step: 'Démarrage scan');
+      _checkingFirebase = false;
+      _alreadyRegistered = false;
+      _firebaseLookupFailed = false;
       _fields = _emptyFields();
     });
 
@@ -115,10 +121,15 @@ class _NfcPageState extends State<NfcPage> {
         _tagUid = result.uid;
         _rawSource = raw;
         _decodedText = decoded;
+        _checkingFirebase = true;
+        _alreadyRegistered = false;
+        _firebaseLookupFailed = false;
         _fields = Map<String, String>.from(normalizedFields);
       });
 
       final warnings = <String>[];
+      var alreadyRegistered = false;
+      var firebaseLookupFailed = false;
 
       try {
         final publicKey = _figurineService.publicKeyFromSource(raw);
@@ -132,6 +143,7 @@ class _NfcPageState extends State<NfcPage> {
               tagUid: result.uid,
             );
         if (existing != null) {
+          alreadyRegistered = true;
           _mergeFigurineFields(normalizedFields, existing.fields);
           final existingName = existing.displayName.trim();
           if (existingName.isNotEmpty && existingName != 'PTIPOTE sans nom') {
@@ -145,6 +157,7 @@ class _NfcPageState extends State<NfcPage> {
           );
         }
       } catch (error) {
+        firebaseLookupFailed = true;
         warnings.add('surnom Firebase indisponible');
       }
 
@@ -164,11 +177,15 @@ class _NfcPageState extends State<NfcPage> {
         _tagUid = result.uid;
         _rawSource = raw;
         _decodedText = decoded;
+        _checkingFirebase = false;
+        _alreadyRegistered = alreadyRegistered;
+        _firebaseLookupFailed = firebaseLookupFailed;
         _fields = normalizedFields;
       });
     } catch (error) {
       setState(() {
         _busy = false;
+        _checkingFirebase = false;
         _statusIsError = true;
         _status = error.toString();
       });
@@ -188,6 +205,31 @@ class _NfcPageState extends State<NfcPage> {
   }
 
   Future<void> _saveFigurine() async {
+    if (_checkingFirebase) {
+      setState(() {
+        _statusIsError = true;
+        _status = 'Attends la fin de la verification Firebase.';
+      });
+      return;
+    }
+
+    if (_alreadyRegistered) {
+      setState(() {
+        _statusIsError = false;
+        _status = 'Ce PTIPOTE est deja enregistre.';
+      });
+      return;
+    }
+
+    if (_firebaseLookupFailed) {
+      setState(() {
+        _statusIsError = true;
+        _status =
+            'Verification Firebase impossible: enregistrement bloque pour eviter un doublon.';
+      });
+      return;
+    }
+
     if (_tagUid.isEmpty ||
         _decodedText.isEmpty ||
         _fields.values.every((value) => value.trim().isEmpty)) {
@@ -224,6 +266,8 @@ class _NfcPageState extends State<NfcPage> {
         _saving = false;
         _statusIsError = false;
         _status = 'Figurine enregistree dans ton compte.';
+        _alreadyRegistered = true;
+        _firebaseLookupFailed = false;
       });
     } catch (error) {
       setState(() {
@@ -414,6 +458,28 @@ class _NfcPageState extends State<NfcPage> {
     ];
   }
 
+  bool get _canSaveFigurine =>
+      _decodedText.isNotEmpty &&
+      !_saving &&
+      !_checkingFirebase &&
+      !_alreadyRegistered &&
+      !_firebaseLookupFailed;
+
+  String get _saveButtonLabel {
+    if (_saving) return 'Enregistrement...';
+    if (_checkingFirebase) return 'Vérification Firebase...';
+    if (_alreadyRegistered) return 'Déjà enregistré';
+    if (_firebaseLookupFailed) return 'Vérification impossible';
+    return 'Enregistrer dans mon compte';
+  }
+
+  IconData get _saveButtonIcon {
+    if (_checkingFirebase) return Icons.sync;
+    if (_alreadyRegistered) return Icons.check_circle;
+    if (_firebaseLookupFailed) return Icons.cloud_off;
+    return Icons.save;
+  }
+
   @override
   Widget build(BuildContext context) {
     final rows = _rows();
@@ -431,16 +497,14 @@ class _NfcPageState extends State<NfcPage> {
           if (_decodedText.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: _saving ? null : _saveFigurine,
+              onPressed: _canSaveFigurine ? _saveFigurine : null,
               icon: _saving
                   ? const SizedBox.square(
                       dimension: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.save),
-              label: Text(_saving
-                  ? 'Enregistrement...'
-                  : 'Enregistrer dans mon compte'),
+                  : Icon(_saveButtonIcon),
+              label: Text(_saveButtonLabel),
             ),
           ],
           const SizedBox(height: 12),

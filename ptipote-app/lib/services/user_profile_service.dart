@@ -55,7 +55,7 @@ class UserProfileService {
     if (user == null) throw StateError('Connexion requise.');
 
     final ref = _doc(user.uid);
-    final snapshot = await ref.get();
+    final snapshot = await _getProfileSnapshot(ref);
     final profile = _fromSnapshot(user, snapshot.data());
     if (snapshot.exists) return profile;
 
@@ -67,8 +67,23 @@ class UserProfileService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    await ref.set(data, SetOptions(merge: true));
+    try {
+      await ref.set(data, SetOptions(merge: true));
+    } on FirebaseException catch (error) {
+      if (error.code != 'unavailable') rethrow;
+    }
     return _fromSnapshot(user, data);
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>> _getProfileSnapshot(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
+    try {
+      return await ref.get();
+    } on FirebaseException catch (error) {
+      if (error.code != 'unavailable') rethrow;
+      return ref.get(const GetOptions(source: Source.cache));
+    }
   }
 
   Future<void> saveMyProfile(
