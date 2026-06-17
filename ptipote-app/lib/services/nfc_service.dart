@@ -5,9 +5,29 @@ import 'dart:io';
 import 'package:nfc_manager/nfc_manager.dart';
 
 abstract class NfcService {
-  Future<NfcTagReadResult> readTag();
+  Future<NfcTagReadResult> readTag({NfcDiagnosticCallback? onDiagnostic});
   Future<String?> readTagPayload();
   Future<void> writeTagPayload(String payload);
+}
+
+typedef NfcDiagnosticCallback = void Function(NfcDiagnosticEvent event);
+
+class NfcDiagnosticEvent {
+  const NfcDiagnosticEvent({
+    required this.step,
+    this.uid = '',
+    this.payload = '',
+    this.recordType = '',
+    this.technologies = const <String>[],
+    this.error = '',
+  });
+
+  final String step;
+  final String uid;
+  final String payload;
+  final String recordType;
+  final List<String> technologies;
+  final String error;
 }
 
 class NfcTagReadResult {
@@ -81,10 +101,18 @@ class NfcManagerService implements NfcService {
   }
 
   @override
-  Future<NfcTagReadResult> readTag() async {
+  Future<NfcTagReadResult> readTag({
+    NfcDiagnosticCallback? onDiagnostic,
+  }) async {
+    onDiagnostic?.call(
+      const NfcDiagnosticEvent(step: 'Vérification disponibilité NFC'),
+    );
     await _ensureAvailable();
 
     final completer = Completer<NfcTagReadResult>();
+    onDiagnostic?.call(
+      const NfcDiagnosticEvent(step: 'Session NFC ouverte'),
+    );
 
     await _manager.startSession(
       alertMessage: 'Approche le haut de ton iPhone de la puce NFC PTIPOTE.',
@@ -92,27 +120,59 @@ class NfcManagerService implements NfcService {
           Platform.isIOS ? <NfcPollingOption>{NfcPollingOption.iso14443} : null,
       onDiscovered: (NfcTag tag) async {
         try {
+          final technologies = _tagTechnologies(tag);
+          onDiagnostic?.call(
+            NfcDiagnosticEvent(
+              step: 'Puce détectée',
+              uid: _extractUid(tag),
+              technologies: technologies,
+            ),
+          );
+
           final ndef = Ndef.from(tag);
           if (ndef == null) {
             throw NfcServiceException('Tag NFC non-NDEF.');
           }
+          onDiagnostic?.call(
+            NfcDiagnosticEvent(
+              step: 'Tag NDEF reconnu',
+              uid: _extractUid(tag),
+              technologies: technologies,
+            ),
+          );
 
           final message = ndef.cachedMessage ?? await ndef.read();
           if (message.records.isEmpty) {
             throw NfcServiceException('Aucune donnee NDEF sur ce tag.');
           }
 
-          final payload = _decodeRecord(message.records.first);
+          final record = message.records.first;
+          final payload = _decodeRecord(record);
           final uid = _extractUid(tag);
           if (uid.isEmpty) {
             throw NfcServiceException('UID de puce introuvable.');
           }
+          onDiagnostic?.call(
+            NfcDiagnosticEvent(
+              step: 'Record NDEF lu',
+              uid: uid,
+              payload: payload,
+              recordType: _recordTypeLabel(record),
+              technologies: technologies,
+            ),
+          );
           await _manager.stopSession(alertMessage: 'Lecture NFC terminee.');
 
           if (!completer.isCompleted) {
             completer.complete(NfcTagReadResult(uid: uid, payload: payload));
           }
         } catch (error) {
+          onDiagnostic?.call(
+            NfcDiagnosticEvent(
+              step: 'Erreur lecture NFC',
+              error: _toReadableError(error).message,
+            ),
+          );
           await _safeStopWithError(error);
           if (!completer.isCompleted) {
             completer.completeError(_toReadableError(error));
@@ -125,6 +185,12 @@ class NfcManagerService implements NfcService {
       const Duration(seconds: 30),
       onTimeout: () async {
         await _safeStopWithError(NfcServiceException('Timeout NFC.'));
+        onDiagnostic?.call(
+          const NfcDiagnosticEvent(
+            step: 'Timeout NFC',
+            error: 'Aucune puce détectée en 30 secondes.',
+          ),
+        );
         throw NfcServiceException('Aucun tag detecte (timeout).');
       },
     );
@@ -234,6 +300,21 @@ class NfcManagerService implements NfcService {
       }
     }
     return '';
+  }
+
+  List<String> _tagTechnologies(NfcTag tag) {
+    final names = tag.data.keys.where((key) {
+      final value = tag.data[key];
+      return value is Map && value.isNotEmpty;
+    }).toList()
+      ..sort();
+    return names;
+  }
+
+  String _recordTypeLabel(NdefRecord record) {
+    final type = utf8.decode(record.type, allowMalformed: true);
+    final tnf = record.typeNameFormat.name;
+    return type.isEmpty ? tnf : '$tnf / $type';
   }
 
   List<int> _asBytes(Object? value) {

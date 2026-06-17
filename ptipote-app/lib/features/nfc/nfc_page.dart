@@ -31,6 +31,7 @@ class _NfcPageState extends State<NfcPage> {
   String _tagUid = '';
   String _rawSource = '';
   String _decodedText = '';
+  NfcDiagnosticEvent? _diagnostic;
   Map<String, String> _fields = _emptyFields();
 
   @override
@@ -69,11 +70,32 @@ class _NfcPageState extends State<NfcPage> {
       _tagUid = '';
       _rawSource = '';
       _decodedText = '';
+      _diagnostic = const NfcDiagnosticEvent(step: 'Démarrage scan');
       _fields = _emptyFields();
     });
 
     try {
-      final result = await _service.readTag();
+      final result = await _service.readTag(
+        onDiagnostic: (event) {
+          if (!mounted) return;
+          setState(() {
+            _diagnostic = event;
+            if (event.uid.isNotEmpty) {
+              _tagUid = event.uid;
+            }
+            if (event.payload.isNotEmpty) {
+              _rawSource = event.payload;
+            }
+            if (event.error.isNotEmpty) {
+              _status = event.error;
+              _statusIsError = true;
+            } else {
+              _status = event.step;
+              _statusIsError = false;
+            }
+          });
+        },
+      );
       final raw = (result.payload ?? '').trim();
       if (raw.isEmpty) {
         throw NfcServiceException('Aucune donnée trouvée sur la puce.');
@@ -407,6 +429,43 @@ class _NfcPageState extends State<NfcPage> {
               ),
             ),
           ),
+          if (_diagnostic != null) ...<Widget>[
+            const SizedBox(height: 12),
+            _SectionCard(
+              title: 'Diagnostic NFC',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: _diagnosticRows(_diagnostic!)
+                    .map(
+                      (row) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Expanded(
+                              flex: 4,
+                              child: Text(
+                                row.label,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 7,
+                              child: SelectableText(
+                                row.value.isEmpty ? '—' : row.value,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+          ],
           if (_decodedText.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
             _SectionCard(
@@ -458,6 +517,17 @@ class _NfcPageState extends State<NfcPage> {
       ),
     );
   }
+}
+
+List<_FieldRow> _diagnosticRows(NfcDiagnosticEvent event) {
+  return <_FieldRow>[
+    _FieldRow('Étape', event.step),
+    _FieldRow('UID', event.uid),
+    _FieldRow('Technos', event.technologies.join(', ')),
+    _FieldRow('Record', event.recordType),
+    _FieldRow('Brut', event.payload),
+    _FieldRow('Erreur', event.error),
+  ];
 }
 
 class _SectionCard extends StatelessWidget {
