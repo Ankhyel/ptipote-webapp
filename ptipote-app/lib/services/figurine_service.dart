@@ -34,19 +34,19 @@ class FigurineService {
     final user = _auth.currentUser;
     if (user == null || tagUid.trim().isEmpty) return null;
 
-    final snapshot = await _getDocWithCacheFallback(
+    final snapshot = await _getDocFromServer(
       _collectionFor(user.uid).doc(_safeId(tagUid)),
     );
     if (snapshot.exists && snapshot.data() != null) {
       return _fromSnapshot(snapshot.id, snapshot.data()!);
     }
 
-    final byTagUid = await _getQueryWithCacheFallback(
+    final byTagUid = await _getQueryFromServer(
       _collectionFor(user.uid).where('tagUid', isEqualTo: tagUid).limit(1),
     );
     if (byTagUid.docs.isNotEmpty) return _fromDoc(byTagUid.docs.first);
 
-    final byLowerTagUid = await _getQueryWithCacheFallback(
+    final byLowerTagUid = await _getQueryFromServer(
       _collectionFor(user.uid)
           .where('tagUid', isEqualTo: tagUid.toLowerCase())
           .limit(1),
@@ -58,10 +58,11 @@ class FigurineService {
   Future<PtipoteFigurine?> getMyFigurineByPublicKey(String publicKey) async {
     final user = _auth.currentUser;
     if (user == null || publicKey.trim().isEmpty) return null;
+    final safePublicKey = _safeId(publicKey);
 
-    final snapshot = await _getQueryWithCacheFallback(
+    final snapshot = await _getQueryFromServer(
       _collectionFor(user.uid)
-          .where('publicKey', isEqualTo: _safeId(publicKey))
+          .where('publicKey', isEqualTo: safePublicKey)
           .limit(1),
     );
     if (snapshot.docs.isEmpty) return null;
@@ -75,7 +76,7 @@ class FigurineService {
     final publicKey = publicKeyFromSource(rawSource);
 
     if (publicKey.isNotEmpty) {
-      final byPublicKey = await _getDocWithCacheFallback(
+      final byPublicKey = await _getDocFromServer(
         _firestore.collection('publicFigurines').doc(publicKey),
       );
       if (byPublicKey.exists && byPublicKey.data() != null) {
@@ -84,7 +85,7 @@ class FigurineService {
     }
 
     if (tagUid.trim().isEmpty) return null;
-    final byUid = await _getQueryWithCacheFallback(
+    final byUid = await _getQueryFromServer(
       _firestore
           .collection('publicFigurines')
           .where('tagUid', isEqualTo: tagUid)
@@ -94,27 +95,15 @@ class FigurineService {
     return _fromDoc(byUid.docs.first);
   }
 
-  Future<DocumentSnapshot<Map<String, dynamic>>> _getDocWithCacheFallback(
+  Future<DocumentSnapshot<Map<String, dynamic>>> _getDocFromServer(
     DocumentReference<Map<String, dynamic>> ref,
-  ) async {
-    try {
-      return await ref.get();
-    } on FirebaseException catch (error) {
-      if (error.code != 'unavailable') rethrow;
-      return ref.get(const GetOptions(source: Source.cache));
-    }
-  }
+  ) =>
+      ref.get(const GetOptions(source: Source.server));
 
-  Future<QuerySnapshot<Map<String, dynamic>>> _getQueryWithCacheFallback(
+  Future<QuerySnapshot<Map<String, dynamic>>> _getQueryFromServer(
     Query<Map<String, dynamic>> query,
-  ) async {
-    try {
-      return await query.get();
-    } on FirebaseException catch (error) {
-      if (error.code != 'unavailable') rethrow;
-      return query.get(const GetOptions(source: Source.cache));
-    }
-  }
+  ) =>
+      query.get(const GetOptions(source: Source.server));
 
   Future<void> saveScannedFigurine({
     required String tagUid,

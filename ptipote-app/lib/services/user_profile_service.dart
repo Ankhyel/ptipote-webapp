@@ -77,14 +77,8 @@ class UserProfileService {
 
   Future<DocumentSnapshot<Map<String, dynamic>>> _getProfileSnapshot(
     DocumentReference<Map<String, dynamic>> ref,
-  ) async {
-    try {
-      return await ref.get();
-    } on FirebaseException catch (error) {
-      if (error.code != 'unavailable') rethrow;
-      return ref.get(const GetOptions(source: Source.cache));
-    }
-  }
+  ) =>
+      ref.get(const GetOptions(source: Source.server));
 
   Future<void> saveMyProfile(
       {required String username, required String displayName}) async {

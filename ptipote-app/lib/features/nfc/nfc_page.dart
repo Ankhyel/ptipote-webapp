@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -118,6 +119,7 @@ class _NfcPageState extends State<NfcPage> {
       setState(() {
         _statusIsError = false;
         _status = 'Décodage NDEF OK, recherche Firebase...';
+        _busy = false;
         _tagUid = result.uid;
         _rawSource = raw;
         _decodedText = decoded;
@@ -133,14 +135,18 @@ class _NfcPageState extends State<NfcPage> {
 
       try {
         final publicKey = _figurineService.publicKeyFromSource(raw);
-        final ownFigurine = await _figurineService.getMyFigurineByTagUid(
-              result.uid,
+        final ownFigurine = await _withFirebaseTimeout(
+              _figurineService.getMyFigurineByTagUid(result.uid),
             ) ??
-            await _figurineService.getMyFigurineByPublicKey(publicKey);
+            await _withFirebaseTimeout(
+              _figurineService.getMyFigurineByPublicKey(publicKey),
+            );
         final existing = ownFigurine ??
-            await _figurineService.getPublicFigurine(
-              rawSource: raw,
-              tagUid: result.uid,
+            await _withFirebaseTimeout(
+              _figurineService.getPublicFigurine(
+                rawSource: raw,
+                tagUid: result.uid,
+              ),
             );
         if (existing != null) {
           alreadyRegistered = true;
@@ -151,9 +157,13 @@ class _NfcPageState extends State<NfcPage> {
           }
         }
         if (ownFigurine != null) {
-          await _figurineService.publishPublicFigurine(
-            rawSource: raw,
-            figurine: ownFigurine,
+          unawaited(
+            _figurineService
+                .publishPublicFigurine(
+                  rawSource: raw,
+                  figurine: ownFigurine,
+                )
+                .catchError((_) {}),
           );
         }
       } catch (error) {
@@ -162,7 +172,9 @@ class _NfcPageState extends State<NfcPage> {
       }
 
       try {
-        final profile = await _profileService.getOrCreateMyProfile();
+        final profile = await _profileService.getOrCreateMyProfile().timeout(
+              const Duration(seconds: 6),
+            );
         normalizedFields['o'] = profile.ownerName;
         normalizedFields['on'] = profile.breederNumber;
       } catch (error) {
@@ -190,6 +202,10 @@ class _NfcPageState extends State<NfcPage> {
         _status = error.toString();
       });
     }
+  }
+
+  Future<T?> _withFirebaseTimeout<T>(Future<T?> future) {
+    return future.timeout(const Duration(seconds: 6), onTimeout: () => null);
   }
 
   void _mergeFigurineFields(
