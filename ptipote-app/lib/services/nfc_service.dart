@@ -161,11 +161,11 @@ class NfcManagerService implements NfcService {
               technologies: technologies,
             ),
           );
-          await _manager.stopSession(alertMessage: 'Lecture NFC terminee.');
 
           if (!completer.isCompleted) {
             completer.complete(NfcTagReadResult(uid: uid, payload: payload));
           }
+          unawaited(_safeStopWithMessage('Lecture NFC terminee.'));
         } catch (error) {
           onDiagnostic?.call(
             NfcDiagnosticEvent(
@@ -334,6 +334,14 @@ class NfcManagerService implements NfcService {
   Future<void> _safeStopWithError(Object error) async {
     try {
       await _manager.stopSession(errorMessage: _toReadableError(error).message);
+    } catch (_) {
+      // Ignore session-stop failures.
+    }
+  }
+
+  Future<void> _safeStopWithMessage(String message) async {
+    try {
+      await _manager.stopSession(alertMessage: message);
     } catch (_) {
       // Ignore session-stop failures.
     }

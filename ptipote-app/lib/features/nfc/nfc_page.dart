@@ -109,22 +109,39 @@ class _NfcPageState extends State<NfcPage> {
       }
 
       final normalizedFields = _normalizeFields(kv);
+      setState(() {
+        _statusIsError = false;
+        _status = 'Décodage NDEF OK, recherche Firebase...';
+        _tagUid = result.uid;
+        _rawSource = raw;
+        _decodedText = decoded;
+        _fields = Map<String, String>.from(normalizedFields);
+      });
+
       final warnings = <String>[];
 
       try {
         final publicKey = _figurineService.publicKeyFromSource(raw);
-        final existing = await _figurineService.getMyFigurineByTagUid(
+        final ownFigurine = await _figurineService.getMyFigurineByTagUid(
               result.uid,
             ) ??
             await _figurineService.getMyFigurineByPublicKey(publicKey);
-        final existingName = existing?.displayName.trim() ?? '';
-        if (existingName.isNotEmpty) {
-          normalizedFields['s'] = existingName;
-        }
+        final existing = ownFigurine ??
+            await _figurineService.getPublicFigurine(
+              rawSource: raw,
+              tagUid: result.uid,
+            );
         if (existing != null) {
+          _mergeFigurineFields(normalizedFields, existing.fields);
+          final existingName = existing.displayName.trim();
+          if (existingName.isNotEmpty && existingName != 'PTIPOTE sans nom') {
+            normalizedFields['s'] = existingName;
+          }
+        }
+        if (ownFigurine != null) {
           await _figurineService.publishPublicFigurine(
             rawSource: raw,
-            figurine: existing,
+            figurine: ownFigurine,
           );
         }
       } catch (error) {
@@ -155,6 +172,18 @@ class _NfcPageState extends State<NfcPage> {
         _statusIsError = true;
         _status = error.toString();
       });
+    }
+  }
+
+  void _mergeFigurineFields(
+    Map<String, String> target,
+    Map<String, String> source,
+  ) {
+    for (final key in <String>['s', 'o', 'on', 'l', 'x']) {
+      final value = source[key]?.trim() ?? '';
+      if (value.isNotEmpty && value != '-') {
+        target[key] = value;
+      }
     }
   }
 

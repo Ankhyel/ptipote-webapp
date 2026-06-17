@@ -51,6 +51,30 @@ class FigurineService {
     return _fromDoc(snapshot.docs.first);
   }
 
+  Future<PtipoteFigurine?> getPublicFigurine({
+    required String rawSource,
+    required String tagUid,
+  }) async {
+    final publicKey = publicKeyFromSource(rawSource);
+
+    if (publicKey.isNotEmpty) {
+      final byPublicKey =
+          await _firestore.collection('publicFigurines').doc(publicKey).get();
+      if (byPublicKey.exists && byPublicKey.data() != null) {
+        return _fromSnapshot(byPublicKey.id, byPublicKey.data()!);
+      }
+    }
+
+    if (tagUid.trim().isEmpty) return null;
+    final byUid = await _firestore
+        .collection('publicFigurines')
+        .where('tagUid', isEqualTo: tagUid)
+        .limit(1)
+        .get();
+    if (byUid.docs.isEmpty) return null;
+    return _fromDoc(byUid.docs.first);
+  }
+
   Future<void> saveScannedFigurine({
     required String tagUid,
     required String nickname,
