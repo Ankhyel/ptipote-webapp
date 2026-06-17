@@ -3,6 +3,8 @@ const DEFAULT_OWNER = "Ce PTIPOTE n'est pas encore adopté... Qu'attends-tu ?";
 const DEFAULT_ACCESSORY = "Aucun";
 const ACTION_SOON_MESSAGE = "La fonctionnalité sera disponible rapidement.";
 const THEME_STORAGE_KEY = "ptipote_theme";
+const FIREBASE_PROJECT_ID = "ptipote-13508";
+const FIREBASE_API_KEY = "AIzaSyCol40AnP-uim5rxMT63ZzuO-E2dfoFTpQ";
 
 const TYPE_COLORS = {
   myca: "#6b7bff",
@@ -19,6 +21,8 @@ const RARITY_LABELS = {
 };
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "webp", "jpeg"];
+
+let decodeRunId = 0;
 
 function $(id) {
   return document.getElementById(id);
@@ -537,6 +541,70 @@ function normalizeModel(data) {
   };
 }
 
+function publicKeyFromHash(rawHash) {
+  return String(rawHash || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+}
+
+function firestoreValueToJs(value) {
+  if (!value || typeof value !== "object") return "";
+  if (Object.prototype.hasOwnProperty.call(value, "stringValue")) return value.stringValue;
+  if (Object.prototype.hasOwnProperty.call(value, "integerValue")) return String(value.integerValue);
+  if (Object.prototype.hasOwnProperty.call(value, "doubleValue")) return String(value.doubleValue);
+  if (Object.prototype.hasOwnProperty.call(value, "booleanValue")) return value.booleanValue ? "1" : "";
+  if (value.mapValue && value.mapValue.fields) {
+    return firestoreFieldsToJs(value.mapValue.fields);
+  }
+  return "";
+}
+
+function firestoreFieldsToJs(fields) {
+  const out = {};
+  for (const [key, value] of Object.entries(fields || {})) {
+    out[key] = firestoreValueToJs(value);
+  }
+  return out;
+}
+
+async function loadPublicFigurine(rawHash) {
+  const publicKey = publicKeyFromHash(rawHash);
+  if (!publicKey) return null;
+
+  const url = new URL(
+    `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/publicFigurines/${encodeURIComponent(publicKey)}`,
+  );
+  url.searchParams.set("key", FIREBASE_API_KEY);
+
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Firebase public indisponible (${response.status})`);
+  }
+
+  const doc = await response.json();
+  return firestoreFieldsToJs(doc.fields || {});
+}
+
+function mergePublicFigurineData(baseData, publicData) {
+  if (!publicData) return baseData;
+
+  const publicFields =
+    publicData.fields && typeof publicData.fields === "object" ? publicData.fields : {};
+  const merged = { ...baseData, ...publicFields };
+
+  if (publicData.nickname) merged.s = publicData.nickname;
+  if (publicData.ownerName) merged.o = publicData.ownerName;
+  if (publicData.breederNumber) merged.on = publicData.breederNumber;
+  if (publicData.species) merged.e = publicData.species;
+  if (publicData.type) merged.t = publicData.type;
+
+  return merged;
+}
+
 function renderHero(model) {
   // In hero card: Type is primary (big), Espèce is secondary.
   $("heroSpecies").textContent = pretty(model.type, "Type inconnu");
@@ -551,7 +619,8 @@ function renderHero(model) {
   updateSpeciesImage(model.type, model.species);
 }
 
-function decodeFromHash() {
+async function decodeFromHash() {
+  const runId = ++decodeRunId;
   const rawHash = String(location.hash || "").replace(/^#/, "").trim();
 
   if (!rawHash) {
@@ -574,6 +643,21 @@ function decodeFromHash() {
     renderHero(model);
     renderInfoCards(model);
     setStatus("Lien Zone 0 : OK", "ok");
+
+    try {
+      const publicData = await loadPublicFigurine(rawHash);
+      if (runId !== decodeRunId) return;
+      if (!publicData) return;
+
+      const publicModel = normalizeModel(mergePublicFigurineData(data, publicData));
+      renderHero(publicModel);
+      renderInfoCards(publicModel);
+      setStatus("Lien Zone 0 : OK + Firebase", "ok");
+    } catch (error) {
+      if (runId !== decodeRunId) return;
+      console.warn(error);
+      setStatus("Lien Zone 0 : OK (Firebase indisponible)", "warn");
+    }
   } catch (error) {
     console.error(error);
     setStatus("Erreur de décodage : vague en cours ou PTIPOTE infecté.", "err");

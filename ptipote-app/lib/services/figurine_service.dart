@@ -39,6 +39,18 @@ class FigurineService {
     return _fromSnapshot(snapshot.id, snapshot.data()!);
   }
 
+  Future<PtipoteFigurine?> getMyFigurineByPublicKey(String publicKey) async {
+    final user = _auth.currentUser;
+    if (user == null || publicKey.trim().isEmpty) return null;
+
+    final snapshot = await _collectionFor(user.uid)
+        .where('publicKey', isEqualTo: _safeId(publicKey))
+        .limit(1)
+        .get();
+    if (snapshot.docs.isEmpty) return null;
+    return _fromDoc(snapshot.docs.first);
+  }
+
   Future<void> saveScannedFigurine({
     required String tagUid,
     required String nickname,
@@ -53,6 +65,7 @@ class FigurineService {
     }
 
     final doc = _collectionFor(user.uid).doc(_safeId(tagUid));
+    final publicKey = publicKeyFromSource(rawSource);
     final now = FieldValue.serverTimestamp();
     final normalizedFields = Map<String, String>.from(fields);
     normalizedFields['s'] = nickname;
@@ -63,6 +76,7 @@ class FigurineService {
       <String, dynamic>{
         'ownerUid': user.uid,
         'tagUid': tagUid,
+        'publicKey': publicKey,
         'species': fields['e'] ?? '',
         'type': fields['t'] ?? '',
         'nickname': nickname,
@@ -76,6 +90,86 @@ class FigurineService {
       },
       SetOptions(merge: true),
     );
+
+    if (publicKey.isNotEmpty) {
+      await _firestore.collection('publicFigurines').doc(publicKey).set(
+        <String, dynamic>{
+          'ownerUid': user.uid,
+          'tagUid': tagUid,
+          'publicKey': publicKey,
+          'species': fields['e'] ?? '',
+          'type': fields['t'] ?? '',
+          'nickname': nickname,
+          'ownerName': ownerProfile.ownerName,
+          'breederNumber': ownerProfile.breederNumber,
+          'fields': normalizedFields,
+          'updatedAt': now,
+          'createdAt': now,
+        },
+        SetOptions(merge: true),
+      );
+    }
+  }
+
+  Future<void> publishPublicFigurine({
+    required String rawSource,
+    required PtipoteFigurine figurine,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('Connexion requise pour publier une figurine.');
+    }
+
+    final publicKey = publicKeyFromSource(rawSource);
+    if (publicKey.isEmpty) return;
+
+    final fields = Map<String, String>.from(figurine.fields);
+    fields['s'] = figurine.displayName;
+    fields['o'] = figurine.ownerName == '-' ? '' : figurine.ownerName;
+    fields['on'] = figurine.breederNumber == '-' ? '' : figurine.breederNumber;
+
+    await _firestore.collection('publicFigurines').doc(publicKey).set(
+      <String, dynamic>{
+        'ownerUid': user.uid,
+        'tagUid': figurine.tagUid,
+        'publicKey': publicKey,
+        'species': figurine.species == '-' ? '' : figurine.species,
+        'type': figurine.type == '-' ? '' : figurine.type,
+        'nickname': figurine.displayName,
+        'ownerName': fields['o'] ?? '',
+        'breederNumber': fields['on'] ?? '',
+        'fields': fields,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  String publicKeyFromSource(String source) {
+    final token = _extractPublicToken(source);
+    return token.isEmpty ? '' : _safeId(token);
+  }
+
+  String _extractPublicToken(String source) {
+    final trimmed = source.trim();
+    if (trimmed.isEmpty) return '';
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null) {
+      final fragment = uri.fragment.trim();
+      if (fragment.isNotEmpty) return fragment;
+
+      final pathLast =
+          uri.pathSegments.isNotEmpty ? uri.pathSegments.last.trim() : '';
+      if (pathLast.isNotEmpty) return pathLast;
+    }
+
+    final hashIndex = trimmed.indexOf('#');
+    if (hashIndex >= 0 && hashIndex + 1 < trimmed.length) {
+      return trimmed.substring(hashIndex + 1).trim();
+    }
+
+    return trimmed;
   }
 
   String _safeId(String value) {

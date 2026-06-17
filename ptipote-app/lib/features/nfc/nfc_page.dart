@@ -87,17 +87,41 @@ class _NfcPageState extends State<NfcPage> {
       }
 
       final normalizedFields = _normalizeFields(kv);
-      final existing = await _figurineService.getMyFigurineByTagUid(result.uid);
-      final profile = await _profileService.getOrCreateMyProfile();
-      normalizedFields['s'] =
-          existing?.displayName ?? normalizedFields['s'] ?? '';
-      normalizedFields['o'] = profile.ownerName;
-      normalizedFields['on'] = profile.breederNumber;
+      final warnings = <String>[];
+
+      try {
+        final publicKey = _figurineService.publicKeyFromSource(raw);
+        final existing = await _figurineService.getMyFigurineByTagUid(
+              result.uid,
+            ) ??
+            await _figurineService.getMyFigurineByPublicKey(publicKey);
+        final existingName = existing?.displayName.trim() ?? '';
+        if (existingName.isNotEmpty) {
+          normalizedFields['s'] = existingName;
+        }
+        if (existing != null) {
+          await _figurineService.publishPublicFigurine(
+            rawSource: raw,
+            figurine: existing,
+          );
+        }
+      } catch (error) {
+        warnings.add('surnom Firebase indisponible');
+      }
+
+      try {
+        final profile = await _profileService.getOrCreateMyProfile();
+        normalizedFields['o'] = profile.ownerName;
+        normalizedFields['on'] = profile.breederNumber;
+      } catch (error) {
+        warnings.add('profil indisponible');
+      }
 
       setState(() {
         _busy = false;
         _statusIsError = false;
-        _status = 'Scan OK';
+        _status =
+            warnings.isEmpty ? 'Scan OK' : 'Scan OK (${warnings.join(', ')})';
         _tagUid = result.uid;
         _rawSource = raw;
         _decodedText = decoded;
