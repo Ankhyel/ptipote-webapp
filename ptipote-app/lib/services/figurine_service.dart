@@ -24,19 +24,90 @@ class FigurineService {
       return Stream<List<PtipoteFigurine>>.value(const <PtipoteFigurine>[]);
     }
 
-    return _collectionFor(user.uid)
-        .orderBy('updatedAt', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map(_fromDoc).toList());
+    return _collectionFor(user.uid).snapshots().map((snapshot) {
+      final figurines = snapshot.docs.map(_fromDoc).toList();
+      figurines.sort(_compareFigurines);
+      return figurines;
+    });
   }
 
   Future<void> refreshMyFigurinesFromServer() async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    await _collectionFor(user.uid)
-        .orderBy('updatedAt', descending: true)
-        .get(const GetOptions(source: Source.server));
+    await _collectionFor(user.uid).get(const GetOptions(source: Source.server));
+  }
+
+  Future<void> updateFigurineOrder(List<PtipoteFigurine> figurines) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('Connexion requise pour classer les figurines.');
+    }
+
+    final batch = _firestore.batch();
+    for (var index = 0; index < figurines.length; index += 1) {
+      batch.set(
+        _collectionFor(user.uid).doc(figurines[index].id),
+        <String, dynamic>{'sortOrder': index},
+        SetOptions(merge: true),
+      );
+    }
+    await batch.commit();
+  }
+
+  Future<void> renameMyFigurine({
+    required PtipoteFigurine figurine,
+    required String nickname,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('Connexion requise pour renommer une figurine.');
+    }
+
+    final cleanNickname = nickname.trim();
+    if (cleanNickname.isEmpty) {
+      throw ArgumentError('Le surnom ne peut pas etre vide.');
+    }
+
+    final fields = Map<String, String>.from(figurine.fields);
+    fields['s'] = cleanNickname;
+    final now = FieldValue.serverTimestamp();
+
+    final batch = _firestore.batch();
+    batch.set(
+      _collectionFor(user.uid).doc(figurine.id),
+      <String, dynamic>{
+        'nickname': cleanNickname,
+        'fields': fields,
+        'updatedAt': now,
+      },
+      SetOptions(merge: true),
+    );
+
+    final publicKey = figurine.publicKey.trim().isNotEmpty
+        ? figurine.publicKey.trim()
+        : publicKeyFromSource(figurine.rawSource);
+    if (publicKey.isNotEmpty) {
+      batch.set(
+        _firestore.collection('publicFigurines').doc(publicKey),
+        <String, dynamic>{
+          'ownerUid': user.uid,
+          'tagUid': figurine.tagUid,
+          'publicKey': publicKey,
+          'species': figurine.species == '-' ? '' : figurine.species,
+          'type': figurine.type == '-' ? '' : figurine.type,
+          'nickname': cleanNickname,
+          'ownerName': figurine.ownerName == '-' ? '' : figurine.ownerName,
+          'breederNumber':
+              figurine.breederNumber == '-' ? '' : figurine.breederNumber,
+          'fields': fields,
+          'updatedAt': now,
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
   }
 
   Future<void> syncOwnerProfileOnMyFigurines(UserProfile profile) async {
@@ -319,6 +390,9 @@ class FigurineService {
       fields: fields,
       tagUid: data['tagUid'] as String? ?? id,
       nickname: '${data['nickname'] ?? fields['s'] ?? ''}',
+      publicKey: '${data['publicKey'] ?? ''}',
+      rawSource: '${data['rawSource'] ?? ''}',
+      sortOrder: _readSortOrder(data['sortOrder']),
       createdAt: createdAt is Timestamp
           ? createdAt.toDate()
           : DateTime.fromMillisecondsSinceEpoch(0),
@@ -326,5 +400,16 @@ class FigurineService {
           ? updatedAt.toDate()
           : DateTime.fromMillisecondsSinceEpoch(0),
     );
+  }
+
+  int _compareFigurines(PtipoteFigurine a, PtipoteFigurine b) {
+    if (a.sortOrder != b.sortOrder) return a.sortOrder.compareTo(b.sortOrder);
+    return b.updatedAt.compareTo(a.updatedAt);
+  }
+
+  int _readSortOrder(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return 1 << 30;
   }
 }

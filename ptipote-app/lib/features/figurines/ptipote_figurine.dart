@@ -3,6 +3,9 @@ class PtipoteFigurine {
     required this.id,
     required this.tagUid,
     required this.nickname,
+    required this.publicKey,
+    required this.rawSource,
+    required this.sortOrder,
     required this.fields,
     required this.createdAt,
     required this.updatedAt,
@@ -11,6 +14,9 @@ class PtipoteFigurine {
   final String id;
   final String tagUid;
   final String nickname;
+  final String publicKey;
+  final String rawSource;
+  final int sortOrder;
   final Map<String, String> fields;
   final DateTime createdAt;
   final DateTime updatedAt;
