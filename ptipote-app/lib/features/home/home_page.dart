@@ -4,8 +4,10 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/theme_controller.dart';
+import '../../services/friend_service.dart';
 import '../../services/nfc_service.dart';
 import '../figurines/figurines_page.dart';
+import '../friends/friends_page.dart';
 import '../nfc/nfc_page.dart';
 import '../profile/profile_page.dart';
 
@@ -19,6 +21,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final _friendService = FriendService();
   bool _scanning = false;
 
   Future<void> _scanFigurine() async {
@@ -84,10 +87,37 @@ class _HomePageState extends State<HomePage> {
           PopupMenuButton<String>(
             position: PopupMenuPosition.under,
             tooltip: 'Profil',
-            icon: const Icon(Icons.account_circle_outlined),
+            icon: StreamBuilder<List<FriendInvite>>(
+              stream: _friendService.watchIncomingInvites(),
+              builder: (context, snapshot) {
+                final count = snapshot.data?.length ?? 0;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    const Icon(Icons.account_circle_outlined),
+                    if (count > 0)
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE64A3C),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
             onSelected: (value) async {
               if (value == 'profile') {
                 Navigator.of(context).pushNamed(ProfilePage.route);
+              }
+              if (value == 'friends') {
+                Navigator.of(context).pushNamed(FriendsPage.route);
               }
               if (value == 'logout') {
                 await GoogleSignIn.instance.signOut();
@@ -103,6 +133,13 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               PopupMenuItem(
+                value: 'friends',
+                child: ListTile(
+                  leading: Icon(Icons.group_outlined),
+                  title: Text('Amis'),
+                ),
+              ),
+              PopupMenuItem(
                 value: 'logout',
                 child: ListTile(
                   leading: Icon(Icons.logout),
@@ -114,60 +151,63 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
-          child: Column(
-            children: <Widget>[
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: const <BoxShadow>[
-                    BoxShadow(
-                      color: Color(0x5533281E),
-                      blurRadius: 18,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF7AFFEB),
-                    foregroundColor: const Color(0xFF24342F),
-                    minimumSize: const Size.fromHeight(64),
-                  ),
-                  onPressed: _scanning ? null : _scanFigurine,
-                  icon: _scanning
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.egg_alt_outlined),
-                  label: Text(
-                    _scanning ? 'Scan en cours...' : 'Scan une figurine',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 520),
-                    child: _ActionCard(
-                      title: 'Mes PTIPOTES',
-                      subtitle:
-                          'Voir les figurines enregistrées dans ton compte',
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final unit = constraints.maxHeight / 5;
+            return Stack(
+              children: <Widget>[
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: unit * 2.12,
+                  child: Center(
+                    child: _CollectionButton(
                       onTap: () =>
                           Navigator.of(context).pushNamed(FigurinesPage.route),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 36),
-            ],
-          ),
+                Positioned(
+                  left: 24,
+                  right: 24,
+                  top: unit * 4.02,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: const <BoxShadow>[
+                        BoxShadow(
+                          color: Color(0x5533281E),
+                          blurRadius: 18,
+                          offset: Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF7AFFEB),
+                        foregroundColor: const Color(0xFF24342F),
+                        minimumSize: const Size.fromHeight(64),
+                      ),
+                      onPressed: _scanning ? null : _scanFigurine,
+                      icon: _scanning
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.egg_alt_outlined),
+                      label: Text(
+                        _scanning ? 'Scan en cours...' : 'Scan une figurine',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -205,25 +245,42 @@ class _ScanDialog extends StatelessWidget {
   }
 }
 
-class _ActionCard extends StatelessWidget {
-  const _ActionCard({
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
+class _CollectionButton extends StatelessWidget {
+  const _CollectionButton({required this.onTap});
 
-  final String title;
-  final String subtitle;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
+    return InkWell(
+      borderRadius: BorderRadius.circular(34),
+      onTap: onTap,
+      child: Ink(
+        width: 178,
+        height: 178,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border: Border.all(color: const Color(0xFFE0CFAE)),
+          borderRadius: BorderRadius.circular(34),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x3333281E),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(Icons.groups_2_outlined, size: 74),
+            SizedBox(height: 14),
+            Text(
+              'Mes ptipotes',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -128,53 +128,33 @@ body {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 28px;
-  background: linear-gradient(
-    155deg,
-    var(--hero-bg-start, #f4e5c9),
-    var(--hero-bg-end, #d7c099) 70%
-  );
+  background: var(--surface);
   display: grid;
-  grid-template-columns: minmax(180px, 48%) 1fr;
+  grid-template-columns: minmax(180px, 42%) 1fr;
   align-items: center;
   gap: 16px;
-  padding: 16px;
+  padding: 72px 28px 28px;
+  box-shadow: 0 8px 18px rgba(84, 60, 30, 0.08);
 }
 
 .hero::before {
-  content: "";
-  position: absolute;
-  inset: -120px auto auto -120px;
-  width: 260px;
-  height: 260px;
-  border-radius: 44% 56% 49% 51% / 54% 41% 59% 46%;
-  background: var(--type-color);
-  opacity: 0.18;
-  filter: blur(22px);
+  content: none;
 }
 
 .hero::after {
-  content: "";
-  position: absolute;
-  inset: auto -45px -65px auto;
-  width: 210px;
-  height: 210px;
-  border-radius: 56% 44% 46% 54% / 45% 56% 44% 55%;
-  background: var(--type-color);
-  opacity: 0.25;
-  filter: blur(8px);
+  content: none;
 }
 
 .heroMedia {
   position: relative;
   z-index: 1;
   background: #fffdf6;
-  border: 1px solid rgba(98, 76, 48, 0.16);
-  border-radius: 26px;
+  border: 1px solid var(--line);
   overflow: hidden;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  width: min(100%, 360px);
+  width: min(100%, 300px);
   margin: 0 auto;
   aspect-ratio: 1 / 1;
   padding: 0;
@@ -270,10 +250,7 @@ body {
 .heroBottom {
   position: relative;
   z-index: 1;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 12px;
+  display: block;
 }
 
 .heroText {
@@ -282,10 +259,13 @@ body {
 }
 
 .heroActions {
+  position: absolute;
+  z-index: 3;
+  top: 16px;
+  left: 16px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
-  flex: 0 0 auto;
 }
 
 .status {
@@ -572,14 +552,14 @@ body {
 
   .hero {
     gap: 10px;
-    padding: 12px;
+    padding: 68px 18px 18px;
     border-radius: 16px;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(154px, 45%) 1fr;
   }
 
   .heroMedia {
     aspect-ratio: 1 / 1;
-    width: min(72vw, 300px);
+    width: min(42vw, 220px);
     border-radius: 999px;
     padding: 0;
   }

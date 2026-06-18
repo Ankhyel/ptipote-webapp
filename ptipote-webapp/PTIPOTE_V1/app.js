@@ -24,6 +24,7 @@ const RARITY_LABELS = {
 const IMAGE_EXTENSIONS = ["png", "jpg", "webp", "jpeg"];
 
 let decodeRunId = 0;
+let statusTimer = null;
 
 function $(id) {
   return document.getElementById(id);
@@ -88,8 +89,18 @@ function initTheme() {
 function setStatus(message, kind = "") {
   const el = $("status");
   if (!el) return;
+  if (statusTimer) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+  }
   el.textContent = message || "";
   el.className = "status" + (kind ? " " + kind : "");
+  if (message && kind === "ok") {
+    statusTimer = setTimeout(() => {
+      el.textContent = "";
+      el.className = "status";
+    }, 3000);
+  }
 }
 
 function escapeHtml(value) {

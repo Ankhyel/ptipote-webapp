@@ -40,6 +40,7 @@ class _NfcPageState extends State<NfcPage> {
   bool _statusIsError = false;
   bool _canSeeDiagnostics = false;
   bool _confirmingTransfer = false;
+  bool _showStatusCard = true;
   String _status = 'Prêt à scanner une puce PTIPOTE.';
   String _tagUid = '';
   String _rawSource = '';
@@ -47,6 +48,26 @@ class _NfcPageState extends State<NfcPage> {
   NfcDiagnosticEvent? _diagnostic;
   PendingTransfer? _pendingTransfer;
   Map<String, String> _fields = _emptyFields();
+  Timer? _statusTimer;
+
+  @override
+  void dispose() {
+    _statusTimer?.cancel();
+    super.dispose();
+  }
+
+  void _setStatus(String status, {required bool isError}) {
+    _statusTimer?.cancel();
+    _statusIsError = isError;
+    _status = status;
+    _showStatusCard = true;
+    if (!isError) {
+      _statusTimer = Timer(const Duration(seconds: 3), () {
+        if (!mounted) return;
+        setState(() => _showStatusCard = false);
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -107,6 +128,7 @@ class _NfcPageState extends State<NfcPage> {
       _busy = true;
       _statusIsError = false;
       _status = 'Lecture NFC en cours...';
+      _showStatusCard = true;
       _tagUid = '';
       _rawSource = '';
       _decodedText = '';
@@ -169,6 +191,7 @@ class _NfcPageState extends State<NfcPage> {
     setState(() {
       _statusIsError = false;
       _status = 'Décodage NDEF OK, recherche Firebase...';
+      _showStatusCard = true;
       _busy = false;
       _tagUid = uid;
       _rawSource = cleanRaw;
@@ -238,10 +261,14 @@ class _NfcPageState extends State<NfcPage> {
 
     setState(() {
       _busy = false;
-      _statusIsError = false;
-      _status = _pendingTransfer == null
-          ? (warnings.isEmpty ? 'Scan OK' : 'Scan OK (${warnings.join(', ')})')
-          : 'Scan requis OK, transfert prêt à confirmer';
+      _setStatus(
+        _pendingTransfer == null
+            ? (warnings.isEmpty
+                ? 'Scan OK'
+                : 'Scan OK (${warnings.join(', ')})')
+            : 'Scan requis OK, transfert prêt à confirmer',
+        isError: false,
+      );
       _tagUid = uid;
       _rawSource = cleanRaw;
       _decodedText = decoded;
@@ -524,18 +551,7 @@ class _NfcPageState extends State<NfcPage> {
   }
 
   String _rarityLabel(String value) {
-    switch (value.trim()) {
-      case '1':
-        return 'Commun';
-      case '2':
-        return 'Spéciale';
-      case '3':
-        return 'Rare';
-      case '4':
-        return 'Légendaire';
-      default:
-        return value;
-    }
+    return _rarityLabelText(value);
   }
 
   bool get _canSaveFigurine =>
@@ -593,10 +609,34 @@ class _NfcPageState extends State<NfcPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
+          if (_showStatusCard)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Text(
+                  _status,
+                  style: TextStyle(
+                    color: _statusIsError
+                        ? Colors.red.shade700
+                        : Colors.green.shade700,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          if (_decodedText.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            _PublicPtipoteCard(
+              fields: _fields,
+              rows: _rows(),
+              accessories: _accessoryRows(),
+            ),
+          ],
+          const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _busy ? null : _readAndDecodeTag,
             icon: const Icon(Icons.nfc),
-            label: Text(_busy ? 'Scan en cours...' : 'Scanner une puce'),
+            label: Text(_busy ? 'Scan en cours...' : 'Scanner une figurine'),
           ),
           if (_decodedText.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
@@ -628,29 +668,6 @@ class _NfcPageState extends State<NfcPage> {
                     ? 'Confirmation...'
                     : 'Confirmer le transfert',
               ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Text(
-                _status,
-                style: TextStyle(
-                  color: _statusIsError
-                      ? Colors.red.shade700
-                      : Colors.green.shade700,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          if (_decodedText.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 12),
-            _PublicPtipoteCard(
-              fields: _fields,
-              rows: _rows(),
-              accessories: _accessoryRows(),
             ),
           ],
           if (_diagnostic != null && _canSeeDiagnostics) ...<Widget>[
@@ -695,7 +712,7 @@ class _PublicPtipoteCard extends StatelessWidget {
                   width: 196,
                   child: _ImageWithRarity(
                     fields: fields,
-                    rarityLabel: _display(fields['r'] ?? ''),
+                    rarityLabel: _rarityLabelText(fields['r'] ?? ''),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1009,6 +1026,21 @@ Color _rarityColorFor(String? value) {
       return const Color(0xFFFFE7A8);
     default:
       return const Color(0xFFFFFCF4);
+  }
+}
+
+String _rarityLabelText(String value) {
+  switch (value.trim()) {
+    case '1':
+      return 'Commun';
+    case '2':
+      return 'Spéciale';
+    case '3':
+      return 'Rare';
+    case '4':
+      return 'Légendaire';
+    default:
+      return value.trim().isEmpty ? '-' : value;
   }
 }
 

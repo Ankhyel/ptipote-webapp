@@ -9,14 +9,20 @@ class FriendInvite {
     required this.id,
     required this.fromUid,
     required this.fromName,
+    required this.fromUsername,
     required this.toUid,
+    required this.toName,
+    required this.toUsername,
     required this.status,
   });
 
   final String id;
   final String fromUid;
   final String fromName;
+  final String fromUsername;
   final String toUid;
+  final String toName;
+  final String toUsername;
   final String status;
 }
 
@@ -46,6 +52,17 @@ class FriendService {
     return _firestore
         .collection('friendInvites')
         .where('toUid', isEqualTo: user.uid)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(_inviteFromDoc).toList());
+  }
+
+  Stream<List<FriendInvite>> watchOutgoingInvites() {
+    final user = _auth.currentUser;
+    if (user == null) return Stream<List<FriendInvite>>.value(const []);
+    return _firestore
+        .collection('friendInvites')
+        .where('fromUid', isEqualTo: user.uid)
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .map((snapshot) => snapshot.docs.map(_inviteFromDoc).toList());
@@ -91,6 +108,7 @@ class FriendService {
         'fromUsername': fromProfile.username,
         'toUid': to.uid,
         'toName': to.ownerName,
+        'toUsername': to.username,
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -145,6 +163,34 @@ class FriendService {
     await batch.commit();
   }
 
+  Future<void> rejectInvite(FriendInvite invite) async {
+    final user = _auth.currentUser;
+    if (user == null || invite.toUid != user.uid) {
+      throw StateError('Invitation indisponible.');
+    }
+    await _firestore.collection('friendInvites').doc(invite.id).set(
+      <String, dynamic>{
+        'status': 'rejected',
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> cancelInvite(FriendInvite invite) async {
+    final user = _auth.currentUser;
+    if (user == null || invite.fromUid != user.uid) {
+      throw StateError('Invitation indisponible.');
+    }
+    await _firestore.collection('friendInvites').doc(invite.id).set(
+      <String, dynamic>{
+        'status': 'cancelled',
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   String _inviteId(String a, String b) {
     final ids = <String>[a, b]..sort();
     return '${ids[0]}_${ids[1]}';
@@ -181,7 +227,10 @@ class FriendService {
       id: doc.id,
       fromUid: '${data['fromUid'] ?? ''}',
       fromName: '${data['fromName'] ?? ''}',
+      fromUsername: '${data['fromUsername'] ?? ''}',
       toUid: '${data['toUid'] ?? ''}',
+      toName: '${data['toName'] ?? ''}',
+      toUsername: '${data['toUsername'] ?? ''}',
       status: '${data['status'] ?? ''}',
     );
   }
