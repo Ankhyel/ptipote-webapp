@@ -6,6 +6,7 @@ class PtipoteFigurine {
     required this.publicKey,
     required this.rawSource,
     required this.sortOrder,
+    required this.transferLockedUntil,
     required this.fields,
     required this.createdAt,
     required this.updatedAt,
@@ -17,6 +18,7 @@ class PtipoteFigurine {
   final String publicKey;
   final String rawSource;
   final int sortOrder;
+  final DateTime? transferLockedUntil;
   final Map<String, String> fields;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -49,4 +51,14 @@ class PtipoteFigurine {
 
   String get breederNumber =>
       fields['on']?.trim().isNotEmpty == true ? fields['on']!.trim() : '-';
+
+  bool get transferRequested => fields['te']?.trim() == '1';
+
+  bool get transferConfirmed => fields['ter']?.trim() == '1';
+
+  bool get isTransferLocked {
+    final until = transferLockedUntil;
+    return transferRequested ||
+        (transferConfirmed && until != null && until.isAfter(DateTime.now()));
+  }
 }

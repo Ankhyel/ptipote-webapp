@@ -447,7 +447,7 @@ function renderInfoCards(model) {
 
   let html = cards
     .map((card) => `
-      <article class="infoCard">
+      <article class="infoCard ${card.label === "Rareté" ? `rarity rarity-${normalizeKey(model.rarity) || "unknown"}` : ""}">
         <div class="label">${escapeHtml(card.label)}</div>
         <div class="value${card.isPlaceholder ? " placeholder" : ""}">${escapeHtml(card.value)}</div>
       </article>

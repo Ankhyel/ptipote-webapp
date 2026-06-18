@@ -8,8 +8,8 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: HomePage()));
 
     expect(find.text('PTIPOTE App'), findsOneWidget);
-    expect(find.text('Mes PTIPOTE'), findsOneWidget);
-    expect(find.text('Scanner une puce'), findsOneWidget);
+    expect(find.text('Mes PTIPOTES'), findsOneWidget);
+    expect(find.text('Scan une figurine'), findsOneWidget);
     expect(find.text('Reprogrammer une puce'), findsNothing);
   });
 }

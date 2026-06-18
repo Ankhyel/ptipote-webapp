@@ -31,11 +31,14 @@ class _NfcPageState extends State<NfcPage> {
   bool _alreadyRegistered = false;
   bool _firebaseLookupFailed = false;
   bool _statusIsError = false;
+  bool _canSeeDiagnostics = false;
+  bool _confirmingTransfer = false;
   String _status = 'Prêt à scanner une puce PTIPOTE.';
   String _tagUid = '';
   String _rawSource = '';
   String _decodedText = '';
   NfcDiagnosticEvent? _diagnostic;
+  PendingTransfer? _pendingTransfer;
   Map<String, String> _fields = _emptyFields();
 
   @override
@@ -78,6 +81,7 @@ class _NfcPageState extends State<NfcPage> {
       _checkingFirebase = false;
       _alreadyRegistered = false;
       _firebaseLookupFailed = false;
+      _pendingTransfer = null;
       _fields = _emptyFields();
     });
 
@@ -177,6 +181,14 @@ class _NfcPageState extends State<NfcPage> {
             );
         normalizedFields['o'] = profile.ownerName;
         normalizedFields['on'] = profile.breederNumber;
+        _canSeeDiagnostics = profile.canSeeDiagnostics;
+        _pendingTransfer =
+            await _figurineService.getIncomingTransferByTagUid(result.uid);
+        final pending = _pendingTransfer;
+        if (pending != null) {
+          _mergeFigurineFields(normalizedFields, pending.fields);
+          normalizedFields['te'] = '1';
+        }
       } catch (error) {
         warnings.add('profil indisponible');
       }
@@ -184,8 +196,11 @@ class _NfcPageState extends State<NfcPage> {
       setState(() {
         _busy = false;
         _statusIsError = false;
-        _status =
-            warnings.isEmpty ? 'Scan OK' : 'Scan OK (${warnings.join(', ')})';
+        _status = _pendingTransfer == null
+            ? (warnings.isEmpty
+                ? 'Scan OK'
+                : 'Scan OK (${warnings.join(', ')})')
+            : 'Scan requis OK, transfert prêt à confirmer';
         _tagUid = result.uid;
         _rawSource = raw;
         _decodedText = decoded;
@@ -500,16 +515,42 @@ class _NfcPageState extends State<NfcPage> {
   String get _saveButtonLabel {
     if (_saving) return 'Enregistrement...';
     if (_checkingFirebase) return 'Vérification Firebase...';
-    if (_alreadyRegistered) return 'Déjà enregistré';
+    if (_alreadyRegistered) return 'Déjà adopté';
     if (_firebaseLookupFailed) return 'Vérification impossible';
-    return 'Enregistrer dans mon compte';
+    return 'Adopter';
   }
 
   IconData get _saveButtonIcon {
     if (_checkingFirebase) return Icons.sync;
     if (_alreadyRegistered) return Icons.check_circle;
     if (_firebaseLookupFailed) return Icons.cloud_off;
-    return Icons.save;
+    return Icons.egg_alt_outlined;
+  }
+
+  Future<void> _confirmTransfer() async {
+    final transfer = _pendingTransfer;
+    if (transfer == null) return;
+    setState(() => _confirmingTransfer = true);
+    try {
+      final profile = await _profileService.getOrCreateMyProfile();
+      await _figurineService.confirmIncomingTransfer(
+        transfer: transfer,
+        newOwner: profile,
+      );
+      setState(() {
+        _confirmingTransfer = false;
+        _pendingTransfer = null;
+        _alreadyRegistered = true;
+        _statusIsError = false;
+        _status = 'Transfert confirmé. Ce PTIPOTE rejoint ton compte.';
+      });
+    } catch (error) {
+      setState(() {
+        _confirmingTransfer = false;
+        _statusIsError = true;
+        _status = error.toString();
+      });
+    }
   }
 
   @override
@@ -527,7 +568,9 @@ class _NfcPageState extends State<NfcPage> {
           if (_decodedText.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: _canSaveFigurine ? _saveFigurine : null,
+              onPressed: _pendingTransfer == null && _canSaveFigurine
+                  ? _saveFigurine
+                  : null,
               icon: _saving
                   ? const SizedBox.square(
                       dimension: 18,
@@ -535,6 +578,23 @@ class _NfcPageState extends State<NfcPage> {
                     )
                   : Icon(_saveButtonIcon),
               label: Text(_saveButtonLabel),
+            ),
+          ],
+          if (_pendingTransfer != null) ...<Widget>[
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _confirmingTransfer ? null : _confirmTransfer,
+              icon: _confirmingTransfer
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.handshake_outlined),
+              label: Text(
+                _confirmingTransfer
+                    ? 'Confirmation...'
+                    : 'Confirmer le transfert',
+              ),
             ),
           ],
           const SizedBox(height: 12),
@@ -558,13 +618,12 @@ class _NfcPageState extends State<NfcPage> {
               fields: _fields,
               rows: _rows(),
               accessories: _accessoryRows(),
-              tagUid: _tagUid,
             ),
           ],
-          if (_diagnostic != null) ...<Widget>[
+          if (_diagnostic != null && _canSeeDiagnostics) ...<Widget>[
             const SizedBox(height: 12),
             _SectionCard(
-              title: 'Diagnostic NFC',
+              title: '⚙️ Diagnostic NFC',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: _diagnosticRows(_diagnostic!)
@@ -609,13 +668,11 @@ class _PublicPtipoteCard extends StatelessWidget {
     required this.fields,
     required this.rows,
     required this.accessories,
-    required this.tagUid,
   });
 
   final Map<String, String> fields;
   final List<_FieldRow> rows;
   final List<_FieldRow> accessories;
-  final String tagUid;
 
   @override
   Widget build(BuildContext context) {
@@ -634,7 +691,7 @@ class _PublicPtipoteCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SizedBox(
-                  width: 112,
+                  width: 196,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
@@ -659,7 +716,8 @@ class _PublicPtipoteCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      _TinyInfo(label: 'Éleveur', value: fields['o'] ?? ''),
+                      _OrganicInfoCard(
+                          label: 'Éleveur', value: fields['o'] ?? ''),
                     ],
                   ),
                 ),
@@ -668,20 +726,40 @@ class _PublicPtipoteCard extends StatelessWidget {
                   child: Column(
                     children: rows
                         .where((row) =>
-                            row.label == 'Espèce' ||
-                            row.label == 'Type' ||
-                            row.label == 'Surnom' ||
-                            row.label == 'Rareté')
+                            row.label == 'Espèce' || row.label == 'Type')
                         .map(
                           (row) => Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: _OrganicInfoCard(
                               label: row.label,
                               value: row.value,
+                              rarity:
+                                  row.label == 'Rareté' ? fields['r'] : null,
                             ),
                           ),
                         )
                         .toList(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _OrganicInfoCard(
+                    label: 'Surnom',
+                    value: fields['s'] ?? '',
+                    compact: true,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _OrganicInfoCard(
+                    label: 'Rareté',
+                    value: _display(fields['r'] ?? ''),
+                    rarity: fields['r'],
+                    compact: true,
                   ),
                 ),
               ],
@@ -728,20 +806,8 @@ class _PublicPtipoteCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: <Widget>[
-                if (tagUid.trim().isNotEmpty)
-                  Expanded(
-                    child: Text(
-                      'UID ${tagUid.trim()}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: colorScheme.onSurfaceVariant,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
                 Text(
                   'Batch ${_display(fields['b'] ?? '')}',
                   textAlign: TextAlign.right,
@@ -773,36 +839,49 @@ class _RoundPtipoteImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 96,
-      height: 96,
+      width: 192,
+      height: 192,
       decoration: BoxDecoration(
         color: const Color(0xFFFFFCF4),
         shape: BoxShape.circle,
         border: Border.all(color: const Color(0xFFD2BD93), width: 2),
       ),
       clipBehavior: Clip.antiAlias,
-      child: PtipoteImage(
-        type: fields['t'] ?? '',
-        species: fields['e'] ?? '',
-        height: 96,
+      child: Transform.scale(
+        scale: 1.5,
+        child: PtipoteImage(
+          type: fields['t'] ?? '',
+          species: fields['e'] ?? '',
+          height: 192,
+        ),
       ),
     );
   }
 }
 
 class _OrganicInfoCard extends StatelessWidget {
-  const _OrganicInfoCard({required this.label, required this.value});
+  const _OrganicInfoCard({
+    required this.label,
+    required this.value,
+    this.rarity,
+    this.compact = false,
+  });
 
   final String label;
   final String value;
+  final String? rarity;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: compact ? 7 : 9,
+      ),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF4),
+        color: _rarityColor(rarity),
         border: Border.all(color: const Color(0xFFE0CFAE)),
         borderRadius: BorderRadius.circular(18),
       ),
@@ -816,16 +895,34 @@ class _OrganicInfoCard extends StatelessWidget {
               fontSize: 12,
             ),
           ),
-          const SizedBox(height: 2),
+          SizedBox(height: compact ? 1 : 2),
           Text(
             _display(value),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            style: TextStyle(
+              fontSize: compact ? 13 : 16,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Color _rarityColor(String? value) {
+    switch (value?.trim()) {
+      case '1':
+        return const Color(0xFFE8E4DD);
+      case '2':
+        return const Color(0xFFD9ECFF);
+      case '3':
+        return const Color(0xFFE8D8FF);
+      case '4':
+        return const Color(0xFFFFE7A8);
+      default:
+        return const Color(0xFFFFFCF4);
+    }
   }
 }
 

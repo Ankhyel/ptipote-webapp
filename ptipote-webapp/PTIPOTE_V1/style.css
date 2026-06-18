@@ -134,7 +134,8 @@ body {
     var(--hero-bg-end, #d7c099) 70%
   );
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(180px, 48%) 1fr;
+  align-items: center;
   gap: 16px;
   padding: 16px;
 }
@@ -173,10 +174,11 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  width: min(100%, 520px);
+  width: min(100%, 360px);
   margin: 0 auto;
   aspect-ratio: 1 / 1;
-  padding: 10px;
+  padding: 0;
+  border-radius: 999px;
 }
 
 .heroMedia img {
@@ -188,6 +190,7 @@ body {
   object-fit: contain;
   object-position: top center;
   border-radius: 0;
+  transform: scale(1.5) translateZ(0);
   -webkit-user-drag: none;
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
@@ -265,6 +268,27 @@ body {
   border-radius: 22px;
   padding: 13px 14px;
   box-shadow: 0 8px 18px rgba(84, 60, 30, 0.08);
+}
+
+.infoCard.rarity-1,
+.infoCard.rarity-commun {
+  background: #e8e4dd;
+}
+
+.infoCard.rarity-2,
+.infoCard.rarity-speciale,
+.infoCard.rarity-special {
+  background: #d9ecff;
+}
+
+.infoCard.rarity-3,
+.infoCard.rarity-rare {
+  background: #e8d8ff;
+}
+
+.infoCard.rarity-4,
+.infoCard.rarity-legendaire {
+  background: #ffe7a8;
 }
 
 .label {
@@ -494,12 +518,14 @@ body {
     gap: 10px;
     padding: 12px;
     border-radius: 16px;
+    grid-template-columns: 1fr;
   }
 
   .heroMedia {
     aspect-ratio: 1 / 1;
-    border-radius: 14px;
-    padding: 8px;
+    width: min(72vw, 300px);
+    border-radius: 999px;
+    padding: 0;
   }
 
   .hero h1 {

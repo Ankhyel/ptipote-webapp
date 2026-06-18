@@ -7,12 +7,16 @@ class UserProfile {
     required this.username,
     required this.displayName,
     required this.email,
+    required this.role,
   });
 
   final String uid;
   final String username;
   final String displayName;
   final String email;
+  final String role;
+
+  bool get canSeeDiagnostics => role == 'admin' || role == 'moderator';
 
   String get ownerName {
     final name = displayName.trim();
@@ -63,7 +67,10 @@ class UserProfileService {
       'uid': user.uid,
       'email': user.email ?? '',
       'username': _defaultUsername(user),
+      'usernameLower': _defaultUsername(user).toLowerCase(),
       'displayName': user.displayName ?? '',
+      'displayNameLower': (user.displayName ?? '').toLowerCase(),
+      'role': 'user',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -90,7 +97,9 @@ class UserProfileService {
         'uid': user.uid,
         'email': user.email ?? '',
         'username': username.trim(),
+        'usernameLower': username.trim().toLowerCase(),
         'displayName': displayName.trim(),
+        'displayNameLower': displayName.trim().toLowerCase(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
@@ -104,6 +113,7 @@ class UserProfileService {
       username: '${source['username'] ?? _defaultUsername(user)}',
       displayName: '${source['displayName'] ?? user.displayName ?? ''}',
       email: '${source['email'] ?? user.email ?? ''}',
+      role: '${source['role'] ?? 'user'}'.trim().toLowerCase(),
     );
   }
 

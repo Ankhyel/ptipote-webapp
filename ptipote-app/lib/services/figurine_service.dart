@@ -68,6 +68,9 @@ class FigurineService {
     if (cleanNickname.isEmpty) {
       throw ArgumentError('Le surnom ne peut pas etre vide.');
     }
+    if (figurine.isTransferLocked) {
+      throw StateError('Ce PTIPOTE est verrouille pendant le transfert.');
+    }
 
     final fields = Map<String, String>.from(figurine.fields);
     fields['s'] = cleanNickname;
@@ -107,6 +110,201 @@ class FigurineService {
       );
     }
 
+    await batch.commit();
+  }
+
+  Future<void> requestTransfer({
+    required PtipoteFigurine figurine,
+    required UserProfile fromProfile,
+    required FriendProfile friend,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('Connexion requise.');
+    if (figurine.isTransferLocked && figurine.transferConfirmed) {
+      throw StateError(
+          'Ce PTIPOTE vient d’être transfere et reste verrouille.');
+    }
+
+    final requestId = '${user.uid}_${figurine.id}_${friend.uid}';
+    final now = FieldValue.serverTimestamp();
+    final fields = Map<String, String>.from(figurine.fields);
+    fields['te'] = '1';
+    fields['ter'] = '0';
+
+    final requestData = <String, dynamic>{
+      'id': requestId,
+      'figurineId': figurine.id,
+      'tagUid': figurine.tagUid,
+      'publicKey': figurine.publicKey,
+      'fromUid': user.uid,
+      'fromName': fromProfile.ownerName,
+      'toUid': friend.uid,
+      'toName': friend.ownerName,
+      'status': 'pending',
+      'fields': fields,
+      'nickname': figurine.displayName,
+      'species': figurine.species == '-' ? '' : figurine.species,
+      'type': figurine.type == '-' ? '' : figurine.type,
+      'requestedAt': now,
+      'updatedAt': now,
+    };
+
+    final batch = _firestore.batch();
+    batch.set(_firestore.collection('transferRequests').doc(requestId),
+        requestData, SetOptions(merge: true));
+    batch.set(
+      _firestore
+          .collection('users')
+          .doc(friend.uid)
+          .collection('incomingTransfers')
+          .doc(figurine.id),
+      requestData,
+      SetOptions(merge: true),
+    );
+    batch.set(
+      _collectionFor(user.uid).doc(figurine.id),
+      <String, dynamic>{
+        'fields': fields,
+        'transfer': requestData,
+        'updatedAt': now,
+      },
+      SetOptions(merge: true),
+    );
+    await _writePublicTransferState(batch, figurine, fields,
+        ownerUid: user.uid);
+    await batch.commit();
+  }
+
+  Future<void> cancelTransfer(PtipoteFigurine figurine) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('Connexion requise.');
+
+    final doc =
+        await _getDocFromServer(_collectionFor(user.uid).doc(figurine.id));
+    final transfer = doc.data()?['transfer'] as Map<String, dynamic>?;
+    final toUid = '${transfer?['toUid'] ?? ''}'.trim();
+    final requestId =
+        '${transfer?['id'] ?? '${user.uid}_${figurine.id}_$toUid'}';
+    final fields = Map<String, String>.from(figurine.fields);
+    fields['te'] = '0';
+
+    final batch = _firestore.batch();
+    batch.set(
+      _collectionFor(user.uid).doc(figurine.id),
+      <String, dynamic>{
+        'fields': fields,
+        'transfer': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    if (requestId.trim().isNotEmpty) {
+      batch.set(
+        _firestore.collection('transferRequests').doc(requestId),
+        <String, dynamic>{
+          'status': 'cancelled',
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+    if (toUid.isNotEmpty) {
+      batch.delete(_firestore
+          .collection('users')
+          .doc(toUid)
+          .collection('incomingTransfers')
+          .doc(figurine.id));
+    }
+    await _writePublicTransferState(batch, figurine, fields,
+        ownerUid: user.uid);
+    await batch.commit();
+  }
+
+  Future<PendingTransfer?> getIncomingTransferByTagUid(String tagUid) async {
+    final user = _auth.currentUser;
+    if (user == null || tagUid.trim().isEmpty) return null;
+    final snapshot = await _getQueryFromServer(
+      _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('incomingTransfers')
+          .where('tagUid', isEqualTo: tagUid)
+          .where('status', isEqualTo: 'pending')
+          .limit(1),
+    );
+    if (snapshot.docs.isEmpty) return null;
+    return PendingTransfer.fromDoc(snapshot.docs.first);
+  }
+
+  Future<void> confirmIncomingTransfer({
+    required PendingTransfer transfer,
+    required UserProfile newOwner,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('Connexion requise.');
+
+    final oldOwnerFigurine =
+        _collectionFor(transfer.fromUid).doc(transfer.figurineId);
+    final oldSnapshot = await _getDocFromServer(oldOwnerFigurine);
+    final sourceData = oldSnapshot.data() ?? const <String, dynamic>{};
+    final fieldsData =
+        sourceData['fields'] as Map<String, dynamic>? ?? transfer.fields;
+    final fields = fieldsData.map((key, value) => MapEntry(key, '$value'));
+    fields['o'] = newOwner.ownerName;
+    fields['on'] = newOwner.breederNumber;
+    fields['te'] = '0';
+    fields['ter'] = '1';
+    final publicKey = '${sourceData['publicKey'] ?? transfer.publicKey}'.trim();
+    final lockUntil = Timestamp.fromDate(
+      DateTime.now().add(const Duration(days: 7)),
+    );
+    final now = FieldValue.serverTimestamp();
+    final newDoc = _collectionFor(user.uid).doc(transfer.figurineId);
+
+    final batch = _firestore.batch();
+    batch.set(
+      newDoc,
+      <String, dynamic>{
+        ...sourceData,
+        'ownerUid': user.uid,
+        'ownerName': newOwner.ownerName,
+        'breederNumber': newOwner.breederNumber,
+        'fields': fields,
+        'transfer': FieldValue.delete(),
+        'transferLockedUntil': lockUntil,
+        'updatedAt': now,
+      },
+      SetOptions(merge: true),
+    );
+    batch.delete(oldOwnerFigurine);
+    batch.delete(_firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('incomingTransfers')
+        .doc(transfer.figurineId));
+    batch.set(
+      _firestore.collection('transferRequests').doc(transfer.id),
+      <String, dynamic>{
+        'status': 'confirmed',
+        'confirmedAt': now,
+        'updatedAt': now,
+      },
+      SetOptions(merge: true),
+    );
+    if (publicKey.isNotEmpty) {
+      batch.set(
+        _firestore.collection('publicFigurines').doc(publicKey),
+        <String, dynamic>{
+          'ownerUid': user.uid,
+          'ownerName': newOwner.ownerName,
+          'breederNumber': newOwner.breederNumber,
+          'nickname': '${sourceData['nickname'] ?? fields['s'] ?? ''}',
+          'fields': fields,
+          'updatedAt': now,
+        },
+        SetOptions(merge: true),
+      );
+    }
     await batch.commit();
   }
 
@@ -393,6 +591,9 @@ class FigurineService {
       publicKey: '${data['publicKey'] ?? ''}',
       rawSource: '${data['rawSource'] ?? ''}',
       sortOrder: _readSortOrder(data['sortOrder']),
+      transferLockedUntil: data['transferLockedUntil'] is Timestamp
+          ? (data['transferLockedUntil'] as Timestamp).toDate()
+          : null,
       createdAt: createdAt is Timestamp
           ? createdAt.toDate()
           : DateTime.fromMillisecondsSinceEpoch(0),
@@ -411,5 +612,75 @@ class FigurineService {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return 1 << 30;
+  }
+
+  Future<void> _writePublicTransferState(
+    WriteBatch batch,
+    PtipoteFigurine figurine,
+    Map<String, String> fields, {
+    required String ownerUid,
+  }) async {
+    final publicKey = figurine.publicKey.trim().isNotEmpty
+        ? figurine.publicKey.trim()
+        : publicKeyFromSource(figurine.rawSource);
+    if (publicKey.isEmpty) return;
+    batch.set(
+      _firestore.collection('publicFigurines').doc(publicKey),
+      <String, dynamic>{
+        'ownerUid': ownerUid,
+        'fields': fields,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+}
+
+class FriendProfile {
+  const FriendProfile({
+    required this.uid,
+    required this.username,
+    required this.ownerName,
+  });
+
+  final String uid;
+  final String username;
+  final String ownerName;
+}
+
+class PendingTransfer {
+  const PendingTransfer({
+    required this.id,
+    required this.figurineId,
+    required this.tagUid,
+    required this.publicKey,
+    required this.fromUid,
+    required this.fromName,
+    required this.fields,
+  });
+
+  final String id;
+  final String figurineId;
+  final String tagUid;
+  final String publicKey;
+  final String fromUid;
+  final String fromName;
+  final Map<String, String> fields;
+
+  static PendingTransfer fromDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    final fieldsData =
+        data['fields'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+    return PendingTransfer(
+      id: '${data['id'] ?? doc.id}',
+      figurineId: '${data['figurineId'] ?? doc.id}',
+      tagUid: '${data['tagUid'] ?? ''}',
+      publicKey: '${data['publicKey'] ?? ''}',
+      fromUid: '${data['fromUid'] ?? ''}',
+      fromName: '${data['fromName'] ?? ''}',
+      fields: fieldsData.map((key, value) => MapEntry(key, '$value')),
+    );
   }
 }

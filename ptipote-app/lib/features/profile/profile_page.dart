@@ -104,8 +104,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
-                    labelText: 'Nom utilisateur',
-                    helperText: 'Utilise comme numero eleveur public.',
+                    labelText: 'Identifiant ami',
+                    helperText: 'Utilise pour la recherche et les invitations.',
                   ),
                 ),
                 const SizedBox(height: 12),
