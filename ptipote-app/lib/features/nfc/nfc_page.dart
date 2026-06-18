@@ -10,11 +10,18 @@ import '../../services/user_profile_service.dart';
 import '../figurines/ptipote_image.dart';
 
 class NfcPage extends StatefulWidget {
-  const NfcPage({super.key, this.service});
+  const NfcPage({
+    super.key,
+    this.service,
+    this.initialUid = '',
+    this.initialPayload = '',
+  });
 
   static const route = '/nfc';
 
   final NfcService? service;
+  final String initialUid;
+  final String initialPayload;
 
   @override
   State<NfcPage> createState() => _NfcPageState();
@@ -47,6 +54,32 @@ class _NfcPageState extends State<NfcPage> {
     _service = widget.service ?? NfcManagerService();
     _figurineService = FigurineService();
     _profileService = UserProfileService();
+    if (widget.initialPayload.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitialScan());
+    }
+  }
+
+  Future<void> _loadInitialScan() async {
+    setState(() {
+      _statusIsError = false;
+      _status = 'Décodage NDEF en cours...';
+      _tagUid = widget.initialUid;
+      _rawSource = widget.initialPayload;
+    });
+    try {
+      await _processRawScan(
+        raw: widget.initialPayload,
+        uid: widget.initialUid,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _checkingFirebase = false;
+        _statusIsError = true;
+        _status = error.toString();
+      });
+    }
   }
 
   static Map<String, String> _emptyFields() {
@@ -107,108 +140,7 @@ class _NfcPageState extends State<NfcPage> {
           });
         },
       );
-      final raw = (result.payload ?? '').trim();
-      if (raw.isEmpty) {
-        throw NfcServiceException('Aucune donnée trouvée sur la puce.');
-      }
-
-      final payload = _extractPayloadFromSource(raw);
-      final decoded = _decodePayload(payload);
-      final kv = _parseKv(decoded);
-      if (kv.isEmpty) {
-        throw NfcServiceException('Décodage OK mais format non reconnu.');
-      }
-
-      final normalizedFields = _normalizeFields(kv);
-      setState(() {
-        _statusIsError = false;
-        _status = 'Décodage NDEF OK, recherche Firebase...';
-        _busy = false;
-        _tagUid = result.uid;
-        _rawSource = raw;
-        _decodedText = decoded;
-        _checkingFirebase = true;
-        _alreadyRegistered = false;
-        _firebaseLookupFailed = false;
-        _fields = Map<String, String>.from(normalizedFields);
-      });
-
-      final warnings = <String>[];
-      var alreadyRegistered = false;
-      var firebaseLookupFailed = false;
-
-      try {
-        final publicKey = _figurineService.publicKeyFromSource(raw);
-        final ownFigurine = await _withFirebaseTimeout(
-              _figurineService.getMyFigurineByTagUid(result.uid),
-            ) ??
-            await _withFirebaseTimeout(
-              _figurineService.getMyFigurineByPublicKey(publicKey),
-            );
-        final existing = ownFigurine ??
-            await _withFirebaseTimeout(
-              _figurineService.getPublicFigurine(
-                rawSource: raw,
-                tagUid: result.uid,
-              ),
-            );
-        if (existing != null) {
-          alreadyRegistered = true;
-          _mergeFigurineFields(normalizedFields, existing.fields);
-          final existingName = existing.displayName.trim();
-          if (existingName.isNotEmpty && existingName != 'PTIPOTE sans nom') {
-            normalizedFields['s'] = existingName;
-          }
-        }
-        if (ownFigurine != null) {
-          unawaited(
-            _figurineService
-                .publishPublicFigurine(
-                  rawSource: raw,
-                  figurine: ownFigurine,
-                )
-                .catchError((_) {}),
-          );
-        }
-      } catch (error) {
-        firebaseLookupFailed = true;
-        warnings.add('surnom Firebase indisponible');
-      }
-
-      try {
-        final profile = await _profileService.getOrCreateMyProfile().timeout(
-              const Duration(seconds: 6),
-            );
-        normalizedFields['o'] = profile.ownerName;
-        normalizedFields['on'] = profile.breederNumber;
-        _canSeeDiagnostics = profile.canSeeDiagnostics;
-        _pendingTransfer =
-            await _figurineService.getIncomingTransferByTagUid(result.uid);
-        final pending = _pendingTransfer;
-        if (pending != null) {
-          _mergeFigurineFields(normalizedFields, pending.fields);
-          normalizedFields['te'] = '1';
-        }
-      } catch (error) {
-        warnings.add('profil indisponible');
-      }
-
-      setState(() {
-        _busy = false;
-        _statusIsError = false;
-        _status = _pendingTransfer == null
-            ? (warnings.isEmpty
-                ? 'Scan OK'
-                : 'Scan OK (${warnings.join(', ')})')
-            : 'Scan requis OK, transfert prêt à confirmer';
-        _tagUid = result.uid;
-        _rawSource = raw;
-        _decodedText = decoded;
-        _checkingFirebase = false;
-        _alreadyRegistered = alreadyRegistered;
-        _firebaseLookupFailed = firebaseLookupFailed;
-        _fields = normalizedFields;
-      });
+      await _processRawScan(raw: result.payload ?? '', uid: result.uid);
     } catch (error) {
       setState(() {
         _busy = false;
@@ -217,6 +149,107 @@ class _NfcPageState extends State<NfcPage> {
         _status = error.toString();
       });
     }
+  }
+
+  Future<void> _processRawScan(
+      {required String raw, required String uid}) async {
+    final cleanRaw = raw.trim();
+    if (cleanRaw.isEmpty) {
+      throw NfcServiceException('Aucune donnée trouvée sur la puce.');
+    }
+
+    final payload = _extractPayloadFromSource(cleanRaw);
+    final decoded = _decodePayload(payload);
+    final kv = _parseKv(decoded);
+    if (kv.isEmpty) {
+      throw NfcServiceException('Décodage OK mais format non reconnu.');
+    }
+
+    final normalizedFields = _normalizeFields(kv);
+    setState(() {
+      _statusIsError = false;
+      _status = 'Décodage NDEF OK, recherche Firebase...';
+      _busy = false;
+      _tagUid = uid;
+      _rawSource = cleanRaw;
+      _decodedText = decoded;
+      _checkingFirebase = true;
+      _alreadyRegistered = false;
+      _firebaseLookupFailed = false;
+      _fields = Map<String, String>.from(normalizedFields);
+    });
+
+    final warnings = <String>[];
+    var alreadyRegistered = false;
+    var firebaseLookupFailed = false;
+
+    try {
+      final publicKey = _figurineService.publicKeyFromSource(cleanRaw);
+      final ownFigurine = await _withFirebaseTimeout(
+            _figurineService.getMyFigurineByTagUid(uid),
+          ) ??
+          await _withFirebaseTimeout(
+            _figurineService.getMyFigurineByPublicKey(publicKey),
+          );
+      final existing = ownFigurine ??
+          await _withFirebaseTimeout(
+            _figurineService.getPublicFigurine(
+              rawSource: cleanRaw,
+              tagUid: uid,
+            ),
+          );
+      if (existing != null) {
+        alreadyRegistered = true;
+        _mergeFigurineFields(normalizedFields, existing.fields);
+        final existingName = existing.displayName.trim();
+        if (existingName.isNotEmpty && existingName != 'PTIPOTE sans nom') {
+          normalizedFields['s'] = existingName;
+        }
+      }
+      if (ownFigurine != null) {
+        unawaited(
+          _figurineService
+              .publishPublicFigurine(rawSource: cleanRaw, figurine: ownFigurine)
+              .catchError((_) {}),
+        );
+      }
+    } catch (error) {
+      firebaseLookupFailed = true;
+      warnings.add('surnom Firebase indisponible');
+    }
+
+    try {
+      final profile = await _profileService
+          .getOrCreateMyProfile()
+          .timeout(const Duration(seconds: 6));
+      normalizedFields['o'] = profile.ownerName;
+      normalizedFields['on'] = profile.breederNumber;
+      _canSeeDiagnostics = profile.canSeeDiagnostics;
+      _pendingTransfer =
+          await _figurineService.getIncomingTransferByTagUid(uid);
+      final pending = _pendingTransfer;
+      if (pending != null) {
+        _mergeFigurineFields(normalizedFields, pending.fields);
+        normalizedFields['te'] = '1';
+      }
+    } catch (error) {
+      warnings.add('profil indisponible');
+    }
+
+    setState(() {
+      _busy = false;
+      _statusIsError = false;
+      _status = _pendingTransfer == null
+          ? (warnings.isEmpty ? 'Scan OK' : 'Scan OK (${warnings.join(', ')})')
+          : 'Scan requis OK, transfert prêt à confirmer';
+      _tagUid = uid;
+      _rawSource = cleanRaw;
+      _decodedText = decoded;
+      _checkingFirebase = false;
+      _alreadyRegistered = alreadyRegistered;
+      _firebaseLookupFailed = firebaseLookupFailed;
+      _fields = normalizedFields;
+    });
   }
 
   Future<T?> _withFirebaseTimeout<T>(Future<T?> future) {
@@ -622,40 +655,7 @@ class _NfcPageState extends State<NfcPage> {
           ],
           if (_diagnostic != null && _canSeeDiagnostics) ...<Widget>[
             const SizedBox(height: 12),
-            _SectionCard(
-              title: '⚙️ Diagnostic NFC',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: _diagnosticRows(_diagnostic!)
-                    .map(
-                      (row) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Expanded(
-                              flex: 4,
-                              child: Text(
-                                row.label,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              flex: 7,
-                              child: SelectableText(
-                                row.value.isEmpty ? '—' : row.value,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
+            _DiagnosticCard(event: _diagnostic!),
           ],
         ],
       ),
@@ -678,6 +678,7 @@ class _PublicPtipoteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final xp = _xpValue(fields['x'] ?? '');
+    final progress = (xp / 100).clamp(0.0, 1.0);
     final hasAccessories =
         accessories.any((row) => row.value.trim().isNotEmpty);
 
@@ -692,33 +693,9 @@ class _PublicPtipoteCard extends StatelessWidget {
               children: <Widget>[
                 SizedBox(
                   width: 196,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      _RoundPtipoteImage(fields: fields),
-                      const SizedBox(height: 12),
-                      _TinyInfo(label: 'Niveau', value: fields['l'] ?? ''),
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          value: (xp / 100).clamp(0.0, 1.0),
-                          minHeight: 9,
-                          backgroundColor: const Color(0xFFE8D9BD),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '$xp / 100 XP',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _OrganicInfoCard(
-                          label: 'Éleveur', value: fields['o'] ?? ''),
-                    ],
+                  child: _ImageWithRarity(
+                    fields: fields,
+                    rarityLabel: _display(fields['r'] ?? ''),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -726,15 +703,15 @@ class _PublicPtipoteCard extends StatelessWidget {
                   child: Column(
                     children: rows
                         .where((row) =>
-                            row.label == 'Espèce' || row.label == 'Type')
+                            row.label == 'Espèce' ||
+                            row.label == 'Type' ||
+                            row.label == 'Surnom')
                         .map(
                           (row) => Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: _OrganicInfoCard(
                               label: row.label,
                               value: row.value,
-                              rarity:
-                                  row.label == 'Rareté' ? fields['r'] : null,
                             ),
                           ),
                         )
@@ -743,26 +720,48 @@ class _PublicPtipoteCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: _OrganicInfoCard(
-                    label: 'Surnom',
-                    value: fields['s'] ?? '',
-                    compact: true,
+            const SizedBox(height: 10),
+            _OrganicInfoCard(label: 'Éleveur', value: fields['o'] ?? ''),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Text(
+                    'Niveau',
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _OrganicInfoCard(
-                    label: 'Rareté',
-                    value: _display(fields['r'] ?? ''),
-                    rarity: fields['r'],
-                    compact: true,
+                  Text(
+                    _display(fields['l'] ?? ''),
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 11,
+                      backgroundColor: const Color(0xFFE8D9BD),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '$xp / 100 XP',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 10),
             Theme(
@@ -859,29 +858,83 @@ class _RoundPtipoteImage extends StatelessWidget {
   }
 }
 
+class _ImageWithRarity extends StatelessWidget {
+  const _ImageWithRarity({required this.fields, required this.rarityLabel});
+
+  final Map<String, String> fields;
+  final String rarityLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        _RoundPtipoteImage(fields: fields),
+        Positioned(
+          left: 6,
+          bottom: 6,
+          child: _RarityBadge(
+            value: fields['r'] ?? '',
+            label: rarityLabel,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RarityBadge extends StatelessWidget {
+  const _RarityBadge({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 58,
+      height: 58,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(7),
+      decoration: BoxDecoration(
+        color: _rarityColorFor(value),
+        border: Border.all(color: const Color(0xFFD2BD93), width: 2),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x3333281E),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+}
+
 class _OrganicInfoCard extends StatelessWidget {
   const _OrganicInfoCard({
     required this.label,
     required this.value,
-    this.rarity,
-    this.compact = false,
   });
 
   final String label;
   final String value;
-  final String? rarity;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: compact ? 7 : 9,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: _rarityColor(rarity),
+        color: const Color(0xFFFFFCF4),
         border: Border.all(color: const Color(0xFFE0CFAE)),
         borderRadius: BorderRadius.circular(18),
       ),
@@ -895,62 +948,18 @@ class _OrganicInfoCard extends StatelessWidget {
               fontSize: 12,
             ),
           ),
-          SizedBox(height: compact ? 1 : 2),
+          const SizedBox(height: 2),
           Text(
             _display(value),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: compact ? 13 : 16,
+            style: const TextStyle(
+              fontSize: 16,
               fontWeight: FontWeight.w800,
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Color _rarityColor(String? value) {
-    switch (value?.trim()) {
-      case '1':
-        return const Color(0xFFE8E4DD);
-      case '2':
-        return const Color(0xFFD9ECFF);
-      case '3':
-        return const Color(0xFFE8D8FF);
-      case '4':
-        return const Color(0xFFFFE7A8);
-      default:
-        return const Color(0xFFFFFCF4);
-    }
-  }
-}
-
-class _TinyInfo extends StatelessWidget {
-  const _TinyInfo({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          label,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 11,
-          ),
-        ),
-        Text(
-          _display(value),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-        ),
-      ],
     );
   }
 }
@@ -988,9 +997,70 @@ class _AccessoryLine extends StatelessWidget {
   }
 }
 
+Color _rarityColorFor(String? value) {
+  switch (value?.trim()) {
+    case '1':
+      return const Color(0xFFE8E4DD);
+    case '2':
+      return const Color(0xFFD9ECFF);
+    case '3':
+      return const Color(0xFFE8D8FF);
+    case '4':
+      return const Color(0xFFFFE7A8);
+    default:
+      return const Color(0xFFFFFCF4);
+  }
+}
+
 String _display(String value, {String fallback = '—'}) {
   final trimmed = value.trim();
   return trimmed.isEmpty ? fallback : trimmed;
+}
+
+class _DiagnosticCard extends StatelessWidget {
+  const _DiagnosticCard({required this.event});
+
+  final NfcDiagnosticEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        title: const Text(
+          '⚙️ Diagnostic NFC',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        children: _diagnosticRows(event)
+            .map(
+              (row) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(
+                      flex: 4,
+                      child: Text(
+                        row.label,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 7,
+                      child: SelectableText(
+                        row.value.isEmpty ? '—' : row.value,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
 }
 
 List<_FieldRow> _diagnosticRows(NfcDiagnosticEvent event) {
@@ -1002,32 +1072,6 @@ List<_FieldRow> _diagnosticRows(NfcDiagnosticEvent event) {
     _FieldRow('Brut', event.payload),
     _FieldRow('Erreur', event.error),
   ];
-}
-
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(title,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _FieldRow {

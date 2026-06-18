@@ -192,9 +192,53 @@ body {
   border-radius: 0;
   transform: scale(1.5) translateZ(0);
   -webkit-user-drag: none;
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
+  -webkit-transform: scale(1.5) translateZ(0);
   backface-visibility: hidden;
+}
+
+.rarityBadge {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 2;
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  padding: 7px;
+  border: 2px solid #d2bd93;
+  border-radius: 24px;
+  color: #2f281f;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.05;
+  text-align: center;
+  box-shadow: 0 8px 18px rgba(51, 40, 30, 0.2);
+}
+
+.rarityBadge.rarity-1,
+.rarityBadge.rarity-commun {
+  background: #e8e4dd;
+}
+
+.rarityBadge.rarity-2,
+.rarityBadge.rarity-speciale,
+.rarityBadge.rarity-special {
+  background: #d9ecff;
+}
+
+.rarityBadge.rarity-3,
+.rarityBadge.rarity-rare {
+  background: #e8d8ff;
+}
+
+.rarityBadge.rarity-4,
+.rarityBadge.rarity-legendaire {
+  background: #ffe7a8;
+}
+
+.rarityBadge.rarity-unknown {
+  background: var(--surface);
 }
 
 .eyebrow {
@@ -270,6 +314,17 @@ body {
   box-shadow: 0 8px 18px rgba(84, 60, 30, 0.08);
 }
 
+.infoCard.levelCard,
+.xpCard {
+  grid-column: 1 / -1;
+}
+
+.levelValue {
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 900;
+}
+
 .infoCard.rarity-1,
 .infoCard.rarity-commun {
   background: #e8e4dd;
@@ -313,7 +368,8 @@ body {
 }
 
 .xpBarTrack {
-  width: 100%;
+  width: calc(100% - 36px);
+  margin-inline: 18px;
   height: 12px;
   border-radius: 999px;
   border: 1px solid var(--xp-track-line);
@@ -571,6 +627,8 @@ body {
   }
 
   .xpBarTrack {
+    width: calc(100% - 24px);
+    margin-inline: 12px;
     height: 10px;
   }
 

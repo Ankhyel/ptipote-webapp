@@ -436,8 +436,6 @@ function renderInfoCards(model) {
       value: pretty(model.nickname, DEFAULT_NICKNAME),
       isPlaceholder: nicknameRaw.length === 0,
     },
-    { label: "Rareté", value: pretty(rarityLabel(model.rarity)) },
-    { label: "Niveau", value: pretty(model.level) },
     {
       label: "Nom de l’éleveur",
       value: pretty(model.ownerName, DEFAULT_OWNER),
@@ -447,12 +445,19 @@ function renderInfoCards(model) {
 
   let html = cards
     .map((card) => `
-      <article class="infoCard ${card.label === "Rareté" ? `rarity rarity-${normalizeKey(model.rarity) || "unknown"}` : ""}">
+      <article class="infoCard">
         <div class="label">${escapeHtml(card.label)}</div>
         <div class="value${card.isPlaceholder ? " placeholder" : ""}">${escapeHtml(card.value)}</div>
       </article>
     `)
     .join("");
+
+  html += `
+    <article class="infoCard levelCard">
+      <div class="label">Niveau</div>
+      <div class="levelValue">${escapeHtml(pretty(model.level))}</div>
+    </article>
+  `;
 
   html += `
     <article class="infoCard xpCard">
@@ -591,6 +596,11 @@ function renderHero(model) {
   // In hero card: Type is primary (big), Espèce is secondary.
   $("heroSpecies").textContent = pretty(model.type, "Type inconnu");
   $("heroType").textContent = pretty(model.species, "Espèce inconnue");
+  const rarity = $("rarityBadge");
+  if (rarity) {
+    rarity.textContent = pretty(rarityLabel(model.rarity));
+    rarity.className = `rarityBadge rarity-${normalizeKey(model.rarity) || "unknown"}`;
+  }
   const baseColor = typeColor(model.species);
   const rarityColor = heroColorByRarity(model.rarity, baseColor);
   const rarityBg = heroBackgroundByRarity(model.rarity);

@@ -326,31 +326,7 @@ class _FigurineCard extends StatelessWidget {
                   children: <Widget>[
                     SizedBox(
                       width: 196,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          _PtipoteAvatar(figurine: figurine),
-                          const SizedBox(height: 10),
-                          _MiniLabel(label: 'Niveau', value: figurine.level),
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: LinearProgressIndicator(
-                              value: progress,
-                              minHeight: 8,
-                              backgroundColor: const Color(0xFFE8D9BD),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '$xp / 100 XP',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: _AvatarWithRarity(figurine: figurine),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -362,7 +338,15 @@ class _FigurineCard extends StatelessWidget {
                           _InfoCard(label: 'Type', value: figurine.type),
                           const SizedBox(height: 8),
                           _InfoCard(
-                              label: 'Eleveur', value: figurine.ownerName),
+                            label: 'Surnom',
+                            value: figurine.displayName,
+                            trailing: IconButton(
+                              tooltip: 'Modifier le surnom',
+                              onPressed:
+                                  figurine.isTransferLocked ? null : onRename,
+                              icon: const Icon(Icons.edit, size: 18),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -372,32 +356,48 @@ class _FigurineCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: _InfoCard(
-                        label: 'Surnom',
-                        value: figurine.displayName,
-                        compact: true,
-                        trailing: IconButton(
-                          tooltip: 'Modifier le surnom',
-                          onPressed:
-                              figurine.isTransferLocked ? null : onRename,
-                          icon: const Icon(Icons.edit, size: 18),
+                const SizedBox(height: 10),
+                _InfoCard(label: 'Eleveur', value: figurine.ownerName),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text(
+                        'Niveau',
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _InfoCard(
-                        label: 'Rareté',
-                        value: _rarityLabel(figurine.fields['r'] ?? ''),
-                        rarity: figurine.fields['r'],
-                        compact: true,
+                      Text(
+                        figurine.level.trim().isEmpty ? '-' : figurine.level,
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 11,
+                          backgroundColor: const Color(0xFFE8D9BD),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '$xp / 100 XP',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 if (figurine.transferRequested) ...<Widget>[
                   const SizedBox(height: 8),
@@ -418,6 +418,30 @@ class _FigurineCard extends StatelessWidget {
     final match = RegExp(r'\d+').firstMatch(value);
     return int.tryParse(match?.group(0) ?? '') ?? 0;
   }
+}
+
+class _AvatarWithRarity extends StatelessWidget {
+  const _AvatarWithRarity({required this.figurine});
+
+  final PtipoteFigurine figurine;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        _PtipoteAvatar(figurine: figurine),
+        Positioned(
+          left: 6,
+          bottom: 6,
+          child: _RarityBadge(
+            value: figurine.fields['r'] ?? '',
+            label: _rarityLabel(figurine.fields['r'] ?? ''),
+          ),
+        ),
+      ],
+    );
+  }
 
   String _rarityLabel(String value) {
     switch (value.trim()) {
@@ -432,6 +456,42 @@ class _FigurineCard extends StatelessWidget {
       default:
         return value.trim().isEmpty ? '-' : value;
     }
+  }
+}
+
+class _RarityBadge extends StatelessWidget {
+  const _RarityBadge({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 58,
+      height: 58,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(7),
+      decoration: BoxDecoration(
+        color: _rarityColorFor(value),
+        border: Border.all(color: const Color(0xFFD2BD93), width: 2),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x3333281E),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+      ),
+    );
   }
 }
 
@@ -471,28 +531,19 @@ class _InfoCard extends StatelessWidget {
     required this.label,
     required this.value,
     this.trailing,
-    this.rarity,
-    this.compact = false,
   });
 
   final String label;
   final String value;
   final Widget? trailing;
-  final String? rarity;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       constraints: const BoxConstraints(minHeight: 54),
-      padding: EdgeInsets.only(
-        left: 12,
-        right: 6,
-        top: compact ? 6 : 8,
-        bottom: compact ? 6 : 8,
-      ),
+      padding: const EdgeInsets.only(left: 12, right: 6, top: 8, bottom: 8),
       decoration: BoxDecoration(
-        color: _rarityColor(rarity),
+        color: const Color(0xFFFFFCF4),
         border: Border.all(color: const Color(0xFFE0CFAE)),
         borderRadius: BorderRadius.circular(18),
       ),
@@ -509,13 +560,13 @@ class _InfoCard extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                SizedBox(height: compact ? 1 : 2),
+                const SizedBox(height: 2),
                 Text(
                   value.trim().isEmpty ? '-' : value,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: compact ? 13 : 16,
+                  style: const TextStyle(
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -527,49 +578,20 @@ class _InfoCard extends StatelessWidget {
       ),
     );
   }
-
-  Color _rarityColor(String? value) {
-    switch (value?.trim()) {
-      case '1':
-        return const Color(0xFFE8E4DD);
-      case '2':
-        return const Color(0xFFD9ECFF);
-      case '3':
-        return const Color(0xFFE8D8FF);
-      case '4':
-        return const Color(0xFFFFE7A8);
-      default:
-        return const Color(0xFFFFFCF4);
-    }
-  }
 }
 
-class _MiniLabel extends StatelessWidget {
-  const _MiniLabel({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          label,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 11,
-          ),
-        ),
-        Text(
-          value.trim().isEmpty ? '-' : value,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-        ),
-      ],
-    );
+Color _rarityColorFor(String? value) {
+  switch (value?.trim()) {
+    case '1':
+      return const Color(0xFFE8E4DD);
+    case '2':
+      return const Color(0xFFD9ECFF);
+    case '3':
+      return const Color(0xFFE8D8FF);
+    case '4':
+      return const Color(0xFFFFE7A8);
+    default:
+      return const Color(0xFFFFFCF4);
   }
 }
 
