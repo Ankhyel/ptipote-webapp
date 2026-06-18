@@ -1,51 +1,67 @@
 :root {
-  --bg: #0a0e18;
-  --bg-spot-a: rgba(91, 117, 255, 0.22);
-  --bg-spot-b: rgba(35, 208, 181, 0.16);
-  --surface: rgba(16, 24, 40, 0.86);
-  --surface-soft: rgba(11, 18, 34, 0.96);
-  --text: #ecf2ff;
-  --muted: #afbbd9;
-  --soft-text: #d8e4ff;
-  --line: rgba(255, 255, 255, 0.12);
-  --placeholder: #d8e2fb;
-  --status-ok: #8ff7d1;
-  --status-warn: #ffd45d;
-  --status-err: #ff8ca9;
-  --xp-track-bg: rgba(6, 16, 34, 0.72);
-  --xp-track-line: rgba(157, 224, 255, 0.24);
-  --xp-text: #bfe7ff;
-  --toast-text: #eaf1ff;
-  --adopt-green-memory-bg: rgba(52, 211, 153, 0.28);
-  --adopt-green-memory-border: rgba(52, 211, 153, 0.58);
-  --adopt-disabled-bg: rgba(160, 175, 202, 0.2);
-  --adopt-disabled-border: rgba(187, 202, 230, 0.34);
-  --adopt-disabled-text: #cbd6ed;
+  --bg: #f6ebd8;
+  --bg-spot-a: rgba(236, 187, 115, 0.24);
+  --bg-spot-b: rgba(128, 154, 101, 0.18);
+  --surface: #fffaf0;
+  --surface-soft: #fffdf6;
+  --text: #2f281f;
+  --muted: #7b6d57;
+  --soft-text: #5d513f;
+  --line: #e0cfae;
+  --placeholder: #8f8069;
+  --status-ok: #168064;
+  --status-warn: #9a6a10;
+  --status-err: #a8413f;
+  --xp-track-bg: #eadcc2;
+  --xp-track-line: #d3bd93;
+  --xp-text: #6e5e3e;
+  --toast-text: #2f281f;
+  --adopt-green-memory-bg: rgba(126, 148, 91, 0.2);
+  --adopt-green-memory-border: rgba(126, 148, 91, 0.54);
+  --adopt-disabled-bg: #efe3cf;
+  --adopt-disabled-border: #cdb58c;
+  --adopt-disabled-text: #71624d;
 }
 
 :root[data-theme="light"] {
-  --bg: #f1f5ff;
-  --bg-spot-a: rgba(81, 114, 255, 0.22);
-  --bg-spot-b: rgba(31, 185, 159, 0.2);
-  --surface: rgba(255, 255, 255, 0.92);
-  --surface-soft: rgba(246, 250, 255, 0.96);
-  --text: #1b2a49;
-  --muted: #5c6f93;
-  --soft-text: #32486e;
-  --line: rgba(33, 56, 99, 0.14);
-  --placeholder: #6177a3;
-  --status-ok: #0a9b72;
-  --status-warn: #b18200;
-  --status-err: #c23557;
-  --xp-track-bg: rgba(218, 229, 247, 0.95);
-  --xp-track-line: rgba(76, 123, 185, 0.28);
-  --xp-text: #2c5f97;
-  --toast-text: #1b2a49;
-  --adopt-green-memory-bg: rgba(52, 211, 153, 0.28);
-  --adopt-green-memory-border: rgba(52, 211, 153, 0.58);
-  --adopt-disabled-bg: rgba(196, 206, 224, 0.42);
-  --adopt-disabled-border: rgba(122, 138, 173, 0.36);
-  --adopt-disabled-text: #617297;
+  --bg: #f6ebd8;
+  --bg-spot-a: rgba(236, 187, 115, 0.24);
+  --bg-spot-b: rgba(128, 154, 101, 0.18);
+  --surface: #fffaf0;
+  --surface-soft: #fffdf6;
+  --text: #2f281f;
+  --muted: #7b6d57;
+  --soft-text: #5d513f;
+  --line: #e0cfae;
+  --placeholder: #8f8069;
+  --status-ok: #168064;
+  --status-warn: #9a6a10;
+  --status-err: #a8413f;
+  --xp-track-bg: #eadcc2;
+  --xp-track-line: #d3bd93;
+  --xp-text: #6e5e3e;
+  --toast-text: #2f281f;
+  --adopt-green-memory-bg: rgba(126, 148, 91, 0.2);
+  --adopt-green-memory-border: rgba(126, 148, 91, 0.54);
+  --adopt-disabled-bg: #efe3cf;
+  --adopt-disabled-border: #cdb58c;
+  --adopt-disabled-text: #71624d;
+}
+
+:root[data-theme="dark"] {
+  --bg: #2b241c;
+  --bg-spot-a: rgba(201, 143, 82, 0.18);
+  --bg-spot-b: rgba(102, 128, 78, 0.18);
+  --surface: #3b3024;
+  --surface-soft: #2f271e;
+  --text: #fff7e8;
+  --muted: #ccb996;
+  --soft-text: #ead9b9;
+  --line: rgba(231, 205, 163, 0.26);
+  --placeholder: #d3c0a0;
+  --xp-track-bg: rgba(79, 65, 48, 0.95);
+  --xp-track-line: rgba(218, 186, 131, 0.34);
+  --xp-text: #f0d8a8;
 }
 
 * { box-sizing: border-box; }
@@ -53,8 +69,8 @@
 body {
   margin: 0;
   background:
-    radial-gradient(1000px 500px at 15% 0%, var(--bg-spot-a), transparent 60%),
-    radial-gradient(900px 500px at 85% 0%, var(--bg-spot-b), transparent 60%),
+    radial-gradient(900px 420px at 10% -4%, var(--bg-spot-a), transparent 58%),
+    radial-gradient(760px 420px at 92% 2%, var(--bg-spot-b), transparent 58%),
     var(--bg);
   color: var(--text);
   font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
@@ -96,9 +112,9 @@ body {
 }
 
 .shopCard {
-  border: 1px solid rgba(255, 244, 226, 0.95);
-  background: linear-gradient(145deg, #fff9f0, #f5ecde 62%, #ece1d1);
-  box-shadow: 0 8px 18px rgba(41, 28, 12, 0.35);
+  border: 1px solid var(--line);
+  background: linear-gradient(145deg, #fffdf6, #f5ead8 62%, #e9d7bb);
+  box-shadow: 0 8px 18px rgba(84, 60, 30, 0.22);
 }
 
 .shopCard .emoji {
@@ -111,11 +127,11 @@ body {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 22px;
+  border-radius: 28px;
   background: linear-gradient(
     155deg,
-    var(--hero-bg-start, rgba(16, 24, 40, 0.7)),
-    var(--hero-bg-end, rgba(13, 21, 41, 0.7)) 70%
+    var(--hero-bg-start, #f4e5c9),
+    var(--hero-bg-end, #d7c099) 70%
   );
   display: grid;
   grid-template-columns: 1fr;
@@ -129,7 +145,7 @@ body {
   inset: -120px auto auto -120px;
   width: 260px;
   height: 260px;
-  border-radius: 999px;
+  border-radius: 44% 56% 49% 51% / 54% 41% 59% 46%;
   background: var(--type-color);
   opacity: 0.18;
   filter: blur(22px);
@@ -141,7 +157,7 @@ body {
   inset: auto -45px -65px auto;
   width: 210px;
   height: 210px;
-  border-radius: 999px;
+  border-radius: 56% 44% 46% 54% / 45% 56% 44% 55%;
   background: var(--type-color);
   opacity: 0.25;
   filter: blur(8px);
@@ -150,9 +166,9 @@ body {
 .heroMedia {
   position: relative;
   z-index: 1;
-  background: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 20px;
+  background: #fffdf6;
+  border: 1px solid rgba(98, 76, 48, 0.16);
+  border-radius: 26px;
   overflow: hidden;
   display: flex;
   align-items: flex-start;
@@ -246,8 +262,9 @@ body {
 .infoCard {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 11px 12px;
+  border-radius: 22px;
+  padding: 13px 14px;
+  box-shadow: 0 8px 18px rgba(84, 60, 30, 0.08);
 }
 
 .label {
@@ -283,8 +300,8 @@ body {
 .xpBarFill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #2f8bff, #24c7b4);
-  box-shadow: 0 0 12px rgba(50, 210, 194, 0.35);
+  background: linear-gradient(90deg, #8b9b62, #d59d58);
+  box-shadow: 0 0 12px rgba(175, 129, 69, 0.25);
 }
 
 .xpText {
@@ -300,11 +317,10 @@ body {
   font-weight: 600;
 }
 
-.infoCard.transfer .value {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  text-align: center;
+.batchCard {
+  justify-self: end;
+  width: min(180px, 100%);
+  text-align: right;
 }
 
 .infoCard.action .label {
@@ -315,12 +331,12 @@ body {
   display: block;
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 18px;
   padding: 10px 12px;
   color: var(--text);
   font-size: 16px;
   font-weight: 700;
-  background: rgba(85, 140, 255, 0.24);
+  background: #e9dcc7;
   cursor: pointer;
   text-align: center;
   text-decoration: none;
@@ -343,12 +359,12 @@ body {
 }
 
 .actionBtn.embark {
-  background: rgba(85, 140, 255, 0.24);
+  background: #e9dcc7;
   border-color: var(--line);
 }
 
 .actionBtn.discover {
-  background: rgba(85, 140, 255, 0.24);
+  background: #d9e1c3;
   border-color: var(--line);
 }
 
@@ -425,16 +441,6 @@ body {
 .accessories li strong {
   font-size: 13px;
   color: var(--text);
-}
-
-.infoCard.transfer.pending .value {
-  background: rgba(246, 188, 53, 0.15);
-  border-color: rgba(246, 188, 53, 0.5);
-}
-
-.infoCard.transfer.confirmed .value {
-  background: rgba(52, 211, 153, 0.16);
-  border-color: rgba(52, 211, 153, 0.48);
 }
 
 .actionToast {

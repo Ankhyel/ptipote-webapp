@@ -8,10 +8,10 @@ const FIREBASE_PROJECT_ID = "ptipote-13508";
 const FIREBASE_API_KEY = "AIzaSyCol40AnP-uim5rxMT63ZzuO-E2dfoFTpQ";
 
 const TYPE_COLORS = {
-  myca: "#6b7bff",
-  rori: "#28b1ff",
-  skadi: "#14b89f",
-  aural: "#f2874a",
+  myca: "#8b9b62",
+  rori: "#7aa3a0",
+  skadi: "#7e945b",
+  aural: "#c58a54",
 };
 
 const RARITY_LABELS = {
@@ -113,11 +113,6 @@ function normalizeKey(value) {
 function pretty(value, fallback = "—") {
   const s = String(value ?? "").trim();
   return s.length ? s : fallback;
-}
-
-function boolFlag(value) {
-  const s = String(value ?? "").trim().toLowerCase();
-  return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
 function getValue(data, keys) {
@@ -226,15 +221,15 @@ function decodeLZ(bytes) {
 
 function typeColor(typeValue) {
   const key = normalizeKey(typeValue);
-  if (!key) return "#4f8cff";
+  if (!key) return "#9c8f5a";
   if (TYPE_COLORS[key]) return TYPE_COLORS[key];
 
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
     hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
   }
-  const hue = hash % 360;
-  return `hsl(${hue} 78% 58%)`;
+  const hue = 34 + (hash % 92);
+  return `hsl(${hue} 38% 52%)`;
 }
 
 function currentTheme() {
@@ -274,9 +269,9 @@ function xpProgress(rawXp) {
 
 function heroColorByRarity(rarity, fallbackColor) {
   const raw = String(rarity ?? "").trim();
-  if (raw === "2") return "#ff5cae"; // Spéciale
-  if (raw === "3") return "#3f7cff"; // Rare
-  if (raw === "4") return "#d4a63b"; // Légendaire
+  if (raw === "2") return "#c98968"; // Spéciale
+  if (raw === "3") return "#7aa3a0"; // Rare
+  if (raw === "4") return "#c8a14a"; // Légendaire
   return fallbackColor; // Commun: current color
 }
 
@@ -286,27 +281,27 @@ function heroBackgroundByRarity(rarity) {
 
   if (raw === "2") {
     return isLight
-      ? { start: "rgba(255, 177, 220, 0.9)", end: "rgba(244, 138, 198, 0.86)" }
-      : { start: "rgba(255, 92, 174, 0.82)", end: "rgba(156, 36, 102, 0.78)" };
+      ? { start: "#f4dccd", end: "#ddb192" }
+      : { start: "#8a513f", end: "#5c342a" };
   }
 
   if (raw === "3") {
     return isLight
-      ? { start: "rgba(145, 184, 255, 0.9)", end: "rgba(104, 150, 237, 0.86)" }
-      : { start: "rgba(63, 124, 255, 0.82)", end: "rgba(28, 70, 167, 0.78)" };
+      ? { start: "#d7e5dc", end: "#a9c7bd" }
+      : { start: "#496b66", end: "#304b47" };
   }
 
   if (raw === "4") {
     return isLight
-      ? { start: "rgba(244, 217, 138, 0.92)", end: "rgba(227, 192, 92, 0.88)" }
-      : { start: "rgba(212, 166, 59, 0.84)", end: "rgba(129, 90, 23, 0.8)" };
+      ? { start: "#f4df9e", end: "#d4ad57" }
+      : { start: "#7b6128", end: "#4e3b1a" };
   }
 
   if (isLight) {
-    return { start: "rgba(229, 238, 255, 0.92)", end: "rgba(206, 222, 248, 0.9)" };
+    return { start: "#f4e5c9", end: "#d7c099" };
   }
 
-  return { start: "rgba(16, 24, 40, 0.7)", end: "rgba(13, 21, 41, 0.7)" };
+  return { start: "#3b3024", end: "#2f271e" };
 }
 
 function buildImageCandidates(...names) {
@@ -496,17 +491,8 @@ function renderInfoCards(model) {
     </article>
   `;
 
-  if (model.transferRequested || model.transferConfirmed) {
-    html += `
-      <article class="infoCard transfer ${model.transferConfirmed ? "confirmed" : "pending"}">
-        <div class="label">Transfert de l’éleveur</div>
-        <div class="value">${escapeHtml(model.transferConfirmed ? "Transfert confirmé" : "Transfert en cours")}</div>
-      </article>
-    `;
-  }
-
   html += `
-    <article class="infoCard tiny">
+    <article class="infoCard tiny batchCard">
       <div class="label">Batch</div>
       <div class="value">${escapeHtml(pretty(model.batch))}</div>
     </article>
@@ -516,9 +502,6 @@ function renderInfoCards(model) {
 }
 
 function normalizeModel(data) {
-  const transferRequestedRaw = getValue(data, ["te", "ta"]);
-  const transferConfirmedRaw = getValue(data, ["ter"]);
-
   return {
     species: getValue(data, ["e"]),
     type: getValue(data, ["t"]),
@@ -529,8 +512,6 @@ function normalizeModel(data) {
     xp: getValue(data, ["x"]),
     ownerName: getValue(data, ["o", "ownerName", "displayName", "breederName"]),
     ownerId: getValue(data, ["on", "breederNumber", "username", "ownerId"]),
-    transferRequested: boolFlag(transferRequestedRaw),
-    transferConfirmed: boolFlag(transferConfirmedRaw),
     accessories: [
       getValue(data, ["a1"]),
       getValue(data, ["a2"]),

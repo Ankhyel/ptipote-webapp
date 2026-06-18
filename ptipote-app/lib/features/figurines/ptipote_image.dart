@@ -62,7 +62,7 @@ class _PtipoteImageState extends State<PtipoteImage> {
       child: Container(
         height: widget.height,
         width: double.infinity,
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: const Color(0xFFFFFCF4),
         child: Image.network(
           url,
           fit: BoxFit.contain,

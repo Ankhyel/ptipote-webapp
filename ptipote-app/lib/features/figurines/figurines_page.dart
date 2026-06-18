@@ -222,7 +222,7 @@ class _FigurineCard extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: progress,
                       minHeight: 8,
-                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      backgroundColor: const Color(0xFFE8D9BD),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -287,9 +287,11 @@ class _PtipoteAvatar extends StatelessWidget {
       width: 92,
       height: 92,
       decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF4),
         shape: BoxShape.circle,
         border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
+          color: const Color(0xFFD2BD93),
+          width: 2,
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -315,9 +317,9 @@ class _InfoCard extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 54),
       padding: const EdgeInsets.only(left: 12, right: 6, top: 8, bottom: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFFFFFCF4),
+        border: Border.all(color: const Color(0xFFE0CFAE)),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: <Widget>[

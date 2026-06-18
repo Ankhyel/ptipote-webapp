@@ -456,22 +456,38 @@ class _NfcPageState extends State<NfcPage> {
 
   List<_FieldRow> _rows() {
     return <_FieldRow>[
-      _FieldRow('Espèce (e)', _fields['e'] ?? ''),
-      _FieldRow('Type (t)', _fields['t'] ?? ''),
-      _FieldRow('Surnom (s)', _fields['s'] ?? ''),
-      _FieldRow('Rareté (r)', _fields['r'] ?? ''),
-      _FieldRow('Batch (b)', _fields['b'] ?? ''),
-      _FieldRow('Niveau (l)', _fields['l'] ?? ''),
-      _FieldRow('XP (x)', _fields['x'] ?? ''),
+      _FieldRow('Espèce', _fields['e'] ?? ''),
+      _FieldRow('Type', _fields['t'] ?? ''),
+      _FieldRow('Surnom', _fields['s'] ?? ''),
+      _FieldRow('Rareté', _rarityLabel(_fields['r'] ?? '')),
+      _FieldRow('Niveau', _fields['l'] ?? ''),
+      _FieldRow('XP', _fields['x'] ?? ''),
       _FieldRow('Nom éleveur', _fields['o'] ?? ''),
-      _FieldRow('Nom utilisateur', _fields['on'] ?? ''),
-      _FieldRow('Transfert (te)', _fields['te'] ?? ''),
-      _FieldRow('Transfert confirmé (ter)', _fields['ter'] ?? ''),
-      _FieldRow('Accessoire 1 (a1)', _fields['a1'] ?? ''),
-      _FieldRow('Accessoire 2 (a2)', _fields['a2'] ?? ''),
-      _FieldRow('Accessoire 3 (a3)', _fields['a3'] ?? ''),
-      _FieldRow('Accessoire 4 (a4)', _fields['a4'] ?? ''),
     ];
+  }
+
+  List<_FieldRow> _accessoryRows() {
+    return <_FieldRow>[
+      _FieldRow('A1', _fields['a1'] ?? ''),
+      _FieldRow('A2', _fields['a2'] ?? ''),
+      _FieldRow('A3', _fields['a3'] ?? ''),
+      _FieldRow('A4', _fields['a4'] ?? ''),
+    ];
+  }
+
+  String _rarityLabel(String value) {
+    switch (value.trim()) {
+      case '1':
+        return 'Commun';
+      case '2':
+        return 'Spéciale';
+      case '3':
+        return 'Rare';
+      case '4':
+        return 'Légendaire';
+      default:
+        return value;
+    }
   }
 
   bool get _canSaveFigurine =>
@@ -498,8 +514,6 @@ class _NfcPageState extends State<NfcPage> {
 
   @override
   Widget build(BuildContext context) {
-    final rows = _rows();
-
     return Scaffold(
       appBar: AppBar(title: const Text('Scanner un PTIPOTE')),
       body: ListView(
@@ -538,6 +552,15 @@ class _NfcPageState extends State<NfcPage> {
               ),
             ),
           ),
+          if (_decodedText.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            _PublicPtipoteCard(
+              fields: _fields,
+              rows: _rows(),
+              accessories: _accessoryRows(),
+              tagUid: _tagUid,
+            ),
+          ],
           if (_diagnostic != null) ...<Widget>[
             const SizedBox(height: 12),
             _SectionCard(
@@ -575,57 +598,302 @@ class _NfcPageState extends State<NfcPage> {
               ),
             ),
           ],
-          if (_decodedText.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'Image PTIPOTE',
-              child: PtipoteImage(
-                  type: _fields['t'] ?? '', species: _fields['e'] ?? ''),
-            ),
-          ],
-          if (_tagUid.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 12),
-            _SectionCard(
-              title: 'UID de la puce',
-              child: SelectableText(_tagUid),
-            ),
-          ],
-          const SizedBox(height: 12),
-          _SectionCard(
-            title: 'Champs PTIPOTE',
-            child: Column(
-              children: rows
-                  .map(
-                    (row) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Expanded(
-                            flex: 6,
-                            child: Text(
-                              row.label,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600),
+        ],
+      ),
+    );
+  }
+}
+
+class _PublicPtipoteCard extends StatelessWidget {
+  const _PublicPtipoteCard({
+    required this.fields,
+    required this.rows,
+    required this.accessories,
+    required this.tagUid,
+  });
+
+  final Map<String, String> fields;
+  final List<_FieldRow> rows;
+  final List<_FieldRow> accessories;
+  final String tagUid;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final xp = _xpValue(fields['x'] ?? '');
+    final hasAccessories =
+        accessories.any((row) => row.value.trim().isNotEmpty);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: 112,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _RoundPtipoteImage(fields: fields),
+                      const SizedBox(height: 12),
+                      _TinyInfo(label: 'Niveau', value: fields['l'] ?? ''),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: (xp / 100).clamp(0.0, 1.0),
+                          minHeight: 9,
+                          backgroundColor: const Color(0xFFE8D9BD),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '$xp / 100 XP',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _TinyInfo(label: 'Éleveur', value: fields['o'] ?? ''),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    children: rows
+                        .where((row) =>
+                            row.label == 'Espèce' ||
+                            row.label == 'Type' ||
+                            row.label == 'Surnom' ||
+                            row.label == 'Rareté')
+                        .map(
+                          (row) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _OrganicInfoCard(
+                              label: row.label,
+                              value: row.value,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            flex: 7,
-                            child: SelectableText(
-                                row.value.isEmpty ? '—' : row.value),
-                          ),
-                        ],
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+                splashColor: colorScheme.primary.withValues(alpha: 0.08),
+              ),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  side: const BorderSide(color: Color(0xFFE0CFAE)),
+                ),
+                collapsedShape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  side: const BorderSide(color: Color(0xFFE0CFAE)),
+                ),
+                backgroundColor: const Color(0xFFFFFCF4),
+                collapsedBackgroundColor: const Color(0xFFFFFCF4),
+                title: const Text(
+                  'Accessoires',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                trailing: Text(
+                  hasAccessories ? 'Voir' : 'Aucun',
+                  style: TextStyle(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                children: accessories
+                    .map(
+                      (row) => _AccessoryLine(
+                        label: row.label,
+                        value: row.value,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                if (tagUid.trim().isNotEmpty)
+                  Expanded(
+                    child: Text(
+                      'UID ${tagUid.trim()}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  )
-                  .toList(),
+                  ),
+                Text(
+                  'Batch ${_display(fields['b'] ?? '')}',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  int _xpValue(String value) {
+    final match = RegExp(r'\d+').firstMatch(value);
+    return int.tryParse(match?.group(0) ?? '') ?? 0;
+  }
+}
+
+class _RoundPtipoteImage extends StatelessWidget {
+  const _RoundPtipoteImage({required this.fields});
+
+  final Map<String, String> fields;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 96,
+      height: 96,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF4),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFFD2BD93), width: 2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: PtipoteImage(
+        type: fields['t'] ?? '',
+        species: fields['e'] ?? '',
+        height: 96,
+      ),
+    );
+  }
+}
+
+class _OrganicInfoCard extends StatelessWidget {
+  const _OrganicInfoCard({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF4),
+        border: Border.all(color: const Color(0xFFE0CFAE)),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            _display(value),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TinyInfo extends StatelessWidget {
+  const _TinyInfo({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 11,
+          ),
+        ),
+        Text(
+          _display(value),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+  }
+}
+
+class _AccessoryLine extends StatelessWidget {
+  const _AccessoryLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: <Widget>[
+          Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _display(value, fallback: 'Aucun'),
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontWeight: FontWeight.w800),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+String _display(String value, {String fallback = '—'}) {
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? fallback : trimmed;
 }
 
 List<_FieldRow> _diagnosticRows(NfcDiagnosticEvent event) {
