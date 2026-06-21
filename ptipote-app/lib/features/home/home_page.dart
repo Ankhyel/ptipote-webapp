@@ -9,7 +9,6 @@ import '../../services/nfc_service.dart';
 import '../figurines/figurines_page.dart';
 import '../friends/friends_page.dart';
 import '../nfc/nfc_page.dart';
-import '../notifications/notifications_page.dart';
 import '../profile/profile_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -132,9 +131,6 @@ class _HomePageState extends State<HomePage> {
               if (value == 'friends') {
                 Navigator.of(context).pushNamed(FriendsPage.route);
               }
-              if (value == 'notifications') {
-                Navigator.of(context).pushNamed(NotificationsPage.route);
-              }
               if (value == 'logout') {
                 await GoogleSignIn.instance.signOut();
                 await FirebaseAuth.instance.signOut();
@@ -153,13 +149,6 @@ class _HomePageState extends State<HomePage> {
                 child: ListTile(
                   leading: Icon(Icons.group_outlined),
                   title: Text('Amis'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'notifications',
-                child: ListTile(
-                  leading: Icon(Icons.notifications_none),
-                  title: Text('Notifications'),
                 ),
               ),
               PopupMenuItem(
