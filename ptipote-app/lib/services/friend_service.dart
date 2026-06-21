@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'figurine_service.dart';
+import 'notification_service.dart';
 import 'user_profile_service.dart';
 
 class FriendInvite {
@@ -27,12 +28,17 @@ class FriendInvite {
 }
 
 class FriendService {
-  FriendService({FirebaseAuth? auth, FirebaseFirestore? firestore})
-      : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+  FriendService({
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+    NotificationService? notificationService,
+  })  : _auth = auth ?? FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance,
+        _notificationService = notificationService ?? NotificationService();
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+  final NotificationService _notificationService;
 
   Stream<List<FriendProfile>> watchFriends() {
     final user = _auth.currentUser;
@@ -111,7 +117,9 @@ class FriendService {
     final user = _auth.currentUser;
     if (user == null) throw StateError('Connexion requise.');
     final id = _inviteId(user.uid, to.uid);
-    await _firestore.collection('friendInvites').doc(id).set(
+    final batch = _firestore.batch();
+    batch.set(
+      _firestore.collection('friendInvites').doc(id),
       <String, dynamic>{
         'fromUid': user.uid,
         'fromName': fromProfile.ownerName,
@@ -125,6 +133,20 @@ class FriendService {
       },
       SetOptions(merge: true),
     );
+    await _notificationService.sendToUser(
+      recipientUid: to.uid,
+      type: 'friend_invite',
+      title: 'Nouvelle demande d’ami',
+      body: '${fromProfile.ownerName} souhaite t’ajouter en ami.',
+      data: <String, dynamic>{
+        'inviteId': id,
+        'fromUid': user.uid,
+        'fromName': fromProfile.ownerName,
+        'fromUsername': fromProfile.username,
+      },
+      batch: batch,
+    );
+    await batch.commit();
   }
 
   Future<void> acceptInvite(FriendInvite invite, UserProfile myProfile) async {

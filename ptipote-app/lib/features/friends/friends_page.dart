@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../services/friend_service.dart';
 import '../../services/figurine_service.dart';
 import '../../services/user_profile_service.dart';
+import '../chat/chat_page.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -270,7 +271,15 @@ class _FriendsList extends StatelessWidget {
                         (friend) => _InviteTile(
                           name: friend.ownerName,
                           username: friend.username,
-                          trailing: const Icon(Icons.chevron_right),
+                          trailing: IconButton(
+                            tooltip: 'Message',
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => ChatPage(friend: friend),
+                              ),
+                            ),
+                            icon: const Icon(Icons.chat_bubble_outline),
+                          ),
                         ),
                       )
                       .toList(),

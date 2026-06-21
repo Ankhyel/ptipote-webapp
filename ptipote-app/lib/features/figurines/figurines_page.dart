@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/friend_service.dart';
 import '../../services/figurine_service.dart';
 import '../../services/user_profile_service.dart';
+import '../chat/chat_page.dart';
 import 'ptipote_figurine.dart';
 import 'ptipote_image.dart';
 
@@ -771,6 +772,15 @@ class _FriendPickerState extends State<_FriendPicker> {
                           subtitle: friend.username.isEmpty
                               ? null
                               : Text(friend.username),
+                          trailing: IconButton(
+                            tooltip: 'Message',
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => ChatPage(friend: friend),
+                              ),
+                            ),
+                            icon: const Icon(Icons.chat_bubble_outline),
+                          ),
                           onTap: () => Navigator.of(context).pop(friend),
                         ),
                       )

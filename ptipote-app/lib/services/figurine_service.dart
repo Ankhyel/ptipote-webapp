@@ -2,17 +2,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../features/figurines/ptipote_figurine.dart';
+import 'notification_service.dart';
 import 'user_profile_service.dart';
 
 class FigurineService {
   FigurineService({
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
+    NotificationService? notificationService,
   })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+        _firestore = firestore ?? FirebaseFirestore.instance,
+        _notificationService = notificationService ?? NotificationService();
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+  final NotificationService _notificationService;
 
   CollectionReference<Map<String, dynamic>> _collectionFor(String uid) {
     return _firestore.collection('users').doc(uid).collection('figurines');
@@ -172,6 +176,21 @@ class FigurineService {
     );
     await _writePublicTransferState(batch, figurine, fields,
         ownerUid: user.uid);
+    await _notificationService.sendToUser(
+      recipientUid: friend.uid,
+      type: 'transfer_request',
+      title: 'Demande de transfert',
+      body:
+          '${fromProfile.ownerName} veut te transférer ${figurine.displayName}.',
+      data: <String, dynamic>{
+        'transferId': requestId,
+        'figurineId': figurine.id,
+        'tagUid': figurine.tagUid,
+        'fromUid': user.uid,
+        'fromName': fromProfile.ownerName,
+      },
+      batch: batch,
+    );
     await batch.commit();
   }
 
@@ -305,6 +324,20 @@ class FigurineService {
         SetOptions(merge: true),
       );
     }
+    await _notificationService.sendToUser(
+      recipientUid: transfer.fromUid,
+      type: 'transfer_confirmed',
+      title: 'Transfert confirmé',
+      body: '${newOwner.ownerName} a confirmé le transfert du PTIPOTE.',
+      data: <String, dynamic>{
+        'transferId': transfer.id,
+        'figurineId': transfer.figurineId,
+        'tagUid': transfer.tagUid,
+        'toUid': user.uid,
+        'toName': newOwner.ownerName,
+      },
+      batch: batch,
+    );
     await batch.commit();
   }
 

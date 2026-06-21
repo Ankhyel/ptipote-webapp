@@ -4,11 +4,12 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/theme_controller.dart';
-import '../../services/friend_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/nfc_service.dart';
 import '../figurines/figurines_page.dart';
 import '../friends/friends_page.dart';
 import '../nfc/nfc_page.dart';
+import '../notifications/notifications_page.dart';
 import '../profile/profile_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -21,7 +22,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final _friendService = FriendService();
+  final _notificationService = NotificationService();
   bool _scanning = false;
 
   Future<void> _scanFigurine() async {
@@ -87,10 +88,10 @@ class _HomePageState extends State<HomePage> {
           PopupMenuButton<String>(
             position: PopupMenuPosition.under,
             tooltip: 'Profil',
-            icon: StreamBuilder<List<FriendInvite>>(
-              stream: _friendService.watchIncomingInvites(),
+            icon: StreamBuilder<int>(
+              stream: _notificationService.watchUnreadCount(),
               builder: (context, snapshot) {
-                final count = snapshot.data?.length ?? 0;
+                final count = snapshot.data ?? 0;
                 return Stack(
                   clipBehavior: Clip.none,
                   children: <Widget>[
@@ -100,11 +101,23 @@ class _HomePageState extends State<HomePage> {
                         right: -2,
                         top: -2,
                         child: Container(
-                          width: 10,
-                          height: 10,
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
                           decoration: const BoxDecoration(
                             color: Color(0xFFE64A3C),
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.all(Radius.circular(8)),
+                          ),
+                          child: Text(
+                            count > 9 ? '9+' : '$count',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
                       ),
@@ -118,6 +131,9 @@ class _HomePageState extends State<HomePage> {
               }
               if (value == 'friends') {
                 Navigator.of(context).pushNamed(FriendsPage.route);
+              }
+              if (value == 'notifications') {
+                Navigator.of(context).pushNamed(NotificationsPage.route);
               }
               if (value == 'logout') {
                 await GoogleSignIn.instance.signOut();
@@ -137,6 +153,13 @@ class _HomePageState extends State<HomePage> {
                 child: ListTile(
                   leading: Icon(Icons.group_outlined),
                   title: Text('Amis'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'notifications',
+                child: ListTile(
+                  leading: Icon(Icons.notifications_none),
+                  title: Text('Notifications'),
                 ),
               ),
               PopupMenuItem(
