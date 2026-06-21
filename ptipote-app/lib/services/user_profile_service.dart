@@ -46,6 +46,9 @@ class UserProfileService {
   DocumentReference<Map<String, dynamic>> _doc(String uid) =>
       _firestore.collection('users').doc(uid);
 
+  DocumentReference<Map<String, dynamic>> _publicDoc(String uid) =>
+      _firestore.collection('publicProfiles').doc(uid);
+
   Stream<UserProfile?> watchMyProfile() {
     final user = _auth.currentUser;
     if (user == null) return Stream<UserProfile?>.value(null);
@@ -61,7 +64,10 @@ class UserProfileService {
     final ref = _doc(user.uid);
     final snapshot = await _getProfileSnapshot(ref);
     final profile = _fromSnapshot(user, snapshot.data());
-    if (snapshot.exists) return profile;
+    if (snapshot.exists) {
+      await _publishProfile(profile);
+      return profile;
+    }
 
     final data = <String, dynamic>{
       'uid': user.uid,
@@ -75,7 +81,18 @@ class UserProfileService {
       'updatedAt': FieldValue.serverTimestamp(),
     };
     try {
-      await ref.set(data, SetOptions(merge: true));
+      final batch = _firestore.batch();
+      batch.set(ref, data, SetOptions(merge: true));
+      batch.set(
+        _publicDoc(user.uid),
+        _publicProfileData(
+          uid: user.uid,
+          username: '${data['username'] ?? ''}',
+          displayName: '${data['displayName'] ?? ''}',
+        ),
+        SetOptions(merge: true),
+      );
+      await batch.commit();
     } on FirebaseException catch (error) {
       if (error.code != 'unavailable') rethrow;
     }
@@ -92,16 +109,41 @@ class UserProfileService {
     final user = _auth.currentUser;
     if (user == null) throw StateError('Connexion requise.');
 
-    await _doc(user.uid).set(
+    final cleanUsername = username.trim();
+    final cleanDisplayName = displayName.trim();
+    final batch = _firestore.batch();
+    batch.set(
+      _doc(user.uid),
       <String, dynamic>{
         'uid': user.uid,
         'email': user.email ?? '',
-        'username': username.trim(),
-        'usernameLower': username.trim().toLowerCase(),
-        'displayName': displayName.trim(),
-        'displayNameLower': displayName.trim().toLowerCase(),
+        'username': cleanUsername,
+        'usernameLower': cleanUsername.toLowerCase(),
+        'displayName': cleanDisplayName,
+        'displayNameLower': cleanDisplayName.toLowerCase(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
+      SetOptions(merge: true),
+    );
+    batch.set(
+      _publicDoc(user.uid),
+      _publicProfileData(
+        uid: user.uid,
+        username: cleanUsername,
+        displayName: cleanDisplayName,
+      ),
+      SetOptions(merge: true),
+    );
+    await batch.commit();
+  }
+
+  Future<void> _publishProfile(UserProfile profile) async {
+    await _publicDoc(profile.uid).set(
+      _publicProfileData(
+        uid: profile.uid,
+        username: profile.username,
+        displayName: profile.displayName,
+      ),
       SetOptions(merge: true),
     );
   }
@@ -123,4 +165,18 @@ class UserProfileService {
     if (local.isNotEmpty) return local;
     return user.uid.substring(0, user.uid.length < 8 ? user.uid.length : 8);
   }
+
+  Map<String, dynamic> _publicProfileData({
+    required String uid,
+    required String username,
+    required String displayName,
+  }) =>
+      <String, dynamic>{
+        'uid': uid,
+        'username': username,
+        'usernameLower': username.toLowerCase(),
+        'displayName': displayName,
+        'displayNameLower': displayName.toLowerCase(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
 }

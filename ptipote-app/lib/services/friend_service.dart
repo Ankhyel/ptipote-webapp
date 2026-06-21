@@ -74,16 +74,8 @@ class FriendService {
     final needle = query.trim().toLowerCase();
     if (needle.isEmpty) return const <FriendProfile>[];
 
-    final byUsername = await _firestore
-        .collection('users')
-        .where('usernameLower', isEqualTo: needle)
-        .limit(8)
-        .get(const GetOptions(source: Source.server));
-    final byName = await _firestore
-        .collection('users')
-        .where('displayNameLower', isEqualTo: needle)
-        .limit(8)
-        .get(const GetOptions(source: Source.server));
+    final byUsername = await _searchProfiles('usernameLower', needle);
+    final byName = await _searchProfiles('displayNameLower', needle);
 
     final found = <String, FriendProfile>{};
     for (final doc in [...byUsername.docs, ...byName.docs]) {
@@ -92,6 +84,24 @@ class FriendService {
     }
     return found.values.toList()
       ..sort((a, b) => a.ownerName.compareTo(b.ownerName));
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> _searchProfiles(
+    String field,
+    String value,
+  ) async {
+    final publicResults = await _firestore
+        .collection('publicProfiles')
+        .where(field, isEqualTo: value)
+        .limit(8)
+        .get(const GetOptions(source: Source.server));
+    if (publicResults.docs.isNotEmpty) return publicResults;
+
+    return _firestore
+        .collection('users')
+        .where(field, isEqualTo: value)
+        .limit(8)
+        .get(const GetOptions(source: Source.server));
   }
 
   Future<void> sendInvite({
