@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../services/friend_service.dart';
@@ -20,28 +22,69 @@ class _FriendsPageState extends State<FriendsPage> {
   List<FriendProfile> _results = const <FriendProfile>[];
   bool _searching = false;
   String? _status;
+  Timer? _searchDebounce;
+  int _searchGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_onSearchChanged);
+  }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _search() async {
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _results = const <FriendProfile>[];
+        _status = null;
+        _searching = false;
+      });
+      return;
+    }
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _search(query),
+    );
+  }
+
+  Future<void> _search([String? query]) async {
+    final searchQuery = (query ?? _searchController.text).trim();
+    if (searchQuery.isEmpty) {
+      setState(() {
+        _results = const <FriendProfile>[];
+        _status = null;
+        _searching = false;
+      });
+      return;
+    }
+    final generation = ++_searchGeneration;
     setState(() {
       _searching = true;
       _status = null;
     });
     try {
-      final results = await _friendService.searchUsers(_searchController.text);
+      final results = await _friendService.searchUsers(searchQuery);
+      if (!mounted || generation != _searchGeneration) return;
       setState(() {
-        _results = results;
+        _results = results.take(5).toList();
         _status = results.isEmpty ? 'Aucun éleveur trouvé.' : null;
       });
     } catch (error) {
+      if (!mounted || generation != _searchGeneration) return;
       setState(() => _status = error.toString());
     } finally {
-      if (mounted) setState(() => _searching = false);
+      if (mounted && generation == _searchGeneration) {
+        setState(() => _searching = false);
+      }
     }
   }
 
@@ -49,7 +92,11 @@ class _FriendsPageState extends State<FriendsPage> {
     final profile = await _profileService.getOrCreateMyProfile();
     await _friendService.sendInvite(fromProfile: profile, to: friend);
     if (!mounted) return;
-    setState(() => _status = 'Invitation envoyée à ${friend.ownerName}.');
+    _searchController.clear();
+    setState(() {
+      _results = const <FriendProfile>[];
+      _status = 'Invitation envoyée à ${friend.ownerName}.';
+    });
   }
 
   Future<void> _accept(FriendInvite invite) async {
@@ -99,18 +146,19 @@ class _FriendsPageState extends State<FriendsPage> {
           TextField(
             controller: _searchController,
             textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _search(),
             decoration: InputDecoration(
               labelText: 'Rechercher par pseudo',
               prefixIcon: const Icon(Icons.search),
               suffixIcon: IconButton(
-                onPressed: _searching ? null : _search,
+                onPressed: _searchController.text.isEmpty
+                    ? null
+                    : () => _searchController.clear(),
                 icon: _searching
                     ? const SizedBox.square(
                         dimension: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.arrow_forward),
+                    : const Icon(Icons.close),
               ),
             ),
           ),
@@ -118,14 +166,24 @@ class _FriendsPageState extends State<FriendsPage> {
             const SizedBox(height: 8),
             Text(_status!, style: const TextStyle(fontWeight: FontWeight.w700)),
           ],
-          for (final result in _results)
-            _InviteTile(
-              name: result.ownerName,
-              username: result.username,
-              trailing: _SquareActionButton(
-                color: const Color(0xFF2E8B57),
-                icon: Icons.person_add_alt_1,
-                onPressed: () => _invite(result),
+          if (_results.isNotEmpty)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _results.length,
+                itemBuilder: (context, index) {
+                  final result = _results[index];
+                  return _InviteTile(
+                    name: result.ownerName,
+                    username: result.username,
+                    trailing: _SquareActionButton(
+                      color: const Color(0xFF2E8B57),
+                      icon: Icons.person_add_alt_1,
+                      onPressed: () => _invite(result),
+                    ),
+                  );
+                },
               ),
             ),
           const SizedBox(height: 18),

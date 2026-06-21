@@ -7,6 +7,7 @@ import 'package:lzstring/lzstring.dart';
 import '../../services/figurine_service.dart';
 import '../../services/nfc_service.dart';
 import '../../services/user_profile_service.dart';
+import '../figurines/figurines_page.dart';
 import '../figurines/ptipote_image.dart';
 
 class NfcPage extends StatefulWidget {
@@ -27,7 +28,7 @@ class NfcPage extends StatefulWidget {
   State<NfcPage> createState() => _NfcPageState();
 }
 
-class _NfcPageState extends State<NfcPage> {
+class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
   late final NfcService _service;
   late final FigurineService _figurineService;
   late final UserProfileService _profileService;
@@ -41,18 +42,22 @@ class _NfcPageState extends State<NfcPage> {
   bool _canSeeDiagnostics = false;
   bool _confirmingTransfer = false;
   bool _showStatusCard = true;
+  bool _adoptedInSession = false;
   String _status = 'Prêt à scanner une puce PTIPOTE.';
   String _tagUid = '';
   String _rawSource = '';
   String _decodedText = '';
+  String? _pendingNickname;
   NfcDiagnosticEvent? _diagnostic;
   PendingTransfer? _pendingTransfer;
   Map<String, String> _fields = _emptyFields();
   Timer? _statusTimer;
+  late final AnimationController _adoptPulseController;
 
   @override
   void dispose() {
     _statusTimer?.cancel();
+    _adoptPulseController.dispose();
     super.dispose();
   }
 
@@ -75,6 +80,10 @@ class _NfcPageState extends State<NfcPage> {
     _service = widget.service ?? NfcManagerService();
     _figurineService = FigurineService();
     _profileService = UserProfileService();
+    _adoptPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
     if (widget.initialPayload.trim().isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitialScan());
     }
@@ -136,6 +145,8 @@ class _NfcPageState extends State<NfcPage> {
       _checkingFirebase = false;
       _alreadyRegistered = false;
       _firebaseLookupFailed = false;
+      _adoptedInSession = false;
+      _pendingNickname = null;
       _pendingTransfer = null;
       _fields = _emptyFields();
     });
@@ -199,6 +210,8 @@ class _NfcPageState extends State<NfcPage> {
       _checkingFirebase = true;
       _alreadyRegistered = false;
       _firebaseLookupFailed = false;
+      _adoptedInSession = false;
+      _pendingNickname = null;
       _fields = Map<String, String>.from(normalizedFields);
     });
 
@@ -296,6 +309,11 @@ class _NfcPageState extends State<NfcPage> {
   }
 
   Future<void> _saveFigurine() async {
+    if (_adoptedInSession) {
+      Navigator.of(context).pushNamed(FigurinesPage.route);
+      return;
+    }
+
     if (_checkingFirebase) {
       setState(() {
         _statusIsError = true;
@@ -331,8 +349,17 @@ class _NfcPageState extends State<NfcPage> {
       return;
     }
 
-    final nickname = await _askNickname();
-    if (nickname == null) return;
+    final pendingNickname = _pendingNickname;
+    if (pendingNickname == null) {
+      final nickname = await _askNickname();
+      if (nickname == null) return;
+      setState(() {
+        _pendingNickname = nickname;
+        _fields = Map<String, String>.from(_fields)..['s'] = nickname;
+        _setStatus('Surnom prêt. Valide avec Bien adopter.', isError: false);
+      });
+      return;
+    }
 
     setState(() {
       _saving = true;
@@ -344,10 +371,11 @@ class _NfcPageState extends State<NfcPage> {
       final fields = Map<String, String>.from(_fields);
       fields['o'] = profile.ownerName;
       fields['on'] = profile.breederNumber;
+      fields['s'] = pendingNickname;
 
       await _figurineService.saveScannedFigurine(
         tagUid: _tagUid,
-        nickname: nickname,
+        nickname: pendingNickname,
         rawSource: _rawSource,
         decodedText: _decodedText,
         fields: fields,
@@ -358,7 +386,10 @@ class _NfcPageState extends State<NfcPage> {
         _statusIsError = false;
         _status = 'Figurine enregistree dans ton compte.';
         _alreadyRegistered = true;
+        _adoptedInSession = true;
+        _pendingNickname = null;
         _firebaseLookupFailed = false;
+        _fields = fields;
       });
     } catch (error) {
       setState(() {
@@ -558,18 +589,21 @@ class _NfcPageState extends State<NfcPage> {
       _decodedText.isNotEmpty &&
       !_saving &&
       !_checkingFirebase &&
-      !_alreadyRegistered &&
+      (!_alreadyRegistered || _adoptedInSession) &&
       !_firebaseLookupFailed;
 
   String get _saveButtonLabel {
+    if (_adoptedInSession) return 'Voir Mes PTIPOTES';
     if (_saving) return 'Enregistrement...';
     if (_checkingFirebase) return 'Vérification Firebase...';
     if (_alreadyRegistered) return 'Déjà adopté';
     if (_firebaseLookupFailed) return 'Vérification impossible';
+    if (_pendingNickname != null) return 'Bien adopter';
     return 'Adopter';
   }
 
   IconData get _saveButtonIcon {
+    if (_adoptedInSession) return Icons.inventory_2_outlined;
     if (_checkingFirebase) return Icons.sync;
     if (_alreadyRegistered) return Icons.check_circle;
     if (_firebaseLookupFailed) return Icons.cloud_off;
@@ -625,6 +659,22 @@ class _NfcPageState extends State<NfcPage> {
               ),
             ),
           if (_decodedText.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            _AdoptActionButton(
+              enabled: _pendingTransfer == null && _canSaveFigurine,
+              saving: _saving,
+              label: _saveButtonLabel,
+              icon: _saveButtonIcon,
+              stage: _adoptedInSession
+                  ? _AdoptButtonStage.done
+                  : _pendingNickname != null
+                      ? _AdoptButtonStage.confirm
+                      : _AdoptButtonStage.ready,
+              animation: _adoptPulseController,
+              onPressed: _saveFigurine,
+            ),
+          ],
+          if (_decodedText.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
             _PublicPtipoteCard(
               fields: _fields,
@@ -638,21 +688,6 @@ class _NfcPageState extends State<NfcPage> {
             icon: const Icon(Icons.nfc),
             label: Text(_busy ? 'Scan en cours...' : 'Scanner une figurine'),
           ),
-          if (_decodedText.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: _pendingTransfer == null && _canSaveFigurine
-                  ? _saveFigurine
-                  : null,
-              icon: _saving
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(_saveButtonIcon),
-              label: Text(_saveButtonLabel),
-            ),
-          ],
           if (_pendingTransfer != null) ...<Widget>[
             const SizedBox(height: 8),
             FilledButton.icon(
@@ -676,6 +711,78 @@ class _NfcPageState extends State<NfcPage> {
           ],
         ],
       ),
+    );
+  }
+}
+
+enum _AdoptButtonStage { ready, confirm, done }
+
+class _AdoptActionButton extends StatelessWidget {
+  const _AdoptActionButton({
+    required this.enabled,
+    required this.saving,
+    required this.label,
+    required this.icon,
+    required this.stage,
+    required this.animation,
+    required this.onPressed,
+  });
+
+  final bool enabled;
+  final bool saving;
+  final String label;
+  final IconData icon;
+  final _AdoptButtonStage stage;
+  final Animation<double> animation;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final baseColor = switch (stage) {
+      _AdoptButtonStage.ready => const Color(0xFF8D8158),
+      _AdoptButtonStage.confirm => const Color(0xFF3F8F59),
+      _AdoptButtonStage.done => const Color(0xFF6EA86B),
+    };
+    final pulseColor = switch (stage) {
+      _AdoptButtonStage.ready => const Color(0xFFFF8A3D),
+      _AdoptButtonStage.confirm => const Color(0xFF68C17C),
+      _AdoptButtonStage.done => const Color(0xFFBFD9A6),
+    };
+
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final color = Color.lerp(baseColor, pulseColor, animation.value)!;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: enabled
+                ? <BoxShadow>[
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.28),
+                      blurRadius: 16 + animation.value * 8,
+                      offset: const Offset(0, 7),
+                    ),
+                  ]
+                : null,
+          ),
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: enabled ? color : null,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(58),
+            ),
+            onPressed: enabled ? onPressed : null,
+            icon: saving
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(icon),
+            label: Text(label),
+          ),
+        );
+      },
     );
   }
 }
@@ -712,7 +819,6 @@ class _PublicPtipoteCard extends StatelessWidget {
                   width: 196,
                   child: _ImageWithRarity(
                     fields: fields,
-                    rarityLabel: _rarityLabelText(fields['r'] ?? ''),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -876,10 +982,9 @@ class _RoundPtipoteImage extends StatelessWidget {
 }
 
 class _ImageWithRarity extends StatelessWidget {
-  const _ImageWithRarity({required this.fields, required this.rarityLabel});
+  const _ImageWithRarity({required this.fields});
 
   final Map<String, String> fields;
-  final String rarityLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -892,7 +997,6 @@ class _ImageWithRarity extends StatelessWidget {
           bottom: 6,
           child: _RarityBadge(
             value: fields['r'] ?? '',
-            label: rarityLabel,
           ),
         ),
       ],
@@ -901,36 +1005,55 @@ class _ImageWithRarity extends StatelessWidget {
 }
 
 class _RarityBadge extends StatelessWidget {
-  const _RarityBadge({required this.value, required this.label});
+  const _RarityBadge({required this.value});
 
   final String value;
-  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 58,
-      height: 58,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(7),
+    final label = _rarityLabelText(value);
+    final stars = _rarityStars(value);
+    return Tooltip(
+      message: label,
+      triggerMode: TooltipTriggerMode.tap,
       decoration: BoxDecoration(
-        color: _rarityColorFor(value),
-        border: Border.all(color: const Color(0xFFD2BD93), width: 2),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x3333281E),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
+        color: const Color(0xFFC9A36D),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+      textStyle: const TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.w900,
+      ),
+      child: Container(
+        width: 58,
+        height: 58,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(7),
+        decoration: BoxDecoration(
+          color: _rarityColorFor(value),
+          border: Border.all(color: const Color(0xFFD2BD93), width: 2),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x3333281E),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: FittedBox(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List<Widget>.generate(
+              stars,
+              (_) => const Icon(
+                Icons.star_rounded,
+                color: Color(0xFF8A6A22),
+                size: 18,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1042,6 +1165,13 @@ String _rarityLabelText(String value) {
     default:
       return value.trim().isEmpty ? '-' : value;
   }
+}
+
+int _rarityStars(String value) {
+  final parsed = int.tryParse(value.trim()) ?? 0;
+  if (parsed <= 0) return 1;
+  if (parsed >= 4) return 5;
+  return parsed;
 }
 
 String _display(String value, {String fallback = '—'}) {

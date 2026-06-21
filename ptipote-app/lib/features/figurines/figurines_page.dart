@@ -436,60 +436,63 @@ class _AvatarWithRarity extends StatelessWidget {
           bottom: 6,
           child: _RarityBadge(
             value: figurine.fields['r'] ?? '',
-            label: _rarityLabel(figurine.fields['r'] ?? ''),
           ),
         ),
       ],
     );
   }
-
-  String _rarityLabel(String value) {
-    switch (value.trim()) {
-      case '1':
-        return 'Commun';
-      case '2':
-        return 'Spécial';
-      case '3':
-        return 'Rare';
-      case '4':
-        return 'Légendaire';
-      default:
-        return value.trim().isEmpty ? '-' : value;
-    }
-  }
 }
 
 class _RarityBadge extends StatelessWidget {
-  const _RarityBadge({required this.value, required this.label});
+  const _RarityBadge({required this.value});
 
   final String value;
-  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 58,
-      height: 58,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.all(7),
+    final label = _rarityLabel(value);
+    final stars = _rarityStars(value);
+    return Tooltip(
+      message: label,
+      triggerMode: TooltipTriggerMode.tap,
       decoration: BoxDecoration(
-        color: _rarityColorFor(value),
-        border: Border.all(color: const Color(0xFFD2BD93), width: 2),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x3333281E),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
+        color: const Color(0xFFC9A36D),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+      textStyle: const TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.w900,
+      ),
+      child: Container(
+        width: 58,
+        height: 58,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(7),
+        decoration: BoxDecoration(
+          color: _rarityColorFor(value),
+          border: Border.all(color: const Color(0xFFD2BD93), width: 2),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x3333281E),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: FittedBox(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List<Widget>.generate(
+              stars,
+              (_) => const Icon(
+                Icons.star_rounded,
+                color: Color(0xFF8A6A22),
+                size: 18,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -593,6 +596,28 @@ Color _rarityColorFor(String? value) {
     default:
       return const Color(0xFFFFFCF4);
   }
+}
+
+String _rarityLabel(String value) {
+  switch (value.trim()) {
+    case '1':
+      return 'Commun';
+    case '2':
+      return 'Spéciale';
+    case '3':
+      return 'Rare';
+    case '4':
+      return 'Légendaire';
+    default:
+      return value.trim().isEmpty ? '-' : value;
+  }
+}
+
+int _rarityStars(String value) {
+  final parsed = int.tryParse(value.trim()) ?? 0;
+  if (parsed <= 0) return 1;
+  if (parsed >= 4) return 5;
+  return parsed;
 }
 
 class _FriendPicker extends StatefulWidget {
