@@ -51,6 +51,17 @@ class ChatService {
         .map((snapshot) => snapshot.docs.map(_fromDoc).toList());
   }
 
+  Stream<int> watchUnreadCountForFriend(String friendUid) {
+    return _notificationService.watchMyNotifications().map(
+          (items) => items.where((item) {
+            final fromUid = '${item.data['fromUid'] ?? ''}';
+            return !item.read &&
+                item.type == 'chat_message' &&
+                fromUid == friendUid;
+          }).length,
+        );
+  }
+
   Future<void> sendMessage({
     required FriendProfile friend,
     required UserProfile fromProfile,

@@ -6,6 +6,8 @@ class PtipoteFigurine {
     required this.publicKey,
     required this.rawSource,
     required this.sortOrder,
+    required this.transferStatus,
+    required this.transferFromName,
     required this.transferLockedUntil,
     required this.fields,
     required this.createdAt,
@@ -18,6 +20,8 @@ class PtipoteFigurine {
   final String publicKey;
   final String rawSource;
   final int sortOrder;
+  final String transferStatus;
+  final String transferFromName;
   final DateTime? transferLockedUntil;
   final Map<String, String> fields;
   final DateTime createdAt;
@@ -56,9 +60,27 @@ class PtipoteFigurine {
 
   bool get transferConfirmed => fields['ter']?.trim() == '1';
 
+  bool get needsTransferScan => transferStatus == 'accepted';
+
+  bool get canTransfer => !isTransferLocked && !needsTransferScan;
+
+  String get lockMessage {
+    if (needsTransferScan) {
+      return 'Scan de la figurine requis pour valider le transfert';
+    }
+    if (transferRequested) return 'Demande en attente';
+    if (transferConfirmed &&
+        transferLockedUntil != null &&
+        transferLockedUntil!.isAfter(DateTime.now())) {
+      return 'Déblocage complet dans 7 jours';
+    }
+    return '';
+  }
+
   bool get isTransferLocked {
     final until = transferLockedUntil;
-    return transferRequested ||
+    return needsTransferScan ||
+        transferRequested ||
         (transferConfirmed && until != null && until.isAfter(DateTime.now()));
   }
 }

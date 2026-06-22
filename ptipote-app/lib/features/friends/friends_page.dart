@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/friend_service.dart';
 import '../../services/figurine_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/user_profile_service.dart';
 import '../chat/chat_page.dart';
 
@@ -18,6 +19,7 @@ class FriendsPage extends StatefulWidget {
 
 class _FriendsPageState extends State<FriendsPage> {
   final _friendService = FriendService();
+  final _notificationService = NotificationService();
   final _profileService = UserProfileService();
   final _searchController = TextEditingController();
   List<FriendProfile> _results = const <FriendProfile>[];
@@ -30,6 +32,9 @@ class _FriendsPageState extends State<FriendsPage> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    Future.microtask(
+      () => _notificationService.markTypesAsRead(<String>{'friend_invite'}),
+    );
   }
 
   @override

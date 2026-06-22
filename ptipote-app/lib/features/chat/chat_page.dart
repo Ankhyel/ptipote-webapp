@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/chat_service.dart';
 import '../../services/figurine_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/user_profile_service.dart';
 
 class ChatPage extends StatefulWidget {
@@ -24,6 +25,7 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   late final ChatService _chatService;
   late final UserProfileService _profileService;
+  final _notificationService = NotificationService();
   final _controller = TextEditingController();
   bool _sending = false;
 
@@ -32,6 +34,9 @@ class _ChatPageState extends State<ChatPage> {
     super.initState();
     _chatService = widget.chatService ?? ChatService();
     _profileService = widget.profileService ?? UserProfileService();
+    Future.microtask(() => _notificationService.markChatAsRead(
+          widget.friend.uid,
+        ));
   }
 
   @override

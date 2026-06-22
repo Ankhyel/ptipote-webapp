@@ -43,6 +43,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
   bool _confirmingTransfer = false;
   bool _showStatusCard = true;
   bool _adoptedInSession = false;
+  bool _showAdoptionSuccess = false;
   String _status = 'Prêt à scanner une puce PTIPOTE.';
   String _tagUid = '';
   String _rawSource = '';
@@ -146,6 +147,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
       _alreadyRegistered = false;
       _firebaseLookupFailed = false;
       _adoptedInSession = false;
+      _showAdoptionSuccess = false;
       _pendingNickname = null;
       _pendingTransfer = null;
       _fields = _emptyFields();
@@ -211,6 +213,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
       _alreadyRegistered = false;
       _firebaseLookupFailed = false;
       _adoptedInSession = false;
+      _showAdoptionSuccess = false;
       _pendingNickname = null;
       _fields = Map<String, String>.from(normalizedFields);
     });
@@ -384,12 +387,17 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
       setState(() {
         _saving = false;
         _statusIsError = false;
-        _status = 'Figurine enregistree dans ton compte.';
+        _setStatus('Figurine enregistree dans ton compte.', isError: false);
         _alreadyRegistered = true;
         _adoptedInSession = true;
+        _showAdoptionSuccess = true;
         _pendingNickname = null;
         _firebaseLookupFailed = false;
         _fields = fields;
+      });
+      Timer(const Duration(seconds: 3), () {
+        if (!mounted) return;
+        setState(() => _showAdoptionSuccess = false);
       });
     } catch (error) {
       setState(() {
@@ -593,6 +601,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
       !_firebaseLookupFailed;
 
   String get _saveButtonLabel {
+    if (_showAdoptionSuccess) return 'Adoption réussie';
     if (_adoptedInSession) return 'Voir Mes PTIPOTES';
     if (_saving) return 'Enregistrement...';
     if (_checkingFirebase) return 'Vérification Firebase...';
@@ -603,6 +612,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
   }
 
   IconData get _saveButtonIcon {
+    if (_showAdoptionSuccess) return Icons.check_circle;
     if (_adoptedInSession) return Icons.inventory_2_outlined;
     if (_checkingFirebase) return Icons.sync;
     if (_alreadyRegistered) return Icons.check_circle;
@@ -661,12 +671,16 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
           if (_decodedText.isNotEmpty) ...<Widget>[
             const SizedBox(height: 10),
             _AdoptActionButton(
-              enabled: _pendingTransfer == null && _canSaveFigurine,
+              enabled: _pendingTransfer == null &&
+                  _canSaveFigurine &&
+                  !_showAdoptionSuccess,
               saving: _saving,
               label: _saveButtonLabel,
               icon: _saveButtonIcon,
               stage: _adoptedInSession
-                  ? _AdoptButtonStage.done
+                  ? (_showAdoptionSuccess
+                      ? _AdoptButtonStage.success
+                      : _AdoptButtonStage.done)
                   : _pendingNickname != null
                       ? _AdoptButtonStage.confirm
                       : _AdoptButtonStage.ready,
@@ -715,7 +729,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
   }
 }
 
-enum _AdoptButtonStage { ready, confirm, done }
+enum _AdoptButtonStage { ready, confirm, success, done }
 
 class _AdoptActionButton extends StatelessWidget {
   const _AdoptActionButton({
@@ -741,26 +755,33 @@ class _AdoptActionButton extends StatelessWidget {
     final baseColor = switch (stage) {
       _AdoptButtonStage.ready => const Color(0xFF8D8158),
       _AdoptButtonStage.confirm => const Color(0xFF3F8F59),
-      _AdoptButtonStage.done => const Color(0xFF6EA86B),
+      _AdoptButtonStage.success => const Color(0xFF4E9B61),
+      _AdoptButtonStage.done => const Color(0xFF8D8158),
     };
     final pulseColor = switch (stage) {
       _AdoptButtonStage.ready => const Color(0xFFFF8A3D),
       _AdoptButtonStage.confirm => const Color(0xFF68C17C),
-      _AdoptButtonStage.done => const Color(0xFFBFD9A6),
+      _AdoptButtonStage.success => baseColor,
+      _AdoptButtonStage.done => baseColor,
     };
 
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
-        final color = Color.lerp(baseColor, pulseColor, animation.value)!;
+        final shouldPulse = enabled &&
+            stage != _AdoptButtonStage.done &&
+            stage != _AdoptButtonStage.success;
+        final color = shouldPulse
+            ? Color.lerp(baseColor, pulseColor, animation.value)!
+            : baseColor;
         return DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             boxShadow: enabled
                 ? <BoxShadow>[
                     BoxShadow(
-                      color: color.withValues(alpha: 0.28),
-                      blurRadius: 16 + animation.value * 8,
+                      color: color.withValues(alpha: 0.22),
+                      blurRadius: shouldPulse ? 16 + animation.value * 8 : 14,
                       offset: const Offset(0, 7),
                     ),
                   ]

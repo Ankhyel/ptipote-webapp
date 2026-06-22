@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'features/auth/auth_gate.dart';
+import 'features/chat/chats_page.dart';
 import 'features/figurines/figurines_page.dart';
 import 'features/friends/friends_page.dart';
 import 'features/nfc/nfc_page.dart';
@@ -23,6 +24,7 @@ class PtipoteApp extends StatelessWidget {
         themeMode: themeMode,
         home: const AuthGate(),
         routes: {
+          ChatsPage.route: (_) => const ChatsPage(),
           FigurinesPage.route: (_) => const FigurinesPage(),
           FriendsPage.route: (_) => const FriendsPage(),
           NfcPage.route: (_) => const NfcPage(),

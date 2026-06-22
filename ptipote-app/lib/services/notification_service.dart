@@ -54,6 +54,14 @@ class NotificationService {
     );
   }
 
+  Stream<int> watchUnreadCountFor(Set<String> types) {
+    if (types.isEmpty) return Stream<int>.value(0);
+    return watchMyNotifications().map(
+      (items) =>
+          items.where((item) => !item.read && types.contains(item.type)).length,
+    );
+  }
+
   Future<void> sendToUser({
     required String recipientUid,
     required String type,
@@ -107,6 +115,63 @@ class NotificationService {
 
     final batch = _firestore.batch();
     for (final doc in unread.docs) {
+      batch.set(
+        doc.reference,
+        <String, dynamic>{
+          'read': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+    await batch.commit();
+  }
+
+  Future<void> markTypesAsRead(Set<String> types) async {
+    final user = _auth.currentUser;
+    if (user == null || types.isEmpty) return;
+
+    final unread = await _collection(user.uid)
+        .where('read', isEqualTo: false)
+        .limit(60)
+        .get(const GetOptions(source: Source.server));
+    final docs = unread.docs.where((doc) {
+      final type = '${doc.data()['type'] ?? ''}';
+      return types.contains(type);
+    }).toList();
+    if (docs.isEmpty) return;
+
+    final batch = _firestore.batch();
+    for (final doc in docs) {
+      batch.set(
+        doc.reference,
+        <String, dynamic>{
+          'read': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+    await batch.commit();
+  }
+
+  Future<void> markChatAsRead(String friendUid) async {
+    final user = _auth.currentUser;
+    if (user == null || friendUid.trim().isEmpty) return;
+
+    final unread = await _collection(user.uid)
+        .where('read', isEqualTo: false)
+        .where('type', isEqualTo: 'chat_message')
+        .limit(60)
+        .get(const GetOptions(source: Source.server));
+    final docs = unread.docs.where((doc) {
+      final data = doc.data()['data'] as Map<String, dynamic>?;
+      return '${data?['fromUid'] ?? ''}' == friendUid;
+    }).toList();
+    if (docs.isEmpty) return;
+
+    final batch = _firestore.batch();
+    for (final doc in docs) {
       batch.set(
         doc.reference,
         <String, dynamic>{

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../services/notification_service.dart';
 import '../../services/nfc_service.dart';
+import '../chat/chats_page.dart';
 import '../figurines/figurines_page.dart';
 import '../friends/friends_page.dart';
 import '../nfc/nfc_page.dart';
@@ -84,43 +85,29 @@ class _HomePageState extends State<HomePage> {
             onPressed: _openShop,
             icon: Icon(Icons.shopping_cart_outlined),
           ),
+          IconButton(
+            tooltip: 'Messages',
+            onPressed: () => Navigator.of(context).pushNamed(ChatsPage.route),
+            icon: StreamBuilder<int>(
+              stream: _notificationService
+                  .watchUnreadCountFor(<String>{'chat_message'}),
+              builder: (context, snapshot) => _BadgedIcon(
+                icon: Icons.chat_bubble_outline,
+                count: snapshot.data ?? 0,
+              ),
+            ),
+          ),
           PopupMenuButton<String>(
             position: PopupMenuPosition.under,
             tooltip: 'Profil',
             icon: StreamBuilder<int>(
-              stream: _notificationService.watchUnreadCount(),
+              stream: _notificationService
+                  .watchUnreadCountFor(<String>{'friend_invite'}),
               builder: (context, snapshot) {
                 final count = snapshot.data ?? 0;
-                return Stack(
-                  clipBehavior: Clip.none,
-                  children: <Widget>[
-                    const Icon(Icons.account_circle_outlined),
-                    if (count > 0)
-                      Positioned(
-                        right: -2,
-                        top: -2,
-                        child: Container(
-                          constraints: const BoxConstraints(
-                            minWidth: 16,
-                            minHeight: 16,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFE64A3C),
-                            borderRadius: BorderRadius.all(Radius.circular(8)),
-                          ),
-                          child: Text(
-                            count > 9 ? '9+' : '$count',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+                return _BadgedIcon(
+                  icon: Icons.account_circle_outlined,
+                  count: count,
                 );
               },
             ),
@@ -136,8 +123,8 @@ class _HomePageState extends State<HomePage> {
                 await FirebaseAuth.instance.signOut();
               }
             },
-            itemBuilder: (context) => const <PopupMenuEntry<String>>[
-              PopupMenuItem(
+            itemBuilder: (context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem(
                 value: 'profile',
                 child: ListTile(
                   leading: Icon(Icons.person_outline),
@@ -146,12 +133,19 @@ class _HomePageState extends State<HomePage> {
               ),
               PopupMenuItem(
                 value: 'friends',
-                child: ListTile(
-                  leading: Icon(Icons.group_outlined),
-                  title: Text('Amis'),
+                child: StreamBuilder<int>(
+                  stream: _notificationService
+                      .watchUnreadCountFor(<String>{'friend_invite'}),
+                  builder: (context, snapshot) => ListTile(
+                    leading: _BadgedIcon(
+                      icon: Icons.group_outlined,
+                      count: snapshot.data ?? 0,
+                    ),
+                    title: const Text('Amis'),
+                  ),
                 ),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: 'logout',
                 child: ListTile(
                   leading: Icon(Icons.logout),
@@ -169,14 +163,25 @@ class _HomePageState extends State<HomePage> {
             return Stack(
               children: <Widget>[
                 Positioned(
-                  left: 0,
-                  right: 0,
+                  left: 24,
                   top: unit * 2.12,
-                  child: Center(
-                    child: _CollectionButton(
-                      onTap: () =>
-                          Navigator.of(context).pushNamed(FigurinesPage.route),
+                  child: _CollectionButton(
+                    onTap: () =>
+                        Navigator.of(context).pushNamed(FigurinesPage.route),
+                    countStream: _notificationService.watchUnreadCountFor(
+                      <String>{'transfer_request', 'transfer_confirmed'},
                     ),
+                  ),
+                ),
+                Positioned(
+                  right: 24,
+                  top: unit * 2.12,
+                  child: _ChatButton(
+                    onTap: () => Navigator.of(context).pushNamed(
+                      ChatsPage.route,
+                    ),
+                    countStream: _notificationService
+                        .watchUnreadCountFor(<String>{'chat_message'}),
                   ),
                 ),
                 Positioned(
@@ -258,9 +263,10 @@ class _ScanDialog extends StatelessWidget {
 }
 
 class _CollectionButton extends StatelessWidget {
-  const _CollectionButton({required this.onTap});
+  const _CollectionButton({required this.onTap, required this.countStream});
 
   final VoidCallback onTap;
+  final Stream<int> countStream;
 
   @override
   Widget build(BuildContext context) {
@@ -268,8 +274,8 @@ class _CollectionButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(34),
       onTap: onTap,
       child: Ink(
-        width: 178,
-        height: 178,
+        width: 154,
+        height: 154,
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           border: Border.all(color: const Color(0xFFE0CFAE)),
@@ -282,16 +288,138 @@ class _CollectionButton extends StatelessWidget {
             ),
           ],
         ),
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
           children: <Widget>[
-            Icon(Icons.groups_2_outlined, size: 74),
-            SizedBox(height: 14),
-            Text(
-              'Mes ptipotes',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(Icons.groups_2_outlined, size: 62),
+                  SizedBox(height: 14),
+                  Text(
+                    'Mes ptipotes',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: StreamBuilder<int>(
+                stream: countStream,
+                builder: (context, snapshot) =>
+                    _Badge(count: snapshot.data ?? 0),
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatButton extends StatelessWidget {
+  const _ChatButton({required this.onTap, required this.countStream});
+
+  final VoidCallback onTap;
+  final Stream<int> countStream;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(34),
+      onTap: onTap,
+      child: Ink(
+        width: 154,
+        height: 154,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border: Border.all(color: const Color(0xFFE0CFAE)),
+          borderRadius: BorderRadius.circular(34),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x3333281E),
+              blurRadius: 18,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: <Widget>[
+            const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(Icons.chat_bubble_outline, size: 58),
+                  SizedBox(height: 14),
+                  Text(
+                    'Messages',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: StreamBuilder<int>(
+                stream: countStream,
+                builder: (context, snapshot) =>
+                    _Badge(count: snapshot.data ?? 0),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BadgedIcon extends StatelessWidget {
+  const _BadgedIcon({required this.icon, required this.count});
+
+  final IconData icon;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        Icon(icon),
+        Positioned(
+          right: -5,
+          top: -5,
+          child: _Badge(count: count),
+        ),
+      ],
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) return const SizedBox.shrink();
+    return Container(
+      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: Color(0xFFE64A3C),
+        borderRadius: BorderRadius.all(Radius.circular(999)),
+      ),
+      child: Text(
+        count > 9 ? '9+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );

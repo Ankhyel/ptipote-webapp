@@ -34,6 +34,7 @@ class _FigurinesPageState extends State<FigurinesPage> {
     _figurineService = widget.service ?? FigurineService();
     _friendService = FriendService();
     _profileService = UserProfileService();
+    Future.microtask(_figurineService.markTransferNotificationsAsRead);
   }
 
   Future<void> _refresh() => _figurineService.refreshMyFigurinesFromServer();
@@ -110,6 +111,73 @@ class _FigurinesPageState extends State<FigurinesPage> {
       _selectedTransfer = null;
       _status = 'Demande de transfert envoyée à ${friend.ownerName}.';
     });
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Demande envoyée'),
+        content: const Text(
+          'Demande de transfert effectuée, attendez la validation du nouvel éleveur.',
+        ),
+        actions: <Widget>[
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Valider'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _acceptTransfer(PendingTransfer transfer) async {
+    await _figurineService.acceptTransferRequest(transfer);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Transfert accepté. Scan de la figurine requis.'),
+      ),
+    );
+  }
+
+  Future<void> _rejectTransfer(PendingTransfer transfer) async {
+    await _figurineService.rejectTransferRequest(transfer);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Transfert refusé.')),
+    );
+  }
+
+  void _showTransferDetails(PendingTransfer transfer) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          transfer.nickname.trim().isEmpty
+              ? 'PTIPOTE à transférer'
+              : transfer.nickname,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('Éleveur actuel: ${transfer.fromName}'),
+            Text(
+              'Espèce: ${transfer.species.trim().isEmpty ? '-' : transfer.species}',
+            ),
+            Text('Type: ${transfer.type.trim().isEmpty ? '-' : transfer.type}'),
+            Text('Rareté: ${_rarityLabel(transfer.fields['r'] ?? '')}'),
+            Text('Niveau: ${transfer.fields['l'] ?? '-'}'),
+            Text('XP: ${transfer.fields['x'] ?? '-'}'),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<FriendProfile?> _chooseFriend() {
@@ -193,9 +261,16 @@ class _FigurinesPageState extends State<FigurinesPage> {
               onRefresh: _refresh,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                children: const <Widget>[
-                  SizedBox(height: 260),
-                  Padding(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  _IncomingTransfersSection(
+                    figurineService: _figurineService,
+                    onAccept: _acceptTransfer,
+                    onReject: _rejectTransfer,
+                    onDetails: _showTransferDetails,
+                  ),
+                  const SizedBox(height: 220),
+                  const Padding(
                     padding: EdgeInsets.all(24),
                     child: Text(
                       'Aucune figurine enregistree.',
@@ -217,6 +292,12 @@ class _FigurinesPageState extends State<FigurinesPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
+                      _IncomingTransfersSection(
+                        figurineService: _figurineService,
+                        onAccept: _acceptTransfer,
+                        onReject: _rejectTransfer,
+                        onDetails: _showTransferDetails,
+                      ),
                       FilledButton.icon(
                         onPressed: _transferAction,
                         icon: Icon(_selectedTransfer?.transferRequested == true
@@ -262,9 +343,18 @@ class _FigurinesPageState extends State<FigurinesPage> {
                       ),
                       child: GestureDetector(
                         onTap: _transferMode
-                            ? () => setState(
-                                  () => _selectedTransfer = figurines[index],
-                                )
+                            ? () {
+                                final figurine = figurines[index];
+                                if (!figurine.canTransfer &&
+                                    !figurine.transferRequested) {
+                                  setState(() {
+                                    _status =
+                                        'Ce PTIPOTE est verrouillé pour le moment.';
+                                  });
+                                  return;
+                                }
+                                setState(() => _selectedTransfer = figurine);
+                              }
                             : null,
                         child: _FigurineCard(
                           figurine: figurines[index],
@@ -310,114 +400,276 @@ class _FigurineCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final xp = _xpValue(figurine.xp);
     final progress = (xp / 100).clamp(0.0, 1.0);
+    final lockMessage = figurine.lockMessage;
 
-    return Opacity(
-      opacity: figurine.isTransferLocked ? 0.3 : 1,
-      child: Padding(
-        padding: EdgeInsets.zero,
-        child: Card(
+    return Stack(
+      children: <Widget>[
+        Card(
           color: selected ? const Color(0xFFE3FDF7) : null,
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    SizedBox(
-                      width: 196,
-                      child: _AvatarWithRarity(figurine: figurine),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          _InfoCard(label: 'Espece', value: figurine.species),
-                          const SizedBox(height: 8),
-                          _InfoCard(label: 'Type', value: figurine.type),
-                          const SizedBox(height: 8),
-                          _InfoCard(
-                            label: 'Surnom',
-                            value: figurine.displayName,
-                            trailing: IconButton(
-                              tooltip: 'Modifier le surnom',
-                              onPressed:
-                                  figurine.isTransferLocked ? null : onRename,
-                              icon: const Icon(Icons.edit, size: 18),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconTheme(
-                      data: IconThemeData(color: colorScheme.onSurfaceVariant),
-                      child: dragHandle,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _InfoCard(label: 'Eleveur', value: figurine.ownerName),
-                const SizedBox(height: 14),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                Opacity(
+                  opacity: figurine.isTransferLocked ? 0.3 : 1,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      Text(
-                        'Niveau',
-                        style: TextStyle(
-                          color: colorScheme.onSurfaceVariant,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          SizedBox(
+                            width: 196,
+                            child: _AvatarWithRarity(figurine: figurine),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                _InfoCard(
+                                  label: 'Espece',
+                                  value: figurine.species,
+                                ),
+                                const SizedBox(height: 8),
+                                _InfoCard(label: 'Type', value: figurine.type),
+                                const SizedBox(height: 8),
+                                _InfoCard(
+                                  label: 'Surnom',
+                                  value: figurine.displayName,
+                                  trailing: IconButton(
+                                    tooltip: 'Modifier le surnom',
+                                    onPressed: figurine.isTransferLocked
+                                        ? null
+                                        : onRename,
+                                    icon: const Icon(Icons.edit, size: 18),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconTheme(
+                            data: IconThemeData(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            child: dragHandle,
+                          ),
+                        ],
                       ),
-                      Text(
-                        figurine.level.trim().isEmpty ? '-' : figurine.level,
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 11,
-                          backgroundColor: const Color(0xFFE8D9BD),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '$xp / 100 XP',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
+                      const SizedBox(height: 10),
+                      _InfoCard(label: 'Eleveur', value: figurine.ownerName),
+                      const SizedBox(height: 14),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Text(
+                              'Niveau',
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              figurine.level.trim().isEmpty
+                                  ? '-'
+                                  : figurine.level,
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                value: progress,
+                                minHeight: 11,
+                                backgroundColor: const Color(0xFFE8D9BD),
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              '$xp / 100 XP',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (figurine.transferRequested) ...<Widget>[
+                if (lockMessage.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 8),
-                  const Text(
-                    'Transfert en attente',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+                  Text(
+                    lockMessage,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ],
               ],
             ),
           ),
         ),
-      ),
+        if (selected)
+          Positioned(
+            top: 10,
+            right: 10,
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: colorScheme.primary,
+                shape: BoxShape.circle,
+                boxShadow: const <BoxShadow>[
+                  BoxShadow(
+                    color: Color(0x3333281E),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Icon(Icons.check, color: colorScheme.onPrimary),
+            ),
+          ),
+      ],
     );
   }
 
   int _xpValue(String value) {
     final match = RegExp(r'\d+').firstMatch(value);
     return int.tryParse(match?.group(0) ?? '') ?? 0;
+  }
+}
+
+class _IncomingTransfersSection extends StatelessWidget {
+  const _IncomingTransfersSection({
+    required this.figurineService,
+    required this.onAccept,
+    required this.onReject,
+    required this.onDetails,
+  });
+
+  final FigurineService figurineService;
+  final ValueChanged<PendingTransfer> onAccept;
+  final ValueChanged<PendingTransfer> onReject;
+  final ValueChanged<PendingTransfer> onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<PendingTransfer>>(
+      stream: figurineService.watchIncomingTransfers(),
+      builder: (context, snapshot) {
+        final transfers = snapshot.data ?? const <PendingTransfer>[];
+        if (transfers.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text(
+              'Demandes de transfert',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+            ),
+            const SizedBox(height: 8),
+            for (final transfer in transfers) ...<Widget>[
+              _IncomingTransferCard(
+                transfer: transfer,
+                onAccept: () => onAccept(transfer),
+                onReject: () => onReject(transfer),
+                onDetails: () => onDetails(transfer),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _IncomingTransferCard extends StatelessWidget {
+  const _IncomingTransferCard({
+    required this.transfer,
+    required this.onAccept,
+    required this.onReject,
+    required this.onDetails,
+  });
+
+  final PendingTransfer transfer;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final type = transfer.type.trim().isEmpty ? '-' : transfer.type;
+    final nickname = transfer.nickname.trim().isEmpty
+        ? 'PTIPOTE sans nom'
+        : transfer.nickname;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: <Widget>[
+            ClipOval(
+              child: ColoredBox(
+                color: const Color(0xFFFFFCF4),
+                child: PtipoteImage(
+                  type: transfer.type,
+                  species: transfer.species,
+                  height: 72,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    nickname,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                  Text('De ${transfer.fromName}'),
+                  Text(
+                    '$type · ${_rarityLabel(transfer.fields['r'] ?? '')}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Voir la fiche',
+              onPressed: onDetails,
+              icon: const Icon(Icons.expand_more),
+            ),
+            IconButton.filled(
+              tooltip: 'Accepter',
+              onPressed: onAccept,
+              style: IconButton.styleFrom(
+                backgroundColor: const Color(0xFF6EA86B),
+              ),
+              icon: const Icon(Icons.check),
+            ),
+            const SizedBox(width: 4),
+            IconButton.filledTonal(
+              tooltip: 'Refuser',
+              onPressed: onReject,
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

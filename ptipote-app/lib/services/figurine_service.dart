@@ -35,6 +35,25 @@ class FigurineService {
     });
   }
 
+  Stream<List<PendingTransfer>> watchIncomingTransfers() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return Stream<List<PendingTransfer>>.value(const <PendingTransfer>[]);
+    }
+    return _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('incomingTransfers')
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(PendingTransfer.fromDoc).toList());
+  }
+
+  Future<void> markTransferNotificationsAsRead() =>
+      _notificationService.markTypesAsRead(
+        <String>{'transfer_request', 'transfer_confirmed'},
+      );
+
   Future<void> refreshMyFigurinesFromServer() async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -194,6 +213,125 @@ class FigurineService {
     await batch.commit();
   }
 
+  Future<void> acceptTransferRequest(PendingTransfer transfer) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('Connexion requise.');
+
+    final incomingRef = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('incomingTransfers')
+        .doc(transfer.figurineId);
+    final placeholderRef = _collectionFor(user.uid).doc(transfer.figurineId);
+    final requestRef = _firestore.collection('transferRequests').doc(
+          transfer.id,
+        );
+    final fields = Map<String, String>.from(transfer.fields);
+    fields['te'] = '1';
+    fields['ter'] = '0';
+
+    final batch = _firestore.batch();
+    batch.set(
+      incomingRef,
+      <String, dynamic>{
+        'status': 'accepted',
+        'acceptedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    batch.set(
+      requestRef,
+      <String, dynamic>{
+        'status': 'accepted',
+        'acceptedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    batch.set(
+      placeholderRef,
+      <String, dynamic>{
+        'ownerUid': user.uid,
+        'tagUid': transfer.tagUid,
+        'publicKey': transfer.publicKey,
+        'species': fields['e'] ?? transfer.species,
+        'type': fields['t'] ?? transfer.type,
+        'nickname': transfer.nickname,
+        'ownerName': transfer.fromName,
+        'fields': fields,
+        'transfer': <String, dynamic>{
+          'id': transfer.id,
+          'status': 'accepted',
+          'scanRequired': true,
+          'fromUid': transfer.fromUid,
+          'fromName': transfer.fromName,
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    await _notificationService.sendToUser(
+      recipientUid: transfer.fromUid,
+      type: 'transfer_confirmed',
+      title: 'Transfert accepté',
+      body:
+          'Le transfert de ${transfer.nickname.trim().isEmpty ? 'ton PTIPOTE' : transfer.nickname} a été accepté. Scan requis côté nouvel éleveur.',
+      data: <String, dynamic>{
+        'transferId': transfer.id,
+        'figurineId': transfer.figurineId,
+        'tagUid': transfer.tagUid,
+        'toUid': user.uid,
+      },
+      batch: batch,
+    );
+    await batch.commit();
+  }
+
+  Future<void> rejectTransferRequest(PendingTransfer transfer) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('Connexion requise.');
+
+    final fields = Map<String, String>.from(transfer.fields);
+    fields['te'] = '0';
+
+    final batch = _firestore.batch();
+    batch.delete(_firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('incomingTransfers')
+        .doc(transfer.figurineId));
+    batch.set(
+      _firestore.collection('transferRequests').doc(transfer.id),
+      <String, dynamic>{
+        'status': 'rejected',
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    batch.set(
+      _collectionFor(transfer.fromUid).doc(transfer.figurineId),
+      <String, dynamic>{
+        'fields': fields,
+        'transfer': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    if (transfer.publicKey.trim().isNotEmpty) {
+      batch.set(
+        _firestore.collection('publicFigurines').doc(transfer.publicKey),
+        <String, dynamic>{
+          'fields': fields,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+    await batch.commit();
+  }
+
   Future<void> cancelTransfer(PtipoteFigurine figurine) async {
     final user = _auth.currentUser;
     if (user == null) throw StateError('Connexion requise.');
@@ -248,11 +386,16 @@ class FigurineService {
           .doc(user.uid)
           .collection('incomingTransfers')
           .where('tagUid', isEqualTo: tagUid)
-          .where('status', isEqualTo: 'pending')
-          .limit(1),
+          .limit(5),
     );
     if (snapshot.docs.isEmpty) return null;
-    return PendingTransfer.fromDoc(snapshot.docs.first);
+    for (final doc in snapshot.docs) {
+      final status = '${doc.data()['status'] ?? ''}';
+      if (status == 'pending' || status == 'accepted') {
+        return PendingTransfer.fromDoc(doc);
+      }
+    }
+    return null;
   }
 
   Future<void> confirmIncomingTransfer({
@@ -296,6 +439,7 @@ class FigurineService {
       SetOptions(merge: true),
     );
     batch.delete(oldOwnerFigurine);
+    batch.delete(newDoc.collection('transferMeta').doc('pending'));
     batch.delete(_firestore
         .collection('users')
         .doc(user.uid)
@@ -624,6 +768,8 @@ class FigurineService {
       publicKey: '${data['publicKey'] ?? ''}',
       rawSource: '${data['rawSource'] ?? ''}',
       sortOrder: _readSortOrder(data['sortOrder']),
+      transferStatus: _readTransferStatus(data['transfer']),
+      transferFromName: _readTransferFromName(data['transfer']),
       transferLockedUntil: data['transferLockedUntil'] is Timestamp
           ? (data['transferLockedUntil'] as Timestamp).toDate()
           : null,
@@ -645,6 +791,16 @@ class FigurineService {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return 1 << 30;
+  }
+
+  String _readTransferStatus(Object? value) {
+    if (value is! Map) return '';
+    return '${value['status'] ?? ''}';
+  }
+
+  String _readTransferFromName(Object? value) {
+    if (value is! Map) return '';
+    return '${value['fromName'] ?? ''}';
   }
 
   Future<void> _writePublicTransferState(
@@ -689,6 +845,9 @@ class PendingTransfer {
     required this.publicKey,
     required this.fromUid,
     required this.fromName,
+    required this.nickname,
+    required this.species,
+    required this.type,
     required this.fields,
   });
 
@@ -698,6 +857,9 @@ class PendingTransfer {
   final String publicKey;
   final String fromUid;
   final String fromName;
+  final String nickname;
+  final String species;
+  final String type;
   final Map<String, String> fields;
 
   static PendingTransfer fromDoc(
@@ -713,6 +875,9 @@ class PendingTransfer {
       publicKey: '${data['publicKey'] ?? ''}',
       fromUid: '${data['fromUid'] ?? ''}',
       fromName: '${data['fromName'] ?? ''}',
+      nickname: '${data['nickname'] ?? fieldsData['s'] ?? ''}',
+      species: '${data['species'] ?? fieldsData['e'] ?? ''}',
+      type: '${data['type'] ?? fieldsData['t'] ?? ''}',
       fields: fieldsData.map((key, value) => MapEntry(key, '$value')),
     );
   }
