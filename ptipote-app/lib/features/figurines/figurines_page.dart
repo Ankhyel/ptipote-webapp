@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/friend_service.dart';
 import '../../services/figurine_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/user_profile_service.dart';
 import '../chat/chat_page.dart';
 import 'ptipote_figurine.dart';
@@ -21,6 +22,7 @@ class FigurinesPage extends StatefulWidget {
 class _FigurinesPageState extends State<FigurinesPage> {
   late final FigurineService _figurineService;
   late final FriendService _friendService;
+  late final NotificationService _notificationService;
   late final UserProfileService _profileService;
   List<PtipoteFigurine> _lastFigurines = const <PtipoteFigurine>[];
   List<String> _manualOrderIds = const <String>[];
@@ -33,6 +35,7 @@ class _FigurinesPageState extends State<FigurinesPage> {
     super.initState();
     _figurineService = widget.service ?? FigurineService();
     _friendService = FriendService();
+    _notificationService = NotificationService();
     _profileService = UserProfileService();
     Future.microtask(_figurineService.markTransferNotificationsAsRead);
   }
@@ -100,41 +103,125 @@ class _FigurinesPageState extends State<FigurinesPage> {
 
     final friend = await _chooseFriend();
     if (friend == null) return;
-    final profile = await _profileService.getOrCreateMyProfile();
-    await _figurineService.requestTransfer(
-      figurine: selected,
-      fromProfile: profile,
-      friend: friend,
-    );
+
+    final sent = await _confirmTransferRequest(selected, friend);
+    if (!mounted) return;
     setState(() {
       _transferMode = false;
       _selectedTransfer = null;
-      _status = 'Demande de transfert envoyée à ${friend.ownerName}.';
+      _status = sent
+          ? 'Demande de transfert envoyée à ${friend.ownerName}.'
+          : 'Transfert annulé.';
     });
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Demande envoyée'),
-        content: const Text(
-          'Demande de transfert effectuée, attendez la validation du nouvel éleveur.',
-        ),
-        actions: <Widget>[
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Valider'),
-          ),
-        ],
-      ),
-    );
+
+    if (!sent) return;
   }
 
-  Future<void> _acceptTransfer(PendingTransfer transfer) async {
-    await _figurineService.acceptTransferRequest(transfer);
+  Future<bool> _confirmTransferRequest(
+    PtipoteFigurine figurine,
+    FriendProfile friend,
+  ) async {
+    var sending = false;
+    var sent = false;
+    String? error;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> send() async {
+            setDialogState(() {
+              sending = true;
+              error = null;
+            });
+            try {
+              final profile = await _profileService.getOrCreateMyProfile();
+              await _figurineService.requestTransfer(
+                figurine: figurine,
+                fromProfile: profile,
+                friend: friend,
+              );
+              setDialogState(() {
+                sending = false;
+                sent = true;
+              });
+            } catch (exception) {
+              setDialogState(() {
+                sending = false;
+                error = exception.toString();
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: Text(
+                sent ? 'Demande envoyée' : 'Confirmer la demande de transfert'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                if (sending) ...<Widget>[
+                  const Center(
+                    child: SizedBox.square(
+                      dimension: 34,
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Envoi de la demande...',
+                    textAlign: TextAlign.center,
+                  ),
+                ] else if (sent) ...<Widget>[
+                  const Text('Demande envoyée en attente de l’ami.'),
+                ] else ...<Widget>[
+                  Text(
+                    'Voulez-vous vraiment faire la demande de transfert de ${figurine.displayName} à ${friend.ownerName} ?',
+                  ),
+                  if (error != null) ...<Widget>[
+                    const SizedBox(height: 12),
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+            actions: <Widget>[
+              if (sent)
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('OK'),
+                )
+              else ...<Widget>[
+                TextButton(
+                  onPressed:
+                      sending ? null : () => Navigator.of(context).pop(false),
+                  child: const Text('Non'),
+                ),
+                FilledButton(
+                  onPressed: sending ? null : send,
+                  child: const Text('Oui'),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+    return result == true;
+  }
+
+  Future<void> _acceptTransfer(PendingTransfer _) async {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Transfert accepté. Scan de la figurine requis.'),
+        content: Text('Acceptation reçue. La suite arrive au prochain test.'),
       ),
     );
   }
@@ -298,6 +385,9 @@ class _FigurinesPageState extends State<FigurinesPage> {
                         onReject: _rejectTransfer,
                         onDetails: _showTransferDetails,
                       ),
+                      _TransferRejectionsSection(
+                        notificationService: _notificationService,
+                      ),
                       FilledButton.icon(
                         onPressed: _transferAction,
                         icon: Icon(_selectedTransfer?.transferRequested == true
@@ -310,7 +400,7 @@ class _FigurinesPageState extends State<FigurinesPage> {
                                   ? 'Sélectionne une carte'
                                   : _selectedTransfer!.transferRequested
                                       ? 'Annuler'
-                                      : 'Transférer',
+                                      : 'Transférer à...',
                         ),
                       ),
                       if (_status != null) ...<Widget>[
@@ -584,6 +674,55 @@ class _IncomingTransfersSection extends StatelessWidget {
                 onDetails: () => onDetails(transfer),
               ),
               const SizedBox(height: 10),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TransferRejectionsSection extends StatelessWidget {
+  const _TransferRejectionsSection({required this.notificationService});
+
+  final NotificationService notificationService;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<PtipoteNotification>>(
+      stream: notificationService.watchMyNotifications(),
+      builder: (context, snapshot) {
+        final rejections = (snapshot.data ?? const <PtipoteNotification>[])
+            .where((item) => item.type == 'transfer_rejected')
+            .take(3)
+            .toList();
+        if (rejections.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (final notification in rejections) ...<Widget>[
+              Card(
+                color: const Color(0xFFFFFCF4),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: <Widget>[
+                      const Icon(Icons.info_outline),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          notification.body.trim().isEmpty
+                              ? 'Votre demande de transfert a été refusée.'
+                              : notification.body,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           ],
         );

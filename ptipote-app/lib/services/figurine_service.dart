@@ -51,7 +51,7 @@ class FigurineService {
 
   Future<void> markTransferNotificationsAsRead() =>
       _notificationService.markTypesAsRead(
-        <String>{'transfer_request', 'transfer_confirmed'},
+        <String>{'transfer_request', 'transfer_confirmed', 'transfer_rejected'},
       );
 
   Future<void> refreshMyFigurinesFromServer() async {
@@ -329,6 +329,21 @@ class FigurineService {
         SetOptions(merge: true),
       );
     }
+    await _notificationService.sendToUser(
+      recipientUid: transfer.fromUid,
+      type: 'transfer_rejected',
+      title: 'Transfert refusé',
+      body:
+          '${transfer.toName} a refusé le transfert de ${transfer.nickname.trim().isEmpty ? 'ton PTIPOTE' : transfer.nickname}.',
+      data: <String, dynamic>{
+        'transferId': transfer.id,
+        'figurineId': transfer.figurineId,
+        'tagUid': transfer.tagUid,
+        'toUid': user.uid,
+        'toName': transfer.toName,
+      },
+      batch: batch,
+    );
     await batch.commit();
   }
 
@@ -845,6 +860,8 @@ class PendingTransfer {
     required this.publicKey,
     required this.fromUid,
     required this.fromName,
+    required this.toUid,
+    required this.toName,
     required this.nickname,
     required this.species,
     required this.type,
@@ -857,6 +874,8 @@ class PendingTransfer {
   final String publicKey;
   final String fromUid;
   final String fromName;
+  final String toUid;
+  final String toName;
   final String nickname;
   final String species;
   final String type;
@@ -875,6 +894,8 @@ class PendingTransfer {
       publicKey: '${data['publicKey'] ?? ''}',
       fromUid: '${data['fromUid'] ?? ''}',
       fromName: '${data['fromName'] ?? ''}',
+      toUid: '${data['toUid'] ?? ''}',
+      toName: '${data['toName'] ?? ''}',
       nickname: '${data['nickname'] ?? fieldsData['s'] ?? ''}',
       species: '${data['species'] ?? fieldsData['e'] ?? ''}',
       type: '${data['type'] ?? fieldsData['t'] ?? ''}',

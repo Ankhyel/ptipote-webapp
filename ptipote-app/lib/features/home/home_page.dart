@@ -163,25 +163,18 @@ class _HomePageState extends State<HomePage> {
             return Stack(
               children: <Widget>[
                 Positioned(
-                  left: 24,
+                  left: (constraints.maxWidth - 154) / 2,
                   top: unit * 2.12,
                   child: _CollectionButton(
                     onTap: () =>
                         Navigator.of(context).pushNamed(FigurinesPage.route),
                     countStream: _notificationService.watchUnreadCountFor(
-                      <String>{'transfer_request', 'transfer_confirmed'},
+                      <String>{
+                        'transfer_request',
+                        'transfer_confirmed',
+                        'transfer_rejected',
+                      },
                     ),
-                  ),
-                ),
-                Positioned(
-                  right: 24,
-                  top: unit * 2.12,
-                  child: _ChatButton(
-                    onTap: () => Navigator.of(context).pushNamed(
-                      ChatsPage.route,
-                    ),
-                    countStream: _notificationService
-                        .watchUnreadCountFor(<String>{'chat_message'}),
                   ),
                 ),
                 Positioned(
@@ -298,63 +291,6 @@ class _CollectionButton extends StatelessWidget {
                   SizedBox(height: 14),
                   Text(
                     'Mes ptipotes',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: StreamBuilder<int>(
-                stream: countStream,
-                builder: (context, snapshot) =>
-                    _Badge(count: snapshot.data ?? 0),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ChatButton extends StatelessWidget {
-  const _ChatButton({required this.onTap, required this.countStream});
-
-  final VoidCallback onTap;
-  final Stream<int> countStream;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(34),
-      onTap: onTap,
-      child: Ink(
-        width: 154,
-        height: 154,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          border: Border.all(color: const Color(0xFFE0CFAE)),
-          borderRadius: BorderRadius.circular(34),
-          boxShadow: const <BoxShadow>[
-            BoxShadow(
-              color: Color(0x3333281E),
-              blurRadius: 18,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: <Widget>[
-            const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Icon(Icons.chat_bubble_outline, size: 58),
-                  SizedBox(height: 14),
-                  Text(
-                    'Messages',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                   ),
                 ],
