@@ -229,6 +229,8 @@ class FigurineService {
     final fields = Map<String, String>.from(transfer.fields);
     fields['te'] = '1';
     fields['ter'] = '0';
+    fields['o'] =
+        transfer.toName.trim().isEmpty ? fields['o'] ?? '' : transfer.toName;
 
     final batch = _firestore.batch();
     batch.set(
@@ -258,7 +260,7 @@ class FigurineService {
         'species': fields['e'] ?? transfer.species,
         'type': fields['t'] ?? transfer.type,
         'nickname': transfer.nickname,
-        'ownerName': transfer.fromName,
+        'ownerName': fields['o'],
         'fields': fields,
         'transfer': <String, dynamic>{
           'id': transfer.id,
@@ -333,8 +335,7 @@ class FigurineService {
       recipientUid: transfer.fromUid,
       type: 'transfer_rejected',
       title: 'Transfert refusé',
-      body:
-          '${transfer.toName} a refusé le transfert de ${transfer.nickname.trim().isEmpty ? 'ton PTIPOTE' : transfer.nickname}.',
+      body: 'La demande de transfert PTIPOTE a été refusée.',
       data: <String, dynamic>{
         'transferId': transfer.id,
         'figurineId': transfer.figurineId,

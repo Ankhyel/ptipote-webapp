@@ -5,6 +5,7 @@ import '../../services/figurine_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/user_profile_service.dart';
 import '../chat/chat_page.dart';
+import '../nfc/nfc_page.dart';
 import 'ptipote_figurine.dart';
 import 'ptipote_image.dart';
 
@@ -217,11 +218,12 @@ class _FigurinesPageState extends State<FigurinesPage> {
     return result == true;
   }
 
-  Future<void> _acceptTransfer(PendingTransfer _) async {
+  Future<void> _acceptTransfer(PendingTransfer transfer) async {
+    await _figurineService.acceptTransferRequest(transfer);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Acceptation reçue. La suite arrive au prochain test.'),
+        content: Text('Transfert accepté. Scan de la figurine requis.'),
       ),
     );
   }
@@ -451,6 +453,9 @@ class _FigurinesPageState extends State<FigurinesPage> {
                           selected:
                               _selectedTransfer?.id == figurines[index].id,
                           onRename: () => _renameFigurine(figurines[index]),
+                          onScan: () => Navigator.of(context).pushNamed(
+                            NfcPage.route,
+                          ),
                           dragHandle: ReorderableDragStartListener(
                             index: index,
                             child: const Tooltip(
@@ -477,12 +482,14 @@ class _FigurineCard extends StatelessWidget {
     required this.figurine,
     required this.selected,
     required this.onRename,
+    required this.onScan,
     required this.dragHandle,
   });
 
   final PtipoteFigurine figurine;
   final bool selected;
   final VoidCallback onRename;
+  final VoidCallback onScan;
   final Widget dragHandle;
 
   @override
@@ -600,6 +607,14 @@ class _FigurineCard extends StatelessWidget {
                   Text(
                     lockMessage,
                     style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ],
+                if (figurine.needsTransferScan) ...<Widget>[
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: onScan,
+                    icon: const Icon(Icons.nfc),
+                    label: const Text('Scanner PTIPOTE'),
                   ),
                 ],
               ],
@@ -747,6 +762,7 @@ class _IncomingTransferCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final type = transfer.type.trim().isEmpty ? '-' : transfer.type;
+    final species = transfer.species.trim().isEmpty ? '-' : transfer.species;
     final nickname = transfer.nickname.trim().isEmpty
         ? 'PTIPOTE sans nom'
         : transfer.nickname;
@@ -756,12 +772,15 @@ class _IncomingTransferCard extends StatelessWidget {
         child: Row(
           children: <Widget>[
             ClipOval(
-              child: ColoredBox(
-                color: const Color(0xFFFFFCF4),
-                child: PtipoteImage(
-                  type: transfer.type,
-                  species: transfer.species,
-                  height: 72,
+              child: SizedBox.square(
+                dimension: 86,
+                child: ColoredBox(
+                  color: const Color(0xFFFFFCF4),
+                  child: PtipoteImage(
+                    type: transfer.type,
+                    species: transfer.species,
+                    height: 86,
+                  ),
                 ),
               ),
             ),
@@ -778,6 +797,11 @@ class _IncomingTransferCard extends StatelessWidget {
                     ),
                   ),
                   Text('De ${transfer.fromName}'),
+                  Text(
+                    'Espèce: $species',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   Text(
                     '$type · ${_rarityLabel(transfer.fields['r'] ?? '')}',
                     maxLines: 1,

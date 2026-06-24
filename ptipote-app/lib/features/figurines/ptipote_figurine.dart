@@ -72,7 +72,9 @@ class PtipoteFigurine {
     if (transferConfirmed &&
         transferLockedUntil != null &&
         transferLockedUntil!.isAfter(DateTime.now())) {
-      return 'Déblocage complet dans 7 jours';
+      final remaining = transferLockedUntil!.difference(DateTime.now());
+      final days = (remaining.inHours / 24).ceil().clamp(1, 7);
+      return 'Temps de recharge de la carte J-$days';
     }
     return '';
   }
