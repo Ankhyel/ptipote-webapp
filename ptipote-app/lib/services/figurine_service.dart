@@ -423,6 +423,7 @@ class FigurineService {
     final oldOwnerFigurine =
         _collectionFor(transfer.fromUid).doc(transfer.figurineId);
     final oldSnapshot = await _getDocFromServer(oldOwnerFigurine);
+    final oldOwnerDocExists = oldSnapshot.exists;
     final sourceData = oldSnapshot.data() ?? const <String, dynamic>{};
     final fieldsData =
         sourceData['fields'] as Map<String, dynamic>? ?? transfer.fields;
@@ -457,7 +458,6 @@ class FigurineService {
       },
       SetOptions(merge: true),
     );
-    batch.delete(oldOwnerFigurine);
     batch.delete(_firestore
         .collection('users')
         .doc(user.uid)
@@ -501,6 +501,15 @@ class FigurineService {
       batch: batch,
     );
     await batch.commit();
+
+    if (oldOwnerDocExists) {
+      try {
+        await oldOwnerFigurine.delete();
+      } catch (_) {
+        // La validation côté nouvel éleveur est prioritaire; le nettoyage
+        // de l'ancien inventaire peut être relancé plus tard si Firestore refuse.
+      }
+    }
   }
 
   Future<void> syncOwnerProfileOnMyFigurines(UserProfile profile) async {

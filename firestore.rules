@@ -15,7 +15,7 @@ service cloud.firestore {
               exists(/databases/$(database)/documents/transferRequests/$(userId + '_' + figurineId + '_' + request.auth.uid))
               && get(/databases/$(database)/documents/transferRequests/$(userId + '_' + figurineId + '_' + request.auth.uid)).data.fromUid == userId
               && get(/databases/$(database)/documents/transferRequests/$(userId + '_' + figurineId + '_' + request.auth.uid)).data.toUid == request.auth.uid
-              && get(/databases/$(database)/documents/transferRequests/$(userId + '_' + figurineId + '_' + request.auth.uid)).data.status == 'accepted'
+              && get(/databases/$(database)/documents/transferRequests/$(userId + '_' + figurineId + '_' + request.auth.uid)).data.status in ['accepted', 'confirmed']
             )
             || (
               exists(/databases/$(database)/documents/users/$(request.auth.uid)/incomingTransfers/$(figurineId))
