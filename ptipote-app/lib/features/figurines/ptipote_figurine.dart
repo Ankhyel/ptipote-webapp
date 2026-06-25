@@ -9,6 +9,7 @@ class PtipoteFigurine {
     required this.transferStatus,
     required this.transferFromName,
     required this.transferLockedUntil,
+    required this.renameLockedUntil,
     required this.fields,
     required this.createdAt,
     required this.updatedAt,
@@ -23,6 +24,7 @@ class PtipoteFigurine {
   final String transferStatus;
   final String transferFromName;
   final DateTime? transferLockedUntil;
+  final DateTime? renameLockedUntil;
   final Map<String, String> fields;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -62,27 +64,43 @@ class PtipoteFigurine {
 
   bool get needsTransferScan => transferStatus == 'accepted';
 
-  bool get canTransfer => !isTransferLocked && !needsTransferScan;
+  bool get transferCooldownActive {
+    final until = transferLockedUntil;
+    return transferConfirmed && until != null && until.isAfter(DateTime.now());
+  }
+
+  bool get renameCooldownActive {
+    final until = renameLockedUntil;
+    return until != null && until.isAfter(DateTime.now());
+  }
+
+  bool get canTransfer =>
+      !needsTransferScan && !transferRequested && !transferCooldownActive;
+
+  bool get canRename =>
+      !needsTransferScan && !transferRequested && !renameCooldownActive;
 
   String get lockMessage {
     if (needsTransferScan) {
       return 'Scan de la figurine requis pour valider le transfert';
     }
     if (transferRequested) return 'Demande en attente';
-    if (transferConfirmed &&
-        transferLockedUntil != null &&
-        transferLockedUntil!.isAfter(DateTime.now())) {
+    if (transferCooldownActive) {
       final remaining = transferLockedUntil!.difference(DateTime.now());
       final days = (remaining.inHours / 24).ceil().clamp(1, 7);
-      return 'Temps de recharge de la carte J-$days';
+      return 'PTIPOTE en recharge, transfert disponible dans J-$days';
     }
     return '';
   }
 
+  String get renameLockMessage {
+    if (!renameCooldownActive) return '';
+    final remaining = renameLockedUntil!.difference(DateTime.now());
+    final days = (remaining.inHours / 24).ceil().clamp(1, 3);
+    return 'Le PTIPOTE pourra être de nouveau renommé dans J-$days';
+  }
+
   bool get isTransferLocked {
-    final until = transferLockedUntil;
-    return needsTransferScan ||
-        transferRequested ||
-        (transferConfirmed && until != null && until.isAfter(DateTime.now()));
+    return needsTransferScan || transferRequested;
   }
 }

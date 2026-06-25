@@ -73,7 +73,7 @@ class _FigurinesPageState extends State<FigurinesPage> {
     if (!mounted ||
         nickname == null ||
         nickname.trim().isEmpty ||
-        figurine.isTransferLocked) {
+        !figurine.canRename) {
       return;
     }
     await _figurineService.renameMyFigurine(
@@ -498,6 +498,7 @@ class _FigurineCard extends StatelessWidget {
     final xp = _xpValue(figurine.xp);
     final progress = (xp / 100).clamp(0.0, 1.0);
     final lockMessage = figurine.lockMessage;
+    final renameLockMessage = figurine.renameLockMessage;
 
     return Stack(
       children: <Widget>[
@@ -537,12 +538,22 @@ class _FigurineCard extends StatelessWidget {
                                   value: figurine.displayName,
                                   trailing: IconButton(
                                     tooltip: 'Modifier le surnom',
-                                    onPressed: figurine.isTransferLocked
-                                        ? null
-                                        : onRename,
+                                    onPressed:
+                                        figurine.canRename ? onRename : null,
                                     icon: const Icon(Icons.edit, size: 18),
                                   ),
                                 ),
+                                if (renameLockMessage.isNotEmpty) ...<Widget>[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    renameLockMessage,
+                                    style: TextStyle(
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),

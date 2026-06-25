@@ -91,8 +91,8 @@ class FigurineService {
     if (cleanNickname.isEmpty) {
       throw ArgumentError('Le surnom ne peut pas etre vide.');
     }
-    if (figurine.isTransferLocked) {
-      throw StateError('Ce PTIPOTE est verrouille pendant le transfert.');
+    if (!figurine.canRename) {
+      throw StateError('Ce PTIPOTE est verrouille temporairement.');
     }
 
     final fields = Map<String, String>.from(figurine.fields);
@@ -143,9 +143,8 @@ class FigurineService {
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw StateError('Connexion requise.');
-    if (figurine.isTransferLocked && figurine.transferConfirmed) {
-      throw StateError(
-          'Ce PTIPOTE vient d’être transfere et reste verrouille.');
+    if (!figurine.canTransfer) {
+      throw StateError('Ce PTIPOTE ne peut pas être transfere pour le moment.');
     }
 
     final requestId = '${user.uid}_${figurine.id}_${friend.uid}';
@@ -433,8 +432,11 @@ class FigurineService {
     fields['te'] = '0';
     fields['ter'] = '1';
     final publicKey = '${sourceData['publicKey'] ?? transfer.publicKey}'.trim();
-    final lockUntil = Timestamp.fromDate(
+    final transferLockUntil = Timestamp.fromDate(
       DateTime.now().add(const Duration(days: 7)),
+    );
+    final renameLockUntil = Timestamp.fromDate(
+      DateTime.now().add(const Duration(days: 3)),
     );
     final now = FieldValue.serverTimestamp();
     final newDoc = _collectionFor(user.uid).doc(transfer.figurineId);
@@ -449,13 +451,13 @@ class FigurineService {
         'breederNumber': newOwner.breederNumber,
         'fields': fields,
         'transfer': FieldValue.delete(),
-        'transferLockedUntil': lockUntil,
+        'transferLockedUntil': transferLockUntil,
+        'renameLockedUntil': renameLockUntil,
         'updatedAt': now,
       },
       SetOptions(merge: true),
     );
     batch.delete(oldOwnerFigurine);
-    batch.delete(newDoc.collection('transferMeta').doc('pending'));
     batch.delete(_firestore
         .collection('users')
         .doc(user.uid)
@@ -788,6 +790,9 @@ class FigurineService {
       transferFromName: _readTransferFromName(data['transfer']),
       transferLockedUntil: data['transferLockedUntil'] is Timestamp
           ? (data['transferLockedUntil'] as Timestamp).toDate()
+          : null,
+      renameLockedUntil: data['renameLockedUntil'] is Timestamp
+          ? (data['renameLockedUntil'] as Timestamp).toDate()
           : null,
       createdAt: createdAt is Timestamp
           ? createdAt.toDate()

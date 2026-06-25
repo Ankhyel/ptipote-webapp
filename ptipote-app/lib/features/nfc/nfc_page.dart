@@ -630,20 +630,56 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
         transfer: transfer,
         newOwner: profile,
       );
+      if (!mounted) return;
       setState(() {
         _confirmingTransfer = false;
         _pendingTransfer = null;
         _alreadyRegistered = true;
         _statusIsError = false;
+        _showStatusCard = true;
         _status = 'Transfert confirmé. Ce PTIPOTE rejoint ton compte.';
       });
+      await _showTransferConfirmedDialog();
     } catch (error) {
+      if (!mounted) return;
       setState(() {
         _confirmingTransfer = false;
         _statusIsError = true;
+        _showStatusCard = true;
         _status = error.toString();
       });
     }
+  }
+
+  Future<void> _showTransferConfirmedDialog() {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: <Widget>[
+            const Expanded(child: Text('Transfert confirmé')),
+            IconButton(
+              tooltip: 'Fermer',
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Ce PTIPOTE a bien été transféré. Il est maintenant sous votre responsabilité.',
+        ),
+        actions: <Widget>[
+          FilledButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).pushReplacementNamed(FigurinesPage.route);
+            },
+            child: const Text('Retourner à Mes PTIPOTES'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
