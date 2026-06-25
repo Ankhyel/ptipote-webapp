@@ -9,7 +9,14 @@ service cloud.firestore {
       match /figurines/{figurineId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
         allow update, delete: if request.auth != null
-          && resource.data.transfer.toUid == request.auth.uid;
+          && (
+            resource.data.transfer.toUid == request.auth.uid
+            || (
+              exists(/databases/$(database)/documents/users/$(request.auth.uid)/incomingTransfers/$(figurineId))
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)/incomingTransfers/$(figurineId)).data.fromUid == userId
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)/incomingTransfers/$(figurineId)).data.status == 'accepted'
+            )
+          );
       }
 
       match /friends/{friendId} {
