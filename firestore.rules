@@ -12,6 +12,12 @@ service cloud.firestore {
           && (
             resource.data.transfer.toUid == request.auth.uid
             || (
+              exists(/databases/$(database)/documents/transferRequests/$(userId + '_' + figurineId + '_' + request.auth.uid))
+              && get(/databases/$(database)/documents/transferRequests/$(userId + '_' + figurineId + '_' + request.auth.uid)).data.fromUid == userId
+              && get(/databases/$(database)/documents/transferRequests/$(userId + '_' + figurineId + '_' + request.auth.uid)).data.toUid == request.auth.uid
+              && get(/databases/$(database)/documents/transferRequests/$(userId + '_' + figurineId + '_' + request.auth.uid)).data.status == 'accepted'
+            )
+            || (
               exists(/databases/$(database)/documents/users/$(request.auth.uid)/incomingTransfers/$(figurineId))
               && get(/databases/$(database)/documents/users/$(request.auth.uid)/incomingTransfers/$(figurineId)).data.fromUid == userId
               && get(/databases/$(database)/documents/users/$(request.auth.uid)/incomingTransfers/$(figurineId)).data.status == 'accepted'
