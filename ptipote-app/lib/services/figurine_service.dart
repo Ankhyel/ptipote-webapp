@@ -422,17 +422,19 @@ class FigurineService {
 
     final oldOwnerFigurine =
         _collectionFor(transfer.fromUid).doc(transfer.figurineId);
-    final oldSnapshot = await _getDocFromServer(oldOwnerFigurine);
-    final oldOwnerDocExists = oldSnapshot.exists;
-    final sourceData = oldSnapshot.data() ?? const <String, dynamic>{};
+    final newDoc = _collectionFor(user.uid).doc(transfer.figurineId);
+    final placeholderSnapshot = await _getDocFromServer(newDoc);
+    final placeholderData =
+        placeholderSnapshot.data() ?? const <String, dynamic>{};
     final fieldsData =
-        sourceData['fields'] as Map<String, dynamic>? ?? transfer.fields;
+        placeholderData['fields'] as Map<String, dynamic>? ?? transfer.fields;
     final fields = fieldsData.map((key, value) => MapEntry(key, '$value'));
     fields['o'] = newOwner.ownerName;
     fields['on'] = newOwner.breederNumber;
     fields['te'] = '0';
     fields['ter'] = '1';
-    final publicKey = '${sourceData['publicKey'] ?? transfer.publicKey}'.trim();
+    final publicKey =
+        '${placeholderData['publicKey'] ?? transfer.publicKey}'.trim();
     final transferLockUntil = Timestamp.fromDate(
       DateTime.now().add(const Duration(days: 7)),
     );
@@ -440,16 +442,22 @@ class FigurineService {
       DateTime.now().add(const Duration(days: 3)),
     );
     final now = FieldValue.serverTimestamp();
-    final newDoc = _collectionFor(user.uid).doc(transfer.figurineId);
+    final nickname =
+        '${placeholderData['nickname'] ?? transfer.nickname}'.trim();
 
     final batch = _firestore.batch();
     batch.set(
       newDoc,
       <String, dynamic>{
-        ...sourceData,
+        ...placeholderData,
         'ownerUid': user.uid,
         'ownerName': newOwner.ownerName,
         'breederNumber': newOwner.breederNumber,
+        'nickname': nickname,
+        'tagUid': transfer.tagUid,
+        'publicKey': publicKey,
+        'species': fields['e'] ?? transfer.species,
+        'type': fields['t'] ?? transfer.type,
         'fields': fields,
         'transfer': FieldValue.delete(),
         'transferLockedUntil': transferLockUntil,
@@ -479,7 +487,7 @@ class FigurineService {
           'ownerUid': user.uid,
           'ownerName': newOwner.ownerName,
           'breederNumber': newOwner.breederNumber,
-          'nickname': '${sourceData['nickname'] ?? fields['s'] ?? ''}',
+          'nickname': nickname.isEmpty ? fields['s'] ?? '' : nickname,
           'fields': fields,
           'updatedAt': now,
         },
@@ -502,13 +510,11 @@ class FigurineService {
     );
     await batch.commit();
 
-    if (oldOwnerDocExists) {
-      try {
-        await oldOwnerFigurine.delete();
-      } catch (_) {
-        // La validation côté nouvel éleveur est prioritaire; le nettoyage
-        // de l'ancien inventaire peut être relancé plus tard si Firestore refuse.
-      }
+    try {
+      await oldOwnerFigurine.delete();
+    } catch (_) {
+      // La validation côté nouvel éleveur est prioritaire; le nettoyage
+      // de l'ancien inventaire peut être relancé plus tard si Firestore refuse.
     }
   }
 
