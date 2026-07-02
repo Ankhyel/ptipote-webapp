@@ -10,6 +10,8 @@ Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'
 - App Flutter: `ptipote-app/`
 - Webapp publique NFC: `ptipote-webapp/`
 - Dashboard interne: `ptipote-dashboard/`
+- Prototype web Zone 0 local: `ptipote-app/ptipote-game/`
+- Handoff produit Zone 0 V1: `PTIPOTE_Zone0_Codex_Handoff_Prototype_V1_Local_v3.docx` dans la documentation locale.
 - Ne pas utiliser l'ancien dossier cloud `Documents/Documents - MacBook Air (2)/...` comme source de verite.
 - Ne pas toucher aux fichiers sales non lies a la demande. Les logs Flutter peuvent exister sans etre a committer.
 
@@ -32,6 +34,7 @@ Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'
 | Amis | `ptipote-app/lib/features/friends/friends_page.dart` | Recherche profils, invitations, accept/refuse/cancel. |
 | Liste chats | `ptipote-app/lib/features/chat/chats_page.dart` | Liste des conversations et badges messages. |
 | Conversation chat | `ptipote-app/lib/features/chat/chat_page.dart` | Messages entre deux amis. |
+| Prototype web Zone 0 | `ptipote-app/ptipote-game/` | Vertical slice HTML/CSS/JS mobile-first du refuge: Ilot, P'TIPOTES, Journal, Lisiere, Atelier, Tour, Marche, Maison. |
 
 ## Services App
 
@@ -85,6 +88,21 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | `users/{uid}/fcmTokens/{tokenId}` | Tokens push par device. | `PushNotificationService`, `functions/index.js` |
 | `chats/{chatId}` | Metadata conversation. | `ChatService`, `ChatsPage` |
 | `chats/{chatId}/messages/{messageId}` | Messages chat. | `ChatService`, `ChatPage` |
+
+## Zone 0 V1 Et Prototype Local
+
+- Source produit a respecter: navigation principale `Ilot | P'TIPOTES | Journal`.
+- Le scan figurine reste important mais contextuel: Ilot, Kernel, P'TIPOTES, adoption ou transfert. Il ne doit pas devenir un onglet principal.
+- Si aucun P'TIPOTE n'existe: afficher un etat vide centre sur le scan. Si au moins un P'TIPOTE existe: ouvrir sur l'Ilot.
+- `ptipote-app/ptipote-game/` contient le prototype HTML/CSS/JS local pour tester vite la boucle refuge sans Flutter.
+- Fichiers du prototype: `index.html`, `styles.css`, `data.js`, `state.js`, `tasks.js`, `ui-island.js`, `ui-panels.js`, `main.js`.
+- Boucle coeur prototype: choisir un P'TIPOTE -> assigner a la Lisiere -> attendre -> recuperer -> crafter un Repas -> soigner a la Maison -> progresser.
+- Handoff V1 mobile: creer progressivement Ilot, Kernel, Lisiere proche/lointaine, Atelier et Cuisine a slots, sans simulation complete.
+- Lisiere V1: exactement deux onglets, `Lisiere proche` et `Lisiere lointaine`. Pas d'onglet PTIBUG separe.
+- Refuge PTIBUG est un batiment dans le biome Plaine PTIBUG. Plaine PTIBUG = biome, Refuge PTIBUG = batiment.
+- Atelier et Cuisine V1 utilisent des slots de salle et des elements contextuels gratuits, pas une main globale de cartes.
+- Ne pas casser amis, chat entre amis, transfert, adoption NFC et rules Firestore existantes.
+- Si une nouvelle fonction est ajoutee, mettre a jour cette data card avec son fichier source de verite, son flux et ses contraintes.
 
 ## Flux Principaux
 
@@ -208,6 +226,8 @@ Pour debugger les push:
 | Modifier roles | `user_profile_service.dart` | `profile_page.dart`, `firestore.rules`, `NfcPage` debug. |
 | Modifier webapp publique | `ptipote-webapp/` | `publicFigurines` dans `FigurineService`. |
 | Modifier dashboard interne | `ptipote-dashboard/` | `firestore.rules` admin/dev. |
+| Modifier prototype Zone 0 local | `ptipote-app/ptipote-game/` | Garder HTML/CSS/JS sans framework, tester via serveur statique. |
+| Ajouter une fonction V1 mobile | Data card puis fichier source de verite Flutter | Verifier handoff Zone 0, navigation Ilot/P'TIPOTES/Journal, scan contextuel. |
 
 ## Conventions Importantes
 
@@ -256,5 +276,6 @@ Pour formater Dart:
 6. Garder l'UI scan et Mes PTIPOTES visuellement coherente.
 7. Lancer au minimum `flutter analyze` si du Dart a change.
 8. Stager seulement les fichiers lies a la demande.
-9. Commit puis push sur `main` si Kevin demande ou si le workflow courant le prevoit.
+9. Si une fonction, un ecran, une route ou une collection est ajoutee: mettre a jour cette data card avant commit.
+10. Commit puis push sur `main` si Kevin demande ou si le workflow courant le prevoit.
 
