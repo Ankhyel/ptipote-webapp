@@ -28,6 +28,7 @@ class _FigurinesPageState extends State<FigurinesPage> {
   List<PtipoteFigurine> _lastFigurines = const <PtipoteFigurine>[];
   List<String> _manualOrderIds = const <String>[];
   bool _transferMode = false;
+  bool _showDevData = false;
   PtipoteFigurine? _selectedTransfer;
   String? _status;
 
@@ -312,166 +313,224 @@ class _FigurinesPageState extends State<FigurinesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Mes PTIPOTES')),
-      body: StreamBuilder<List<PtipoteFigurine>>(
-        stream: _figurineService.watchMyFigurines(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: const <Widget>[
-                  SizedBox(height: 280),
-                  Center(child: CircularProgressIndicator()),
-                ],
-              ),
-            );
-          }
+      body: StreamBuilder<UserProfile?>(
+        stream: _profileService.watchMyProfile(),
+        builder: (context, profileSnapshot) {
+          final canSeeDevData =
+              profileSnapshot.data?.canSeeDiagnostics ?? false;
+          final showDevData = canSeeDevData && _showDevData;
 
-          if (snapshot.hasError) {
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                children: <Widget>[
-                  Text('Chargement impossible: ${snapshot.error}'),
-                ],
-              ),
-            );
-          }
-
-          final figurines = _applyManualOrder(
-            snapshot.data ?? const <PtipoteFigurine>[],
-          );
-          _lastFigurines = figurines;
-          if (figurines.isEmpty) {
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                children: <Widget>[
-                  _IncomingTransfersSection(
-                    figurineService: _figurineService,
-                    onAccept: _acceptTransfer,
-                    onReject: _rejectTransfer,
-                    onDetails: _showTransferDetails,
+          return StreamBuilder<List<PtipoteFigurine>>(
+            stream: _figurineService.watchMyFigurines(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: const <Widget>[
+                      SizedBox(height: 280),
+                      Center(child: CircularProgressIndicator()),
+                    ],
                   ),
-                  const SizedBox(height: 220),
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'Aucune figurine enregistree.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
+                );
+              }
 
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: Column(
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+              if (snapshot.hasError) {
+                return RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
                     children: <Widget>[
+                      Text('Chargement impossible: ${snapshot.error}'),
+                    ],
+                  ),
+                );
+              }
+
+              final figurines = _applyManualOrder(
+                snapshot.data ?? const <PtipoteFigurine>[],
+              );
+              _lastFigurines = figurines;
+              if (figurines.isEmpty) {
+                return RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    children: <Widget>[
+                      if (canSeeDevData) ...<Widget>[
+                        _DevDataToggle(
+                          enabled: _showDevData,
+                          onChanged: (value) =>
+                              setState(() => _showDevData = value),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       _IncomingTransfersSection(
                         figurineService: _figurineService,
                         onAccept: _acceptTransfer,
                         onReject: _rejectTransfer,
                         onDetails: _showTransferDetails,
                       ),
-                      _TransferRejectionsSection(
-                        notificationService: _notificationService,
-                      ),
-                      FilledButton.icon(
-                        onPressed: _transferAction,
-                        icon: Icon(_selectedTransfer?.transferRequested == true
-                            ? Icons.close
-                            : Icons.ios_share),
-                        label: Text(
-                          !_transferMode
-                              ? 'Transférer un PTIPOTE'
-                              : _selectedTransfer == null
-                                  ? 'Sélectionne une carte'
-                                  : _selectedTransfer!.transferRequested
-                                      ? 'Annuler'
-                                      : 'Transférer à...',
+                      const SizedBox(height: 220),
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          'Aucune figurine enregistree.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
-                      if (_status != null) ...<Widget>[
-                        const SizedBox(height: 8),
-                        Text(_status!,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w700)),
-                      ],
                     ],
                   ),
-                ),
-                Expanded(
-                  child: ReorderableListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    itemCount: figurines.length,
-                    onReorderItem: _reorderFigurines,
-                    proxyDecorator: (child, index, animation) => Material(
-                      color: Colors.transparent,
-                      child: ScaleTransition(
-                        scale: Tween<double>(begin: 1, end: 1.02)
-                            .animate(animation),
-                        child: child,
+                );
+              }
+
+              return RefreshIndicator(
+                onRefresh: _refresh,
+                child: Column(
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          if (canSeeDevData) ...<Widget>[
+                            _DevDataToggle(
+                              enabled: _showDevData,
+                              onChanged: (value) =>
+                                  setState(() => _showDevData = value),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          _IncomingTransfersSection(
+                            figurineService: _figurineService,
+                            onAccept: _acceptTransfer,
+                            onReject: _rejectTransfer,
+                            onDetails: _showTransferDetails,
+                          ),
+                          _TransferRejectionsSection(
+                            notificationService: _notificationService,
+                          ),
+                          FilledButton.icon(
+                            onPressed: _transferAction,
+                            icon: Icon(
+                                _selectedTransfer?.transferRequested == true
+                                    ? Icons.close
+                                    : Icons.ios_share),
+                            label: Text(
+                              !_transferMode
+                                  ? 'Transférer un PTIPOTE'
+                                  : _selectedTransfer == null
+                                      ? 'Sélectionne une carte'
+                                      : _selectedTransfer!.transferRequested
+                                          ? 'Annuler'
+                                          : 'Transférer à...',
+                            ),
+                          ),
+                          if (_status != null) ...<Widget>[
+                            const SizedBox(height: 8),
+                            Text(_status!,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ],
                       ),
                     ),
-                    itemBuilder: (context, index) => Padding(
-                      key: ValueKey(figurines[index].id),
-                      padding: EdgeInsets.only(
-                        bottom: index == figurines.length - 1 ? 0 : 12,
-                      ),
-                      child: GestureDetector(
-                        onTap: _transferMode
-                            ? () {
-                                final figurine = figurines[index];
-                                if (!figurine.canTransfer &&
-                                    !figurine.transferRequested) {
-                                  setState(() {
-                                    _status =
-                                        'Ce PTIPOTE est verrouillé pour le moment.';
-                                  });
-                                  return;
-                                }
-                                setState(() => _selectedTransfer = figurine);
-                              }
-                            : null,
-                        child: _FigurineCard(
-                          figurine: figurines[index],
-                          selected:
-                              _selectedTransfer?.id == figurines[index].id,
-                          onRename: () => _renameFigurine(figurines[index]),
-                          onScan: () => Navigator.of(context).pushNamed(
-                            NfcPage.route,
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        itemCount: figurines.length,
+                        onReorderItem: _reorderFigurines,
+                        proxyDecorator: (child, index, animation) => Material(
+                          color: Colors.transparent,
+                          child: ScaleTransition(
+                            scale: Tween<double>(begin: 1, end: 1.02)
+                                .animate(animation),
+                            child: child,
                           ),
-                          dragHandle: ReorderableDragStartListener(
-                            index: index,
-                            child: const Tooltip(
-                              message: 'Deplacer',
-                              child: Icon(Icons.drag_handle),
+                        ),
+                        itemBuilder: (context, index) => Padding(
+                          key: ValueKey(figurines[index].id),
+                          padding: EdgeInsets.only(
+                            bottom: index == figurines.length - 1 ? 0 : 12,
+                          ),
+                          child: GestureDetector(
+                            onTap: _transferMode
+                                ? () {
+                                    final figurine = figurines[index];
+                                    if (!figurine.canTransfer &&
+                                        !figurine.transferRequested) {
+                                      setState(() {
+                                        _status =
+                                            'Ce PTIPOTE est verrouillé pour le moment.';
+                                      });
+                                      return;
+                                    }
+                                    setState(
+                                        () => _selectedTransfer = figurine);
+                                  }
+                                : null,
+                            child: _FigurineCard(
+                              figurine: figurines[index],
+                              showDevData: showDevData,
+                              selected:
+                                  _selectedTransfer?.id == figurines[index].id,
+                              onRename: () => _renameFigurine(figurines[index]),
+                              onScan: () => Navigator.of(context).pushNamed(
+                                NfcPage.route,
+                              ),
+                              dragHandle: ReorderableDragStartListener(
+                                index: index,
+                                child: const Tooltip(
+                                  message: 'Deplacer',
+                                  child: Icon(Icons.drag_handle),
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           );
         },
+      ),
+    );
+  }
+}
+
+class _DevDataToggle extends StatelessWidget {
+  const _DevDataToggle({
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: SwitchListTile.adaptive(
+        value: enabled,
+        onChanged: onChanged,
+        secondary: const Icon(Icons.bug_report_outlined),
+        title: const Text(
+          'Données dev',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        subtitle: Text(
+          enabled
+              ? 'UID, batch et champs techniques visibles.'
+              : 'Infos publiques uniquement.',
+        ),
       ),
     );
   }
@@ -480,6 +539,7 @@ class _FigurinesPageState extends State<FigurinesPage> {
 class _FigurineCard extends StatelessWidget {
   const _FigurineCard({
     required this.figurine,
+    required this.showDevData,
     required this.selected,
     required this.onRename,
     required this.onScan,
@@ -487,6 +547,7 @@ class _FigurineCard extends StatelessWidget {
   });
 
   final PtipoteFigurine figurine;
+  final bool showDevData;
   final bool selected;
   final VoidCallback onRename;
   final VoidCallback onScan;
@@ -628,6 +689,10 @@ class _FigurineCard extends StatelessWidget {
                     label: const Text('Scanner PTIPOTE'),
                   ),
                 ],
+                if (showDevData) ...<Widget>[
+                  const SizedBox(height: 12),
+                  _FigurineDevData(figurine: figurine),
+                ],
               ],
             ),
           ),
@@ -660,6 +725,170 @@ class _FigurineCard extends StatelessWidget {
   int _xpValue(String value) {
     final match = RegExp(r'\d+').firstMatch(value);
     return int.tryParse(match?.group(0) ?? '') ?? 0;
+  }
+}
+
+class _FigurineDevData extends StatelessWidget {
+  const _FigurineDevData({required this.figurine});
+
+  final PtipoteFigurine figurine;
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = Map<String, String>.from(figurine.fields);
+    final primaryRows = <_DevDataRow>[
+      _DevDataRow('UID puce', figurine.tagUid),
+      _DevDataRow('Document', figurine.id),
+      _DevDataRow('Public key', figurine.publicKey),
+      _DevDataRow('Batch', fields['b'] ?? ''),
+      _DevDataRow('Source NDEF', figurine.rawSource),
+      _DevDataRow('Statut transfert', figurine.transferStatus),
+      _DevDataRow('Transfert (te)', fields['te'] ?? ''),
+      _DevDataRow('Transfert confirme (ter)', fields['ter'] ?? ''),
+      _DevDataRow('Eleveur origine', figurine.transferFromName),
+      _DevDataRow(
+        'Verrou transfert',
+        figurine.transferLockedUntil?.toIso8601String() ?? '',
+      ),
+      _DevDataRow(
+        'Verrou surnom',
+        figurine.renameLockedUntil?.toIso8601String() ?? '',
+      ),
+      _DevDataRow('Cree le', figurine.createdAt.toIso8601String()),
+      _DevDataRow('Mis a jour le', figurine.updatedAt.toIso8601String()),
+    ];
+
+    final fieldRows = fields.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2E8D6),
+        border: Border.all(color: const Color(0xFFD2BD93)),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.bug_report_outlined,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Données dev',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final row in primaryRows)
+            _DevDataLine(label: row.label, value: row.value),
+          if (fieldRows.isNotEmpty) ...<Widget>[
+            const Divider(height: 18),
+            const Text(
+              'Champs NDEF / Firestore',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final field in fieldRows)
+                  _DevFieldChip(label: field.key, value: field.value),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DevDataRow {
+  const _DevDataRow(this.label, this.value);
+
+  final String label;
+  final String value;
+}
+
+class _DevDataLine extends StatelessWidget {
+  const _DevDataLine({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanValue = value.trim().isEmpty ? '-' : value.trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          SelectableText(
+            cleanValue,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DevFieldChip extends StatelessWidget {
+  const _DevFieldChip({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanValue = value.trim().isEmpty ? '-' : value.trim();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF4),
+        border: Border.all(color: const Color(0xFFE0CFAE)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: <InlineSpan>[
+            TextSpan(
+              text: '$label: ',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            TextSpan(text: cleanValue),
+          ],
+        ),
+        style: const TextStyle(fontSize: 12),
+      ),
+    );
   }
 }
 
