@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PTIPOTE Dashboard</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Interne PTIPOTE</p>
+          <h1>Suivi data & admin</h1>
+        </div>
+        <div class="session">
+          <div class="session-copy">
+            <span id="authState">Non connecte</span>
+            <small id="authDetail">Acces reserve admin/dev</small>
+          </div>
+          <button class="button" id="authButton" type="button">Connexion</button>
+        </div>
+      </header>
+
+      <section class="status-panel" id="notice">
+        <strong>Lecture securisee</strong>
+        <span>Connecte-toi avec un compte admin Firebase. Les stats lisibles apparaitront ici selon les rules Firestore deployees.</span>
+      </section>
+
+      <section class="grid metrics" aria-label="Statistiques principales">
+        <article class="metric">
+          <span>Utilisateurs</span>
+          <strong id="usersCount">-</strong>
+          <small id="usersHint">users</small>
+        </article>
+        <article class="metric">
+          <span>PTIPOTES enregistres</span>
+          <strong id="figurinesCount">-</strong>
+          <small id="figurinesHint">users/*/figurines</small>
+        </article>
+        <article class="metric">
+          <span>PTIPOTES publics</span>
+          <strong id="publicFigurinesCount">-</strong>
+          <small id="publicFigurinesHint">publicFigurines</small>
+        </article>
+        <article class="metric">
+          <span>Demandes transfert</span>
+          <strong id="transferRequestsCount">-</strong>
+          <small id="transferRequestsHint">transferRequests</small>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Transferts</h2>
+            <button class="ghost" id="refreshButton" type="button">Actualiser</button>
+          </div>
+          <div class="transfer-list" id="transferStatusList">
+            <div class="row"><span>En attente</span><strong id="transferPending">-</strong></div>
+            <div class="row"><span>Acceptes</span><strong id="transferAccepted">-</strong></div>
+            <div class="row"><span>Confirmes</span><strong id="transferConfirmed">-</strong></div>
+            <div class="row"><span>Refuses</span><strong id="transferRefused">-</strong></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Donnees a instrumenter</h2>
+          </div>
+          <ul class="todo-list">
+            <li><span>Utilisateurs actifs</span><small>Ajouter lastSeenAt / appOpenedAt cote app.</small></li>
+            <li><span>FCM tokens</span><small>Compter via agregat serveur, pas en lecture brute.</small></li>
+            <li><span>Erreurs Firebase</span><small>Logger un event technique filtre et sans donnees sensibles.</small></li>
+            <li><span>Scans NFC</span><small>Remonter scanSuccess / scanError avec figurineId public ou hash.</small></li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Activite recente</h2>
+          <span class="pill">A brancher</span>
+        </div>
+        <div class="empty-state">
+          Aucune collection d'evenements admin n'est encore presente dans ce repo. Le dashboard affichera les vrais evenements des que l'app les remontera.
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
