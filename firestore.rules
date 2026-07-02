@@ -19,6 +19,15 @@ service cloud.firestore {
         );
     }
 
+    function isDev() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'dev';
+    }
+
+    function canReadDashboard() {
+      return isAdmin() || isDev();
+    }
+
     function ownCreateKeepsRole(userId) {
       return signedIn()
         && request.auth.uid == userId
@@ -55,7 +64,8 @@ service cloud.firestore {
       allow delete: if false;
 
       match /figurines/{figurineId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if (request.auth != null && request.auth.uid == userId) || canReadDashboard();
+        allow write: if request.auth != null && request.auth.uid == userId;
         allow update, delete: if request.auth != null
           && (
             resource.data.transfer.toUid == request.auth.uid
@@ -125,7 +135,11 @@ service cloud.firestore {
 
     match /transferRequests/{transferId} {
       allow read, update: if request.auth != null
-        && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+        && (
+          resource.data.fromUid == request.auth.uid
+          || resource.data.toUid == request.auth.uid
+          || canReadDashboard()
+        );
       allow create: if request.auth != null
         && request.resource.data.fromUid == request.auth.uid;
     }

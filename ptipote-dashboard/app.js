@@ -9,11 +9,15 @@ import {
 import {
   collection,
   collectionGroup,
+  doc,
   getCountFromServer,
+  getDoc,
   getFirestore,
   query,
   where,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+const BOOTSTRAP_ADMIN_UIDS = new Set(["taNxWXLMh2gJx5CHgmBB8Phl4c93"]);
 
 const firebaseConfig = {
   apiKey: "AIzaSyCol40AnP-uim5rxMT63ZzuO-E2dfoFTpQ",
@@ -27,6 +31,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
+let currentDashboardRole = "";
 
 const ids = [
   "authState",
@@ -96,9 +101,36 @@ function readableFirebaseError(error) {
   return error?.message || "Lecture impossible";
 }
 
-async function loadStats() {
+function clearStats() {
+  setValue("usersCount", "usersHint", { ok: false, message: "Reserve admin/dev" });
+  setValue("figurinesCount", "figurinesHint", { ok: false, message: "Reserve admin/dev" });
+  setValue("publicFigurinesCount", "publicFigurinesHint", { ok: false, message: "Reserve admin/dev" });
+  setValue("transferRequestsCount", "transferRequestsHint", { ok: false, message: "Reserve admin/dev" });
+  el.transferPending.textContent = "-";
+  el.transferAccepted.textContent = "-";
+  el.transferConfirmed.textContent = "-";
+  el.transferRefused.textContent = "-";
+}
+
+async function getDashboardRole(user) {
+  if (BOOTSTRAP_ADMIN_UIDS.has(user.uid)) {
+    return "admin";
+  }
+
+  const snapshot = await getDoc(doc(db, "users", user.uid));
+  const role = snapshot.exists() ? snapshot.data().role : "";
+  return role === "admin" || role === "dev" ? role : "";
+}
+
+async function loadStats(role) {
   if (!auth.currentUser) {
     setNotice("Connexion requise", "Les compteurs sont lances apres authentification Google.", false);
+    return;
+  }
+
+  if (!role) {
+    clearStats();
+    setNotice("Acces refuse", "Ton document utilisateur doit avoir le role admin ou dev.", true);
     return;
   }
 
@@ -158,16 +190,28 @@ async function handleAuthClick() {
 
 onAuthStateChanged(auth, (user) => {
   if (!user) {
+    currentDashboardRole = "";
     el.authState.textContent = "Non connecte";
     el.authDetail.textContent = "Acces reserve admin/dev";
     el.authButton.textContent = "Connexion";
+    clearStats();
     return;
   }
 
   el.authState.textContent = user.displayName || user.email || "Compte Firebase";
-  el.authDetail.textContent = user.email || user.uid;
   el.authButton.textContent = "Deconnexion";
-  loadStats();
+  getDashboardRole(user)
+    .then((role) => {
+      currentDashboardRole = role;
+      el.authDetail.textContent = role ? `${user.email || user.uid} - ${role}` : user.email || user.uid;
+      loadStats(role);
+    })
+    .catch((error) => {
+      currentDashboardRole = "";
+      clearStats();
+      el.authDetail.textContent = user.email || user.uid;
+      setNotice("Role illisible", readableFirebaseError(error), true);
+    });
 });
 
 el.authButton.addEventListener("click", () => {
@@ -177,5 +221,5 @@ el.authButton.addEventListener("click", () => {
 });
 
 el.refreshButton.addEventListener("click", () => {
-  loadStats();
+  loadStats(currentDashboardRole);
 });

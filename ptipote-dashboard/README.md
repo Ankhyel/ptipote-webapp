@@ -8,7 +8,7 @@ Dashboard interne statique pour suivre les donnees admin de PTIPOTE sans exposer
 - Firebase Web SDK charge depuis le CDN.
 - Auth Google cote client.
 - Lectures Firestore avec `getCountFromServer()` pour eviter de telecharger les documents.
-- Securite attendue dans Firestore rules : seuls les comptes admin/dev doivent pouvoir lire ces collections ou les futurs agregats.
+- Acces dashboard verifie avec `users/{uid}.role` (`admin` ou `dev`) et le bootstrap admin deja present dans `firestore.rules`.
 
 Cette premiere version ne contient aucune cle admin. La cle Firebase Web est un identifiant client normal ; elle ne donne pas de droits si les rules Firestore sont correctes.
 
@@ -22,58 +22,15 @@ Cette premiere version ne contient aucune cle admin. La cle Firebase Web est un 
 
 Si les rules refusent l'acces, les cartes affichent un tiret et un message explicite.
 
-## Rules Firestore recommandees
+## Rules Firestore
 
-Le repo ne contient pas encore de `firestore.rules`. Pour un dashboard interne, privilegier un custom claim `admin` pose par un environnement serveur ou la console Admin SDK.
+Le repo contient `firestore.rules`. Le dashboard suit le modele existant :
 
-```js
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    function isAdmin() {
-      return request.auth != null && request.auth.token.admin == true;
-    }
+- bootstrap admin UID dans `isBootstrapAdmin()`;
+- role applicatif dans `users/{uid}.role`;
+- roles autorises pour le dashboard : `admin` et `dev`.
 
-    match /users/{userId} {
-      allow read: if isAdmin();
-      match /figurines/{figurineId} {
-        allow read: if isAdmin();
-      }
-      match /notifications/{notificationId} {
-        allow read: if isAdmin();
-      }
-      match /fcmTokens/{tokenId} {
-        allow read: if false;
-      }
-    }
-
-    match /publicProfiles/{uid} {
-      allow read: if isAdmin();
-    }
-
-    match /publicFigurines/{publicKey} {
-      allow read: if isAdmin();
-    }
-
-    match /friendInvites/{inviteId} {
-      allow read: if isAdmin();
-    }
-
-    match /transferRequests/{transferId} {
-      allow read: if isAdmin();
-    }
-
-    match /chats/{chatId} {
-      allow read: if isAdmin();
-    }
-
-    match /adminStats/{docId} {
-      allow read: if isAdmin();
-      allow write: if false;
-    }
-  }
-}
-```
+La premiere ouverture lit le document `users/{uid}` du compte connecte. Si le role n'est pas `admin` ou `dev`, les compteurs restent bloques cote UI. Les rules gardent la vraie securite et autorisent les lectures necessaires aux compteurs dashboard pour `admin/dev`.
 
 Pour `fcmTokens`, eviter une lecture brute cote dashboard. Preferer un agregat serveur, par exemple `adminStats/fcm` avec `activeTokenCount`, `staleTokenCount`, `lastRefreshAt`.
 
