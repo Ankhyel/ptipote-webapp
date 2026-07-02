@@ -40,6 +40,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
   bool _firebaseLookupFailed = false;
   bool _statusIsError = false;
   bool _canSeeDiagnostics = false;
+  bool _showDiagnostics = false;
   bool _confirmingTransfer = false;
   bool _showStatusCard = true;
   bool _adoptedInSession = false;
@@ -143,6 +144,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
       _rawSource = '';
       _decodedText = '';
       _diagnostic = const NfcDiagnosticEvent(step: 'Démarrage scan');
+      _showDiagnostics = false;
       _checkingFirebase = false;
       _alreadyRegistered = false;
       _firebaseLookupFailed = false;
@@ -755,9 +757,34 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
               ),
             ),
           ],
-          if (_diagnostic != null && _canSeeDiagnostics) ...<Widget>[
+          if (_canSeeDiagnostics && _decodedText.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
-            _DiagnosticCard(event: _diagnostic!),
+            SwitchListTile.adaptive(
+              value: _showDiagnostics,
+              onChanged: (value) => setState(() => _showDiagnostics = value),
+              title: const Text(
+                'Mode debug',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              secondary: const Icon(Icons.bug_report_outlined),
+            ),
+          ],
+          if (_canSeeDiagnostics && _showDiagnostics) ...<Widget>[
+            const SizedBox(height: 12),
+            _DebugCard(
+              fields: _fields,
+              uid: _tagUid,
+              rawSource: _rawSource,
+              decodedText: _decodedText,
+              checkingFirebase: _checkingFirebase,
+              alreadyRegistered: _alreadyRegistered,
+              firebaseLookupFailed: _firebaseLookupFailed,
+              pendingTransfer: _pendingTransfer,
+            ),
+            if (_diagnostic != null) ...<Widget>[
+              const SizedBox(height: 12),
+              _DiagnosticCard(event: _diagnostic!),
+            ],
           ],
         ],
       ),
@@ -1234,6 +1261,88 @@ int _rarityStars(String value) {
 String _display(String value, {String fallback = '—'}) {
   final trimmed = value.trim();
   return trimmed.isEmpty ? fallback : trimmed;
+}
+
+class _DebugCard extends StatelessWidget {
+  const _DebugCard({
+    required this.fields,
+    required this.uid,
+    required this.rawSource,
+    required this.decodedText,
+    required this.checkingFirebase,
+    required this.alreadyRegistered,
+    required this.firebaseLookupFailed,
+    required this.pendingTransfer,
+  });
+
+  final Map<String, String> fields;
+  final String uid;
+  final String rawSource;
+  final String decodedText;
+  final bool checkingFirebase;
+  final bool alreadyRegistered;
+  final bool firebaseLookupFailed;
+  final PendingTransfer? pendingTransfer;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <_FieldRow>[
+      _FieldRow('UID puce', uid),
+      _FieldRow('Firebase', _firebaseStateLabel()),
+      _FieldRow('Déjà adopté', alreadyRegistered ? 'oui' : 'non'),
+      _FieldRow(
+        'Transfert',
+        pendingTransfer == null ? 'aucun' : pendingTransfer!.id,
+      ),
+      _FieldRow('NDEF brut', rawSource),
+      _FieldRow('NDEF décodé', decodedText),
+      ...fields.entries.map((entry) => _FieldRow(entry.key, entry.value)),
+    ];
+
+    return Card(
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        title: const Text(
+          'Debug PTIPOTE',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        children: rows
+            .map(
+              (row) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(
+                      flex: 4,
+                      child: Text(
+                        row.label,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 7,
+                      child: SelectableText(
+                        row.value.trim().isEmpty ? '—' : row.value,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  String _firebaseStateLabel() {
+    if (checkingFirebase) return 'en cours';
+    if (firebaseLookupFailed) return 'erreur';
+    return 'OK';
+  }
 }
 
 class _DiagnosticCard extends StatelessWidget {

@@ -19,11 +19,15 @@ class _ProfilePageState extends State<ProfilePage> {
   late final FigurineService _figurineService;
   final _usernameController = TextEditingController();
   final _displayNameController = TextEditingController();
+  final _roleUidController = TextEditingController();
 
   bool _loaded = false;
   bool _loading = true;
   bool _saving = false;
+  bool _savingRole = false;
+  String _selectedRole = 'dev';
   String? _status;
+  UserProfile? _profile;
 
   @override
   void initState() {
@@ -37,6 +41,7 @@ class _ProfilePageState extends State<ProfilePage> {
   void dispose() {
     _usernameController.dispose();
     _displayNameController.dispose();
+    _roleUidController.dispose();
     super.dispose();
   }
 
@@ -52,6 +57,7 @@ class _ProfilePageState extends State<ProfilePage> {
       _usernameController.text = profile.username;
       _displayNameController.text = profile.displayName;
       setState(() {
+        _profile = profile;
         _loaded = true;
         _loading = false;
       });
@@ -83,11 +89,36 @@ class _ProfilePageState extends State<ProfilePage> {
           username: username, displayName: displayName);
       final profile = await _service.getOrCreateMyProfile();
       await _figurineService.syncOwnerProfileOnMyFigurines(profile);
-      setState(() => _status = 'Profil et PTIPOTE synchronises.');
+      setState(() {
+        _profile = profile;
+        _status = 'Profil et PTIPOTE synchronises.';
+      });
     } catch (error) {
       setState(() => _status = error.toString());
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveRole() async {
+    final uid = _roleUidController.text.trim();
+    if (uid.isEmpty) {
+      setState(() => _status = 'UID utilisateur requis.');
+      return;
+    }
+
+    setState(() {
+      _savingRole = true;
+      _status = null;
+    });
+
+    try {
+      await _service.setUserRole(uid: uid, role: _selectedRole);
+      setState(() => _status = 'Role $_selectedRole attribue.');
+    } catch (error) {
+      setState(() => _status = error.toString());
+    } finally {
+      if (mounted) setState(() => _savingRole = false);
     }
   }
 
@@ -134,6 +165,76 @@ class _ProfilePageState extends State<ProfilePage> {
                       : const Icon(Icons.save),
                   label: Text(_saving ? 'Enregistrement...' : 'Enregistrer'),
                 ),
+                if (_profile?.isAdmin ?? false) ...<Widget>[
+                  const SizedBox(height: 24),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text(
+                            'Administration',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _roleUidController,
+                            textInputAction: TextInputAction.done,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              labelText: 'UID utilisateur',
+                              helperText: 'Attribue ou retire le role dev.',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SegmentedButton<String>(
+                            segments: const <ButtonSegment<String>>[
+                              ButtonSegment<String>(
+                                value: 'dev',
+                                icon: Icon(Icons.bug_report_outlined),
+                                label: Text('Dev'),
+                              ),
+                              ButtonSegment<String>(
+                                value: 'user',
+                                icon: Icon(Icons.person_outline),
+                                label: Text('Utilisateur'),
+                              ),
+                            ],
+                            selected: <String>{_selectedRole},
+                            onSelectionChanged: _savingRole
+                                ? null
+                                : (selection) {
+                                    setState(() {
+                                      _selectedRole = selection.first;
+                                    });
+                                  },
+                          ),
+                          const SizedBox(height: 12),
+                          FilledButton.icon(
+                            onPressed: _savingRole ? null : _saveRole,
+                            icon: _savingRole
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.admin_panel_settings),
+                            label: Text(
+                              _savingRole
+                                  ? 'Attribution...'
+                                  : 'Enregistrer le role',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
             )
           : _ProfileLoadState(

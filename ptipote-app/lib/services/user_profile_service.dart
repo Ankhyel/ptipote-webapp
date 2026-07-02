@@ -16,7 +16,9 @@ class UserProfile {
   final String email;
   final String role;
 
-  bool get canSeeDiagnostics => role == 'admin' || role == 'moderator';
+  bool get isAdmin => role == 'admin';
+  bool get isDev => role == 'dev';
+  bool get canSeeDiagnostics => isAdmin || isDev;
 
   String get ownerName {
     final name = displayName.trim();
@@ -43,6 +45,10 @@ class UserProfileService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
 
+  static const Set<String> _bootstrapAdminUids = <String>{
+    'taNxWXLMh2gJx5CHgmBB8Phl4c93',
+  };
+
   DocumentReference<Map<String, dynamic>> _doc(String uid) =>
       _firestore.collection('users').doc(uid);
 
@@ -65,6 +71,7 @@ class UserProfileService {
     final snapshot = await _getProfileSnapshot(ref);
     final profile = _fromSnapshot(user, snapshot.data());
     if (snapshot.exists) {
+      await _syncBootstrapRoleIfNeeded(user.uid, snapshot.data());
       await _publishProfile(profile);
       return profile;
     }
@@ -76,7 +83,7 @@ class UserProfileService {
       'usernameLower': _defaultUsername(user).toLowerCase(),
       'displayName': user.displayName ?? '',
       'displayNameLower': (user.displayName ?? '').toLowerCase(),
-      'role': 'user',
+      'role': _bootstrapAdminUids.contains(user.uid) ? 'admin' : 'user',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -137,6 +144,27 @@ class UserProfileService {
     await batch.commit();
   }
 
+  Future<void> setUserRole({
+    required String uid,
+    required String role,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw StateError('Connexion requise.');
+
+    final cleanRole = role.trim().toLowerCase();
+    if (cleanRole != 'user' && cleanRole != 'dev') {
+      throw ArgumentError('Role non autorise.');
+    }
+
+    await _doc(uid).set(
+      <String, dynamic>{
+        'role': cleanRole,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   Future<void> _publishProfile(UserProfile profile) async {
     await _publicDoc(profile.uid).set(
       _publicProfileData(
@@ -150,12 +178,28 @@ class UserProfileService {
 
   UserProfile _fromSnapshot(User user, Map<String, dynamic>? data) {
     final source = data ?? const <String, dynamic>{};
+    final role = '${source['role'] ?? 'user'}'.trim().toLowerCase();
     return UserProfile(
       uid: user.uid,
       username: '${source['username'] ?? _defaultUsername(user)}',
       displayName: '${source['displayName'] ?? user.displayName ?? ''}',
       email: '${source['email'] ?? user.email ?? ''}',
-      role: '${source['role'] ?? 'user'}'.trim().toLowerCase(),
+      role: _bootstrapAdminUids.contains(user.uid) ? 'admin' : role,
+    );
+  }
+
+  Future<void> _syncBootstrapRoleIfNeeded(
+    String uid,
+    Map<String, dynamic>? data,
+  ) async {
+    if (!_bootstrapAdminUids.contains(uid)) return;
+    if ('${data?['role'] ?? ''}'.trim().toLowerCase() == 'admin') return;
+    await _doc(uid).set(
+      <String, dynamic>{
+        'role': 'admin',
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
     );
   }
 
