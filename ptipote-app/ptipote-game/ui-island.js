@@ -12,13 +12,25 @@
 
   function renderBuildings(state, onSelect) {
     const grid = document.getElementById("buildingGrid");
-    grid.innerHTML = window.PTIPOTE_DATA.buildings.map((building) => `
-      <button class="building-card ${state.selectedBuilding === building.id ? "active" : ""}" type="button" data-building="${building.id}">
-        <span class="building-icon">${building.icon}</span>
-        <h3>${building.name}</h3>
-        <p>${building.summary}</p>
+    const ptipote = window.PTIPOTE_STATE.getSelectedPtipote(state);
+    grid.style.setProperty("--refuge-bg", `url("${window.PTIPOTE_DATA.refuge.background}")`);
+    grid.innerHTML = `
+      <div class="refuge-overlay" aria-hidden="true"></div>
+      ${window.PTIPOTE_DATA.buildings.map((building) => `
+        <button
+          class="building-card ${state.selectedBuilding === building.id ? "active" : ""}"
+          style="--x:${building.x}%;--y:${building.y}%;--w:${building.w}%;--h:${building.h}%"
+          type="button"
+          data-building="${building.id}"
+        >
+          <span>${building.name}</span>
+        </button>
+      `).join("")}
+      <button class="refuge-ptipote" type="button" data-building="home">
+        <span class="refuge-ptipote-avatar">${ptipote.name.slice(0, 1)}</span>
+        <span>${ptipote.name} · niv. ${ptipote.level}</span>
       </button>
-    `).join("");
+    `;
 
     grid.querySelectorAll("[data-building]").forEach((button) => {
       button.addEventListener("click", () => onSelect(button.dataset.building));

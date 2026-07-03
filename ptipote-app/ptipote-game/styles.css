@@ -40,6 +40,7 @@ button {
 .app-shell {
   min-height: 100dvh;
   padding: 14px 12px 92px;
+  background: linear-gradient(180deg, rgba(244, 247, 242, 0.94), rgba(234, 225, 204, 0.9));
 }
 
 .top-hud {
@@ -120,9 +121,16 @@ button {
 }
 
 .island-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  position: relative;
+  min-height: min(122vw, 760px);
+  overflow: hidden;
+  border: 1px solid rgba(65, 51, 31, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(31, 51, 42, 0.08), rgba(67, 45, 20, 0.22)),
+    var(--refuge-bg) center / cover no-repeat,
+    #ddc49a;
+  box-shadow: var(--shadow);
 }
 
 .building-card,
@@ -136,33 +144,83 @@ button {
 }
 
 .building-card {
-  min-height: 128px;
-  padding: 12px;
-  text-align: left;
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  z-index: 2;
+  display: grid;
+  width: var(--w);
+  height: var(--h);
+  min-height: 42px;
+  place-items: center;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.2);
+  color: #2a2114;
+  text-align: center;
+  text-shadow: 0 1px 8px rgba(255, 255, 255, 0.95);
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(1px);
 }
 
 .building-card.active {
-  border-color: var(--accent);
-  background: var(--surface-strong);
+  border-color: rgba(255, 255, 255, 0.85);
+  background: rgba(54, 162, 105, 0.26);
+  box-shadow: 0 0 0 2px rgba(54, 162, 105, 0.25), 0 10px 24px rgba(35, 58, 28, 0.18);
 }
 
-.building-icon {
+.building-card span {
+  display: block;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 900;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.refuge-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 43%, rgba(255, 244, 198, 0.2), transparent 24%),
+    linear-gradient(180deg, transparent 58%, rgba(38, 27, 12, 0.18));
+}
+
+.refuge-ptipote {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  max-width: calc(100% - 24px);
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #2a2114;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: 0 8px 18px rgba(45, 32, 17, 0.18);
+}
+
+.refuge-ptipote-avatar {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 26px;
+  height: 26px;
   place-items: center;
-  border-radius: 8px;
-  background: var(--surface-strong);
-  font-size: 24px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
 }
 
-.building-card h3,
 .ptipote-card h3,
 .sheet-card h3 {
   margin: 10px 0 4px;
 }
 
-.building-card p,
 .ptipote-card p,
 .journal-entry p,
 .objective-card p,
@@ -355,7 +413,7 @@ button {
   }
 
   .island-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-height: min(82vw, 780px);
   }
 
   .bottom-sheet {

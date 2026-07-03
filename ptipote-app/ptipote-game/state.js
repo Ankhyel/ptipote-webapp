@@ -10,7 +10,7 @@
     const data = window.PTIPOTE_DATA;
     return {
       selectedTab: "island",
-      selectedBuilding: "bio",
+      selectedBuilding: "kernel",
       selectedPtipoteUid: data.ptipotes[0].uid,
       ptipotes: clone(data.ptipotes),
       resources: clone(data.resources),
@@ -37,13 +37,15 @@
   }
 
   function mergeState(base, saved) {
-    return {
+    const next = {
       ...base,
       ...saved,
       resources: { ...base.resources, ...(saved.resources || {}) },
       ptipotes: Array.isArray(saved.ptipotes) ? saved.ptipotes : base.ptipotes,
       journal: Array.isArray(saved.journal) ? saved.journal : base.journal
     };
+    if (next.selectedBuilding === "bio") next.selectedBuilding = "kernel";
+    return next;
   }
 
   function saveState(state) {

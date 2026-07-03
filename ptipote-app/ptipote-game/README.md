@@ -26,7 +26,13 @@ http://localhost:4173/ptipote-app/ptipote-game/
 - `ui-island.js` : HUD, ilot, navigation.
 - `ui-panels.js` : fiches basses, P'TIPOTES, journal.
 - `main.js` : orchestration et evenements.
+- `image_game/` : fonds du jeu et assets visuels propres au refuge.
+  Convention: nommer chaque fond avec le nom de l'ecran, par exemple `Ilot.jpg`, `Kernel.jpg`, `Maison.jpg`, `Lisiere_1.jpg`.
 
 ## Parcours coeur
 
-Choisir un P'TIPOTE -> l'assigner a la Lisiere -> attendre -> recuperer -> crafter un Repas -> soigner a la Maison -> progresser au Bio-ordinateur.
+Choisir un P'TIPOTE -> l'assigner a la Lisiere -> attendre -> recuperer -> crafter un Repas -> soigner a la Maison -> progresser au Kernel.
+
+## Refuge V1
+
+L'ecran Ilot affiche le fond `image_game/Ilot.jpg` avec des zones cliquables semi-transparentes pour Maison, Kernel, Lisiere, Atelier, Cuisine et Marche.

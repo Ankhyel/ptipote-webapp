@@ -35,7 +35,7 @@
     window.PTIPOTE_STATE.addJournal(state, `P'TIPOTE selectionne : ${window.PTIPOTE_STATE.getSelectedPtipote(state).name}.`);
     window.PTIPOTE_STATE.advanceObjective(state, 0);
     state.selectedTab = "island";
-    state.selectedBuilding = "bio";
+    state.selectedBuilding = "kernel";
     persistAndRender();
   }
 
@@ -48,7 +48,11 @@
       sell: () => window.PTIPOTE_TASKS.sellStock(state, payload.stock),
       rest: () => window.PTIPOTE_TASKS.restAtHome(state),
       feed: () => window.PTIPOTE_TASKS.feedAtHome(state),
-      progress: () => window.PTIPOTE_TASKS.applyProgression(state)
+      progress: () => window.PTIPOTE_TASKS.applyProgression(state),
+      scan: () => {
+        window.PTIPOTE_STATE.addJournal(state, "Kernel : scan figurine pret. NFC reel non connecte dans ce proto.");
+        return "";
+      }
     };
 
     const error = actions[action] ? actions[action]() : "Action inconnue.";

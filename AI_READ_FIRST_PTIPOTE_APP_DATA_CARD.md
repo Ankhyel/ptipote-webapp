@@ -95,7 +95,9 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Le scan figurine reste important mais contextuel: Ilot, Kernel, P'TIPOTES, adoption ou transfert. Il ne doit pas devenir un onglet principal.
 - Si aucun P'TIPOTE n'existe: afficher un etat vide centre sur le scan. Si au moins un P'TIPOTE existe: ouvrir sur l'Ilot.
 - `ptipote-app/ptipote-game/` contient le prototype HTML/CSS/JS local pour tester vite la boucle refuge sans Flutter.
+- `ptipote-app/ptipote-game/image_game/` contient les fonds et assets visuels du jeu. Convention: le nom de fichier doit correspondre au nom de l'ecran, par exemple `Ilot.jpg`, `Kernel.jpg`, `Maison.jpg`, `Lisiere_1.jpg`.
 - Fichiers du prototype: `index.html`, `styles.css`, `data.js`, `state.js`, `tasks.js`, `ui-island.js`, `ui-panels.js`, `main.js`.
+- L'ecran Ilot du prototype affiche maintenant le refuge du joueur avec fond illustre, cases batiment a opacite 20%, P'TIPOTE visible et Kernel pour scanner.
 - Boucle coeur prototype: choisir un P'TIPOTE -> assigner a la Lisiere -> attendre -> recuperer -> crafter un Repas -> soigner a la Maison -> progresser.
 - Handoff V1 mobile: creer progressivement Ilot, Kernel, Lisiere proche/lointaine, Atelier et Cuisine a slots, sans simulation complete.
 - Lisiere V1: exactement deux onglets, `Lisiere proche` et `Lisiere lointaine`. Pas d'onglet PTIBUG separe.
@@ -278,4 +280,3 @@ Pour formater Dart:
 8. Stager seulement les fichiers lies a la demande.
 9. Si une fonction, un ecran, une route ou une collection est ajoutee: mettre a jour cette data card avant commit.
 10. Commit puis push sur `main` si Kevin demande ou si le workflow courant le prevoit.
-

@@ -69,10 +69,13 @@
     `;
     const footer = `</article>`;
 
-    if (building.id === "bio") {
+    if (building.id === "kernel") {
       return `${header}
         <p>${ptipote.name} selectionne. UID ${ptipote.uid}, espece ${ptipote.species}, type ${ptipote.type}.</p>
-        <div class="action-row"><button class="primary-button" type="button" data-action="progress">Appliquer progression</button></div>
+        <div class="action-row">
+          <button class="primary-button" type="button" data-action="scan">Scanner une figurine</button>
+          <button class="secondary-button" type="button" data-action="progress">Appliquer progression</button>
+        </div>
       ${footer}`;
     }
 
@@ -113,6 +116,13 @@
           <option value="meals">Repas (${state.resources.meals})</option>
         </select>
         <div class="action-row"><button class="primary-button" type="button" data-action="sell">Vendre automatiquement</button></div>
+      ${footer}`;
+    }
+
+    if (building.id === "kitchen") {
+      return `${header}
+        <p>Cuisine V1 placeholder : les Repas et soins avanceront ici. Eau disponible comme element de salle.</p>
+        <div class="action-row"><button class="secondary-button" type="button" data-action="feed">Utiliser un Repas</button></div>
       ${footer}`;
     }
 
