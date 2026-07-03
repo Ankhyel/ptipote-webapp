@@ -6,9 +6,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../services/notification_service.dart';
 import '../../services/nfc_service.dart';
+import '../../services/user_profile_service.dart';
 import '../chat/chats_page.dart';
 import '../figurines/figurines_page.dart';
 import '../friends/friends_page.dart';
+import '../game/refuge_page.dart';
 import '../nfc/nfc_page.dart';
 import '../profile/profile_page.dart';
 
@@ -23,6 +25,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final _notificationService = NotificationService();
+  final _userProfileService = UserProfileService();
   bool _scanning = false;
 
   Future<void> _scanFigurine() async {
@@ -178,6 +181,22 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 Positioned(
+                  left: (constraints.maxWidth - 154) / 2,
+                  top: unit * 1.18,
+                  child: StreamBuilder<UserProfile?>(
+                    stream: _userProfileService.watchMyProfile(),
+                    builder: (context, snapshot) {
+                      final canSeeDiagnostics =
+                          snapshot.data?.canSeeDiagnostics ?? false;
+                      if (!canSeeDiagnostics) return const SizedBox.shrink();
+                      return _GameButton(
+                        onTap: () =>
+                            Navigator.of(context).pushNamed(RefugePage.route),
+                      );
+                    },
+                  ),
+                ),
+                Positioned(
                   left: 24,
                   right: 24,
                   top: unit * 4.02,
@@ -218,6 +237,49 @@ class _HomePageState extends State<HomePage> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _GameButton extends StatelessWidget {
+  const _GameButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(28),
+      onTap: onTap,
+      child: Ink(
+        width: 154,
+        height: 78,
+        decoration: BoxDecoration(
+          color: const Color(0xFFE9D9B7),
+          border: Border.all(color: const Color(0xFFC7B07D)),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x2933281E),
+              blurRadius: 14,
+              offset: Offset(0, 7),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.cottage_outlined, size: 28),
+              SizedBox(width: 8),
+              Text(
+                'Jeu',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
         ),
       ),
     );

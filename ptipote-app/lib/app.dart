@@ -6,6 +6,7 @@ import 'features/auth/auth_gate.dart';
 import 'features/chat/chats_page.dart';
 import 'features/figurines/figurines_page.dart';
 import 'features/friends/friends_page.dart';
+import 'features/game/refuge_page.dart';
 import 'features/nfc/nfc_page.dart';
 import 'features/profile/profile_page.dart';
 
@@ -27,6 +28,7 @@ class PtipoteApp extends StatelessWidget {
           ChatsPage.route: (_) => const ChatsPage(),
           FigurinesPage.route: (_) => const FigurinesPage(),
           FriendsPage.route: (_) => const FriendsPage(),
+          RefugePage.route: (_) => const RefugePage(),
           NfcPage.route: (_) => const NfcPage(),
           ProfilePage.route: (_) => const ProfilePage(),
         },

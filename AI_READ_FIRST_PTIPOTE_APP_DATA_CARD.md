@@ -34,6 +34,8 @@ Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'
 | Amis | `ptipote-app/lib/features/friends/friends_page.dart` | Recherche profils, invitations, accept/refuse/cancel. |
 | Liste chats | `ptipote-app/lib/features/chat/chats_page.dart` | Liste des conversations et badges messages. |
 | Conversation chat | `ptipote-app/lib/features/chat/chat_page.dart` | Messages entre deux amis. |
+| Jeu / refuge Flutter | `ptipote-app/lib/features/game/refuge_page.dart` | Ecran dev du refuge joueur, accessible par bouton Jeu sur Home si `canSeeDiagnostics`. |
+| Assets jeu Flutter | `ptipote-app/assets/image_game/` | Images d'ecran du jeu, resolues par nom sans dependance a l'extension. |
 | Prototype web Zone 0 | `ptipote-app/ptipote-game/` | Vertical slice HTML/CSS/JS mobile-first du refuge: Ilot, P'TIPOTES, Journal, Lisiere, Atelier, Tour, Marche, Maison. |
 
 ## Services App
@@ -69,6 +71,7 @@ Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'
 | `/profile` | `ptipote-app/lib/features/profile/profile_page.dart` |
 | `/friends` | `ptipote-app/lib/features/friends/friends_page.dart` |
 | `/chats` | `ptipote-app/lib/features/chat/chats_page.dart` |
+| `/game` | `ptipote-app/lib/features/game/refuge_page.dart` |
 
 Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
@@ -96,6 +99,8 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Si aucun P'TIPOTE n'existe: afficher un etat vide centre sur le scan. Si au moins un P'TIPOTE existe: ouvrir sur l'Ilot.
 - `ptipote-app/ptipote-game/` contient le prototype HTML/CSS/JS local pour tester vite la boucle refuge sans Flutter.
 - `ptipote-app/ptipote-game/image_game/` contient les fonds et assets visuels du jeu. Convention: le nom de fichier doit correspondre au nom de l'ecran, par exemple `Ilot.jpg`, `Kernel.jpg`, `Maison.jpg`, `Lisiere_1.jpg`.
+- `ptipote-app/assets/image_game/` contient les images embarquees dans l'app Flutter. Le code resout les images par nom (`Refuge`, `Kernel`, `Maison`) quelle que soit l'extension (`.jpg`, `.PNG`, etc.).
+- Bouton Flutter `Jeu`: ajoute sur Home au-dessus de `Mes ptipotes`, visible seulement si `UserProfile.canSeeDiagnostics` est vrai (`dev/admin`). Ne pas creer de second toggle.
 - Fichiers du prototype: `index.html`, `styles.css`, `data.js`, `state.js`, `tasks.js`, `ui-island.js`, `ui-panels.js`, `main.js`.
 - L'ecran Ilot du prototype affiche maintenant le refuge du joueur avec fond illustre, cases batiment a opacite 20%, P'TIPOTE visible et Kernel pour scanner.
 - Boucle coeur prototype: choisir un P'TIPOTE -> assigner a la Lisiere -> attendre -> recuperer -> crafter un Repas -> soigner a la Maison -> progresser.
