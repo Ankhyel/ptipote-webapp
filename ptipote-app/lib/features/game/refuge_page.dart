@@ -13,8 +13,7 @@ class RefugePage extends StatefulWidget {
 
 class _RefugePageState extends State<RefugePage> {
   final _assetResolver = GameAssetResolver();
-  final Map<String, String?> _assetsByScreen = <String, String?>{};
-  String _screen = 'Refuge';
+  String? _refugeAsset;
 
   static const _buildings = <_RefugeBuilding>[
     _RefugeBuilding(
@@ -33,13 +32,23 @@ class _RefugePageState extends State<RefugePage> {
     ),
     _RefugeBuilding(
       name: 'Lisiere',
+      title: 'Lisière',
       left: 0.22,
       top: 0.72,
       width: 0.32,
       height: 0.11,
     ),
     _RefugeBuilding(
-      name: 'Atelier',
+      name: 'Tour',
+      title: 'Tour de sécurité',
+      left: 0.78,
+      top: 0.42,
+      width: 0.32,
+      height: 0.11,
+    ),
+    _RefugeBuilding(
+      name: 'FabLab',
+      title: 'La FabLab',
       left: 0.78,
       top: 0.72,
       width: 0.32,
@@ -54,27 +63,24 @@ class _RefugePageState extends State<RefugePage> {
   }
 
   Future<void> _warmAssets() async {
-    for (final screenName in <String>{
-      'Refuge',
-      'Kernel',
-      'Maison',
-      ..._buildings.map((building) => building.name),
-    }) {
-      _assetsByScreen[screenName] = await _assetResolver.resolve(screenName);
-    }
+    _refugeAsset = await _assetResolver.resolve('Refuge');
     if (mounted) setState(() {});
   }
 
-  void _openBuilding(String name) {
-    setState(() => _screen = _assetsByScreen[name] == null ? 'Refuge' : name);
+  void _openBuilding(_RefugeBuilding building) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => building.name == 'FabLab'
+            ? const FablabPage()
+            : _GameBuildingPage(building: building),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentAsset = _assetsByScreen[_screen] ?? _assetsByScreen['Refuge'];
-
     return Scaffold(
-      appBar: AppBar(title: Text(_screen == 'Refuge' ? 'Jeu' : _screen)),
+      appBar: AppBar(title: const Text('Jeu')),
       body: SafeArea(
         child: Column(
           children: <Widget>[
@@ -88,9 +94,9 @@ class _RefugePageState extends State<RefugePage> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: <Widget>[
-                        if (currentAsset != null)
+                        if (_refugeAsset != null)
                           Image.asset(
-                            currentAsset,
+                            _refugeAsset!,
                             fit: BoxFit.cover,
                             alignment: Alignment.center,
                           )
@@ -108,35 +114,26 @@ class _RefugePageState extends State<RefugePage> {
                             ),
                           ),
                         ),
-                        if (_screen == 'Refuge')
-                          ..._buildings.map(
-                            (building) => _BuildingHotspot(
-                              building: building,
-                              onTap: () => _openBuilding(building.name),
-                            ),
-                          )
-                        else
-                          _ScreenActions(
-                            screen: _screen,
-                            onBackToRefuge: () =>
-                                setState(() => _screen = 'Refuge'),
+                        ..._buildings.map(
+                          (building) => _BuildingHotspot(
+                            building: building,
+                            onTap: () => _openBuilding(building),
                           ),
+                        ),
                       ],
                     ),
                   ),
                 ),
               ),
             ),
-            if (_screen == 'Refuge')
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                child: Text(
-                  'Prototype dev : tape un bâtiment pour ouvrir son écran. '
-                  'Les images sont résolues par nom, quelle que soit leur extension.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Text(
+                'Prototype dev : tape un bâtiment pour ouvrir sa page.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
+            ),
           ],
         ),
       ),
@@ -169,7 +166,7 @@ class _BuildingHotspot extends StatelessWidget {
             onTap: onTap,
             child: Center(
               child: Text(
-                building.name,
+                building.title,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Color(0xFF2B2116),
@@ -188,53 +185,72 @@ class _BuildingHotspot extends StatelessWidget {
   }
 }
 
-class _ScreenActions extends StatelessWidget {
-  const _ScreenActions({required this.screen, required this.onBackToRefuge});
+class _GameBuildingPage extends StatelessWidget {
+  const _GameBuildingPage({required this.building});
 
-  final String screen;
-  final VoidCallback onBackToRefuge;
+  final _RefugeBuilding building;
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 16,
-      child: Card(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Scaffold(
+      appBar: AppBar(title: Text(building.title)),
+      body: SafeArea(
+        child: _BuildingPlaceholder(
+          icon: building.icon,
+          title: building.title,
+          description: building.description,
+          actions: building.name == 'Kernel'
+              ? <Widget>[
+                  FilledButton.icon(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Scan NFC réel à brancher ici.'),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.egg_alt_outlined),
+                    label: const Text('Scanner une figurine'),
+                  ),
+                ]
+              : const <Widget>[],
+        ),
+      ),
+    );
+  }
+}
+
+class FablabPage extends StatelessWidget {
+  const FablabPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('La FabLab'),
+          bottom: const TabBar(
+            tabs: <Widget>[
+              Tab(text: 'Atelier', icon: Icon(Icons.construction_outlined)),
+              Tab(text: 'Cuisine', icon: Icon(Icons.soup_kitchen_outlined)),
+            ],
+          ),
+        ),
+        body: const SafeArea(
+          child: TabBarView(
             children: <Widget>[
-              Text(
-                screen,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w900),
+              _BuildingPlaceholder(
+                icon: Icons.construction_outlined,
+                title: 'Atelier',
+                description:
+                    'Préparation future des assemblages, plans et objets du refuge.',
               ),
-              const SizedBox(height: 8),
-              Text(_descriptionFor(screen)),
-              const SizedBox(height: 12),
-              if (screen == 'Kernel') ...<Widget>[
-                FilledButton.icon(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Scan NFC réel à brancher ici.'),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.egg_alt_outlined),
-                  label: const Text('Scanner une figurine'),
-                ),
-                const SizedBox(height: 8),
-              ],
-              OutlinedButton(
-                onPressed: onBackToRefuge,
-                child: const Text('Retour refuge'),
+              _BuildingPlaceholder(
+                icon: Icons.soup_kitchen_outlined,
+                title: 'Cuisine',
+                description:
+                    'Préparation future des repas, soins et recettes simples.',
               ),
             ],
           ),
@@ -242,13 +258,62 @@ class _ScreenActions extends StatelessWidget {
       ),
     );
   }
+}
 
-  String _descriptionFor(String screen) {
-    return switch (screen) {
-      'Kernel' => 'Centre du refuge : scan, messages système et plans futurs.',
-      'Maison' => 'Refuge des P’TIPOTES : repos, soins et inventaire vivant.',
-      _ => 'Écran placeholder prêt à recevoir ses futures fonctions.',
-    };
+class _BuildingPlaceholder extends StatelessWidget {
+  const _BuildingPlaceholder({
+    required this.icon,
+    required this.title,
+    required this.description,
+    this.actions = const <Widget>[],
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: <Widget>[
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Icon(icon, size: 58),
+                const SizedBox(height: 14),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  description,
+                  textAlign: TextAlign.center,
+                ),
+                if (actions.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 18),
+                  ...actions,
+                ],
+                const SizedBox(height: 18),
+                const Text(
+                  'Page de base créée. Le gameplay sera branché dans une étape suivante.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -271,15 +336,39 @@ class _MissingGameImage extends StatelessWidget {
 class _RefugeBuilding {
   const _RefugeBuilding({
     required this.name,
+    String? title,
     required this.left,
     required this.top,
     required this.width,
     required this.height,
-  });
+  }) : title = title ?? name;
 
   final String name;
+  final String title;
   final double left;
   final double top;
   final double width;
   final double height;
+
+  IconData get icon {
+    return switch (name) {
+      'Maison' => Icons.bedroom_baby_outlined,
+      'Kernel' => Icons.device_hub_outlined,
+      'Lisiere' => Icons.forest_outlined,
+      'Tour' => Icons.shield_outlined,
+      'FabLab' => Icons.precision_manufacturing_outlined,
+      _ => Icons.place_outlined,
+    };
+  }
+
+  String get description {
+    return switch (name) {
+      'Maison' => 'Accueil des P’TIPOTES, repos, chambres et soins.',
+      'Kernel' => 'Centre du refuge : scan, messages système et plans futurs.',
+      'Lisiere' => 'Exploration future des biomes proches et lointains.',
+      'Tour' => 'Sécurité, stabilité et protection future du refuge.',
+      'FabLab' => 'Accès aux espaces Atelier et Cuisine.',
+      _ => 'Écran placeholder prêt à recevoir ses futures fonctions.',
+    };
+  }
 }
