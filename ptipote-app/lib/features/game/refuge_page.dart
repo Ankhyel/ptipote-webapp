@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../services/figurine_service.dart';
@@ -13,13 +15,9 @@ class RefugePage extends StatefulWidget {
   State<RefugePage> createState() => _RefugePageState();
 }
 
-class _RefugePageState extends State<RefugePage>
-    with SingleTickerProviderStateMixin {
+class _RefugePageState extends State<RefugePage> {
   final _assetResolver = GameAssetResolver();
-  final _figurineService = FigurineService();
-  late final AnimationController _walkController;
   String? _refugeAsset;
-  String? _selectedFigurineId;
 
   static const _buildings = <_RefugeBuilding>[
     _RefugeBuilding(
@@ -65,17 +63,7 @@ class _RefugePageState extends State<RefugePage>
   @override
   void initState() {
     super.initState();
-    _walkController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 12),
-    )..repeat();
     _warmAssets();
-  }
-
-  @override
-  void dispose() {
-    _walkController.dispose();
-    super.dispose();
   }
 
   Future<void> _warmAssets() async {
@@ -86,9 +74,11 @@ class _RefugePageState extends State<RefugePage>
   void _openBuilding(_RefugeBuilding building) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => building.name == 'FabLab'
-            ? const FablabPage()
-            : _GameBuildingPage(building: building),
+        builder: (_) {
+          if (building.name == 'Maison') return const _MaisonPage();
+          if (building.name == 'FabLab') return const FablabPage();
+          return _GameBuildingPage(building: building);
+        },
       ),
     );
   }
@@ -130,43 +120,11 @@ class _RefugePageState extends State<RefugePage>
                             ),
                           ),
                         ),
-                        const _AlcoveLayer(),
-                        const _FloorLayer(),
                         ..._buildings.map(
                           (building) => _BuildingHotspot(
                             building: building,
                             onTap: () => _openBuilding(building),
                           ),
-                        ),
-                        StreamBuilder<List<PtipoteFigurine>>(
-                          stream: _figurineService.watchMyFigurines(),
-                          builder: (context, snapshot) {
-                            final figurines =
-                                snapshot.data ?? const <PtipoteFigurine>[];
-                            if (snapshot.connectionState ==
-                                    ConnectionState.waiting &&
-                                figurines.isEmpty) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
-                            }
-                            if (figurines.isEmpty) {
-                              return const _RefugeEmptyState();
-                            }
-                            return _PtipoteRefugeLayer(
-                              figurines: figurines,
-                              animation: _walkController,
-                              selectedFigurineId: _selectedFigurineId,
-                              onToggleFigurine: (figurine) {
-                                setState(() {
-                                  _selectedFigurineId =
-                                      _selectedFigurineId == figurine.id
-                                          ? null
-                                          : figurine.id;
-                                });
-                              },
-                            );
-                          },
                         ),
                       ],
                     ),
@@ -183,6 +141,158 @@ class _RefugePageState extends State<RefugePage>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MaisonPage extends StatefulWidget {
+  const _MaisonPage();
+
+  @override
+  State<_MaisonPage> createState() => _MaisonPageState();
+}
+
+class _MaisonPageState extends State<_MaisonPage>
+    with SingleTickerProviderStateMixin {
+  final _assetResolver = GameAssetResolver();
+  final _figurineService = FigurineService();
+  late final AnimationController _tickController;
+  final Map<String, int> _vitalityOverrides = <String, int>{};
+  String? _selectedFigurineId;
+  String? _trainingFigurineId;
+  bool _choosingTrainingTarget = false;
+  String? _maisonAsset;
+
+  @override
+  void initState() {
+    super.initState();
+    _tickController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..repeat();
+    _loadAsset();
+  }
+
+  @override
+  void dispose() {
+    _tickController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAsset() async {
+    _maisonAsset = await _assetResolver.resolve('Maison');
+    if (mounted) setState(() {});
+  }
+
+  int _vitalityFor(PtipoteFigurine figurine) {
+    return _vitalityOverrides[figurine.id] ?? figurine.vitality;
+  }
+
+  void _toggleFigurine(PtipoteFigurine figurine) {
+    setState(() {
+      if (_choosingTrainingTarget) {
+        _trainingFigurineId = figurine.id;
+        _selectedFigurineId = figurine.id;
+        _choosingTrainingTarget = false;
+        return;
+      }
+      _selectedFigurineId =
+          _selectedFigurineId == figurine.id ? null : figurine.id;
+    });
+  }
+
+  void _trainSelected(List<PtipoteFigurine> figurines) {
+    final id = _trainingFigurineId;
+    if (id == null) return;
+    PtipoteFigurine? figurine;
+    for (final item in figurines) {
+      if (item.id == id) {
+        figurine = item;
+        break;
+      }
+    }
+    if (figurine == null) return;
+    final selected = figurine;
+    setState(() {
+      final current = _vitalityFor(selected);
+      _vitalityOverrides[id] = math.max(0, current - 1);
+      _selectedFigurineId = id;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Maison')),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: DecoratedBox(
+              decoration: const BoxDecoration(color: Color(0xFFE7D4B2)),
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  if (_maisonAsset != null)
+                    Image.asset(
+                      _maisonAsset!,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                    ),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: <Color>[
+                          Color(0x22000000),
+                          Color(0x33000000),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const _AlcoveLayer(),
+                  const _FloorLayer(),
+                  StreamBuilder<List<PtipoteFigurine>>(
+                    stream: _figurineService.watchMyFigurines(),
+                    builder: (context, snapshot) {
+                      final figurines =
+                          snapshot.data ?? const <PtipoteFigurine>[];
+                      if (snapshot.connectionState == ConnectionState.waiting &&
+                          figurines.isEmpty) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (figurines.isEmpty) return const _RefugeEmptyState();
+                      return Stack(
+                        children: <Widget>[
+                          _PtipoteRefugeLayer(
+                            figurines: figurines,
+                            animation: _tickController,
+                            selectedFigurineId: _selectedFigurineId,
+                            trainingFigurineId: _trainingFigurineId,
+                            choosingTrainingTarget: _choosingTrainingTarget,
+                            vitalityFor: _vitalityFor,
+                            onToggleFigurine: _toggleFigurine,
+                          ),
+                          _TrainingTool(
+                            choosing: _choosingTrainingTarget,
+                            hasTarget: _trainingFigurineId != null,
+                            onChoose: () {
+                              setState(() => _choosingTrainingTarget = true);
+                            },
+                            onTrain: () => _trainSelected(figurines),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -290,48 +400,163 @@ class _AlcoveLayer extends StatelessWidget {
   }
 }
 
-class _PtipoteRefugeLayer extends StatelessWidget {
+class _PtipoteRefugeLayer extends StatefulWidget {
   const _PtipoteRefugeLayer({
     required this.figurines,
     required this.animation,
     required this.selectedFigurineId,
+    required this.trainingFigurineId,
+    required this.choosingTrainingTarget,
+    required this.vitalityFor,
     required this.onToggleFigurine,
   });
 
   final List<PtipoteFigurine> figurines;
   final Animation<double> animation;
   final String? selectedFigurineId;
+  final String? trainingFigurineId;
+  final bool choosingTrainingTarget;
+  final int Function(PtipoteFigurine figurine) vitalityFor;
   final ValueChanged<PtipoteFigurine> onToggleFigurine;
 
   @override
+  State<_PtipoteRefugeLayer> createState() => _PtipoteRefugeLayerState();
+}
+
+class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
+  final _random = math.Random();
+  final Map<String, _PtipoteMotion> _motions = <String, _PtipoteMotion>{};
+  Duration _lastElapsed = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.animation.addListener(_onTick);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PtipoteRefugeLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      oldWidget.animation.removeListener(_onTick);
+      widget.animation.addListener(_onTick);
+      _lastElapsed = Duration.zero;
+    }
+    _syncMotions();
+  }
+
+  @override
+  void dispose() {
+    widget.animation.removeListener(_onTick);
+    super.dispose();
+  }
+
+  void _syncMotions() {
+    final ids = widget.figurines.map((figurine) => figurine.id).toSet();
+    _motions.removeWhere((id, _) => !ids.contains(id));
+    for (final figurine in widget.figurines) {
+      _motions.putIfAbsent(figurine.id, _newMotion);
+    }
+  }
+
+  _PtipoteMotion _newMotion() {
+    return _PtipoteMotion(
+      x: 0.08 + _random.nextDouble() * 0.84,
+      direction: _random.nextBool() ? 1 : -1,
+      speed: 0.035 + _random.nextDouble() * 0.025,
+      moving: _random.nextBool(),
+      nextDecision: 1.0 + _random.nextDouble() * 3.0,
+      bounceSeed: _random.nextDouble() * math.pi * 2,
+    );
+  }
+
+  void _onTick() {
+    final controller = widget.animation;
+    if (controller is! AnimationController) return;
+    final elapsed = controller.lastElapsedDuration ?? Duration.zero;
+    if (_lastElapsed == Duration.zero) {
+      _lastElapsed = elapsed;
+      return;
+    }
+    var dt = (elapsed - _lastElapsed).inMilliseconds / 1000;
+    _lastElapsed = elapsed;
+    if (dt < 0) dt = 0.016;
+    if (dt > 0.08) dt = 0.08;
+
+    for (final figurine in widget.figurines) {
+      final motion = _motions.putIfAbsent(figurine.id, _newMotion);
+      if (widget.vitalityFor(figurine) <= 0 ||
+          widget.trainingFigurineId == figurine.id) {
+        continue;
+      }
+
+      motion.nextDecision -= dt;
+      if (motion.nextDecision <= 0) {
+        motion.moving = _random.nextDouble() > 0.35;
+        if (_random.nextBool()) motion.direction *= -1;
+        motion.nextDecision = 1.4 + _random.nextDouble() * 3.2;
+      }
+
+      if (!motion.moving) continue;
+      motion.x += motion.direction * motion.speed * dt;
+      if (motion.x <= 0) {
+        motion.x = 0;
+        motion.direction = 1;
+      }
+      if (motion.x >= 1) {
+        motion.x = 1;
+        motion.direction = -1;
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final resting =
-        figurines.where((figurine) => figurine.vitality <= 0).take(3).toList();
-    final active =
-        figurines.where((figurine) => figurine.vitality > 0).toList();
+    _syncMotions();
+    final resting = widget.figurines
+        .where((figurine) => widget.vitalityFor(figurine) <= 0)
+        .take(3)
+        .toList();
+    final active = widget.figurines
+        .where((figurine) => widget.vitalityFor(figurine) > 0)
+        .toList();
 
     return AnimatedBuilder(
-      animation: animation,
+      animation: widget.animation,
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
           final spriteSize = (constraints.maxWidth * 0.18).clamp(56.0, 86.0);
+          final usableWidth = math.max(1.0, constraints.maxWidth - spriteSize);
           return Stack(
             children: <Widget>[
               ...List<Widget>.generate(active.length, (index) {
                 final figurine = active[index];
-                final laneProgress = (animation.value + index * 0.22) % 1.0;
-                final left = constraints.maxWidth -
-                    laneProgress * (constraints.maxWidth + spriteSize);
-                final bottom =
-                    constraints.maxHeight * (0.08 + (index % 3) * 0.055);
+                final motion = _motions.putIfAbsent(figurine.id, _newMotion);
+                final isTraining = widget.trainingFigurineId == figurine.id;
+                final left = isTraining
+                    ? (constraints.maxWidth - spriteSize) / 2
+                    : motion.x * usableWidth;
+                final bounce = motion.moving && !isTraining
+                    ? math.sin(
+                          widget.animation.value * math.pi * 20 +
+                              motion.bounceSeed,
+                        ) *
+                        4
+                    : 0.0;
+                final bottom = isTraining
+                    ? constraints.maxHeight * 0.16
+                    : constraints.maxHeight * (0.08 + (index % 3) * 0.055) +
+                        bounce;
                 return Positioned(
                   left: left,
                   bottom: bottom,
                   width: spriteSize,
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
-                    selected: selectedFigurineId == figurine.id,
-                    onTap: () => onToggleFigurine(figurine),
+                    vitality: widget.vitalityFor(figurine),
+                    selected: widget.selectedFigurineId == figurine.id,
+                    choosingTrainingTarget: widget.choosingTrainingTarget,
+                    onTap: () => widget.onToggleFigurine(figurine),
                   ),
                 );
               }),
@@ -345,8 +570,10 @@ class _PtipoteRefugeLayer extends StatelessWidget {
                   width: spriteSize,
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
-                    selected: selectedFigurineId == figurine.id,
-                    onTap: () => onToggleFigurine(figurine),
+                    vitality: widget.vitalityFor(figurine),
+                    selected: widget.selectedFigurineId == figurine.id,
+                    choosingTrainingTarget: widget.choosingTrainingTarget,
+                    onTap: () => widget.onToggleFigurine(figurine),
                   ),
                 );
               }),
@@ -358,15 +585,37 @@ class _PtipoteRefugeLayer extends StatelessWidget {
   }
 }
 
+class _PtipoteMotion {
+  _PtipoteMotion({
+    required this.x,
+    required this.direction,
+    required this.speed,
+    required this.moving,
+    required this.nextDecision,
+    required this.bounceSeed,
+  });
+
+  double x;
+  int direction;
+  double speed;
+  bool moving;
+  double nextDecision;
+  double bounceSeed;
+}
+
 class _PtipoteSpriteButton extends StatelessWidget {
   const _PtipoteSpriteButton({
     required this.figurine,
+    required this.vitality,
     required this.selected,
+    required this.choosingTrainingTarget,
     required this.onTap,
   });
 
   final PtipoteFigurine figurine;
+  final int vitality;
   final bool selected;
+  final bool choosingTrainingTarget;
   final VoidCallback onTap;
 
   @override
@@ -381,7 +630,19 @@ class _PtipoteSpriteButton extends StatelessWidget {
           if (selected)
             Positioned(
               bottom: 76,
-              child: _PtipoteInfoBubble(figurine: figurine),
+              child: _PtipoteInfoBubble(
+                figurine: figurine,
+                vitality: vitality,
+              ),
+            ),
+          if (choosingTrainingTarget)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white, width: 2),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
             ),
         ],
       ),
@@ -400,7 +661,7 @@ class _PtipoteSprite extends StatefulWidget {
 
 class _PtipoteSpriteState extends State<_PtipoteSprite> {
   static const _baseUrl = 'https://app.ptipotes.com/img';
-  static const _extensions = <String>['png', 'webp', 'jpg', 'jpeg'];
+  static const _extensions = <String>['jpg', 'jpeg', 'png', 'webp'];
   late List<String> _candidates;
   int _index = 0;
 
@@ -461,9 +722,10 @@ class _PtipoteSpriteState extends State<_PtipoteSprite> {
 }
 
 class _PtipoteInfoBubble extends StatelessWidget {
-  const _PtipoteInfoBubble({required this.figurine});
+  const _PtipoteInfoBubble({required this.figurine, required this.vitality});
 
   final PtipoteFigurine figurine;
+  final int vitality;
 
   @override
   Widget build(BuildContext context) {
@@ -491,7 +753,7 @@ class _PtipoteInfoBubble extends StatelessWidget {
             _InfoLine(label: 'XP', value: figurine.xp),
             _InfoLine(
               label: 'Vitalité',
-              value: '${figurine.vitality}/${figurine.maxVitality}',
+              value: '$vitality/${figurine.maxVitality}',
             ),
           ],
         ),
@@ -547,6 +809,74 @@ class _RefugeEmptyState extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrainingTool extends StatelessWidget {
+  const _TrainingTool({
+    required this.choosing,
+    required this.hasTarget,
+    required this.onChoose,
+    required this.onTrain,
+  });
+
+  final bool choosing;
+  final bool hasTarget;
+  final VoidCallback onChoose;
+  final VoidCallback onTrain;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 12,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Material(
+              color:
+                  Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(999),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: onChoose,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const Text('🏋️', style: TextStyle(fontSize: 26)),
+                      if (choosing) ...<Widget>[
+                        const SizedBox(width: 8),
+                        Text(
+                          'Clique un P’TIPOTE',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(fontWeight: FontWeight.w900),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (hasTarget) ...<Widget>[
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: onTrain,
+                child: const Text('Entrainer'),
+              ),
+            ],
+          ],
         ),
       ),
     );

@@ -102,8 +102,9 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - `ptipote-app/assets/image_game/` contient les images embarquees dans l'app Flutter. Le code resout les images par nom (`Refuge`, `Kernel`, `Maison`) quelle que soit l'extension (`.jpg`, `.PNG`, etc.).
 - Bouton Flutter `Jeu`: ajoute sur Home au-dessus de `Mes ptipotes`, visible seulement si `UserProfile.canSeeDiagnostics` est vrai (`dev/admin`). Ne pas creer de second toggle.
 - Dans `RefugePage`, chaque case de batiment ouvre une vraie page Flutter placeholder: Maison, Kernel, Lisiere, Tour de securite, FabLab. La FabLab contient deux onglets: Atelier et Cuisine.
-- Dans `RefugePage`, les P'TIPOTES de `FigurineService.watchMyFigurines()` sont affiches comme sprites sur le tiers bas. `PtipoteFigurine.vitality` vaut `3/3` par defaut, et une vitalite a 0 place le P'TIPOTE dans une des trois alcoves du haut.
-- Clic sur un sprite du Refuge: ouvre/ferme une bulle avec espece, type, surnom, niveau, energie, XP et vitalite.
+- Dans la page Maison ouverte depuis `RefugePage`, les P'TIPOTES de `FigurineService.watchMyFigurines()` sont affiches comme sprites sur le tiers bas. `PtipoteFigurine.vitality` vaut `3/3` par defaut, et une vitalite a 0 place le P'TIPOTE dans une des trois alcoves du haut.
+- Clic sur un sprite dans la Maison: ouvre/ferme une bulle avec espece, type, surnom, niveau, energie, XP et vitalite.
+- Test dev Maison: l'emoji haltere permet de choisir un P'TIPOTE puis `Entrainer` retire 1 vitalite localement; a 0 il va dans une alcove.
 - Fichiers du prototype: `index.html`, `styles.css`, `data.js`, `state.js`, `tasks.js`, `ui-island.js`, `ui-panels.js`, `main.js`.
 - L'ecran Ilot du prototype affiche maintenant le refuge du joueur avec fond illustre, cases batiment a opacite 20%, P'TIPOTE visible et Kernel pour scanner.
 - Boucle coeur prototype: choisir un P'TIPOTE -> assigner a la Lisiere -> attendre -> recuperer -> crafter un Repas -> soigner a la Maison -> progresser.
