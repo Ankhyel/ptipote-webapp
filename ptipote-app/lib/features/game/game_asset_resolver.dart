@@ -7,7 +7,7 @@ class GameAssetResolver {
 
   final AssetBundle _bundle;
 
-  static const _basePath = 'assets/image_game/';
+  static const _basePath = 'ptipote-game/image_game/';
   static const _extensions = <String>[
     'jpg',
     'jpeg',

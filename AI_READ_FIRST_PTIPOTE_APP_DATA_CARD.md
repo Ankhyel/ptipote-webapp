@@ -35,7 +35,7 @@ Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'
 | Liste chats | `ptipote-app/lib/features/chat/chats_page.dart` | Liste des conversations et badges messages. |
 | Conversation chat | `ptipote-app/lib/features/chat/chat_page.dart` | Messages entre deux amis. |
 | Jeu / refuge Flutter | `ptipote-app/lib/features/game/refuge_page.dart` | Ecran dev du refuge joueur, accessible par bouton Jeu sur Home si `canSeeDiagnostics`. |
-| Assets jeu Flutter | `ptipote-app/assets/image_game/` | Images d'ecran du jeu, resolues par nom sans dependance a l'extension. |
+| Assets jeu Flutter | `ptipote-app/ptipote-game/image_game/` | Images d'ecran du jeu, resolues par nom sans dependance a l'extension. |
 | Prototype web Zone 0 | `ptipote-app/ptipote-game/` | Vertical slice HTML/CSS/JS mobile-first du refuge: Ilot, P'TIPOTES, Journal, Lisiere, Atelier, Tour, Marche, Maison. |
 
 ## Services App
@@ -98,8 +98,8 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Le scan figurine reste important mais contextuel: Ilot, Kernel, P'TIPOTES, adoption ou transfert. Il ne doit pas devenir un onglet principal.
 - Si aucun P'TIPOTE n'existe: afficher un etat vide centre sur le scan. Si au moins un P'TIPOTE existe: ouvrir sur l'Ilot.
 - `ptipote-app/ptipote-game/` contient le prototype HTML/CSS/JS local pour tester vite la boucle refuge sans Flutter.
-- `ptipote-app/ptipote-game/image_game/` contient les fonds et assets visuels du jeu. Convention: le nom de fichier doit correspondre au nom de l'ecran, par exemple `Ilot.jpg`, `Kernel.jpg`, `Maison.jpg`, `Lisiere_1.jpg`.
-- `ptipote-app/assets/image_game/` contient les images embarquees dans l'app Flutter. Le code resout les images par nom (`Refuge`, `Kernel`, `Maison`) quelle que soit l'extension (`.jpg`, `.PNG`, etc.).
+- `ptipote-app/ptipote-game/image_game/` contient les fonds et assets visuels embarques dans l'app Flutter. Convention: le nom de fichier doit correspondre au nom de l'ecran, par exemple `Camp.jpg`, `Kernel.jpg`, `Maison.jpg`, `Lisiere_1.jpg`.
+- `GameAssetResolver` lit `ptipote-game/image_game/` et resout les images par nom (`Camp`, `Kernel`, `Maison`) quelle que soit l'extension (`.jpg`, `.PNG`, etc.).
 - Bouton Flutter `Jeu`: ajoute sur Home au-dessus de `Mes ptipotes`, visible seulement si `UserProfile.canSeeDiagnostics` est vrai (`dev/admin`). Ne pas creer de second toggle.
 - Dans `RefugePage`, chaque case de batiment ouvre une vraie page Flutter placeholder: Maison, Kernel, Lisiere, Tour de securite, FabLab. La FabLab contient deux onglets: Atelier et Cuisine.
 - Dans la page Maison ouverte depuis `RefugePage`, les P'TIPOTES de `FigurineService.watchMyFigurines()` sont affiches comme sprites sur le tiers bas. `PtipoteFigurine.vitality` vaut `3/3` par defaut, et une vitalite a 0 place le P'TIPOTE dans une des trois alcoves du haut.

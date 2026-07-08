@@ -28,3 +28,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+    - ptipote-game/image_game/

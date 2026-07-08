@@ -67,7 +67,7 @@ class _RefugePageState extends State<RefugePage> {
   }
 
   Future<void> _warmAssets() async {
-    _refugeAsset = await _assetResolver.resolve('Refuge');
+    _refugeAsset = await _assetResolver.resolve('Camp');
     if (mounted) setState(() {});
   }
 
@@ -107,7 +107,7 @@ class _RefugePageState extends State<RefugePage> {
                             alignment: Alignment.center,
                           )
                         else
-                          const _MissingGameImage(screenName: 'Refuge'),
+                          const _MissingGameImage(screenName: 'Camp'),
                         const DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
