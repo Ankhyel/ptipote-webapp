@@ -46,6 +46,26 @@ class PtipoteFigurine {
   String get xp =>
       fields['x']?.trim().isNotEmpty == true ? fields['x']!.trim() : '-';
 
+  int get vitality => _readBoundedStat(
+        fields['vitality'] ?? fields['v'],
+        fallback: 3,
+        min: 0,
+        max: maxVitality,
+      );
+
+  int get maxVitality => _readBoundedStat(
+        fields['maxVitality'] ?? fields['mv'],
+        fallback: 3,
+        min: 1,
+        max: 99,
+      );
+
+  String get energy => fields['energy']?.trim().isNotEmpty == true
+      ? fields['energy']!.trim()
+      : fields['en']?.trim().isNotEmpty == true
+          ? fields['en']!.trim()
+          : '-';
+
   String get species =>
       fields['e']?.trim().isNotEmpty == true ? fields['e']!.trim() : '-';
 
@@ -102,5 +122,15 @@ class PtipoteFigurine {
 
   bool get isTransferLocked {
     return needsTransferScan || transferRequested;
+  }
+
+  int _readBoundedStat(
+    String? value, {
+    required int fallback,
+    required int min,
+    required int max,
+  }) {
+    final parsed = int.tryParse((value ?? '').trim());
+    return (parsed ?? fallback).clamp(min, max);
   }
 }
