@@ -150,6 +150,38 @@ small {
   color: var(--danger);
 }
 
+.dashboard-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.tab-button {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff8ec;
+  color: var(--brown);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.tab-button.active {
+  background: var(--brown);
+  color: #fffaf0;
+  border-color: var(--brown);
+}
+
+.dashboard-panel {
+  display: none;
+}
+
+.dashboard-panel.active {
+  display: block;
+}
+
 .grid {
   display: grid;
   gap: 14px;

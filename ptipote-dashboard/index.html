@@ -27,98 +27,72 @@
         <span>Connecte-toi avec un compte admin Firebase. Les stats lisibles apparaitront ici selon les rules Firestore deployees.</span>
       </section>
 
-      <section class="grid metrics" aria-label="Statistiques principales">
-        <article class="metric">
-          <span>Utilisateurs</span>
-          <strong id="usersCount">-</strong>
-          <small id="usersHint">users</small>
-        </article>
-        <article class="metric">
-          <span>PTIPOTES enregistres</span>
-          <strong id="figurinesCount">-</strong>
-          <small id="figurinesHint">users/*/figurines</small>
-        </article>
-        <article class="metric">
-          <span>PTIPOTES publics</span>
-          <strong id="publicFigurinesCount">-</strong>
-          <small id="publicFigurinesHint">publicFigurines</small>
-        </article>
-        <article class="metric">
-          <span>Demandes transfert</span>
-          <strong id="transferRequestsCount">-</strong>
-          <small id="transferRequestsHint">transferRequests</small>
-        </article>
+      <nav class="dashboard-tabs" aria-label="Sections du dashboard">
+        <button class="tab-button active" type="button" data-dashboard-tab="overview">Vue générale</button>
+        <button class="tab-button" type="button" data-dashboard-tab="ptipote-stats">Stat Ptipote</button>
+        <button class="tab-button" type="button" data-dashboard-tab="camp-heart">Cœur du Camp</button>
+      </nav>
+
+      <section class="dashboard-panel active" data-dashboard-panel="overview">
+        <section class="grid metrics" aria-label="Statistiques principales">
+          <article class="metric"><span>Utilisateurs</span><strong id="usersCount">-</strong><small id="usersHint">users</small></article>
+          <article class="metric"><span>PTIPOTES enregistres</span><strong id="figurinesCount">-</strong><small id="figurinesHint">users/*/figurines</small></article>
+          <article class="metric"><span>PTIPOTES publics</span><strong id="publicFigurinesCount">-</strong><small id="publicFigurinesHint">publicFigurines</small></article>
+          <article class="metric"><span>Demandes transfert</span><strong id="transferRequestsCount">-</strong><small id="transferRequestsHint">transferRequests</small></article>
+        </section>
+
+        <section class="content-grid">
+          <article class="panel">
+            <div class="panel-head"><h2>Transferts</h2><button class="ghost" id="refreshButton" type="button">Actualiser</button></div>
+            <div class="transfer-list" id="transferStatusList">
+              <div class="row"><span>En attente</span><strong id="transferPending">-</strong></div>
+              <div class="row"><span>Acceptes</span><strong id="transferAccepted">-</strong></div>
+              <div class="row"><span>Confirmes</span><strong id="transferConfirmed">-</strong></div>
+              <div class="row"><span>Refuses</span><strong id="transferRefused">-</strong></div>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h2>Donnees a instrumenter</h2></div>
+            <ul class="todo-list">
+              <li><span>Utilisateurs actifs</span><small>Ajouter lastSeenAt / appOpenedAt cote app.</small></li>
+              <li><span>FCM tokens</span><small>Compter via agregat serveur, pas en lecture brute.</small></li>
+              <li><span>Erreurs Firebase</span><small>Logger un event technique filtre et sans donnees sensibles.</small></li>
+              <li><span>Scans NFC</span><small>Remonter scanSuccess / scanError avec figurineId public ou hash.</small></li>
+            </ul>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Activite recente</h2><span class="pill">A brancher</span></div>
+          <div class="empty-state">Aucune collection d'evenements admin n'est encore presente dans ce repo. Le dashboard affichera les vrais evenements des que l'app les remontera.</div>
+        </section>
       </section>
 
-      <section class="panel stat-ptipote-panel" aria-labelledby="statPtipoteTitle">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Configuration V1</p>
-            <h2 id="statPtipoteTitle">Stat Ptipote</h2>
-          </div>
-          <div class="panel-actions">
-            <button class="ghost" id="resetPtipoteStatsButton" type="button">Recharger</button>
-            <button class="ghost" id="exportPtipoteStatsButton" type="button">Exporter JSON</button>
-          </div>
-        </div>
-        <p class="panel-note" id="statPtipoteStatus">
-          Charge les valeurs depuis ptipote-stats-config.json. Les changements sont gardes localement pour preparer la synchro app.
-        </p>
-        <form class="stat-form" id="statPtipoteForm"></form>
-      </section>
-
-      <section class="panel stat-ptipote-panel" aria-labelledby="campHeartTitle">
-        <div class="panel-head">
-          <div>
-            <p class="eyebrow">Configuration V1</p>
-            <h2 id="campHeartTitle">Cœur du Camp</h2>
-          </div>
-          <button class="ghost" id="exportCampHeartButton" type="button">Exporter JSON</button>
-        </div>
-        <p class="panel-note" id="campHeartStatus">
-          Charge les paliers depuis camp-heart-config.json. Edition dashboard complète à brancher plus tard.
-        </p>
-        <div class="stage-list" id="campHeartStageList"></div>
-      </section>
-
-      <section class="content-grid">
-        <article class="panel">
+      <section class="dashboard-panel" data-dashboard-panel="ptipote-stats">
+        <section class="panel stat-ptipote-panel" aria-labelledby="statPtipoteTitle">
           <div class="panel-head">
-            <h2>Transferts</h2>
-            <button class="ghost" id="refreshButton" type="button">Actualiser</button>
+            <div><p class="eyebrow">Configuration V1</p><h2 id="statPtipoteTitle">Stat Ptipote</h2></div>
+            <div class="panel-actions">
+              <button class="ghost" id="resetPtipoteStatsButton" type="button">Recharger</button>
+              <button class="ghost" id="exportPtipoteStatsButton" type="button">Exporter JSON</button>
+            </div>
           </div>
-          <div class="transfer-list" id="transferStatusList">
-            <div class="row"><span>En attente</span><strong id="transferPending">-</strong></div>
-            <div class="row"><span>Acceptes</span><strong id="transferAccepted">-</strong></div>
-            <div class="row"><span>Confirmes</span><strong id="transferConfirmed">-</strong></div>
-            <div class="row"><span>Refuses</span><strong id="transferRefused">-</strong></div>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Donnees a instrumenter</h2>
-          </div>
-          <ul class="todo-list">
-            <li><span>Utilisateurs actifs</span><small>Ajouter lastSeenAt / appOpenedAt cote app.</small></li>
-            <li><span>FCM tokens</span><small>Compter via agregat serveur, pas en lecture brute.</small></li>
-            <li><span>Erreurs Firebase</span><small>Logger un event technique filtre et sans donnees sensibles.</small></li>
-            <li><span>Scans NFC</span><small>Remonter scanSuccess / scanError avec figurineId public ou hash.</small></li>
-          </ul>
-        </article>
+          <p class="panel-note" id="statPtipoteStatus">Charge les valeurs depuis ptipote-stats-config.json. Les changements sont gardes localement pour preparer la synchro app.</p>
+          <form class="stat-form" id="statPtipoteForm"></form>
+        </section>
       </section>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Activite recente</h2>
-          <span class="pill">A brancher</span>
-        </div>
-        <div class="empty-state">
-          Aucune collection d'evenements admin n'est encore presente dans ce repo. Le dashboard affichera les vrais evenements des que l'app les remontera.
-        </div>
+      <section class="dashboard-panel" data-dashboard-panel="camp-heart">
+        <section class="panel stat-ptipote-panel" aria-labelledby="campHeartTitle">
+          <div class="panel-head">
+            <div><p class="eyebrow">Configuration V1</p><h2 id="campHeartTitle">Cœur du Camp</h2></div>
+            <button class="ghost" id="exportCampHeartButton" type="button">Exporter JSON</button>
+          </div>
+          <p class="panel-note" id="campHeartStatus">Charge les paliers depuis camp-heart-config.json. Edition dashboard complète à brancher plus tard.</p>
+          <div class="stage-list" id="campHeartStageList"></div>
+        </section>
       </section>
     </main>
-
     <script type="module" src="./app.js"></script>
   </body>
 </html>

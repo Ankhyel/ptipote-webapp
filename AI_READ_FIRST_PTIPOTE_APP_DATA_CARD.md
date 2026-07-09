@@ -130,7 +130,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | `ptipote-app/lib/features/figurines/ptipote_figurine.dart` | Getters calcules: vitalite 100, bonheur, EVG, niveau/XP, etat, preference automatique, modificateurs. |
 | `ptipote-app/lib/features/game/refuge_page.dart` | Maison: deplacement, alcoves, recuperation automatique, fiche P'TIPOTE, preference Maison/Tour/Marche. |
 | `ptipote-dashboard/ptipote-stats-config.json` | Miroir JSON des stats de base pour edition/export depuis le dashboard. |
-| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`, `ptipote-dashboard/styles.css` | Panneau dashboard `Stat Ptipote` qui charge, modifie localement et exporte le JSON. |
+| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`, `ptipote-dashboard/styles.css` | Onglet dashboard `Stat Ptipote` qui charge, modifie localement et exporte le JSON. |
 
 ### 2. Modeles / classes modifies
 
@@ -161,7 +161,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 ### 4. Dashboard
 
-- Le dashboard possede maintenant un panneau `Stat Ptipote`.
+- Le dashboard possede maintenant un onglet visible `Stat Ptipote`.
 - Il charge `ptipote-dashboard/ptipote-stats-config.json`, permet une edition locale via `localStorage`, et exporte un JSON.
 - Non branche en runtime a Flutter/Firebase pour cette V1. Reste a faire: choisir une source partagee (par exemple `gameConfig/ptipoteStats` Firestore ou generation d'asset) et synchroniser l'app avec cette source.
 - Les modificateurs type/enveloppe, couts mission, contribution Tour et contribution Marche sont prepares cote Dart mais pas encore editables dans le dashboard.
@@ -204,7 +204,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Bio-batterie / Energie joueur non branchee dans cette V1 stats.
 - Bonheur existe (`baseHappiness`, bornes, helpers `addHappiness`/`reduceHappiness`) mais ses effets restent a integrer: calin, nourriture, repos, mission reussie, accident en Lisiere.
 - Enveloppes non finalisees cote cartes: modificateurs prepares avec fallback `standard`.
-- Dashboard `Stat Ptipote` non synchronise automatiquement avec Flutter/Firebase: edition locale et export JSON seulement.
+- Dashboard `Stat Ptipote` visible comme onglet separe, non synchronise automatiquement avec Flutter/Firebase: edition locale et export JSON seulement.
 
 ## Coeur Du Camp V1 - Progression Du Refuge
 
@@ -215,7 +215,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | `ptipote-app/lib/features/game/camp_heart_config.dart` | Source Flutter des stades, XP requis, population, limite P'TIPOTES confort, bonheur refuge, activite locale et deblocages. |
 | `ptipote-app/lib/features/game/refuge_page.dart` | Hotspot `Cœur du Camp` sur le refuge, ecran detail, jauge, depot Organique placeholder, passage de niveau. |
 | `ptipote-dashboard/camp-heart-config.json` | Miroir JSON des paliers du Cœur du Camp pour consultation/export dashboard. |
-| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`, `ptipote-dashboard/styles.css` | Panneau dashboard `Cœur du Camp` en lecture/export; edition avancee a brancher plus tard. |
+| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`, `ptipote-dashboard/styles.css` | Onglet dashboard `Cœur du Camp` en lecture/export; edition avancee a brancher plus tard. |
 
 ### 2. Donnees ajoutees
 

@@ -79,6 +79,22 @@ const ids = [
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
+const dashboardTabButtons = Array.from(document.querySelectorAll("[data-dashboard-tab]"));
+const dashboardPanels = Array.from(document.querySelectorAll("[data-dashboard-panel]"));
+
+function setupDashboardTabs() {
+  dashboardTabButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.dashboardTab;
+      dashboardTabButtons.forEach((item) => {
+        item.classList.toggle("active", item === button);
+      });
+      dashboardPanels.forEach((panel) => {
+        panel.classList.toggle("active", panel.dataset.dashboardPanel === target);
+      });
+    });
+  });
+}
 
 function setNotice(title, message, isError = false) {
   el.notice.classList.toggle("error", isError);
@@ -349,5 +365,6 @@ el.exportCampHeartButton.addEventListener("click", () => {
   exportCampHeartConfig();
 });
 
+setupDashboardTabs();
 loadPtipoteStatsConfig();
 loadCampHeartConfig();
