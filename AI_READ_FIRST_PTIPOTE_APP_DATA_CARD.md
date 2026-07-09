@@ -270,6 +270,79 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Bonheur refuge prepare et affiche mais pas encore relie au bonheur P'TIPOTE ou aux evenements.
 - Dashboard Cœur du Camp en lecture/export seulement; edition et synchro runtime restent a brancher.
 
+## LISIERE V1 - Missions, Inventaire Et Rapports
+
+### 1. Fichiers crees ou modifies
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/game/lisiere_forage_config.dart` | Source Flutter des biomes, durees, intensites, gains, couts Vitalite, risques, limites inventaire. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat local Zone 0: Vitalite override, missions, inventaire global, rapports/messages, securite fallback. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Ecran Lisiere proche, lancement/resolution mission, Maison avec inventaire, boite aux lettres et pastilles. |
+| `ptipote-dashboard/lisiere-forage-config.json` | Miroir JSON des temps/gains/couts/risques Lisiere pour consultation/export dashboard. |
+| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglet dashboard `Lisiere / Fourrage` en lecture/export. |
+
+### 2. Configuration
+
+- `forageTimeScale`: `6`, donc 1h theorique = 10 min test, 2h = 20 min, 6h = 60 min, 10h = 100 min.
+- Intensites: `doux` x0.75 gains / x0.75 Vitalite / -5% risque; `normal` x1; `intensif` x1.35 gains / x1.25 Vitalite / +10% risque.
+- Couts Vitalite par duree: 1h `15`, 2h `25`, 6h `55`, 10h `80` avant multiplicateur intensite.
+- Risques biome: Colline `10%`, Plaine riche `8%`, Bassin mineral `14%`, Sous-bois `12%`.
+- Inventaire V1: `10` slots, stack max `10`.
+
+### 3. Dashboard
+
+- Onglet visible: `Lisiere / Fourrage`.
+- Champs affiches depuis `ptipote-dashboard/lisiere-forage-config.json`: multiplicateur temps, durees reelles, intensites, risques, gains de base par biome.
+- Non synchronise automatiquement avec Flutter/Firebase pour cette V1; modifier aussi `lisiere_forage_config.dart` pour changer l'app.
+
+### 4. Biomes V1
+
+- Colline: mixte, 1h normal = `2 Organique` + `2 Mineral`.
+- Plaine riche: Organique, 1h normal = `4 Organique` + `1 Mineral`.
+- Bassin mineral: Mineral, 1h normal = `1 Organique` + `4 Mineral`.
+- Sous-bois: Organique/transformation, 1h normal = `3 Organique` + `1 Mineral`.
+- Batiments lies aux biomes non branches: aucun bouton casse, mention `Batiment lie : a venir` dans l'estimation.
+
+### 5. Mission model
+
+- Modele local `ForageMission`: id, figurineId, figurineName, biome, duree theorique, duree test, intensite, startTime, endTime, expectedRewards, vitalityCost, riskPercent, riskLabel, status.
+- Etats mission: `active`, `completed`.
+- Lancement: choisit P'TIPOTE/duree/intensite/biome, verifie Vitalite, deduit la Vitalite et cree une mission active.
+- Resolution: timer local, applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, cree un rapport non lu.
+- Etat `onMission` prepare via mission active locale; les champs Firestore P'TIPOTE ne sont pas encore modifies.
+
+### 6. Risques
+
+- Formule V1: `baseBiomeRisk + intensityRiskModifier - (refugeSafety / 10) - bonus type`, minimum `0%`.
+- Securite refuge fallback: `50` tant que la Tour n'est pas branchee.
+- Labels UI: `Tres sur`, `Sur`, `Incertain`, `Risque`.
+- Incidents doux V1: Pollution (-20% Organique), Drone errant (-25% gains), Climat difficile (-15% gains).
+- Bonus types prepares: vegetal aide Plaine riche, mineral aide Bassin mineral, fongique aide Sous-bois.
+
+### 7. Inventaire global
+
+- Emplacement code: `Zone0GameState.inventory` et `Zone0InventorySheet` dans `refuge_page.dart`.
+- Accessible depuis la Maison via icone caisse en bas a droite.
+- Limite: 10 slots, stack max 10, ressources supportees `Organique`, `Mineral`, et Bio-batterie preparee par convention mais pas encore generee.
+- Inventaire plein: le rapport marque que certaines ressources attendent; aucune suppression silencieuse intentionnelle.
+
+### 8. Rapports / messages P'TIPOTE
+
+- Emplacement code: `Zone0GameState.reports`, `PtipoteMissionReport`, `MissionReportsSheet`.
+- Creation automatique a la fin de mission avec P'TIPOTE, biome, duree, intensite, gains, incident, Vitalite restante, date.
+- Pastille Maison sur le refuge et pastille boite aux lettres dans la Maison lisent `unreadReportCount`.
+- Ouverture de la boite aux lettres marque les rapports comme lus.
+
+### 9. Attentes / placeholders
+
+- Tour non branchee: Securite refuge par defaut `50`.
+- Marche non branche: autoAssignment `market` fallback Maison existant.
+- Stock Atelier non branche: transfert Maison <-> Atelier et drag and drop prevus plus tard.
+- Stock Organique reel non branche a l'inventaire joueur; inventaire V1 local session seulement.
+- Persistance missions/inventaire/rapports non branchee; tout est local session pour tester la boucle.
+- Lisiere lointaine, batiments de biomes, Refuge PTIBUG, puzzle tokens et auto-battler non developpes.
+
 ## Flux Principaux
 
 ### Auth Et Profil

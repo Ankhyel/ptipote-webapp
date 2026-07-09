@@ -1,0 +1,23 @@
+{
+  "forageTimeScale": 6,
+  "inventorySlotLimit": 10,
+  "inventoryStackLimit": 10,
+  "refugeSafetyFallback": 50,
+  "durations": [
+    { "id": "oneHour", "label": "1h", "theoreticalHours": 1, "realMinutes": 10, "baseVitalityCost": 15 },
+    { "id": "twoHours", "label": "2h", "theoreticalHours": 2, "realMinutes": 20, "baseVitalityCost": 25 },
+    { "id": "sixHours", "label": "6h", "theoreticalHours": 6, "realMinutes": 60, "baseVitalityCost": 55 },
+    { "id": "tenHours", "label": "10h", "theoreticalHours": 10, "realMinutes": 100, "baseVitalityCost": 80 }
+  ],
+  "intensities": [
+    { "id": "doux", "label": "Doux", "rewardMultiplier": 0.75, "vitalityMultiplier": 0.75, "riskModifierPercent": -5 },
+    { "id": "normal", "label": "Normal", "rewardMultiplier": 1.0, "vitalityMultiplier": 1.0, "riskModifierPercent": 0 },
+    { "id": "intensif", "label": "Intensif", "rewardMultiplier": 1.35, "vitalityMultiplier": 1.25, "riskModifierPercent": 10 }
+  ],
+  "biomes": [
+    { "id": "colline", "label": "Colline", "baseRiskPercent": 10, "rewards": { "Organique": 2, "Minéral": 2 } },
+    { "id": "plaineRiche", "label": "Plaine riche", "baseRiskPercent": 8, "rewards": { "Organique": 4, "Minéral": 1 } },
+    { "id": "bassinMineral", "label": "Bassin minéral", "baseRiskPercent": 14, "rewards": { "Organique": 1, "Minéral": 4 } },
+    { "id": "sousBois", "label": "Sous-bois", "baseRiskPercent": 12, "rewards": { "Organique": 3, "Minéral": 1 } }
+  ]
+}

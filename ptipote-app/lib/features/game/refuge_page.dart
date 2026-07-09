@@ -8,6 +8,8 @@ import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'camp_heart_config.dart';
 import 'game_asset_resolver.dart';
+import 'lisiere_forage_config.dart';
+import 'zone0_game_state.dart';
 
 class RefugePage extends StatefulWidget {
   const RefugePage({super.key});
@@ -20,6 +22,7 @@ class RefugePage extends StatefulWidget {
 
 class _RefugePageState extends State<RefugePage> {
   static final _campHeartState = CampHeartState.placeholder();
+  static final _zone0State = Zone0GameState.instance;
 
   final _assetResolver = GameAssetResolver();
   String? _refugeAsset;
@@ -89,6 +92,9 @@ class _RefugePageState extends State<RefugePage> {
       MaterialPageRoute<void>(
         builder: (_) {
           if (building.name == 'Maison') return const _MaisonPage();
+          if (building.name == 'Lisiere') {
+            return LisierePage(gameState: _zone0State);
+          }
           if (building.name == 'CampHeart') {
             return CampHeartPage(state: _campHeartState);
           }
@@ -142,6 +148,9 @@ class _RefugePageState extends State<RefugePage> {
                             campHeartState: building.name == 'CampHeart'
                                 ? _campHeartState
                                 : null,
+                            notificationCount: building.name == 'Maison'
+                                ? _zone0State.unreadReportCount
+                                : 0,
                             onTap: () => _openBuilding(building),
                           ),
                         ),
@@ -175,17 +184,10 @@ class _MaisonPage extends StatefulWidget {
 
 class _MaisonPageState extends State<_MaisonPage>
     with SingleTickerProviderStateMixin {
-  static final Map<String, int> _savedVitalityOverrides = <String, int>{};
-  static final Map<String, PtipoteAutoAssignmentPreference>
-      _savedAutoPreferenceOverrides =
-      <String, PtipoteAutoAssignmentPreference>{};
-
   final _assetResolver = GameAssetResolver();
   final _figurineService = FigurineService();
+  final _gameState = Zone0GameState.instance;
   late final AnimationController _tickController;
-  final Map<String, int> _vitalityOverrides = _savedVitalityOverrides;
-  final Map<String, PtipoteAutoAssignmentPreference> _autoPreferenceOverrides =
-      _savedAutoPreferenceOverrides;
   Timer? _vitalityRecoveryTimer;
   int _recoveryTick = 0;
   String? _selectedFigurineId;
@@ -220,14 +222,13 @@ class _MaisonPageState extends State<_MaisonPage>
   }
 
   int _vitalityFor(PtipoteFigurine figurine) {
-    return _vitalityOverrides[figurine.id] ?? figurine.vitality;
+    return _gameState.vitalityFor(figurine);
   }
 
   PtipoteAutoAssignmentPreference _autoPreferenceFor(
     PtipoteFigurine figurine,
   ) {
-    return _autoPreferenceOverrides[figurine.id] ??
-        figurine.autoAssignmentPreference;
+    return _gameState.autoPreferenceFor(figurine);
   }
 
   void _toggleFigurine(PtipoteFigurine figurine) {
@@ -257,18 +258,18 @@ class _MaisonPageState extends State<_MaisonPage>
     final selected = figurine;
     setState(() {
       final current = _vitalityFor(selected);
-      _vitalityOverrides[id] = math.max(0, current - 25);
+      _gameState.vitalityOverrides[id] = math.max(0, current - 25);
       _selectedFigurineId = id;
     });
   }
 
   void _recoverVitalityStep() {
-    if (!mounted || _vitalityOverrides.isEmpty) return;
+    if (!mounted || _gameState.vitalityOverrides.isEmpty) return;
     setState(() {
       _recoveryTick += 1;
       final vitalityUpdates = <String, int>{};
       final idsToClear = <String>[];
-      for (final entry in _vitalityOverrides.entries) {
+      for (final entry in _gameState.vitalityOverrides.entries) {
         final isResting =
             entry.value <= ptipoteStatsConfig.minVitalityBeforeAutoRest;
         if (!isResting && _recoveryTick.isOdd) continue;
@@ -282,9 +283,9 @@ class _MaisonPageState extends State<_MaisonPage>
           vitalityUpdates[entry.key] = nextVitality;
         }
       }
-      _vitalityOverrides.addAll(vitalityUpdates);
+      _gameState.vitalityOverrides.addAll(vitalityUpdates);
       for (final id in idsToClear) {
-        _vitalityOverrides.remove(id);
+        _gameState.vitalityOverrides.remove(id);
       }
     });
   }
@@ -294,7 +295,7 @@ class _MaisonPageState extends State<_MaisonPage>
     PtipoteAutoAssignmentPreference preference,
   ) {
     setState(() {
-      _autoPreferenceOverrides[figurine.id] = preference;
+      _gameState.autoPreferenceOverrides[figurine.id] = preference;
       _selectedFigurineId = figurine.id;
     });
   }
@@ -364,6 +365,11 @@ class _MaisonPageState extends State<_MaisonPage>
                             },
                             onTrain: () => _trainSelected(figurines),
                           ),
+                          _MaisonUtilityButtons(
+                            unreadCount: _gameState.unreadReportCount,
+                            onInventory: _openInventory,
+                            onMessages: _openMessages,
+                          ),
                         ],
                       );
                     },
@@ -376,6 +382,23 @@ class _MaisonPageState extends State<_MaisonPage>
       ),
     );
   }
+
+  void _openInventory() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => Zone0InventorySheet(gameState: _gameState),
+    );
+  }
+
+  void _openMessages() {
+    setState(_gameState.markReportsRead);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => MissionReportsSheet(gameState: _gameState),
+    );
+  }
 }
 
 class _BuildingHotspot extends StatelessWidget {
@@ -383,11 +406,13 @@ class _BuildingHotspot extends StatelessWidget {
     required this.building,
     required this.onTap,
     this.campHeartState,
+    this.notificationCount = 0,
   });
 
   final _RefugeBuilding building;
   final VoidCallback onTap;
   final CampHeartState? campHeartState;
+  final int notificationCount;
 
   @override
   Widget build(BuildContext context) {
@@ -403,25 +428,36 @@ class _BuildingHotspot extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             side: BorderSide(color: Colors.white.withValues(alpha: 0.50)),
           ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: onTap,
-            child: building.name == 'CampHeart' && campHeartState != null
-                ? _CampHeartHotspotContent(state: campHeartState!)
-                : Center(
-                    child: Text(
-                      building.title,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Color(0xFF2B2116),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        shadows: <Shadow>[
-                          Shadow(color: Colors.white, blurRadius: 10),
-                        ],
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: onTap,
+                child: building.name == 'CampHeart' && campHeartState != null
+                    ? _CampHeartHotspotContent(state: campHeartState!)
+                    : Center(
+                        child: Text(
+                          building.title,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF2B2116),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            shadows: <Shadow>[
+                              Shadow(color: Colors.white, blurRadius: 10),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+              ),
+              if (notificationCount > 0)
+                Positioned(
+                  right: -5,
+                  top: -5,
+                  child: _NotificationBadge(count: notificationCount),
+                ),
+            ],
           ),
         ),
       ),
@@ -486,6 +522,116 @@ class _CampHeartHotspotContent extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NotificationBadge extends StatelessWidget {
+  const _NotificationBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      constraints: const BoxConstraints(minWidth: 24),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.error,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Center(
+        child: Text(
+          '$count',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MaisonUtilityButtons extends StatelessWidget {
+  const _MaisonUtilityButtons({
+    required this.unreadCount,
+    required this.onInventory,
+    required this.onMessages,
+  });
+
+  final int unreadCount;
+  final VoidCallback onInventory;
+  final VoidCallback onMessages;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 12,
+      bottom: 12,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _RoundUtilityButton(
+            icon: Icons.inventory_2_outlined,
+            tooltip: 'Inventaire',
+            onTap: onInventory,
+          ),
+          const SizedBox(height: 10),
+          Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              _RoundUtilityButton(
+                icon: Icons.mark_email_unread_outlined,
+                tooltip: 'Messages P’TIPOTE',
+                onTap: onMessages,
+              ),
+              if (unreadCount > 0)
+                Positioned(
+                  right: -5,
+                  top: -5,
+                  child: _NotificationBadge(count: unreadCount),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoundUtilityButton extends StatelessWidget {
+  const _RoundUtilityButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+        shape: const CircleBorder(),
+        elevation: 4,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: Icon(icon),
+          ),
+        ),
       ),
     );
   }
@@ -1136,6 +1282,545 @@ class _AlcovePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class Zone0InventorySheet extends StatelessWidget {
+  const Zone0InventorySheet({super.key, required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    final stacks = gameState.inventory;
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        shrinkWrap: true,
+        children: <Widget>[
+          Text(
+            'Inventaire global',
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${stacks.length}/${lisiereForageConfig.inventorySlotLimit} slots · stacks de ${lisiereForageConfig.inventoryStackLimit}',
+          ),
+          const SizedBox(height: 12),
+          if (stacks.isEmpty)
+            const _SheetEmptyState(
+                text: 'Aucune ressource rangée pour le moment.')
+          else
+            ...stacks.map(
+              (stack) => ListTile(
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: Text(stack.resource),
+                trailing: Text(
+                  '${stack.amount}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class MissionReportsSheet extends StatelessWidget {
+  const MissionReportsSheet({super.key, required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    final reports = gameState.reports.reversed.toList();
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        shrinkWrap: true,
+        children: <Widget>[
+          Text(
+            'Messages P’TIPOTE',
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 12),
+          if (reports.isEmpty)
+            const _SheetEmptyState(text: 'Aucun rapport de mission.')
+          else
+            ...reports.map(
+              (report) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '${report.figurineName} revient de ${report.biomeLabel}',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Durée ${report.durationLabel} · ${report.intensityLabel}',
+                      ),
+                      Text('Récolte : ${_formatRewards(report.rewards)}'),
+                      Text('Incident : ${report.incidentLabel}'),
+                      Text('Vitalité restante : ${report.vitalityRemaining}'),
+                      if (report.inventoryFull)
+                        const Text(
+                          'Inventaire plein : certaines ressources attendent.',
+                        ),
+                      const SizedBox(height: 4),
+                      Text(
+                        report.completedAt
+                            .toLocal()
+                            .toString()
+                            .split('.')
+                            .first,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SheetEmptyState extends StatelessWidget {
+  const _SheetEmptyState({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Text(text, textAlign: TextAlign.center),
+    );
+  }
+}
+
+class LisierePage extends StatefulWidget {
+  const LisierePage({super.key, required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  State<LisierePage> createState() => _LisierePageState();
+}
+
+class _LisierePageState extends State<LisierePage> {
+  final _figurineService = FigurineService();
+  final _random = math.Random();
+  ForageBiome _biome = ForageBiome.colline;
+  ForageDuration _duration = ForageDuration.oneHour;
+  ForageIntensity _intensity = ForageIntensity.normal;
+  String? _selectedFigurineId;
+  Timer? _missionTimer;
+
+  @override
+  void dispose() {
+    _missionTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Lisière proche')),
+      body: SafeArea(
+        child: StreamBuilder<List<PtipoteFigurine>>(
+          stream: _figurineService.watchMyFigurines(),
+          builder: (context, snapshot) {
+            final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+            PtipoteFigurine? selected;
+            for (final figurine in figurines) {
+              if (figurine.id == _selectedFigurineId) {
+                selected = figurine;
+                break;
+              }
+            }
+            final estimate = selected == null ? null : _estimate(selected);
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: <Widget>[
+                _ForageChoiceCard(
+                  title: 'Biome',
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ForageBiome.values.map((biome) {
+                      final config = lisiereForageConfig.biomes[biome]!;
+                      return ChoiceChip(
+                        label: Text(config.label),
+                        selected: _biome == biome,
+                        onSelected: (_) => setState(() => _biome = biome),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                _ForageChoiceCard(
+                  title: 'P’TIPOTE',
+                  child: figurines.isEmpty
+                      ? const Text('Aucun P’TIPOTE disponible.')
+                      : Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: figurines.map((figurine) {
+                            final vitality =
+                                widget.gameState.vitalityFor(figurine);
+                            final onMission =
+                                widget.gameState.isOnMission(figurine.id);
+                            return ChoiceChip(
+                              label: Text(
+                                '${figurine.displayName} · V$vitality${onMission ? ' · mission' : ''}',
+                              ),
+                              selected: _selectedFigurineId == figurine.id,
+                              onSelected: onMission
+                                  ? null
+                                  : (_) => setState(() {
+                                        _selectedFigurineId = figurine.id;
+                                      }),
+                            );
+                          }).toList(),
+                        ),
+                ),
+                _ForageChoiceCard(
+                  title: 'Durée',
+                  child: Wrap(
+                    spacing: 8,
+                    children: ForageDuration.values.map((duration) {
+                      final config = lisiereForageConfig.durations[duration]!;
+                      final real = config.realDuration(
+                        lisiereForageConfig.forageTimeScale,
+                      );
+                      return ChoiceChip(
+                        label: Text(
+                            '${config.label} (${real.inMinutes} min test)'),
+                        selected: _duration == duration,
+                        onSelected: (_) => setState(() => _duration = duration),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                _ForageChoiceCard(
+                  title: 'Intensité',
+                  child: Wrap(
+                    spacing: 8,
+                    children: ForageIntensity.values.map((intensity) {
+                      return ChoiceChip(
+                        label: Text(
+                            lisiereForageConfig.intensities[intensity]!.label),
+                        selected: _intensity == intensity,
+                        onSelected: (_) =>
+                            setState(() => _intensity = intensity),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                if (estimate != null) _ForageEstimateCard(estimate: estimate),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: estimate?.canLaunch == true
+                      ? () => _launchMission(selected!, estimate!)
+                      : null,
+                  icon: const Icon(Icons.forest_outlined),
+                  label: const Text('Envoyer récolter'),
+                ),
+                if (estimate != null && !estimate.canLaunch)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Ce P’TIPOTE a besoin de récupérer avant cette sortie.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                _ActiveMissionsCard(gameState: widget.gameState),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  ForageEstimate _estimate(PtipoteFigurine figurine) {
+    final rewards = _calculateRewards(figurine);
+    final duration = lisiereForageConfig.durations[_duration]!;
+    final intensity = lisiereForageConfig.intensities[_intensity]!;
+    final cost =
+        (duration.baseVitalityCost * intensity.vitalityMultiplier).round();
+    final riskPercent = _riskPercent(figurine);
+    final vitality = widget.gameState.vitalityFor(figurine);
+    return ForageEstimate(
+      rewards: rewards,
+      vitalityCost: cost,
+      riskPercent: riskPercent,
+      riskLabel: _riskLabel(riskPercent),
+      zoneFatigueLabel: intensity.zoneFatigueLabel,
+      canLaunch: vitality > ptipoteStatsConfig.minVitalityBeforeAutoRest &&
+          vitality >= cost &&
+          !widget.gameState.isOnMission(figurine.id),
+    );
+  }
+
+  Map<String, int> _calculateRewards(PtipoteFigurine figurine) {
+    final biome = lisiereForageConfig.biomes[_biome]!;
+    final duration = lisiereForageConfig.durations[_duration]!;
+    final intensity = lisiereForageConfig.intensities[_intensity]!;
+    final rewards = <String, int>{};
+    for (final entry in biome.baseRewards.entries) {
+      var value =
+          entry.value * duration.theoreticalHours * intensity.rewardMultiplier;
+      if (_biome == ForageBiome.plaineRiche &&
+          figurine.elementType == PtipoteElementType.vegetal &&
+          entry.key == 'Organique') {
+        value *= 1.10;
+      }
+      if (_biome == ForageBiome.bassinMineral &&
+          figurine.elementType == PtipoteElementType.mineral &&
+          entry.key == 'Minéral') {
+        value *= 1.10;
+      }
+      if (_biome == ForageBiome.sousBois &&
+          figurine.elementType == PtipoteElementType.fungal &&
+          entry.key == 'Organique') {
+        value *= 1.10;
+      }
+      rewards[entry.key] = math.max(0, value.round());
+    }
+    return rewards;
+  }
+
+  int _riskPercent(PtipoteFigurine figurine) {
+    final biome = lisiereForageConfig.biomes[_biome]!;
+    final intensity = lisiereForageConfig.intensities[_intensity]!;
+    var risk = biome.baseRiskPercent +
+        intensity.riskModifierPercent -
+        (widget.gameState.refugeSafety / 10).round();
+    if (_biome == ForageBiome.plaineRiche &&
+        figurine.elementType == PtipoteElementType.vegetal) {
+      risk -= 2;
+    }
+    if (_biome == ForageBiome.bassinMineral &&
+        figurine.elementType == PtipoteElementType.mineral) {
+      risk -= 2;
+    }
+    if (_biome == ForageBiome.sousBois &&
+        figurine.elementType == PtipoteElementType.fungal) {
+      risk -= 2;
+    }
+    return math.max(0, risk);
+  }
+
+  String _riskLabel(int risk) {
+    if (risk <= 3) return 'Très sûr';
+    if (risk <= 8) return 'Sûr';
+    if (risk <= 15) return 'Incertain';
+    return 'Risqué';
+  }
+
+  void _launchMission(PtipoteFigurine figurine, ForageEstimate estimate) {
+    final duration = lisiereForageConfig.durations[_duration]!;
+    final start = DateTime.now();
+    final mission = ForageMission(
+      id: 'mission-${start.microsecondsSinceEpoch}',
+      figurineId: figurine.id,
+      figurineName: figurine.displayName,
+      biome: _biome,
+      duration: _duration,
+      intensity: _intensity,
+      startTime: start,
+      endTime:
+          start.add(duration.realDuration(lisiereForageConfig.forageTimeScale)),
+      expectedRewards: estimate.rewards,
+      vitalityCost: estimate.vitalityCost,
+      riskPercent: estimate.riskPercent,
+      riskLabel: estimate.riskLabel,
+    );
+    widget.gameState.missions.add(mission);
+    widget.gameState.vitalityOverrides[figurine.id] = math.max(
+        0, widget.gameState.vitalityFor(figurine) - estimate.vitalityCost);
+    setState(() {});
+    _missionTimer?.cancel();
+    _missionTimer = Timer(mission.endTime.difference(DateTime.now()), () {
+      if (mounted) _resolveMission(mission);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${figurine.displayName} part en Lisière.')),
+    );
+  }
+
+  void _resolveMission(ForageMission mission) {
+    if (mission.status != ForageMissionStatus.active) return;
+    final biome = lisiereForageConfig.biomes[mission.biome]!;
+    final duration = lisiereForageConfig.durations[mission.duration]!;
+    final intensity = lisiereForageConfig.intensities[mission.intensity]!;
+    var rewards = Map<String, int>.from(mission.expectedRewards);
+    var incident = 'aucun';
+
+    if (_random.nextInt(100) < mission.riskPercent) {
+      final hazards =
+          ForageHazard.values.where((h) => h != ForageHazard.none).toList();
+      final hazard = hazards[_random.nextInt(hazards.length)];
+      switch (hazard) {
+        case ForageHazard.pollution:
+          rewards['Organique'] = ((rewards['Organique'] ?? 0) * 0.8).round();
+          incident = 'pollution légère, gains organiques réduits';
+        case ForageHazard.droneErrant:
+          rewards = rewards
+              .map((key, value) => MapEntry(key, (value * 0.75).round()));
+          incident = 'drone errant, retour anticipé';
+        case ForageHazard.climatDifficile:
+          rewards = rewards
+              .map((key, value) => MapEntry(key, (value * 0.85).round()));
+          incident = 'climat difficile, récolte ralentie';
+        case ForageHazard.none:
+          break;
+      }
+    }
+
+    final inventoryResult = widget.gameState.addResources(rewards);
+    final vitality =
+        widget.gameState.vitalityOverrides[mission.figurineId] ?? 0;
+    widget.gameState.reports.add(
+      PtipoteMissionReport(
+        id: 'report-${DateTime.now().microsecondsSinceEpoch}',
+        figurineName: mission.figurineName,
+        biomeLabel: biome.label,
+        durationLabel: duration.label,
+        intensityLabel: intensity.label,
+        rewards: rewards,
+        incidentLabel: incident,
+        vitalityRemaining: vitality,
+        completedAt: DateTime.now(),
+        inventoryFull: inventoryResult.hasPending,
+      ),
+    );
+    mission.status = ForageMissionStatus.completed;
+    if (mounted) setState(() {});
+  }
+}
+
+class ForageEstimate {
+  const ForageEstimate({
+    required this.rewards,
+    required this.vitalityCost,
+    required this.riskPercent,
+    required this.riskLabel,
+    required this.zoneFatigueLabel,
+    required this.canLaunch,
+  });
+
+  final Map<String, int> rewards;
+  final int vitalityCost;
+  final int riskPercent;
+  final String riskLabel;
+  final String zoneFatigueLabel;
+  final bool canLaunch;
+}
+
+class _ForageChoiceCard extends StatelessWidget {
+  const _ForageChoiceCard({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 10),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ForageEstimateCard extends StatelessWidget {
+  const _ForageEstimateCard({required this.estimate});
+
+  final ForageEstimate estimate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text('Estimation',
+                style: TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            Text('Gain : ${_formatRewards(estimate.rewards)}'),
+            Text('Vitalité consommée : ${estimate.vitalityCost}'),
+            Text('Risque : ${estimate.riskLabel} (${estimate.riskPercent}%)'),
+            Text('Fatigue de zone prévue : ${estimate.zoneFatigueLabel}'),
+            const Text('Bâtiment lié : à venir'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActiveMissionsCard extends StatelessWidget {
+  const _ActiveMissionsCard({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = gameState.missions
+        .where((mission) => mission.status == ForageMissionStatus.active)
+        .toList();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text('Missions en cours',
+                style: TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            if (active.isEmpty)
+              const Text('Aucune mission en cours.')
+            else
+              ...active.map((mission) {
+                final biome = lisiereForageConfig.biomes[mission.biome]!;
+                return Text('${mission.figurineName} · ${biome.label}');
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _formatRewards(Map<String, int> rewards) {
+  if (rewards.isEmpty) return 'aucune';
+  return rewards.entries
+      .where((entry) => entry.value > 0)
+      .map((entry) => '+${entry.value} ${entry.key}')
+      .join(', ');
 }
 
 class CampHeartState extends ChangeNotifier {

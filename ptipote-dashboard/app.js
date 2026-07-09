@@ -34,6 +34,7 @@ const provider = new GoogleAuthProvider();
 let currentDashboardRole = "";
 let ptipoteStatsConfig = {};
 let campHeartConfig = {};
+let lisiereForageConfig = {};
 
 const PTIPOTE_STATS_STORAGE_KEY = "ptipote_stats_config_v1";
 const PTIPOTE_STATS_FIELDS = [
@@ -76,6 +77,9 @@ const ids = [
   "campHeartStatus",
   "campHeartStageList",
   "exportCampHeartButton",
+  "lisiereForageStatus",
+  "lisiereForageList",
+  "exportLisiereForageButton",
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -296,6 +300,43 @@ function renderCampHeartConfig() {
   `).join("");
 }
 
+async function loadLisiereForageConfig() {
+  try {
+    const response = await fetch("./lisiere-forage-config.json", { cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    lisiereForageConfig = await response.json();
+    renderLisiereForageConfig();
+    el.lisiereForageStatus.textContent = "Configuration Lisière chargée depuis le JSON versionné.";
+  } catch (error) {
+    el.lisiereForageStatus.textContent = "Configuration Lisière illisible: " + error.message;
+  }
+}
+
+function renderLisiereForageConfig() {
+  const durations = Array.isArray(lisiereForageConfig.durations) ? lisiereForageConfig.durations : [];
+  const intensities = Array.isArray(lisiereForageConfig.intensities) ? lisiereForageConfig.intensities : [];
+  const biomes = Array.isArray(lisiereForageConfig.biomes) ? lisiereForageConfig.biomes : [];
+  const rows = [];
+  rows.push('<div class="stage-row"><div><strong>Temps</strong><span>Multiplicateur test x' + escapeHtml(lisiereForageConfig.forageTimeScale) + ' · ' + durations.map((item) => escapeHtml(item.label) + ' => ' + escapeHtml(item.realMinutes) + ' min').join(' · ') + '</span></div><strong>durées</strong></div>');
+  rows.push('<div class="stage-row"><div><strong>Intensités</strong><span>' + intensities.map((item) => escapeHtml(item.label) + ' x' + escapeHtml(item.rewardMultiplier) + ' risque ' + escapeHtml(item.riskModifierPercent) + '%').join(' · ') + '</span></div><strong>coûts</strong></div>');
+  biomes.forEach((biome) => {
+    const organic = biome.rewards && biome.rewards.Organique ? biome.rewards.Organique : 0;
+    const mineral = biome.rewards && biome.rewards["Minéral"] ? biome.rewards["Minéral"] : 0;
+    rows.push('<div class="stage-row"><div><strong>' + escapeHtml(biome.label) + '</strong><span>Risque ' + escapeHtml(biome.baseRiskPercent) + '% · Organique ' + escapeHtml(organic) + ' · Minéral ' + escapeHtml(mineral) + '</span></div><strong>biome</strong></div>');
+  });
+  el.lisiereForageList.innerHTML = rows.join('');
+}
+
+function exportLisiereForageConfig() {
+  const blob = new Blob([JSON.stringify(lisiereForageConfig, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "lisiere-forage-config.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function exportCampHeartConfig() {
   const blob = new Blob([JSON.stringify(campHeartConfig, null, 2)], {
     type: "application/json",
@@ -365,6 +406,11 @@ el.exportCampHeartButton.addEventListener("click", () => {
   exportCampHeartConfig();
 });
 
+el.exportLisiereForageButton.addEventListener("click", () => {
+  exportLisiereForageConfig();
+});
+
 setupDashboardTabs();
 loadPtipoteStatsConfig();
 loadCampHeartConfig();
+loadLisiereForageConfig();

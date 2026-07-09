@@ -31,6 +31,7 @@
         <button class="tab-button active" type="button" data-dashboard-tab="overview">Vue générale</button>
         <button class="tab-button" type="button" data-dashboard-tab="ptipote-stats">Stat Ptipote</button>
         <button class="tab-button" type="button" data-dashboard-tab="camp-heart">Cœur du Camp</button>
+        <button class="tab-button" type="button" data-dashboard-tab="lisiere-forage">Lisière / Fourrage</button>
       </nav>
 
       <section class="dashboard-panel active" data-dashboard-panel="overview">
@@ -90,6 +91,17 @@
           </div>
           <p class="panel-note" id="campHeartStatus">Charge les paliers depuis camp-heart-config.json. Edition dashboard complète à brancher plus tard.</p>
           <div class="stage-list" id="campHeartStageList"></div>
+        </section>
+      </section>
+
+      <section class="dashboard-panel" data-dashboard-panel="lisiere-forage">
+        <section class="panel stat-ptipote-panel" aria-labelledby="lisiereForageTitle">
+          <div class="panel-head">
+            <div><p class="eyebrow">Configuration V1</p><h2 id="lisiereForageTitle">Lisière / Fourrage</h2></div>
+            <button class="ghost" id="exportLisiereForageButton" type="button">Exporter JSON</button>
+          </div>
+          <p class="panel-note" id="lisiereForageStatus">Charge les temps, gains, coûts et risques depuis lisiere-forage-config.json.</p>
+          <div class="stage-list" id="lisiereForageList"></div>
         </section>
       </section>
     </main>
