@@ -26,12 +26,15 @@ export PATH="$FLUTTER_DIR/bin:$PATH"
 flutter --version
 flutter precache --ios
 flutter pub get
+flutter build ios --config-only --no-codesign
 
 PLUGIN_SWIFT_PACKAGE="ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift"
 if [ -f "$PLUGIN_SWIFT_PACKAGE" ]; then
   perl -0pi -e 's|\.iOS\("13\.0"\)|.iOS("15.0")|g' "$PLUGIN_SWIFT_PACKAGE"
 else
-  echo "Flutter generated plugin Swift package not found yet: $PLUGIN_SWIFT_PACKAGE"
+  echo "Flutter generated plugin Swift package missing after iOS config generation: $PLUGIN_SWIFT_PACKAGE"
+  find ios/Flutter -maxdepth 5 -print
+  exit 7
 fi
 
 cd ios
