@@ -1,0 +1,64 @@
+{
+  "stages": [
+    {
+      "level": 1,
+      "stage": "camp",
+      "label": "Camp",
+      "xpRequiredForNextLevel": 100,
+      "populationLabel": "environ 5 personnes + visiteurs",
+      "populationMin": 5,
+      "populationMax": null,
+      "activePtipoteComfortLimit": 1,
+      "refugeHappinessBonus": 0,
+      "localActivityModifier": 1.0
+    },
+    {
+      "level": 2,
+      "stage": "refuge",
+      "label": "Refuge",
+      "xpRequiredForNextLevel": 250,
+      "populationLabel": "7 à 12 habitants",
+      "populationMin": 7,
+      "populationMax": 12,
+      "activePtipoteComfortLimit": 2,
+      "refugeHappinessBonus": 5,
+      "localActivityModifier": 1.05
+    },
+    {
+      "level": 3,
+      "stage": "bourgade",
+      "label": "Bourgade",
+      "xpRequiredForNextLevel": 500,
+      "populationLabel": "15 à 21 habitants",
+      "populationMin": 15,
+      "populationMax": 21,
+      "activePtipoteComfortLimit": 3,
+      "refugeHappinessBonus": 10,
+      "localActivityModifier": 1.12
+    },
+    {
+      "level": 4,
+      "stage": "village",
+      "label": "Village",
+      "xpRequiredForNextLevel": 900,
+      "populationLabel": "communauté stable",
+      "populationMin": null,
+      "populationMax": null,
+      "activePtipoteComfortLimit": 4,
+      "refugeHappinessBonus": 15,
+      "localActivityModifier": 1.2
+    },
+    {
+      "level": 5,
+      "stage": "petiteVille",
+      "label": "Petite ville",
+      "xpRequiredForNextLevel": null,
+      "populationLabel": "à définir plus tard",
+      "populationMin": null,
+      "populationMax": null,
+      "activePtipoteComfortLimit": 5,
+      "refugeHappinessBonus": 20,
+      "localActivityModifier": 1.3
+    }
+  ]
+}

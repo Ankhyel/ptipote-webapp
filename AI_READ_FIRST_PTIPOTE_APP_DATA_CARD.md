@@ -36,9 +36,11 @@ Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'
 | Liste chats | `ptipote-app/lib/features/chat/chats_page.dart` | Liste des conversations et badges messages. |
 | Conversation chat | `ptipote-app/lib/features/chat/chat_page.dart` | Messages entre deux amis. |
 | Jeu / refuge Flutter | `ptipote-app/lib/features/game/refuge_page.dart` | Ecran dev du refuge joueur, accessible par bouton Jeu sur Home si `canSeeDiagnostics`. |
+| Config Cœur du Camp | `ptipote-app/lib/features/game/camp_heart_config.dart` | Stades Camp/Refuge/Bourgade/Village/Petite ville, XP, population, confort P'TIPOTES, bonheur refuge, deblocages. |
 | Assets jeu Flutter | `ptipote-app/ptipote-game/image_game/` | Images d'ecran du jeu, resolues par nom sans dependance a l'extension. |
 | Prototype web Zone 0 | `ptipote-app/ptipote-game/` | Vertical slice HTML/CSS/JS mobile-first du refuge: Ilot, P'TIPOTES, Journal, Lisiere, Atelier, Tour, Marche, Maison. |
 | Config dashboard stats PTIPOTE | `ptipote-dashboard/ptipote-stats-config.json` | Miroir JSON editable/exportable depuis le panneau dashboard `Stat Ptipote`. |
+| Config dashboard Cœur du Camp | `ptipote-dashboard/camp-heart-config.json` | Miroir JSON des paliers du Cœur du Camp, visible/exportable dans le dashboard. |
 
 ## Services App
 
@@ -203,6 +205,70 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Bonheur existe (`baseHappiness`, bornes, helpers `addHappiness`/`reduceHappiness`) mais ses effets restent a integrer: calin, nourriture, repos, mission reussie, accident en Lisiere.
 - Enveloppes non finalisees cote cartes: modificateurs prepares avec fallback `standard`.
 - Dashboard `Stat Ptipote` non synchronise automatiquement avec Flutter/Firebase: edition locale et export JSON seulement.
+
+## Coeur Du Camp V1 - Progression Du Refuge
+
+### 1. Fichiers crees ou modifies
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/game/camp_heart_config.dart` | Source Flutter des stades, XP requis, population, limite P'TIPOTES confort, bonheur refuge, activite locale et deblocages. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Hotspot `Cœur du Camp` sur le refuge, ecran detail, jauge, depot Organique placeholder, passage de niveau. |
+| `ptipote-dashboard/camp-heart-config.json` | Miroir JSON des paliers du Cœur du Camp pour consultation/export dashboard. |
+| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`, `ptipote-dashboard/styles.css` | Panneau dashboard `Cœur du Camp` en lecture/export; edition avancee a brancher plus tard. |
+
+### 2. Donnees ajoutees
+
+- `campHeartLevel`: niveau courant du Cœur, de 1 a 5.
+- `campStage`: enum `CampStage` avec `camp`, `refuge`, `bourgade`, `village`, `petiteVille`.
+- `vegetalizationXp`: XP de vegetalisation du niveau courant.
+- `vegetalizationXpRequired`: seuil du prochain niveau; `null` au niveau max V1.
+- `totalVegetalizationInvested`: total Organique investi.
+- `activePtipoteComfortLimit`: nombre de P'TIPOTES actifs confortables par stade.
+- `populationMin` / `populationMax`: fourchette preparee quand connue.
+- `refugeHappinessBonus`: bonus doux de bonheur refuge par stade.
+- `localActivityModifier`: donnees preparees pour le futur Marche.
+
+### 3. Configuration
+
+- Fichier source Flutter: `ptipote-app/lib/features/game/camp_heart_config.dart`.
+- Miroir dashboard: `ptipote-dashboard/camp-heart-config.json`.
+- XP requis V1: niveau 1 -> 2 = `100`, 2 -> 3 = `250`, 3 -> 4 = `500`, 4 -> 5 = `900`, niveau 5 = max V1.
+- Pour modifier les valeurs dans l'app, changer `camp_heart_config.dart`; le JSON dashboard est un miroir manuel tant qu'aucune synchro config n'existe.
+
+### 4. UI
+
+- Dans `RefugePage`, le `Cœur du Camp` est un hotspot cliquable proche du centre-bas du decor.
+- Le `Kernel` reste un hotspot distinct, proche du Cœur mais separe, legerement centre/droite.
+- L'ecran `CampHeartPage` affiche: stade, niveau, jauge de vegetalisation, stock Organique placeholder, depot +1/+5/+10/Max, prochain palier, population, P'TIPOTES confort, bonheur refuge, activite locale et placeholders.
+
+### 5. Deblocages par stade
+
+- Camp: Maison, Kernel, Cuisine simple, Lisiere proche, 1 P'TIPOTE actif confortable, visiteurs, Colline, Plaine riche.
+- Refuge: Atelier simple, Tour, Bassin mineral, Sous-bois, Refuge PTIBUG, 2 P'TIPOTES actifs confortables, habitants permanents.
+- Bourgade: Serre, Schemas PTIBUG via Atelier, evolutions PTIBUG, premiere Lisiere lointaine simple, 3 P'TIPOTES actifs confortables.
+- Village: systemes sociaux avances plus tard, Relais commun plus tard, Lisiere lointaine plus complete, routes commerciales plus tard, 4 P'TIPOTES actifs confortables.
+- Petite ville: placeholders futurs, mairie plus tard, organisation avancee, systemes de groupe plus tard, Zone 1 avancee plus tard.
+- Ordre important: Cuisine simple disponible au stade Camp; Atelier simple seulement au stade Refuge.
+
+### 6. Systemes branches
+
+- Jauge de vegetalisation branchee en local session dans `CampHeartState`.
+- Depot Organique branche sur un stock placeholder local de `25` pour tester la progression.
+- Passage de niveau/stade branche localement avec message SnackBar.
+- Population, bonheur refuge, limite P'TIPOTES confort et activite locale sont affiches/prepares mais pas encore appliques aux autres systemes.
+
+### 7. Attentes / placeholders
+
+- Stock Organique reel non branche: connecter plus tard a l'inventaire/ressources joueur et empecher les depots hors stock reel.
+- Persistance Firestore/localStorage du Cœur non branchee: l'etat est local session pour V1.
+- Atelier affiche comme deblocage Refuge mais gameplay complet non branche.
+- Tour affichee comme deblocage Refuge mais aide/securite non branchee.
+- Marche non branche: population et `localActivityModifier` seulement prepares.
+- Lisiere lointaine non developpee: deblocage affiche mais non actif.
+- Limite P'TIPOTES actifs confortables preparee mais ne bloque pas encore missions/actions.
+- Bonheur refuge prepare et affiche mais pas encore relie au bonheur P'TIPOTE ou aux evenements.
+- Dashboard Cœur du Camp en lecture/export seulement; edition et synchro runtime restent a brancher.
 
 ## Flux Principaux
 

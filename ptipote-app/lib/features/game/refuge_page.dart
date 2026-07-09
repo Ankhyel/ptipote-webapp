@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../services/figurine_service.dart';
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
+import 'camp_heart_config.dart';
 import 'game_asset_resolver.dart';
 
 class RefugePage extends StatefulWidget {
@@ -18,6 +19,8 @@ class RefugePage extends StatefulWidget {
 }
 
 class _RefugePageState extends State<RefugePage> {
+  static final _campHeartState = CampHeartState.placeholder();
+
   final _assetResolver = GameAssetResolver();
   String? _refugeAsset;
 
@@ -31,10 +34,18 @@ class _RefugePageState extends State<RefugePage> {
     ),
     _RefugeBuilding(
       name: 'Kernel',
-      left: 0.50,
-      top: 0.54,
-      width: 0.34,
-      height: 0.12,
+      left: 0.63,
+      top: 0.50,
+      width: 0.28,
+      height: 0.11,
+    ),
+    _RefugeBuilding(
+      name: 'CampHeart',
+      title: 'Cœur du Camp',
+      left: 0.43,
+      top: 0.59,
+      width: 0.38,
+      height: 0.14,
     ),
     _RefugeBuilding(
       name: 'Lisiere',
@@ -78,6 +89,9 @@ class _RefugePageState extends State<RefugePage> {
       MaterialPageRoute<void>(
         builder: (_) {
           if (building.name == 'Maison') return const _MaisonPage();
+          if (building.name == 'CampHeart') {
+            return CampHeartPage(state: _campHeartState);
+          }
           if (building.name == 'FabLab') return const FablabPage();
           return _GameBuildingPage(building: building);
         },
@@ -125,6 +139,9 @@ class _RefugePageState extends State<RefugePage> {
                         ..._buildings.map(
                           (building) => _BuildingHotspot(
                             building: building,
+                            campHeartState: building.name == 'CampHeart'
+                                ? _campHeartState
+                                : null,
                             onTap: () => _openBuilding(building),
                           ),
                         ),
@@ -362,10 +379,15 @@ class _MaisonPageState extends State<_MaisonPage>
 }
 
 class _BuildingHotspot extends StatelessWidget {
-  const _BuildingHotspot({required this.building, required this.onTap});
+  const _BuildingHotspot({
+    required this.building,
+    required this.onTap,
+    this.campHeartState,
+  });
 
   final _RefugeBuilding building;
   final VoidCallback onTap;
+  final CampHeartState? campHeartState;
 
   @override
   Widget build(BuildContext context) {
@@ -384,22 +406,86 @@ class _BuildingHotspot extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
             onTap: onTap,
-            child: Center(
-              child: Text(
-                building.title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF2B2116),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                  shadows: <Shadow>[
-                    Shadow(color: Colors.white, blurRadius: 10),
-                  ],
-                ),
+            child: building.name == 'CampHeart' && campHeartState != null
+                ? _CampHeartHotspotContent(state: campHeartState!)
+                : Center(
+                    child: Text(
+                      building.title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF2B2116),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        shadows: <Shadow>[
+                          Shadow(color: Colors.white, blurRadius: 10),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CampHeartHotspotContent extends StatelessWidget {
+  const _CampHeartHotspotContent({required this.state});
+
+  final CampHeartState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final stage = state.currentStage;
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          const Text(
+            'Cœur du Camp',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF2B2116),
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              shadows: <Shadow>[Shadow(color: Colors.white, blurRadius: 10)],
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${stage.label} niv. ${state.campHeartLevel}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF2B2116),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 5),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 6,
+              value: state.progressRatio,
+              backgroundColor: Colors.white.withValues(alpha: 0.45),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                Color(0xFF6FA05F),
               ),
             ),
           ),
-        ),
+          const SizedBox(height: 2),
+          Text(
+            state.isMaxLevel
+                ? 'max V1'
+                : '${state.vegetalizationXp} / ${state.vegetalizationXpRequired}',
+            style: const TextStyle(
+              color: Color(0xFF2B2116),
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1052,6 +1138,440 @@ class _AlcovePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+class CampHeartState extends ChangeNotifier {
+  CampHeartState({
+    required this.campHeartLevel,
+    required this.vegetalizationXp,
+    required this.totalVegetalizationInvested,
+    required this.placeholderOrganicStock,
+  });
+
+  factory CampHeartState.placeholder() {
+    return CampHeartState(
+      campHeartLevel: 1,
+      vegetalizationXp: 0,
+      totalVegetalizationInvested: 0,
+      placeholderOrganicStock: 25,
+    );
+  }
+
+  int campHeartLevel;
+  int vegetalizationXp;
+  int totalVegetalizationInvested;
+  int placeholderOrganicStock;
+
+  CampHeartStageConfig get currentStage {
+    return campHeartConfig.stageForLevel(campHeartLevel);
+  }
+
+  CampStage get campStage => currentStage.stage;
+
+  CampHeartStageConfig? get nextStage {
+    return campHeartConfig.nextStageForLevel(campHeartLevel);
+  }
+
+  int? get vegetalizationXpRequired {
+    return currentStage.xpRequiredForNextLevel;
+  }
+
+  bool get isMaxLevel => vegetalizationXpRequired == null;
+
+  double get progressRatio {
+    final required = vegetalizationXpRequired;
+    if (required == null) return 1;
+    return (vegetalizationXp / required).clamp(0, 1);
+  }
+
+  int get activePtipoteComfortLimit {
+    return currentStage.activePtipoteComfortLimit;
+  }
+
+  int? get populationMin => currentStage.populationMin;
+
+  int? get populationMax => currentStage.populationMax;
+
+  int get refugeHappinessBonus => currentStage.refugeHappinessBonus;
+
+  bool get canDepositOrganic {
+    return !isMaxLevel && placeholderOrganicStock > 0;
+  }
+
+  String depositOrganic(int requestedAmount) {
+    if (isMaxLevel) return 'Le Cœur du Camp est au niveau max V1.';
+    final amount = math.min(requestedAmount, placeholderOrganicStock);
+    if (amount <= 0) return 'Stock Organique placeholder vide.';
+
+    placeholderOrganicStock -= amount;
+    vegetalizationXp += amount;
+    totalVegetalizationInvested += amount;
+
+    String? levelUpMessage;
+    while (!isMaxLevel) {
+      final required = vegetalizationXpRequired!;
+      if (vegetalizationXp < required) break;
+      vegetalizationXp -= required;
+      campHeartLevel =
+          math.min(campHeartLevel + 1, campHeartConfig.stages.length);
+      levelUpMessage =
+          'Le Cœur du Camp grandit. Le camp devient ${currentStage.label}.';
+    }
+
+    notifyListeners();
+    return levelUpMessage ?? '+$amount Organique investi.';
+  }
+}
+
+class CampHeartPage extends StatefulWidget {
+  const CampHeartPage({super.key, required this.state});
+
+  final CampHeartState state;
+
+  @override
+  State<CampHeartPage> createState() => _CampHeartPageState();
+}
+
+class _CampHeartPageState extends State<CampHeartPage> {
+  void _deposit(int amount) {
+    final message = widget.state.depositOrganic(amount);
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.state;
+    final stage = state.currentStage;
+    final nextStage = state.nextStage;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Cœur du Camp')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            _CampHeartHero(state: state),
+            const SizedBox(height: 12),
+            _CampHeartProgressCard(state: state),
+            const SizedBox(height: 12),
+            _CampHeartDepositCard(
+              state: state,
+              onDeposit: _deposit,
+            ),
+            const SizedBox(height: 12),
+            _CampHeartStageCard(
+              title: nextStage == null
+                  ? 'Niveau max V1'
+                  : 'Prochain palier : ${nextStage.label}',
+              items: nextStage?.unlocks ?? stage.unlocks,
+              footer: nextStage == null
+                  ? 'Les prochains systèmes de Petite ville seront définis plus tard.'
+                  : 'Déblocages affichés comme données V1, branchés progressivement.',
+            ),
+            const SizedBox(height: 12),
+            _CampHeartStatsCard(stage: stage),
+            const SizedBox(height: 12),
+            _CampHeartStageCard(
+              title: 'Effets du stade ${stage.label}',
+              items: stage.effects,
+              footer:
+                  'Population, bonheur refuge et activité locale sont préparés; le Marché les lira plus tard.',
+            ),
+            const SizedBox(height: 12),
+            const _CampHeartPendingCard(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CampHeartHero extends StatelessWidget {
+  const _CampHeartHero({required this.state});
+
+  final CampHeartState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: <Widget>[
+            Container(
+              width: 92,
+              height: 92,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const RadialGradient(
+                  colors: <Color>[
+                    Color(0xFFE7FFD6),
+                    Color(0xFF8CBF69),
+                    Color(0xFF5A6F3C),
+                  ],
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: const Color(0xFF8CBF69).withValues(alpha: 0.35),
+                    blurRadius: 24,
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.energy_savings_leaf_outlined,
+                size: 52,
+                color: Color(0xFF24311D),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Cœur du Camp',
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Le Cœur du Camp enrichit le sol et aide le refuge à devenir habitable.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CampHeartProgressCard extends StatelessWidget {
+  const _CampHeartProgressCard({required this.state});
+
+  final CampHeartState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final required = state.vegetalizationXpRequired;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'Stade : ${state.currentStage.label}',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text('Cœur niveau ${state.campHeartLevel}'),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              minHeight: 12,
+              value: state.progressRatio,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              required == null
+                  ? 'Végétalisation : niveau max V1'
+                  : 'Végétalisation : ${state.vegetalizationXp} / $required',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Total investi : ${state.totalVegetalizationInvested} Organique',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CampHeartDepositCard extends StatelessWidget {
+  const _CampHeartDepositCard({
+    required this.state,
+    required this.onDeposit,
+  });
+
+  final CampHeartState state;
+  final ValueChanged<int> onDeposit;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxAmount = state.placeholderOrganicStock;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'Ajouter de l’Organique',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Stock Organique placeholder : $maxAmount',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Stock réel non branché : cette réserve sert seulement à tester la jauge V1.',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                _DepositButton(
+                    amount: 1, stock: maxAmount, onDeposit: onDeposit),
+                _DepositButton(
+                    amount: 5, stock: maxAmount, onDeposit: onDeposit),
+                _DepositButton(
+                    amount: 10, stock: maxAmount, onDeposit: onDeposit),
+                FilledButton.tonal(
+                  onPressed: state.canDepositOrganic
+                      ? () => onDeposit(maxAmount)
+                      : null,
+                  child: const Text('Max'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DepositButton extends StatelessWidget {
+  const _DepositButton({
+    required this.amount,
+    required this.stock,
+    required this.onDeposit,
+  });
+
+  final int amount;
+  final int stock;
+  final ValueChanged<int> onDeposit;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonal(
+      onPressed: stock >= amount ? () => onDeposit(amount) : null,
+      child: Text('+$amount'),
+    );
+  }
+}
+
+class _CampHeartStageCard extends StatelessWidget {
+  const _CampHeartStageCard({
+    required this.title,
+    required this.items,
+    required this.footer,
+  });
+
+  final String title;
+  final List<String> items;
+  final String footer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              title,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            ...items.take(7).map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text('• '),
+                        Expanded(child: Text(item)),
+                      ],
+                    ),
+                  ),
+                ),
+            const SizedBox(height: 10),
+            Text(
+              footer,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CampHeartStatsCard extends StatelessWidget {
+  const _CampHeartStatsCard({required this.stage});
+
+  final CampHeartStageConfig stage;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: <Widget>[
+            _InfoLine(label: 'Population', value: stage.populationLabel),
+            _InfoLine(
+              label: 'P’TIPOTES confort',
+              value: '${stage.activePtipoteComfortLimit}',
+            ),
+            _InfoLine(
+              label: 'Bonheur refuge',
+              value: '+${stage.refugeHappinessBonus}',
+            ),
+            _InfoLine(
+              label: 'Activité locale',
+              value: 'x${stage.localActivityModifier.toStringAsFixed(2)}',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CampHeartPendingCard extends StatelessWidget {
+  const _CampHeartPendingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Text(
+          'À venir : branchement du stock Organique réel, Marché, Tour, Lisière lointaine, bonheur global du refuge et limite effective des P’TIPOTES actifs.',
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+}
+
 class _GameBuildingPage extends StatelessWidget {
   const _GameBuildingPage({required this.building});
 
@@ -1221,6 +1741,7 @@ class _RefugeBuilding {
     return switch (name) {
       'Maison' => Icons.bedroom_baby_outlined,
       'Kernel' => Icons.device_hub_outlined,
+      'CampHeart' => Icons.energy_savings_leaf_outlined,
       'Lisiere' => Icons.forest_outlined,
       'Tour' => Icons.shield_outlined,
       'FabLab' => Icons.precision_manufacturing_outlined,
@@ -1232,6 +1753,8 @@ class _RefugeBuilding {
     return switch (name) {
       'Maison' => 'Accueil des P’TIPOTES, repos, chambres et soins.',
       'Kernel' => 'Centre du refuge : scan, messages système et plans futurs.',
+      'CampHeart' =>
+        'Bio-réacteur organique du refuge : végétalisation, habitabilité et progression du camp.',
       'Lisiere' => 'Exploration future des biomes proches et lointains.',
       'Tour' => 'Sécurité, stabilité et protection future du refuge.',
       'FabLab' => 'Accès aux espaces Atelier et Cuisine.',

@@ -33,6 +33,7 @@ const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 let currentDashboardRole = "";
 let ptipoteStatsConfig = {};
+let campHeartConfig = {};
 
 const PTIPOTE_STATS_STORAGE_KEY = "ptipote_stats_config_v1";
 const PTIPOTE_STATS_FIELDS = [
@@ -72,6 +73,9 @@ const ids = [
   "statPtipoteStatus",
   "resetPtipoteStatsButton",
   "exportPtipoteStatsButton",
+  "campHeartStatus",
+  "campHeartStageList",
+  "exportCampHeartButton",
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -251,6 +255,43 @@ function exportPtipoteStatsConfig() {
   URL.revokeObjectURL(url);
 }
 
+async function loadCampHeartConfig() {
+  try {
+    const response = await fetch("./camp-heart-config.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    campHeartConfig = await response.json();
+    renderCampHeartConfig();
+    el.campHeartStatus.textContent = "Paliers charges depuis le JSON versionne.";
+  } catch (error) {
+    el.campHeartStatus.textContent = `Configuration Cœur du Camp illisible: ${error.message}`;
+  }
+}
+
+function renderCampHeartConfig() {
+  const stages = Array.isArray(campHeartConfig.stages) ? campHeartConfig.stages : [];
+  el.campHeartStageList.innerHTML = stages.map((stage) => `
+    <div class="stage-row">
+      <div>
+        <strong>Niv. ${escapeHtml(stage.level)} - ${escapeHtml(stage.label)}</strong>
+        <span>${escapeHtml(stage.populationLabel)} · ${escapeHtml(stage.activePtipoteComfortLimit)} P'TIPOTE(s) confort · bonheur +${escapeHtml(stage.refugeHappinessBonus)}</span>
+      </div>
+      <strong>${stage.xpRequiredForNextLevel == null ? "max V1" : `${escapeHtml(stage.xpRequiredForNextLevel)} XP`}</strong>
+    </div>
+  `).join("");
+}
+
+function exportCampHeartConfig() {
+  const blob = new Blob([JSON.stringify(campHeartConfig, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "camp-heart-config.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function handleAuthClick() {
   if (auth.currentUser) {
     await signOut(auth);
@@ -304,4 +345,9 @@ el.exportPtipoteStatsButton.addEventListener("click", () => {
   exportPtipoteStatsConfig();
 });
 
+el.exportCampHeartButton.addEventListener("click", () => {
+  exportCampHeartConfig();
+});
+
 loadPtipoteStatsConfig();
+loadCampHeartConfig();

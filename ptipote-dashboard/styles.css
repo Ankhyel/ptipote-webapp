@@ -246,6 +246,31 @@ small {
   font-weight: 800;
 }
 
+.stage-list {
+  display: grid;
+  gap: 10px;
+}
+
+.stage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff8ec;
+}
+
+.stage-row strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.stage-row span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .transfer-list {
   display: grid;
   gap: 10px;
@@ -364,6 +389,10 @@ small {
 
   .todo-list li {
     display: grid;
+  }
+
+  .stage-row {
+    grid-template-columns: 1fr;
   }
 
   .todo-list small {
