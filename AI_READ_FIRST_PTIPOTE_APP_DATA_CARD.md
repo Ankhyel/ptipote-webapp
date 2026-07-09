@@ -105,6 +105,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Dans la page Maison ouverte depuis `RefugePage`, les P'TIPOTES de `FigurineService.watchMyFigurines()` sont affiches comme sprites sur le tiers bas. `PtipoteFigurine.vitality` vaut `3/3` par defaut, et une vitalite a 0 place le P'TIPOTE dans une des trois alcoves du haut.
 - Clic sur un sprite dans la Maison: ouvre/ferme une bulle avec espece, type, surnom, niveau, energie, XP et vitalite.
 - Test dev Maison: l'emoji haltere permet de choisir un P'TIPOTE puis `Entrainer` retire 1 vitalite localement; a 0 il va dans une alcove.
+- Test recuperation Maison: la vitalite perdue est conservee localement pendant la session et remonte de 1 toutes les 30 secondes. Les sprites cherchent `png/webp` avant `jpg/jpeg` pour privilegier les images transparentes.
 - Fichiers du prototype: `index.html`, `styles.css`, `data.js`, `state.js`, `tasks.js`, `ui-island.js`, `ui-panels.js`, `main.js`.
 - L'ecran Ilot du prototype affiche maintenant le refuge du joueur avec fond illustre, cases batiment a opacite 20%, P'TIPOTE visible et Kernel pour scanner.
 - Boucle coeur prototype: choisir un P'TIPOTE -> assigner a la Lisiere -> attendre -> recuperer -> crafter un Repas -> soigner a la Maison -> progresser.

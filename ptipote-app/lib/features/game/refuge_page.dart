@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -156,10 +157,13 @@ class _MaisonPage extends StatefulWidget {
 
 class _MaisonPageState extends State<_MaisonPage>
     with SingleTickerProviderStateMixin {
+  static final Map<String, int> _savedVitalityOverrides = <String, int>{};
+
   final _assetResolver = GameAssetResolver();
   final _figurineService = FigurineService();
   late final AnimationController _tickController;
-  final Map<String, int> _vitalityOverrides = <String, int>{};
+  final Map<String, int> _vitalityOverrides = _savedVitalityOverrides;
+  Timer? _vitalityRecoveryTimer;
   String? _selectedFigurineId;
   String? _trainingFigurineId;
   bool _choosingTrainingTarget = false;
@@ -172,11 +176,16 @@ class _MaisonPageState extends State<_MaisonPage>
       vsync: this,
       duration: const Duration(seconds: 1),
     )..repeat();
+    _vitalityRecoveryTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _recoverVitalityStep(),
+    );
     _loadAsset();
   }
 
   @override
   void dispose() {
+    _vitalityRecoveryTimer?.cancel();
     _tickController.dispose();
     super.dispose();
   }
@@ -219,6 +228,26 @@ class _MaisonPageState extends State<_MaisonPage>
       final current = _vitalityFor(selected);
       _vitalityOverrides[id] = math.max(0, current - 1);
       _selectedFigurineId = id;
+    });
+  }
+
+  void _recoverVitalityStep() {
+    if (!mounted || _vitalityOverrides.isEmpty) return;
+    setState(() {
+      final vitalityUpdates = <String, int>{};
+      final idsToClear = <String>[];
+      for (final entry in _vitalityOverrides.entries) {
+        final nextVitality = math.min(3, entry.value + 1);
+        if (nextVitality >= 3) {
+          idsToClear.add(entry.key);
+        } else {
+          vitalityUpdates[entry.key] = nextVitality;
+        }
+      }
+      _vitalityOverrides.addAll(vitalityUpdates);
+      for (final id in idsToClear) {
+        _vitalityOverrides.remove(id);
+      }
     });
   }
 
@@ -463,7 +492,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
     return _PtipoteMotion(
       x: 0.08 + _random.nextDouble() * 0.84,
       direction: _random.nextBool() ? 1 : -1,
-      speed: 0.035 + _random.nextDouble() * 0.025,
+      speed: 0.0175 + _random.nextDouble() * 0.0125,
       moving: _random.nextBool(),
       nextDecision: 1.0 + _random.nextDouble() * 3.0,
       bounceSeed: _random.nextDouble() * math.pi * 2,
@@ -527,6 +556,8 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
         builder: (context, constraints) {
           final spriteSize = (constraints.maxWidth * 0.18).clamp(56.0, 86.0);
           final usableWidth = math.max(1.0, constraints.maxWidth - spriteSize);
+          final floorTopBottom = constraints.maxHeight / 3 - spriteSize * 0.70;
+          final walkingBaseBottom = math.max(8.0, floorTopBottom);
           return Stack(
             children: <Widget>[
               ...List<Widget>.generate(active.length, (index) {
@@ -538,15 +569,14 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                     : motion.x * usableWidth;
                 final bounce = motion.moving && !isTraining
                     ? math.sin(
-                          widget.animation.value * math.pi * 20 +
+                          widget.animation.value * math.pi * 2 +
                               motion.bounceSeed,
                         ) *
-                        4
+                        0.4
                     : 0.0;
                 final bottom = isTraining
                     ? constraints.maxHeight * 0.16
-                    : constraints.maxHeight * (0.08 + (index % 3) * 0.055) +
-                        bounce;
+                    : walkingBaseBottom + (index % 3) * 12 + bounce;
                 return Positioned(
                   left: left,
                   bottom: bottom,
@@ -661,7 +691,7 @@ class _PtipoteSprite extends StatefulWidget {
 
 class _PtipoteSpriteState extends State<_PtipoteSprite> {
   static const _baseUrl = 'https://app.ptipotes.com/img';
-  static const _extensions = <String>['jpg', 'jpeg', 'png', 'webp'];
+  static const _extensions = <String>['png', 'webp', 'jpg', 'jpeg'];
   late List<String> _candidates;
   int _index = 0;
 
