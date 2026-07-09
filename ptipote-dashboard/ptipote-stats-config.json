@@ -1,0 +1,14 @@
+{
+  "maxVitality": 100,
+  "vitalityRecoveryPerMinute": 1,
+  "minVitalityBeforeAutoRest": 20,
+  "baseHappiness": 70,
+  "maxHappiness": 100,
+  "happinessDecayPerHour": 1,
+  "xpRequiredBase": 100,
+  "xpRequiredMultiplier": 1.25,
+  "baseEVG": 50,
+  "baseForageEfficiency": 1,
+  "baseSafetyContribution": 1,
+  "baseMarketContribution": 1
+}

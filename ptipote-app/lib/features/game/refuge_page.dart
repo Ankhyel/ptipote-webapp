@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/figurine_service.dart';
 import '../figurines/ptipote_figurine.dart';
+import '../figurines/ptipote_stats_config.dart';
 import 'game_asset_resolver.dart';
 
 class RefugePage extends StatefulWidget {
@@ -158,12 +159,18 @@ class _MaisonPage extends StatefulWidget {
 class _MaisonPageState extends State<_MaisonPage>
     with SingleTickerProviderStateMixin {
   static final Map<String, int> _savedVitalityOverrides = <String, int>{};
+  static final Map<String, PtipoteAutoAssignmentPreference>
+      _savedAutoPreferenceOverrides =
+      <String, PtipoteAutoAssignmentPreference>{};
 
   final _assetResolver = GameAssetResolver();
   final _figurineService = FigurineService();
   late final AnimationController _tickController;
   final Map<String, int> _vitalityOverrides = _savedVitalityOverrides;
+  final Map<String, PtipoteAutoAssignmentPreference> _autoPreferenceOverrides =
+      _savedAutoPreferenceOverrides;
   Timer? _vitalityRecoveryTimer;
+  int _recoveryTick = 0;
   String? _selectedFigurineId;
   String? _trainingFigurineId;
   bool _choosingTrainingTarget = false;
@@ -199,6 +206,13 @@ class _MaisonPageState extends State<_MaisonPage>
     return _vitalityOverrides[figurine.id] ?? figurine.vitality;
   }
 
+  PtipoteAutoAssignmentPreference _autoPreferenceFor(
+    PtipoteFigurine figurine,
+  ) {
+    return _autoPreferenceOverrides[figurine.id] ??
+        figurine.autoAssignmentPreference;
+  }
+
   void _toggleFigurine(PtipoteFigurine figurine) {
     setState(() {
       if (_choosingTrainingTarget) {
@@ -226,7 +240,7 @@ class _MaisonPageState extends State<_MaisonPage>
     final selected = figurine;
     setState(() {
       final current = _vitalityFor(selected);
-      _vitalityOverrides[id] = math.max(0, current - 1);
+      _vitalityOverrides[id] = math.max(0, current - 25);
       _selectedFigurineId = id;
     });
   }
@@ -234,11 +248,18 @@ class _MaisonPageState extends State<_MaisonPage>
   void _recoverVitalityStep() {
     if (!mounted || _vitalityOverrides.isEmpty) return;
     setState(() {
+      _recoveryTick += 1;
       final vitalityUpdates = <String, int>{};
       final idsToClear = <String>[];
       for (final entry in _vitalityOverrides.entries) {
-        final nextVitality = math.min(3, entry.value + 1);
-        if (nextVitality >= 3) {
+        final isResting =
+            entry.value <= ptipoteStatsConfig.minVitalityBeforeAutoRest;
+        if (!isResting && _recoveryTick.isOdd) continue;
+        final nextVitality = math.min(
+          ptipoteStatsConfig.maxVitality,
+          entry.value + ptipoteStatsConfig.vitalityRecoveryPerMinute,
+        );
+        if (nextVitality >= ptipoteStatsConfig.maxVitality) {
           idsToClear.add(entry.key);
         } else {
           vitalityUpdates[entry.key] = nextVitality;
@@ -248,6 +269,16 @@ class _MaisonPageState extends State<_MaisonPage>
       for (final id in idsToClear) {
         _vitalityOverrides.remove(id);
       }
+    });
+  }
+
+  void _setAutoPreference(
+    PtipoteFigurine figurine,
+    PtipoteAutoAssignmentPreference preference,
+  ) {
+    setState(() {
+      _autoPreferenceOverrides[figurine.id] = preference;
+      _selectedFigurineId = figurine.id;
     });
   }
 
@@ -304,7 +335,9 @@ class _MaisonPageState extends State<_MaisonPage>
                             trainingFigurineId: _trainingFigurineId,
                             choosingTrainingTarget: _choosingTrainingTarget,
                             vitalityFor: _vitalityFor,
+                            autoPreferenceFor: _autoPreferenceFor,
                             onToggleFigurine: _toggleFigurine,
+                            onAutoPreferenceChanged: _setAutoPreference,
                           ),
                           _TrainingTool(
                             choosing: _choosingTrainingTarget,
@@ -437,7 +470,9 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.trainingFigurineId,
     required this.choosingTrainingTarget,
     required this.vitalityFor,
+    required this.autoPreferenceFor,
     required this.onToggleFigurine,
+    required this.onAutoPreferenceChanged,
   });
 
   final List<PtipoteFigurine> figurines;
@@ -446,7 +481,13 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final String? trainingFigurineId;
   final bool choosingTrainingTarget;
   final int Function(PtipoteFigurine figurine) vitalityFor;
+  final PtipoteAutoAssignmentPreference Function(PtipoteFigurine figurine)
+      autoPreferenceFor;
   final ValueChanged<PtipoteFigurine> onToggleFigurine;
+  final void Function(
+    PtipoteFigurine figurine,
+    PtipoteAutoAssignmentPreference preference,
+  ) onAutoPreferenceChanged;
 
   @override
   State<_PtipoteRefugeLayer> createState() => _PtipoteRefugeLayerState();
@@ -514,7 +555,8 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
 
     for (final figurine in widget.figurines) {
       final motion = _motions.putIfAbsent(figurine.id, _newMotion);
-      if (widget.vitalityFor(figurine) <= 0 ||
+      if (widget.vitalityFor(figurine) <=
+              ptipoteStatsConfig.minVitalityBeforeAutoRest ||
           widget.trainingFigurineId == figurine.id) {
         continue;
       }
@@ -543,11 +585,19 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
   Widget build(BuildContext context) {
     _syncMotions();
     final resting = widget.figurines
-        .where((figurine) => widget.vitalityFor(figurine) <= 0)
+        .where(
+          (figurine) =>
+              widget.vitalityFor(figurine) <=
+              ptipoteStatsConfig.minVitalityBeforeAutoRest,
+        )
         .take(3)
         .toList();
     final active = widget.figurines
-        .where((figurine) => widget.vitalityFor(figurine) > 0)
+        .where(
+          (figurine) =>
+              widget.vitalityFor(figurine) >
+              ptipoteStatsConfig.minVitalityBeforeAutoRest,
+        )
         .toList();
 
     return AnimatedBuilder(
@@ -584,9 +634,13 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
                     vitality: widget.vitalityFor(figurine),
+                    autoPreference: widget.autoPreferenceFor(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     choosingTrainingTarget: widget.choosingTrainingTarget,
                     onTap: () => widget.onToggleFigurine(figurine),
+                    onAutoPreferenceChanged: (preference) {
+                      widget.onAutoPreferenceChanged(figurine, preference);
+                    },
                   ),
                 );
               }),
@@ -601,9 +655,13 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
                     vitality: widget.vitalityFor(figurine),
+                    autoPreference: widget.autoPreferenceFor(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     choosingTrainingTarget: widget.choosingTrainingTarget,
                     onTap: () => widget.onToggleFigurine(figurine),
+                    onAutoPreferenceChanged: (preference) {
+                      widget.onAutoPreferenceChanged(figurine, preference);
+                    },
                   ),
                 );
               }),
@@ -637,16 +695,20 @@ class _PtipoteSpriteButton extends StatelessWidget {
   const _PtipoteSpriteButton({
     required this.figurine,
     required this.vitality,
+    required this.autoPreference,
     required this.selected,
     required this.choosingTrainingTarget,
     required this.onTap,
+    required this.onAutoPreferenceChanged,
   });
 
   final PtipoteFigurine figurine;
   final int vitality;
+  final PtipoteAutoAssignmentPreference autoPreference;
   final bool selected;
   final bool choosingTrainingTarget;
   final VoidCallback onTap;
+  final ValueChanged<PtipoteAutoAssignmentPreference> onAutoPreferenceChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -663,6 +725,8 @@ class _PtipoteSpriteButton extends StatelessWidget {
               child: _PtipoteInfoBubble(
                 figurine: figurine,
                 vitality: vitality,
+                autoPreference: autoPreference,
+                onAutoPreferenceChanged: onAutoPreferenceChanged,
               ),
             ),
           if (choosingTrainingTarget)
@@ -752,10 +816,17 @@ class _PtipoteSpriteState extends State<_PtipoteSprite> {
 }
 
 class _PtipoteInfoBubble extends StatelessWidget {
-  const _PtipoteInfoBubble({required this.figurine, required this.vitality});
+  const _PtipoteInfoBubble({
+    required this.figurine,
+    required this.vitality,
+    required this.autoPreference,
+    required this.onAutoPreferenceChanged,
+  });
 
   final PtipoteFigurine figurine;
   final int vitality;
+  final PtipoteAutoAssignmentPreference autoPreference;
+  final ValueChanged<PtipoteAutoAssignmentPreference> onAutoPreferenceChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -764,7 +835,7 @@ class _PtipoteInfoBubble extends StatelessWidget {
       elevation: 8,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        width: 210,
+        width: 236,
         padding: const EdgeInsets.all(12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -777,18 +848,67 @@ class _PtipoteInfoBubble extends StatelessWidget {
             const SizedBox(height: 8),
             _InfoLine(label: 'Espèce', value: figurine.species),
             _InfoLine(label: 'Type', value: figurine.type),
+            _InfoLine(label: 'Enveloppe', value: figurine.envelopeLabel),
             _InfoLine(label: 'Surnom', value: figurine.displayName),
             _InfoLine(label: 'Niveau', value: figurine.level),
-            _InfoLine(label: 'Énergie', value: figurine.energy),
-            _InfoLine(label: 'XP', value: figurine.xp),
+            _InfoLine(
+              label: 'XP',
+              value: '${figurine.xp}/${figurine.xpRequiredForNextLevel}',
+            ),
             _InfoLine(
               label: 'Vitalité',
               value: '$vitality/${figurine.maxVitality}',
+            ),
+            _InfoLine(label: 'Bonheur', value: '${figurine.happiness}/100'),
+            _InfoLine(label: 'État', value: _stateLabel(figurine, vitality)),
+            _InfoLine(label: 'Auto', value: _preferenceLabel(autoPreference)),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children:
+                  PtipoteAutoAssignmentPreference.values.map((preference) {
+                return ChoiceChip(
+                  label: Text(_shortPreferenceLabel(preference)),
+                  selected: autoPreference == preference,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) => onAutoPreferenceChanged(preference),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Tour/Marché préparés : fallback Maison pour cette V1.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _stateLabel(PtipoteFigurine figurine, int currentVitality) {
+    if (currentVitality <= 0) return 'épuisé';
+    if (currentVitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+      return 'repos';
+    }
+    return figurine.behaviorStateLabel;
+  }
+
+  String _preferenceLabel(PtipoteAutoAssignmentPreference preference) {
+    return switch (preference) {
+      PtipoteAutoAssignmentPreference.home => 'Maison',
+      PtipoteAutoAssignmentPreference.tower => 'Tour bientôt',
+      PtipoteAutoAssignmentPreference.market => 'Marché bientôt',
+    };
+  }
+
+  String _shortPreferenceLabel(PtipoteAutoAssignmentPreference preference) {
+    return switch (preference) {
+      PtipoteAutoAssignmentPreference.home => 'Maison',
+      PtipoteAutoAssignmentPreference.tower => 'Tour',
+      PtipoteAutoAssignmentPreference.market => 'Marché',
+    };
   }
 }
 

@@ -50,6 +50,23 @@
         </article>
       </section>
 
+      <section class="panel stat-ptipote-panel" aria-labelledby="statPtipoteTitle">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Configuration V1</p>
+            <h2 id="statPtipoteTitle">Stat Ptipote</h2>
+          </div>
+          <div class="panel-actions">
+            <button class="ghost" id="resetPtipoteStatsButton" type="button">Recharger</button>
+            <button class="ghost" id="exportPtipoteStatsButton" type="button">Exporter JSON</button>
+          </div>
+        </div>
+        <p class="panel-note" id="statPtipoteStatus">
+          Charge les valeurs depuis ptipote-stats-config.json. Les changements sont gardes localement pour preparer la synchro app.
+        </p>
+        <form class="stat-form" id="statPtipoteForm"></form>
+      </section>
+
       <section class="content-grid">
         <article class="panel">
           <div class="panel-head">

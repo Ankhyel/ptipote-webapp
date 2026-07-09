@@ -1,6 +1,6 @@
 # AI READ FIRST - PTIPOTE App Data Card
 
-Derniere mise a jour: 2026-07-02
+Derniere mise a jour: 2026-07-09
 
 Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'application Flutter PTIPOTE. Lis ce fichier avant d'ouvrir le code: il indique ou vivent les fonctions, les flux importants, les collections Firestore et les fichiers a modifier selon la demande.
 
@@ -28,6 +28,7 @@ Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'
 | Accueil | `ptipote-app/lib/features/home/home_page.dart` | Boutons Mes PTIPOTES, scan figurine, shop, chat, menu profil, badges de notifications. |
 | Mes PTIPOTES | `ptipote-app/lib/features/figurines/figurines_page.dart` | Liste inventaire, drag/reorder, renommage, transfert, demandes entrantes, refresh. |
 | Modele figurine | `ptipote-app/lib/features/figurines/ptipote_figurine.dart` | Structure Dart d'une figurine, champs calcules, locks/cooldowns. |
+| Config stats PTIPOTE | `ptipote-app/lib/features/figurines/ptipote_stats_config.dart` | Valeurs V1 centralisees: vitalite, bonheur, XP, EVG, modificateurs type/enveloppe, etats. |
 | Image figurine | `ptipote-app/lib/features/figurines/ptipote_image.dart` | Resolution et affichage des images PTIPOTE. |
 | Scan NFC | `ptipote-app/lib/features/nfc/nfc_page.dart` | UI scan, decodage NDEF, adoption, confirmation transfert, carte debug/dev. |
 | Profil et roles | `ptipote-app/lib/features/profile/profile_page.dart` | Profil eleveur, panneau admin pour assigner le role dev. |
@@ -37,6 +38,7 @@ Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'
 | Jeu / refuge Flutter | `ptipote-app/lib/features/game/refuge_page.dart` | Ecran dev du refuge joueur, accessible par bouton Jeu sur Home si `canSeeDiagnostics`. |
 | Assets jeu Flutter | `ptipote-app/ptipote-game/image_game/` | Images d'ecran du jeu, resolues par nom sans dependance a l'extension. |
 | Prototype web Zone 0 | `ptipote-app/ptipote-game/` | Vertical slice HTML/CSS/JS mobile-first du refuge: Ilot, P'TIPOTES, Journal, Lisiere, Atelier, Tour, Marche, Maison. |
+| Config dashboard stats PTIPOTE | `ptipote-dashboard/ptipote-stats-config.json` | Miroir JSON editable/exportable depuis le panneau dashboard `Stat Ptipote`. |
 
 ## Services App
 
@@ -102,10 +104,10 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - `GameAssetResolver` lit `ptipote-game/image_game/` et resout les images par nom (`Camp`, `Kernel`, `Maison`) quelle que soit l'extension (`.jpg`, `.PNG`, etc.).
 - Bouton Flutter `Jeu`: ajoute sur Home au-dessus de `Mes ptipotes`, visible seulement si `UserProfile.canSeeDiagnostics` est vrai (`dev/admin`). Ne pas creer de second toggle.
 - Dans `RefugePage`, chaque case de batiment ouvre une vraie page Flutter placeholder: Maison, Kernel, Lisiere, Tour de securite, FabLab. La FabLab contient deux onglets: Atelier et Cuisine.
-- Dans la page Maison ouverte depuis `RefugePage`, les P'TIPOTES de `FigurineService.watchMyFigurines()` sont affiches comme sprites sur le tiers bas. `PtipoteFigurine.vitality` vaut `3/3` par defaut, et une vitalite a 0 place le P'TIPOTE dans une des trois alcoves du haut.
-- Clic sur un sprite dans la Maison: ouvre/ferme une bulle avec espece, type, surnom, niveau, energie, XP et vitalite.
-- Test dev Maison: l'emoji haltere permet de choisir un P'TIPOTE puis `Entrainer` retire 1 vitalite localement; a 0 il va dans une alcove.
-- Test recuperation Maison: la vitalite perdue est conservee localement pendant la session et remonte de 1 toutes les 30 secondes. Les sprites cherchent `png/webp` avant `jpg/jpeg` pour privilegier les images transparentes.
+- Dans la page Maison ouverte depuis `RefugePage`, les P'TIPOTES de `FigurineService.watchMyFigurines()` sont affiches comme sprites sur le tiers bas. `PtipoteFigurine.vitality` vaut `100/100` par defaut, et une vitalite a 20 ou moins place le P'TIPOTE dans une des trois alcoves du haut.
+- Clic sur un sprite dans la Maison: ouvre/ferme une bulle avec espece, type, enveloppe, surnom, niveau, XP, vitalite, bonheur, etat et preference automatique.
+- Test dev Maison: l'emoji haltere permet de choisir un P'TIPOTE puis `Entrainer` retire 25 vitalite localement; a 20 ou moins il va dans une alcove.
+- Test recuperation Maison: la vitalite perdue est conservee localement pendant la session. En alcove, elle remonte de 1 toutes les 30 secondes; hors alcove, de 1 par minute. Les sprites cherchent `png/webp` avant `jpg/jpeg` pour privilegier les images transparentes.
 - Fichiers du prototype: `index.html`, `styles.css`, `data.js`, `state.js`, `tasks.js`, `ui-island.js`, `ui-panels.js`, `main.js`.
 - L'ecran Ilot du prototype affiche maintenant le refuge du joueur avec fond illustre, cases batiment a opacite 20%, P'TIPOTE visible et Kernel pour scanner.
 - Boucle coeur prototype: choisir un P'TIPOTE -> assigner a la Lisiere -> attendre -> recuperer -> crafter un Repas -> soigner a la Maison -> progresser.
@@ -115,6 +117,92 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Atelier et Cuisine V1 utilisent des slots de salle et des elements contextuels gratuits, pas une main globale de cartes.
 - Ne pas casser amis, chat entre amis, transfert, adoption NFC et rules Firestore existantes.
 - Si une nouvelle fonction est ajoutee, mettre a jour cette data card avec son fichier source de verite, son flux et ses contraintes.
+
+## PTIPOTE V1 - Stats Et Comportements
+
+### 1. Fichiers crees ou modifies
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/figurines/ptipote_stats_config.dart` | Source Flutter des stats V1: valeurs de base, enums, modificateurs type/enveloppe, formule XP. |
+| `ptipote-app/lib/features/figurines/ptipote_figurine.dart` | Getters calcules: vitalite 100, bonheur, EVG, niveau/XP, etat, preference automatique, modificateurs. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Maison: deplacement, alcoves, recuperation automatique, fiche P'TIPOTE, preference Maison/Tour/Marche. |
+| `ptipote-dashboard/ptipote-stats-config.json` | Miroir JSON des stats de base pour edition/export depuis le dashboard. |
+| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`, `ptipote-dashboard/styles.css` | Panneau dashboard `Stat Ptipote` qui charge, modifie localement et exporte le JSON. |
+
+### 2. Modeles / classes modifies
+
+- `PtipoteFigurine`: conserve les donnees Firestore existantes et ajoute des champs calcules sans migration obligatoire.
+- Enums ajoutes dans `ptipote_stats_config.dart`: `PtipoteElementType`, `PtipoteEnvelopeType`, `PtipoteBehaviorState`, `PtipoteAutoAssignmentPreference`.
+- Types V1 reconnus: `vegetal`, `mineral`, `fungal`; variantes francaises/anglais courantes normalisees.
+- Enveloppes V1 reconnues: `standard`, `explorateur`, `producteur`, `scientifique`, `protecteur`; inconnue ou absente => `standard`.
+
+### 3. Stats configurables
+
+| Stat | Defaut | Emplacement |
+| --- | --- | --- |
+| `maxVitality` | `100` | `ptipote_stats_config.dart` + `ptipote-stats-config.json` |
+| `vitalityRecoveryPerMinute` | `1` | idem |
+| `minVitalityBeforeAutoRest` | `20` | idem |
+| `baseHappiness` | `70` | idem |
+| `maxHappiness` | `100` | idem |
+| `happinessDecayPerHour` | `1` | idem |
+| `xpRequiredBase` | `100` | idem |
+| `xpRequiredMultiplier` | `1.25` | idem |
+| `baseEVG` | `50` | idem |
+| `baseForageEfficiency` | `1.0` | idem |
+| `baseSafetyContribution` | `1.0` | idem |
+| `baseMarketContribution` | `1.0` | idem |
+
+- Formule XP: `xpRequiredBase * pow(xpRequiredMultiplier, currentLevel - 1)`, arrondie a l'entier.
+- EVG est preparee comme stat configurable et affichee/calculable, mais pas encore exploitee par une mecanique.
+
+### 4. Dashboard
+
+- Le dashboard possede maintenant un panneau `Stat Ptipote`.
+- Il charge `ptipote-dashboard/ptipote-stats-config.json`, permet une edition locale via `localStorage`, et exporte un JSON.
+- Non branche en runtime a Flutter/Firebase pour cette V1. Reste a faire: choisir une source partagee (par exemple `gameConfig/ptipoteStats` Firestore ou generation d'asset) et synchroniser l'app avec cette source.
+- Les modificateurs type/enveloppe, couts mission, contribution Tour et contribution Marche sont prepares cote Dart mais pas encore editables dans le dashboard.
+
+### 5. Etats P'TIPOTE
+
+| Etat | Comportement V1 |
+| --- | --- |
+| `idle` | Disponible, reserve pour les futurs flux. |
+| `wanderingHome` | Se balade dans la Maison. Utilise par defaut si Vitalite > 20. |
+| `resting` | Dans une alcove et recupere. Active si Vitalite <= 20. |
+| `onMission` | Prepare pour Lisiere/missions, pas encore branche. |
+| `helpingTower` | Prepare pour aide Tour, pas encore actif. |
+| `helpingMarket` | Prepare pour aide Marche, pas encore actif. |
+| `exhausted` | Vitalite a 0, repos obligatoire. |
+
+### 6. Vitalite
+
+- Vitalite remplace l'ancienne notion d'energie P'TIPOTE. L'energie reste une ressource/monnaie joueur.
+- Max V1: `100`.
+- Seuils: `80-100` en forme, `50-79` disponible, `21-49` fatigue, `0-20` repos necessaire.
+- A `20` ou moins, la Maison place le P'TIPOTE dans une alcove et bloque le deplacement.
+- Recuperation V1 Maison: hors alcove `+1/min`, en alcove `+1/30s` pour simuler `+2/min`.
+- Ne depasse jamais `maxVitality`; a `100`, l'override local est retire et le P'TIPOTE revient a `wanderingHome`.
+
+### 7. Affectation automatique
+
+- Champ prepare: `autoAssignmentPreference` avec valeurs `home`, `tower`, `market`.
+- UI Maison: controle `[Maison] [Tour] [Marche]` dans la fiche P'TIPOTE.
+- Si Vitalite <= 20: force `resting`.
+- Si preference `home`: retour Maison / balade.
+- Si preference `tower`: fallback Maison pour cette V1, car la Tour n'est pas branchee.
+- Si preference `market`: fallback Maison pour cette V1, car le Marche n'est pas branche.
+
+### 8. Attentes / systemes non encore branches
+
+- Tour non branchee: `helpingTower` et `safetyContribution` prepares mais pas actifs.
+- Marche non branche: `helpingMarket` et `marketContribution` prepares mais pas actifs.
+- Missions Lisiere non branchees au modele Flutter: `onMission` prepare mais pas actif.
+- Bio-batterie / Energie joueur non branchee dans cette V1 stats.
+- Bonheur existe (`baseHappiness`, bornes, helpers `addHappiness`/`reduceHappiness`) mais ses effets restent a integrer: calin, nourriture, repos, mission reussie, accident en Lisiere.
+- Enveloppes non finalisees cote cartes: modificateurs prepares avec fallback `standard`.
+- Dashboard `Stat Ptipote` non synchronise automatiquement avec Flutter/Firebase: edition locale et export JSON seulement.
 
 ## Flux Principaux
 

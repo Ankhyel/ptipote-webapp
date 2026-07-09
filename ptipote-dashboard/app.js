@@ -32,6 +32,23 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 let currentDashboardRole = "";
+let ptipoteStatsConfig = {};
+
+const PTIPOTE_STATS_STORAGE_KEY = "ptipote_stats_config_v1";
+const PTIPOTE_STATS_FIELDS = [
+  "maxVitality",
+  "vitalityRecoveryPerMinute",
+  "minVitalityBeforeAutoRest",
+  "baseHappiness",
+  "maxHappiness",
+  "happinessDecayPerHour",
+  "xpRequiredBase",
+  "xpRequiredMultiplier",
+  "baseEVG",
+  "baseForageEfficiency",
+  "baseSafetyContribution",
+  "baseMarketContribution",
+];
 
 const ids = [
   "authState",
@@ -51,6 +68,10 @@ const ids = [
   "transferAccepted",
   "transferConfirmed",
   "transferRefused",
+  "statPtipoteForm",
+  "statPtipoteStatus",
+  "resetPtipoteStatsButton",
+  "exportPtipoteStatsButton",
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -179,6 +200,57 @@ function setLoading(isLoading) {
   el.authButton.disabled = isLoading;
 }
 
+async function loadPtipoteStatsConfig({ reset = false } = {}) {
+  try {
+    const response = await fetch("./ptipote-stats-config.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const baseConfig = await response.json();
+    const savedConfig = reset
+      ? null
+      : JSON.parse(localStorage.getItem(PTIPOTE_STATS_STORAGE_KEY) || "null");
+    ptipoteStatsConfig = { ...baseConfig, ...(savedConfig || {}) };
+    if (reset) {
+      localStorage.removeItem(PTIPOTE_STATS_STORAGE_KEY);
+    }
+    renderPtipoteStatsForm();
+    el.statPtipoteStatus.textContent = reset
+      ? "Valeurs rechargees depuis le JSON versionne."
+      : "Valeurs chargees. Les modifications restent locales jusqu'a integration Firestore/app.";
+  } catch (error) {
+    el.statPtipoteStatus.textContent = `Configuration Stat Ptipote illisible: ${error.message}`;
+  }
+}
+
+function renderPtipoteStatsForm() {
+  el.statPtipoteForm.innerHTML = PTIPOTE_STATS_FIELDS.map((field) => `
+    <div class="stat-field">
+      <label for="stat-${field}">${escapeHtml(field)}</label>
+      <input id="stat-${field}" name="${escapeHtml(field)}" type="number" step="0.01" value="${escapeHtml(ptipoteStatsConfig[field] ?? "")}">
+    </div>
+  `).join("");
+
+  el.statPtipoteForm.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("input", () => {
+      const value = Number(input.value);
+      ptipoteStatsConfig[input.name] = Number.isFinite(value) ? value : input.value;
+      localStorage.setItem(PTIPOTE_STATS_STORAGE_KEY, JSON.stringify(ptipoteStatsConfig, null, 2));
+      el.statPtipoteStatus.textContent = "Modification locale sauvegardee. Exporter le JSON pour synchroniser le fichier source.";
+    });
+  });
+}
+
+function exportPtipoteStatsConfig() {
+  const blob = new Blob([JSON.stringify(ptipoteStatsConfig, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "ptipote-stats-config.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function handleAuthClick() {
   if (auth.currentUser) {
     await signOut(auth);
@@ -223,3 +295,13 @@ el.authButton.addEventListener("click", () => {
 el.refreshButton.addEventListener("click", () => {
   loadStats(currentDashboardRole);
 });
+
+el.resetPtipoteStatsButton.addEventListener("click", () => {
+  loadPtipoteStatsConfig({ reset: true });
+});
+
+el.exportPtipoteStatsButton.addEventListener("click", () => {
+  exportPtipoteStatsConfig();
+});
+
+loadPtipoteStatsConfig();

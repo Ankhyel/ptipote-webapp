@@ -197,6 +197,55 @@ small {
   margin-bottom: 16px;
 }
 
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.panel-note {
+  margin: -6px 0 14px;
+  color: var(--muted);
+}
+
+.stat-ptipote-panel {
+  margin-bottom: 14px;
+}
+
+.stat-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat-field {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff8ec;
+}
+
+.stat-field label {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.stat-field input {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #fffdf8;
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+}
+
 .transfer-list {
   display: grid;
   gap: 10px;
@@ -270,6 +319,7 @@ small {
   .topbar,
   .session,
   .status-panel,
+  .panel-head,
   .content-grid {
     align-items: stretch;
     flex-direction: column;
@@ -288,6 +338,10 @@ small {
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .stat-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 560px) {
@@ -297,6 +351,10 @@ small {
   }
 
   .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-form {
     grid-template-columns: 1fr;
   }
 
