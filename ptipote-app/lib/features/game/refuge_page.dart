@@ -26,6 +26,7 @@ class _RefugePageState extends State<RefugePage> {
 
   final _assetResolver = GameAssetResolver();
   String? _refugeAsset;
+  Timer? _missionResolutionTimer;
 
   static const _buildings = <_RefugeBuilding>[
     _RefugeBuilding(
@@ -79,7 +80,24 @@ class _RefugePageState extends State<RefugePage> {
   @override
   void initState() {
     super.initState();
+    _zone0State.addListener(_onZone0StateChanged);
+    _missionResolutionTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _zone0State.resolveDueForageMissions(),
+    );
     _warmAssets();
+    _zone0State.resolveDueForageMissions();
+  }
+
+  @override
+  void dispose() {
+    _missionResolutionTimer?.cancel();
+    _zone0State.removeListener(_onZone0StateChanged);
+    super.dispose();
+  }
+
+  void _onZone0StateChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _warmAssets() async {
@@ -198,6 +216,7 @@ class _MaisonPageState extends State<_MaisonPage>
   @override
   void initState() {
     super.initState();
+    _gameState.addListener(_onGameStateChanged);
     _tickController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 1),
@@ -212,8 +231,13 @@ class _MaisonPageState extends State<_MaisonPage>
   @override
   void dispose() {
     _vitalityRecoveryTimer?.cancel();
+    _gameState.removeListener(_onGameStateChanged);
     _tickController.dispose();
     super.dispose();
+  }
+
+  void _onGameStateChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadAsset() async {
@@ -353,6 +377,7 @@ class _MaisonPageState extends State<_MaisonPage>
                             trainingFigurineId: _trainingFigurineId,
                             choosingTrainingTarget: _choosingTrainingTarget,
                             vitalityFor: _vitalityFor,
+                            isOnMission: _gameState.isOnMission,
                             autoPreferenceFor: _autoPreferenceFor,
                             onToggleFigurine: _toggleFigurine,
                             onAutoPreferenceChanged: _setAutoPreference,
@@ -392,7 +417,7 @@ class _MaisonPageState extends State<_MaisonPage>
   }
 
   void _openMessages() {
-    setState(_gameState.markReportsRead);
+    _gameState.markReportsRead();
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -702,6 +727,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.trainingFigurineId,
     required this.choosingTrainingTarget,
     required this.vitalityFor,
+    required this.isOnMission,
     required this.autoPreferenceFor,
     required this.onToggleFigurine,
     required this.onAutoPreferenceChanged,
@@ -713,6 +739,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final String? trainingFigurineId;
   final bool choosingTrainingTarget;
   final int Function(PtipoteFigurine figurine) vitalityFor;
+  final bool Function(String figurineId) isOnMission;
   final PtipoteAutoAssignmentPreference Function(PtipoteFigurine figurine)
       autoPreferenceFor;
   final ValueChanged<PtipoteFigurine> onToggleFigurine;
@@ -819,16 +846,18 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
     final resting = widget.figurines
         .where(
           (figurine) =>
+              !widget.isOnMission(figurine.id) &&
               widget.vitalityFor(figurine) <=
-              ptipoteStatsConfig.minVitalityBeforeAutoRest,
+                  ptipoteStatsConfig.minVitalityBeforeAutoRest,
         )
         .take(3)
         .toList();
     final active = widget.figurines
         .where(
           (figurine) =>
+              !widget.isOnMission(figurine.id) &&
               widget.vitalityFor(figurine) >
-              ptipoteStatsConfig.minVitalityBeforeAutoRest,
+                  ptipoteStatsConfig.minVitalityBeforeAutoRest,
         )
         .toList();
 
@@ -1420,17 +1449,26 @@ class LisierePage extends StatefulWidget {
 
 class _LisierePageState extends State<LisierePage> {
   final _figurineService = FigurineService();
-  final _random = math.Random();
   ForageBiome _biome = ForageBiome.colline;
   ForageDuration _duration = ForageDuration.oneHour;
   ForageIntensity _intensity = ForageIntensity.normal;
   String? _selectedFigurineId;
-  Timer? _missionTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.gameState.addListener(_onGameStateChanged);
+    widget.gameState.resolveDueForageMissions();
+  }
 
   @override
   void dispose() {
-    _missionTimer?.cancel();
+    widget.gameState.removeListener(_onGameStateChanged);
     super.dispose();
+  }
+
+  void _onGameStateChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -1631,84 +1669,19 @@ class _LisierePageState extends State<LisierePage> {
   }
 
   void _launchMission(PtipoteFigurine figurine, ForageEstimate estimate) {
-    final duration = lisiereForageConfig.durations[_duration]!;
-    final start = DateTime.now();
-    final mission = ForageMission(
-      id: 'mission-${start.microsecondsSinceEpoch}',
-      figurineId: figurine.id,
-      figurineName: figurine.displayName,
+    widget.gameState.startForageMission(
+      figurine: figurine,
       biome: _biome,
       duration: _duration,
       intensity: _intensity,
-      startTime: start,
-      endTime:
-          start.add(duration.realDuration(lisiereForageConfig.forageTimeScale)),
       expectedRewards: estimate.rewards,
       vitalityCost: estimate.vitalityCost,
       riskPercent: estimate.riskPercent,
       riskLabel: estimate.riskLabel,
     );
-    widget.gameState.missions.add(mission);
-    widget.gameState.vitalityOverrides[figurine.id] = math.max(
-        0, widget.gameState.vitalityFor(figurine) - estimate.vitalityCost);
-    setState(() {});
-    _missionTimer?.cancel();
-    _missionTimer = Timer(mission.endTime.difference(DateTime.now()), () {
-      if (mounted) _resolveMission(mission);
-    });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${figurine.displayName} part en Lisière.')),
     );
-  }
-
-  void _resolveMission(ForageMission mission) {
-    if (mission.status != ForageMissionStatus.active) return;
-    final biome = lisiereForageConfig.biomes[mission.biome]!;
-    final duration = lisiereForageConfig.durations[mission.duration]!;
-    final intensity = lisiereForageConfig.intensities[mission.intensity]!;
-    var rewards = Map<String, int>.from(mission.expectedRewards);
-    var incident = 'aucun';
-
-    if (_random.nextInt(100) < mission.riskPercent) {
-      final hazards =
-          ForageHazard.values.where((h) => h != ForageHazard.none).toList();
-      final hazard = hazards[_random.nextInt(hazards.length)];
-      switch (hazard) {
-        case ForageHazard.pollution:
-          rewards['Organique'] = ((rewards['Organique'] ?? 0) * 0.8).round();
-          incident = 'pollution légère, gains organiques réduits';
-        case ForageHazard.droneErrant:
-          rewards = rewards
-              .map((key, value) => MapEntry(key, (value * 0.75).round()));
-          incident = 'drone errant, retour anticipé';
-        case ForageHazard.climatDifficile:
-          rewards = rewards
-              .map((key, value) => MapEntry(key, (value * 0.85).round()));
-          incident = 'climat difficile, récolte ralentie';
-        case ForageHazard.none:
-          break;
-      }
-    }
-
-    final inventoryResult = widget.gameState.addResources(rewards);
-    final vitality =
-        widget.gameState.vitalityOverrides[mission.figurineId] ?? 0;
-    widget.gameState.reports.add(
-      PtipoteMissionReport(
-        id: 'report-${DateTime.now().microsecondsSinceEpoch}',
-        figurineName: mission.figurineName,
-        biomeLabel: biome.label,
-        durationLabel: duration.label,
-        intensityLabel: intensity.label,
-        rewards: rewards,
-        incidentLabel: incident,
-        vitalityRemaining: vitality,
-        completedAt: DateTime.now(),
-        inventoryFull: inventoryResult.hasPending,
-      ),
-    );
-    mission.status = ForageMissionStatus.completed;
-    if (mounted) setState(() {});
   }
 }
 

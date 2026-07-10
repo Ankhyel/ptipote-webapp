@@ -277,8 +277,8 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | Fichier | Role |
 | --- | --- |
 | `ptipote-app/lib/features/game/lisiere_forage_config.dart` | Source Flutter des biomes, durees, intensites, gains, couts Vitalite, risques, limites inventaire. |
-| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat local Zone 0: Vitalite override, missions, inventaire global, rapports/messages, securite fallback. |
-| `ptipote-app/lib/features/game/refuge_page.dart` | Ecran Lisiere proche, lancement/resolution mission, Maison avec inventaire, boite aux lettres et pastilles. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat local Zone 0: Vitalite override, missions, resolution centralisee, inventaire global, rapports/messages, securite fallback. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Ecran Lisiere proche, lancement mission, tick de resolution, Maison avec inventaire, boite aux lettres et pastilles. |
 | `ptipote-dashboard/lisiere-forage-config.json` | Miroir JSON des temps/gains/couts/risques Lisiere pour consultation/export dashboard. |
 | `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglet dashboard `Lisiere / Fourrage` en lecture/export. |
 
@@ -309,8 +309,8 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Modele local `ForageMission`: id, figurineId, figurineName, biome, duree theorique, duree test, intensite, startTime, endTime, expectedRewards, vitalityCost, riskPercent, riskLabel, status.
 - Etats mission: `active`, `completed`.
 - Lancement: choisit P'TIPOTE/duree/intensite/biome, verifie Vitalite, deduit la Vitalite et cree une mission active.
-- Resolution: timer local, applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, cree un rapport non lu.
-- Etat `onMission` prepare via mission active locale; les champs Firestore P'TIPOTE ne sont pas encore modifies.
+- Resolution: centralisee dans `Zone0GameState.resolveDueForageMissions()`, appelee par un tick depuis `RefugePage` et a l'ouverture de la Lisiere. Elle applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, cree un rapport non lu.
+- Etat `onMission` prepare via mission active locale; les champs Firestore P'TIPOTE ne sont pas encore modifies. Un P'TIPOTE en mission est masque de la Maison pendant la mission.
 
 ### 6. Risques
 
@@ -331,7 +331,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 - Emplacement code: `Zone0GameState.reports`, `PtipoteMissionReport`, `MissionReportsSheet`.
 - Creation automatique a la fin de mission avec P'TIPOTE, biome, duree, intensite, gains, incident, Vitalite restante, date.
-- Pastille Maison sur le refuge et pastille boite aux lettres dans la Maison lisent `unreadReportCount`.
+- Pastille Maison sur le refuge et pastille boite aux lettres dans la Maison lisent `unreadReportCount`; `Zone0GameState` notifie l'UI quand un rapport arrive.
 - Ouverture de la boite aux lettres marque les rapports comme lus.
 
 ### 9. Attentes / placeholders

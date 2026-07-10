@@ -1,13 +1,16 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'lisiere_forage_config.dart';
 
-class Zone0GameState {
+class Zone0GameState extends ChangeNotifier {
   Zone0GameState._();
 
   static final Zone0GameState instance = Zone0GameState._();
+  final math.Random _random = math.Random();
 
   final Map<String, int> vitalityOverrides = <String, int>{};
   final Map<String, PtipoteAutoAssignmentPreference> autoPreferenceOverrides =
@@ -39,6 +42,56 @@ class Zone0GameState {
           mission.figurineId == figurineId &&
           mission.status == ForageMissionStatus.active,
     );
+  }
+
+  ForageMission startForageMission({
+    required PtipoteFigurine figurine,
+    required ForageBiome biome,
+    required ForageDuration duration,
+    required ForageIntensity intensity,
+    required Map<String, int> expectedRewards,
+    required int vitalityCost,
+    required int riskPercent,
+    required String riskLabel,
+  }) {
+    final start = DateTime.now();
+    final durationConfig = lisiereForageConfig.durations[duration]!;
+    final mission = ForageMission(
+      id: 'mission-${start.microsecondsSinceEpoch}',
+      figurineId: figurine.id,
+      figurineName: figurine.displayName,
+      biome: biome,
+      duration: duration,
+      intensity: intensity,
+      startTime: start,
+      endTime: start.add(
+        durationConfig.realDuration(lisiereForageConfig.forageTimeScale),
+      ),
+      expectedRewards: expectedRewards,
+      vitalityCost: vitalityCost,
+      riskPercent: riskPercent,
+      riskLabel: riskLabel,
+    );
+    missions.add(mission);
+    vitalityOverrides[figurine.id] = math.max(
+      0,
+      vitalityFor(figurine) - vitalityCost,
+    );
+    notifyListeners();
+    return mission;
+  }
+
+  bool resolveDueForageMissions({DateTime? now}) {
+    final currentTime = now ?? DateTime.now();
+    var resolvedAny = false;
+    for (final mission in missions) {
+      if (mission.status != ForageMissionStatus.active) continue;
+      if (mission.endTime.isAfter(currentTime)) continue;
+      _resolveMission(mission, completedAt: currentTime);
+      resolvedAny = true;
+    }
+    if (resolvedAny) notifyListeners();
+    return resolvedAny;
   }
 
   int freeInventorySlots() {
@@ -83,9 +136,62 @@ class Zone0GameState {
   }
 
   void markReportsRead() {
+    var changed = false;
     for (final report in reports) {
+      if (!report.read) changed = true;
       report.read = true;
     }
+    if (changed) notifyListeners();
+  }
+
+  void _resolveMission(
+    ForageMission mission, {
+    required DateTime completedAt,
+  }) {
+    final biome = lisiereForageConfig.biomes[mission.biome]!;
+    final duration = lisiereForageConfig.durations[mission.duration]!;
+    final intensity = lisiereForageConfig.intensities[mission.intensity]!;
+    var rewards = Map<String, int>.from(mission.expectedRewards);
+    var incident = 'aucun';
+
+    if (_random.nextInt(100) < mission.riskPercent) {
+      final hazards =
+          ForageHazard.values.where((h) => h != ForageHazard.none).toList();
+      final hazard = hazards[_random.nextInt(hazards.length)];
+      switch (hazard) {
+        case ForageHazard.pollution:
+          rewards['Organique'] = ((rewards['Organique'] ?? 0) * 0.8).round();
+          incident = 'pollution légère, gains organiques réduits';
+        case ForageHazard.droneErrant:
+          rewards = rewards
+              .map((key, value) => MapEntry(key, (value * 0.75).round()));
+          incident = 'drone errant, retour anticipé';
+        case ForageHazard.climatDifficile:
+          rewards = rewards
+              .map((key, value) => MapEntry(key, (value * 0.85).round()));
+          incident = 'climat difficile, récolte ralentie';
+        case ForageHazard.none:
+          break;
+      }
+    }
+
+    final inventoryResult = addResources(rewards);
+    final vitality = vitalityOverrides[mission.figurineId] ?? 0;
+    reports.add(
+      PtipoteMissionReport(
+        id: 'report-${completedAt.microsecondsSinceEpoch}',
+        figurineName: mission.figurineName,
+        biomeLabel: biome.label,
+        durationLabel: duration.label,
+        intensityLabel: intensity.label,
+        rewards: rewards,
+        incidentLabel: incident,
+        vitalityRemaining: vitality,
+        completedAt: completedAt,
+        inventoryFull: inventoryResult.hasPending,
+      ),
+    );
+    mission.status = ForageMissionStatus.completed;
   }
 }
 
