@@ -251,16 +251,33 @@ function renderPtipoteStatsForm() {
       <label for="stat-${field}">${escapeHtml(field)}</label>
       <input id="stat-${field}" name="${escapeHtml(field)}" type="number" step="0.01" value="${escapeHtml(ptipoteStatsConfig[field] ?? "")}">
     </div>
-  `).join("");
+  `).join("") + `
+    <div class="stat-field stat-field-wide">
+      <label>XP requis par niveau</label>
+      <p id="xpRequiredPreview"></p>
+    </div>
+  `;
+  renderXpRequiredPreview();
 
   el.statPtipoteForm.querySelectorAll("input").forEach((input) => {
     input.addEventListener("input", () => {
       const value = Number(input.value);
       ptipoteStatsConfig[input.name] = Number.isFinite(value) ? value : input.value;
       localStorage.setItem(PTIPOTE_STATS_STORAGE_KEY, JSON.stringify(ptipoteStatsConfig, null, 2));
+      renderXpRequiredPreview();
       el.statPtipoteStatus.textContent = "Modification locale sauvegardee. Exporter le JSON pour synchroniser le fichier source.";
     });
   });
+}
+
+function renderXpRequiredPreview() {
+  const preview = document.getElementById("xpRequiredPreview");
+  if (!preview) return;
+  const xpBase = Number(ptipoteStatsConfig.xpRequiredBase || 100);
+  const xpMultiplier = Number(ptipoteStatsConfig.xpRequiredMultiplier || 1.25);
+  preview.textContent = [1, 2, 3, 4, 5]
+    .map((level) => `Niv. ${level}→${level + 1}: ${Math.round(xpBase * Math.pow(xpMultiplier, level - 1))} XP`)
+    .join(" · ");
 }
 
 function exportPtipoteStatsConfig() {
@@ -319,6 +336,9 @@ function renderLisiereForageConfig() {
   const rows = [];
   rows.push('<div class="stage-row"><div><strong>Temps</strong><span>Multiplicateur test x' + escapeHtml(lisiereForageConfig.forageTimeScale) + ' · ' + durations.map((item) => escapeHtml(item.label) + ' => ' + escapeHtml(item.realMinutes) + ' min').join(' · ') + '</span></div><strong>durées</strong></div>');
   rows.push('<div class="stage-row"><div><strong>Intensités</strong><span>' + intensities.map((item) => escapeHtml(item.label) + ' x' + escapeHtml(item.rewardMultiplier) + ' risque ' + escapeHtml(item.riskModifierPercent) + '%').join(' · ') + '</span></div><strong>coûts</strong></div>');
+  const xpByDuration = lisiereForageConfig.xpGainByDuration || {};
+  const xpByIntensity = lisiereForageConfig.intensityXpMultiplier || {};
+  rows.push('<div class="stage-row"><div><strong>XP mission</strong><span>Base par durée: ' + Object.entries(xpByDuration).map(([key, value]) => escapeHtml(key) + ' +' + escapeHtml(value)).join(' · ') + ' | intensité: ' + Object.entries(xpByIntensity).map(([key, value]) => escapeHtml(key) + ' x' + escapeHtml(value)).join(' · ') + '</span></div><strong>progression</strong></div>');
   biomes.forEach((biome) => {
     const organic = biome.rewards && biome.rewards.Organique ? biome.rewards.Organique : 0;
     const mineral = biome.rewards && biome.rewards["Minéral"] ? biome.rewards["Minéral"] : 0;

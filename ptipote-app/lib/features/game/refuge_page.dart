@@ -114,7 +114,10 @@ class _RefugePageState extends State<RefugePage> {
             return LisierePage(gameState: _zone0State);
           }
           if (building.name == 'CampHeart') {
-            return CampHeartPage(state: _campHeartState);
+            return CampHeartPage(
+              state: _campHeartState,
+              gameState: _zone0State,
+            );
           }
           if (building.name == 'FabLab') return const FablabPage();
           return _GameBuildingPage(building: building);
@@ -377,6 +380,8 @@ class _MaisonPageState extends State<_MaisonPage>
                             trainingFigurineId: _trainingFigurineId,
                             choosingTrainingTarget: _choosingTrainingTarget,
                             vitalityFor: _vitalityFor,
+                            xpFor: _gameState.xpFor,
+                            levelFor: _gameState.levelFor,
                             isOnMission: _gameState.isOnMission,
                             autoPreferenceFor: _autoPreferenceFor,
                             onToggleFigurine: _toggleFigurine,
@@ -727,6 +732,8 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.trainingFigurineId,
     required this.choosingTrainingTarget,
     required this.vitalityFor,
+    required this.xpFor,
+    required this.levelFor,
     required this.isOnMission,
     required this.autoPreferenceFor,
     required this.onToggleFigurine,
@@ -739,6 +746,8 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final String? trainingFigurineId;
   final bool choosingTrainingTarget;
   final int Function(PtipoteFigurine figurine) vitalityFor;
+  final int Function(PtipoteFigurine figurine) xpFor;
+  final int Function(PtipoteFigurine figurine) levelFor;
   final bool Function(String figurineId) isOnMission;
   final PtipoteAutoAssignmentPreference Function(PtipoteFigurine figurine)
       autoPreferenceFor;
@@ -895,6 +904,8 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
                     vitality: widget.vitalityFor(figurine),
+                    xp: widget.xpFor(figurine),
+                    level: widget.levelFor(figurine),
                     autoPreference: widget.autoPreferenceFor(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     choosingTrainingTarget: widget.choosingTrainingTarget,
@@ -916,6 +927,8 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
                     vitality: widget.vitalityFor(figurine),
+                    xp: widget.xpFor(figurine),
+                    level: widget.levelFor(figurine),
                     autoPreference: widget.autoPreferenceFor(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     choosingTrainingTarget: widget.choosingTrainingTarget,
@@ -956,6 +969,8 @@ class _PtipoteSpriteButton extends StatelessWidget {
   const _PtipoteSpriteButton({
     required this.figurine,
     required this.vitality,
+    required this.xp,
+    required this.level,
     required this.autoPreference,
     required this.selected,
     required this.choosingTrainingTarget,
@@ -965,6 +980,8 @@ class _PtipoteSpriteButton extends StatelessWidget {
 
   final PtipoteFigurine figurine;
   final int vitality;
+  final int xp;
+  final int level;
   final PtipoteAutoAssignmentPreference autoPreference;
   final bool selected;
   final bool choosingTrainingTarget;
@@ -986,6 +1003,8 @@ class _PtipoteSpriteButton extends StatelessWidget {
               child: _PtipoteInfoBubble(
                 figurine: figurine,
                 vitality: vitality,
+                xp: xp,
+                level: level,
                 autoPreference: autoPreference,
                 onAutoPreferenceChanged: onAutoPreferenceChanged,
               ),
@@ -1080,12 +1099,16 @@ class _PtipoteInfoBubble extends StatelessWidget {
   const _PtipoteInfoBubble({
     required this.figurine,
     required this.vitality,
+    required this.xp,
+    required this.level,
     required this.autoPreference,
     required this.onAutoPreferenceChanged,
   });
 
   final PtipoteFigurine figurine;
   final int vitality;
+  final int xp;
+  final int level;
   final PtipoteAutoAssignmentPreference autoPreference;
   final ValueChanged<PtipoteAutoAssignmentPreference> onAutoPreferenceChanged;
 
@@ -1111,10 +1134,10 @@ class _PtipoteInfoBubble extends StatelessWidget {
             _InfoLine(label: 'Type', value: figurine.type),
             _InfoLine(label: 'Enveloppe', value: figurine.envelopeLabel),
             _InfoLine(label: 'Surnom', value: figurine.displayName),
-            _InfoLine(label: 'Niveau', value: figurine.level),
+            _InfoLine(label: 'Niveau', value: '$level'),
             _InfoLine(
               label: 'XP',
-              value: '${figurine.xp}/${figurine.xpRequiredForNextLevel}',
+              value: '$xp/${ptipoteStatsConfig.xpRequiredForNextLevel(level)}',
             ),
             _InfoLine(
               label: 'Vitalité',
@@ -1398,6 +1421,9 @@ class MissionReportsSheet extends StatelessWidget {
                         'Durée ${report.durationLabel} · ${report.intensityLabel}',
                       ),
                       Text('Récolte : ${_formatRewards(report.rewards)}'),
+                      Text(
+                        'XP : +${report.xpGain}${report.leveledUp ? ' · niveau ${report.levelAfter}' : ''}',
+                      ),
                       Text('Incident : ${report.incidentLabel}'),
                       Text('Vitalité restante : ${report.vitalityRemaining}'),
                       if (report.inventoryFull)
@@ -1452,7 +1478,7 @@ class _LisierePageState extends State<LisierePage> {
   ForageBiome _biome = ForageBiome.colline;
   ForageDuration _duration = ForageDuration.oneHour;
   ForageIntensity _intensity = ForageIntensity.normal;
-  String? _selectedFigurineId;
+  final Set<String> _selectedFigurineIds = <String>{};
 
   @override
   void initState() {
@@ -1480,14 +1506,16 @@ class _LisierePageState extends State<LisierePage> {
           stream: _figurineService.watchMyFigurines(),
           builder: (context, snapshot) {
             final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-            PtipoteFigurine? selected;
-            for (final figurine in figurines) {
-              if (figurine.id == _selectedFigurineId) {
-                selected = figurine;
-                break;
-              }
-            }
-            final estimate = selected == null ? null : _estimate(selected);
+            final selectedFigurines = figurines
+                .where((figurine) => _selectedFigurineIds.contains(figurine.id))
+                .toList();
+            final estimates = <PtipoteFigurine, ForageEstimate>{
+              for (final figurine in selectedFigurines)
+                figurine: _estimate(figurine),
+            };
+            final groupEstimate = estimates.isEmpty
+                ? null
+                : ForageGroupEstimate.fromEstimates(estimates.values);
             return ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
@@ -1522,11 +1550,18 @@ class _LisierePageState extends State<LisierePage> {
                               label: Text(
                                 '${figurine.displayName} · V$vitality${onMission ? ' · mission' : ''}',
                               ),
-                              selected: _selectedFigurineId == figurine.id,
+                              selected:
+                                  _selectedFigurineIds.contains(figurine.id),
                               onSelected: onMission
                                   ? null
                                   : (_) => setState(() {
-                                        _selectedFigurineId = figurine.id;
+                                        if (_selectedFigurineIds
+                                            .contains(figurine.id)) {
+                                          _selectedFigurineIds
+                                              .remove(figurine.id);
+                                        } else {
+                                          _selectedFigurineIds.add(figurine.id);
+                                        }
                                       }),
                             );
                           }).toList(),
@@ -1565,20 +1600,28 @@ class _LisierePageState extends State<LisierePage> {
                     }).toList(),
                   ),
                 ),
-                if (estimate != null) _ForageEstimateCard(estimate: estimate),
+                if (groupEstimate != null)
+                  _ForageEstimateCard(
+                    estimate: groupEstimate,
+                    selectedCount: selectedFigurines.length,
+                  ),
                 const SizedBox(height: 12),
                 FilledButton.icon(
-                  onPressed: estimate?.canLaunch == true
-                      ? () => _launchMission(selected!, estimate!)
+                  onPressed: groupEstimate?.canLaunch == true
+                      ? () => _launchMissions(estimates)
                       : null,
                   icon: const Icon(Icons.forest_outlined),
-                  label: const Text('Envoyer récolter'),
+                  label: Text(
+                    selectedFigurines.length <= 1
+                        ? 'Envoyer récolter'
+                        : 'Envoyer ${selectedFigurines.length} P’TIPOTES',
+                  ),
                 ),
-                if (estimate != null && !estimate.canLaunch)
+                if (groupEstimate != null && !groupEstimate.canLaunch)
                   const Padding(
                     padding: EdgeInsets.only(top: 8),
                     child: Text(
-                      'Ce P’TIPOTE a besoin de récupérer avant cette sortie.',
+                      'Un ou plusieurs P’TIPOTES ont besoin de récupérer avant cette sortie.',
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -1603,6 +1646,7 @@ class _LisierePageState extends State<LisierePage> {
     return ForageEstimate(
       rewards: rewards,
       vitalityCost: cost,
+      xpGain: _xpGain(figurine),
       riskPercent: riskPercent,
       riskLabel: _riskLabel(riskPercent),
       zoneFatigueLabel: intensity.zoneFatigueLabel,
@@ -1610,6 +1654,14 @@ class _LisierePageState extends State<LisierePage> {
           vitality >= cost &&
           !widget.gameState.isOnMission(figurine.id),
     );
+  }
+
+  int _xpGain(PtipoteFigurine figurine) {
+    final base = lisiereForageConfig.xpGainByDuration[_duration] ?? 8;
+    final intensity =
+        lisiereForageConfig.intensityXpMultiplier[_intensity] ?? 1;
+    final withBonus = base * intensity * (1 + figurine.xpGainBonus);
+    return math.max(1, withBonus.round());
   }
 
   Map<String, int> _calculateRewards(PtipoteFigurine figurine) {
@@ -1668,19 +1720,33 @@ class _LisierePageState extends State<LisierePage> {
     return 'Risqué';
   }
 
-  void _launchMission(PtipoteFigurine figurine, ForageEstimate estimate) {
-    widget.gameState.startForageMission(
-      figurine: figurine,
-      biome: _biome,
-      duration: _duration,
-      intensity: _intensity,
-      expectedRewards: estimate.rewards,
-      vitalityCost: estimate.vitalityCost,
-      riskPercent: estimate.riskPercent,
-      riskLabel: estimate.riskLabel,
-    );
+  void _launchMissions(Map<PtipoteFigurine, ForageEstimate> estimates) {
+    var launched = 0;
+    for (final entry in estimates.entries) {
+      final estimate = entry.value;
+      if (!estimate.canLaunch) continue;
+      widget.gameState.startForageMission(
+        figurine: entry.key,
+        biome: _biome,
+        duration: _duration,
+        intensity: _intensity,
+        expectedRewards: estimate.rewards,
+        vitalityCost: estimate.vitalityCost,
+        riskPercent: estimate.riskPercent,
+        riskLabel: estimate.riskLabel,
+        xpGain: estimate.xpGain,
+      );
+      launched += 1;
+    }
+    _selectedFigurineIds.clear();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${figurine.displayName} part en Lisière.')),
+      SnackBar(
+        content: Text(
+          launched <= 1
+              ? '1 P’TIPOTE part en Lisière.'
+              : '$launched P’TIPOTES partent en Lisière.',
+        ),
+      ),
     );
   }
 }
@@ -1689,6 +1755,7 @@ class ForageEstimate {
   const ForageEstimate({
     required this.rewards,
     required this.vitalityCost,
+    required this.xpGain,
     required this.riskPercent,
     required this.riskLabel,
     required this.zoneFatigueLabel,
@@ -1697,6 +1764,64 @@ class ForageEstimate {
 
   final Map<String, int> rewards;
   final int vitalityCost;
+  final int xpGain;
+  final int riskPercent;
+  final String riskLabel;
+  final String zoneFatigueLabel;
+  final bool canLaunch;
+}
+
+class ForageGroupEstimate {
+  ForageGroupEstimate({
+    required this.rewards,
+    required this.vitalityCost,
+    required this.xpGain,
+    required this.riskPercent,
+    required this.riskLabel,
+    required this.zoneFatigueLabel,
+    required this.canLaunch,
+  });
+
+  factory ForageGroupEstimate.fromEstimates(
+    Iterable<ForageEstimate> estimates,
+  ) {
+    final list = estimates.toList();
+    final rewards = <String, int>{};
+    var vitalityCost = 0;
+    var xpGain = 0;
+    var riskPercent = 0;
+    var riskLabel = 'Très sûr';
+    var zoneFatigueLabel = 'faible';
+    var canLaunch = list.isNotEmpty;
+
+    for (final estimate in list) {
+      vitalityCost += estimate.vitalityCost;
+      xpGain += estimate.xpGain;
+      canLaunch = canLaunch && estimate.canLaunch;
+      if (estimate.riskPercent >= riskPercent) {
+        riskPercent = estimate.riskPercent;
+        riskLabel = estimate.riskLabel;
+      }
+      zoneFatigueLabel = estimate.zoneFatigueLabel;
+      for (final entry in estimate.rewards.entries) {
+        rewards[entry.key] = (rewards[entry.key] ?? 0) + entry.value;
+      }
+    }
+
+    return ForageGroupEstimate(
+      rewards: rewards,
+      vitalityCost: vitalityCost,
+      xpGain: xpGain,
+      riskPercent: riskPercent,
+      riskLabel: riskLabel,
+      zoneFatigueLabel: zoneFatigueLabel,
+      canLaunch: canLaunch,
+    );
+  }
+
+  final Map<String, int> rewards;
+  final int vitalityCost;
+  final int xpGain;
   final int riskPercent;
   final String riskLabel;
   final String zoneFatigueLabel;
@@ -1728,9 +1853,13 @@ class _ForageChoiceCard extends StatelessWidget {
 }
 
 class _ForageEstimateCard extends StatelessWidget {
-  const _ForageEstimateCard({required this.estimate});
+  const _ForageEstimateCard({
+    required this.estimate,
+    required this.selectedCount,
+  });
 
-  final ForageEstimate estimate;
+  final ForageGroupEstimate estimate;
+  final int selectedCount;
 
   @override
   Widget build(BuildContext context) {
@@ -1743,8 +1872,10 @@ class _ForageEstimateCard extends StatelessWidget {
             const Text('Estimation',
                 style: TextStyle(fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
+            Text('Groupe : $selectedCount P’TIPOTE(s)'),
             Text('Gain : ${_formatRewards(estimate.rewards)}'),
             Text('Vitalité consommée : ${estimate.vitalityCost}'),
+            Text('XP gagnée : ${estimate.xpGain} total'),
             Text('Risque : ${estimate.riskLabel} (${estimate.riskPercent}%)'),
             Text('Fatigue de zone prévue : ${estimate.zoneFatigueLabel}'),
             const Text('Bâtiment lié : à venir'),
@@ -1801,7 +1932,6 @@ class CampHeartState extends ChangeNotifier {
     required this.campHeartLevel,
     required this.vegetalizationXp,
     required this.totalVegetalizationInvested,
-    required this.placeholderOrganicStock,
   });
 
   factory CampHeartState.placeholder() {
@@ -1809,14 +1939,12 @@ class CampHeartState extends ChangeNotifier {
       campHeartLevel: 1,
       vegetalizationXp: 0,
       totalVegetalizationInvested: 0,
-      placeholderOrganicStock: 25,
     );
   }
 
   int campHeartLevel;
   int vegetalizationXp;
   int totalVegetalizationInvested;
-  int placeholderOrganicStock;
 
   CampHeartStageConfig get currentStage {
     return campHeartConfig.stageForLevel(campHeartLevel);
@@ -1850,16 +1978,15 @@ class CampHeartState extends ChangeNotifier {
 
   int get refugeHappinessBonus => currentStage.refugeHappinessBonus;
 
-  bool get canDepositOrganic {
-    return !isMaxLevel && placeholderOrganicStock > 0;
+  bool canDepositOrganic(Zone0GameState gameState) {
+    return !isMaxLevel && gameState.resourceAmount('Organique') > 0;
   }
 
-  String depositOrganic(int requestedAmount) {
+  String depositOrganic(int requestedAmount, Zone0GameState gameState) {
     if (isMaxLevel) return 'Le Cœur du Camp est au niveau max V1.';
-    final amount = math.min(requestedAmount, placeholderOrganicStock);
-    if (amount <= 0) return 'Stock Organique placeholder vide.';
+    final amount = gameState.removeResource('Organique', requestedAmount);
+    if (amount <= 0) return 'Stock Organique vide dans la Maison.';
 
-    placeholderOrganicStock -= amount;
     vegetalizationXp += amount;
     totalVegetalizationInvested += amount;
 
@@ -1880,17 +2007,38 @@ class CampHeartState extends ChangeNotifier {
 }
 
 class CampHeartPage extends StatefulWidget {
-  const CampHeartPage({super.key, required this.state});
+  const CampHeartPage({
+    super.key,
+    required this.state,
+    required this.gameState,
+  });
 
   final CampHeartState state;
+  final Zone0GameState gameState;
 
   @override
   State<CampHeartPage> createState() => _CampHeartPageState();
 }
 
 class _CampHeartPageState extends State<CampHeartPage> {
+  @override
+  void initState() {
+    super.initState();
+    widget.gameState.addListener(_onGameStateChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.gameState.removeListener(_onGameStateChanged);
+    super.dispose();
+  }
+
+  void _onGameStateChanged() {
+    if (mounted) setState(() {});
+  }
+
   void _deposit(int amount) {
-    final message = widget.state.depositOrganic(amount);
+    final message = widget.state.depositOrganic(amount, widget.gameState);
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -1914,6 +2062,7 @@ class _CampHeartPageState extends State<CampHeartPage> {
             const SizedBox(height: 12),
             _CampHeartDepositCard(
               state: state,
+              gameState: widget.gameState,
               onDeposit: _deposit,
             ),
             const SizedBox(height: 12),
@@ -2053,15 +2202,17 @@ class _CampHeartProgressCard extends StatelessWidget {
 class _CampHeartDepositCard extends StatelessWidget {
   const _CampHeartDepositCard({
     required this.state,
+    required this.gameState,
     required this.onDeposit,
   });
 
   final CampHeartState state;
+  final Zone0GameState gameState;
   final ValueChanged<int> onDeposit;
 
   @override
   Widget build(BuildContext context) {
-    final maxAmount = state.placeholderOrganicStock;
+    final maxAmount = gameState.resourceAmount('Organique');
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -2077,12 +2228,12 @@ class _CampHeartDepositCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Stock Organique placeholder : $maxAmount',
+              'Stock Organique Maison : $maxAmount',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Stock réel non branché : cette réserve sert seulement à tester la jauge V1.',
+              'Le Cœur consomme maintenant le stock global rangé dans la Maison.',
             ),
             const SizedBox(height: 12),
             Wrap(
@@ -2096,7 +2247,7 @@ class _CampHeartDepositCard extends StatelessWidget {
                 _DepositButton(
                     amount: 10, stock: maxAmount, onDeposit: onDeposit),
                 FilledButton.tonal(
-                  onPressed: state.canDepositOrganic
+                  onPressed: state.canDepositOrganic(gameState)
                       ? () => onDeposit(maxAmount)
                       : null,
                   child: const Text('Max'),
@@ -2222,7 +2373,7 @@ class _CampHeartPendingCard extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.all(16),
         child: Text(
-          'À venir : branchement du stock Organique réel, Marché, Tour, Lisière lointaine, bonheur global du refuge et limite effective des P’TIPOTES actifs.',
+          'À venir : Marché, Tour, Lisière lointaine, bonheur global du refuge et limite effective des P’TIPOTES actifs.',
           textAlign: TextAlign.center,
         ),
       ),

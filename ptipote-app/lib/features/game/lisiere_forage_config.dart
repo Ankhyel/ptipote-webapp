@@ -12,6 +12,8 @@ class LisiereForageConfig {
     required this.refugeSafetyFallback,
     required this.inventorySlotLimit,
     required this.inventoryStackLimit,
+    required this.xpGainByDuration,
+    required this.intensityXpMultiplier,
     required this.biomes,
     required this.durations,
     required this.intensities,
@@ -21,6 +23,8 @@ class LisiereForageConfig {
   final int refugeSafetyFallback;
   final int inventorySlotLimit;
   final int inventoryStackLimit;
+  final Map<ForageDuration, int> xpGainByDuration;
+  final Map<ForageIntensity, double> intensityXpMultiplier;
   final Map<ForageBiome, ForageBiomeConfig> biomes;
   final Map<ForageDuration, ForageDurationConfig> durations;
   final Map<ForageIntensity, ForageIntensityConfig> intensities;
@@ -78,6 +82,17 @@ const lisiereForageConfig = LisiereForageConfig(
   refugeSafetyFallback: 50,
   inventorySlotLimit: 10,
   inventoryStackLimit: 10,
+  xpGainByDuration: <ForageDuration, int>{
+    ForageDuration.oneHour: 10,
+    ForageDuration.twoHours: 18,
+    ForageDuration.sixHours: 45,
+    ForageDuration.tenHours: 75,
+  },
+  intensityXpMultiplier: <ForageIntensity, double>{
+    ForageIntensity.doux: 0.85,
+    ForageIntensity.normal: 1,
+    ForageIntensity.intensif: 1.20,
+  },
   biomes: <ForageBiome, ForageBiomeConfig>{
     ForageBiome.colline: ForageBiomeConfig(
       label: 'Colline',

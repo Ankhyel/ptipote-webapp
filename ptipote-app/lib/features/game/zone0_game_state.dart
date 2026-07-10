@@ -13,6 +13,8 @@ class Zone0GameState extends ChangeNotifier {
   final math.Random _random = math.Random();
 
   final Map<String, int> vitalityOverrides = <String, int>{};
+  final Map<String, int> xpOverrides = <String, int>{};
+  final Map<String, int> levelOverrides = <String, int>{};
   final Map<String, PtipoteAutoAssignmentPreference> autoPreferenceOverrides =
       <String, PtipoteAutoAssignmentPreference>{};
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
@@ -23,6 +25,14 @@ class Zone0GameState extends ChangeNotifier {
 
   int vitalityFor(PtipoteFigurine figurine) {
     return vitalityOverrides[figurine.id] ?? figurine.vitality;
+  }
+
+  int xpFor(PtipoteFigurine figurine) {
+    return xpOverrides[figurine.id] ?? figurine.xpValue;
+  }
+
+  int levelFor(PtipoteFigurine figurine) {
+    return levelOverrides[figurine.id] ?? figurine.levelValue;
   }
 
   PtipoteAutoAssignmentPreference autoPreferenceFor(PtipoteFigurine figurine) {
@@ -44,6 +54,30 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  int resourceAmount(String resource) {
+    return inventory
+        .where((stack) => stack.resource == resource)
+        .fold(0, (total, stack) => total + stack.amount);
+  }
+
+  int removeResource(String resource, int requestedAmount) {
+    var remaining = math.max(0, requestedAmount);
+    var removed = 0;
+    for (final stack in inventory.toList()) {
+      if (remaining <= 0) break;
+      if (stack.resource != resource) continue;
+      final take = math.min(stack.amount, remaining);
+      stack.amount -= take;
+      remaining -= take;
+      removed += take;
+      if (stack.amount <= 0) {
+        inventory.remove(stack);
+      }
+    }
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
+
   ForageMission startForageMission({
     required PtipoteFigurine figurine,
     required ForageBiome biome,
@@ -53,9 +87,12 @@ class Zone0GameState extends ChangeNotifier {
     required int vitalityCost,
     required int riskPercent,
     required String riskLabel,
+    required int xpGain,
   }) {
     final start = DateTime.now();
     final durationConfig = lisiereForageConfig.durations[duration]!;
+    levelOverrides.putIfAbsent(figurine.id, () => figurine.levelValue);
+    xpOverrides.putIfAbsent(figurine.id, () => figurine.xpValue);
     final mission = ForageMission(
       id: 'mission-${start.microsecondsSinceEpoch}',
       figurineId: figurine.id,
@@ -71,6 +108,7 @@ class Zone0GameState extends ChangeNotifier {
       vitalityCost: vitalityCost,
       riskPercent: riskPercent,
       riskLabel: riskLabel,
+      xpGain: xpGain,
     );
     missions.add(mission);
     vitalityOverrides[figurine.id] = math.max(
@@ -176,6 +214,7 @@ class Zone0GameState extends ChangeNotifier {
     }
 
     final inventoryResult = addResources(rewards);
+    final xpResult = addMissionXp(mission.figurineId, mission.xpGain);
     final vitality = vitalityOverrides[mission.figurineId] ?? 0;
     reports.add(
       PtipoteMissionReport(
@@ -186,6 +225,9 @@ class Zone0GameState extends ChangeNotifier {
         intensityLabel: intensity.label,
         rewards: rewards,
         incidentLabel: incident,
+        xpGain: mission.xpGain,
+        leveledUp: xpResult.leveledUp,
+        levelAfter: xpResult.level,
         vitalityRemaining: vitality,
         completedAt: completedAt,
         inventoryFull: inventoryResult.hasPending,
@@ -193,6 +235,39 @@ class Zone0GameState extends ChangeNotifier {
     );
     mission.status = ForageMissionStatus.completed;
   }
+
+  PtipoteXpGainResult addMissionXp(String figurineId, int xpGain) {
+    var level = levelOverrides[figurineId] ?? 1;
+    var xp = xpOverrides[figurineId] ?? 0;
+    xp += math.max(0, xpGain);
+    var leveledUp = false;
+
+    while (xp >= ptipoteStatsConfig.xpRequiredForNextLevel(level)) {
+      xp -= ptipoteStatsConfig.xpRequiredForNextLevel(level);
+      level += 1;
+      leveledUp = true;
+    }
+
+    levelOverrides[figurineId] = level;
+    xpOverrides[figurineId] = xp;
+    return PtipoteXpGainResult(
+      xp: xp,
+      level: level,
+      leveledUp: leveledUp,
+    );
+  }
+}
+
+class PtipoteXpGainResult {
+  const PtipoteXpGainResult({
+    required this.xp,
+    required this.level,
+    required this.leveledUp,
+  });
+
+  final int xp;
+  final int level;
+  final bool leveledUp;
 }
 
 class Zone0InventoryStack {
@@ -227,6 +302,7 @@ class ForageMission {
     required this.vitalityCost,
     required this.riskPercent,
     required this.riskLabel,
+    required this.xpGain,
   });
 
   final String id;
@@ -241,6 +317,7 @@ class ForageMission {
   final int vitalityCost;
   final int riskPercent;
   final String riskLabel;
+  final int xpGain;
   ForageMissionStatus status = ForageMissionStatus.active;
 }
 
@@ -253,6 +330,9 @@ class PtipoteMissionReport {
     required this.intensityLabel,
     required this.rewards,
     required this.incidentLabel,
+    required this.xpGain,
+    required this.leveledUp,
+    required this.levelAfter,
     required this.vitalityRemaining,
     required this.completedAt,
     required this.inventoryFull,
@@ -265,6 +345,9 @@ class PtipoteMissionReport {
   final String intensityLabel;
   final Map<String, int> rewards;
   final String incidentLabel;
+  final int xpGain;
+  final bool leveledUp;
+  final int levelAfter;
   final int vitalityRemaining;
   final DateTime completedAt;
   final bool inventoryFull;

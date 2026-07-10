@@ -3,6 +3,17 @@
   "inventorySlotLimit": 10,
   "inventoryStackLimit": 10,
   "refugeSafetyFallback": 50,
+  "xpGainByDuration": {
+    "oneHour": 10,
+    "twoHours": 18,
+    "sixHours": 45,
+    "tenHours": 75
+  },
+  "intensityXpMultiplier": {
+    "doux": 0.85,
+    "normal": 1.0,
+    "intensif": 1.2
+  },
   "durations": [
     { "id": "oneHour", "label": "1h", "theoreticalHours": 1, "realMinutes": 10, "baseVitalityCost": 15 },
     { "id": "twoHours", "label": "2h", "theoreticalHours": 2, "realMinutes": 20, "baseVitalityCost": 25 },

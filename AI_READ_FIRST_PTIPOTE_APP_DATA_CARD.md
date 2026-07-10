@@ -254,13 +254,12 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 ### 6. Systemes branches
 
 - Jauge de vegetalisation branchee en local session dans `CampHeartState`.
-- Depot Organique branche sur un stock placeholder local de `25` pour tester la progression.
+- Depot Organique branche sur le stock global Maison via `Zone0GameState.inventory`; consomme les stacks `Organique`.
 - Passage de niveau/stade branche localement avec message SnackBar.
 - Population, bonheur refuge, limite P'TIPOTES confort et activite locale sont affiches/prepares mais pas encore appliques aux autres systemes.
 
 ### 7. Attentes / placeholders
 
-- Stock Organique reel non branche: connecter plus tard a l'inventaire/ressources joueur et empecher les depots hors stock reel.
 - Persistance Firestore/localStorage du Cœur non branchee: l'etat est local session pour V1.
 - Atelier affiche comme deblocage Refuge mais gameplay complet non branche.
 - Tour affichee comme deblocage Refuge mais aide/securite non branchee.
@@ -287,13 +286,15 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - `forageTimeScale`: `6`, donc 1h theorique = 10 min test, 2h = 20 min, 6h = 60 min, 10h = 100 min.
 - Intensites: `doux` x0.75 gains / x0.75 Vitalite / -5% risque; `normal` x1; `intensif` x1.35 gains / x1.25 Vitalite / +10% risque.
 - Couts Vitalite par duree: 1h `15`, 2h `25`, 6h `55`, 10h `80` avant multiplicateur intensite.
+- Gains XP mission: 1h `10`, 2h `18`, 6h `45`, 10h `75`, multiplies par intensite (`doux` x0.85, `normal` x1, `intensif` x1.2) et bonus XP enveloppe.
 - Risques biome: Colline `10%`, Plaine riche `8%`, Bassin mineral `14%`, Sous-bois `12%`.
 - Inventaire V1: `10` slots, stack max `10`.
 
 ### 3. Dashboard
 
 - Onglet visible: `Lisiere / Fourrage`.
-- Champs affiches depuis `ptipote-dashboard/lisiere-forage-config.json`: multiplicateur temps, durees reelles, intensites, risques, gains de base par biome.
+- Champs affiches depuis `ptipote-dashboard/lisiere-forage-config.json`: multiplicateur temps, durees reelles, intensites, risques, gains de base par biome, gains XP mission.
+- Onglet `Stat Ptipote`: affiche `xpRequiredBase`, `xpRequiredMultiplier` et une preview des XP requis par niveau.
 - Non synchronise automatiquement avec Flutter/Firebase pour cette V1; modifier aussi `lisiere_forage_config.dart` pour changer l'app.
 
 ### 4. Biomes V1
@@ -306,10 +307,10 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 ### 5. Mission model
 
-- Modele local `ForageMission`: id, figurineId, figurineName, biome, duree theorique, duree test, intensite, startTime, endTime, expectedRewards, vitalityCost, riskPercent, riskLabel, status.
+- Modele local `ForageMission`: id, figurineId, figurineName, biome, duree theorique, duree test, intensite, startTime, endTime, expectedRewards, vitalityCost, riskPercent, riskLabel, xpGain, status.
 - Etats mission: `active`, `completed`.
-- Lancement: choisit P'TIPOTE/duree/intensite/biome, verifie Vitalite, deduit la Vitalite et cree une mission active.
-- Resolution: centralisee dans `Zone0GameState.resolveDueForageMissions()`, appelee par un tick depuis `RefugePage` et a l'ouverture de la Lisiere. Elle applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, cree un rapport non lu.
+- Lancement: choisit un ou plusieurs P'TIPOTES/duree/intensite/biome, verifie Vitalite, deduit la Vitalite et cree une mission active par P'TIPOTE.
+- Resolution: centralisee dans `Zone0GameState.resolveDueForageMissions()`, appelee par un tick depuis `RefugePage` et a l'ouverture de la Lisiere. Elle applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, ajoute l'XP locale au P'TIPOTE, gere le level-up local, cree un rapport non lu.
 - Etat `onMission` prepare via mission active locale; les champs Firestore P'TIPOTE ne sont pas encore modifies. Un P'TIPOTE en mission est masque de la Maison pendant la mission.
 
 ### 6. Risques
@@ -326,11 +327,12 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Accessible depuis la Maison via icone caisse en bas a droite.
 - Limite: 10 slots, stack max 10, ressources supportees `Organique`, `Mineral`, et Bio-batterie preparee par convention mais pas encore generee.
 - Inventaire plein: le rapport marque que certaines ressources attendent; aucune suppression silencieuse intentionnelle.
+- Le Cœur du Camp consomme maintenant le stock `Organique` de cet inventaire global via `Zone0GameState.removeResource`.
 
 ### 8. Rapports / messages P'TIPOTE
 
 - Emplacement code: `Zone0GameState.reports`, `PtipoteMissionReport`, `MissionReportsSheet`.
-- Creation automatique a la fin de mission avec P'TIPOTE, biome, duree, intensite, gains, incident, Vitalite restante, date.
+- Creation automatique a la fin de mission avec P'TIPOTE, biome, duree, intensite, gains, XP gagnee, level-up local, incident, Vitalite restante, date.
 - Pastille Maison sur le refuge et pastille boite aux lettres dans la Maison lisent `unreadReportCount`; `Zone0GameState` notifie l'UI quand un rapport arrive.
 - Ouverture de la boite aux lettres marque les rapports comme lus.
 
@@ -339,8 +341,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Tour non branchee: Securite refuge par defaut `50`.
 - Marche non branche: autoAssignment `market` fallback Maison existant.
 - Stock Atelier non branche: transfert Maison <-> Atelier et drag and drop prevus plus tard.
-- Stock Organique reel non branche a l'inventaire joueur; inventaire V1 local session seulement.
-- Persistance missions/inventaire/rapports non branchee; tout est local session pour tester la boucle.
+- Persistance missions/inventaire/rapports/XP mission non branchee; tout est local session pour tester la boucle.
 - Lisiere lointaine, batiments de biomes, Refuge PTIBUG, puzzle tokens et auto-battler non developpes.
 
 ## Flux Principaux
