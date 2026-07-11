@@ -106,10 +106,10 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - `GameAssetResolver` lit `ptipote-game/image_game/` et resout les images par nom (`Camp`, `Kernel`, `Maison`) quelle que soit l'extension (`.jpg`, `.PNG`, etc.).
 - Bouton Flutter `Jeu`: ajoute sur Home au-dessus de `Mes ptipotes`, visible seulement si `UserProfile.canSeeDiagnostics` est vrai (`dev/admin`). Ne pas creer de second toggle.
 - Dans `RefugePage`, chaque case de batiment ouvre une vraie page Flutter placeholder: Maison, Kernel, Lisiere, Tour de securite, FabLab. La FabLab contient deux onglets: Atelier et Cuisine.
-- Dans la page Maison ouverte depuis `RefugePage`, les P'TIPOTES de `FigurineService.watchMyFigurines()` sont affiches comme sprites sur le tiers bas. `PtipoteFigurine.vitality` vaut `100/100` par defaut, et une vitalite a 20 ou moins place le P'TIPOTE dans une des trois alcoves du haut.
-- Clic sur un sprite dans la Maison: ouvre/ferme une bulle avec espece, type, enveloppe, surnom, niveau, XP, vitalite, bonheur, etat et preference automatique.
+- Dans la page Maison ouverte depuis `RefugePage`, les P'TIPOTES de `FigurineService.watchMyFigurines()` sont affiches comme sprites sur le tiers bas. `PtipoteFigurine.vitality` vaut `100/100` par defaut, et une vitalite a 20 ou moins place le P'TIPOTE dans une des trois alcoves descendues vers le milieu-haut de l'ecran.
+- Clic sur un sprite dans la Maison: ouvre/ferme une bulle avec espece, type, enveloppe, surnom, niveau, XP, vitalite, bonheur, etat et preference automatique. En alcove, la bulle s'ouvre sous le P'TIPOTE, contient `Reveiller`, et peut etre deplacee par appui long/glisse.
 - Test dev Maison: l'emoji haltere permet de choisir un P'TIPOTE puis `Entrainer` retire 25 vitalite localement; a 20 ou moins il va dans une alcove.
-- Test recuperation Maison: la vitalite perdue est conservee localement pendant la session. En alcove, elle remonte de 1 toutes les 30 secondes; hors alcove, de 1 par minute. Les sprites cherchent `png/webp` avant `jpg/jpeg` pour privilegier les images transparentes.
+- Test recuperation Maison: la vitalite perdue est conservee localement pendant la session. En alcove, elle remonte de 1 toutes les 30 secondes (`+2/min` configurable); une barre sous le sprite indique le temps restant avant retour operationnel. Hors alcove, recuperation lente de 1 par minute. Les sprites cherchent `png/webp` avant `jpg/jpeg` pour privilegier les images transparentes.
 - Fichiers du prototype: `index.html`, `styles.css`, `data.js`, `state.js`, `tasks.js`, `ui-island.js`, `ui-panels.js`, `main.js`.
 - L'ecran Ilot du prototype affiche maintenant le refuge du joueur avec fond illustre, cases batiment a opacite 20%, P'TIPOTE visible et Kernel pour scanner.
 - Boucle coeur prototype: choisir un P'TIPOTE -> assigner a la Lisiere -> attendre -> recuperer -> crafter un Repas -> soigner a la Maison -> progresser.
@@ -187,6 +187,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Seuils: `80-100` en forme, `50-79` disponible, `21-49` fatigue, `0-20` repos necessaire.
 - A `20` ou moins, la Maison place le P'TIPOTE dans une alcove et bloque le deplacement.
 - Recuperation V1 Maison: hors alcove `+1/min`, en alcove `+2/min` configurable via `alcoveVitalityRecoveryPerMinute` et applique par tick de 30s.
+- Reveil manuel: bouton `Reveiller` dans la fiche d'un P'TIPOTE en alcove; il le sort du repos avec une Vitalite juste au-dessus du seuil de repos.
 - Ne depasse jamais `maxVitality`; a `100`, l'override local est retire et le P'TIPOTE revient a `wanderingHome`.
 
 ### 7. Affectation automatique
@@ -202,7 +203,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 - Tour non branchee: `helpingTower` et `safetyContribution` prepares mais pas actifs.
 - Marche non branche: `helpingMarket` et `marketContribution` prepares mais pas actifs.
-- Missions Lisiere branchees en local runtime: un P'TIPOTE en mission est masque de la Maison; l'etat Firestore `behaviorState` reste a brancher plus tard.
+- Missions Lisiere branchees en local runtime: un P'TIPOTE en mission est masque de la Maison; un P'TIPOTE en mission ou en repos est considere `occupe` et n'est pas selectionnable en Lisiere. L'etat Firestore `behaviorState` reste a brancher plus tard.
 - Bio-batterie / Energie joueur non branchee dans cette V1 stats.
 - Bonheur existe (`baseHappiness`, bornes, helpers `addHappiness`/`reduceHappiness`) mais ses effets restent a integrer: calin, nourriture, repos, mission reussie, accident en Lisiere.
 - Enveloppes non finalisees cote cartes: modificateurs prepares avec fallback `standard`.
@@ -312,7 +313,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 - Modele local `ForageMission`: id, figurineId, figurineName, biome, duree theorique, duree test, intensite, startTime, endTime, expectedRewards, vitalityCost, riskPercent, riskLabel, xpGain, status.
 - Etats mission: `active`, `completed`.
-- Lancement: choisit un ou plusieurs P'TIPOTES/duree/intensite/biome, verifie Vitalite, deduit la Vitalite et cree une mission active par P'TIPOTE.
+- Lancement: choisit un ou plusieurs P'TIPOTES/duree/intensite/biome, verifie Vitalite et disponibilite (`non occupe`), deduit la Vitalite et cree une mission active par P'TIPOTE.
 - Resolution: centralisee dans `Zone0GameState.resolveDueForageMissions()`, appelee par un tick depuis `RefugePage` et a l'ouverture de la Lisiere. Elle applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, ajoute l'XP au P'TIPOTE, gere le level-up, sauvegarde `fields.x/xp/l/level` dans Firestore, cree un rapport non lu.
 - Etat `onMission` prepare via mission active locale; les champs Firestore P'TIPOTE `behaviorState` restent a brancher. Un P'TIPOTE en mission est masque de la Maison pendant la mission.
 

@@ -336,6 +336,13 @@ class _MaisonPageState extends State<_MaisonPage>
     });
   }
 
+  void _wakeFigurine(PtipoteFigurine figurine) {
+    setState(() {
+      _gameState.wakeFromRest(figurine);
+      _selectedFigurineId = figurine.id;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -395,6 +402,7 @@ class _MaisonPageState extends State<_MaisonPage>
                             autoPreferenceFor: _autoPreferenceFor,
                             onToggleFigurine: _toggleFigurine,
                             onAutoPreferenceChanged: _setAutoPreference,
+                            onWake: _wakeFigurine,
                           ),
                           _TrainingTool(
                             choosing: _choosingTrainingTarget,
@@ -720,7 +728,7 @@ class _AlcoveLayer extends StatelessWidget {
               final left = constraints.maxWidth * (0.18 + index * 0.29);
               return Positioned(
                 left: left,
-                top: constraints.maxHeight * 0.15,
+                top: constraints.maxHeight * 0.33,
                 width: alcoveWidth,
                 height: alcoveHeight,
                 child: CustomPaint(painter: _AlcovePainter()),
@@ -747,6 +755,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.autoPreferenceFor,
     required this.onToggleFigurine,
     required this.onAutoPreferenceChanged,
+    required this.onWake,
   });
 
   final List<PtipoteFigurine> figurines;
@@ -765,6 +774,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     PtipoteFigurine figurine,
     PtipoteAutoAssignmentPreference preference,
   ) onAutoPreferenceChanged;
+  final ValueChanged<PtipoteFigurine> onWake;
 
   @override
   State<_PtipoteRefugeLayer> createState() => _PtipoteRefugeLayerState();
@@ -918,7 +928,10 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                     autoPreference: widget.autoPreferenceFor(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     choosingTrainingTarget: widget.choosingTrainingTarget,
+                    isResting: false,
+                    restProgress: 0,
                     onTap: () => widget.onToggleFigurine(figurine),
+                    onWake: () => widget.onWake(figurine),
                     onAutoPreferenceChanged: (preference) {
                       widget.onAutoPreferenceChanged(figurine, preference);
                     },
@@ -929,9 +942,11 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                 final figurine = resting[index];
                 final alcoveCenter =
                     constraints.maxWidth * (0.30 + index * 0.29);
+                final restProgress = widget.vitalityFor(figurine) /
+                    ptipoteStatsConfig.maxVitality;
                 return Positioned(
                   left: alcoveCenter - spriteSize / 2,
-                  top: constraints.maxHeight * 0.13,
+                  top: constraints.maxHeight * 0.31,
                   width: spriteSize,
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
@@ -941,7 +956,10 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                     autoPreference: widget.autoPreferenceFor(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     choosingTrainingTarget: widget.choosingTrainingTarget,
+                    isResting: true,
+                    restProgress: restProgress,
                     onTap: () => widget.onToggleFigurine(figurine),
+                    onWake: () => widget.onWake(figurine),
                     onAutoPreferenceChanged: (preference) {
                       widget.onAutoPreferenceChanged(figurine, preference);
                     },
@@ -974,7 +992,7 @@ class _PtipoteMotion {
   double bounceSeed;
 }
 
-class _PtipoteSpriteButton extends StatelessWidget {
+class _PtipoteSpriteButton extends StatefulWidget {
   const _PtipoteSpriteButton({
     required this.figurine,
     required this.vitality,
@@ -983,7 +1001,10 @@ class _PtipoteSpriteButton extends StatelessWidget {
     required this.autoPreference,
     required this.selected,
     required this.choosingTrainingTarget,
+    required this.isResting,
+    required this.restProgress,
     required this.onTap,
+    required this.onWake,
     required this.onAutoPreferenceChanged,
   });
 
@@ -994,31 +1015,77 @@ class _PtipoteSpriteButton extends StatelessWidget {
   final PtipoteAutoAssignmentPreference autoPreference;
   final bool selected;
   final bool choosingTrainingTarget;
+  final bool isResting;
+  final double restProgress;
   final VoidCallback onTap;
+  final VoidCallback onWake;
   final ValueChanged<PtipoteAutoAssignmentPreference> onAutoPreferenceChanged;
 
   @override
+  State<_PtipoteSpriteButton> createState() => _PtipoteSpriteButtonState();
+}
+
+class _PtipoteSpriteButtonState extends State<_PtipoteSpriteButton> {
+  Offset _bubbleOffset = Offset.zero;
+  Offset _longPressOrigin = Offset.zero;
+  Offset _bubbleOrigin = Offset.zero;
+
+  @override
   Widget build(BuildContext context) {
+    final remainingRatio = (1 - widget.restProgress).clamp(0.0, 1.0);
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.bottomCenter,
         children: <Widget>[
-          _PtipoteSprite(figurine: figurine),
-          if (selected)
+          _PtipoteSprite(figurine: widget.figurine),
+          if (widget.isResting)
             Positioned(
-              bottom: 76,
-              child: _PtipoteInfoBubble(
-                figurine: figurine,
-                vitality: vitality,
-                xp: xp,
-                level: level,
-                autoPreference: autoPreference,
-                onAutoPreferenceChanged: onAutoPreferenceChanged,
+              bottom: -10,
+              left: 8,
+              right: 8,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  value: remainingRatio,
+                  backgroundColor: Colors.white.withValues(alpha: 0.72),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Color(0xFF6FA05F),
+                  ),
+                ),
               ),
             ),
-          if (choosingTrainingTarget)
+          if (widget.selected)
+            Positioned(
+              bottom: widget.isResting ? null : 76 + _bubbleOffset.dy,
+              top: widget.isResting ? 76 + _bubbleOffset.dy : null,
+              left: _bubbleOffset.dx,
+              child: GestureDetector(
+                onLongPressStart: (_) {
+                  _longPressOrigin = Offset.zero;
+                  _bubbleOrigin = _bubbleOffset;
+                },
+                onLongPressMoveUpdate: (details) {
+                  setState(() {
+                    _longPressOrigin = details.offsetFromOrigin;
+                    _bubbleOffset = _bubbleOrigin + _longPressOrigin;
+                  });
+                },
+                child: _PtipoteInfoBubble(
+                  figurine: widget.figurine,
+                  vitality: widget.vitality,
+                  xp: widget.xp,
+                  level: widget.level,
+                  autoPreference: widget.autoPreference,
+                  isResting: widget.isResting,
+                  onWake: widget.onWake,
+                  onAutoPreferenceChanged: widget.onAutoPreferenceChanged,
+                ),
+              ),
+            ),
+          if (widget.choosingTrainingTarget)
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -1138,6 +1205,8 @@ class _PtipoteInfoBubble extends StatelessWidget {
     required this.xp,
     required this.level,
     required this.autoPreference,
+    required this.isResting,
+    required this.onWake,
     required this.onAutoPreferenceChanged,
   });
 
@@ -1146,6 +1215,8 @@ class _PtipoteInfoBubble extends StatelessWidget {
   final int xp;
   final int level;
   final PtipoteAutoAssignmentPreference autoPreference;
+  final bool isResting;
+  final VoidCallback onWake;
   final ValueChanged<PtipoteAutoAssignmentPreference> onAutoPreferenceChanged;
 
   @override
@@ -1182,6 +1253,17 @@ class _PtipoteInfoBubble extends StatelessWidget {
             _InfoLine(label: 'Bonheur', value: '${figurine.happiness}/100'),
             _InfoLine(label: 'État', value: _stateLabel(figurine, vitality)),
             _InfoLine(label: 'Auto', value: _preferenceLabel(autoPreference)),
+            if (isResting) ...<Widget>[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: onWake,
+                  icon: const Icon(Icons.wb_sunny_outlined),
+                  label: const Text('Réveiller'),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             Wrap(
               spacing: 6,
@@ -1542,6 +1624,12 @@ class _LisierePageState extends State<LisierePage> {
           stream: _figurineService.watchMyFigurines(),
           builder: (context, snapshot) {
             final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+            _selectedFigurineIds.removeWhere((id) {
+              return figurines.any(
+                (figurine) =>
+                    figurine.id == id && widget.gameState.isBusy(figurine),
+              );
+            });
             final selectedFigurines = figurines
                 .where((figurine) => _selectedFigurineIds.contains(figurine.id))
                 .toList();
@@ -1590,13 +1678,21 @@ class _LisierePageState extends State<LisierePage> {
                                 widget.gameState.vitalityFor(figurine);
                             final onMission =
                                 widget.gameState.isOnMission(figurine.id);
+                            final resting =
+                                widget.gameState.isResting(figurine);
+                            final busy = widget.gameState.isBusy(figurine);
+                            final suffix = onMission
+                                ? ' · mission'
+                                : resting
+                                    ? ' · repos'
+                                    : '';
                             return ChoiceChip(
                               label: Text(
-                                '${figurine.displayName} · V$vitality${onMission ? ' · mission' : ''}',
+                                '${figurine.displayName} · V$vitality$suffix',
                               ),
                               selected:
                                   _selectedFigurineIds.contains(figurine.id),
-                              onSelected: onMission
+                              onSelected: busy
                                   ? null
                                   : (_) => setState(() {
                                         if (_selectedFigurineIds
@@ -1708,7 +1804,7 @@ class _LisierePageState extends State<LisierePage> {
       zoneFatigueLabel: intensity.zoneFatigueLabel,
       canLaunch: vitality > ptipoteStatsConfig.minVitalityBeforeAutoRest &&
           vitality >= cost &&
-          !widget.gameState.isOnMission(figurine.id),
+          !widget.gameState.isBusy(figurine),
     );
   }
 

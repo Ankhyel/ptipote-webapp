@@ -60,6 +60,26 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  bool isResting(PtipoteFigurine figurine) {
+    return !isOnMission(figurine.id) &&
+        vitalityFor(figurine) <= ptipoteStatsConfig.minVitalityBeforeAutoRest;
+  }
+
+  bool isBusy(PtipoteFigurine figurine) {
+    return isOnMission(figurine.id) || isResting(figurine);
+  }
+
+  void wakeFromRest(PtipoteFigurine figurine) {
+    if (isOnMission(figurine.id)) return;
+    final wakeVitality = math.min(
+      ptipoteStatsConfig.maxVitality,
+      ptipoteStatsConfig.minVitalityBeforeAutoRest + 1,
+    );
+    vitalityOverrides[figurine.id] =
+        math.max(vitalityFor(figurine), wakeVitality);
+    notifyListeners();
+  }
+
   int resourceAmount(String resource) {
     return inventory
         .where((stack) => stack.resource == resource)
