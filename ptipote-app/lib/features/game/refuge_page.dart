@@ -1482,24 +1482,184 @@ class Zone0InventorySheet extends StatelessWidget {
             '${stacks.length}/${lisiereForageConfig.inventorySlotLimit} slots · stacks de ${lisiereForageConfig.inventoryStackLimit}',
           ),
           const SizedBox(height: 12),
-          if (stacks.isEmpty)
-            const _SheetEmptyState(
-                text: 'Aucune ressource rangée pour le moment.')
-          else
-            ...stacks.map(
-              (stack) => ListTile(
-                leading: const Icon(Icons.inventory_2_outlined),
-                title: Text(stack.resource),
-                trailing: Text(
-                  '${stack.amount}',
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-              ),
-            ),
+          _FirebaseSyncStatus(gameState: gameState),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 3,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: List<Widget>.generate(
+                lisiereForageConfig.inventorySlotLimit, (index) {
+              final stack = index < stacks.length ? stacks[index] : null;
+              return _InventorySlot(stack: stack);
+            }),
+          ),
         ],
       ),
     );
   }
+}
+
+class _FirebaseSyncStatus extends StatelessWidget {
+  const _FirebaseSyncStatus({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    final error = gameState.lastFirebaseError;
+    final color = error == null
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.error;
+    final lastSync = gameState.lastFirebaseSyncAt;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(
+              gameState.isFirebaseSyncing
+                  ? Icons.sync
+                  : error == null
+                      ? Icons.cloud_done_outlined
+                      : Icons.cloud_off_outlined,
+              color: color,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                error == null
+                    ? '${gameState.firebaseSyncLabel}${lastSync == null ? '' : ' · ${_formatTime(lastSync)}'}'
+                    : '${gameState.firebaseSyncLabel} · $error',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTime(DateTime date) {
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+}
+
+class _InventorySlot extends StatelessWidget {
+  const _InventorySlot({required this.stack});
+
+  final Zone0InventoryStack? stack;
+
+  @override
+  Widget build(BuildContext context) {
+    final filled = stack != null;
+    return AspectRatio(
+      aspectRatio: 1,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: filled
+              ? Theme.of(context).colorScheme.surface
+              : Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withValues(alpha: 0.46),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color:
+                Theme.of(context).colorScheme.outline.withValues(alpha: 0.32),
+          ),
+          boxShadow: filled
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
+        ),
+        child: Stack(
+          children: <Widget>[
+            Center(
+              child: Icon(
+                _resourceIcon(stack?.resource),
+                size: 36,
+                color: filled
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.28),
+              ),
+            ),
+            if (filled)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    child: Text(
+                      '${stack!.amount}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (filled)
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Text(
+                  stack!.resource,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _resourceIcon(String? resource) {
+  return switch (resource) {
+    'Organique' => Icons.eco_outlined,
+    'Débris' || 'Debris' => Icons.construction_outlined,
+    'Minéral' || 'Mineral' => Icons.diamond_outlined,
+    'Énergie' || 'Energie' => Icons.bolt_outlined,
+    'Repas' => Icons.restaurant_outlined,
+    _ => Icons.inventory_2_outlined,
+  };
 }
 
 class MissionReportsSheet extends StatelessWidget {

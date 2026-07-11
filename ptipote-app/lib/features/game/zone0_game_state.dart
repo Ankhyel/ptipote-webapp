@@ -27,6 +27,10 @@ class Zone0GameState extends ChangeNotifier {
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
 
   int refugeSafety = lisiereForageConfig.refugeSafetyFallback;
+  DateTime? lastFirebaseSyncAt;
+  String? lastFirebaseError;
+  String firebaseSyncLabel = 'Non synchronisé';
+  bool isFirebaseSyncing = false;
   bool _loadedFromFirebase = false;
 
   int vitalityFor(PtipoteFigurine figurine) {
@@ -148,55 +152,59 @@ class Zone0GameState extends ChangeNotifier {
 
   Future<void> loadFromFirebase() async {
     if (_loadedFromFirebase) return;
-    final user = _auth.currentUser;
+    final user = await _currentUser();
     if (user == null) return;
-    _loadedFromFirebase = true;
+    await _runFirebaseSync('Chargement Zone 0', () async {
+      final snapshot = await _zone0Doc(user.uid).get();
+      final data = snapshot.data();
+      if (data == null) {
+        _loadedFromFirebase = true;
+        return;
+      }
 
-    final snapshot = await _zone0Doc(user.uid).get();
-    final data = snapshot.data();
-    if (data == null) return;
+      final inventoryData = data['inventory'];
+      if (inventoryData is List) {
+        inventory
+          ..clear()
+          ..addAll(
+            inventoryData
+                .whereType<Map>()
+                .map(
+                  (item) => Zone0InventoryStack(
+                    resource: '${item['resource'] ?? ''}',
+                    amount: _readInt(item['amount']),
+                  ),
+                )
+                .where(
+                    (stack) => stack.resource.isNotEmpty && stack.amount > 0),
+          );
+      }
 
-    final inventoryData = data['inventory'];
-    if (inventoryData is List) {
-      inventory
-        ..clear()
-        ..addAll(
-          inventoryData
-              .whereType<Map>()
-              .map(
-                (item) => Zone0InventoryStack(
-                  resource: '${item['resource'] ?? ''}',
-                  amount: _readInt(item['amount']),
-                ),
-              )
-              .where((stack) => stack.resource.isNotEmpty && stack.amount > 0),
-        );
-    }
+      final vitalityData = data['vitalityOverrides'];
+      if (vitalityData is Map) {
+        vitalityOverrides
+          ..clear()
+          ..addEntries(
+            vitalityData.entries.map(
+              (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
+            ),
+          );
+      }
 
-    final vitalityData = data['vitalityOverrides'];
-    if (vitalityData is Map) {
-      vitalityOverrides
-        ..clear()
-        ..addEntries(
-          vitalityData.entries.map(
-            (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
-          ),
-        );
-    }
+      final missionData = data['missions'];
+      if (missionData is List) {
+        missions
+          ..clear()
+          ..addAll(
+            missionData
+                .whereType<Map>()
+                .map(ForageMission.fromFirebase)
+                .whereType<ForageMission>(),
+          );
+      }
 
-    final missionData = data['missions'];
-    if (missionData is List) {
-      missions
-        ..clear()
-        ..addAll(
-          missionData
-              .whereType<Map>()
-              .map(ForageMission.fromFirebase)
-              .whereType<ForageMission>(),
-        );
-    }
-
-    notifyListeners();
+      _loadedFromFirebase = true;
+    });
   }
 
   ForageMission startForageMission({
@@ -390,54 +398,64 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> loadCampHeartFromFirebase() async {
-    final user = _auth.currentUser;
+    final user = await _currentUser();
     if (user == null) return null;
-    final snapshot = await _zone0Doc(user.uid).get();
-    return snapshot.data()?['campHeart'] as Map<String, dynamic>?;
+    Map<String, dynamic>? campHeart;
+    await _runFirebaseSync('Chargement Cœur du Camp', () async {
+      final snapshot = await _zone0Doc(user.uid).get();
+      campHeart = snapshot.data()?['campHeart'] as Map<String, dynamic>?;
+    });
+    return campHeart;
   }
 
   Future<void> saveCampHeartToFirebase(Map<String, dynamic> campHeart) async {
-    final user = _auth.currentUser;
+    final user = await _currentUser();
     if (user == null) return;
-    await _zone0Doc(user.uid).set(
-      <String, dynamic>{
-        'campHeart': campHeart,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _runFirebaseSync('Sauvegarde Cœur du Camp', () {
+      return _zone0Doc(user.uid).set(
+        <String, dynamic>{
+          'campHeart': campHeart,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    });
   }
 
   Future<void> saveInventoryToFirebase() async {
-    final user = _auth.currentUser;
+    final user = await _currentUser();
     if (user == null) return;
-    await _zone0Doc(user.uid).set(
-      <String, dynamic>{
-        'inventory': inventory
-            .map(
-              (stack) => <String, dynamic>{
-                'resource': stack.resource,
-                'amount': stack.amount,
-              },
-            )
-            .toList(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _runFirebaseSync('Sauvegarde inventaire', () {
+      return _zone0Doc(user.uid).set(
+        <String, dynamic>{
+          'inventory': inventory
+              .map(
+                (stack) => <String, dynamic>{
+                  'resource': stack.resource,
+                  'amount': stack.amount,
+                },
+              )
+              .toList(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    });
   }
 
   Future<void> saveRuntimeToFirebase() async {
-    final user = _auth.currentUser;
+    final user = await _currentUser();
     if (user == null) return;
-    await _zone0Doc(user.uid).set(
-      <String, dynamic>{
-        'vitalityOverrides': vitalityOverrides,
-        'missions': missions.map((mission) => mission.toFirebase()).toList(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _runFirebaseSync('Sauvegarde missions/vitalité', () {
+      return _zone0Doc(user.uid).set(
+        <String, dynamic>{
+          'vitalityOverrides': vitalityOverrides,
+          'missions': missions.map((mission) => mission.toFirebase()).toList(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    });
   }
 
   Future<void> persistFigurineProgress({
@@ -445,7 +463,7 @@ class Zone0GameState extends ChangeNotifier {
     required int xp,
     required int level,
   }) async {
-    final user = _auth.currentUser;
+    final user = await _currentUser();
     if (user == null) return;
     final ref = _firestore
         .collection('users')
@@ -462,13 +480,15 @@ class Zone0GameState extends ChangeNotifier {
     fields['l'] = '$level';
     fields['level'] = '$level';
 
-    await ref.set(
-      <String, dynamic>{
-        'fields': fields,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _runFirebaseSync('Sauvegarde XP P’TIPOTE', () {
+      return ref.set(
+        <String, dynamic>{
+          'fields': fields,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    });
   }
 
   DocumentReference<Map<String, dynamic>> _zone0Doc(String uid) {
@@ -483,6 +503,50 @@ class Zone0GameState extends ChangeNotifier {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse('$value') ?? 0;
+  }
+
+  Future<User?> _currentUser() async {
+    final current = _auth.currentUser;
+    if (current != null) return current;
+    try {
+      return _auth
+          .authStateChanges()
+          .where((user) => user != null)
+          .cast<User>()
+          .first
+          .timeout(const Duration(seconds: 4));
+    } on Object {
+      lastFirebaseError = 'Utilisateur Firebase non prêt.';
+      firebaseSyncLabel = 'Synchro impossible';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> _runFirebaseSync(
+    String label,
+    Future<void> Function() action,
+  ) async {
+    isFirebaseSyncing = true;
+    firebaseSyncLabel = label;
+    lastFirebaseError = null;
+    notifyListeners();
+    try {
+      await action();
+      lastFirebaseSyncAt = DateTime.now();
+      firebaseSyncLabel = 'Synchronisé';
+    } on FirebaseException catch (error) {
+      lastFirebaseError = '${error.code}: ${error.message ?? error.plugin}';
+      firebaseSyncLabel = 'Erreur Firebase';
+      debugPrint('Zone0 Firebase sync failed: $label: $lastFirebaseError');
+    } on Object catch (error) {
+      lastFirebaseError = '$error';
+      firebaseSyncLabel = 'Erreur Firebase';
+      debugPrint('Zone0 Firebase sync failed: $label: $error');
+    } finally {
+      isFirebaseSyncing = false;
+      notifyListeners();
+    }
   }
 }
 

@@ -258,7 +258,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 ### 6. Systemes branches
 
 - Jauge de vegetalisation branchee dans `CampHeartState` et sauvegardee dans `users/{uid}/game/zone0.campHeart`.
-- Depot Organique branche sur le stock global Maison via `Zone0GameState.inventory`; consomme les stacks `Organique`.
+- Depot Organique branche sur le stock global Maison via `Zone0GameState.inventory`; consomme les stacks `Organique`. Le statut Firebase est visible dans l'inventaire pour diagnostiquer les refus de rules/reseau.
 - Passage de niveau/stade branche localement avec message SnackBar.
 - Population, bonheur refuge, limite P'TIPOTES confort et activite locale sont affiches/prepares mais pas encore appliques aux autres systemes.
 
@@ -280,7 +280,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | Fichier | Role |
 | --- | --- |
 | `ptipote-app/lib/features/game/lisiere_forage_config.dart` | Source Flutter des biomes, durees, intensites, gains, couts Vitalite, risques, limites inventaire. |
-| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat Zone 0: Vitalite override, missions persistantes, resolution centralisee, inventaire global, rapports/messages, securite fallback, persistance Firestore V1. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat Zone 0: Vitalite override, missions persistantes, resolution centralisee, inventaire global, rapports/messages, securite fallback, persistance Firestore V1 et statut de synchro Firebase. |
 | `ptipote-app/lib/features/game/refuge_page.dart` | Ecran Lisiere proche, lancement mission, tick de resolution, Maison avec inventaire, boite aux lettres et pastilles. |
 | `ptipote-dashboard/lisiere-forage-config.json` | Miroir JSON des temps/gains/couts/risques Lisiere pour consultation/export dashboard. |
 | `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglet dashboard `Lisiere / Fourrage` en lecture/export. |
@@ -330,9 +330,11 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Emplacement code: `Zone0GameState.inventory` et `Zone0InventorySheet` dans `refuge_page.dart`.
 - Accessible depuis la Maison via icone caisse en bas a droite.
 - Limite: 10 slots, stack max 10, ressources supportees `Organique`, `Mineral`, et Bio-batterie preparee par convention mais pas encore generee.
+- UI: grille mobile 3 colonnes, 9 slots + 1 slot bonus, cases arrondies, icone ressource au centre et quantite en haut a droite.
 - Inventaire plein: la Lisiere affiche un avertissement rouge avant depart si les gains potentiels depassent la capacite; le rapport marque le surplus perdu.
 - Le Cœur du Camp consomme maintenant le stock `Organique` de cet inventaire global via `Zone0GameState.removeResource`.
 - Inventaire sauvegarde dans `users/{uid}/game/zone0.inventory`.
+- Diagnostic Firebase: la feuille inventaire affiche le dernier etat de synchro (`Synchronise`, `Erreur Firebase`, utilisateur non pret) et le dernier message d'erreur.
 
 ### 8. Rapports / messages P'TIPOTE
 
