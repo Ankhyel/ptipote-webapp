@@ -136,6 +136,34 @@ class FigurineService {
     await batch.commit();
   }
 
+  Future<void> cacheMyFigurineImagePath({
+    required PtipoteFigurine figurine,
+    required String imagePath,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final cleanPath = imagePath.trim();
+    if (cleanPath.isEmpty || cleanPath.contains('bplaceholder')) return;
+
+    final ref = _collectionFor(user.uid).doc(figurine.id);
+    final snapshot = await ref.get();
+    final data = snapshot.data() ?? const <String, dynamic>{};
+    final fields = Map<String, dynamic>.from(
+      data['fields'] as Map<String, dynamic>? ?? const <String, dynamic>{},
+    );
+    fields['imagePath'] = cleanPath;
+    fields['img'] = cleanPath;
+
+    await ref.set(
+      <String, dynamic>{
+        'imagePath': cleanPath,
+        'fields': fields,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   Future<void> requestTransfer({
     required PtipoteFigurine figurine,
     required UserProfile fromProfile,
@@ -789,6 +817,7 @@ class FigurineService {
     final fields = fieldsData.map((key, value) => MapEntry(key, '$value'));
     fields['o'] = '${data['ownerName'] ?? fields['o'] ?? ''}';
     fields['on'] = '${data['breederNumber'] ?? fields['on'] ?? ''}';
+    fields['imagePath'] = '${data['imagePath'] ?? fields['imagePath'] ?? ''}';
 
     final createdAt = data['createdAt'];
     final updatedAt = data['updatedAt'];

@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../figurines/ptipote_figurine.dart';
@@ -11,6 +14,8 @@ class Zone0GameState extends ChangeNotifier {
 
   static final Zone0GameState instance = Zone0GameState._();
   final math.Random _random = math.Random();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   final Map<String, int> vitalityOverrides = <String, int>{};
   final Map<String, int> xpOverrides = <String, int>{};
@@ -22,6 +27,7 @@ class Zone0GameState extends ChangeNotifier {
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
 
   int refugeSafety = lisiereForageConfig.refugeSafetyFallback;
+  bool _loadedFromFirebase = false;
 
   int vitalityFor(PtipoteFigurine figurine) {
     return vitalityOverrides[figurine.id] ?? figurine.vitality;
@@ -60,6 +66,44 @@ class Zone0GameState extends ChangeNotifier {
         .fold(0, (total, stack) => total + stack.amount);
   }
 
+  int inventoryFreeCapacityFor(Map<String, int> rewards) {
+    final simulated = inventory
+        .map(
+          (stack) => Zone0InventoryStack(
+            resource: stack.resource,
+            amount: stack.amount,
+          ),
+        )
+        .toList();
+    var freeSlots = lisiereForageConfig.inventorySlotLimit - simulated.length;
+    var capacity = 0;
+
+    for (final entry in rewards.entries) {
+      var remaining = math.max(0, entry.value);
+      for (final stack
+          in simulated.where((stack) => stack.resource == entry.key)) {
+        if (remaining <= 0) break;
+        final room = lisiereForageConfig.inventoryStackLimit - stack.amount;
+        if (room <= 0) continue;
+        final add = math.min(room, remaining);
+        stack.amount += add;
+        remaining -= add;
+        capacity += add;
+      }
+
+      while (remaining > 0 && freeSlots > 0) {
+        final add =
+            math.min(remaining, lisiereForageConfig.inventoryStackLimit);
+        simulated.add(Zone0InventoryStack(resource: entry.key, amount: add));
+        freeSlots -= 1;
+        remaining -= add;
+        capacity += add;
+      }
+    }
+
+    return capacity;
+  }
+
   int removeResource(String resource, int requestedAmount) {
     var remaining = math.max(0, requestedAmount);
     var removed = 0;
@@ -74,8 +118,40 @@ class Zone0GameState extends ChangeNotifier {
         inventory.remove(stack);
       }
     }
-    if (removed > 0) notifyListeners();
+    if (removed > 0) {
+      notifyListeners();
+      unawaited(saveInventoryToFirebase());
+    }
     return removed;
+  }
+
+  Future<void> loadFromFirebase() async {
+    if (_loadedFromFirebase) return;
+    final user = _auth.currentUser;
+    if (user == null) return;
+    _loadedFromFirebase = true;
+
+    final snapshot = await _zone0Doc(user.uid).get();
+    final data = snapshot.data();
+    if (data == null) return;
+
+    final inventoryData = data['inventory'];
+    if (inventoryData is List) {
+      inventory
+        ..clear()
+        ..addAll(
+          inventoryData
+              .whereType<Map>()
+              .map(
+                (item) => Zone0InventoryStack(
+                  resource: '${item['resource'] ?? ''}',
+                  amount: _readInt(item['amount']),
+                ),
+              )
+              .where((stack) => stack.resource.isNotEmpty && stack.amount > 0),
+        );
+      notifyListeners();
+    }
   }
 
   ForageMission startForageMission({
@@ -170,6 +246,7 @@ class Zone0GameState extends ChangeNotifier {
       }
     }
 
+    if (addedAny) unawaited(saveInventoryToFirebase());
     return InventoryAddResult(addedAny: addedAny, pending: pending);
   }
 
@@ -215,6 +292,11 @@ class Zone0GameState extends ChangeNotifier {
 
     final inventoryResult = addResources(rewards);
     final xpResult = addMissionXp(mission.figurineId, mission.xpGain);
+    unawaited(persistFigurineProgress(
+      figurineId: mission.figurineId,
+      xp: xpResult.xp,
+      level: xpResult.level,
+    ));
     final vitality = vitalityOverrides[mission.figurineId] ?? 0;
     reports.add(
       PtipoteMissionReport(
@@ -255,6 +337,89 @@ class Zone0GameState extends ChangeNotifier {
       level: level,
       leveledUp: leveledUp,
     );
+  }
+
+  Future<Map<String, dynamic>?> loadCampHeartFromFirebase() async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    final snapshot = await _zone0Doc(user.uid).get();
+    return snapshot.data()?['campHeart'] as Map<String, dynamic>?;
+  }
+
+  Future<void> saveCampHeartToFirebase(Map<String, dynamic> campHeart) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await _zone0Doc(user.uid).set(
+      <String, dynamic>{
+        'campHeart': campHeart,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> saveInventoryToFirebase() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await _zone0Doc(user.uid).set(
+      <String, dynamic>{
+        'inventory': inventory
+            .map(
+              (stack) => <String, dynamic>{
+                'resource': stack.resource,
+                'amount': stack.amount,
+              },
+            )
+            .toList(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> persistFigurineProgress({
+    required String figurineId,
+    required int xp,
+    required int level,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final ref = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('figurines')
+        .doc(figurineId);
+    final snapshot = await ref.get();
+    final data = snapshot.data() ?? const <String, dynamic>{};
+    final fields = Map<String, dynamic>.from(
+      data['fields'] as Map<String, dynamic>? ?? const <String, dynamic>{},
+    );
+    fields['x'] = '$xp';
+    fields['xp'] = '$xp';
+    fields['l'] = '$level';
+    fields['level'] = '$level';
+
+    await ref.set(
+      <String, dynamic>{
+        'fields': fields,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  DocumentReference<Map<String, dynamic>> _zone0Doc(String uid) {
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('game')
+        .doc('zone0');
+  }
+
+  int _readInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? 0;
   }
 }
 

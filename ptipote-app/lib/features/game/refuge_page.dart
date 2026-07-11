@@ -101,6 +101,11 @@ class _RefugePageState extends State<RefugePage> {
   }
 
   Future<void> _warmAssets() async {
+    await _zone0State.loadFromFirebase();
+    final campHeartData = await _zone0State.loadCampHeartFromFirebase();
+    if (campHeartData != null) {
+      _campHeartState.applyFirebaseData(campHeartData);
+    }
     _refugeAsset = await _assetResolver.resolve('Camp');
     if (mounted) setState(() {});
   }
@@ -296,13 +301,17 @@ class _MaisonPageState extends State<_MaisonPage>
       _recoveryTick += 1;
       final vitalityUpdates = <String, int>{};
       final idsToClear = <String>[];
+      final alcoveRecoveryPerTick = math.max(
+        1,
+        (ptipoteStatsConfig.alcoveVitalityRecoveryPerMinute / 2).round(),
+      );
       for (final entry in _gameState.vitalityOverrides.entries) {
         final isResting =
             entry.value <= ptipoteStatsConfig.minVitalityBeforeAutoRest;
         if (!isResting && _recoveryTick.isOdd) continue;
         final nextVitality = math.min(
           ptipoteStatsConfig.maxVitality,
-          entry.value + ptipoteStatsConfig.vitalityRecoveryPerMinute,
+          entry.value + alcoveRecoveryPerTick,
         );
         if (nextVitality >= ptipoteStatsConfig.maxVitality) {
           idsToClear.add(entry.key);
@@ -1036,8 +1045,11 @@ class _PtipoteSprite extends StatefulWidget {
 class _PtipoteSpriteState extends State<_PtipoteSprite> {
   static const _baseUrl = 'https://app.ptipotes.com/img';
   static const _extensions = <String>['png', 'webp', 'jpg', 'jpeg'];
+  static final Map<String, String> _resolvedImageCache = <String, String>{};
+  final _figurineService = FigurineService();
   late List<String> _candidates;
   int _index = 0;
+  bool _savedResolvedPath = false;
 
   @override
   void initState() {
@@ -1049,26 +1061,42 @@ class _PtipoteSpriteState extends State<_PtipoteSprite> {
   void didUpdateWidget(covariant _PtipoteSprite oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.figurine.type != widget.figurine.type ||
-        oldWidget.figurine.species != widget.figurine.species) {
+        oldWidget.figurine.species != widget.figurine.species ||
+        oldWidget.figurine.imagePath != widget.figurine.imagePath) {
       _candidates = _buildCandidates();
       _index = 0;
+      _savedResolvedPath = false;
     }
   }
 
   List<String> _buildCandidates() {
+    final cached = _resolvedImageCache[widget.figurine.id];
+    final saved = widget.figurine.imagePath;
     final names = <String>{
       widget.figurine.type.trim(),
       widget.figurine.species.trim(),
     }..removeWhere((value) => value.isEmpty || value == '-');
 
     final urls = <String>[];
+    if (cached != null && cached.isNotEmpty) urls.add(cached);
+    if (saved.isNotEmpty) urls.add(saved);
     for (final name in names) {
       for (final ext in _extensions) {
         urls.add('$_baseUrl/${Uri.encodeComponent(name)}.$ext');
       }
     }
     urls.add('$_baseUrl/bplaceholder.png');
-    return urls;
+    return urls.toSet().toList();
+  }
+
+  void _rememberResolvedPath(String url) {
+    if (_savedResolvedPath || url.contains('bplaceholder')) return;
+    _savedResolvedPath = true;
+    _resolvedImageCache[widget.figurine.id] = url;
+    unawaited(_figurineService.cacheMyFigurineImagePath(
+      figurine: widget.figurine,
+      imagePath: url,
+    ));
   }
 
   @override
@@ -1079,6 +1107,14 @@ class _PtipoteSpriteState extends State<_PtipoteSprite> {
       child: Image.network(
         url,
         fit: BoxFit.contain,
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (wasSynchronouslyLoaded || frame != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _rememberResolvedPath(url);
+            });
+          }
+          return child;
+        },
         errorBuilder: (context, error, stackTrace) {
           if (_index < _candidates.length - 1) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1428,7 +1464,7 @@ class MissionReportsSheet extends StatelessWidget {
                       Text('Vitalité restante : ${report.vitalityRemaining}'),
                       if (report.inventoryFull)
                         const Text(
-                          'Inventaire plein : certaines ressources attendent.',
+                          'Inventaire plein : le surplus est perdu.',
                         ),
                       const SizedBox(height: 4),
                       Text(
@@ -1516,6 +1552,14 @@ class _LisierePageState extends State<LisierePage> {
             final groupEstimate = estimates.isEmpty
                 ? null
                 : ForageGroupEstimate.fromEstimates(estimates.values);
+            final inventoryOverflow = groupEstimate == null
+                ? 0
+                : math.max(
+                    0,
+                    groupEstimate.totalRewards -
+                        widget.gameState
+                            .inventoryFreeCapacityFor(groupEstimate.rewards),
+                  );
             return ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
@@ -1606,6 +1650,18 @@ class _LisierePageState extends State<LisierePage> {
                     selectedCount: selectedFigurines.length,
                   ),
                 const SizedBox(height: 12),
+                if (inventoryOverflow > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      'Attention : les gains potentiels dépassent le stock disponible. Environ $inventoryOverflow ressource(s) seront perdues si rien n’est rangé.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 FilledButton.icon(
                   onPressed: groupEstimate?.canLaunch == true
                       ? () => _launchMissions(estimates)
@@ -1769,6 +1825,10 @@ class ForageEstimate {
   final String riskLabel;
   final String zoneFatigueLabel;
   final bool canLaunch;
+
+  int get totalRewards {
+    return rewards.values.fold(0, (total, amount) => total + amount);
+  }
 }
 
 class ForageGroupEstimate {
@@ -1826,6 +1886,10 @@ class ForageGroupEstimate {
   final String riskLabel;
   final String zoneFatigueLabel;
   final bool canLaunch;
+
+  int get totalRewards {
+    return rewards.values.fold(0, (total, amount) => total + amount);
+  }
 }
 
 class _ForageChoiceCard extends StatelessWidget {
@@ -2002,7 +2066,39 @@ class CampHeartState extends ChangeNotifier {
     }
 
     notifyListeners();
+    unawaited(gameState.saveCampHeartToFirebase(toFirebaseData()));
     return levelUpMessage ?? '+$amount Organique investi.';
+  }
+
+  void applyFirebaseData(Map<String, dynamic> data) {
+    campHeartLevel = _readInt(data['campHeartLevel'], fallback: campHeartLevel);
+    vegetalizationXp =
+        _readInt(data['vegetalizationXp'], fallback: vegetalizationXp);
+    totalVegetalizationInvested = _readInt(
+      data['totalVegetalizationInvested'],
+      fallback: totalVegetalizationInvested,
+    );
+    notifyListeners();
+  }
+
+  Map<String, dynamic> toFirebaseData() {
+    return <String, dynamic>{
+      'campHeartLevel': campHeartLevel,
+      'campStage': campStage.name,
+      'vegetalizationXp': vegetalizationXp,
+      'vegetalizationXpRequired': vegetalizationXpRequired,
+      'totalVegetalizationInvested': totalVegetalizationInvested,
+      'activePtipoteComfortLimit': activePtipoteComfortLimit,
+      'populationMin': populationMin,
+      'populationMax': populationMax,
+      'refugeHappinessBonus': refugeHappinessBonus,
+    };
+  }
+
+  int _readInt(Object? value, {required int fallback}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? fallback;
   }
 }
 

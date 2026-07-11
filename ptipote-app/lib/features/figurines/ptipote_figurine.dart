@@ -113,6 +113,14 @@ class PtipoteFigurine {
   String get type =>
       fields['t']?.trim().isNotEmpty == true ? fields['t']!.trim() : '-';
 
+  String get imagePath {
+    final value = fields['imagePath']?.trim();
+    if (value != null && value.isNotEmpty) return value;
+    final short = fields['img']?.trim();
+    if (short != null && short.isNotEmpty) return short;
+    return '';
+  }
+
   PtipoteElementType get elementType {
     final value = _normalize(fields['type'] ?? fields['t']);
     if (value.contains('miner')) return PtipoteElementType.mineral;

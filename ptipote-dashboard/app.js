@@ -40,6 +40,7 @@ const PTIPOTE_STATS_STORAGE_KEY = "ptipote_stats_config_v1";
 const PTIPOTE_STATS_FIELDS = [
   "maxVitality",
   "vitalityRecoveryPerMinute",
+  "alcoveVitalityRecoveryPerMinute",
   "minVitalityBeforeAutoRest",
   "baseHappiness",
   "maxHappiness",

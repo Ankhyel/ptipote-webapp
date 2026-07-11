@@ -26,6 +26,7 @@ class PtipoteStatsConfig {
   const PtipoteStatsConfig({
     required this.maxVitality,
     required this.vitalityRecoveryPerMinute,
+    required this.alcoveVitalityRecoveryPerMinute,
     required this.minVitalityBeforeAutoRest,
     required this.baseHappiness,
     required this.maxHappiness,
@@ -42,6 +43,7 @@ class PtipoteStatsConfig {
 
   final int maxVitality;
   final int vitalityRecoveryPerMinute;
+  final int alcoveVitalityRecoveryPerMinute;
   final int minVitalityBeforeAutoRest;
   final int baseHappiness;
   final int maxHappiness;
@@ -86,6 +88,7 @@ class PtipoteStatModifier {
 const ptipoteStatsConfig = PtipoteStatsConfig(
   maxVitality: 100,
   vitalityRecoveryPerMinute: 1,
+  alcoveVitalityRecoveryPerMinute: 2,
   minVitalityBeforeAutoRest: 20,
   baseHappiness: 70,
   maxHappiness: 100,

@@ -127,8 +127,9 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | Fichier | Role |
 | --- | --- |
 | `ptipote-app/lib/features/figurines/ptipote_stats_config.dart` | Source Flutter des stats V1: valeurs de base, enums, modificateurs type/enveloppe, formule XP. |
-| `ptipote-app/lib/features/figurines/ptipote_figurine.dart` | Getters calcules: vitalite 100, bonheur, EVG, niveau/XP, etat, preference automatique, modificateurs. |
+| `ptipote-app/lib/features/figurines/ptipote_figurine.dart` | Getters calcules: vitalite 100, bonheur, EVG, niveau/XP, etat, preference automatique, modificateurs, chemin image cache. |
 | `ptipote-app/lib/features/game/refuge_page.dart` | Maison: deplacement, alcoves, recuperation automatique, fiche P'TIPOTE, preference Maison/Tour/Marche. |
+| `ptipote-app/lib/services/figurine_service.dart` | Lecture/ecriture Firestore des figurines, cache du chemin image resolu. |
 | `ptipote-dashboard/ptipote-stats-config.json` | Miroir JSON des stats de base pour edition/export depuis le dashboard. |
 | `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`, `ptipote-dashboard/styles.css` | Onglet dashboard `Stat Ptipote` qui charge, modifie localement et exporte le JSON. |
 
@@ -145,6 +146,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | --- | --- | --- |
 | `maxVitality` | `100` | `ptipote_stats_config.dart` + `ptipote-stats-config.json` |
 | `vitalityRecoveryPerMinute` | `1` | idem |
+| `alcoveVitalityRecoveryPerMinute` | `2` | idem |
 | `minVitalityBeforeAutoRest` | `20` | idem |
 | `baseHappiness` | `70` | idem |
 | `maxHappiness` | `100` | idem |
@@ -184,7 +186,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Max V1: `100`.
 - Seuils: `80-100` en forme, `50-79` disponible, `21-49` fatigue, `0-20` repos necessaire.
 - A `20` ou moins, la Maison place le P'TIPOTE dans une alcove et bloque le deplacement.
-- Recuperation V1 Maison: hors alcove `+1/min`, en alcove `+1/30s` pour simuler `+2/min`.
+- Recuperation V1 Maison: hors alcove `+1/min`, en alcove `+2/min` configurable via `alcoveVitalityRecoveryPerMinute` et applique par tick de 30s.
 - Ne depasse jamais `maxVitality`; a `100`, l'override local est retire et le P'TIPOTE revient a `wanderingHome`.
 
 ### 7. Affectation automatique
@@ -200,11 +202,12 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 - Tour non branchee: `helpingTower` et `safetyContribution` prepares mais pas actifs.
 - Marche non branche: `helpingMarket` et `marketContribution` prepares mais pas actifs.
-- Missions Lisiere non branchees au modele Flutter: `onMission` prepare mais pas actif.
+- Missions Lisiere branchees en local runtime: un P'TIPOTE en mission est masque de la Maison; l'etat Firestore `behaviorState` reste a brancher plus tard.
 - Bio-batterie / Energie joueur non branchee dans cette V1 stats.
 - Bonheur existe (`baseHappiness`, bornes, helpers `addHappiness`/`reduceHappiness`) mais ses effets restent a integrer: calin, nourriture, repos, mission reussie, accident en Lisiere.
 - Enveloppes non finalisees cote cartes: modificateurs prepares avec fallback `standard`.
 - Dashboard `Stat Ptipote` visible comme onglet separe, non synchronise automatiquement avec Flutter/Firebase: edition locale et export JSON seulement.
+- Cache image: `fields.imagePath` / `fields.img` et champ top-level `imagePath` peuvent stocker l'URL resolue pour eviter de retester les extensions a chaque affichage.
 
 ## Coeur Du Camp V1 - Progression Du Refuge
 
@@ -253,14 +256,14 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 ### 6. Systemes branches
 
-- Jauge de vegetalisation branchee en local session dans `CampHeartState`.
+- Jauge de vegetalisation branchee dans `CampHeartState` et sauvegardee dans `users/{uid}/game/zone0.campHeart`.
 - Depot Organique branche sur le stock global Maison via `Zone0GameState.inventory`; consomme les stacks `Organique`.
 - Passage de niveau/stade branche localement avec message SnackBar.
 - Population, bonheur refuge, limite P'TIPOTES confort et activite locale sont affiches/prepares mais pas encore appliques aux autres systemes.
 
 ### 7. Attentes / placeholders
 
-- Persistance Firestore/localStorage du Cœur non branchee: l'etat est local session pour V1.
+- Persistance Firestore du Cœur branchee sur `users/{uid}/game/zone0`; pas encore de synchro multi-device temps reel.
 - Atelier affiche comme deblocage Refuge mais gameplay complet non branche.
 - Tour affichee comme deblocage Refuge mais aide/securite non branchee.
 - Marche non branche: population et `localActivityModifier` seulement prepares.
@@ -276,7 +279,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | Fichier | Role |
 | --- | --- |
 | `ptipote-app/lib/features/game/lisiere_forage_config.dart` | Source Flutter des biomes, durees, intensites, gains, couts Vitalite, risques, limites inventaire. |
-| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat local Zone 0: Vitalite override, missions, resolution centralisee, inventaire global, rapports/messages, securite fallback. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat Zone 0: Vitalite override, missions, resolution centralisee, inventaire global, rapports/messages, securite fallback, persistance Firestore V1. |
 | `ptipote-app/lib/features/game/refuge_page.dart` | Ecran Lisiere proche, lancement mission, tick de resolution, Maison avec inventaire, boite aux lettres et pastilles. |
 | `ptipote-dashboard/lisiere-forage-config.json` | Miroir JSON des temps/gains/couts/risques Lisiere pour consultation/export dashboard. |
 | `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglet dashboard `Lisiere / Fourrage` en lecture/export. |
@@ -310,8 +313,8 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Modele local `ForageMission`: id, figurineId, figurineName, biome, duree theorique, duree test, intensite, startTime, endTime, expectedRewards, vitalityCost, riskPercent, riskLabel, xpGain, status.
 - Etats mission: `active`, `completed`.
 - Lancement: choisit un ou plusieurs P'TIPOTES/duree/intensite/biome, verifie Vitalite, deduit la Vitalite et cree une mission active par P'TIPOTE.
-- Resolution: centralisee dans `Zone0GameState.resolveDueForageMissions()`, appelee par un tick depuis `RefugePage` et a l'ouverture de la Lisiere. Elle applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, ajoute l'XP locale au P'TIPOTE, gere le level-up local, cree un rapport non lu.
-- Etat `onMission` prepare via mission active locale; les champs Firestore P'TIPOTE ne sont pas encore modifies. Un P'TIPOTE en mission est masque de la Maison pendant la mission.
+- Resolution: centralisee dans `Zone0GameState.resolveDueForageMissions()`, appelee par un tick depuis `RefugePage` et a l'ouverture de la Lisiere. Elle applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, ajoute l'XP au P'TIPOTE, gere le level-up, sauvegarde `fields.x/xp/l/level` dans Firestore, cree un rapport non lu.
+- Etat `onMission` prepare via mission active locale; les champs Firestore P'TIPOTE `behaviorState` restent a brancher. Un P'TIPOTE en mission est masque de la Maison pendant la mission.
 
 ### 6. Risques
 
@@ -326,8 +329,9 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Emplacement code: `Zone0GameState.inventory` et `Zone0InventorySheet` dans `refuge_page.dart`.
 - Accessible depuis la Maison via icone caisse en bas a droite.
 - Limite: 10 slots, stack max 10, ressources supportees `Organique`, `Mineral`, et Bio-batterie preparee par convention mais pas encore generee.
-- Inventaire plein: le rapport marque que certaines ressources attendent; aucune suppression silencieuse intentionnelle.
+- Inventaire plein: la Lisiere affiche un avertissement rouge avant depart si les gains potentiels depassent la capacite; le rapport marque le surplus perdu.
 - Le Cœur du Camp consomme maintenant le stock `Organique` de cet inventaire global via `Zone0GameState.removeResource`.
+- Inventaire sauvegarde dans `users/{uid}/game/zone0.inventory`.
 
 ### 8. Rapports / messages P'TIPOTE
 
@@ -341,7 +345,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Tour non branchee: Securite refuge par defaut `50`.
 - Marche non branche: autoAssignment `market` fallback Maison existant.
 - Stock Atelier non branche: transfert Maison <-> Atelier et drag and drop prevus plus tard.
-- Persistance missions/inventaire/rapports/XP mission non branchee; tout est local session pour tester la boucle.
+- Persistance missions/rapports non branchee; inventaire, Cœur et XP/niveau P'TIPOTE sont sauvegardes Firestore.
 - Lisiere lointaine, batiments de biomes, Refuge PTIBUG, puzzle tokens et auto-battler non developpes.
 
 ## Flux Principaux
