@@ -203,7 +203,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 - Tour non branchee: `helpingTower` et `safetyContribution` prepares mais pas actifs.
 - Marche non branche: `helpingMarket` et `marketContribution` prepares mais pas actifs.
-- Missions Lisiere branchees en local runtime: un P'TIPOTE en mission est masque de la Maison; un P'TIPOTE en mission ou en repos est considere `occupe` et n'est pas selectionnable en Lisiere. L'etat Firestore `behaviorState` reste a brancher plus tard.
+- Missions Lisiere branchees en runtime avec sauvegarde Firebase V1: un P'TIPOTE en mission est masque de la Maison; un P'TIPOTE en mission ou en repos est considere `occupe` et n'est pas selectionnable en Lisiere. Les missions actives et `vitalityOverrides` sont stockes dans `users/{uid}/game/zone0` pour survivre aux reloads/builds. L'etat Firestore `behaviorState` reste a brancher plus tard.
 - Bio-batterie / Energie joueur non branchee dans cette V1 stats.
 - Bonheur existe (`baseHappiness`, bornes, helpers `addHappiness`/`reduceHappiness`) mais ses effets restent a integrer: calin, nourriture, repos, mission reussie, accident en Lisiere.
 - Enveloppes non finalisees cote cartes: modificateurs prepares avec fallback `standard`.
@@ -280,7 +280,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | Fichier | Role |
 | --- | --- |
 | `ptipote-app/lib/features/game/lisiere_forage_config.dart` | Source Flutter des biomes, durees, intensites, gains, couts Vitalite, risques, limites inventaire. |
-| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat Zone 0: Vitalite override, missions, resolution centralisee, inventaire global, rapports/messages, securite fallback, persistance Firestore V1. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat Zone 0: Vitalite override, missions persistantes, resolution centralisee, inventaire global, rapports/messages, securite fallback, persistance Firestore V1. |
 | `ptipote-app/lib/features/game/refuge_page.dart` | Ecran Lisiere proche, lancement mission, tick de resolution, Maison avec inventaire, boite aux lettres et pastilles. |
 | `ptipote-dashboard/lisiere-forage-config.json` | Miroir JSON des temps/gains/couts/risques Lisiere pour consultation/export dashboard. |
 | `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglet dashboard `Lisiere / Fourrage` en lecture/export. |
@@ -311,11 +311,11 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 ### 5. Mission model
 
-- Modele local `ForageMission`: id, figurineId, figurineName, biome, duree theorique, duree test, intensite, startTime, endTime, expectedRewards, vitalityCost, riskPercent, riskLabel, xpGain, status.
+- Modele `ForageMission`: id, figurineId, figurineName, biome, duree theorique, duree test, intensite, startTime, endTime, expectedRewards, vitalityCost, riskPercent, riskLabel, xpGain, status. Serialize/deserialise vers Firebase.
 - Etats mission: `active`, `completed`.
 - Lancement: choisit un ou plusieurs P'TIPOTES/duree/intensite/biome, verifie Vitalite et disponibilite (`non occupe`), deduit la Vitalite et cree une mission active par P'TIPOTE.
 - Resolution: centralisee dans `Zone0GameState.resolveDueForageMissions()`, appelee par un tick depuis `RefugePage` et a l'ouverture de la Lisiere. Elle applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, ajoute l'XP au P'TIPOTE, gere le level-up, sauvegarde `fields.x/xp/l/level` dans Firestore, cree un rapport non lu.
-- Etat `onMission` prepare via mission active locale; les champs Firestore P'TIPOTE `behaviorState` restent a brancher. Un P'TIPOTE en mission est masque de la Maison pendant la mission.
+- Etat `onMission` determine via mission active sauvegardee; les champs Firestore P'TIPOTE `behaviorState` restent a brancher. Un P'TIPOTE en mission est masque de la Maison pendant la mission.
 
 ### 6. Risques
 

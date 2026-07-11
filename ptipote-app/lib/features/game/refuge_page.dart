@@ -102,6 +102,7 @@ class _RefugePageState extends State<RefugePage> {
 
   Future<void> _warmAssets() async {
     await _zone0State.loadFromFirebase();
+    _zone0State.resolveDueForageMissions();
     final campHeartData = await _zone0State.loadCampHeartFromFirebase();
     if (campHeartData != null) {
       _campHeartState.applyFirebaseData(campHeartData);
@@ -293,6 +294,7 @@ class _MaisonPageState extends State<_MaisonPage>
       _gameState.vitalityOverrides[id] = math.max(0, current - 25);
       _selectedFigurineId = id;
     });
+    unawaited(_gameState.saveRuntimeToFirebase());
   }
 
   void _recoverVitalityStep() {
@@ -324,6 +326,7 @@ class _MaisonPageState extends State<_MaisonPage>
         _gameState.vitalityOverrides.remove(id);
       }
     });
+    unawaited(_gameState.saveRuntimeToFirebase());
   }
 
   void _setAutoPreference(
@@ -728,7 +731,7 @@ class _AlcoveLayer extends StatelessWidget {
               final left = constraints.maxWidth * (0.18 + index * 0.29);
               return Positioned(
                 left: left,
-                top: constraints.maxHeight * 0.33,
+                top: constraints.maxHeight * 0.28,
                 width: alcoveWidth,
                 height: alcoveHeight,
                 child: CustomPaint(painter: _AlcovePainter()),
@@ -946,7 +949,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                     ptipoteStatsConfig.maxVitality;
                 return Positioned(
                   left: alcoveCenter - spriteSize / 2,
-                  top: constraints.maxHeight * 0.31,
+                  top: constraints.maxHeight * 0.26,
                   width: spriteSize,
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
@@ -2167,7 +2170,8 @@ class CampHeartState extends ChangeNotifier {
   }
 
   void applyFirebaseData(Map<String, dynamic> data) {
-    campHeartLevel = _readInt(data['campHeartLevel'], fallback: campHeartLevel);
+    campHeartLevel = _readInt(data['campHeartLevel'], fallback: campHeartLevel)
+        .clamp(1, campHeartConfig.stages.length);
     vegetalizationXp =
         _readInt(data['vegetalizationXp'], fallback: vegetalizationXp);
     totalVegetalizationInvested = _readInt(

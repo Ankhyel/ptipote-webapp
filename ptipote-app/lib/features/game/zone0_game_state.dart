@@ -78,6 +78,7 @@ class Zone0GameState extends ChangeNotifier {
     vitalityOverrides[figurine.id] =
         math.max(vitalityFor(figurine), wakeVitality);
     notifyListeners();
+    unawaited(saveRuntimeToFirebase());
   }
 
   int resourceAmount(String resource) {
@@ -170,8 +171,32 @@ class Zone0GameState extends ChangeNotifier {
               )
               .where((stack) => stack.resource.isNotEmpty && stack.amount > 0),
         );
-      notifyListeners();
     }
+
+    final vitalityData = data['vitalityOverrides'];
+    if (vitalityData is Map) {
+      vitalityOverrides
+        ..clear()
+        ..addEntries(
+          vitalityData.entries.map(
+            (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
+          ),
+        );
+    }
+
+    final missionData = data['missions'];
+    if (missionData is List) {
+      missions
+        ..clear()
+        ..addAll(
+          missionData
+              .whereType<Map>()
+              .map(ForageMission.fromFirebase)
+              .whereType<ForageMission>(),
+        );
+    }
+
+    notifyListeners();
   }
 
   ForageMission startForageMission({
@@ -212,6 +237,7 @@ class Zone0GameState extends ChangeNotifier {
       vitalityFor(figurine) - vitalityCost,
     );
     notifyListeners();
+    unawaited(saveRuntimeToFirebase());
     return mission;
   }
 
@@ -224,7 +250,10 @@ class Zone0GameState extends ChangeNotifier {
       _resolveMission(mission, completedAt: currentTime);
       resolvedAny = true;
     }
-    if (resolvedAny) notifyListeners();
+    if (resolvedAny) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
     return resolvedAny;
   }
 
@@ -352,6 +381,7 @@ class Zone0GameState extends ChangeNotifier {
 
     levelOverrides[figurineId] = level;
     xpOverrides[figurineId] = xp;
+    unawaited(saveRuntimeToFirebase());
     return PtipoteXpGainResult(
       xp: xp,
       level: level,
@@ -391,6 +421,19 @@ class Zone0GameState extends ChangeNotifier {
               },
             )
             .toList(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  Future<void> saveRuntimeToFirebase() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await _zone0Doc(user.uid).set(
+      <String, dynamic>{
+        'vitalityOverrides': vitalityOverrides,
+        'missions': missions.map((mission) => mission.toFirebase()).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
@@ -490,6 +533,45 @@ class ForageMission {
     required this.xpGain,
   });
 
+  factory ForageMission.fromFirebase(Map<dynamic, dynamic> data) {
+    final biome = _enumByName(
+      ForageBiome.values,
+      '${data['biome'] ?? ''}',
+      ForageBiome.colline,
+    );
+    final duration = _enumByName(
+      ForageDuration.values,
+      '${data['duration'] ?? ''}',
+      ForageDuration.oneHour,
+    );
+    final intensity = _enumByName(
+      ForageIntensity.values,
+      '${data['intensity'] ?? ''}',
+      ForageIntensity.normal,
+    );
+    final mission = ForageMission(
+      id: '${data['id'] ?? 'mission-${DateTime.now().microsecondsSinceEpoch}'}',
+      figurineId: '${data['figurineId'] ?? ''}',
+      figurineName: '${data['figurineName'] ?? 'P’TIPOTE'}',
+      biome: biome,
+      duration: duration,
+      intensity: intensity,
+      startTime: _readDate(data['startTime']) ?? DateTime.now(),
+      endTime: _readDate(data['endTime']) ?? DateTime.now(),
+      expectedRewards: _readIntMap(data['expectedRewards']),
+      vitalityCost: _readStaticInt(data['vitalityCost']),
+      riskPercent: _readStaticInt(data['riskPercent']),
+      riskLabel: '${data['riskLabel'] ?? 'normal'}',
+      xpGain: _readStaticInt(data['xpGain']),
+    );
+    mission.status = _enumByName(
+      ForageMissionStatus.values,
+      '${data['status'] ?? ''}',
+      ForageMissionStatus.active,
+    );
+    return mission;
+  }
+
   final String id;
   final String figurineId;
   final String figurineName;
@@ -504,6 +586,56 @@ class ForageMission {
   final String riskLabel;
   final int xpGain;
   ForageMissionStatus status = ForageMissionStatus.active;
+
+  Map<String, dynamic> toFirebase() {
+    return <String, dynamic>{
+      'id': id,
+      'figurineId': figurineId,
+      'figurineName': figurineName,
+      'biome': biome.name,
+      'duration': duration.name,
+      'intensity': intensity.name,
+      'startTime': Timestamp.fromDate(startTime),
+      'endTime': Timestamp.fromDate(endTime),
+      'expectedRewards': expectedRewards,
+      'vitalityCost': vitalityCost,
+      'riskPercent': riskPercent,
+      'riskLabel': riskLabel,
+      'xpGain': xpGain,
+      'status': status.name,
+    };
+  }
+
+  static T _enumByName<T extends Enum>(
+    List<T> values,
+    String name,
+    T fallback,
+  ) {
+    for (final value in values) {
+      if (value.name == name) return value;
+    }
+    return fallback;
+  }
+
+  static DateTime? _readDate(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  static Map<String, int> _readIntMap(Object? value) {
+    if (value is! Map) return const <String, int>{};
+    return value.map(
+      (key, amount) => MapEntry('$key', _readStaticInt(amount)),
+    )..removeWhere((_, amount) => amount <= 0);
+  }
+
+  static int _readStaticInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? 0;
+  }
 }
 
 class PtipoteMissionReport {
