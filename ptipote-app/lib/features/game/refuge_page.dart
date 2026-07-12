@@ -7,6 +7,7 @@ import '../../services/figurine_service.dart';
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'camp_heart_config.dart';
+import 'fablab_config.dart';
 import 'game_asset_resolver.dart';
 import 'lisiere_forage_config.dart';
 import 'zone0_game_state.dart';
@@ -125,11 +126,29 @@ class _RefugePageState extends State<RefugePage> {
               gameState: _zone0State,
             );
           }
-          if (building.name == 'FabLab') return const FablabPage();
+          if (building.name == 'FabLab') {
+            return FablabPage(
+              gameState: _zone0State,
+              campHeartLevel: _campHeartState.campHeartLevel,
+            );
+          }
           return _GameBuildingPage(building: building);
         },
       ),
     );
+  }
+
+  void _handleBuildingTap(_RefugeBuilding building) {
+    if (building.name == 'FabLab' && !_zone0State.isFablabBuilt) {
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (_) => FablabConstructionSheet(gameState: _zone0State),
+      );
+      return;
+    }
+    _openBuilding(building);
   }
 
   @override
@@ -178,7 +197,8 @@ class _RefugePageState extends State<RefugePage> {
                             notificationCount: building.name == 'Maison'
                                 ? _zone0State.unreadReportCount
                                 : 0,
-                            onTap: () => _openBuilding(building),
+                            gameState: _zone0State,
+                            onTap: () => _handleBuildingTap(building),
                           ),
                         ),
                       ],
@@ -456,12 +476,14 @@ class _BuildingHotspot extends StatelessWidget {
     required this.building,
     required this.onTap,
     this.campHeartState,
+    this.gameState,
     this.notificationCount = 0,
   });
 
   final _RefugeBuilding building;
   final VoidCallback onTap;
   final CampHeartState? campHeartState;
+  final Zone0GameState? gameState;
   final int notificationCount;
 
   @override
@@ -484,22 +506,7 @@ class _BuildingHotspot extends StatelessWidget {
               InkWell(
                 borderRadius: BorderRadius.circular(18),
                 onTap: onTap,
-                child: building.name == 'CampHeart' && campHeartState != null
-                    ? _CampHeartHotspotContent(state: campHeartState!)
-                    : Center(
-                        child: Text(
-                          building.title,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFF2B2116),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            shadows: <Shadow>[
-                              Shadow(color: Colors.white, blurRadius: 10),
-                            ],
-                          ),
-                        ),
-                      ),
+                child: _content(),
               ),
               if (notificationCount > 0)
                 Positioned(
@@ -509,6 +516,29 @@ class _BuildingHotspot extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _content() {
+    if (building.name == 'CampHeart' && campHeartState != null) {
+      return _CampHeartHotspotContent(state: campHeartState!);
+    }
+    if (building.name == 'FabLab' && gameState != null) {
+      return _FablabHotspotContent(gameState: gameState!);
+    }
+    return Center(
+      child: Text(
+        building.title,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFF2B2116),
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          shadows: <Shadow>[
+            Shadow(color: Colors.white, blurRadius: 10),
+          ],
         ),
       ),
     );
@@ -572,6 +602,55 @@ class _CampHeartHotspotContent extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FablabHotspotContent extends StatelessWidget {
+  const _FablabHotspotContent({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    final built = gameState.isFablabBuilt;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(
+              built
+                  ? Icons.precision_manufacturing_outlined
+                  : Icons.construction_outlined,
+              color: const Color(0xFF2B2116),
+              size: 22,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              built ? 'Fablab niv. ${gameState.fablabLevel}' : 'Fablab à bâtir',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF2B2116),
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                shadows: <Shadow>[Shadow(color: Colors.white, blurRadius: 10)],
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              built ? 'Stock ${gameState.globalStockCapacity}' : '8 Org. · 4 Min.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF2B2116),
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1479,7 +1558,7 @@ class Zone0InventorySheet extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '${stacks.length}/${lisiereForageConfig.inventorySlotLimit} slots · stacks de ${lisiereForageConfig.inventoryStackLimit}',
+            'Stock ${gameState.inventoryUsedAmount}/${gameState.globalStockCapacity} · ${stacks.length}/${gameState.inventorySlotLimit} slots',
           ),
           const SizedBox(height: 12),
           _FirebaseSyncStatus(gameState: gameState),
@@ -1490,8 +1569,8 @@ class Zone0InventorySheet extends StatelessWidget {
             crossAxisSpacing: 10,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            children: List<Widget>.generate(
-                lisiereForageConfig.inventorySlotLimit, (index) {
+            children: List<Widget>.generate(gameState.inventorySlotLimit,
+                (index) {
               final stack = index < stacks.length ? stacks[index] : null;
               return _InventorySlot(stack: stack);
             }),
@@ -2772,40 +2851,304 @@ class _GameBuildingPage extends StatelessWidget {
   }
 }
 
+class FablabConstructionSheet extends StatelessWidget {
+  const FablabConstructionSheet({super.key, required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    final cost = fablabConfig.constructionCostLevel1;
+    final canBuild = gameState.hasResources(cost);
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 18,
+          right: 18,
+          bottom: 18 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'Fablab',
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Le Fablab permet au refuge de cuisiner, fabriquer et recycler progressivement ses ressources.',
+            ),
+            const SizedBox(height: 14),
+            _ResourceCostLine(
+              resource: 'Organique',
+              owned: gameState.resourceAmount('Organique'),
+              required: cost['Organique'] ?? 0,
+            ),
+            _ResourceCostLine(
+              resource: 'Minéral',
+              owned: gameState.resourceAmount('Minéral'),
+              required: cost['Minéral'] ?? 0,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Stock ajouté : +${fablabConfig.stockCapacityBonusPerFablabLevel} unités',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            if (!canBuild) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                gameState.missingResourcesLabel(cost),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: canBuild
+                  ? () {
+                      final result = gameState.constructFablabLevel1();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(result.message)),
+                      );
+                      if (result.success) Navigator.of(context).pop();
+                    }
+                  : null,
+              icon: const Icon(Icons.construction_outlined),
+              label: const Text('Construire'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ResourceCostLine extends StatelessWidget {
+  const _ResourceCostLine({
+    required this.resource,
+    required this.owned,
+    required this.required,
+  });
+
+  final String resource;
+  final int owned;
+  final int required;
+
+  @override
+  Widget build(BuildContext context) {
+    final ok = owned >= required;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: <Widget>[
+          Icon(_resourceIcon(resource), size: 20),
+          const SizedBox(width: 8),
+          Expanded(child: Text(resource)),
+          Text(
+            '$owned / $required',
+            style: TextStyle(
+              color: ok ? null : Theme.of(context).colorScheme.error,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class FablabPage extends StatelessWidget {
-  const FablabPage({super.key});
+  const FablabPage({
+    super.key,
+    required this.gameState,
+    required this.campHeartLevel,
+  });
+
+  final Zone0GameState gameState;
+  final int campHeartLevel;
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('La FabLab'),
+          title: Text('Fablab niveau ${gameState.fablabLevel}'),
           bottom: const TabBar(
             tabs: <Widget>[
-              Tab(text: 'Atelier', icon: Icon(Icons.construction_outlined)),
               Tab(text: 'Cuisine', icon: Icon(Icons.soup_kitchen_outlined)),
+              Tab(text: 'Atelier', icon: Icon(Icons.construction_outlined)),
+              Tab(text: 'Recycleur', icon: Icon(Icons.recycling_outlined)),
             ],
           ),
         ),
-        body: const SafeArea(
+        body: SafeArea(
           child: TabBarView(
             children: <Widget>[
+              FablabCuisineView(gameState: gameState),
               _BuildingPlaceholder(
                 icon: Icons.construction_outlined,
                 title: 'Atelier',
                 description:
-                    'Préparation future des assemblages, plans et objets du refuge.',
+                    'Débloqué au Cœur du Camp niveau ${fablabConfig.atelierUnlockCampHeartLevel}. Niveau actuel : $campHeartLevel. Gameplay à venir.',
               ),
               _BuildingPlaceholder(
-                icon: Icons.soup_kitchen_outlined,
-                title: 'Cuisine',
+                icon: Icons.recycling_outlined,
+                title: 'Recycleur',
                 description:
-                    'Préparation future des repas, soins et recettes simples.',
+                    'Débloqué au Cœur du Camp niveau ${fablabConfig.recyclerUnlockCampHeartLevel}. Niveau actuel : $campHeartLevel. Gameplay à venir.',
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class FablabCuisineView extends StatefulWidget {
+  const FablabCuisineView({super.key, required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  State<FablabCuisineView> createState() => _FablabCuisineViewState();
+}
+
+class _FablabCuisineViewState extends State<FablabCuisineView> {
+  String? _lastResult;
+
+  @override
+  Widget build(BuildContext context) {
+    final organic = widget.gameState.resourceAmount('Organique');
+    final canPrepare =
+        organic >= fablabConfig.simpleMealOrganicCost &&
+            widget.gameState.hasInventoryCapacityFor(
+              <String, int>{'Repas simple': fablabConfig.simpleMealOutputAmount},
+            );
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: <Widget>[
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  'Cuisine',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 6),
+                const Text('Niveau 1 · Eau disponible gratuitement.'),
+                const SizedBox(height: 14),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _RecipeSlot(
+                        label: 'Slot 1',
+                        value:
+                            '${fablabConfig.simpleMealOrganicCost} Organique',
+                        icon: Icons.eco_outlined,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: _RecipeSlot(
+                        label: 'Slot 2',
+                        value: 'Eau',
+                        icon: Icons.water_drop_outlined,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text('Stock Organique : $organic'),
+                Text(
+                  'Résultat : ${fablabConfig.simpleMealOutputAmount} Repas simple',
+                ),
+                if (!canPrepare) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    organic < fablabConfig.simpleMealOrganicCost
+                        ? 'Il manque ${fablabConfig.simpleMealOrganicCost - organic} Organique.'
+                        : 'Inventaire plein : impossible de ranger le Repas simple.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  onPressed: canPrepare
+                      ? () {
+                          final result = widget.gameState.prepareSimpleMeal();
+                          setState(() => _lastResult = result.message);
+                        }
+                      : null,
+                  icon: const Icon(Icons.restaurant_outlined),
+                  label: const Text('Préparer'),
+                ),
+                if (_lastResult != null) ...<Widget>[
+                  const SizedBox(height: 10),
+                  Text(
+                    _lastResult!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RecipeSlot extends StatelessWidget {
+  const _RecipeSlot({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: <Widget>[
+            Icon(icon),
+            const SizedBox(height: 6),
+            Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+            Text(value, textAlign: TextAlign.center),
+          ],
         ),
       ),
     );

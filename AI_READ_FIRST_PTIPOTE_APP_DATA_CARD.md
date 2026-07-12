@@ -455,6 +455,60 @@ Pour debugger les push:
 - Verifier les logs Cloud Functions.
 - Verifier APNs/Firebase Messaging cote Firebase Console.
 
+## FABLAB V1 - Construction Et Cuisine
+
+### 1. Fichiers crees ou modifies
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/game/fablab_config.dart` | Configuration Fablab V1: cout, capacite de stock, niveaux, recette Cuisine. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat persistant du Fablab, construction, capacite globale, recette Repas simple. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Hotspot Fablab constructible, modale construction, page Fablab, Cuisine, inventaire dynamique. |
+| `ptipote-dashboard/fablab-config.json` | Miroir JSON dashboard pour consultation/export. |
+| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglet dashboard `Fablab`. |
+
+### 2. Construction generique preparee
+
+- Etat utilise: `constructible` si `fablabLevel == 0`, `built` si `fablabLevel >= 1`.
+- Donnees sauvegardees dans `users/{uid}/game/zone0.buildings.fablab`.
+- Le modele stocke `buildingId`, `buildingType`, `displayName`, `state`, `currentLevel`, `maxLevel`, `requiredCampHeartLevel`, `stockCapacityBonusPerLevel`, `isVisible`.
+- La logique `constructFablabLevel1()` sert de base pour les prochains batiments constructibles.
+
+### 3. Fablab
+
+- Visible des le refuge comme emplacement `Fablab a batir`.
+- Cout niveau 1: `8 Organique`, `4 Mineral`.
+- Construction immediate, sans timer ni assignation P'TIPOTE.
+- Apres construction: `fablabLevel = 1`, etat `built`, message boite aux lettres systeme.
+- Clic apres construction: ouvre la page Fablab.
+
+### 4. Stock global
+
+- Capacite de base: `100` unites.
+- Formule: `baseGlobalStockCapacity + fablabLevel * stockCapacityBonusPerFablabLevel`.
+- Stack max actuel: `10`, donc niveau 0 = 10 slots, niveau 1 = 20 slots.
+- UI inventaire: grille scrollable 3 colonnes, conserve les stacks existants.
+
+### 5. Cuisine
+
+- Cuisine active au Fablab niveau 1.
+- Interface: 2 slots visuels, Eau gratuite contextuelle, stock Organique, resultat.
+- Recette test temporaire: `2 Organique + Eau => 1 Repas simple`.
+- `Repas simple` est ajoute a l'inventaire global et stacke comme les autres ressources.
+- Consommation du Repas simple pour restaurer la Vitalite: a brancher plus tard.
+
+### 6. Dashboard
+
+- Onglet `Fablab` charge `ptipote-dashboard/fablab-config.json`.
+- Variables visibles/exportables: cout Organique, cout Mineral, capacite de base, bonus de stock, niveau max, niveau Cuisine, prerequis Atelier/Recycleur, recette Repas simple.
+- Synchronisation automatique Dashboard -> Flutter non branchee; modifier aussi `fablab_config.dart` pour changer l'app.
+
+### 7. Sections futures
+
+- Atelier visible mais verrouille: `Debloque au Cœur du Camp niveau 1.`
+- Recycleur visible mais verrouille: `Debloque au Cœur du Camp niveau 2.`
+- Aucun gameplay Atelier, Recycleur, schemas PTIBUG, amelioration PTIBUG ou drag and drop stock n'est actif.
+
 ## Ou Modifier Selon La Demande
 
 | Demande | Modifier en premier | Verifier aussi |

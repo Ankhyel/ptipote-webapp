@@ -32,6 +32,7 @@
         <button class="tab-button" type="button" data-dashboard-tab="ptipote-stats">Stat Ptipote</button>
         <button class="tab-button" type="button" data-dashboard-tab="camp-heart">Cœur du Camp</button>
         <button class="tab-button" type="button" data-dashboard-tab="lisiere-forage">Lisière / Fourrage</button>
+        <button class="tab-button" type="button" data-dashboard-tab="fablab">Fablab</button>
       </nav>
 
       <section class="dashboard-panel active" data-dashboard-panel="overview">
@@ -102,6 +103,17 @@
           </div>
           <p class="panel-note" id="lisiereForageStatus">Charge les temps, gains, coûts et risques depuis lisiere-forage-config.json.</p>
           <div class="stage-list" id="lisiereForageList"></div>
+        </section>
+      </section>
+
+      <section class="dashboard-panel" data-dashboard-panel="fablab">
+        <section class="panel stat-ptipote-panel" aria-labelledby="fablabTitle">
+          <div class="panel-head">
+            <div><p class="eyebrow">Configuration V1</p><h2 id="fablabTitle">Fablab</h2></div>
+            <button class="ghost" id="exportFablabButton" type="button">Exporter JSON</button>
+          </div>
+          <p class="panel-note" id="fablabStatus">Charge la construction, le stock et la Cuisine depuis fablab-config.json.</p>
+          <div class="stage-list" id="fablabConfigList"></div>
         </section>
       </section>
     </main>

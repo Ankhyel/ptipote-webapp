@@ -1,0 +1,12 @@
+{
+  "constructionCostLevel1Organic": 8,
+  "constructionCostLevel1Mineral": 4,
+  "baseGlobalStockCapacity": 100,
+  "stockCapacityBonusPerFablabLevel": 100,
+  "fablabMaxLevel": 5,
+  "cuisineUnlockLevel": 1,
+  "atelierUnlockCampHeartLevel": 1,
+  "recyclerUnlockCampHeartLevel": 2,
+  "simpleMealOrganicCost": 2,
+  "simpleMealOutputAmount": 1
+}

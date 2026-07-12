@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
+import 'fablab_config.dart';
 import 'lisiere_forage_config.dart';
 
 class Zone0GameState extends ChangeNotifier {
@@ -27,11 +28,28 @@ class Zone0GameState extends ChangeNotifier {
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
 
   int refugeSafety = lisiereForageConfig.refugeSafetyFallback;
+  int fablabLevel = 0;
   DateTime? lastFirebaseSyncAt;
   String? lastFirebaseError;
   String firebaseSyncLabel = 'Non synchronisé';
   bool isFirebaseSyncing = false;
   bool _loadedFromFirebase = false;
+
+  bool get isFablabBuilt => fablabLevel >= fablabConfig.cuisineUnlockLevel;
+
+  int get globalStockCapacity {
+    return fablabConfig.baseGlobalStockCapacity +
+        fablabLevel * fablabConfig.stockCapacityBonusPerFablabLevel;
+  }
+
+  int get inventorySlotLimit {
+    return (globalStockCapacity / lisiereForageConfig.inventoryStackLimit)
+        .floor();
+  }
+
+  int get inventoryUsedAmount {
+    return inventory.fold(0, (total, stack) => total + stack.amount);
+  }
 
   int vitalityFor(PtipoteFigurine figurine) {
     return vitalityOverrides[figurine.id] ?? figurine.vitality;
@@ -100,7 +118,7 @@ class Zone0GameState extends ChangeNotifier {
           ),
         )
         .toList();
-    var freeSlots = lisiereForageConfig.inventorySlotLimit - simulated.length;
+    var freeSlots = inventorySlotLimit - simulated.length;
     var capacity = 0;
 
     for (final entry in rewards.entries) {
@@ -148,6 +166,115 @@ class Zone0GameState extends ChangeNotifier {
       unawaited(saveInventoryToFirebase());
     }
     return removed;
+  }
+
+  bool hasResources(Map<String, int> costs) {
+    return costs.entries.every(
+      (entry) => resourceAmount(entry.key) >= math.max(0, entry.value),
+    );
+  }
+
+  bool hasInventoryCapacityFor(Map<String, int> rewards) {
+    return inventoryFreeCapacityFor(rewards) >=
+        rewards.values.fold(0, (total, amount) => total + math.max(0, amount));
+  }
+
+  bool removeResources(Map<String, int> costs) {
+    final cleanCosts = Map<String, int>.from(costs)
+      ..removeWhere((_, amount) => amount <= 0);
+    if (!hasResources(cleanCosts)) return false;
+
+    for (final entry in cleanCosts.entries) {
+      removeResource(entry.key, entry.value);
+    }
+    unawaited(saveInventoryToFirebase());
+    return true;
+  }
+
+  Zone0ActionResult constructFablabLevel1() {
+    if (isFablabBuilt) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Fablab est déjà construit.',
+      );
+    }
+
+    final cost = fablabConfig.constructionCostLevel1;
+    if (!hasResources(cost)) {
+      return Zone0ActionResult(
+        success: false,
+        message: missingResourcesLabel(cost),
+      );
+    }
+
+    if (!removeResources(cost)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ressources insuffisantes.',
+      );
+    }
+
+    fablabLevel = 1;
+    reports.add(
+      PtipoteMissionReport.system(
+        message: 'Le Fablab est prêt. La Cuisine est maintenant disponible.',
+      ),
+    );
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Le Fablab est prêt. La Cuisine peut maintenant être utilisée.',
+    );
+  }
+
+  Zone0ActionResult prepareSimpleMeal() {
+    if (!isFablabBuilt) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Construis le Fablab pour utiliser la Cuisine.',
+      );
+    }
+
+    final cost = <String, int>{'Organique': fablabConfig.simpleMealOrganicCost};
+    final output = <String, int>{'Repas simple': fablabConfig.simpleMealOutputAmount};
+    if (!hasResources(cost)) {
+      return Zone0ActionResult(
+        success: false,
+        message: missingResourcesLabel(cost),
+      );
+    }
+    if (!hasInventoryCapacityFor(output)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Inventaire plein : libère un slot avant de cuisiner.',
+      );
+    }
+    if (!removeResources(cost)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ressources insuffisantes.',
+      );
+    }
+    addResources(output);
+    notifyListeners();
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Repas simple préparé.',
+    );
+  }
+
+  String missingResourcesLabel(Map<String, int> costs) {
+    final missing = costs.entries
+        .map((entry) => MapEntry(
+              entry.key,
+              math.max(0, entry.value - resourceAmount(entry.key)),
+            ))
+        .where((entry) => entry.value > 0)
+        .map((entry) => '${entry.value} ${entry.key}')
+        .join(', ');
+    return missing.isEmpty ? 'Ressources disponibles.' : 'Il manque $missing.';
   }
 
   Future<void> loadFromFirebase() async {
@@ -201,6 +328,17 @@ class Zone0GameState extends ChangeNotifier {
                 .map(ForageMission.fromFirebase)
                 .whereType<ForageMission>(),
           );
+      }
+
+      final buildingsData = data['buildings'];
+      if (buildingsData is Map) {
+        final fablabData = buildingsData['fablab'];
+        if (fablabData is Map) {
+          fablabLevel = _readInt(fablabData['currentLevel']).clamp(
+            0,
+            fablabConfig.fablabMaxLevel,
+          );
+        }
       }
 
       _loadedFromFirebase = true;
@@ -266,7 +404,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int freeInventorySlots() {
-    return lisiereForageConfig.inventorySlotLimit - inventory.length;
+    return inventorySlotLimit - inventory.length;
   }
 
   InventoryAddResult addResources(Map<String, int> rewards) {
@@ -288,7 +426,7 @@ class Zone0GameState extends ChangeNotifier {
       }
 
       while (remaining > 0 &&
-          inventory.length < lisiereForageConfig.inventorySlotLimit) {
+          inventory.length < inventorySlotLimit) {
         final add =
             math.min(remaining, lisiereForageConfig.inventoryStackLimit);
         inventory.add(Zone0InventoryStack(resource: entry.key, amount: add));
@@ -458,6 +596,33 @@ class Zone0GameState extends ChangeNotifier {
     });
   }
 
+  Future<void> saveBuildingsToFirebase() async {
+    final user = await _currentUser();
+    if (user == null) return;
+    await _runFirebaseSync('Sauvegarde bâtiments', () {
+      return _zone0Doc(user.uid).set(
+        <String, dynamic>{
+          'buildings': <String, dynamic>{
+            'fablab': <String, dynamic>{
+              'buildingId': 'fablab',
+              'buildingType': 'production',
+              'displayName': 'Fablab',
+              'state': isFablabBuilt ? 'built' : 'constructible',
+              'currentLevel': fablabLevel,
+              'maxLevel': fablabConfig.fablabMaxLevel,
+              'requiredCampHeartLevel': 0,
+              'stockCapacityBonusPerLevel':
+                  fablabConfig.stockCapacityBonusPerFablabLevel,
+              'isVisible': true,
+            },
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    });
+  }
+
   Future<void> persistFigurineProgress({
     required String figurineId,
     required int xp,
@@ -576,6 +741,13 @@ class InventoryAddResult {
   final Map<String, int> pending;
 
   bool get hasPending => pending.isNotEmpty;
+}
+
+class Zone0ActionResult {
+  const Zone0ActionResult({required this.success, required this.message});
+
+  final bool success;
+  final String message;
 }
 
 enum ForageMissionStatus { active, completed }
@@ -718,6 +890,25 @@ class PtipoteMissionReport {
     required this.completedAt,
     required this.inventoryFull,
   });
+
+  factory PtipoteMissionReport.system({required String message}) {
+    final now = DateTime.now();
+    return PtipoteMissionReport(
+      id: 'system-${now.microsecondsSinceEpoch}',
+      figurineName: 'Refuge',
+      biomeLabel: 'Zone 0',
+      durationLabel: 'instantané',
+      intensityLabel: 'système',
+      rewards: const <String, int>{},
+      incidentLabel: message,
+      xpGain: 0,
+      leveledUp: false,
+      levelAfter: 0,
+      vitalityRemaining: 0,
+      completedAt: now,
+      inventoryFull: false,
+    );
+  }
 
   final String id;
   final String figurineName;

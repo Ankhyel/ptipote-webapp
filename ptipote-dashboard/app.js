@@ -35,6 +35,7 @@ let currentDashboardRole = "";
 let ptipoteStatsConfig = {};
 let campHeartConfig = {};
 let lisiereForageConfig = {};
+let fablabConfig = {};
 
 const PTIPOTE_STATS_STORAGE_KEY = "ptipote_stats_config_v1";
 const PTIPOTE_STATS_FIELDS = [
@@ -81,6 +82,9 @@ const ids = [
   "lisiereForageStatus",
   "lisiereForageList",
   "exportLisiereForageButton",
+  "fablabStatus",
+  "fablabConfigList",
+  "exportFablabButton",
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -358,6 +362,48 @@ function exportLisiereForageConfig() {
   URL.revokeObjectURL(url);
 }
 
+async function loadFablabConfig() {
+  try {
+    const response = await fetch("./fablab-config.json", { cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    fablabConfig = await response.json();
+    renderFablabConfig();
+    el.fablabStatus.textContent = "Configuration Fablab chargée depuis le JSON versionné.";
+  } catch (error) {
+    el.fablabStatus.textContent = "Configuration Fablab illisible: " + error.message;
+  }
+}
+
+function renderFablabConfig() {
+  const rows = [
+    ["Construction Organique niv. 1", fablabConfig.constructionCostLevel1Organic],
+    ["Construction Minéral niv. 1", fablabConfig.constructionCostLevel1Mineral],
+    ["Capacité stock de base", fablabConfig.baseGlobalStockCapacity],
+    ["Bonus stock par niveau", fablabConfig.stockCapacityBonusPerFablabLevel],
+    ["Niveau max Fablab", fablabConfig.fablabMaxLevel],
+    ["Cuisine active niveau", fablabConfig.cuisineUnlockLevel],
+    ["Atelier requis Cœur", fablabConfig.atelierUnlockCampHeartLevel],
+    ["Recycleur requis Cœur", fablabConfig.recyclerUnlockCampHeartLevel],
+    ["Recette Repas simple", `${fablabConfig.simpleMealOrganicCost} Organique + Eau => ${fablabConfig.simpleMealOutputAmount} Repas simple`],
+  ];
+  el.fablabConfigList.innerHTML = rows.map(([label, value]) => `
+    <div class="stage-row">
+      <div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>
+      <strong>V1</strong>
+    </div>
+  `).join("");
+}
+
+function exportFablabConfig() {
+  const blob = new Blob([JSON.stringify(fablabConfig, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "fablab-config.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function exportCampHeartConfig() {
   const blob = new Blob([JSON.stringify(campHeartConfig, null, 2)], {
     type: "application/json",
@@ -431,7 +477,12 @@ el.exportLisiereForageButton.addEventListener("click", () => {
   exportLisiereForageConfig();
 });
 
+el.exportFablabButton.addEventListener("click", () => {
+  exportFablabConfig();
+});
+
 setupDashboardTabs();
 loadPtipoteStatsConfig();
 loadCampHeartConfig();
 loadLisiereForageConfig();
+loadFablabConfig();
