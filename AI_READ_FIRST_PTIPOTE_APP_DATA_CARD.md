@@ -564,6 +564,95 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 - `Craft` permet d'ajouter localement une recette, selectionner deux materiaux maximum, definir un objet resultat et ses effets consommables, puis exporter `craft-config.json`.
 - La synchro automatique Dashboard -> Flutter/Firebase reste a brancher; le JSON exporte sert de source de reprise.
 
+## PTIPOTE V1 - Bonheur, Faim Et Repos
+
+### 1. Fichiers modifies
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/figurines/ptipote_stats_config.dart` | Source des seuils V1: vitalite, faim, mission min, cooldown/soin calin, bulles, besoins requis. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Calcul humeur, faim/vitalite, rapports persistants, suppression rapport, retour mission en repos. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Maison: bulles de besoins, fiche statut, temps restant; Lisiere: seuil mission/avertissements; rapports swipe. |
+| `ptipote-dashboard/ptipote-stats-config.json` | Miroir dashboard des nouvelles valeurs de tuning. |
+| `ptipote-dashboard/app.js` | Onglet Stat Ptipote expose les champs ajoutes. |
+
+### 2. Vitalite
+
+- Recuperations exclusives, par priorite:
+  - repos alcove: `+2 Vitalite/min`;
+  - heureux et eveille: `+1 Vitalite/min`;
+  - eveille non heureux: `+1 Vitalite/2 min`.
+- La Vitalite reste bornee entre `0` et `100`.
+- `Envoyer au lit` ajoute le P'TIPOTE a `manualRestingIds`.
+- `Reveil` retire le repos manuel et garde au moins le seuil de reveil existant.
+
+### 3. Faim
+
+- Faim bornee entre `0` et `100`.
+- Baisse naturelle: `-1` toutes les `30 min` hors mission.
+- Pendant une mission, la baisse passive est suspendue par le moteur Maison (`isOnMission` ignore le tick faim).
+- Perte de faim mission: `vitaliteConsommee * missionHungerCostRatio`, V1 = `0.5`.
+- Craft: aucun cout specifique en V1; les couts pourront etre ajoutes plus tard.
+
+### 4. Bonheur
+
+- Bonheur calcule depuis 3 besoins:
+  - nourri: `faim > 30`;
+  - repose: `Vitalite > 30` ou actuellement en repos;
+  - caline: dernier calin dans `cuddleCareDurationMinutes`.
+- Etats:
+  - `Heureux`: 3 besoins satisfaits;
+  - `Bien`: 2 besoins satisfaits;
+  - `Mal`: 0 ou 1 besoin satisfait.
+- Pas de jauge bonheur independante sauvegardee pour la logique Zone 0.
+
+### 5. Calin
+
+- Cooldown bouton: `cuddleCooldownMinutes = 180`.
+- Duree de soin affectif: `cuddleCareDurationMinutes = 240`.
+- Le bouton reste avec jauge de recharge, par P'TIPOTE.
+
+### 6. Bulles de besoins
+
+- Affichees dans la Maison au-dessus des P'TIPOTES, avec `IgnorePointer`.
+- Icones:
+  - lit pour Vitalite basse;
+  - repas pour faim basse;
+  - coeur pour besoin affectif.
+- Priorite: Vitalite critique, faim critique, calin, puis seuils non critiques.
+- Frequence configurable: min/max intervalle et duree d'affichage.
+
+### 7. Missions
+
+- Seuil minimum selection: `minimumMissionVitality = 10`.
+- Les P'TIPOTES occupes ou au repos restent non selectionnables.
+- Si Vitalite finale estimee `<= 20`, avertissement non bloquant.
+- Au retour avec Vitalite `<= 20`, le P'TIPOTE est ajoute a `manualRestingIds` et revient en repos.
+
+### 8. Rapports
+
+- Les rapports sont sauvegardes dans `users/{uid}/game/zone0.reports`.
+- La lecture marque `read = true` mais ne supprime plus.
+- Suppression manuelle: swipe gauche sur un rapport.
+- Le compteur Maison compte uniquement les rapports non lus.
+- Le rapport affiche Vitalite restante, faim restante, humeur finale et phrase de retour.
+
+### 9. Temps de recuperation
+
+- Fiche P'TIPOTE > Details affiche:
+  - `Vitalite maximale`, ou
+  - `Repos complet dans X min`.
+- Formule:
+  - alcove: points manquants / `2 par min`;
+  - heureux eveille: points manquants / `1 par min`;
+  - normal: points manquants * `2 min`.
+
+### 10. Dashboard
+
+- Champs exposes: mission minimum, seuils faim/vitalite, cooldown/duree calin, seuils bulles, intervalles bulles, besoins requis.
+- Synchro automatique Dashboard -> Flutter runtime non branchee; exporter le JSON et reporter dans `ptipote_stats_config.dart`.
+- Mise a jour hors-ligne fine non finalisee: la simulation applique les ticks en Maison et persiste les valeurs, mais la chronologie hors-ligne mission/repos/craft devra etre raffinee quand les activites longues seront toutes modelisees.
+
 ## Ou Modifier Selon La Demande
 
 | Demande | Modifier en premier | Verifier aussi |

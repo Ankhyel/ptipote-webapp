@@ -398,6 +398,10 @@ class _MaisonPageState extends State<_MaisonPage>
                             isOnMission: _gameState.isOnMission,
                             isResting: _gameState.isResting,
                             isHappy: _gameState.isHappy,
+                            moodLabelFor: _gameState.moodLabelFor,
+                            recoveryRemaining:
+                                _gameState.vitalityRecoveryRemaining,
+                            isCuddleCareActive: _gameState.isCuddleCareActive,
                             canCuddle: _gameState.canCuddle,
                             cuddleProgress: _gameState.cuddleCooldownProgress,
                             autoPreferenceFor: _autoPreferenceFor,
@@ -815,6 +819,9 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.isOnMission,
     required this.isResting,
     required this.isHappy,
+    required this.moodLabelFor,
+    required this.recoveryRemaining,
+    required this.isCuddleCareActive,
     required this.canCuddle,
     required this.cuddleProgress,
     required this.autoPreferenceFor,
@@ -838,6 +845,9 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final bool Function(String figurineId) isOnMission;
   final bool Function(PtipoteFigurine figurine) isResting;
   final bool Function(PtipoteFigurine figurine) isHappy;
+  final String Function(PtipoteFigurine figurine) moodLabelFor;
+  final Duration Function(PtipoteFigurine figurine) recoveryRemaining;
+  final bool Function(PtipoteFigurine figurine) isCuddleCareActive;
   final bool Function(PtipoteFigurine figurine) canCuddle;
   final double Function(PtipoteFigurine figurine) cuddleProgress;
   final PtipoteAutoAssignmentPreference Function(PtipoteFigurine figurine)
@@ -994,17 +1004,29 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                   top: top,
                   isResting: false,
                 );
-                return Positioned(
-                  left: left,
-                  bottom: bottom,
-                  width: spriteSize,
-                  child: _PtipoteSpriteButton(
-                    figurine: figurine,
-                    selected: widget.selectedFigurineId == figurine.id,
-                    isResting: false,
-                    restProgress: 0,
-                    onTap: () => widget.onToggleFigurine(figurine),
-                  ),
+                final needIcon = _needIconFor(figurine);
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    Positioned(
+                      left: left,
+                      bottom: bottom,
+                      width: spriteSize,
+                      child: _PtipoteSpriteButton(
+                        figurine: figurine,
+                        selected: widget.selectedFigurineId == figurine.id,
+                        isResting: false,
+                        restProgress: 0,
+                        onTap: () => widget.onToggleFigurine(figurine),
+                      ),
+                    ),
+                    if (needIcon != null)
+                      Positioned(
+                        left: left + spriteSize * 0.58,
+                        top: top - 8,
+                        child: _NeedBubble(icon: needIcon),
+                      ),
+                  ],
                 );
               }),
               ...List<Widget>.generate(resting.length, (index) {
@@ -1020,17 +1042,29 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                   top: top,
                   isResting: true,
                 );
-                return Positioned(
-                  left: left,
-                  top: top,
-                  width: spriteSize,
-                  child: _PtipoteSpriteButton(
-                    figurine: figurine,
-                    selected: widget.selectedFigurineId == figurine.id,
-                    isResting: true,
-                    restProgress: restProgress,
-                    onTap: () => widget.onToggleFigurine(figurine),
-                  ),
+                final needIcon = _needIconFor(figurine);
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    Positioned(
+                      left: left,
+                      top: top,
+                      width: spriteSize,
+                      child: _PtipoteSpriteButton(
+                        figurine: figurine,
+                        selected: widget.selectedFigurineId == figurine.id,
+                        isResting: true,
+                        restProgress: restProgress,
+                        onTap: () => widget.onToggleFigurine(figurine),
+                      ),
+                    ),
+                    if (needIcon != null)
+                      Positioned(
+                        left: left + spriteSize * 0.58,
+                        top: top - 8,
+                        child: _NeedBubble(icon: needIcon),
+                      ),
+                  ],
                 );
               }),
               if (widget.selectedFigurineId != null)
@@ -1112,6 +1146,9 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
             level: widget.levelFor(selectedFigurine),
             autoPreference: widget.autoPreferenceFor(selectedFigurine),
             isHappy: widget.isHappy(selectedFigurine),
+            moodLabel: widget.moodLabelFor(selectedFigurine),
+            recoveryRemaining: widget.recoveryRemaining(selectedFigurine),
+            cuddleCareActive: widget.isCuddleCareActive(selectedFigurine),
             canCuddle: widget.canCuddle(selectedFigurine),
             cuddleProgress: widget.cuddleProgress(selectedFigurine),
             availableSimpleMeals: widget.availableSimpleMeals,
@@ -1128,6 +1165,68 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
         ),
       ),
     ];
+  }
+
+  IconData? _needIconFor(PtipoteFigurine figurine) {
+    if (!_shouldShowNeedBubble(figurine)) return null;
+    final vitality = widget.vitalityFor(figurine);
+    final hunger = widget.hungerFor(figurine);
+    if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+      return Icons.bedtime_outlined;
+    }
+    if (hunger <= ptipoteStatsConfig.happyHungerThreshold) {
+      return Icons.restaurant_outlined;
+    }
+    if (!widget.isCuddleCareActive(figurine)) {
+      return Icons.favorite_border;
+    }
+    if (vitality <= ptipoteStatsConfig.vitalityBubbleThreshold) {
+      return Icons.bedtime_outlined;
+    }
+    if (hunger <= ptipoteStatsConfig.hungerBubbleThreshold) {
+      return Icons.restaurant_outlined;
+    }
+    return null;
+  }
+
+  bool _shouldShowNeedBubble(PtipoteFigurine figurine) {
+    final minInterval = ptipoteStatsConfig.needBubbleMinIntervalMinutes * 60;
+    final maxInterval = ptipoteStatsConfig.needBubbleMaxIntervalMinutes * 60;
+    final span = math.max(1, maxInterval - minInterval);
+    final seed = figurine.id.hashCode.abs();
+    final interval = minInterval + seed % span;
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final phase = (nowSeconds + seed) % math.max(1, interval);
+    return phase < ptipoteStatsConfig.needBubbleDisplayDurationSeconds;
+  }
+}
+
+class _NeedBubble extends StatelessWidget {
+  const _NeedBubble({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+          shape: BoxShape.circle,
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(7),
+          child: Icon(icon, size: 18),
+        ),
+      ),
+    );
   }
 }
 
@@ -1331,6 +1430,9 @@ class _PtipoteInfoBubble extends StatelessWidget {
     required this.level,
     required this.autoPreference,
     required this.isHappy,
+    required this.moodLabel,
+    required this.recoveryRemaining,
+    required this.cuddleCareActive,
     required this.canCuddle,
     required this.cuddleProgress,
     required this.availableSimpleMeals,
@@ -1351,6 +1453,9 @@ class _PtipoteInfoBubble extends StatelessWidget {
   final int level;
   final PtipoteAutoAssignmentPreference autoPreference;
   final bool isHappy;
+  final String moodLabel;
+  final Duration recoveryRemaining;
+  final bool cuddleCareActive;
   final bool canCuddle;
   final double cuddleProgress;
   final int availableSimpleMeals;
@@ -1447,7 +1552,7 @@ class _PtipoteInfoBubble extends StatelessWidget {
                       ),
                       _InfoLine(
                         label: 'Bonheur',
-                        value: '${figurine.happiness}/100',
+                        value: moodLabel,
                       ),
                       _InfoLine(
                           label: 'Heureux', value: isHappy ? 'oui' : 'non'),
@@ -1455,7 +1560,13 @@ class _PtipoteInfoBubble extends StatelessWidget {
                         label: 'Câlin',
                         value: lastCuddleAt == null
                             ? 'jamais'
-                            : _relativeCuddleLabel(lastCuddleAt!),
+                            : cuddleCareActive
+                                ? 'actif · ${_relativeCuddleLabel(lastCuddleAt!)}'
+                                : 'à renouveler',
+                      ),
+                      _InfoLine(
+                        label: 'Récupération',
+                        value: _recoveryLabel(recoveryRemaining),
                       ),
                       _InfoLine(
                         label: 'État',
@@ -1525,6 +1636,15 @@ class _PtipoteInfoBubble extends StatelessWidget {
     if (elapsed.inMinutes < 1) return 'à l’instant';
     if (elapsed.inHours < 1) return 'il y a ${elapsed.inMinutes} min';
     return 'il y a ${elapsed.inHours} h';
+  }
+
+  String _recoveryLabel(Duration duration) {
+    if (duration == Duration.zero) return 'Vitalité maximale';
+    if (duration.inHours > 0) {
+      final minutes = duration.inMinutes.remainder(60);
+      return 'Repos complet dans ${duration.inHours} h $minutes min';
+    }
+    return 'Repos complet dans ${duration.inMinutes} min';
   }
 }
 
@@ -1926,40 +2046,62 @@ class MissionReportsSheet extends StatelessWidget {
             const _SheetEmptyState(text: 'Aucun rapport de mission.')
           else
             ...reports.map(
-              (report) => Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        '${report.figurineName} revient de ${report.biomeLabel}',
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Durée ${report.durationLabel} · ${report.intensityLabel}',
-                      ),
-                      Text('Récolte : ${_formatRewards(report.rewards)}'),
-                      Text(
-                        'XP : +${report.xpGain}${report.leveledUp ? ' · niveau ${report.levelAfter}' : ''}',
-                      ),
-                      Text('Incident : ${report.incidentLabel}'),
-                      Text('Vitalité restante : ${report.vitalityRemaining}'),
-                      if (report.inventoryFull)
-                        const Text(
-                          'Inventaire plein : le surplus est perdu.',
+              (report) => Dismissible(
+                key: ValueKey(report.id),
+                direction: DismissDirection.endToStart,
+                background: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.error,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: EdgeInsets.only(right: 18),
+                      child: Icon(Icons.delete_outline, color: Colors.white),
+                    ),
+                  ),
+                ),
+                onDismissed: (_) => gameState.deleteReport(report.id),
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          '${report.figurineName} revient de ${report.biomeLabel}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
-                      const SizedBox(height: 4),
-                      Text(
-                        report.completedAt
-                            .toLocal()
-                            .toString()
-                            .split('.')
-                            .first,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
+                        const SizedBox(height: 6),
+                        Text(
+                          'Durée ${report.durationLabel} · ${report.intensityLabel}',
+                        ),
+                        Text('Récolte : ${_formatRewards(report.rewards)}'),
+                        Text(
+                          'XP : +${report.xpGain}${report.leveledUp ? ' · niveau ${report.levelAfter}' : ''}',
+                        ),
+                        Text('Incident : ${report.incidentLabel}'),
+                        Text('Vitalité restante : ${report.vitalityRemaining}'),
+                        Text('Faim restante : ${report.hungerRemaining}'),
+                        Text('Bonheur au retour : ${report.moodLabel}'),
+                        if (report.finalStateLabel.isNotEmpty)
+                          Text(report.finalStateLabel),
+                        if (report.inventoryFull)
+                          const Text(
+                            'Inventaire plein : le surplus est perdu.',
+                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          report.completedAt
+                              .toLocal()
+                              .toString()
+                              .split('.')
+                              .first,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -2029,7 +2171,10 @@ class _LisierePageState extends State<LisierePage> {
             _selectedFigurineIds.removeWhere((id) {
               return figurines.any(
                 (figurine) =>
-                    figurine.id == id && widget.gameState.isBusy(figurine),
+                    figurine.id == id &&
+                    (widget.gameState.isBusy(figurine) ||
+                        widget.gameState.vitalityFor(figurine) <
+                            ptipoteStatsConfig.minimumMissionVitality),
               );
             });
             final selectedFigurines = figurines
@@ -2083,18 +2228,22 @@ class _LisierePageState extends State<LisierePage> {
                             final resting =
                                 widget.gameState.isResting(figurine);
                             final busy = widget.gameState.isBusy(figurine);
+                            final tooTired = vitality <
+                                ptipoteStatsConfig.minimumMissionVitality;
                             final suffix = onMission
                                 ? ' · mission'
                                 : resting
                                     ? ' · repos'
-                                    : '';
+                                    : tooTired
+                                        ? ' · trop fatigué'
+                                        : '';
                             return ChoiceChip(
                               label: Text(
                                 '${figurine.displayName} · V$vitality$suffix',
                               ),
                               selected:
                                   _selectedFigurineIds.contains(figurine.id),
-                              onSelected: busy
+                              onSelected: busy || tooTired
                                   ? null
                                   : (_) => setState(() {
                                         if (_selectedFigurineIds
@@ -2160,6 +2309,21 @@ class _LisierePageState extends State<LisierePage> {
                       ),
                     ),
                   ),
+                if (groupEstimate != null &&
+                    groupEstimate.restWarningLabels.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      groupEstimate.restWarningLabels.length == 1
+                          ? '${groupEstimate.restWarningLabels.first} risque de revenir très fatigué et ira directement se coucher.'
+                          : '${groupEstimate.restWarningLabels.join(', ')} risquent de revenir très fatigués et iront directement se coucher.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 FilledButton.icon(
                   onPressed: groupEstimate?.canLaunch == true
                       ? () => _launchMissions(estimates)
@@ -2175,7 +2339,7 @@ class _LisierePageState extends State<LisierePage> {
                   const Padding(
                     padding: EdgeInsets.only(top: 8),
                     child: Text(
-                      'Un ou plusieurs P’TIPOTES ont besoin de récupérer avant cette sortie.',
+                      'Un ou plusieurs P’TIPOTES sont trop fatigués pour partir.',
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -2201,11 +2365,12 @@ class _LisierePageState extends State<LisierePage> {
       rewards: rewards,
       vitalityCost: cost,
       xpGain: _xpGain(figurine),
+      figurineName: figurine.displayName,
+      finalVitality: math.max(0, vitality - cost),
       riskPercent: riskPercent,
       riskLabel: _riskLabel(riskPercent),
       zoneFatigueLabel: intensity.zoneFatigueLabel,
-      canLaunch: vitality > ptipoteStatsConfig.minVitalityBeforeAutoRest &&
-          vitality >= cost &&
+      canLaunch: vitality >= ptipoteStatsConfig.minimumMissionVitality &&
           !widget.gameState.isBusy(figurine),
     );
   }
@@ -2310,6 +2475,8 @@ class ForageEstimate {
     required this.rewards,
     required this.vitalityCost,
     required this.xpGain,
+    required this.figurineName,
+    required this.finalVitality,
     required this.riskPercent,
     required this.riskLabel,
     required this.zoneFatigueLabel,
@@ -2319,6 +2486,8 @@ class ForageEstimate {
   final Map<String, int> rewards;
   final int vitalityCost;
   final int xpGain;
+  final String figurineName;
+  final int finalVitality;
   final int riskPercent;
   final String riskLabel;
   final String zoneFatigueLabel;
@@ -2334,6 +2503,7 @@ class ForageGroupEstimate {
     required this.rewards,
     required this.vitalityCost,
     required this.xpGain,
+    required this.restWarningLabels,
     required this.riskPercent,
     required this.riskLabel,
     required this.zoneFatigueLabel,
@@ -2347,6 +2517,7 @@ class ForageGroupEstimate {
     final rewards = <String, int>{};
     var vitalityCost = 0;
     var xpGain = 0;
+    final restWarningLabels = <String>[];
     var riskPercent = 0;
     var riskLabel = 'Très sûr';
     var zoneFatigueLabel = 'faible';
@@ -2355,6 +2526,10 @@ class ForageGroupEstimate {
     for (final estimate in list) {
       vitalityCost += estimate.vitalityCost;
       xpGain += estimate.xpGain;
+      if (estimate.finalVitality <=
+          ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+        restWarningLabels.add(estimate.figurineName);
+      }
       canLaunch = canLaunch && estimate.canLaunch;
       if (estimate.riskPercent >= riskPercent) {
         riskPercent = estimate.riskPercent;
@@ -2370,6 +2545,7 @@ class ForageGroupEstimate {
       rewards: rewards,
       vitalityCost: vitalityCost,
       xpGain: xpGain,
+      restWarningLabels: restWarningLabels,
       riskPercent: riskPercent,
       riskLabel: riskLabel,
       zoneFatigueLabel: zoneFatigueLabel,
@@ -2380,6 +2556,7 @@ class ForageGroupEstimate {
   final Map<String, int> rewards;
   final int vitalityCost;
   final int xpGain;
+  final List<String> restWarningLabels;
   final int riskPercent;
   final String riskLabel;
   final String zoneFatigueLabel;

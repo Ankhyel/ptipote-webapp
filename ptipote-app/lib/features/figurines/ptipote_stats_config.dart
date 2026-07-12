@@ -22,6 +22,8 @@ enum PtipoteBehaviorState {
 
 enum PtipoteAutoAssignmentPreference { home, tower, market }
 
+enum PtipoteMood { happy, okay, unwell }
+
 class PtipoteStatsConfig {
   const PtipoteStatsConfig({
     required this.maxVitality,
@@ -30,13 +32,23 @@ class PtipoteStatsConfig {
     required this.naturalVitalityRecoveryMinutes,
     required this.happyVitalityRecoveryPerMinute,
     required this.minVitalityBeforeAutoRest,
+    required this.minimumMissionVitality,
     required this.maxHunger,
     required this.baseHunger,
     required this.hungerDecayMinutes,
     required this.missionHungerCostRatio,
     required this.happyVitalityThreshold,
     required this.happyHungerThreshold,
-    required this.cuddleHappyHours,
+    required this.cuddleCooldownMinutes,
+    required this.cuddleCareDurationMinutes,
+    required this.vitalityBubbleThreshold,
+    required this.hungerBubbleThreshold,
+    required this.cuddleBubbleWarningMinutes,
+    required this.needBubbleMinIntervalMinutes,
+    required this.needBubbleMaxIntervalMinutes,
+    required this.needBubbleDisplayDurationSeconds,
+    required this.happyNeedsRequired,
+    required this.okayNeedsRequired,
     required this.baseHappiness,
     required this.maxHappiness,
     required this.happinessDecayPerHour,
@@ -56,13 +68,23 @@ class PtipoteStatsConfig {
   final int naturalVitalityRecoveryMinutes;
   final int happyVitalityRecoveryPerMinute;
   final int minVitalityBeforeAutoRest;
+  final int minimumMissionVitality;
   final int maxHunger;
   final int baseHunger;
   final int hungerDecayMinutes;
   final double missionHungerCostRatio;
   final int happyVitalityThreshold;
   final int happyHungerThreshold;
-  final int cuddleHappyHours;
+  final int cuddleCooldownMinutes;
+  final int cuddleCareDurationMinutes;
+  final int vitalityBubbleThreshold;
+  final int hungerBubbleThreshold;
+  final int cuddleBubbleWarningMinutes;
+  final int needBubbleMinIntervalMinutes;
+  final int needBubbleMaxIntervalMinutes;
+  final int needBubbleDisplayDurationSeconds;
+  final int happyNeedsRequired;
+  final int okayNeedsRequired;
   final int baseHappiness;
   final int maxHappiness;
   final int happinessDecayPerHour;
@@ -110,13 +132,23 @@ const ptipoteStatsConfig = PtipoteStatsConfig(
   naturalVitalityRecoveryMinutes: 2,
   happyVitalityRecoveryPerMinute: 1,
   minVitalityBeforeAutoRest: 20,
+  minimumMissionVitality: 10,
   maxHunger: 100,
   baseHunger: 100,
   hungerDecayMinutes: 30,
   missionHungerCostRatio: 0.5,
   happyVitalityThreshold: 30,
   happyHungerThreshold: 30,
-  cuddleHappyHours: 3,
+  cuddleCooldownMinutes: 180,
+  cuddleCareDurationMinutes: 240,
+  vitalityBubbleThreshold: 40,
+  hungerBubbleThreshold: 40,
+  cuddleBubbleWarningMinutes: 30,
+  needBubbleMinIntervalMinutes: 2,
+  needBubbleMaxIntervalMinutes: 5,
+  needBubbleDisplayDurationSeconds: 6,
+  happyNeedsRequired: 3,
+  okayNeedsRequired: 2,
   baseHappiness: 70,
   maxHappiness: 100,
   happinessDecayPerHour: 1,

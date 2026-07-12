@@ -102,29 +102,87 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool isHappy(PtipoteFigurine figurine) {
+    return moodFor(figurine) == PtipoteMood.happy;
+  }
+
+  bool isFed(PtipoteFigurine figurine) {
+    return hungerFor(figurine) > ptipoteStatsConfig.happyHungerThreshold;
+  }
+
+  bool isRested(PtipoteFigurine figurine) {
+    return vitalityFor(figurine) > ptipoteStatsConfig.happyVitalityThreshold ||
+        isResting(figurine);
+  }
+
+  bool isCuddleCareActive(PtipoteFigurine figurine) {
     final cuddleAt = lastCuddleAt[figurine.id];
-    final hasRecentCuddle = cuddleAt != null &&
-        DateTime.now().difference(cuddleAt) <=
-            Duration(hours: ptipoteStatsConfig.cuddleHappyHours);
-    return isResting(figurine) &&
-        vitalityFor(figurine) > ptipoteStatsConfig.happyVitalityThreshold &&
-        hungerFor(figurine) > ptipoteStatsConfig.happyHungerThreshold &&
-        hasRecentCuddle;
+    if (cuddleAt == null) return false;
+    return DateTime.now().difference(cuddleAt) <=
+        Duration(minutes: ptipoteStatsConfig.cuddleCareDurationMinutes);
+  }
+
+  int satisfiedNeedCount(PtipoteFigurine figurine) {
+    return <bool>[
+      isFed(figurine),
+      isRested(figurine),
+      isCuddleCareActive(figurine),
+    ].where((satisfied) => satisfied).length;
+  }
+
+  PtipoteMood moodFor(PtipoteFigurine figurine) {
+    final count = satisfiedNeedCount(figurine);
+    if (count >= ptipoteStatsConfig.happyNeedsRequired) {
+      return PtipoteMood.happy;
+    }
+    if (count >= ptipoteStatsConfig.okayNeedsRequired) {
+      return PtipoteMood.okay;
+    }
+    return PtipoteMood.unwell;
+  }
+
+  String moodLabelFor(PtipoteFigurine figurine) {
+    return switch (moodFor(figurine)) {
+      PtipoteMood.happy => 'Heureux',
+      PtipoteMood.okay => 'Bien',
+      PtipoteMood.unwell => 'Mal',
+    };
   }
 
   bool canCuddle(PtipoteFigurine figurine) {
     final cuddleAt = lastCuddleAt[figurine.id];
     if (cuddleAt == null) return true;
     return DateTime.now().difference(cuddleAt) >=
-        Duration(hours: ptipoteStatsConfig.cuddleHappyHours);
+        Duration(minutes: ptipoteStatsConfig.cuddleCooldownMinutes);
   }
 
   double cuddleCooldownProgress(PtipoteFigurine figurine) {
     final cuddleAt = lastCuddleAt[figurine.id];
     if (cuddleAt == null) return 1;
-    final cooldown = Duration(hours: ptipoteStatsConfig.cuddleHappyHours);
+    final cooldown =
+        Duration(minutes: ptipoteStatsConfig.cuddleCooldownMinutes);
     final elapsed = DateTime.now().difference(cuddleAt);
     return (elapsed.inSeconds / cooldown.inSeconds).clamp(0.0, 1.0);
+  }
+
+  Duration vitalityRecoveryRemaining(PtipoteFigurine figurine) {
+    final missing =
+        math.max(0, ptipoteStatsConfig.maxVitality - vitalityFor(figurine));
+    if (missing == 0) return Duration.zero;
+    if (isResting(figurine)) {
+      return Duration(
+        minutes: (missing / ptipoteStatsConfig.alcoveVitalityRecoveryPerMinute)
+            .ceil(),
+      );
+    }
+    if (isHappy(figurine)) {
+      return Duration(
+        minutes: (missing / ptipoteStatsConfig.happyVitalityRecoveryPerMinute)
+            .ceil(),
+      );
+    }
+    return Duration(
+      minutes: missing * ptipoteStatsConfig.naturalVitalityRecoveryMinutes,
+    );
   }
 
   void sendToSleep(PtipoteFigurine figurine) {
@@ -505,6 +563,18 @@ class Zone0GameState extends ChangeNotifier {
           );
       }
 
+      final reportData = data['reports'];
+      if (reportData is List) {
+        reports
+          ..clear()
+          ..addAll(
+            reportData
+                .whereType<Map>()
+                .map(PtipoteMissionReport.fromFirebase)
+                .whereType<PtipoteMissionReport>(),
+          );
+      }
+
       final buildingsData = data['buildings'];
       if (buildingsData is Map) {
         final fablabData = buildingsData['fablab'];
@@ -631,7 +701,19 @@ class Zone0GameState extends ChangeNotifier {
       if (!report.read) changed = true;
       report.read = true;
     }
-    if (changed) notifyListeners();
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+  }
+
+  void deleteReport(String reportId) {
+    final before = reports.length;
+    reports.removeWhere((report) => report.id == reportId);
+    if (reports.length != before) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
   }
 
   void _resolveMission(
@@ -673,6 +755,23 @@ class Zone0GameState extends ChangeNotifier {
       level: xpResult.level,
     ));
     final vitality = vitalityOverrides[mission.figurineId] ?? 0;
+    final hunger =
+        hungerOverrides[mission.figurineId] ?? ptipoteStatsConfig.baseHunger;
+    final moodLabel = _moodLabelForValues(
+      vitality: vitality,
+      hunger: hunger,
+      isResting: vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest,
+      figurineId: mission.figurineId,
+    );
+    if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+      manualRestingIds.add(mission.figurineId);
+    }
+    final finalState = _finalMissionStateLabel(
+      figurineName: mission.figurineName,
+      vitality: vitality,
+      hunger: hunger,
+      moodLabel: moodLabel,
+    );
     reports.add(
       PtipoteMissionReport(
         id: 'report-${completedAt.microsecondsSinceEpoch}',
@@ -686,11 +785,58 @@ class Zone0GameState extends ChangeNotifier {
         leveledUp: xpResult.leveledUp,
         levelAfter: xpResult.level,
         vitalityRemaining: vitality,
+        hungerRemaining: hunger,
+        moodLabel: moodLabel,
+        finalStateLabel: finalState,
         completedAt: completedAt,
         inventoryFull: inventoryResult.hasPending,
       ),
     );
     mission.status = ForageMissionStatus.completed;
+  }
+
+  String _moodLabelForValues({
+    required int vitality,
+    required int hunger,
+    required bool isResting,
+    required String figurineId,
+  }) {
+    var needs = 0;
+    if (hunger > ptipoteStatsConfig.happyHungerThreshold) needs += 1;
+    if (vitality > ptipoteStatsConfig.happyVitalityThreshold || isResting) {
+      needs += 1;
+    }
+    final cuddleAt = lastCuddleAt[figurineId];
+    if (cuddleAt != null &&
+        DateTime.now().difference(cuddleAt) <=
+            Duration(minutes: ptipoteStatsConfig.cuddleCareDurationMinutes)) {
+      needs += 1;
+    }
+    if (needs >= ptipoteStatsConfig.happyNeedsRequired) return 'Heureux';
+    if (needs >= ptipoteStatsConfig.okayNeedsRequired) return 'Bien';
+    return 'Mal';
+  }
+
+  String _finalMissionStateLabel({
+    required String figurineName,
+    required int vitality,
+    required int hunger,
+    required String moodLabel,
+  }) {
+    final notes = <String>[];
+    if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+      notes
+          .add('$figurineName est revenu très fatigué et est allé se reposer.');
+    } else if (vitality <= ptipoteStatsConfig.happyVitalityThreshold) {
+      notes.add('$figurineName est revenu fatigué.');
+    } else {
+      notes.add('$figurineName est revenu en forme.');
+    }
+    if (hunger <= ptipoteStatsConfig.happyHungerThreshold) {
+      notes.add('$figurineName aimerait manger.');
+    }
+    notes.add('État de bonheur : $moodLabel.');
+    return notes.join(' ');
   }
 
   PtipoteXpGainResult addMissionXp(String figurineId, int xpGain) {
@@ -774,6 +920,7 @@ class Zone0GameState extends ChangeNotifier {
             (key, value) => MapEntry(key, Timestamp.fromDate(value)),
           ),
           'missions': missions.map((mission) => mission.toFirebase()).toList(),
+          'reports': reports.map((report) => report.toFirebase()).toList(),
           'updatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
@@ -1079,9 +1226,37 @@ class PtipoteMissionReport {
     required this.leveledUp,
     required this.levelAfter,
     required this.vitalityRemaining,
+    required this.hungerRemaining,
+    required this.moodLabel,
+    required this.finalStateLabel,
     required this.completedAt,
     required this.inventoryFull,
+    this.read = false,
   });
+
+  factory PtipoteMissionReport.fromFirebase(Map<dynamic, dynamic> data) {
+    return PtipoteMissionReport(
+      id: '${data['id'] ?? 'report-${DateTime.now().microsecondsSinceEpoch}'}',
+      figurineName: '${data['figurineName'] ?? 'P’TIPOTE'}',
+      biomeLabel: '${data['biomeLabel'] ?? 'Zone 0'}',
+      durationLabel: '${data['durationLabel'] ?? '-'}',
+      intensityLabel: '${data['intensityLabel'] ?? '-'}',
+      rewards: ForageMission._readIntMap(data['rewards']),
+      incidentLabel: '${data['incidentLabel'] ?? 'aucun'}',
+      xpGain: ForageMission._readStaticInt(data['xpGain']),
+      leveledUp: data['leveledUp'] == true,
+      levelAfter: ForageMission._readStaticInt(data['levelAfter']),
+      vitalityRemaining:
+          ForageMission._readStaticInt(data['vitalityRemaining']),
+      hungerRemaining: ForageMission._readStaticInt(data['hungerRemaining']),
+      moodLabel: '${data['moodLabel'] ?? 'Bien'}',
+      finalStateLabel: '${data['finalStateLabel'] ?? ''}',
+      completedAt:
+          ForageMission._readDate(data['completedAt']) ?? DateTime.now(),
+      inventoryFull: data['inventoryFull'] == true,
+      read: data['read'] == true,
+    );
+  }
 
   factory PtipoteMissionReport.system({required String message}) {
     final now = DateTime.now();
@@ -1097,6 +1272,9 @@ class PtipoteMissionReport {
       leveledUp: false,
       levelAfter: 0,
       vitalityRemaining: 0,
+      hungerRemaining: 0,
+      moodLabel: 'Bien',
+      finalStateLabel: message,
       completedAt: now,
       inventoryFull: false,
     );
@@ -1113,7 +1291,32 @@ class PtipoteMissionReport {
   final bool leveledUp;
   final int levelAfter;
   final int vitalityRemaining;
+  final int hungerRemaining;
+  final String moodLabel;
+  final String finalStateLabel;
   final DateTime completedAt;
   final bool inventoryFull;
-  bool read = false;
+  bool read;
+
+  Map<String, dynamic> toFirebase() {
+    return <String, dynamic>{
+      'id': id,
+      'figurineName': figurineName,
+      'biomeLabel': biomeLabel,
+      'durationLabel': durationLabel,
+      'intensityLabel': intensityLabel,
+      'rewards': rewards,
+      'incidentLabel': incidentLabel,
+      'xpGain': xpGain,
+      'leveledUp': leveledUp,
+      'levelAfter': levelAfter,
+      'vitalityRemaining': vitalityRemaining,
+      'hungerRemaining': hungerRemaining,
+      'moodLabel': moodLabel,
+      'finalStateLabel': finalStateLabel,
+      'completedAt': Timestamp.fromDate(completedAt),
+      'inventoryFull': inventoryFull,
+      'read': read,
+    };
+  }
 }
