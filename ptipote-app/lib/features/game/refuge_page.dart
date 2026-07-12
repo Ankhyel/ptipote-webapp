@@ -1483,9 +1483,27 @@ class _PtipoteInfoBubble extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(
-                  figurine.displayName,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        figurine.displayName,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    Text(
+                      'Lvl $level',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _PtipoteQuickStats(
+                  moodLabel: moodLabel,
+                  vitality: vitality,
+                  hunger: hunger,
+                  recoveryRemaining: recoveryRemaining,
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -1536,7 +1554,6 @@ class _PtipoteInfoBubble extends StatelessWidget {
                       _InfoLine(label: 'Type', value: figurine.type),
                       _InfoLine(
                           label: 'Enveloppe', value: figurine.envelopeLabel),
-                      _InfoLine(label: 'Niveau', value: '$level'),
                       _InfoLine(
                         label: 'XP',
                         value:
@@ -1554,8 +1571,6 @@ class _PtipoteInfoBubble extends StatelessWidget {
                         label: 'Bonheur',
                         value: moodLabel,
                       ),
-                      _InfoLine(
-                          label: 'Heureux', value: isHappy ? 'oui' : 'non'),
                       _InfoLine(
                         label: 'Câlin',
                         value: lastCuddleAt == null
@@ -1640,12 +1655,140 @@ class _PtipoteInfoBubble extends StatelessWidget {
 
   String _recoveryLabel(Duration duration) {
     if (duration == Duration.zero) return 'Vitalité maximale';
-    if (duration.inHours > 0) {
-      final minutes = duration.inMinutes.remainder(60);
-      return 'Repos complet dans ${duration.inHours} h $minutes min';
-    }
-    return 'Repos complet dans ${duration.inMinutes} min';
+    return _shortDurationLabel(duration);
   }
+}
+
+class _PtipoteQuickStats extends StatelessWidget {
+  const _PtipoteQuickStats({
+    required this.moodLabel,
+    required this.vitality,
+    required this.hunger,
+    required this.recoveryRemaining,
+  });
+
+  final String moodLabel;
+  final int vitality;
+  final int hunger;
+  final Duration recoveryRemaining;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: <Widget>[
+            _QuickStatChip(
+              icon: _moodIcon(moodLabel),
+              label: moodLabel,
+              color: _moodColor(context, moodLabel),
+            ),
+            _QuickStatChip(
+              icon: _batteryIcon(vitality),
+              label: '$vitality',
+              color: _vitalityColor(context, vitality),
+            ),
+            _QuickStatChip(
+              icon: Icons.restaurant_outlined,
+              label: '$hunger',
+              color: _hungerColor(context, hunger),
+            ),
+            _QuickStatChip(
+              icon: Icons.timer_outlined,
+              label: _shortDurationLabel(recoveryRemaining),
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _moodIcon(String mood) {
+    return switch (mood) {
+      'Heureux' => Icons.sentiment_very_satisfied_outlined,
+      'Bien' => Icons.sentiment_satisfied_outlined,
+      _ => Icons.sentiment_dissatisfied_outlined,
+    };
+  }
+
+  Color _moodColor(BuildContext context, String mood) {
+    return switch (mood) {
+      'Heureux' => const Color(0xFF2E9B57),
+      'Bien' => const Color(0xFFE2952D),
+      _ => Theme.of(context).colorScheme.error,
+    };
+  }
+
+  IconData _batteryIcon(int value) {
+    if (value < 40) return Icons.battery_1_bar_outlined;
+    if (value < 60) return Icons.battery_2_bar_outlined;
+    return Icons.battery_full_outlined;
+  }
+
+  Color _vitalityColor(BuildContext context, int value) {
+    if (value < 40) return Theme.of(context).colorScheme.error;
+    if (value < 60) return const Color(0xFFE2952D);
+    return const Color(0xFF2E9B57);
+  }
+
+  Color _hungerColor(BuildContext context, int value) {
+    if (value < 40) return Theme.of(context).colorScheme.error;
+    if (value < 60) return const Color(0xFFE2952D);
+    return const Color(0xFF2E9B57);
+  }
+}
+
+class _QuickStatChip extends StatelessWidget {
+  const _QuickStatChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 2),
+        Text(
+          label,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _shortDurationLabel(Duration duration) {
+  if (duration == Duration.zero) return 'max';
+  if (duration.inHours > 0) {
+    final minutes = duration.inMinutes.remainder(60);
+    return minutes == 0
+        ? '${duration.inHours}h'
+        : '${duration.inHours}h$minutes';
+  }
+  return '${duration.inMinutes}m';
 }
 
 class _InfoLine extends StatelessWidget {
