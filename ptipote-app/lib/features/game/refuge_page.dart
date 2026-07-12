@@ -641,7 +641,9 @@ class _FablabHotspotContent extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              built ? 'Stock ${gameState.globalStockCapacity}' : '8 Org. · 4 Min.',
+              built
+                  ? 'Stock ${gameState.globalStockCapacity}'
+                  : '8 Org. · 4 Min.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Color(0xFF2B2116),
@@ -1569,8 +1571,8 @@ class Zone0InventorySheet extends StatelessWidget {
             crossAxisSpacing: 10,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            children: List<Widget>.generate(gameState.inventorySlotLimit,
-                (index) {
+            children:
+                List<Widget>.generate(gameState.inventorySlotLimit, (index) {
               final stack = index < stacks.length ? stacks[index] : null;
               return _InventorySlot(stack: stack);
             }),
@@ -3031,11 +3033,10 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
   @override
   Widget build(BuildContext context) {
     final organic = widget.gameState.resourceAmount('Organique');
-    final canPrepare =
-        organic >= fablabConfig.simpleMealOrganicCost &&
-            widget.gameState.hasInventoryCapacityFor(
-              <String, int>{'Repas simple': fablabConfig.simpleMealOutputAmount},
-            );
+    final canPrepare = organic >= fablabConfig.simpleMealOrganicCost &&
+        widget.gameState.hasInventoryCapacityFor(
+          <String, int>{'Repas simple': fablabConfig.simpleMealOutputAmount},
+        );
     return ListView(
       padding: const EdgeInsets.all(18),
       children: <Widget>[

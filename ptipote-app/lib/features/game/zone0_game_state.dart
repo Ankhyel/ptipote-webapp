@@ -238,7 +238,9 @@ class Zone0GameState extends ChangeNotifier {
     }
 
     final cost = <String, int>{'Organique': fablabConfig.simpleMealOrganicCost};
-    final output = <String, int>{'Repas simple': fablabConfig.simpleMealOutputAmount};
+    final output = <String, int>{
+      'Repas simple': fablabConfig.simpleMealOutputAmount
+    };
     if (!hasResources(cost)) {
       return Zone0ActionResult(
         success: false,
@@ -425,8 +427,7 @@ class Zone0GameState extends ChangeNotifier {
         addedAny = true;
       }
 
-      while (remaining > 0 &&
-          inventory.length < inventorySlotLimit) {
+      while (remaining > 0 && inventory.length < inventorySlotLimit) {
         final add =
             math.min(remaining, lisiereForageConfig.inventoryStackLimit);
         inventory.add(Zone0InventoryStack(resource: entry.key, amount: add));
