@@ -861,6 +861,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
 class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
   final _random = math.Random();
   final Map<String, _PtipoteMotion> _motions = <String, _PtipoteMotion>{};
+  final Map<String, Offset> _bubbleOffsets = <String, Offset>{};
   Duration _lastElapsed = Duration.zero;
 
   @override
@@ -889,6 +890,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
   void _syncMotions() {
     final ids = widget.figurines.map((figurine) => figurine.id).toSet();
     _motions.removeWhere((id, _) => !ids.contains(id));
+    _bubbleOffsets.removeWhere((id, _) => !ids.contains(id));
     for (final figurine in widget.figurines) {
       _motions.putIfAbsent(figurine.id, _newMotion);
     }
@@ -971,6 +973,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
           final usableWidth = math.max(1.0, constraints.maxWidth - spriteSize);
           final floorTopBottom = constraints.maxHeight / 3 - spriteSize * 0.70;
           final walkingBaseBottom = math.max(8.0, floorTopBottom);
+          final placements = <String, _PtipotePlacement>{};
           return Stack(
             children: <Widget>[
               ...List<Widget>.generate(active.length, (index) {
@@ -985,36 +988,22 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                         0.4
                     : 0.0;
                 final bottom = walkingBaseBottom + (index % 3) * 12 + bounce;
+                final top = constraints.maxHeight - bottom - spriteSize;
+                placements[figurine.id] = _PtipotePlacement(
+                  left: left,
+                  top: top,
+                  isResting: false,
+                );
                 return Positioned(
                   left: left,
                   bottom: bottom,
                   width: spriteSize,
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
-                    vitality: widget.vitalityFor(figurine),
-                    hunger: widget.hungerFor(figurine),
-                    xp: widget.xpFor(figurine),
-                    level: widget.levelFor(figurine),
-                    autoPreference: widget.autoPreferenceFor(figurine),
-                    isHappy: widget.isHappy(figurine),
-                    canCuddle: widget.canCuddle(figurine),
-                    cuddleProgress: widget.cuddleProgress(figurine),
-                    availableSimpleMeals: widget.availableSimpleMeals,
-                    lastCuddleAt: widget.lastCuddleAt(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     isResting: false,
                     restProgress: 0,
-                    stageSize: constraints.biggest,
-                    spriteLeft: left,
-                    spriteTop: constraints.maxHeight - bottom - spriteSize,
                     onTap: () => widget.onToggleFigurine(figurine),
-                    onWake: () => widget.onWake(figurine),
-                    onSleep: () => widget.onSleep(figurine),
-                    onCuddle: () => widget.onCuddle(figurine),
-                    onFeed: () => widget.onFeed(figurine),
-                    onAutoPreferenceChanged: (preference) {
-                      widget.onAutoPreferenceChanged(figurine, preference);
-                    },
                   ),
                 );
               }),
@@ -1024,45 +1013,134 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                     constraints.maxWidth * (0.30 + index * 0.29);
                 final restProgress = widget.vitalityFor(figurine) /
                     ptipoteStatsConfig.maxVitality;
+                final left = alcoveCenter - spriteSize / 2;
+                final top = constraints.maxHeight * 0.26;
+                placements[figurine.id] = _PtipotePlacement(
+                  left: left,
+                  top: top,
+                  isResting: true,
+                );
                 return Positioned(
-                  left: alcoveCenter - spriteSize / 2,
-                  top: constraints.maxHeight * 0.26,
+                  left: left,
+                  top: top,
                   width: spriteSize,
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
-                    vitality: widget.vitalityFor(figurine),
-                    hunger: widget.hungerFor(figurine),
-                    xp: widget.xpFor(figurine),
-                    level: widget.levelFor(figurine),
-                    autoPreference: widget.autoPreferenceFor(figurine),
-                    isHappy: widget.isHappy(figurine),
-                    canCuddle: widget.canCuddle(figurine),
-                    cuddleProgress: widget.cuddleProgress(figurine),
-                    availableSimpleMeals: widget.availableSimpleMeals,
-                    lastCuddleAt: widget.lastCuddleAt(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     isResting: true,
                     restProgress: restProgress,
-                    stageSize: constraints.biggest,
-                    spriteLeft: alcoveCenter - spriteSize / 2,
-                    spriteTop: constraints.maxHeight * 0.26,
                     onTap: () => widget.onToggleFigurine(figurine),
-                    onWake: () => widget.onWake(figurine),
-                    onSleep: () => widget.onSleep(figurine),
-                    onCuddle: () => widget.onCuddle(figurine),
-                    onFeed: () => widget.onFeed(figurine),
-                    onAutoPreferenceChanged: (preference) {
-                      widget.onAutoPreferenceChanged(figurine, preference);
-                    },
                   ),
                 );
               }),
+              if (widget.selectedFigurineId != null)
+                ..._selectedBubble(
+                  constraints: constraints,
+                  spriteSize: spriteSize,
+                  placements: placements,
+                ),
             ],
           );
         },
       ),
     );
   }
+
+  List<Widget> _selectedBubble({
+    required BoxConstraints constraints,
+    required double spriteSize,
+    required Map<String, _PtipotePlacement> placements,
+  }) {
+    PtipoteFigurine? selected;
+    for (final figurine in widget.figurines) {
+      if (figurine.id == widget.selectedFigurineId) {
+        selected = figurine;
+        break;
+      }
+    }
+    if (selected == null) return const <Widget>[];
+    final selectedFigurine = selected;
+    final placement = placements[selectedFigurine.id];
+    if (placement == null) return const <Widget>[];
+
+    const bubbleWidth = 216.0;
+    final bubbleHeight = placement.isResting ? 238.0 : 202.0;
+    final offset = _bubbleOffsets[selectedFigurine.id] ?? Offset.zero;
+    final preferredTop = placement.isResting
+        ? placement.top + 88 + offset.dy
+        : placement.top - bubbleHeight - 8 + offset.dy;
+    final bubbleTop = preferredTop
+        .clamp(
+          8.0,
+          math.max(8.0, constraints.maxHeight - bubbleHeight - 8),
+        )
+        .toDouble();
+    final preferredLeft =
+        placement.left + spriteSize / 2 - bubbleWidth / 2 + offset.dx;
+    final bubbleLeft = preferredLeft
+        .clamp(
+          8.0,
+          math.max(8.0, constraints.maxWidth - bubbleWidth - 8),
+        )
+        .toDouble();
+    var dragOrigin = Offset.zero;
+    var bubbleOrigin = offset;
+
+    return <Widget>[
+      Positioned(
+        left: bubbleLeft,
+        top: bubbleTop,
+        width: bubbleWidth,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPressStart: (_) {
+            dragOrigin = Offset.zero;
+            bubbleOrigin = _bubbleOffsets[selectedFigurine.id] ?? Offset.zero;
+          },
+          onLongPressMoveUpdate: (details) {
+            setState(() {
+              dragOrigin = details.offsetFromOrigin;
+              _bubbleOffsets[selectedFigurine.id] = bubbleOrigin + dragOrigin;
+            });
+          },
+          child: _PtipoteInfoBubble(
+            maxHeight: bubbleHeight,
+            figurine: selectedFigurine,
+            vitality: widget.vitalityFor(selectedFigurine),
+            hunger: widget.hungerFor(selectedFigurine),
+            xp: widget.xpFor(selectedFigurine),
+            level: widget.levelFor(selectedFigurine),
+            autoPreference: widget.autoPreferenceFor(selectedFigurine),
+            isHappy: widget.isHappy(selectedFigurine),
+            canCuddle: widget.canCuddle(selectedFigurine),
+            cuddleProgress: widget.cuddleProgress(selectedFigurine),
+            availableSimpleMeals: widget.availableSimpleMeals,
+            lastCuddleAt: widget.lastCuddleAt(selectedFigurine),
+            isResting: placement.isResting,
+            onWake: () => widget.onWake(selectedFigurine),
+            onSleep: () => widget.onSleep(selectedFigurine),
+            onCuddle: () => widget.onCuddle(selectedFigurine),
+            onFeed: () => widget.onFeed(selectedFigurine),
+            onAutoPreferenceChanged: (preference) {
+              widget.onAutoPreferenceChanged(selectedFigurine, preference);
+            },
+          ),
+        ),
+      ),
+    ];
+  }
+}
+
+class _PtipotePlacement {
+  const _PtipotePlacement({
+    required this.left,
+    required this.top,
+    required this.isResting,
+  });
+
+  final double left;
+  final double top;
+  final bool isResting;
 }
 
 class _PtipoteMotion {
@@ -1086,81 +1164,26 @@ class _PtipoteMotion {
 class _PtipoteSpriteButton extends StatefulWidget {
   const _PtipoteSpriteButton({
     required this.figurine,
-    required this.vitality,
-    required this.hunger,
-    required this.xp,
-    required this.level,
-    required this.autoPreference,
-    required this.isHappy,
-    required this.canCuddle,
-    required this.cuddleProgress,
-    required this.availableSimpleMeals,
-    required this.lastCuddleAt,
     required this.selected,
     required this.isResting,
     required this.restProgress,
-    required this.stageSize,
-    required this.spriteLeft,
-    required this.spriteTop,
     required this.onTap,
-    required this.onWake,
-    required this.onSleep,
-    required this.onCuddle,
-    required this.onFeed,
-    required this.onAutoPreferenceChanged,
   });
 
   final PtipoteFigurine figurine;
-  final int vitality;
-  final int hunger;
-  final int xp;
-  final int level;
-  final PtipoteAutoAssignmentPreference autoPreference;
-  final bool isHappy;
-  final bool canCuddle;
-  final double cuddleProgress;
-  final int availableSimpleMeals;
-  final DateTime? lastCuddleAt;
   final bool selected;
   final bool isResting;
   final double restProgress;
-  final Size stageSize;
-  final double spriteLeft;
-  final double spriteTop;
   final VoidCallback onTap;
-  final VoidCallback onWake;
-  final VoidCallback onSleep;
-  final VoidCallback onCuddle;
-  final VoidCallback onFeed;
-  final ValueChanged<PtipoteAutoAssignmentPreference> onAutoPreferenceChanged;
 
   @override
   State<_PtipoteSpriteButton> createState() => _PtipoteSpriteButtonState();
 }
 
 class _PtipoteSpriteButtonState extends State<_PtipoteSpriteButton> {
-  Offset _bubbleOffset = Offset.zero;
-  Offset _longPressOrigin = Offset.zero;
-  Offset _bubbleOrigin = Offset.zero;
-
   @override
   Widget build(BuildContext context) {
     final remainingRatio = (1 - widget.restProgress).clamp(0.0, 1.0);
-    const bubbleWidth = 216.0;
-    final bubbleHeight = widget.isResting ? 238.0 : 202.0;
-    final preferredTop = widget.isResting
-        ? widget.spriteTop + 88 + _bubbleOffset.dy
-        : widget.spriteTop - bubbleHeight - 8 + _bubbleOffset.dy;
-    final bubbleTop = preferredTop.clamp(
-      8.0,
-      math.max(8.0, widget.stageSize.height - bubbleHeight - 8),
-    );
-    final preferredLeft =
-        widget.spriteLeft + 41 - bubbleWidth / 2 + _bubbleOffset.dx;
-    final bubbleLeft = preferredLeft.clamp(
-      8.0,
-      math.max(8.0, widget.stageSize.width - bubbleWidth - 8),
-    );
     return GestureDetector(
       onTap: widget.onTap,
       child: Stack(
@@ -1186,39 +1209,11 @@ class _PtipoteSpriteButtonState extends State<_PtipoteSpriteButton> {
               ),
             ),
           if (widget.selected)
-            Positioned(
-              top: bubbleTop - widget.spriteTop,
-              left: bubbleLeft - widget.spriteLeft,
-              child: GestureDetector(
-                onLongPressStart: (_) {
-                  _longPressOrigin = Offset.zero;
-                  _bubbleOrigin = _bubbleOffset;
-                },
-                onLongPressMoveUpdate: (details) {
-                  setState(() {
-                    _longPressOrigin = details.offsetFromOrigin;
-                    _bubbleOffset = _bubbleOrigin + _longPressOrigin;
-                  });
-                },
-                child: _PtipoteInfoBubble(
-                  maxHeight: bubbleHeight,
-                  figurine: widget.figurine,
-                  vitality: widget.vitality,
-                  hunger: widget.hunger,
-                  xp: widget.xp,
-                  level: widget.level,
-                  autoPreference: widget.autoPreference,
-                  isHappy: widget.isHappy,
-                  canCuddle: widget.canCuddle,
-                  cuddleProgress: widget.cuddleProgress,
-                  availableSimpleMeals: widget.availableSimpleMeals,
-                  lastCuddleAt: widget.lastCuddleAt,
-                  isResting: widget.isResting,
-                  onWake: widget.onWake,
-                  onSleep: widget.onSleep,
-                  onCuddle: widget.onCuddle,
-                  onFeed: widget.onFeed,
-                  onAutoPreferenceChanged: widget.onAutoPreferenceChanged,
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white, width: 2),
+                  borderRadius: BorderRadius.circular(999),
                 ),
               ),
             ),
@@ -1388,33 +1383,35 @@ class _PtipoteInfoBubble extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 6),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                Row(
                   children: <Widget>[
-                    if (!isResting)
-                      FilledButton.tonalIcon(
-                        onPressed: onSleep,
-                        icon: const Icon(Icons.bedtime_outlined),
-                        label: const Text('Dormir'),
+                    Expanded(
+                      child: _CompactActionButton(
+                        onPressed: isResting ? onWake : onSleep,
+                        icon: isResting
+                            ? Icons.wb_sunny_outlined
+                            : Icons.bedtime_outlined,
+                        label: isResting ? 'Réveil' : 'Dodo',
                       ),
-                    _CooldownActionButton(
-                      progress: cuddleProgress,
-                      enabled: canCuddle,
-                      onPressed: onCuddle,
-                      icon: Icons.favorite_border,
-                      label: canCuddle ? 'Câliner' : 'Câlin recharge',
                     ),
-                    FilledButton.tonalIcon(
-                      onPressed: availableSimpleMeals > 0 ? onFeed : null,
-                      icon: const Icon(Icons.restaurant_outlined),
-                      label: Text('Nourrir ($availableSimpleMeals)'),
-                    ),
-                    if (isResting)
-                      FilledButton.tonalIcon(
-                        onPressed: onWake,
-                        icon: const Icon(Icons.wb_sunny_outlined),
-                        label: const Text('Réveiller'),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _CooldownActionButton(
+                        progress: cuddleProgress,
+                        enabled: canCuddle,
+                        onPressed: onCuddle,
+                        icon: Icons.favorite_border,
+                        label: 'Câlin',
                       ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _CompactActionButton(
+                        onPressed: availableSimpleMeals > 0 ? onFeed : null,
+                        icon: Icons.restaurant_outlined,
+                        label: 'Repas',
+                      ),
+                    ),
                   ],
                 ),
                 Theme(
@@ -1555,6 +1552,39 @@ class _InfoLine extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CompactActionButton extends StatelessWidget {
+  const _CompactActionButton({
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+  });
+
+  final VoidCallback? onPressed;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      child: FilledButton.tonal(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(icon, size: 16),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ],
+        ),
       ),
     );
   }
