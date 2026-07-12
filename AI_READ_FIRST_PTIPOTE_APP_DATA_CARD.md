@@ -462,9 +462,11 @@ Pour debugger les push:
 | Fichier | Role |
 | --- | --- |
 | `ptipote-app/lib/features/game/fablab_config.dart` | Configuration Fablab V1: cout, capacite de stock, niveaux, recette Cuisine. |
+| `ptipote-app/lib/features/game/craft_config.dart` | Configuration Craft V1: recettes, ingredients, resultats, effet consommable faim/vitalite. |
 | `ptipote-app/lib/features/game/zone0_game_state.dart` | Etat persistant du Fablab, construction, capacite globale, recette Repas simple. |
 | `ptipote-app/lib/features/game/refuge_page.dart` | Hotspot Fablab constructible, modale construction, page Fablab, Cuisine, inventaire dynamique. |
 | `ptipote-dashboard/fablab-config.json` | Miroir JSON dashboard pour consultation/export. |
+| `ptipote-dashboard/craft-config.json` | Miroir JSON dashboard des recettes Craft. |
 | `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglet dashboard `Fablab`. |
 
 ### 2. Construction generique preparee
@@ -493,14 +495,15 @@ Pour debugger les push:
 
 - Cuisine active au Fablab niveau 1.
 - Interface: 2 slots visuels, Eau gratuite contextuelle, stock Organique, resultat.
-- Recette test temporaire: `2 Organique + Eau => 1 Repas simple`.
+- Recette test temporaire: `2 Organique + Eau => 1 Repas simple`, definie dans `craft_config.dart`.
 - `Repas simple` est ajoute a l'inventaire global et stacke comme les autres ressources.
-- Consommation du Repas simple pour restaurer la Vitalite: a brancher plus tard.
+- `Repas simple` est consommable depuis la fiche P'TIPOTE dans la Maison: `+20 faim`, `+15 vitalite`.
 
 ### 6. Dashboard
 
 - Onglet `Fablab` charge `ptipote-dashboard/fablab-config.json`.
-- Variables visibles/exportables: cout Organique, cout Mineral, capacite de base, bonus de stock, niveau max, niveau Cuisine, prerequis Atelier/Recycleur, recette Repas simple.
+- Variables visibles/exportables: cout Organique, cout Mineral, capacite de base, bonus de stock, niveau max, niveau Cuisine, prerequis Atelier/Recycleur.
+- Onglet `Craft` charge `ptipote-dashboard/craft-config.json`; permet de creer une recette locale avec materiaux, quantites, objet resultat, statut consommable, faim restauree et vitalite restauree, puis exporter le JSON.
 - Synchronisation automatique Dashboard -> Flutter non branchee; modifier aussi `fablab_config.dart` pour changer l'app.
 
 ### 7. Sections futures
@@ -508,6 +511,58 @@ Pour debugger les push:
 - Atelier visible mais verrouille: `Debloque au Cœur du Camp niveau 1.`
 - Recycleur visible mais verrouille: `Debloque au Cœur du Camp niveau 2.`
 - Aucun gameplay Atelier, Recycleur, schemas PTIBUG, amelioration PTIBUG ou drag and drop stock n'est actif.
+
+## PTIPOTE V1 - Repos, Faim Et Consommables
+
+### 1. Fichiers crees ou modifies
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/figurines/ptipote_stats_config.dart` | Stats V1 ajoutees: recuperation naturelle/heureuse/repos, faim, seuils bonheur, cooldown calin. |
+| `ptipote-app/lib/features/game/craft_config.dart` | Recette `Repas simple` et effets consommables configurables cote app. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Persistance Firebase faim/repos manuel/dernier calin, regeneration, faim de mission, consommation. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Fiche P'TIPOTE: faim, heureux, dormir, caliner avec cooldown, nourrir, jauge de repos. |
+| `ptipote-dashboard/ptipote-stats-config.json` | Miroir JSON des nouvelles stats faim/repos/calin. |
+| `ptipote-dashboard/craft-config.json` | Miroir JSON des recettes et consommables. |
+| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglets `Stat Ptipote` enrichi et `Craft`. |
+
+### 2. Recuperation de vitalite
+
+- Regeneration naturelle: `+1 vitalite` toutes les `2 minutes`.
+- Si heureux: `+1 vitalite/minute` prepare via `happyVitalityRecoveryPerMinute`.
+- En repos/alcove: `+2 vitalite/minute`.
+- Le repos manuel est stocke dans `users/{uid}/game/zone0.manualRestingIds`.
+- A vitalite max, le P'TIPOTE quitte le repos manuel.
+
+### 3. Bonheur operationnel
+
+Un P'TIPOTE est heureux si:
+- il est au repos;
+- sa vitalite est strictement superieure a `30`;
+- sa faim est strictement superieure a `30`;
+- il a ete caline dans les `3 heures`.
+
+Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldown il est grise et affiche une jauge de recharge.
+
+### 4. Faim
+
+- Faim max/base V1: `100`.
+- Decroissance passive: `-1 faim` toutes les `30 minutes`.
+- Une mission retire aussi de la faim egale a `50%` de la vitalite consommee.
+- Donnee persistante: `users/{uid}/game/zone0.hungerOverrides`.
+
+### 5. Consommable Repas simple
+
+- `Repas simple` est fabrique en Cuisine.
+- Consommation depuis la fiche P'TIPOTE Maison.
+- Effet V1: `+20 faim`, `+15 vitalite`.
+- Les ressources ne sont retirees qu'au moment de la consommation.
+
+### 6. Dashboard
+
+- `Stat Ptipote` expose les seuils et vitesses: regeneration naturelle, repos, faim, ratio mission, seuils bonheur, cooldown calin.
+- `Craft` permet d'ajouter localement une recette, selectionner deux materiaux maximum, definir un objet resultat et ses effets consommables, puis exporter `craft-config.json`.
+- La synchro automatique Dashboard -> Flutter/Firebase reste a brancher; le JSON exporte sert de source de reprise.
 
 ## Ou Modifier Selon La Demande
 

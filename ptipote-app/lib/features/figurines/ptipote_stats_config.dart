@@ -27,7 +27,16 @@ class PtipoteStatsConfig {
     required this.maxVitality,
     required this.vitalityRecoveryPerMinute,
     required this.alcoveVitalityRecoveryPerMinute,
+    required this.naturalVitalityRecoveryMinutes,
+    required this.happyVitalityRecoveryPerMinute,
     required this.minVitalityBeforeAutoRest,
+    required this.maxHunger,
+    required this.baseHunger,
+    required this.hungerDecayMinutes,
+    required this.missionHungerCostRatio,
+    required this.happyVitalityThreshold,
+    required this.happyHungerThreshold,
+    required this.cuddleHappyHours,
     required this.baseHappiness,
     required this.maxHappiness,
     required this.happinessDecayPerHour,
@@ -44,7 +53,16 @@ class PtipoteStatsConfig {
   final int maxVitality;
   final int vitalityRecoveryPerMinute;
   final int alcoveVitalityRecoveryPerMinute;
+  final int naturalVitalityRecoveryMinutes;
+  final int happyVitalityRecoveryPerMinute;
   final int minVitalityBeforeAutoRest;
+  final int maxHunger;
+  final int baseHunger;
+  final int hungerDecayMinutes;
+  final double missionHungerCostRatio;
+  final int happyVitalityThreshold;
+  final int happyHungerThreshold;
+  final int cuddleHappyHours;
   final int baseHappiness;
   final int maxHappiness;
   final int happinessDecayPerHour;
@@ -89,7 +107,16 @@ const ptipoteStatsConfig = PtipoteStatsConfig(
   maxVitality: 100,
   vitalityRecoveryPerMinute: 1,
   alcoveVitalityRecoveryPerMinute: 2,
+  naturalVitalityRecoveryMinutes: 2,
+  happyVitalityRecoveryPerMinute: 1,
   minVitalityBeforeAutoRest: 20,
+  maxHunger: 100,
+  baseHunger: 100,
+  hungerDecayMinutes: 30,
+  missionHungerCostRatio: 0.5,
+  happyVitalityThreshold: 30,
+  happyHungerThreshold: 30,
+  cuddleHappyHours: 3,
   baseHappiness: 70,
   maxHappiness: 100,
   happinessDecayPerHour: 1,

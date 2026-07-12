@@ -33,6 +33,7 @@
         <button class="tab-button" type="button" data-dashboard-tab="camp-heart">Cœur du Camp</button>
         <button class="tab-button" type="button" data-dashboard-tab="lisiere-forage">Lisière / Fourrage</button>
         <button class="tab-button" type="button" data-dashboard-tab="fablab">Fablab</button>
+        <button class="tab-button" type="button" data-dashboard-tab="craft">Craft</button>
       </nav>
 
       <section class="dashboard-panel active" data-dashboard-panel="overview">
@@ -114,6 +115,30 @@
           </div>
           <p class="panel-note" id="fablabStatus">Charge la construction, le stock et la Cuisine depuis fablab-config.json.</p>
           <div class="stage-list" id="fablabConfigList"></div>
+        </section>
+      </section>
+
+      <section class="dashboard-panel" data-dashboard-panel="craft">
+        <section class="panel stat-ptipote-panel" aria-labelledby="craftTitle">
+          <div class="panel-head">
+            <div><p class="eyebrow">Configuration V1</p><h2 id="craftTitle">Craft</h2></div>
+            <button class="ghost" id="exportCraftButton" type="button">Exporter JSON</button>
+          </div>
+          <p class="panel-note" id="craftStatus">Charge les recettes depuis craft-config.json. Les ajouts restent locaux jusqu'a export.</p>
+          <div class="stage-list" id="craftRecipeList"></div>
+          <form class="stat-form" id="craftRecipeForm">
+            <div class="stat-field"><label for="craftDisplayName">Nom recette</label><input id="craftDisplayName" name="displayName" value="Repas nutritif"></div>
+            <div class="stat-field"><label for="craftIngredientResource">Matériau 1</label><select id="craftIngredientResource" name="ingredientResource"><option>Organique</option><option>Minéral</option><option>Débris</option><option>Repas simple</option></select></div>
+            <div class="stat-field"><label for="craftIngredientAmount">Quantité 1</label><input id="craftIngredientAmount" name="ingredientAmount" type="number" min="1" value="1"></div>
+            <div class="stat-field"><label for="craftIngredientResource2">Matériau 2</label><select id="craftIngredientResource2" name="ingredientResource2"><option value="">Aucun</option><option>Organique</option><option>Minéral</option><option>Débris</option><option>Repas simple</option></select></div>
+            <div class="stat-field"><label for="craftIngredientAmount2">Quantité 2</label><input id="craftIngredientAmount2" name="ingredientAmount2" type="number" min="0" value="0"></div>
+            <div class="stat-field"><label for="craftResultItem">Objet résultat</label><input id="craftResultItem" name="resultItem" value="Repas nutritif"></div>
+            <div class="stat-field"><label for="craftResultAmount">Quantité résultat</label><input id="craftResultAmount" name="resultAmount" type="number" min="1" value="1"></div>
+            <div class="stat-field"><label for="craftIsConsumable">Consommable</label><select id="craftIsConsumable" name="isConsumable"><option value="true">Oui</option><option value="false">Non</option></select></div>
+            <div class="stat-field"><label for="craftHungerRestore">Faim récupérée</label><input id="craftHungerRestore" name="hungerRestore" type="number" min="0" value="20"></div>
+            <div class="stat-field"><label for="craftVitalityRestore">Vitalité récupérée</label><input id="craftVitalityRestore" name="vitalityRestore" type="number" min="0" value="15"></div>
+            <div class="stat-field stat-field-wide"><button class="button" id="addCraftRecipeButton" type="submit">Ajouter recette locale</button></div>
+          </form>
         </section>
       </section>
     </main>

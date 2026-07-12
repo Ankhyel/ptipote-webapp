@@ -1,0 +1,22 @@
+{
+  "recipes": [
+    {
+      "id": "simpleMeal",
+      "displayName": "Repas simple",
+      "ingredients": [
+        {
+          "resource": "Organique",
+          "amount": 2
+        }
+      ],
+      "contextIngredients": [
+        "Eau"
+      ],
+      "resultItem": "Repas simple",
+      "resultAmount": 1,
+      "isConsumable": true,
+      "hungerRestore": 20,
+      "vitalityRestore": 15
+    }
+  ]
+}

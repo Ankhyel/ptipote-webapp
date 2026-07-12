@@ -36,13 +36,24 @@ let ptipoteStatsConfig = {};
 let campHeartConfig = {};
 let lisiereForageConfig = {};
 let fablabConfig = {};
+let craftConfig = {};
 
 const PTIPOTE_STATS_STORAGE_KEY = "ptipote_stats_config_v1";
+const CRAFT_STORAGE_KEY = "craft_config_v1";
 const PTIPOTE_STATS_FIELDS = [
   "maxVitality",
   "vitalityRecoveryPerMinute",
   "alcoveVitalityRecoveryPerMinute",
+  "naturalVitalityRecoveryMinutes",
+  "happyVitalityRecoveryPerMinute",
   "minVitalityBeforeAutoRest",
+  "maxHunger",
+  "baseHunger",
+  "hungerDecayMinutes",
+  "missionHungerCostRatio",
+  "happyVitalityThreshold",
+  "happyHungerThreshold",
+  "cuddleHappyHours",
   "baseHappiness",
   "maxHappiness",
   "happinessDecayPerHour",
@@ -85,6 +96,10 @@ const ids = [
   "fablabStatus",
   "fablabConfigList",
   "exportFablabButton",
+  "craftStatus",
+  "craftRecipeList",
+  "craftRecipeForm",
+  "exportCraftButton",
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -384,7 +399,6 @@ function renderFablabConfig() {
     ["Cuisine active niveau", fablabConfig.cuisineUnlockLevel],
     ["Atelier requis Cœur", fablabConfig.atelierUnlockCampHeartLevel],
     ["Recycleur requis Cœur", fablabConfig.recyclerUnlockCampHeartLevel],
-    ["Recette Repas simple", `${fablabConfig.simpleMealOrganicCost} Organique + Eau => ${fablabConfig.simpleMealOutputAmount} Repas simple`],
   ];
   el.fablabConfigList.innerHTML = rows.map(([label, value]) => `
     <div class="stage-row">
@@ -392,6 +406,88 @@ function renderFablabConfig() {
       <strong>V1</strong>
     </div>
   `).join("");
+}
+
+async function loadCraftConfig({ reset = false } = {}) {
+  try {
+    const response = await fetch("./craft-config.json", { cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const baseConfig = await response.json();
+    const savedConfig = reset ? null : JSON.parse(localStorage.getItem(CRAFT_STORAGE_KEY) || "null");
+    craftConfig = { ...baseConfig, ...(savedConfig || {}) };
+    if (reset) localStorage.removeItem(CRAFT_STORAGE_KEY);
+    renderCraftConfig();
+    el.craftStatus.textContent = "Recettes chargées. Les ajouts restent locaux jusqu'a export JSON.";
+  } catch (error) {
+    el.craftStatus.textContent = "Configuration Craft illisible: " + error.message;
+  }
+}
+
+function renderCraftConfig() {
+  const recipes = Array.isArray(craftConfig.recipes) ? craftConfig.recipes : [];
+  el.craftRecipeList.innerHTML = recipes.map((recipe) => {
+    const ingredients = Array.isArray(recipe.ingredients)
+      ? recipe.ingredients.map((item) => `${escapeHtml(item.amount)} ${escapeHtml(item.resource)}`).join(" + ")
+      : "";
+    const context = Array.isArray(recipe.contextIngredients) && recipe.contextIngredients.length
+      ? ` + ${recipe.contextIngredients.map(escapeHtml).join(" + ")}`
+      : "";
+    const effects = recipe.isConsumable
+      ? `consommable · faim +${escapeHtml(recipe.hungerRestore || 0)} · vitalité +${escapeHtml(recipe.vitalityRestore || 0)}`
+      : "non consommable";
+    return `
+      <div class="stage-row">
+        <div>
+          <strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong>
+          <span>${ingredients}${context} => ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${effects}</span>
+        </div>
+        <strong>${escapeHtml(recipe.id || "recette")}</strong>
+      </div>
+    `;
+  }).join("");
+}
+
+function addCraftRecipe(event) {
+  event.preventDefault();
+  const form = new FormData(el.craftRecipeForm);
+  const ingredients = [
+    {
+      resource: String(form.get("ingredientResource") || "Organique"),
+      amount: Number(form.get("ingredientAmount") || 1),
+    },
+  ];
+  const resource2 = String(form.get("ingredientResource2") || "");
+  const amount2 = Number(form.get("ingredientAmount2") || 0);
+  if (resource2 && amount2 > 0) {
+    ingredients.push({ resource: resource2, amount: amount2 });
+  }
+  const displayName = String(form.get("displayName") || "Nouvelle recette").trim();
+  const resultItem = String(form.get("resultItem") || displayName).trim();
+  const recipe = {
+    id: displayName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `recipe-${Date.now()}`,
+    displayName,
+    ingredients,
+    contextIngredients: ["Eau"],
+    resultItem,
+    resultAmount: Number(form.get("resultAmount") || 1),
+    isConsumable: form.get("isConsumable") === "true",
+    hungerRestore: Number(form.get("hungerRestore") || 0),
+    vitalityRestore: Number(form.get("vitalityRestore") || 0),
+  };
+  craftConfig.recipes = Array.isArray(craftConfig.recipes) ? [...craftConfig.recipes, recipe] : [recipe];
+  localStorage.setItem(CRAFT_STORAGE_KEY, JSON.stringify(craftConfig, null, 2));
+  renderCraftConfig();
+  el.craftStatus.textContent = "Recette ajoutée localement. Exporte le JSON pour versionner la configuration.";
+}
+
+function exportCraftConfig() {
+  const blob = new Blob([JSON.stringify(craftConfig, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "craft-config.json";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function exportFablabConfig() {
@@ -481,8 +577,15 @@ el.exportFablabButton.addEventListener("click", () => {
   exportFablabConfig();
 });
 
+el.exportCraftButton.addEventListener("click", () => {
+  exportCraftConfig();
+});
+
+el.craftRecipeForm.addEventListener("submit", addCraftRecipe);
+
 setupDashboardTabs();
 loadPtipoteStatsConfig();
 loadCampHeartConfig();
 loadLisiereForageConfig();
 loadFablabConfig();
+loadCraftConfig();

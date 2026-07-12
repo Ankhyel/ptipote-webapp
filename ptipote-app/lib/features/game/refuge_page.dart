@@ -7,6 +7,7 @@ import '../../services/figurine_service.dart';
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'camp_heart_config.dart';
+import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'game_asset_resolver.dart';
 import 'lisiere_forage_config.dart';
@@ -318,35 +319,15 @@ class _MaisonPageState extends State<_MaisonPage>
   }
 
   void _recoverVitalityStep() {
-    if (!mounted || _gameState.vitalityOverrides.isEmpty) return;
-    setState(() {
-      _recoveryTick += 1;
-      final vitalityUpdates = <String, int>{};
-      final idsToClear = <String>[];
-      final alcoveRecoveryPerTick = math.max(
-        1,
-        (ptipoteStatsConfig.alcoveVitalityRecoveryPerMinute / 2).round(),
+    if (!mounted) return;
+    _recoveryTick += 1;
+    _figurineService.watchMyFigurines().first.then((figurines) {
+      if (!mounted) return;
+      _gameState.recoverFigurineNeeds(
+        figurines: figurines,
+        tick: _recoveryTick,
       );
-      for (final entry in _gameState.vitalityOverrides.entries) {
-        final isResting =
-            entry.value <= ptipoteStatsConfig.minVitalityBeforeAutoRest;
-        if (!isResting && _recoveryTick.isOdd) continue;
-        final nextVitality = math.min(
-          ptipoteStatsConfig.maxVitality,
-          entry.value + alcoveRecoveryPerTick,
-        );
-        if (nextVitality >= ptipoteStatsConfig.maxVitality) {
-          idsToClear.add(entry.key);
-        } else {
-          vitalityUpdates[entry.key] = nextVitality;
-        }
-      }
-      _gameState.vitalityOverrides.addAll(vitalityUpdates);
-      for (final id in idsToClear) {
-        _gameState.vitalityOverrides.remove(id);
-      }
     });
-    unawaited(_gameState.saveRuntimeToFirebase());
   }
 
   void _setAutoPreference(
@@ -364,6 +345,28 @@ class _MaisonPageState extends State<_MaisonPage>
       _gameState.wakeFromRest(figurine);
       _selectedFigurineId = figurine.id;
     });
+  }
+
+  void _sendToSleep(PtipoteFigurine figurine) {
+    setState(() {
+      _gameState.sendToSleep(figurine);
+      _selectedFigurineId = figurine.id;
+    });
+  }
+
+  void _cuddleFigurine(PtipoteFigurine figurine) {
+    setState(() {
+      _gameState.cuddle(figurine);
+      _selectedFigurineId = figurine.id;
+    });
+  }
+
+  void _feedFigurine(PtipoteFigurine figurine) {
+    final result = _gameState.consumeSimpleMeal(figurine);
+    setState(() => _selectedFigurineId = figurine.id);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
   }
 
   @override
@@ -419,13 +422,26 @@ class _MaisonPageState extends State<_MaisonPage>
                             trainingFigurineId: _trainingFigurineId,
                             choosingTrainingTarget: _choosingTrainingTarget,
                             vitalityFor: _vitalityFor,
+                            hungerFor: _gameState.hungerFor,
                             xpFor: _gameState.xpFor,
                             levelFor: _gameState.levelFor,
                             isOnMission: _gameState.isOnMission,
+                            isResting: _gameState.isResting,
+                            isHappy: _gameState.isHappy,
+                            canCuddle: _gameState.canCuddle,
+                            cuddleProgress: _gameState.cuddleCooldownProgress,
                             autoPreferenceFor: _autoPreferenceFor,
+                            availableSimpleMeals: _gameState.resourceAmount(
+                              craftConfig.simpleMealRecipe.resultItem,
+                            ),
+                            lastCuddleAt: (figurine) =>
+                                _gameState.lastCuddleAt[figurine.id],
                             onToggleFigurine: _toggleFigurine,
                             onAutoPreferenceChanged: _setAutoPreference,
                             onWake: _wakeFigurine,
+                            onSleep: _sendToSleep,
+                            onCuddle: _cuddleFigurine,
+                            onFeed: _feedFigurine,
                           ),
                           _TrainingTool(
                             choosing: _choosingTrainingTarget,
@@ -833,13 +849,23 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.trainingFigurineId,
     required this.choosingTrainingTarget,
     required this.vitalityFor,
+    required this.hungerFor,
     required this.xpFor,
     required this.levelFor,
     required this.isOnMission,
+    required this.isResting,
+    required this.isHappy,
+    required this.canCuddle,
+    required this.cuddleProgress,
     required this.autoPreferenceFor,
+    required this.availableSimpleMeals,
+    required this.lastCuddleAt,
     required this.onToggleFigurine,
     required this.onAutoPreferenceChanged,
     required this.onWake,
+    required this.onSleep,
+    required this.onCuddle,
+    required this.onFeed,
   });
 
   final List<PtipoteFigurine> figurines;
@@ -848,17 +874,27 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final String? trainingFigurineId;
   final bool choosingTrainingTarget;
   final int Function(PtipoteFigurine figurine) vitalityFor;
+  final int Function(PtipoteFigurine figurine) hungerFor;
   final int Function(PtipoteFigurine figurine) xpFor;
   final int Function(PtipoteFigurine figurine) levelFor;
   final bool Function(String figurineId) isOnMission;
+  final bool Function(PtipoteFigurine figurine) isResting;
+  final bool Function(PtipoteFigurine figurine) isHappy;
+  final bool Function(PtipoteFigurine figurine) canCuddle;
+  final double Function(PtipoteFigurine figurine) cuddleProgress;
   final PtipoteAutoAssignmentPreference Function(PtipoteFigurine figurine)
       autoPreferenceFor;
+  final int availableSimpleMeals;
+  final DateTime? Function(PtipoteFigurine figurine) lastCuddleAt;
   final ValueChanged<PtipoteFigurine> onToggleFigurine;
   final void Function(
     PtipoteFigurine figurine,
     PtipoteAutoAssignmentPreference preference,
   ) onAutoPreferenceChanged;
   final ValueChanged<PtipoteFigurine> onWake;
+  final ValueChanged<PtipoteFigurine> onSleep;
+  final ValueChanged<PtipoteFigurine> onCuddle;
+  final ValueChanged<PtipoteFigurine> onFeed;
 
   @override
   State<_PtipoteRefugeLayer> createState() => _PtipoteRefugeLayerState();
@@ -928,6 +964,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
       final motion = _motions.putIfAbsent(figurine.id, _newMotion);
       if (widget.vitalityFor(figurine) <=
               ptipoteStatsConfig.minVitalityBeforeAutoRest ||
+          widget.isResting(figurine) ||
           widget.trainingFigurineId == figurine.id) {
         continue;
       }
@@ -958,18 +995,14 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
     final resting = widget.figurines
         .where(
           (figurine) =>
-              !widget.isOnMission(figurine.id) &&
-              widget.vitalityFor(figurine) <=
-                  ptipoteStatsConfig.minVitalityBeforeAutoRest,
+              !widget.isOnMission(figurine.id) && widget.isResting(figurine),
         )
         .take(3)
         .toList();
     final active = widget.figurines
         .where(
           (figurine) =>
-              !widget.isOnMission(figurine.id) &&
-              widget.vitalityFor(figurine) >
-                  ptipoteStatsConfig.minVitalityBeforeAutoRest,
+              !widget.isOnMission(figurine.id) && !widget.isResting(figurine),
         )
         .toList();
 
@@ -1007,15 +1040,24 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
                     vitality: widget.vitalityFor(figurine),
+                    hunger: widget.hungerFor(figurine),
                     xp: widget.xpFor(figurine),
                     level: widget.levelFor(figurine),
                     autoPreference: widget.autoPreferenceFor(figurine),
+                    isHappy: widget.isHappy(figurine),
+                    canCuddle: widget.canCuddle(figurine),
+                    cuddleProgress: widget.cuddleProgress(figurine),
+                    availableSimpleMeals: widget.availableSimpleMeals,
+                    lastCuddleAt: widget.lastCuddleAt(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     choosingTrainingTarget: widget.choosingTrainingTarget,
                     isResting: false,
                     restProgress: 0,
                     onTap: () => widget.onToggleFigurine(figurine),
                     onWake: () => widget.onWake(figurine),
+                    onSleep: () => widget.onSleep(figurine),
+                    onCuddle: () => widget.onCuddle(figurine),
+                    onFeed: () => widget.onFeed(figurine),
                     onAutoPreferenceChanged: (preference) {
                       widget.onAutoPreferenceChanged(figurine, preference);
                     },
@@ -1035,15 +1077,24 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                   child: _PtipoteSpriteButton(
                     figurine: figurine,
                     vitality: widget.vitalityFor(figurine),
+                    hunger: widget.hungerFor(figurine),
                     xp: widget.xpFor(figurine),
                     level: widget.levelFor(figurine),
                     autoPreference: widget.autoPreferenceFor(figurine),
+                    isHappy: widget.isHappy(figurine),
+                    canCuddle: widget.canCuddle(figurine),
+                    cuddleProgress: widget.cuddleProgress(figurine),
+                    availableSimpleMeals: widget.availableSimpleMeals,
+                    lastCuddleAt: widget.lastCuddleAt(figurine),
                     selected: widget.selectedFigurineId == figurine.id,
                     choosingTrainingTarget: widget.choosingTrainingTarget,
                     isResting: true,
                     restProgress: restProgress,
                     onTap: () => widget.onToggleFigurine(figurine),
                     onWake: () => widget.onWake(figurine),
+                    onSleep: () => widget.onSleep(figurine),
+                    onCuddle: () => widget.onCuddle(figurine),
+                    onFeed: () => widget.onFeed(figurine),
                     onAutoPreferenceChanged: (preference) {
                       widget.onAutoPreferenceChanged(figurine, preference);
                     },
@@ -1080,29 +1131,47 @@ class _PtipoteSpriteButton extends StatefulWidget {
   const _PtipoteSpriteButton({
     required this.figurine,
     required this.vitality,
+    required this.hunger,
     required this.xp,
     required this.level,
     required this.autoPreference,
+    required this.isHappy,
+    required this.canCuddle,
+    required this.cuddleProgress,
+    required this.availableSimpleMeals,
+    required this.lastCuddleAt,
     required this.selected,
     required this.choosingTrainingTarget,
     required this.isResting,
     required this.restProgress,
     required this.onTap,
     required this.onWake,
+    required this.onSleep,
+    required this.onCuddle,
+    required this.onFeed,
     required this.onAutoPreferenceChanged,
   });
 
   final PtipoteFigurine figurine;
   final int vitality;
+  final int hunger;
   final int xp;
   final int level;
   final PtipoteAutoAssignmentPreference autoPreference;
+  final bool isHappy;
+  final bool canCuddle;
+  final double cuddleProgress;
+  final int availableSimpleMeals;
+  final DateTime? lastCuddleAt;
   final bool selected;
   final bool choosingTrainingTarget;
   final bool isResting;
   final double restProgress;
   final VoidCallback onTap;
   final VoidCallback onWake;
+  final VoidCallback onSleep;
+  final VoidCallback onCuddle;
+  final VoidCallback onFeed;
   final ValueChanged<PtipoteAutoAssignmentPreference> onAutoPreferenceChanged;
 
   @override
@@ -1160,11 +1229,20 @@ class _PtipoteSpriteButtonState extends State<_PtipoteSpriteButton> {
                 child: _PtipoteInfoBubble(
                   figurine: widget.figurine,
                   vitality: widget.vitality,
+                  hunger: widget.hunger,
                   xp: widget.xp,
                   level: widget.level,
                   autoPreference: widget.autoPreference,
+                  isHappy: widget.isHappy,
+                  canCuddle: widget.canCuddle,
+                  cuddleProgress: widget.cuddleProgress,
+                  availableSimpleMeals: widget.availableSimpleMeals,
+                  lastCuddleAt: widget.lastCuddleAt,
                   isResting: widget.isResting,
                   onWake: widget.onWake,
+                  onSleep: widget.onSleep,
+                  onCuddle: widget.onCuddle,
+                  onFeed: widget.onFeed,
                   onAutoPreferenceChanged: widget.onAutoPreferenceChanged,
                 ),
               ),
@@ -1286,21 +1364,39 @@ class _PtipoteInfoBubble extends StatelessWidget {
   const _PtipoteInfoBubble({
     required this.figurine,
     required this.vitality,
+    required this.hunger,
     required this.xp,
     required this.level,
     required this.autoPreference,
+    required this.isHappy,
+    required this.canCuddle,
+    required this.cuddleProgress,
+    required this.availableSimpleMeals,
+    required this.lastCuddleAt,
     required this.isResting,
     required this.onWake,
+    required this.onSleep,
+    required this.onCuddle,
+    required this.onFeed,
     required this.onAutoPreferenceChanged,
   });
 
   final PtipoteFigurine figurine;
   final int vitality;
+  final int hunger;
   final int xp;
   final int level;
   final PtipoteAutoAssignmentPreference autoPreference;
+  final bool isHappy;
+  final bool canCuddle;
+  final double cuddleProgress;
+  final int availableSimpleMeals;
+  final DateTime? lastCuddleAt;
   final bool isResting;
   final VoidCallback onWake;
+  final VoidCallback onSleep;
+  final VoidCallback onCuddle;
+  final VoidCallback onFeed;
   final ValueChanged<PtipoteAutoAssignmentPreference> onAutoPreferenceChanged;
 
   @override
@@ -1334,9 +1430,45 @@ class _PtipoteInfoBubble extends StatelessWidget {
               label: 'Vitalité',
               value: '$vitality/${figurine.maxVitality}',
             ),
+            _InfoLine(
+              label: 'Faim',
+              value: '$hunger/${ptipoteStatsConfig.maxHunger}',
+            ),
             _InfoLine(label: 'Bonheur', value: '${figurine.happiness}/100'),
+            _InfoLine(label: 'Heureux', value: isHappy ? 'oui' : 'non'),
+            _InfoLine(
+              label: 'Câlin',
+              value: lastCuddleAt == null
+                  ? 'jamais'
+                  : _relativeCuddleLabel(lastCuddleAt!),
+            ),
             _InfoLine(label: 'État', value: _stateLabel(figurine, vitality)),
             _InfoLine(label: 'Auto', value: _preferenceLabel(autoPreference)),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: <Widget>[
+                if (!isResting)
+                  FilledButton.tonalIcon(
+                    onPressed: onSleep,
+                    icon: const Icon(Icons.bedtime_outlined),
+                    label: const Text('Dormir'),
+                  ),
+                _CooldownActionButton(
+                  progress: cuddleProgress,
+                  enabled: canCuddle,
+                  onPressed: onCuddle,
+                  icon: Icons.favorite_border,
+                  label: canCuddle ? 'Câliner' : 'Câlin recharge',
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: availableSimpleMeals > 0 ? onFeed : null,
+                  icon: const Icon(Icons.restaurant_outlined),
+                  label: Text('Nourrir ($availableSimpleMeals)'),
+                ),
+              ],
+            ),
             if (isResting) ...<Widget>[
               const SizedBox(height: 10),
               SizedBox(
@@ -1396,6 +1528,13 @@ class _PtipoteInfoBubble extends StatelessWidget {
       PtipoteAutoAssignmentPreference.market => 'Marché',
     };
   }
+
+  String _relativeCuddleLabel(DateTime date) {
+    final elapsed = DateTime.now().difference(date);
+    if (elapsed.inMinutes < 1) return 'à l’instant';
+    if (elapsed.inHours < 1) return 'il y a ${elapsed.inMinutes} min';
+    return 'il y a ${elapsed.inHours} h';
+  }
 }
 
 class _InfoLine extends StatelessWidget {
@@ -1419,6 +1558,69 @@ class _InfoLine extends StatelessWidget {
               textAlign: TextAlign.right,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CooldownActionButton extends StatelessWidget {
+  const _CooldownActionButton({
+    required this.progress,
+    required this.enabled,
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+  });
+
+  final double progress;
+  final bool enabled;
+  final VoidCallback onPressed;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 40,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: enabled
+                    ? colorScheme.secondaryContainer
+                    : colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: progress.clamp(0.0, 1.0),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colorScheme.secondary.withValues(alpha: 0.28),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: TextButton.icon(
+              onPressed: enabled ? onPressed : null,
+              icon: Icon(icon, size: 18),
+              label: Text(label),
+              style: TextButton.styleFrom(
+                foregroundColor: enabled
+                    ? colorScheme.onSecondaryContainer
+                    : colorScheme.onSurfaceVariant,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
             ),
           ),
         ],
@@ -1738,7 +1940,7 @@ IconData _resourceIcon(String? resource) {
     'Débris' || 'Debris' => Icons.construction_outlined,
     'Minéral' || 'Mineral' => Icons.diamond_outlined,
     'Énergie' || 'Energie' => Icons.bolt_outlined,
-    'Repas' => Icons.restaurant_outlined,
+    'Repas' || 'Repas simple' => Icons.restaurant_outlined,
     _ => Icons.inventory_2_outlined,
   };
 }
@@ -3032,10 +3234,12 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
 
   @override
   Widget build(BuildContext context) {
+    final recipe = craftConfig.simpleMealRecipe;
     final organic = widget.gameState.resourceAmount('Organique');
-    final canPrepare = organic >= fablabConfig.simpleMealOrganicCost &&
+    final organicCost = recipe.ingredients['Organique'] ?? 0;
+    final canPrepare = organic >= organicCost &&
         widget.gameState.hasInventoryCapacityFor(
-          <String, int>{'Repas simple': fablabConfig.simpleMealOutputAmount},
+          <String, int>{recipe.resultItem: recipe.resultAmount},
         );
     return ListView(
       padding: const EdgeInsets.all(18),
@@ -3061,8 +3265,7 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
                     Expanded(
                       child: _RecipeSlot(
                         label: 'Slot 1',
-                        value:
-                            '${fablabConfig.simpleMealOrganicCost} Organique',
+                        value: '$organicCost Organique',
                         icon: Icons.eco_outlined,
                       ),
                     ),
@@ -3079,14 +3282,17 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
                 const SizedBox(height: 12),
                 Text('Stock Organique : $organic'),
                 Text(
-                  'Résultat : ${fablabConfig.simpleMealOutputAmount} Repas simple',
+                  'Résultat : ${recipe.resultAmount} ${recipe.resultItem}',
+                ),
+                Text(
+                  'Consommable : +${recipe.hungerRestore} faim, +${recipe.vitalityRestore} vitalité',
                 ),
                 if (!canPrepare) ...<Widget>[
                   const SizedBox(height: 8),
                   Text(
-                    organic < fablabConfig.simpleMealOrganicCost
-                        ? 'Il manque ${fablabConfig.simpleMealOrganicCost - organic} Organique.'
-                        : 'Inventaire plein : impossible de ranger le Repas simple.',
+                    organic < organicCost
+                        ? 'Il manque ${organicCost - organic} Organique.'
+                        : 'Inventaire plein : impossible de ranger ${recipe.resultItem}.',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
                       fontWeight: FontWeight.w900,

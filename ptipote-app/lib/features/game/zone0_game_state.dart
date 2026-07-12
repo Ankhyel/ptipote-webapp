@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
+import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'lisiere_forage_config.dart';
 
@@ -19,8 +20,11 @@ class Zone0GameState extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   final Map<String, int> vitalityOverrides = <String, int>{};
+  final Map<String, int> hungerOverrides = <String, int>{};
   final Map<String, int> xpOverrides = <String, int>{};
   final Map<String, int> levelOverrides = <String, int>{};
+  final Map<String, DateTime> lastCuddleAt = <String, DateTime>{};
+  final Set<String> manualRestingIds = <String>{};
   final Map<String, PtipoteAutoAssignmentPreference> autoPreferenceOverrides =
       <String, PtipoteAutoAssignmentPreference>{};
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
@@ -55,6 +59,10 @@ class Zone0GameState extends ChangeNotifier {
     return vitalityOverrides[figurine.id] ?? figurine.vitality;
   }
 
+  int hungerFor(PtipoteFigurine figurine) {
+    return hungerOverrides[figurine.id] ?? ptipoteStatsConfig.baseHunger;
+  }
+
   int xpFor(PtipoteFigurine figurine) {
     return xpOverrides[figurine.id] ?? figurine.xpValue;
   }
@@ -84,15 +92,59 @@ class Zone0GameState extends ChangeNotifier {
 
   bool isResting(PtipoteFigurine figurine) {
     return !isOnMission(figurine.id) &&
-        vitalityFor(figurine) <= ptipoteStatsConfig.minVitalityBeforeAutoRest;
+        (manualRestingIds.contains(figurine.id) ||
+            vitalityFor(figurine) <=
+                ptipoteStatsConfig.minVitalityBeforeAutoRest);
   }
 
   bool isBusy(PtipoteFigurine figurine) {
     return isOnMission(figurine.id) || isResting(figurine);
   }
 
+  bool isHappy(PtipoteFigurine figurine) {
+    final cuddleAt = lastCuddleAt[figurine.id];
+    final hasRecentCuddle = cuddleAt != null &&
+        DateTime.now().difference(cuddleAt) <=
+            Duration(hours: ptipoteStatsConfig.cuddleHappyHours);
+    return isResting(figurine) &&
+        vitalityFor(figurine) > ptipoteStatsConfig.happyVitalityThreshold &&
+        hungerFor(figurine) > ptipoteStatsConfig.happyHungerThreshold &&
+        hasRecentCuddle;
+  }
+
+  bool canCuddle(PtipoteFigurine figurine) {
+    final cuddleAt = lastCuddleAt[figurine.id];
+    if (cuddleAt == null) return true;
+    return DateTime.now().difference(cuddleAt) >=
+        Duration(hours: ptipoteStatsConfig.cuddleHappyHours);
+  }
+
+  double cuddleCooldownProgress(PtipoteFigurine figurine) {
+    final cuddleAt = lastCuddleAt[figurine.id];
+    if (cuddleAt == null) return 1;
+    final cooldown = Duration(hours: ptipoteStatsConfig.cuddleHappyHours);
+    final elapsed = DateTime.now().difference(cuddleAt);
+    return (elapsed.inSeconds / cooldown.inSeconds).clamp(0.0, 1.0);
+  }
+
+  void sendToSleep(PtipoteFigurine figurine) {
+    if (isOnMission(figurine.id)) return;
+    manualRestingIds.add(figurine.id);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  void cuddle(PtipoteFigurine figurine) {
+    if (isOnMission(figurine.id)) return;
+    if (!canCuddle(figurine)) return;
+    lastCuddleAt[figurine.id] = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
   void wakeFromRest(PtipoteFigurine figurine) {
     if (isOnMission(figurine.id)) return;
+    manualRestingIds.remove(figurine.id);
     final wakeVitality = math.min(
       ptipoteStatsConfig.maxVitality,
       ptipoteStatsConfig.minVitalityBeforeAutoRest + 1,
@@ -101,6 +153,59 @@ class Zone0GameState extends ChangeNotifier {
         math.max(vitalityFor(figurine), wakeVitality);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
+  }
+
+  void recoverFigurineNeeds({
+    required List<PtipoteFigurine> figurines,
+    required int tick,
+  }) {
+    var changed = false;
+    final hungerDecayTick =
+        math.max(1, ptipoteStatsConfig.hungerDecayMinutes * 2);
+    final naturalVitalityTick =
+        math.max(1, ptipoteStatsConfig.naturalVitalityRecoveryMinutes * 2);
+    for (final figurine in figurines) {
+      if (isOnMission(figurine.id)) continue;
+      final currentVitality = vitalityFor(figurine);
+      final resting = isResting(figurine);
+      final happy = isHappy(figurine);
+      var vitalityGain = 0;
+      if (resting) {
+        vitalityGain = math.max(1,
+            (ptipoteStatsConfig.alcoveVitalityRecoveryPerMinute / 2).round());
+      } else if (happy && tick.isEven) {
+        vitalityGain = ptipoteStatsConfig.happyVitalityRecoveryPerMinute;
+      } else if (tick % naturalVitalityTick == 0) {
+        vitalityGain = 1;
+      }
+
+      if (vitalityGain > 0 &&
+          currentVitality < ptipoteStatsConfig.maxVitality) {
+        final nextVitality = math.min(
+          ptipoteStatsConfig.maxVitality,
+          currentVitality + vitalityGain,
+        );
+        if (nextVitality >= ptipoteStatsConfig.maxVitality) {
+          vitalityOverrides.remove(figurine.id);
+          manualRestingIds.remove(figurine.id);
+        } else {
+          vitalityOverrides[figurine.id] = nextVitality;
+        }
+        changed = true;
+      }
+
+      if (tick % hungerDecayTick == 0) {
+        final currentHunger = hungerFor(figurine);
+        if (currentHunger > 0) {
+          hungerOverrides[figurine.id] = math.max(0, currentHunger - 1);
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
   }
 
   int resourceAmount(String resource) {
@@ -237,10 +342,9 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
 
-    final cost = <String, int>{'Organique': fablabConfig.simpleMealOrganicCost};
-    final output = <String, int>{
-      'Repas simple': fablabConfig.simpleMealOutputAmount
-    };
+    final recipe = craftConfig.simpleMealRecipe;
+    final cost = recipe.ingredients;
+    final output = <String, int>{recipe.resultItem: recipe.resultAmount};
     if (!hasResources(cost)) {
       return Zone0ActionResult(
         success: false,
@@ -264,6 +368,44 @@ class Zone0GameState extends ChangeNotifier {
     return const Zone0ActionResult(
       success: true,
       message: 'Repas simple préparé.',
+    );
+  }
+
+  Zone0ActionResult consumeSimpleMeal(PtipoteFigurine figurine) {
+    final recipe = craftConfig.simpleMealRecipe;
+    if (!recipe.isConsumable) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cet objet n’est pas consommable.',
+      );
+    }
+    if (resourceAmount(recipe.resultItem) <= 0) {
+      return Zone0ActionResult(
+        success: false,
+        message: 'Aucun ${recipe.resultItem} disponible.',
+      );
+    }
+    final removed = removeResource(recipe.resultItem, 1);
+    if (removed <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Repas indisponible.',
+      );
+    }
+    hungerOverrides[figurine.id] = math.min(
+      ptipoteStatsConfig.maxHunger,
+      hungerFor(figurine) + recipe.hungerRestore,
+    );
+    vitalityOverrides[figurine.id] = math.min(
+      ptipoteStatsConfig.maxVitality,
+      vitalityFor(figurine) + recipe.vitalityRestore,
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          '${figurine.displayName} mange ${recipe.resultItem} (+${recipe.hungerRestore} faim, +${recipe.vitalityRestore} vitalité).',
     );
   }
 
@@ -317,6 +459,37 @@ class Zone0GameState extends ChangeNotifier {
             vitalityData.entries.map(
               (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
             ),
+          );
+      }
+
+      final hungerData = data['hungerOverrides'];
+      if (hungerData is Map) {
+        hungerOverrides
+          ..clear()
+          ..addEntries(
+            hungerData.entries.map(
+              (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
+            ),
+          );
+      }
+
+      final restingData = data['manualRestingIds'];
+      if (restingData is List) {
+        manualRestingIds
+          ..clear()
+          ..addAll(restingData.map((id) => '$id'));
+      }
+
+      final cuddleData = data['lastCuddleAt'];
+      if (cuddleData is Map) {
+        lastCuddleAt
+          ..clear()
+          ..addEntries(
+            cuddleData.entries.map((entry) {
+              final date = _readDate(entry.value);
+              if (date == null) return null;
+              return MapEntry('${entry.key}', date);
+            }).whereType<MapEntry<String, DateTime>>(),
           );
       }
 
@@ -384,6 +557,12 @@ class Zone0GameState extends ChangeNotifier {
       0,
       vitalityFor(figurine) - vitalityCost,
     );
+    hungerOverrides[figurine.id] = math.max(
+      0,
+      hungerFor(figurine) -
+          (vitalityCost * ptipoteStatsConfig.missionHungerCostRatio).round(),
+    );
+    manualRestingIds.remove(figurine.id);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return mission;
@@ -589,6 +768,11 @@ class Zone0GameState extends ChangeNotifier {
       return _zone0Doc(user.uid).set(
         <String, dynamic>{
           'vitalityOverrides': vitalityOverrides,
+          'hungerOverrides': hungerOverrides,
+          'manualRestingIds': manualRestingIds.toList(),
+          'lastCuddleAt': lastCuddleAt.map(
+            (key, value) => MapEntry(key, Timestamp.fromDate(value)),
+          ),
           'missions': missions.map((mission) => mission.toFirebase()).toList(),
           'updatedAt': FieldValue.serverTimestamp(),
         },
@@ -669,6 +853,13 @@ class Zone0GameState extends ChangeNotifier {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse('$value') ?? 0;
+  }
+
+  DateTime? _readDate(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 
   Future<User?> _currentUser() async {
