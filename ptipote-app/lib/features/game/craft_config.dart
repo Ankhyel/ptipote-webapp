@@ -11,6 +11,8 @@ class CraftConfig {
   }
 }
 
+enum FoodType { meal, drink }
+
 class CraftRecipe {
   const CraftRecipe({
     required this.id,
@@ -19,6 +21,7 @@ class CraftRecipe {
     required this.resultItem,
     required this.resultAmount,
     required this.isConsumable,
+    required this.foodType,
     required this.hungerRestore,
     required this.vitalityRestore,
   });
@@ -29,6 +32,7 @@ class CraftRecipe {
   final String resultItem;
   final int resultAmount;
   final bool isConsumable;
+  final FoodType foodType;
   final int hungerRestore;
   final int vitalityRestore;
 }
@@ -42,8 +46,9 @@ const craftConfig = CraftConfig(
       resultItem: 'Repas simple',
       resultAmount: 1,
       isConsumable: true,
-      hungerRestore: 20,
-      vitalityRestore: 15,
+      foodType: FoodType.meal,
+      hungerRestore: 35,
+      vitalityRestore: 5,
     ),
   ],
 );

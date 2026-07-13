@@ -728,6 +728,77 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 - Le Marche ne lit pas encore population/securite.
 - Les valeurs dashboard doivent encore etre reliees a une edition runtime distante si besoin.
 
+## REPOS ET RECUPERATION V1
+
+### 1. Fichiers crees ou modifies
+
+- `ptipote-app/lib/features/figurines/ptipote_stats_config.dart`: ajoute `PtipoteRestState`, les seuils de Repos, bonus/malus XP/rendement, faim max suralimentee et malus d'indigestion.
+- `ptipote-app/lib/features/game/craft_config.dart`: ajoute `FoodType` (`meal`, `drink`) et transforme `Repas simple` en repas: `+35 faim`, `+5 Vitalite`.
+- `ptipote-app/lib/features/game/zone0_game_state.dart`: ajoute `restOverrides`, persistence Firebase, recuperation sommeil, perte naturelle de Repos, perte de Repos en mission, faim jusqu'a 120 et humeur basee sur Repos.
+- `ptipote-app/lib/features/game/refuge_page.dart`: affiche l'etat de Repos, l'indigestion, les bulles sommeil/indigestion et applique les bonus/malus Repos aux estimations Lisiere.
+- `ptipote-dashboard/ptipote-stats-config.json`: expose les parametres Repos/Nourriture.
+- `ptipote-dashboard/craft-config.json`, `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`: expose `FoodType` et les nouvelles valeurs Repas/Boisson.
+
+### 2. Nouvelle statistique Repos
+
+- Valeur: `0` a `100`.
+- Valeur par defaut: `100` si aucune sauvegarde Firebase n'existe.
+- Sauvegarde: `users/{uid}/game/zone0.restOverrides`.
+- Seul le sommeil restaure le Repos.
+- Le Confort n'est pas developpe dans cette etape; il deviendra plus tard un multiplicateur de recuperation du Repos selon qualite de couchage, decoration, niveau des alcoves, etc.
+
+### 3. Etats de Repos
+
+- `Bien repose`: `80-100`, bonus `+10% XP`, `+10% rendement`.
+- `Repose`: `50-79`, etat normal.
+- `Fatigue`: `20-49`, malus `-10% XP`, `-5% rendement`.
+- `Extenue`: `0-19`, refuse les longues missions, conserve les malus et rentre dormir via la logique de repos existante si fatigue.
+- Les seuils sont configurables dans `ptipote_stats_config.dart` et le JSON dashboard.
+
+### 4. Sommeil et Vitalite
+
+- Sommeil:
+  - Repos: `+2 par minute`.
+  - Vitalite: `+1 par minute`.
+- Vitalite reste le carburant des missions, crafts, Tour et futures activites.
+- Nourriture ne restaure jamais le Repos.
+
+### 5. Faim et suralimentation
+
+- Faim normale: `0-100`.
+- Suralimentation autorisee jusqu'a `120`.
+- Si Faim `80-100`: bonus passif de recuperation naturelle de Vitalite `+25%`.
+- Si Faim `>100`: etat Indigestion, icone dediee, `-25% recuperation Vitalite`, `-10% XP`.
+- La faim redescend par son rythme normal; aucun reset instantane.
+
+### 6. Categories de nourriture
+
+- `FoodType.meal`: repas, restaure surtout la Faim.
+- `FoodType.drink`: boisson, restaure surtout la Vitalite.
+- `Repas simple` V1: `meal`, `+35 faim`, `+5 Vitalite`.
+- Les futures recettes Craft doivent definir `foodType`.
+
+### 7. Bonheur et besoins
+
+- Le bonheur garde les trois besoins:
+  - Nourri: `faim > 30`.
+  - Repose: etat `Repose` ou `Bien repose`.
+  - Caline: dernier calin encore valide.
+- Les bulles possibles utilisent maintenant:
+  - repas/faim;
+  - sommeil si Repos faible;
+  - coeur si calin manquant;
+  - indigestion si Faim > 100.
+
+### 8. Dashboard
+
+- Section Stat Ptipote expose:
+  - `maxRest`, recuperation sommeil, perte naturelle, perte mission;
+  - seuils Bien repose/Repose/Fatigue/Extenue;
+  - bonus faim bien nourrie, seuil indigestion, malus indigestion, faim maximale.
+- Section Craft expose `FoodType` sur les nouvelles recettes locales.
+- Synchro automatique dashboard -> runtime non branchee; exporter JSON puis reporter dans les configs Dart si necessaire.
+
 ## Ou Modifier Selon La Demande
 
 | Demande | Modifier en premier | Verifier aussi |

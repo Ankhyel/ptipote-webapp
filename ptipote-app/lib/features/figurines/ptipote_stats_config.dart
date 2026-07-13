@@ -24,6 +24,8 @@ enum PtipoteAutoAssignmentPreference { home, tower, market }
 
 enum PtipoteMood { happy, okay, unwell }
 
+enum PtipoteRestState { wellRested, rested, tired, exhausted }
+
 class PtipoteStatsConfig {
   const PtipoteStatsConfig({
     required this.maxVitality,
@@ -33,10 +35,28 @@ class PtipoteStatsConfig {
     required this.happyVitalityRecoveryPerMinute,
     required this.minVitalityBeforeAutoRest,
     required this.minimumMissionVitality,
+    required this.maxRest,
+    required this.sleepRestRecoveryPerMinute,
+    required this.awakeRestLossMinutes,
+    required this.missionRestLossRatio,
+    required this.wellRestedThreshold,
+    required this.restedThreshold,
+    required this.tiredThreshold,
+    required this.exhaustedThreshold,
+    required this.wellRestedXpBonus,
+    required this.wellRestedRewardBonus,
+    required this.tiredXpPenalty,
+    required this.tiredRewardPenalty,
+    required this.indigestionXpPenalty,
     required this.maxHunger,
+    required this.maxOverfedHunger,
     required this.baseHunger,
     required this.hungerDecayMinutes,
     required this.missionHungerCostRatio,
+    required this.wellFedHungerThreshold,
+    required this.wellFedVitalityRecoveryBonus,
+    required this.indigestionHungerThreshold,
+    required this.indigestionVitalityRecoveryPenalty,
     required this.happyVitalityThreshold,
     required this.happyHungerThreshold,
     required this.cuddleCooldownMinutes,
@@ -69,10 +89,28 @@ class PtipoteStatsConfig {
   final int happyVitalityRecoveryPerMinute;
   final int minVitalityBeforeAutoRest;
   final int minimumMissionVitality;
+  final int maxRest;
+  final int sleepRestRecoveryPerMinute;
+  final int awakeRestLossMinutes;
+  final double missionRestLossRatio;
+  final int wellRestedThreshold;
+  final int restedThreshold;
+  final int tiredThreshold;
+  final int exhaustedThreshold;
+  final double wellRestedXpBonus;
+  final double wellRestedRewardBonus;
+  final double tiredXpPenalty;
+  final double tiredRewardPenalty;
+  final double indigestionXpPenalty;
   final int maxHunger;
+  final int maxOverfedHunger;
   final int baseHunger;
   final int hungerDecayMinutes;
   final double missionHungerCostRatio;
+  final int wellFedHungerThreshold;
+  final double wellFedVitalityRecoveryBonus;
+  final int indigestionHungerThreshold;
+  final double indigestionVitalityRecoveryPenalty;
   final int happyVitalityThreshold;
   final int happyHungerThreshold;
   final int cuddleCooldownMinutes;
@@ -102,6 +140,13 @@ class PtipoteStatsConfig {
     final required =
         xpRequiredBase * math.pow(xpRequiredMultiplier, safeLevel - 1);
     return required.round();
+  }
+
+  PtipoteRestState restStateFor(int rest) {
+    if (rest >= wellRestedThreshold) return PtipoteRestState.wellRested;
+    if (rest >= restedThreshold) return PtipoteRestState.rested;
+    if (rest >= tiredThreshold) return PtipoteRestState.tired;
+    return PtipoteRestState.exhausted;
   }
 }
 
@@ -133,10 +178,28 @@ const ptipoteStatsConfig = PtipoteStatsConfig(
   happyVitalityRecoveryPerMinute: 1,
   minVitalityBeforeAutoRest: 20,
   minimumMissionVitality: 10,
+  maxRest: 100,
+  sleepRestRecoveryPerMinute: 2,
+  awakeRestLossMinutes: 30,
+  missionRestLossRatio: 0.25,
+  wellRestedThreshold: 80,
+  restedThreshold: 50,
+  tiredThreshold: 20,
+  exhaustedThreshold: 0,
+  wellRestedXpBonus: 0.10,
+  wellRestedRewardBonus: 0.10,
+  tiredXpPenalty: 0.10,
+  tiredRewardPenalty: 0.05,
+  indigestionXpPenalty: 0.10,
   maxHunger: 100,
+  maxOverfedHunger: 120,
   baseHunger: 100,
   hungerDecayMinutes: 30,
   missionHungerCostRatio: 0.5,
+  wellFedHungerThreshold: 80,
+  wellFedVitalityRecoveryBonus: 0.25,
+  indigestionHungerThreshold: 100,
+  indigestionVitalityRecoveryPenalty: 0.25,
   happyVitalityThreshold: 30,
   happyHungerThreshold: 30,
   cuddleCooldownMinutes: 180,

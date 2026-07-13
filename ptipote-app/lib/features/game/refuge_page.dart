@@ -414,12 +414,15 @@ class _MaisonPageState extends State<_MaisonPage>
                             selectedFigurineId: _selectedFigurineId,
                             vitalityFor: _vitalityFor,
                             hungerFor: _gameState.hungerFor,
+                            restFor: _gameState.restFor,
                             xpFor: _gameState.xpFor,
                             levelFor: _gameState.levelFor,
                             isOnMission: _gameState.isOnMission,
                             isAssignedToTower: _gameState.isAssignedToTower,
                             isResting: _gameState.isResting,
                             isHappy: _gameState.isHappy,
+                            hasIndigestion: _gameState.hasIndigestion,
+                            restStateLabelFor: _gameState.restStateLabelFor,
                             moodLabelFor: _gameState.moodLabelFor,
                             recoveryRemaining:
                                 _gameState.vitalityRecoveryRemaining,
@@ -903,12 +906,15 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.selectedFigurineId,
     required this.vitalityFor,
     required this.hungerFor,
+    required this.restFor,
     required this.xpFor,
     required this.levelFor,
     required this.isOnMission,
     required this.isAssignedToTower,
     required this.isResting,
     required this.isHappy,
+    required this.hasIndigestion,
+    required this.restStateLabelFor,
     required this.moodLabelFor,
     required this.recoveryRemaining,
     required this.isCuddleCareActive,
@@ -930,12 +936,15 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final String? selectedFigurineId;
   final int Function(PtipoteFigurine figurine) vitalityFor;
   final int Function(PtipoteFigurine figurine) hungerFor;
+  final int Function(PtipoteFigurine figurine) restFor;
   final int Function(PtipoteFigurine figurine) xpFor;
   final int Function(PtipoteFigurine figurine) levelFor;
   final bool Function(String figurineId) isOnMission;
   final bool Function(String figurineId) isAssignedToTower;
   final bool Function(PtipoteFigurine figurine) isResting;
   final bool Function(PtipoteFigurine figurine) isHappy;
+  final bool Function(PtipoteFigurine figurine) hasIndigestion;
+  final String Function(PtipoteFigurine figurine) restStateLabelFor;
   final String Function(PtipoteFigurine figurine) moodLabelFor;
   final Duration Function(PtipoteFigurine figurine) recoveryRemaining;
   final bool Function(PtipoteFigurine figurine) isCuddleCareActive;
@@ -1128,8 +1137,8 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                 final figurine = resting[index];
                 final alcoveCenter =
                     constraints.maxWidth * (0.30 + index * 0.29);
-                final restProgress = widget.vitalityFor(figurine) /
-                    ptipoteStatsConfig.maxVitality;
+                final restProgress =
+                    widget.restFor(figurine) / ptipoteStatsConfig.maxRest;
                 final left = alcoveCenter - spriteSize / 2;
                 final top = constraints.maxHeight * 0.26;
                 placements[figurine.id] = _PtipotePlacement(
@@ -1237,10 +1246,13 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
             figurine: selectedFigurine,
             vitality: widget.vitalityFor(selectedFigurine),
             hunger: widget.hungerFor(selectedFigurine),
+            rest: widget.restFor(selectedFigurine),
             xp: widget.xpFor(selectedFigurine),
             level: widget.levelFor(selectedFigurine),
             autoPreference: widget.autoPreferenceFor(selectedFigurine),
             isHappy: widget.isHappy(selectedFigurine),
+            hasIndigestion: widget.hasIndigestion(selectedFigurine),
+            restStateLabel: widget.restStateLabelFor(selectedFigurine),
             moodLabel: widget.moodLabelFor(selectedFigurine),
             recoveryRemaining: widget.recoveryRemaining(selectedFigurine),
             cuddleCareActive: widget.isCuddleCareActive(selectedFigurine),
@@ -1266,6 +1278,13 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
     if (!_shouldShowNeedBubble(figurine)) return null;
     final vitality = widget.vitalityFor(figurine);
     final hunger = widget.hungerFor(figurine);
+    final rest = widget.restFor(figurine);
+    if (hunger > ptipoteStatsConfig.indigestionHungerThreshold) {
+      return Icons.sick_outlined;
+    }
+    if (rest < ptipoteStatsConfig.restedThreshold) {
+      return Icons.bedtime_outlined;
+    }
     if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
       return Icons.bedtime_outlined;
     }
@@ -1521,10 +1540,13 @@ class _PtipoteInfoBubble extends StatelessWidget {
     required this.figurine,
     required this.vitality,
     required this.hunger,
+    required this.rest,
     required this.xp,
     required this.level,
     required this.autoPreference,
     required this.isHappy,
+    required this.hasIndigestion,
+    required this.restStateLabel,
     required this.moodLabel,
     required this.recoveryRemaining,
     required this.cuddleCareActive,
@@ -1544,10 +1566,13 @@ class _PtipoteInfoBubble extends StatelessWidget {
   final PtipoteFigurine figurine;
   final int vitality;
   final int hunger;
+  final int rest;
   final int xp;
   final int level;
   final PtipoteAutoAssignmentPreference autoPreference;
   final bool isHappy;
+  final bool hasIndigestion;
+  final String restStateLabel;
   final String moodLabel;
   final Duration recoveryRemaining;
   final bool cuddleCareActive;
@@ -1598,6 +1623,9 @@ class _PtipoteInfoBubble extends StatelessWidget {
                   moodLabel: moodLabel,
                   vitality: vitality,
                   hunger: hunger,
+                  rest: rest,
+                  restStateLabel: restStateLabel,
+                  hasIndigestion: hasIndigestion,
                   recoveryRemaining: recoveryRemaining,
                 ),
                 const SizedBox(height: 6),
@@ -1660,7 +1688,13 @@ class _PtipoteInfoBubble extends StatelessWidget {
                       ),
                       _InfoLine(
                         label: 'Faim',
-                        value: '$hunger/${ptipoteStatsConfig.maxHunger}',
+                        value:
+                            '$hunger/${ptipoteStatsConfig.maxHunger}${hasIndigestion ? ' · indigestion' : ''}',
+                      ),
+                      _InfoLine(
+                        label: 'Repos',
+                        value:
+                            '$rest/${ptipoteStatsConfig.maxRest} · $restStateLabel',
                       ),
                       _InfoLine(
                         label: 'Bonheur',
@@ -1759,12 +1793,18 @@ class _PtipoteQuickStats extends StatelessWidget {
     required this.moodLabel,
     required this.vitality,
     required this.hunger,
+    required this.rest,
+    required this.restStateLabel,
+    required this.hasIndigestion,
     required this.recoveryRemaining,
   });
 
   final String moodLabel;
   final int vitality;
   final int hunger;
+  final int rest;
+  final String restStateLabel;
+  final bool hasIndigestion;
   final Duration recoveryRemaining;
 
   @override
@@ -1793,9 +1833,18 @@ class _PtipoteQuickStats extends StatelessWidget {
               color: _vitalityColor(context, vitality),
             ),
             _QuickStatChip(
-              icon: Icons.restaurant_outlined,
+              icon: hasIndigestion
+                  ? Icons.sick_outlined
+                  : Icons.restaurant_outlined,
               label: '$hunger',
-              color: _hungerColor(context, hunger),
+              color: hasIndigestion
+                  ? Theme.of(context).colorScheme.error
+                  : _hungerColor(context, hunger),
+            ),
+            _QuickStatChip(
+              icon: _restIcon(restStateLabel),
+              label: restStateLabel.split(' ').first,
+              color: _restColor(context, rest),
             ),
             _QuickStatChip(
               icon: Icons.timer_outlined,
@@ -1837,8 +1886,30 @@ class _PtipoteQuickStats extends StatelessWidget {
   }
 
   Color _hungerColor(BuildContext context, int value) {
+    if (value > ptipoteStatsConfig.indigestionHungerThreshold) {
+      return Theme.of(context).colorScheme.error;
+    }
     if (value < 40) return Theme.of(context).colorScheme.error;
     if (value < 60) return const Color(0xFFE2952D);
+    return const Color(0xFF2E9B57);
+  }
+
+  IconData _restIcon(String label) {
+    return switch (label) {
+      'Bien reposé' => Icons.hotel_class_outlined,
+      'Reposé' => Icons.bedtime_outlined,
+      'Fatigué' => Icons.bedtime_outlined,
+      _ => Icons.battery_alert_outlined,
+    };
+  }
+
+  Color _restColor(BuildContext context, int value) {
+    if (value < ptipoteStatsConfig.tiredThreshold) {
+      return Theme.of(context).colorScheme.error;
+    }
+    if (value < ptipoteStatsConfig.restedThreshold) {
+      return const Color(0xFFE2952D);
+    }
     return const Color(0xFF2E9B57);
   }
 }
@@ -2626,6 +2697,7 @@ class _LisierePageState extends State<LisierePage> {
       possibleHazards: _possibleHazards(),
       zoneFatigueLabel: intensity.zoneFatigueLabel,
       canLaunch: vitality >= ptipoteStatsConfig.minimumMissionVitality &&
+          !_isLongMissionRefused(figurine) &&
           !widget.gameState.isBusy(figurine),
     );
   }
@@ -2634,7 +2706,18 @@ class _LisierePageState extends State<LisierePage> {
     final base = lisiereForageConfig.xpGainByDuration[_duration] ?? 8;
     final intensity =
         lisiereForageConfig.intensityXpMultiplier[_intensity] ?? 1;
-    final withBonus = base * intensity * (1 + figurine.xpGainBonus);
+    var modifier = 1 + figurine.xpGainBonus;
+    final restState = widget.gameState.restStateFor(figurine);
+    if (restState == PtipoteRestState.wellRested) {
+      modifier += ptipoteStatsConfig.wellRestedXpBonus;
+    } else if (restState == PtipoteRestState.tired ||
+        restState == PtipoteRestState.exhausted) {
+      modifier -= ptipoteStatsConfig.tiredXpPenalty;
+    }
+    if (widget.gameState.hasIndigestion(figurine)) {
+      modifier -= ptipoteStatsConfig.indigestionXpPenalty;
+    }
+    final withBonus = base * intensity * math.max(0.1, modifier);
     return math.max(1, withBonus.round());
   }
 
@@ -2646,6 +2729,13 @@ class _LisierePageState extends State<LisierePage> {
     for (final entry in biome.baseRewards.entries) {
       var value =
           entry.value * duration.theoreticalHours * intensity.rewardMultiplier;
+      final restState = widget.gameState.restStateFor(figurine);
+      if (restState == PtipoteRestState.wellRested) {
+        value *= 1 + ptipoteStatsConfig.wellRestedRewardBonus;
+      } else if (restState == PtipoteRestState.tired ||
+          restState == PtipoteRestState.exhausted) {
+        value *= 1 - ptipoteStatsConfig.tiredRewardPenalty;
+      }
       if (_biome == ForageBiome.plaineRiche &&
           figurine.elementType == PtipoteElementType.vegetal &&
           entry.key == 'Organique') {
@@ -2680,7 +2770,18 @@ class _LisierePageState extends State<LisierePage> {
         figurine.elementType == PtipoteElementType.fungal) {
       risk -= 2;
     }
+    if (widget.gameState.restStateFor(figurine) == PtipoteRestState.exhausted) {
+      risk += 10;
+    }
     return math.max(lisiereForageConfig.minimumMissionRisk, risk);
+  }
+
+  bool _isLongMissionRefused(PtipoteFigurine figurine) {
+    final exhausted =
+        widget.gameState.restStateFor(figurine) == PtipoteRestState.exhausted;
+    final longMission = _duration == ForageDuration.sixHours ||
+        _duration == ForageDuration.tenHours;
+    return exhausted && longMission;
   }
 
   int _baseRiskPercent() {

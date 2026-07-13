@@ -49,10 +49,28 @@ const PTIPOTE_STATS_FIELDS = [
   "happyVitalityRecoveryPerMinute",
   "minVitalityBeforeAutoRest",
   "minimumMissionVitality",
+  "maxRest",
+  "sleepRestRecoveryPerMinute",
+  "awakeRestLossMinutes",
+  "missionRestLossRatio",
+  "wellRestedThreshold",
+  "restedThreshold",
+  "tiredThreshold",
+  "exhaustedThreshold",
+  "wellRestedXpBonus",
+  "wellRestedRewardBonus",
+  "tiredXpPenalty",
+  "tiredRewardPenalty",
+  "indigestionXpPenalty",
   "maxHunger",
+  "maxOverfedHunger",
   "baseHunger",
   "hungerDecayMinutes",
   "missionHungerCostRatio",
+  "wellFedHungerThreshold",
+  "wellFedVitalityRecoveryBonus",
+  "indigestionHungerThreshold",
+  "indigestionVitalityRecoveryPenalty",
   "happyVitalityThreshold",
   "happyHungerThreshold",
   "cuddleCooldownMinutes",
@@ -497,7 +515,7 @@ function renderCraftConfig() {
       ? ` + ${recipe.contextIngredients.map(escapeHtml).join(" + ")}`
       : "";
     const effects = recipe.isConsumable
-      ? `consommable · faim +${escapeHtml(recipe.hungerRestore || 0)} · vitalité +${escapeHtml(recipe.vitalityRestore || 0)}`
+      ? `${escapeHtml(recipe.foodType || "meal")} · consommable · faim +${escapeHtml(recipe.hungerRestore || 0)} · vitalité +${escapeHtml(recipe.vitalityRestore || 0)}`
       : "non consommable";
     return `
       <div class="stage-row">
@@ -535,6 +553,7 @@ function addCraftRecipe(event) {
     resultItem,
     resultAmount: Number(form.get("resultAmount") || 1),
     isConsumable: form.get("isConsumable") === "true",
+    foodType: String(form.get("foodType") || "meal"),
     hungerRestore: Number(form.get("hungerRestore") || 0),
     vitalityRestore: Number(form.get("vitalityRestore") || 0),
   };

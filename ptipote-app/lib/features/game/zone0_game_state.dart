@@ -22,6 +22,7 @@ class Zone0GameState extends ChangeNotifier {
 
   final Map<String, int> vitalityOverrides = <String, int>{};
   final Map<String, int> hungerOverrides = <String, int>{};
+  final Map<String, int> restOverrides = <String, int>{};
   final Map<String, int> xpOverrides = <String, int>{};
   final Map<String, int> levelOverrides = <String, int>{};
   final Map<String, DateTime> lastCuddleAt = <String, DateTime>{};
@@ -73,6 +74,10 @@ class Zone0GameState extends ChangeNotifier {
     return hungerOverrides[figurine.id] ?? ptipoteStatsConfig.baseHunger;
   }
 
+  int restFor(PtipoteFigurine figurine) {
+    return restOverrides[figurine.id] ?? ptipoteStatsConfig.maxRest;
+  }
+
   int xpFor(PtipoteFigurine figurine) {
     return xpOverrides[figurine.id] ?? figurine.xpValue;
   }
@@ -122,8 +127,26 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool isRested(PtipoteFigurine figurine) {
-    return vitalityFor(figurine) > ptipoteStatsConfig.happyVitalityThreshold ||
-        isResting(figurine);
+    final state = restStateFor(figurine);
+    return state == PtipoteRestState.wellRested ||
+        state == PtipoteRestState.rested;
+  }
+
+  bool hasIndigestion(PtipoteFigurine figurine) {
+    return hungerFor(figurine) > ptipoteStatsConfig.indigestionHungerThreshold;
+  }
+
+  PtipoteRestState restStateFor(PtipoteFigurine figurine) {
+    return ptipoteStatsConfig.restStateFor(restFor(figurine));
+  }
+
+  String restStateLabelFor(PtipoteFigurine figurine) {
+    return switch (restStateFor(figurine)) {
+      PtipoteRestState.wellRested => 'Bien reposé',
+      PtipoteRestState.rested => 'Reposé',
+      PtipoteRestState.tired => 'Fatigué',
+      PtipoteRestState.exhausted => 'Exténué',
+    };
   }
 
   bool isCuddleCareActive(PtipoteFigurine figurine) {
@@ -232,6 +255,8 @@ class Zone0GameState extends ChangeNotifier {
     var changed = false;
     final hungerDecayTick =
         math.max(1, ptipoteStatsConfig.hungerDecayMinutes * 2);
+    final restLossTick =
+        math.max(1, ptipoteStatsConfig.awakeRestLossMinutes * 2);
     final naturalVitalityTick =
         math.max(1, ptipoteStatsConfig.naturalVitalityRecoveryMinutes * 2);
     for (final figurine in figurines) {
@@ -259,14 +284,38 @@ class Zone0GameState extends ChangeNotifier {
       final currentVitality = vitalityFor(figurine);
       final resting = isResting(figurine);
       final happy = isHappy(figurine);
+      final hunger = hungerFor(figurine);
       var vitalityGain = 0;
-      if (resting) {
-        vitalityGain = math.max(1,
-            (ptipoteStatsConfig.alcoveVitalityRecoveryPerMinute / 2).round());
+      if (resting && tick.isEven) {
+        vitalityGain = ptipoteStatsConfig.vitalityRecoveryPerMinute;
       } else if (happy && tick.isEven) {
         vitalityGain = ptipoteStatsConfig.happyVitalityRecoveryPerMinute;
+      } else if (!resting &&
+          hunger >= ptipoteStatsConfig.wellFedHungerThreshold &&
+          hunger <= ptipoteStatsConfig.indigestionHungerThreshold &&
+          tick % math.max(1, (naturalVitalityTick * 0.75).round()) == 0) {
+        vitalityGain = 1;
       } else if (tick % naturalVitalityTick == 0) {
         vitalityGain = 1;
+      }
+
+      if (vitalityGain > 0) {
+        if (hunger >= ptipoteStatsConfig.wellFedHungerThreshold &&
+            hunger <= ptipoteStatsConfig.indigestionHungerThreshold) {
+          vitalityGain = math.max(
+            1,
+            (vitalityGain *
+                    (1 + ptipoteStatsConfig.wellFedVitalityRecoveryBonus))
+                .round(),
+          );
+        } else if (hunger > ptipoteStatsConfig.indigestionHungerThreshold) {
+          vitalityGain = math.max(
+            0,
+            (vitalityGain *
+                    (1 - ptipoteStatsConfig.indigestionVitalityRecoveryPenalty))
+                .floor(),
+          );
+        }
       }
 
       if (vitalityGain > 0 &&
@@ -290,6 +339,21 @@ class Zone0GameState extends ChangeNotifier {
           hungerOverrides[figurine.id] = math.max(0, currentHunger - 1);
           changed = true;
         }
+      }
+
+      final currentRest = restFor(figurine);
+      if (resting) {
+        final restGain =
+            math.max(1, ptipoteStatsConfig.sleepRestRecoveryPerMinute ~/ 2);
+        final nextRest =
+            math.min(ptipoteStatsConfig.maxRest, currentRest + restGain);
+        if (nextRest != currentRest) {
+          restOverrides[figurine.id] = nextRest;
+          changed = true;
+        }
+      } else if (tick % restLossTick == 0 && currentRest > 0) {
+        restOverrides[figurine.id] = math.max(0, currentRest - 1);
+        changed = true;
       }
     }
     if (isSecurityTowerBuilt &&
@@ -567,7 +631,7 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     hungerOverrides[figurine.id] = math.min(
-      ptipoteStatsConfig.maxHunger,
+      ptipoteStatsConfig.maxOverfedHunger,
       hungerFor(figurine) + recipe.hungerRestore,
     );
     vitalityOverrides[figurine.id] = math.min(
@@ -642,6 +706,17 @@ class Zone0GameState extends ChangeNotifier {
           ..clear()
           ..addEntries(
             hungerData.entries.map(
+              (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
+            ),
+          );
+      }
+
+      final restData = data['restOverrides'];
+      if (restData is Map) {
+        restOverrides
+          ..clear()
+          ..addEntries(
+            restData.entries.map(
               (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
             ),
           );
@@ -767,6 +842,11 @@ class Zone0GameState extends ChangeNotifier {
       0,
       hungerFor(figurine) -
           (vitalityCost * ptipoteStatsConfig.missionHungerCostRatio).round(),
+    );
+    restOverrides[figurine.id] = math.max(
+      0,
+      restFor(figurine) -
+          (vitalityCost * ptipoteStatsConfig.missionRestLossRatio).round(),
     );
     manualRestingIds.remove(figurine.id);
     notifyListeners();
@@ -897,10 +977,11 @@ class Zone0GameState extends ChangeNotifier {
     final vitality = vitalityOverrides[mission.figurineId] ?? 0;
     final hunger =
         hungerOverrides[mission.figurineId] ?? ptipoteStatsConfig.baseHunger;
+    final rest =
+        restOverrides[mission.figurineId] ?? ptipoteStatsConfig.maxRest;
     final moodLabel = _moodLabelForValues(
-      vitality: vitality,
       hunger: hunger,
-      isResting: vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest,
+      rest: rest,
       figurineId: mission.figurineId,
     );
     if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
@@ -940,14 +1021,15 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   String _moodLabelForValues({
-    required int vitality,
     required int hunger,
-    required bool isResting,
+    required int rest,
     required String figurineId,
   }) {
     var needs = 0;
     if (hunger > ptipoteStatsConfig.happyHungerThreshold) needs += 1;
-    if (vitality > ptipoteStatsConfig.happyVitalityThreshold || isResting) {
+    final restState = ptipoteStatsConfig.restStateFor(rest);
+    if (restState == PtipoteRestState.wellRested ||
+        restState == PtipoteRestState.rested) {
       needs += 1;
     }
     final cuddleAt = lastCuddleAt[figurineId];
@@ -1059,6 +1141,7 @@ class Zone0GameState extends ChangeNotifier {
         <String, dynamic>{
           'vitalityOverrides': vitalityOverrides,
           'hungerOverrides': hungerOverrides,
+          'restOverrides': restOverrides,
           'manualRestingIds': manualRestingIds.toList(),
           'towerAssignedIds': towerAssignedIds.toList(),
           'campSecurity': refugeSafety,

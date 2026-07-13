@@ -15,8 +15,9 @@
       "resultItem": "Repas simple",
       "resultAmount": 1,
       "isConsumable": true,
-      "hungerRestore": 20,
-      "vitalityRestore": 15
+      "foodType": "meal",
+      "hungerRestore": 35,
+      "vitalityRestore": 5
     }
   ]
 }
