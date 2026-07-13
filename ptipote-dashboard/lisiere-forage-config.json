@@ -2,7 +2,9 @@
   "forageTimeScale": 6,
   "inventorySlotLimit": 10,
   "inventoryStackLimit": 10,
-  "refugeSafetyFallback": 50,
+  "refugeSafetyFallback": 0,
+  "minimumMissionRisk": 5,
+  "securityRiskReductionFactor": 0.4,
   "xpGainByDuration": {
     "oneHour": 10,
     "twoHours": 18,
@@ -26,9 +28,35 @@
     { "id": "intensif", "label": "Intensif", "rewardMultiplier": 1.35, "vitalityMultiplier": 1.25, "riskModifierPercent": 10 }
   ],
   "biomes": [
-    { "id": "colline", "label": "Colline", "baseRiskPercent": 10, "rewards": { "Organique": 2, "Minéral": 2 } },
-    { "id": "plaineRiche", "label": "Plaine riche", "baseRiskPercent": 8, "rewards": { "Organique": 4, "Minéral": 1 } },
-    { "id": "bassinMineral", "label": "Bassin minéral", "baseRiskPercent": 14, "rewards": { "Organique": 1, "Minéral": 4 } },
-    { "id": "sousBois", "label": "Sous-bois", "baseRiskPercent": 12, "rewards": { "Organique": 3, "Minéral": 1 } }
+    {
+      "id": "colline",
+      "label": "Colline",
+      "baseRiskPercent": 45,
+      "rewards": { "Organique": 4, "Minéral": 3 },
+      "hazards": ["terrainInstable", "droneErrant"]
+    },
+    {
+      "id": "plaineRiche",
+      "label": "Plaine",
+      "baseRiskPercent": 30,
+      "rewards": { "Organique": 2, "Minéral": 1 },
+      "restorationLevel": 0,
+      "restorationStage": "Plaine desséchée",
+      "hazards": ["climatDifficile", "droneErrant"]
+    },
+    {
+      "id": "bassinMineral",
+      "label": "Bassin minéral",
+      "baseRiskPercent": 35,
+      "rewards": { "Organique": 1, "Minéral": 5 },
+      "hazards": ["terrainInstable", "droneErrant"]
+    },
+    {
+      "id": "sousBois",
+      "label": "Sous-bois",
+      "baseRiskPercent": 40,
+      "rewards": { "Organique": 5, "Minéral": 1 },
+      "hazards": ["pollution", "climatDifficile"]
+    }
   ]
 }

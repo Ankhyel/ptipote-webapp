@@ -35,6 +35,7 @@ let currentDashboardRole = "";
 let ptipoteStatsConfig = {};
 let campHeartConfig = {};
 let lisiereForageConfig = {};
+let securityTowerConfig = {};
 let fablabConfig = {};
 let craftConfig = {};
 
@@ -103,6 +104,9 @@ const ids = [
   "lisiereForageStatus",
   "lisiereForageList",
   "exportLisiereForageButton",
+  "securityTowerStatus",
+  "securityTowerConfigList",
+  "exportSecurityTowerButton",
   "fablabStatus",
   "fablabConfigList",
   "exportFablabButton",
@@ -369,10 +373,12 @@ function renderLisiereForageConfig() {
   const xpByDuration = lisiereForageConfig.xpGainByDuration || {};
   const xpByIntensity = lisiereForageConfig.intensityXpMultiplier || {};
   rows.push('<div class="stage-row"><div><strong>XP mission</strong><span>Base par durée: ' + Object.entries(xpByDuration).map(([key, value]) => escapeHtml(key) + ' +' + escapeHtml(value)).join(' · ') + ' | intensité: ' + Object.entries(xpByIntensity).map(([key, value]) => escapeHtml(key) + ' x' + escapeHtml(value)).join(' · ') + '</span></div><strong>progression</strong></div>');
+  rows.push('<div class="stage-row"><div><strong>Formule danger</strong><span>Minimum ' + escapeHtml(lisiereForageConfig.minimumMissionRisk) + '% · réduction sécurité x' + escapeHtml(lisiereForageConfig.securityRiskReductionFactor) + '</span></div><strong>sécurité</strong></div>');
   biomes.forEach((biome) => {
     const organic = biome.rewards && biome.rewards.Organique ? biome.rewards.Organique : 0;
     const mineral = biome.rewards && biome.rewards["Minéral"] ? biome.rewards["Minéral"] : 0;
-    rows.push('<div class="stage-row"><div><strong>' + escapeHtml(biome.label) + '</strong><span>Risque ' + escapeHtml(biome.baseRiskPercent) + '% · Organique ' + escapeHtml(organic) + ' · Minéral ' + escapeHtml(mineral) + '</span></div><strong>biome</strong></div>');
+    const hazards = Array.isArray(biome.hazards) ? biome.hazards.join(', ') : '';
+    rows.push('<div class="stage-row"><div><strong>' + escapeHtml(biome.label) + '</strong><span>Risque ' + escapeHtml(biome.baseRiskPercent) + '% · Organique ' + escapeHtml(organic) + ' · Minéral ' + escapeHtml(mineral) + ' · dangers ' + escapeHtml(hazards) + '</span></div><strong>biome</strong></div>');
   });
   el.lisiereForageList.innerHTML = rows.join('');
 }
@@ -383,6 +389,54 @@ function exportLisiereForageConfig() {
   const link = document.createElement("a");
   link.href = url;
   link.download = "lisiere-forage-config.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function loadSecurityTowerConfig() {
+  try {
+    const response = await fetch("./security-tower-config.json", { cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    securityTowerConfig = await response.json();
+    renderSecurityTowerConfig();
+    el.securityTowerStatus.textContent = "Configuration Tour chargée depuis le JSON versionné.";
+  } catch (error) {
+    el.securityTowerStatus.textContent = "Configuration Tour illisible: " + error.message;
+  }
+}
+
+function renderSecurityTowerConfig() {
+  const slots = securityTowerConfig.slotsByLevel || {};
+  const labels = Array.isArray(securityTowerConfig.dangerLabels) ? securityTowerConfig.dangerLabels : [];
+  const rows = [
+    ["Coût Organique", securityTowerConfig.constructionCostOrganic],
+    ["Coût Minéral", securityTowerConfig.constructionCostMineral],
+    ["Cœur requis", securityTowerConfig.requiredCampHeartLevel],
+    ["Sécurité max", securityTowerConfig.maxSecurity],
+    ["Sécurité initiale", securityTowerConfig.initialSecurity],
+    ["Gain sécurité / tick", securityTowerConfig.securityGainPerTick],
+    ["Durée tick", `${securityTowerConfig.tickMinutes} min`],
+    ["Coût Vitalité / tick", securityTowerConfig.vitalityCostPerTick],
+    ["Décroissance sécurité", securityTowerConfig.securityDecayPerTick],
+    ["Risque minimum", `${securityTowerConfig.minimumMissionRisk}%`],
+    ["Coefficient réduction", securityTowerConfig.securityRiskReductionFactor],
+    ["Slots", Object.entries(slots).map(([level, count]) => `niv. ${level}: ${count}`).join(" · ")],
+    ["Labels danger", labels.map((item) => `${item.label} ${item.min}-${item.max}%`).join(" · ")],
+  ];
+  el.securityTowerConfigList.innerHTML = rows.map(([label, value]) => `
+    <div class="stage-row">
+      <div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>
+      <strong>Tour</strong>
+    </div>
+  `).join("");
+}
+
+function exportSecurityTowerConfig() {
+  const blob = new Blob([JSON.stringify(securityTowerConfig, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "security-tower-config.json";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -583,6 +637,10 @@ el.exportLisiereForageButton.addEventListener("click", () => {
   exportLisiereForageConfig();
 });
 
+el.exportSecurityTowerButton.addEventListener("click", () => {
+  exportSecurityTowerConfig();
+});
+
 el.exportFablabButton.addEventListener("click", () => {
   exportFablabConfig();
 });
@@ -597,5 +655,6 @@ setupDashboardTabs();
 loadPtipoteStatsConfig();
 loadCampHeartConfig();
 loadLisiereForageConfig();
+loadSecurityTowerConfig();
 loadFablabConfig();
 loadCraftConfig();

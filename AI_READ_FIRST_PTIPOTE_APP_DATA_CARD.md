@@ -653,6 +653,81 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 - Synchro automatique Dashboard -> Flutter runtime non branchee; exporter le JSON et reporter dans `ptipote_stats_config.dart`.
 - Mise a jour hors-ligne fine non finalisee: la simulation applique les ticks en Maison et persiste les valeurs, mais la chronologie hors-ligne mission/repos/craft devra etre raffinee quand les activites longues seront toutes modelisees.
 
+## TOUR DE SECURITE ET LISIERE V1
+
+### 1. Fichiers crees ou modifies
+
+- `ptipote-app/lib/features/game/security_tower_config.dart`: configuration V1 de la Tour, cout, slots, gain/decroissance de securite et ticks.
+- `ptipote-app/lib/features/game/lisiere_forage_config.dart`: valeurs V1 des biomes, formule de risque minimum, coefficient de reduction securite, dangers possibles et champs futurs de restauration de la Plaine.
+- `ptipote-app/lib/features/game/zone0_game_state.dart`: etat de construction Tour, affectation P'TIPOTE, securite du camp, persistence Firebase, rapports enrichis.
+- `ptipote-app/lib/features/game/refuge_page.dart`: hotspot Tour, construction, page d'affectation, estimation Lisiere et rapport de mission enrichis.
+- `ptipote-dashboard/lisiere-forage-config.json`: valeurs dashboard des biomes et formule de risque.
+- `ptipote-dashboard/security-tower-config.json`: valeurs dashboard de la Tour.
+- `ptipote-dashboard/index.html` et `ptipote-dashboard/app.js`: onglet Tour et affichage/export de la configuration.
+
+### 2. Tour
+
+- Batiment visible dans l'Ilot.
+- Avant Coeur du Camp niveau 1: affiche verrouillage "Coeur requis".
+- A partir du niveau requis: mini-menu de construction.
+- Cout V1: `6 Organique`, `8 Mineral`.
+- Construction immediate, sans timer ni ouvrier.
+- Niveau 1: `1` slot P'TIPOTE; niveaux 2/3 prepares dans la config.
+- Un P'TIPOTE affecte passe en surveillance Tour, disparait de la Maison et devient indisponible pour les missions.
+
+### 3. Securite
+
+- Stockage runtime: `refugeSafety`, sauvegarde Firebase `users/{uid}/game/zone0.campSecurity`.
+- Minimum `0`, maximum `100`.
+- Gain V1: `+5` securite par tick de `10 min` avec P'TIPOTE affecte.
+- Cout V1: `-5 Vitalite` par tick pour le P'TIPOTE affecte.
+- Decroissance V1: `-1` securite par tick sans P'TIPOTE affecte.
+- Si Vitalite du P'TIPOTE atteint le seuil de repos, il est retire de la Tour et envoye en alcove via `manualRestingIds`.
+
+### 4. Lisiere
+
+- Nouvelles valeurs de biomes:
+  - Plaine: danger `30%`, `2 Organique`, `1 Mineral`.
+  - Colline: danger `45%`, `4 Organique`, `3 Mineral`.
+  - Sous-bois: danger `40%`, `5 Organique`, `1 Mineral`.
+  - Bassin mineral: danger `35%`, `1 Organique`, `5 Mineral`.
+- Formule V1: `danger biome + modificateur intensite - securite * 0.4 - petits bonus type`.
+- Danger minimum: `5%`.
+- Labels: Tres sur, Sur, Incertain, Risque, Tres risque.
+- Plaine: champs futurs `restorationLevel`, `restorationStage`, modifiers et bonus PTIBUG prepares, non actifs.
+
+### 5. Missions
+
+- La securite est memorisee au lancement: `securityAtLaunch`.
+- Le rapport garde aussi `baseRiskPercent`, `securityReduction`, `realRiskPercent`.
+- Maximum un evenement impactant par mission.
+- Dangers V1:
+  - Pollution: `-20% Organique`.
+  - Drone errant: `-25% gains totaux`.
+  - Climat difficile: `-15% gains totaux`.
+  - Terrain instable: `-20% Mineral`.
+
+### 6. Dashboard
+
+- Onglet `Lisiere / Fourrage`: temps, intensites, XP, formule de danger, biomes, gains et dangers.
+- Onglet `Tour`: couts, niveau requis, securite max/initiale, gain, tick, cout vitalite, decroissance, risque minimum, coefficient de reduction, slots et labels.
+- Les valeurs sont versionnees/exportables en JSON; synchro automatique dashboard -> app runtime non branchee.
+
+### 7. Extensions futures
+
+- Bonus type/enveloppe/modules sur les dangers.
+- Restauration active de la Plaine.
+- Corridors securises.
+- Niveaux superieurs de Tour avec plusieurs slots.
+- Refuge PTIBUG non branche.
+- Lisiere lointaine non active.
+
+### 8. Attentes
+
+- Le comportement sommeil/alcove n'est pas redefini par cette feature.
+- Le Marche ne lit pas encore population/securite.
+- Les valeurs dashboard doivent encore etre reliees a une edition runtime distante si besoin.
+
 ## Ou Modifier Selon La Demande
 
 | Demande | Modifier en premier | Verifier aussi |

@@ -4,12 +4,20 @@ enum ForageDuration { oneHour, twoHours, sixHours, tenHours }
 
 enum ForageIntensity { doux, normal, intensif }
 
-enum ForageHazard { none, pollution, droneErrant, climatDifficile }
+enum ForageHazard {
+  none,
+  pollution,
+  droneErrant,
+  climatDifficile,
+  terrainInstable,
+}
 
 class LisiereForageConfig {
   const LisiereForageConfig({
     required this.forageTimeScale,
     required this.refugeSafetyFallback,
+    required this.minimumMissionRisk,
+    required this.securityRiskReductionFactor,
     required this.inventorySlotLimit,
     required this.inventoryStackLimit,
     required this.xpGainByDuration,
@@ -21,6 +29,8 @@ class LisiereForageConfig {
 
   final int forageTimeScale;
   final int refugeSafetyFallback;
+  final int minimumMissionRisk;
+  final double securityRiskReductionFactor;
   final int inventorySlotLimit;
   final int inventoryStackLimit;
   final Map<ForageDuration, int> xpGainByDuration;
@@ -36,12 +46,26 @@ class ForageBiomeConfig {
     required this.tendency,
     required this.baseRewards,
     required this.baseRiskPercent,
+    this.restorationLevel = 0,
+    this.restorationStage = 'base',
+    this.organicRewardModifier = 0,
+    this.mineralRewardModifier = 0,
+    this.riskModifier = 0,
+    this.linkedPtipoteRefugeBonus = 0,
+    this.hazards = const <ForageHazard>[],
   });
 
   final String label;
   final String tendency;
   final Map<String, int> baseRewards;
   final int baseRiskPercent;
+  final int restorationLevel;
+  final String restorationStage;
+  final double organicRewardModifier;
+  final double mineralRewardModifier;
+  final int riskModifier;
+  final int linkedPtipoteRefugeBonus;
+  final List<ForageHazard> hazards;
 }
 
 class ForageDurationConfig {
@@ -79,7 +103,9 @@ class ForageIntensityConfig {
 
 const lisiereForageConfig = LisiereForageConfig(
   forageTimeScale: 6,
-  refugeSafetyFallback: 50,
+  refugeSafetyFallback: 0,
+  minimumMissionRisk: 5,
+  securityRiskReductionFactor: 0.4,
   inventorySlotLimit: 10,
   inventoryStackLimit: 10,
   xpGainByDuration: <ForageDuration, int>{
@@ -97,26 +123,44 @@ const lisiereForageConfig = LisiereForageConfig(
     ForageBiome.colline: ForageBiomeConfig(
       label: 'Colline',
       tendency: 'mixte',
-      baseRewards: <String, int>{'Organique': 2, 'Minéral': 2},
-      baseRiskPercent: 10,
+      baseRewards: <String, int>{'Organique': 4, 'Minéral': 3},
+      baseRiskPercent: 45,
+      hazards: <ForageHazard>[
+        ForageHazard.terrainInstable,
+        ForageHazard.droneErrant
+      ],
     ),
     ForageBiome.plaineRiche: ForageBiomeConfig(
-      label: 'Plaine riche',
-      tendency: 'Organique',
-      baseRewards: <String, int>{'Organique': 4, 'Minéral': 1},
-      baseRiskPercent: 8,
+      label: 'Plaine',
+      tendency: 'départ / restauration',
+      baseRewards: <String, int>{'Organique': 2, 'Minéral': 1},
+      baseRiskPercent: 30,
+      restorationLevel: 0,
+      restorationStage: 'Plaine desséchée',
+      hazards: <ForageHazard>[
+        ForageHazard.climatDifficile,
+        ForageHazard.droneErrant
+      ],
     ),
     ForageBiome.bassinMineral: ForageBiomeConfig(
       label: 'Bassin minéral',
       tendency: 'Minéral',
-      baseRewards: <String, int>{'Organique': 1, 'Minéral': 4},
-      baseRiskPercent: 14,
+      baseRewards: <String, int>{'Organique': 1, 'Minéral': 5},
+      baseRiskPercent: 35,
+      hazards: <ForageHazard>[
+        ForageHazard.terrainInstable,
+        ForageHazard.droneErrant
+      ],
     ),
     ForageBiome.sousBois: ForageBiomeConfig(
       label: 'Sous-bois',
       tendency: 'Organique / transformation',
-      baseRewards: <String, int>{'Organique': 3, 'Minéral': 1},
-      baseRiskPercent: 12,
+      baseRewards: <String, int>{'Organique': 5, 'Minéral': 1},
+      baseRiskPercent: 40,
+      hazards: <ForageHazard>[
+        ForageHazard.pollution,
+        ForageHazard.climatDifficile
+      ],
     ),
   },
   durations: <ForageDuration, ForageDurationConfig>{

@@ -10,6 +10,7 @@ import '../figurines/ptipote_stats_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'lisiere_forage_config.dart';
+import 'security_tower_config.dart';
 
 class Zone0GameState extends ChangeNotifier {
   Zone0GameState._();
@@ -33,6 +34,8 @@ class Zone0GameState extends ChangeNotifier {
 
   int refugeSafety = lisiereForageConfig.refugeSafetyFallback;
   int fablabLevel = 0;
+  int securityTowerLevel = 0;
+  final Set<String> towerAssignedIds = <String>{};
   DateTime? lastFirebaseSyncAt;
   String? lastFirebaseError;
   String firebaseSyncLabel = 'Non synchronisé';
@@ -40,6 +43,13 @@ class Zone0GameState extends ChangeNotifier {
   bool _loadedFromFirebase = false;
 
   bool get isFablabBuilt => fablabLevel >= fablabConfig.cuisineUnlockLevel;
+  bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
+  int get securityTowerSlots =>
+      securityTowerConfig.slotsForLevel(securityTowerLevel);
+
+  bool isAssignedToTower(String figurineId) {
+    return towerAssignedIds.contains(figurineId);
+  }
 
   int get globalStockCapacity {
     return fablabConfig.baseGlobalStockCapacity +
@@ -98,7 +108,9 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool isBusy(PtipoteFigurine figurine) {
-    return isOnMission(figurine.id) || isResting(figurine);
+    return isOnMission(figurine.id) ||
+        isResting(figurine) ||
+        towerAssignedIds.contains(figurine.id);
   }
 
   bool isHappy(PtipoteFigurine figurine) {
@@ -224,6 +236,26 @@ class Zone0GameState extends ChangeNotifier {
         math.max(1, ptipoteStatsConfig.naturalVitalityRecoveryMinutes * 2);
     for (final figurine in figurines) {
       if (isOnMission(figurine.id)) continue;
+      if (towerAssignedIds.contains(figurine.id)) {
+        if (tick % math.max(1, securityTowerConfig.tickMinutes * 2) == 0) {
+          final currentVitality = vitalityFor(figurine);
+          final nextVitality = math.max(
+            0,
+            currentVitality - securityTowerConfig.vitalityCostPerTick,
+          );
+          vitalityOverrides[figurine.id] = nextVitality;
+          refugeSafety = math.min(
+            securityTowerConfig.maxSecurity,
+            refugeSafety + securityTowerConfig.securityGainPerTick,
+          );
+          if (nextVitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+            towerAssignedIds.remove(figurine.id);
+            manualRestingIds.add(figurine.id);
+          }
+          changed = true;
+        }
+        continue;
+      }
       final currentVitality = vitalityFor(figurine);
       final resting = isResting(figurine);
       final happy = isHappy(figurine);
@@ -259,6 +291,16 @@ class Zone0GameState extends ChangeNotifier {
           changed = true;
         }
       }
+    }
+    if (isSecurityTowerBuilt &&
+        towerAssignedIds.isEmpty &&
+        tick % math.max(1, securityTowerConfig.tickMinutes * 2) == 0 &&
+        refugeSafety > 0) {
+      refugeSafety = math.max(
+        0,
+        refugeSafety - securityTowerConfig.securityDecayPerTick,
+      );
+      changed = true;
     }
     if (changed) {
       notifyListeners();
@@ -390,6 +432,80 @@ class Zone0GameState extends ChangeNotifier {
       success: true,
       message: 'Le Fablab est prêt. La Cuisine peut maintenant être utilisée.',
     );
+  }
+
+  Zone0ActionResult constructSecurityTower(int campHeartLevel) {
+    if (isSecurityTowerBuilt) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'La Tour est déjà construite.',
+      );
+    }
+    if (campHeartLevel < securityTowerConfig.requiredCampHeartLevel) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Cœur du Camp doit atteindre le niveau 1.',
+      );
+    }
+    final cost = securityTowerConfig.constructionCost;
+    if (!hasResources(cost)) {
+      return Zone0ActionResult(
+          success: false, message: missingResourcesLabel(cost));
+    }
+    if (!removeResources(cost)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ressources insuffisantes.',
+      );
+    }
+    securityTowerLevel = 1;
+    refugeSafety = math.max(refugeSafety, securityTowerConfig.initialSecurity);
+    reports.add(
+      PtipoteMissionReport.system(
+        message: 'La Tour de sécurité est construite.',
+      ),
+    );
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'La Tour surveille maintenant les abords du refuge.',
+    );
+  }
+
+  Zone0ActionResult assignToTower(PtipoteFigurine figurine) {
+    if (!isSecurityTowerBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Tour non construite.');
+    }
+    if (towerAssignedIds.length >= securityTowerSlots) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun slot libre.');
+    }
+    if (isBusy(figurine) && !towerAssignedIds.contains(figurine.id)) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIPOTE occupé.');
+    }
+    if (vitalityFor(figurine) <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIPOTE trop fatigué.');
+    }
+    towerAssignedIds.add(figurine.id);
+    manualRestingIds.remove(figurine.id);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '${figurine.displayName} surveille la Tour.',
+    );
+  }
+
+  void removeFromTower(String figurineId) {
+    if (towerAssignedIds.remove(figurineId)) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
   }
 
   Zone0ActionResult prepareSimpleMeal() {
@@ -584,6 +700,20 @@ class Zone0GameState extends ChangeNotifier {
             fablabConfig.fablabMaxLevel,
           );
         }
+        final towerData = buildingsData['securityTower'];
+        if (towerData is Map) {
+          securityTowerLevel = _readInt(towerData['currentLevel']).clamp(0, 3);
+        }
+      }
+      refugeSafety = _readInt(data['campSecurity']).clamp(
+        0,
+        securityTowerConfig.maxSecurity,
+      );
+      final towerAssignedData = data['towerAssignedIds'];
+      if (towerAssignedData is List) {
+        towerAssignedIds
+          ..clear()
+          ..addAll(towerAssignedData.map((id) => '$id'));
       }
 
       _loadedFromFirebase = true;
@@ -599,6 +729,9 @@ class Zone0GameState extends ChangeNotifier {
     required int vitalityCost,
     required int riskPercent,
     required String riskLabel,
+    required int baseRiskPercent,
+    required int securityAtLaunch,
+    required int securityReduction,
     required int xpGain,
   }) {
     final start = DateTime.now();
@@ -620,6 +753,9 @@ class Zone0GameState extends ChangeNotifier {
       vitalityCost: vitalityCost,
       riskPercent: riskPercent,
       riskLabel: riskLabel,
+      baseRiskPercent: baseRiskPercent,
+      securityAtLaunch: securityAtLaunch,
+      securityReduction: securityReduction,
       xpGain: xpGain,
     );
     missions.add(mission);
@@ -727,21 +863,25 @@ class Zone0GameState extends ChangeNotifier {
     var incident = 'aucun';
 
     if (_random.nextInt(100) < mission.riskPercent) {
-      final hazards =
-          ForageHazard.values.where((h) => h != ForageHazard.none).toList();
+      final hazards = biome.hazards.isEmpty
+          ? ForageHazard.values.where((h) => h != ForageHazard.none).toList()
+          : biome.hazards;
       final hazard = hazards[_random.nextInt(hazards.length)];
       switch (hazard) {
         case ForageHazard.pollution:
           rewards['Organique'] = ((rewards['Organique'] ?? 0) * 0.8).round();
-          incident = 'pollution légère, gains organiques réduits';
+          incident = 'pollution légère, -20 % Organique';
         case ForageHazard.droneErrant:
           rewards = rewards
               .map((key, value) => MapEntry(key, (value * 0.75).round()));
-          incident = 'drone errant, retour anticipé';
+          incident = 'drone errant, -25 % gains totaux';
         case ForageHazard.climatDifficile:
           rewards = rewards
               .map((key, value) => MapEntry(key, (value * 0.85).round()));
-          incident = 'climat difficile, récolte ralentie';
+          incident = 'climat difficile, -15 % gains totaux';
+        case ForageHazard.terrainInstable:
+          rewards['Minéral'] = ((rewards['Minéral'] ?? 0) * 0.8).round();
+          incident = 'terrain instable, -20 % Minéral';
         case ForageHazard.none:
           break;
       }
@@ -788,6 +928,10 @@ class Zone0GameState extends ChangeNotifier {
         hungerRemaining: hunger,
         moodLabel: moodLabel,
         finalStateLabel: finalState,
+        baseRiskPercent: mission.baseRiskPercent,
+        securityAtLaunch: mission.securityAtLaunch,
+        securityReduction: mission.securityReduction,
+        realRiskPercent: mission.riskPercent,
         completedAt: completedAt,
         inventoryFull: inventoryResult.hasPending,
       ),
@@ -916,6 +1060,8 @@ class Zone0GameState extends ChangeNotifier {
           'vitalityOverrides': vitalityOverrides,
           'hungerOverrides': hungerOverrides,
           'manualRestingIds': manualRestingIds.toList(),
+          'towerAssignedIds': towerAssignedIds.toList(),
+          'campSecurity': refugeSafety,
           'lastCuddleAt': lastCuddleAt.map(
             (key, value) => MapEntry(key, Timestamp.fromDate(value)),
           ),
@@ -945,6 +1091,17 @@ class Zone0GameState extends ChangeNotifier {
               'requiredCampHeartLevel': 0,
               'stockCapacityBonusPerLevel':
                   fablabConfig.stockCapacityBonusPerFablabLevel,
+              'isVisible': true,
+            },
+            'securityTower': <String, dynamic>{
+              'buildingId': 'securityTower',
+              'buildingType': 'security',
+              'displayName': 'Tour de sécurité',
+              'state': isSecurityTowerBuilt ? 'built' : 'constructible',
+              'currentLevel': securityTowerLevel,
+              'maxLevel': 3,
+              'requiredCampHeartLevel':
+                  securityTowerConfig.requiredCampHeartLevel,
               'isVisible': true,
             },
           },
@@ -1105,6 +1262,9 @@ class ForageMission {
     required this.vitalityCost,
     required this.riskPercent,
     required this.riskLabel,
+    required this.baseRiskPercent,
+    required this.securityAtLaunch,
+    required this.securityReduction,
     required this.xpGain,
   });
 
@@ -1137,6 +1297,9 @@ class ForageMission {
       vitalityCost: _readStaticInt(data['vitalityCost']),
       riskPercent: _readStaticInt(data['riskPercent']),
       riskLabel: '${data['riskLabel'] ?? 'normal'}',
+      baseRiskPercent: _readStaticInt(data['baseRiskPercent']),
+      securityAtLaunch: _readStaticInt(data['securityAtLaunch']),
+      securityReduction: _readStaticInt(data['securityReduction']),
       xpGain: _readStaticInt(data['xpGain']),
     );
     mission.status = _enumByName(
@@ -1159,6 +1322,9 @@ class ForageMission {
   final int vitalityCost;
   final int riskPercent;
   final String riskLabel;
+  final int baseRiskPercent;
+  final int securityAtLaunch;
+  final int securityReduction;
   final int xpGain;
   ForageMissionStatus status = ForageMissionStatus.active;
 
@@ -1176,6 +1342,9 @@ class ForageMission {
       'vitalityCost': vitalityCost,
       'riskPercent': riskPercent,
       'riskLabel': riskLabel,
+      'baseRiskPercent': baseRiskPercent,
+      'securityAtLaunch': securityAtLaunch,
+      'securityReduction': securityReduction,
       'xpGain': xpGain,
       'status': status.name,
     };
@@ -1229,6 +1398,10 @@ class PtipoteMissionReport {
     required this.hungerRemaining,
     required this.moodLabel,
     required this.finalStateLabel,
+    required this.baseRiskPercent,
+    required this.securityAtLaunch,
+    required this.securityReduction,
+    required this.realRiskPercent,
     required this.completedAt,
     required this.inventoryFull,
     this.read = false,
@@ -1251,6 +1424,11 @@ class PtipoteMissionReport {
       hungerRemaining: ForageMission._readStaticInt(data['hungerRemaining']),
       moodLabel: '${data['moodLabel'] ?? 'Bien'}',
       finalStateLabel: '${data['finalStateLabel'] ?? ''}',
+      baseRiskPercent: ForageMission._readStaticInt(data['baseRiskPercent']),
+      securityAtLaunch: ForageMission._readStaticInt(data['securityAtLaunch']),
+      securityReduction:
+          ForageMission._readStaticInt(data['securityReduction']),
+      realRiskPercent: ForageMission._readStaticInt(data['realRiskPercent']),
       completedAt:
           ForageMission._readDate(data['completedAt']) ?? DateTime.now(),
       inventoryFull: data['inventoryFull'] == true,
@@ -1275,6 +1453,10 @@ class PtipoteMissionReport {
       hungerRemaining: 0,
       moodLabel: 'Bien',
       finalStateLabel: message,
+      baseRiskPercent: 0,
+      securityAtLaunch: 0,
+      securityReduction: 0,
+      realRiskPercent: 0,
       completedAt: now,
       inventoryFull: false,
     );
@@ -1294,6 +1476,10 @@ class PtipoteMissionReport {
   final int hungerRemaining;
   final String moodLabel;
   final String finalStateLabel;
+  final int baseRiskPercent;
+  final int securityAtLaunch;
+  final int securityReduction;
+  final int realRiskPercent;
   final DateTime completedAt;
   final bool inventoryFull;
   bool read;
@@ -1314,6 +1500,10 @@ class PtipoteMissionReport {
       'hungerRemaining': hungerRemaining,
       'moodLabel': moodLabel,
       'finalStateLabel': finalStateLabel,
+      'baseRiskPercent': baseRiskPercent,
+      'securityAtLaunch': securityAtLaunch,
+      'securityReduction': securityReduction,
+      'realRiskPercent': realRiskPercent,
       'completedAt': Timestamp.fromDate(completedAt),
       'inventoryFull': inventoryFull,
       'read': read,

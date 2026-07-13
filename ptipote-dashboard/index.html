@@ -32,6 +32,7 @@
         <button class="tab-button" type="button" data-dashboard-tab="ptipote-stats">Stat Ptipote</button>
         <button class="tab-button" type="button" data-dashboard-tab="camp-heart">Cœur du Camp</button>
         <button class="tab-button" type="button" data-dashboard-tab="lisiere-forage">Lisière / Fourrage</button>
+        <button class="tab-button" type="button" data-dashboard-tab="security-tower">Tour</button>
         <button class="tab-button" type="button" data-dashboard-tab="fablab">Fablab</button>
         <button class="tab-button" type="button" data-dashboard-tab="craft">Craft</button>
       </nav>
@@ -104,6 +105,17 @@
           </div>
           <p class="panel-note" id="lisiereForageStatus">Charge les temps, gains, coûts et risques depuis lisiere-forage-config.json.</p>
           <div class="stage-list" id="lisiereForageList"></div>
+        </section>
+      </section>
+
+      <section class="dashboard-panel" data-dashboard-panel="security-tower">
+        <section class="panel stat-ptipote-panel" aria-labelledby="securityTowerTitle">
+          <div class="panel-head">
+            <div><p class="eyebrow">Configuration V1</p><h2 id="securityTowerTitle">Tour de sécurité</h2></div>
+            <button class="ghost" id="exportSecurityTowerButton" type="button">Exporter JSON</button>
+          </div>
+          <p class="panel-note" id="securityTowerStatus">Charge les coûts, ticks et seuils depuis security-tower-config.json.</p>
+          <div class="stage-list" id="securityTowerConfigList"></div>
         </section>
       </section>
 

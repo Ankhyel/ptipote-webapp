@@ -1,0 +1,25 @@
+{
+  "constructionCostOrganic": 6,
+  "constructionCostMineral": 8,
+  "requiredCampHeartLevel": 1,
+  "maxSecurity": 100,
+  "initialSecurity": 0,
+  "securityGainPerTick": 5,
+  "tickMinutes": 10,
+  "vitalityCostPerTick": 5,
+  "securityDecayPerTick": 1,
+  "minimumMissionRisk": 5,
+  "securityRiskReductionFactor": 0.4,
+  "slotsByLevel": {
+    "1": 1,
+    "2": 2,
+    "3": 3
+  },
+  "dangerLabels": [
+    { "label": "Très sûr", "min": 5, "max": 14 },
+    { "label": "Sûr", "min": 15, "max": 24 },
+    { "label": "Incertain", "min": 25, "max": 39 },
+    { "label": "Risqué", "min": 40, "max": 54 },
+    { "label": "Très risqué", "min": 55, "max": 100 }
+  ]
+}
