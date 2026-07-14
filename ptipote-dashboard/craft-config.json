@@ -12,12 +12,33 @@
       "contextIngredients": [
         "Eau"
       ],
+      "cuisineLevel": 1,
       "resultItem": "Repas simple",
       "resultAmount": 1,
       "isConsumable": true,
       "foodType": "meal",
       "hungerRestore": 35,
       "vitalityRestore": 5
+    },
+    {
+      "id": "vitalityDrink",
+      "displayName": "Boisson tonique",
+      "ingredients": [
+        {
+          "resource": "Organique",
+          "amount": 3
+        }
+      ],
+      "contextIngredients": [
+        "4 Eau"
+      ],
+      "cuisineLevel": 2,
+      "resultItem": "Boisson tonique",
+      "resultAmount": 2,
+      "isConsumable": true,
+      "foodType": "drink",
+      "hungerRestore": 5,
+      "vitalityRestore": 15
     }
   ]
 }

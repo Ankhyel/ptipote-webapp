@@ -521,7 +521,7 @@ function renderCraftConfig() {
       <div class="stage-row">
         <div>
           <strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong>
-          <span>${ingredients}${context} => ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${effects}</span>
+          <span>Cuisine niv. ${escapeHtml(recipe.cuisineLevel || 1)} · ${ingredients}${context} => ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${effects}</span>
         </div>
         <strong>${escapeHtml(recipe.id || "recette")}</strong>
       </div>
@@ -550,6 +550,7 @@ function addCraftRecipe(event) {
     displayName,
     ingredients,
     contextIngredients: ["Eau"],
+    cuisineLevel: Number(form.get("cuisineLevel") || 1),
     resultItem,
     resultAmount: Number(form.get("resultAmount") || 1),
     isConsumable: form.get("isConsumable") === "true",

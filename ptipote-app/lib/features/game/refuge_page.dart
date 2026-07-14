@@ -28,6 +28,7 @@ class _RefugePageState extends State<RefugePage> {
   static final _zone0State = Zone0GameState.instance;
 
   final _assetResolver = GameAssetResolver();
+  final _figurineService = FigurineService();
   String? _refugeAsset;
   Timer? _missionResolutionTimer;
 
@@ -110,6 +111,8 @@ class _RefugePageState extends State<RefugePage> {
     if (campHeartData != null) {
       _campHeartState.applyFirebaseData(campHeartData);
     }
+    final figurines = await _figurineService.watchMyFigurines().first;
+    _zone0State.recoverFigurineNeeds(figurines: figurines, tick: 1);
     _refugeAsset = await _assetResolver.resolve('Camp');
     if (mounted) setState(() {});
   }
@@ -426,6 +429,8 @@ class _MaisonPageState extends State<_MaisonPage>
                             moodLabelFor: _gameState.moodLabelFor,
                             recoveryRemaining:
                                 _gameState.vitalityRecoveryRemaining,
+                            restRecoveryRemaining:
+                                _gameState.restRecoveryRemaining,
                             isCuddleCareActive: _gameState.isCuddleCareActive,
                             canCuddle: _gameState.canCuddle,
                             cuddleProgress: _gameState.cuddleCooldownProgress,
@@ -917,6 +922,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.restStateLabelFor,
     required this.moodLabelFor,
     required this.recoveryRemaining,
+    required this.restRecoveryRemaining,
     required this.isCuddleCareActive,
     required this.canCuddle,
     required this.cuddleProgress,
@@ -947,6 +953,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final String Function(PtipoteFigurine figurine) restStateLabelFor;
   final String Function(PtipoteFigurine figurine) moodLabelFor;
   final Duration Function(PtipoteFigurine figurine) recoveryRemaining;
+  final Duration Function(PtipoteFigurine figurine) restRecoveryRemaining;
   final bool Function(PtipoteFigurine figurine) isCuddleCareActive;
   final bool Function(PtipoteFigurine figurine) canCuddle;
   final double Function(PtipoteFigurine figurine) cuddleProgress;
@@ -1120,7 +1127,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                         figurine: figurine,
                         selected: widget.selectedFigurineId == figurine.id,
                         isResting: false,
-                        restProgress: 0,
+                        restRemainingLabel: '',
                         onTap: () => widget.onToggleFigurine(figurine),
                       ),
                     ),
@@ -1137,8 +1144,6 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                 final figurine = resting[index];
                 final alcoveCenter =
                     constraints.maxWidth * (0.30 + index * 0.29);
-                final restProgress =
-                    widget.restFor(figurine) / ptipoteStatsConfig.maxRest;
                 final left = alcoveCenter - spriteSize / 2;
                 final top = constraints.maxHeight * 0.26;
                 placements[figurine.id] = _PtipotePlacement(
@@ -1158,7 +1163,9 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                         figurine: figurine,
                         selected: widget.selectedFigurineId == figurine.id,
                         isResting: true,
-                        restProgress: restProgress,
+                        restRemainingLabel: _shortDurationLabel(
+                          widget.restRecoveryRemaining(figurine),
+                        ),
                         onTap: () => widget.onToggleFigurine(figurine),
                       ),
                     ),
@@ -1379,14 +1386,14 @@ class _PtipoteSpriteButton extends StatefulWidget {
     required this.figurine,
     required this.selected,
     required this.isResting,
-    required this.restProgress,
+    required this.restRemainingLabel,
     required this.onTap,
   });
 
   final PtipoteFigurine figurine;
   final bool selected;
   final bool isResting;
-  final double restProgress;
+  final String restRemainingLabel;
   final VoidCallback onTap;
 
   @override
@@ -1396,7 +1403,6 @@ class _PtipoteSpriteButton extends StatefulWidget {
 class _PtipoteSpriteButtonState extends State<_PtipoteSpriteButton> {
   @override
   Widget build(BuildContext context) {
-    final remainingRatio = (1 - widget.restProgress).clamp(0.0, 1.0);
     return GestureDetector(
       onTap: widget.onTap,
       child: Stack(
@@ -1406,17 +1412,28 @@ class _PtipoteSpriteButtonState extends State<_PtipoteSpriteButton> {
           _PtipoteSprite(figurine: widget.figurine),
           if (widget.isResting)
             Positioned(
-              bottom: -10,
-              left: 8,
-              right: 8,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  minHeight: 6,
-                  value: remainingRatio,
-                  backgroundColor: Colors.white.withValues(alpha: 0.72),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFF6FA05F),
+              bottom: -18,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.88),
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.14),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  child: Text(
+                    widget.restRemainingLabel,
+                    style: const TextStyle(
+                      color: Color(0xFF2B2116),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ),
@@ -1823,8 +1840,7 @@ class _PtipoteQuickStats extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
             _QuickStatChip(
-              icon: _moodIcon(moodLabel),
-              label: moodLabel,
+              emoji: _moodEmoji(moodLabel),
               color: _moodColor(context, moodLabel),
             ),
             _QuickStatChip(
@@ -1842,8 +1858,7 @@ class _PtipoteQuickStats extends StatelessWidget {
                   : _hungerColor(context, hunger),
             ),
             _QuickStatChip(
-              icon: _restIcon(restStateLabel),
-              label: restStateLabel.split(' ').first,
+              emoji: _restEmoji(restStateLabel),
               color: _restColor(context, rest),
             ),
             _QuickStatChip(
@@ -1857,11 +1872,11 @@ class _PtipoteQuickStats extends StatelessWidget {
     );
   }
 
-  IconData _moodIcon(String mood) {
+  String _moodEmoji(String mood) {
     return switch (mood) {
-      'Heureux' => Icons.sentiment_very_satisfied_outlined,
-      'Bien' => Icons.sentiment_satisfied_outlined,
-      _ => Icons.sentiment_dissatisfied_outlined,
+      'Heureux' => '🤩',
+      'Bien' => '🙂',
+      _ => '😟',
     };
   }
 
@@ -1894,12 +1909,12 @@ class _PtipoteQuickStats extends StatelessWidget {
     return const Color(0xFF2E9B57);
   }
 
-  IconData _restIcon(String label) {
+  String _restEmoji(String label) {
     return switch (label) {
-      'Bien reposé' => Icons.hotel_class_outlined,
-      'Reposé' => Icons.bedtime_outlined,
-      'Fatigué' => Icons.bedtime_outlined,
-      _ => Icons.battery_alert_outlined,
+      'Bien reposé' => '🤩',
+      'Reposé' => '😴',
+      'Fatigué' => '😪',
+      _ => '🥱',
     };
   }
 
@@ -1916,12 +1931,14 @@ class _PtipoteQuickStats extends StatelessWidget {
 
 class _QuickStatChip extends StatelessWidget {
   const _QuickStatChip({
-    required this.icon,
-    required this.label,
+    this.icon,
+    this.emoji,
+    this.label = '',
     required this.color,
   });
 
-  final IconData icon;
+  final IconData? icon;
+  final String? emoji;
   final String label;
   final Color color;
 
@@ -1930,17 +1947,25 @@ class _QuickStatChip extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 2),
-        Text(
-          label,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: FontWeight.w900,
+        if (emoji != null)
+          Text(
+            emoji!,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          )
+        else if (icon != null)
+          Icon(icon, size: 16, color: color),
+        if (label.isNotEmpty) ...<Widget>[
+          const SizedBox(width: 2),
+          Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -3832,13 +3857,11 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                           const Text('Aucun P’TIPOTE ne surveille la Tour.')
                         else
                           ...assigned.map(
-                            (figurine) => ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(figurine.displayName),
-                              subtitle: Text(
-                                'Vitalité ${widget.gameState.vitalityFor(figurine)}/100',
-                              ),
-                              trailing: TextButton(
+                            (figurine) => _TowerFigurineRow(
+                              name: figurine.displayName,
+                              subtitle:
+                                  'Vitalité ${widget.gameState.vitalityFor(figurine)}/100',
+                              action: TextButton(
                                 onPressed: () {
                                   widget.gameState.removeFromTower(figurine.id);
                                 },
@@ -3869,13 +3892,11 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                           const Text('Aucun P’TIPOTE disponible.')
                         else
                           ...available.map(
-                            (figurine) => ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(figurine.displayName),
-                              subtitle: Text(
-                                'Vitalité ${widget.gameState.vitalityFor(figurine)}/100',
-                              ),
-                              trailing: FilledButton(
+                            (figurine) => _TowerFigurineRow(
+                              name: figurine.displayName,
+                              subtitle:
+                                  'Vitalité ${widget.gameState.vitalityFor(figurine)}/100',
+                              action: FilledButton(
                                 onPressed: () {
                                   final result =
                                       widget.gameState.assignToTower(figurine);
@@ -3895,6 +3916,50 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _TowerFigurineRow extends StatelessWidget {
+  const _TowerFigurineRow({
+    required this.name,
+    required this.subtitle,
+    required this.action,
+  });
+
+  final String name;
+  final String subtitle;
+  final Widget action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          action,
+        ],
       ),
     );
   }
@@ -4079,95 +4144,134 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
 
   @override
   Widget build(BuildContext context) {
-    final recipe = craftConfig.simpleMealRecipe;
-    final organic = widget.gameState.resourceAmount('Organique');
-    final organicCost = recipe.ingredients['Organique'] ?? 0;
-    final canPrepare = organic >= organicCost &&
-        widget.gameState.hasInventoryCapacityFor(
-          <String, int>{recipe.resultItem: recipe.resultAmount},
-        );
     return ListView(
       padding: const EdgeInsets.all(18),
       children: <Widget>[
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+        Text(
+          'Cuisine',
+          style: Theme.of(context)
+              .textTheme
+              .titleLarge
+              ?.copyWith(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 6),
+        const Text('Eau disponible gratuitement dans la Cuisine.'),
+        const SizedBox(height: 14),
+        ...craftConfig.recipes.map((recipe) {
+          final canPrepare =
+              widget.gameState.hasResources(recipe.ingredients) &&
+                  widget.gameState.hasInventoryCapacityFor(
+                    <String, int>{recipe.resultItem: recipe.resultAmount},
+                  );
+          return _CuisineRecipeCard(
+            recipe: recipe,
+            gameState: widget.gameState,
+            canPrepare: canPrepare,
+            onPrepare: () {
+              final result = widget.gameState.prepareRecipe(recipe);
+              setState(() => _lastResult = result.message);
+            },
+          );
+        }),
+        if (_lastResult != null) ...<Widget>[
+          const SizedBox(height: 10),
+          Text(
+            _lastResult!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _CuisineRecipeCard extends StatelessWidget {
+  const _CuisineRecipeCard({
+    required this.recipe,
+    required this.gameState,
+    required this.canPrepare,
+    required this.onPrepare,
+  });
+
+  final CraftRecipe recipe;
+  final Zone0GameState gameState;
+  final bool canPrepare;
+  final VoidCallback onPrepare;
+
+  @override
+  Widget build(BuildContext context) {
+    final output = <String, int>{recipe.resultItem: recipe.resultAmount};
+    final missingLabel = !gameState.hasResources(recipe.ingredients)
+        ? gameState.missingResourcesLabel(recipe.ingredients)
+        : 'Inventaire plein : impossible de ranger ${recipe.resultItem}.';
+    final ingredientText = recipe.ingredients.entries
+        .map((entry) => '${entry.value} ${entry.key}')
+        .join(' + ');
+    final contextText = recipe.contextIngredients.entries
+        .map((entry) => '${entry.value} ${entry.key}')
+        .join(' + ');
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              '${recipe.displayName} · Cuisine niv. ${recipe.cuisineLevel}',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            Row(
               children: <Widget>[
-                Text(
-                  'Cuisine',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 6),
-                const Text('Niveau 1 · Eau disponible gratuitement.'),
-                const SizedBox(height: 14),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: _RecipeSlot(
-                        label: 'Slot 1',
-                        value: '$organicCost Organique',
-                        icon: Icons.eco_outlined,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: _RecipeSlot(
-                        label: 'Slot 2',
-                        value: 'Eau',
-                        icon: Icons.water_drop_outlined,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text('Stock Organique : $organic'),
-                Text(
-                  'Résultat : ${recipe.resultAmount} ${recipe.resultItem}',
-                ),
-                Text(
-                  'Consommable : +${recipe.hungerRestore} faim, +${recipe.vitalityRestore} vitalité',
-                ),
-                if (!canPrepare) ...<Widget>[
-                  const SizedBox(height: 8),
-                  Text(
-                    organic < organicCost
-                        ? 'Il manque ${organicCost - organic} Organique.'
-                        : 'Inventaire plein : impossible de ranger ${recipe.resultItem}.',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontWeight: FontWeight.w900,
-                    ),
+                Expanded(
+                  child: _RecipeSlot(
+                    label: 'Ingrédients',
+                    value: ingredientText,
+                    icon: Icons.eco_outlined,
                   ),
-                ],
-                const SizedBox(height: 14),
-                FilledButton.icon(
-                  onPressed: canPrepare
-                      ? () {
-                          final result = widget.gameState.prepareSimpleMeal();
-                          setState(() => _lastResult = result.message);
-                        }
-                      : null,
-                  icon: const Icon(Icons.restaurant_outlined),
-                  label: const Text('Préparer'),
                 ),
-                if (_lastResult != null) ...<Widget>[
-                  const SizedBox(height: 10),
-                  Text(
-                    _lastResult!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _RecipeSlot(
+                    label: 'Cuisine',
+                    value: contextText.isEmpty ? 'Aucun' : contextText,
+                    icon: Icons.water_drop_outlined,
                   ),
-                ],
+                ),
               ],
             ),
-          ),
+            const SizedBox(height: 12),
+            Text('Résultat : ${recipe.resultAmount} ${recipe.resultItem}'),
+            Text(
+              'Type : ${recipe.foodType.name} · faim +${recipe.hungerRestore} · vitalité +${recipe.vitalityRestore}',
+            ),
+            Text('Stock Organique : ${gameState.resourceAmount('Organique')}'),
+            if (!canPrepare) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                gameState.hasInventoryCapacityFor(output)
+                    ? missingLabel
+                    : 'Inventaire plein : impossible de ranger ${recipe.resultItem}.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: canPrepare ? onPrepare : null,
+              icon: Icon(
+                recipe.foodType == FoodType.drink
+                    ? Icons.local_drink_outlined
+                    : Icons.restaurant_outlined,
+              ),
+              label: const Text('Préparer'),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

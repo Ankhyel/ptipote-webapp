@@ -38,6 +38,7 @@ class Zone0GameState extends ChangeNotifier {
   int securityTowerLevel = 0;
   final Set<String> towerAssignedIds = <String>{};
   DateTime? lastFirebaseSyncAt;
+  DateTime? lastSimulationAt;
   String? lastFirebaseError;
   String firebaseSyncLabel = 'Non synchronisé';
   bool isFirebaseSyncing = false;
@@ -220,6 +221,14 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  Duration restRecoveryRemaining(PtipoteFigurine figurine) {
+    final missing = math.max(0, ptipoteStatsConfig.maxRest - restFor(figurine));
+    if (missing == 0) return Duration.zero;
+    return Duration(
+      minutes: (missing / ptipoteStatsConfig.sleepRestRecoveryPerMinute).ceil(),
+    );
+  }
+
   void sendToSleep(PtipoteFigurine figurine) {
     if (isOnMission(figurine.id)) return;
     manualRestingIds.add(figurine.id);
@@ -253,6 +262,9 @@ class Zone0GameState extends ChangeNotifier {
     required int tick,
   }) {
     var changed = false;
+    if (_applyElapsedSimulation(figurines)) {
+      changed = true;
+    }
     final hungerDecayTick =
         math.max(1, ptipoteStatsConfig.hungerDecayMinutes * 2);
     final restLossTick =
@@ -324,7 +336,8 @@ class Zone0GameState extends ChangeNotifier {
           ptipoteStatsConfig.maxVitality,
           currentVitality + vitalityGain,
         );
-        if (nextVitality >= ptipoteStatsConfig.maxVitality) {
+        if (nextVitality >= ptipoteStatsConfig.maxVitality &&
+            restFor(figurine) >= ptipoteStatsConfig.maxRest) {
           vitalityOverrides.remove(figurine.id);
           manualRestingIds.remove(figurine.id);
         } else {
@@ -370,6 +383,129 @@ class Zone0GameState extends ChangeNotifier {
       notifyListeners();
       unawaited(saveRuntimeToFirebase());
     }
+  }
+
+  bool _applyElapsedSimulation(List<PtipoteFigurine> figurines) {
+    final now = DateTime.now();
+    final previous = lastSimulationAt;
+    if (previous == null) {
+      lastSimulationAt = now;
+      return true;
+    }
+    final elapsedMinutes = now.difference(previous).inMinutes;
+    if (elapsedMinutes <= 0) return false;
+
+    var changed = false;
+    final figurinesById = <String, PtipoteFigurine>{
+      for (final figurine in figurines) figurine.id: figurine,
+    };
+
+    for (final figurine in figurines) {
+      if (isOnMission(figurine.id)) continue;
+      if (towerAssignedIds.contains(figurine.id)) continue;
+
+      final resting = isResting(figurine);
+      var currentHunger = hungerFor(figurine);
+      var currentRest = restFor(figurine);
+      var currentVitality = vitalityFor(figurine);
+
+      final hungerLoss =
+          elapsedMinutes ~/ math.max(1, ptipoteStatsConfig.hungerDecayMinutes);
+      if (hungerLoss > 0 && currentHunger > 0) {
+        currentHunger = math.max(0, currentHunger - hungerLoss);
+        hungerOverrides[figurine.id] = currentHunger;
+        changed = true;
+      }
+
+      if (resting) {
+        final restGain =
+            elapsedMinutes * ptipoteStatsConfig.sleepRestRecoveryPerMinute;
+        if (restGain > 0 && currentRest < ptipoteStatsConfig.maxRest) {
+          currentRest =
+              math.min(ptipoteStatsConfig.maxRest, currentRest + restGain);
+          restOverrides[figurine.id] = currentRest;
+          changed = true;
+        }
+        if (currentVitality < ptipoteStatsConfig.maxVitality) {
+          currentVitality = math.min(
+            ptipoteStatsConfig.maxVitality,
+            currentVitality +
+                elapsedMinutes * ptipoteStatsConfig.vitalityRecoveryPerMinute,
+          );
+          vitalityOverrides[figurine.id] = currentVitality;
+          changed = true;
+        }
+      } else {
+        final restLoss = elapsedMinutes ~/
+            math.max(1, ptipoteStatsConfig.awakeRestLossMinutes);
+        if (restLoss > 0 && currentRest > 0) {
+          currentRest = math.max(0, currentRest - restLoss);
+          restOverrides[figurine.id] = currentRest;
+          changed = true;
+        }
+
+        final recoveryInterval = isHappy(figurine)
+            ? math.max(1,
+                (1 / ptipoteStatsConfig.happyVitalityRecoveryPerMinute).ceil())
+            : ptipoteStatsConfig.naturalVitalityRecoveryMinutes;
+        var vitalityGain = elapsedMinutes ~/ math.max(1, recoveryInterval);
+        if (currentHunger >= ptipoteStatsConfig.wellFedHungerThreshold &&
+            currentHunger <= ptipoteStatsConfig.indigestionHungerThreshold) {
+          vitalityGain = (vitalityGain *
+                  (1 + ptipoteStatsConfig.wellFedVitalityRecoveryBonus))
+              .round();
+        } else if (currentHunger >
+            ptipoteStatsConfig.indigestionHungerThreshold) {
+          vitalityGain = (vitalityGain *
+                  (1 - ptipoteStatsConfig.indigestionVitalityRecoveryPenalty))
+              .floor();
+        }
+        if (vitalityGain > 0 &&
+            currentVitality < ptipoteStatsConfig.maxVitality) {
+          currentVitality = math.min(
+            ptipoteStatsConfig.maxVitality,
+            currentVitality + vitalityGain,
+          );
+          vitalityOverrides[figurine.id] = currentVitality;
+          changed = true;
+        }
+      }
+    }
+
+    final towerTicks =
+        elapsedMinutes ~/ math.max(1, securityTowerConfig.tickMinutes);
+    if (towerTicks > 0) {
+      if (towerAssignedIds.isNotEmpty) {
+        for (final figurineId in towerAssignedIds.toList()) {
+          final figurine = figurinesById[figurineId];
+          if (figurine == null) continue;
+          final nextVitality = math.max(
+            0,
+            vitalityFor(figurine) -
+                towerTicks * securityTowerConfig.vitalityCostPerTick,
+          );
+          vitalityOverrides[figurine.id] = nextVitality;
+          refugeSafety = math.min(
+            securityTowerConfig.maxSecurity,
+            refugeSafety + towerTicks * securityTowerConfig.securityGainPerTick,
+          );
+          if (nextVitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+            towerAssignedIds.remove(figurine.id);
+            manualRestingIds.add(figurine.id);
+          }
+          changed = true;
+        }
+      } else if (isSecurityTowerBuilt && refugeSafety > 0) {
+        refugeSafety = math.max(
+          0,
+          refugeSafety - towerTicks * securityTowerConfig.securityDecayPerTick,
+        );
+        changed = true;
+      }
+    }
+
+    lastSimulationAt = now;
+    return changed;
   }
 
   int resourceAmount(String resource) {
@@ -573,6 +709,10 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult prepareSimpleMeal() {
+    return prepareRecipe(craftConfig.simpleMealRecipe);
+  }
+
+  Zone0ActionResult prepareRecipe(CraftRecipe recipe) {
     if (!isFablabBuilt) {
       return const Zone0ActionResult(
         success: false,
@@ -580,7 +720,6 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
 
-    final recipe = craftConfig.simpleMealRecipe;
     final cost = recipe.ingredients;
     final output = <String, int>{recipe.resultItem: recipe.resultAmount};
     if (!hasResources(cost)) {
@@ -603,9 +742,9 @@ class Zone0GameState extends ChangeNotifier {
     }
     addResources(output);
     notifyListeners();
-    return const Zone0ActionResult(
+    return Zone0ActionResult(
       success: true,
-      message: 'Repas simple préparé.',
+      message: '${recipe.displayName} préparé.',
     );
   }
 
@@ -790,6 +929,8 @@ class Zone0GameState extends ChangeNotifier {
           ..clear()
           ..addAll(towerAssignedData.map((id) => '$id'));
       }
+      lastSimulationAt =
+          _readDate(data['lastSimulationAt']) ?? _readDate(data['updatedAt']);
 
       _loadedFromFirebase = true;
     });
@@ -1145,6 +1286,9 @@ class Zone0GameState extends ChangeNotifier {
           'manualRestingIds': manualRestingIds.toList(),
           'towerAssignedIds': towerAssignedIds.toList(),
           'campSecurity': refugeSafety,
+          'lastSimulationAt': lastSimulationAt == null
+              ? FieldValue.serverTimestamp()
+              : Timestamp.fromDate(lastSimulationAt!),
           'lastCuddleAt': lastCuddleAt.map(
             (key, value) => MapEntry(key, Timestamp.fromDate(value)),
           ),

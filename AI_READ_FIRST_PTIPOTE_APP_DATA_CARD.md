@@ -319,7 +319,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 ### 6. Risques
 
-- Formule V1: `baseBiomeRisk + intensityRiskModifier - (refugeSafety / 10) - bonus type`, minimum `0%`.
+- Formule V1: `baseBiomeRisk + intensityRiskModifier - campSecurity * 0.4 - bonus type`, minimum `5%`.
 - Securite refuge fallback: `50` tant que la Tour n'est pas branchee.
 - Labels UI: `Tres sur`, `Sur`, `Incertain`, `Risque`.
 - Incidents doux V1: Pollution (-20% Organique), Drone errant (-25% gains), Climat difficile (-15% gains).
@@ -744,6 +744,7 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 - Valeur: `0` a `100`.
 - Valeur par defaut: `100` si aucune sauvegarde Firebase n'existe.
 - Sauvegarde: `users/{uid}/game/zone0.restOverrides`.
+- Simulation hors ligne: `lastSimulationAt` sauvegarde le dernier calcul; au retour dans l'app, les minutes ecoulees appliquent faim, Repos, recuperation Vitalite, contribution Tour et decroissance securite.
 - Seul le sommeil restaure le Repos.
 - Le Confort n'est pas developpe dans cette etape; il deviendra plus tard un multiplicateur de recuperation du Repos selon qualite de couchage, decoration, niveau des alcoves, etc.
 
@@ -762,6 +763,7 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
   - Vitalite: `+1 par minute`.
 - Vitalite reste le carburant des missions, crafts, Tour et futures activites.
 - Nourriture ne restaure jamais le Repos.
+- La barre sous les P'TIPOTES endormis est remplacee par un cartouche de temps restant avant Repos complet.
 
 ### 5. Faim et suralimentation
 
@@ -776,6 +778,7 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 - `FoodType.meal`: repas, restaure surtout la Faim.
 - `FoodType.drink`: boisson, restaure surtout la Vitalite.
 - `Repas simple` V1: `meal`, `+35 faim`, `+5 Vitalite`.
+- `Boisson tonique` V1: `drink`, `3 Organique + 4 Eau`, produit `2`, `+5 faim`, `+15 Vitalite`.
 - Les futures recettes Craft doivent definir `foodType`.
 
 ### 7. Bonheur et besoins
