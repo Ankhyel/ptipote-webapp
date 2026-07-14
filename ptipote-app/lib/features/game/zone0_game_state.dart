@@ -119,6 +119,10 @@ class Zone0GameState extends ChangeNotifier {
         towerAssignedIds.contains(figurine.id);
   }
 
+  bool isUnavailableForTower(PtipoteFigurine figurine) {
+    return isOnMission(figurine.id) || towerAssignedIds.contains(figurine.id);
+  }
+
   bool isHappy(PtipoteFigurine figurine) {
     return moodFor(figurine) == PtipoteMood.happy;
   }
@@ -683,7 +687,7 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Aucun slot libre.');
     }
-    if (isBusy(figurine) && !towerAssignedIds.contains(figurine.id)) {
+    if (isUnavailableForTower(figurine)) {
       return const Zone0ActionResult(
           success: false, message: 'P’TIPOTE occupé.');
     }

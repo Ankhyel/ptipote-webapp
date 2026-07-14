@@ -3795,7 +3795,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
             final available = figurines
                 .where(
                   (figurine) =>
-                      !widget.gameState.isBusy(figurine) &&
+                      !widget.gameState.isUnavailableForTower(figurine) &&
                       widget.gameState.vitalityFor(figurine) >
                           ptipoteStatsConfig.minVitalityBeforeAutoRest,
                 )
