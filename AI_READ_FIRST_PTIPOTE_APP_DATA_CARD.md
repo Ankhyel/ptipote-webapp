@@ -852,6 +852,7 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
   - 5 repas prepares.
   - 3 missions en Plaine terminees.
 - Les recompenses ajoutent la population sans depasser la capacite.
+- Les missions terminees et les recompenses de population versees sont persistees separement. Une recompense bloquee par la capacite est conservee puis versee automatiquement quand le Cœur augmente la capacite. Les anciennes sauvegardes sont reconciliees une seule fois a partir de leur population deja creditee.
 - La Boite aux lettres recoit uniquement le message consequence via `PtipoteMissionReport.system`.
 - Le Kernel affiche les objectifs, la Boite raconte les resultats.
 

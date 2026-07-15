@@ -41,6 +41,11 @@ class Zone0GameState extends ChangeNotifier {
   final List<Zone0InventoryStack> marketStock = <Zone0InventoryStack>[];
   final List<MarketCustomerRequest> marketRequests = <MarketCustomerRequest>[];
   final Set<String> completedKernelMissionIds = <String>{};
+  // Kept separately from completion: a completed mission can wait for room
+  // in the refuge before all of its population reward is credited.
+  final Map<String, int> kernelPopulationRewardsGranted = <String, int>{};
+  bool _needsKernelPopulationRewardMigration = false;
+  int _lastKnownCampHeartLevel = 1;
 
   int refugeSafety = lisiereForageConfig.refugeSafetyFallback;
   int fablabLevel = 0;
@@ -1256,7 +1261,7 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Le Fablab est prêt. La Cuisine est maintenant disponible.',
       ),
     );
-    refreshKernelMissions(campHeartLevel: 1);
+    refreshKernelMissions();
     notifyListeners();
     unawaited(saveBuildingsToFirebase());
     unawaited(saveRuntimeToFirebase());
@@ -1699,6 +1704,22 @@ class Zone0GameState extends ChangeNotifier {
             ..clear()
             ..addAll(completedData.map((id) => '$id'));
         }
+        kernelPopulationRewardsGranted.clear();
+        final grantedData = kernelData['populationRewardsGranted'];
+        if (grantedData is Map) {
+          for (final entry in grantedData.entries) {
+            final amount = _readInt(entry.value);
+            if (amount > 0) {
+              kernelPopulationRewardsGranted['${entry.key}'] = amount;
+            }
+          }
+          _needsKernelPopulationRewardMigration = false;
+        } else {
+          // Older saves only stored completed ids. Reconstruct the rewards
+          // already received from the current population once on next refresh.
+          _needsKernelPopulationRewardMigration =
+              completedKernelMissionIds.isNotEmpty;
+        }
       }
       final generatorData = data['campGenerator'];
       if (generatorData is Map) {
@@ -1969,21 +1990,64 @@ class Zone0GameState extends ChangeNotifier {
     };
   }
 
-  bool refreshKernelMissions({int campHeartLevel = 1}) {
+  bool refreshKernelMissions({int? campHeartLevel}) {
     var changed = false;
+    if (campHeartLevel != null) {
+      _lastKnownCampHeartLevel = campHeartLevel.clamp(1, 5);
+    }
     final populationCapacity =
-        populationCapacityForCampHeartLevel(campHeartLevel);
-    for (final mission in kernelConfig.missions) {
-      if (completedKernelMissionIds.contains(mission.id)) continue;
-      if (_kernelMissionProgress(mission) < mission.requiredAmount) continue;
-      completedKernelMissionIds.add(mission.id);
-      currentPopulation = math.min(
-        populationCapacity,
-        currentPopulation + mission.populationReward,
+        populationCapacityForCampHeartLevel(_lastKnownCampHeartLevel);
+
+    if (_needsKernelPopulationRewardMigration) {
+      var alreadyCredited = math.max(
+        0,
+        currentPopulation - kernelConfig.startingPopulation,
       );
-      bioBatteries += mission.bioBatteryReward;
-      reports.add(PtipoteMissionReport.system(message: mission.mailMessage));
+      for (final mission in kernelConfig.missions) {
+        if (!completedKernelMissionIds.contains(mission.id)) continue;
+        final granted = math.min(mission.populationReward, alreadyCredited);
+        if (granted > 0) {
+          kernelPopulationRewardsGranted[mission.id] = granted;
+          alreadyCredited -= granted;
+        }
+      }
+      _needsKernelPopulationRewardMigration = false;
       changed = true;
+    }
+
+    var restoredPopulation = 0;
+    for (final mission in kernelConfig.missions) {
+      final wasCompleted = completedKernelMissionIds.contains(mission.id);
+      if (!wasCompleted) {
+        if (_kernelMissionProgress(mission) < mission.requiredAmount) continue;
+        completedKernelMissionIds.add(mission.id);
+        bioBatteries += mission.bioBatteryReward;
+        reports.add(PtipoteMissionReport.system(message: mission.mailMessage));
+        changed = true;
+      }
+
+      final alreadyGranted = (kernelPopulationRewardsGranted[mission.id] ?? 0)
+          .clamp(0, mission.populationReward);
+      final remainingReward = mission.populationReward - alreadyGranted;
+      final availableCapacity =
+          math.max(0, populationCapacity - currentPopulation);
+      final populationGrantedNow = math.min(remainingReward, availableCapacity);
+      if (populationGrantedNow <= 0) continue;
+
+      currentPopulation += populationGrantedNow;
+      kernelPopulationRewardsGranted[mission.id] =
+          alreadyGranted + populationGrantedNow;
+      if (wasCompleted) restoredPopulation += populationGrantedNow;
+      changed = true;
+    }
+
+    if (restoredPopulation > 0) {
+      reports.add(
+        PtipoteMissionReport.system(
+          message:
+              '$restoredPopulation habitant(s) rejoignent le refuge : récompenses Kernel restaurées.',
+        ),
+      );
     }
     if (changed) {
       unawaited(saveRuntimeToFirebase());
@@ -2369,6 +2433,7 @@ class Zone0GameState extends ChangeNotifier {
             'mealsPrepared': mealsPrepared,
             'plaineMissionsCompleted': plaineMissionsCompleted,
             'completedMissionIds': completedKernelMissionIds.toList(),
+            'populationRewardsGranted': kernelPopulationRewardsGranted,
           },
           'campGenerator': <String, dynamic>{
             'organic': generatorOrganic,
