@@ -7,11 +7,14 @@ import 'package:flutter/foundation.dart';
 
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
+import 'camp_generator_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'kernel_config.dart';
 import 'lisiere_forage_config.dart';
+import 'market_config.dart';
 import 'security_tower_config.dart';
+import 'workshop_config.dart';
 
 class Zone0GameState extends ChangeNotifier {
   Zone0GameState._();
@@ -33,17 +36,32 @@ class Zone0GameState extends ChangeNotifier {
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
   final List<ForageMission> missions = <ForageMission>[];
   final List<TowerMission> towerMissions = <TowerMission>[];
+  WorkshopCraftOrder? workshopOrder;
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
+  final List<Zone0InventoryStack> marketStock = <Zone0InventoryStack>[];
+  final List<MarketCustomerRequest> marketRequests = <MarketCustomerRequest>[];
   final Set<String> completedKernelMissionIds = <String>{};
 
   int refugeSafety = lisiereForageConfig.refugeSafetyFallback;
   int fablabLevel = 0;
   int securityTowerLevel = 0;
+  int marketLevel = 0;
   int currentPopulation = kernelConfig.startingPopulation;
   int bioBatteries = kernelConfig.startingBioBatteries;
   int campWellbeing = kernelConfig.startingWellbeing;
   int mealsPrepared = 0;
   int plaineMissionsCompleted = 0;
+  int generatorOrganic = 0;
+  int generatorMineral = 0;
+  int generatorTotalProduced = 0;
+  DateTime? generatorCycleStartedAt;
+  DateTime? marketNextSaleAt;
+  DateTime? marketLastWorkTickAt;
+  DateTime? lastManualTowerRechargeAt;
+  String? marketAssignedPtipoteId;
+  String? marketAssignedPtipoteName;
+  int marketValueRemainder = 0;
+  int marketBioBatteriesEarned = 0;
   final Set<String> towerAssignedIds = <String>{};
   DateTime? lastFirebaseSyncAt;
   DateTime? lastSimulationAt;
@@ -54,6 +72,7 @@ class Zone0GameState extends ChangeNotifier {
 
   bool get isFablabBuilt => fablabLevel >= fablabConfig.cuisineUnlockLevel;
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
+  bool get isMarketBuilt => marketLevel >= 1;
   int get securityTowerSlots =>
       securityTowerConfig.slotsForLevel(securityTowerLevel);
   bool get hasActiveTowerMission => towerMissions.any(
@@ -69,6 +88,13 @@ class Zone0GameState extends ChangeNotifier {
         );
   }
 
+  bool isAssignedToWorkshop(String figurineId) =>
+      workshopOrder?.status == WorkshopOrderStatus.active &&
+      workshopOrder?.assignedPtipoteId == figurineId;
+
+  bool isAssignedToMarket(String figurineId) =>
+      marketAssignedPtipoteId == figurineId;
+
   int get globalStockCapacity {
     return fablabConfig.baseGlobalStockCapacity +
         fablabLevel * fablabConfig.stockCapacityBonusPerFablabLevel;
@@ -81,6 +107,95 @@ class Zone0GameState extends ChangeNotifier {
 
   int get inventoryUsedAmount {
     return inventory.fold(0, (total, stack) => total + stack.amount);
+  }
+
+  int generatorOrganicCapacity(int heartLevel) =>
+      campGeneratorConfig.organicCapacity(heartLevel);
+
+  int generatorMineralCapacity(int heartLevel) =>
+      campGeneratorConfig.mineralCapacity(heartLevel);
+
+  Duration? generatorRemaining(int heartLevel, {DateTime? now}) {
+    final started = generatorCycleStartedAt;
+    if (started == null || !_generatorCanRun) return null;
+    final end = started.add(
+      Duration(minutes: campGeneratorConfig.cycleMinutes(heartLevel)),
+    );
+    final remaining = end.difference(now ?? DateTime.now());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  bool get _generatorCanRun =>
+      generatorOrganic >= campGeneratorConfig.organicCostPerCycle &&
+      generatorMineral >= campGeneratorConfig.mineralCostPerCycle;
+
+  Zone0ActionResult transferToGenerator({
+    required String resource,
+    required int amount,
+    required int heartLevel,
+  }) {
+    final isOrganic = resource == 'Organique';
+    if (!isOrganic && resource != 'Minéral') {
+      return const Zone0ActionResult(
+          success: false, message: 'Ressource incompatible.');
+    }
+    final current = isOrganic ? generatorOrganic : generatorMineral;
+    final capacity = isOrganic
+        ? generatorOrganicCapacity(heartLevel)
+        : generatorMineralCapacity(heartLevel);
+    final moved = math.min(
+        math.min(amount, resourceAmount(resource)), capacity - current);
+    if (moved <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucune ressource transférée.');
+    }
+    final removed = removeResource(resource, moved);
+    if (isOrganic) {
+      generatorOrganic += removed;
+    } else {
+      generatorMineral += removed;
+    }
+    generatorCycleStartedAt ??= _generatorCanRun ? DateTime.now() : null;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$removed $resource ajouté au Générateur.');
+  }
+
+  bool resolveGenerator({required int heartLevel, DateTime? now}) {
+    final current = now ?? DateTime.now();
+    if (!_generatorCanRun) {
+      generatorCycleStartedAt = null;
+      return false;
+    }
+    generatorCycleStartedAt ??= current;
+    final cycle =
+        Duration(minutes: campGeneratorConfig.cycleMinutes(heartLevel));
+    final elapsed = current.difference(generatorCycleStartedAt!);
+    final elapsedCycles = elapsed.inSeconds ~/ math.max(1, cycle.inSeconds);
+    if (elapsedCycles <= 0) return false;
+    final possibleCycles = math.min(
+      elapsedCycles,
+      math.min(
+        generatorOrganic ~/ campGeneratorConfig.organicCostPerCycle,
+        generatorMineral ~/ campGeneratorConfig.mineralCostPerCycle,
+      ),
+    );
+    if (possibleCycles <= 0) return false;
+    generatorOrganic -=
+        possibleCycles * campGeneratorConfig.organicCostPerCycle;
+    generatorMineral -=
+        possibleCycles * campGeneratorConfig.mineralCostPerCycle;
+    final produced = possibleCycles * campGeneratorConfig.bioBatteriesPerCycle;
+    bioBatteries += produced;
+    generatorTotalProduced += produced;
+    generatorCycleStartedAt = _generatorCanRun
+        ? generatorCycleStartedAt!
+            .add(Duration(seconds: cycle.inSeconds * possibleCycles))
+        : null;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return true;
   }
 
   int populationCapacityForCampHeartLevel(int campHeartLevel) {
@@ -185,11 +300,438 @@ class Zone0GameState extends ChangeNotifier {
   bool isBusy(PtipoteFigurine figurine) {
     return isOnMission(figurine.id) ||
         isResting(figurine) ||
-        isAssignedToTower(figurine.id);
+        isAssignedToTower(figurine.id) ||
+        isAssignedToWorkshop(figurine.id) ||
+        isAssignedToMarket(figurine.id);
   }
 
+  double calculateWorkshopEfficiency(PtipoteFigurine figurine) {
+    final levelBonus =
+        levelFor(figurine) * workshopConfig.levelSpeedBonusPercent;
+    return levelBonus.clamp(0, workshopConfig.maxLevelSpeedBonusPercent);
+  }
+
+  Zone0ActionResult startWorkshopOrder({
+    required WorkshopRecipe recipe,
+    required int quantity,
+    PtipoteFigurine? figurine,
+  }) {
+    resolveWorkshopOrder();
+    if (workshopOrder?.status == WorkshopOrderStatus.active) {
+      return const Zone0ActionResult(
+          success: false, message: 'Une commande est déjà en cours.');
+    }
+    if (quantity <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Quantité invalide.');
+    }
+    if (figurine != null && isBusy(figurine)) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIPOTE occupé.');
+    }
+    final totalCosts =
+        recipe.ingredients.map((key, value) => MapEntry(key, value * quantity));
+    if (!hasResources(totalCosts)) {
+      return Zone0ActionResult(
+          success: false, message: missingResourcesLabel(totalCosts));
+    }
+    if (!hasInventoryCapacityFor(
+        <String, int>{recipe.resultItem: recipe.resultAmount * quantity})) {
+      return const Zone0ActionResult(
+          success: false, message: 'Inventaire insuffisant pour la commande.');
+    }
+    if (!removeResources(totalCosts)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ressources indisponibles.');
+    }
+    final speedBonus =
+        figurine == null ? 0.0 : calculateWorkshopEfficiency(figurine);
+    final unitSeconds = math.max(
+        1,
+        (Duration(minutes: recipe.durationMinutes).inSeconds * (1 - speedBonus))
+            .round());
+    final now = DateTime.now();
+    workshopOrder = WorkshopCraftOrder(
+      id: 'workshop-${now.microsecondsSinceEpoch}',
+      recipeId: recipe.id,
+      requestedQuantity: quantity,
+      completedQuantity: 0,
+      assignedPtipoteId: figurine?.id,
+      assignedPtipoteName: figurine?.displayName,
+      startTime: now,
+      nextCompletionTime: now.add(Duration(seconds: unitSeconds)),
+      unitDurationSeconds: unitSeconds,
+      reservedResources: totalCosts,
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            '${recipe.displayName} lancé${figurine == null ? '' : ' avec ${figurine.displayName}'}.');
+  }
+
+  bool resolveWorkshopOrder({DateTime? now}) {
+    final order = workshopOrder;
+    if (order == null || order.status != WorkshopOrderStatus.active) {
+      return false;
+    }
+    final current = now ?? DateTime.now();
+    if (current.isBefore(order.nextCompletionTime)) return false;
+    final recipe = workshopConfig.recipe(order.recipeId);
+    final elapsedUnits = 1 +
+        current.difference(order.nextCompletionTime).inSeconds ~/
+            order.unitDurationSeconds;
+    var units = math.min(
+        elapsedUnits, order.requestedQuantity - order.completedQuantity);
+    if (order.assignedPtipoteId != null) {
+      final vitality = vitalityOverrides[order.assignedPtipoteId!] ??
+          ptipoteStatsConfig.maxVitality;
+      final possible = math.max(
+          0,
+          (vitality - ptipoteStatsConfig.minVitalityBeforeAutoRest) ~/
+              workshopConfig.vitalityCostPerUnit);
+      units = math.min(units, possible);
+    }
+    if (units > 0) {
+      addResources(
+          <String, int>{recipe.resultItem: recipe.resultAmount * units});
+      order.completedQuantity += units;
+      order.nextCompletionTime = order.nextCompletionTime
+          .add(Duration(seconds: order.unitDurationSeconds * units));
+      if (order.assignedPtipoteId != null) {
+        final id = order.assignedPtipoteId!;
+        vitalityOverrides[id] = math.max(
+            0,
+            (vitalityOverrides[id] ?? ptipoteStatsConfig.maxVitality) -
+                units * workshopConfig.vitalityCostPerUnit);
+      }
+    }
+    final assignedVitality = order.assignedPtipoteId == null
+        ? ptipoteStatsConfig.maxVitality
+        : vitalityOverrides[order.assignedPtipoteId!] ??
+            ptipoteStatsConfig.maxVitality;
+    final tired = order.assignedPtipoteId != null &&
+        assignedVitality <
+            ptipoteStatsConfig.minVitalityBeforeAutoRest +
+                workshopConfig.vitalityCostPerUnit;
+    if (order.completedQuantity >= order.requestedQuantity || tired) {
+      order.status = WorkshopOrderStatus.completed;
+      if (tired) {
+        manualRestingIds.add(order.assignedPtipoteId!);
+        final remaining = order.requestedQuantity - order.completedQuantity;
+        if (remaining > 0) {
+          addResources(recipe.ingredients
+              .map((key, value) => MapEntry(key, value * remaining)));
+        }
+      }
+      reports.add(PtipoteMissionReport.system(
+          message: tired
+              ? '${order.assignedPtipoteName} rentre fatigué de l’Atelier.'
+              : 'Commande Atelier terminée : ${recipe.displayName}.'));
+    }
+    notifyListeners();
+    unawaited(saveInventoryToFirebase());
+    unawaited(saveRuntimeToFirebase());
+    return true;
+  }
+
+  Zone0ActionResult cancelWorkshopOrder() {
+    final order = workshopOrder;
+    if (order == null || order.status != WorkshopOrderStatus.active) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucune commande active.');
+    }
+    resolveWorkshopOrder();
+    final remaining = order.requestedQuantity - order.completedQuantity;
+    final recipe = workshopConfig.recipe(order.recipeId);
+    if (remaining > 0) {
+      addResources(recipe.ingredients
+          .map((key, value) => MapEntry(key, value * remaining)));
+    }
+    order.status = WorkshopOrderStatus.cancelled;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true,
+        message: 'Commande annulée, ressources restantes rendues.');
+  }
+
+  Zone0ActionResult constructMarket(int heartLevel) {
+    if (isMarketBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Le Marché est déjà construit.');
+    }
+    if (heartLevel < marketConfig.requiredCampHeartLevel) {
+      return const Zone0ActionResult(
+          success: false, message: 'Niveau du Cœur insuffisant.');
+    }
+    if (currentPopulation < marketConfig.requiredPopulation) {
+      return Zone0ActionResult(
+          success: false,
+          message: 'Population requise : ${marketConfig.requiredPopulation}.');
+    }
+    if (!hasResources(marketConfig.constructionCost)) {
+      return Zone0ActionResult(
+          success: false,
+          message: missingResourcesLabel(marketConfig.constructionCost));
+    }
+    if (!removeResources(marketConfig.constructionCost)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ressources indisponibles.');
+    }
+    marketLevel = 1;
+    reports.add(PtipoteMissionReport.system(message: 'Le Marché est ouvert.'));
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Le Marché est prêt.');
+  }
+
+  Zone0ActionResult transferToMarket(String resource, int amount) {
+    if (!isMarketBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Marché non construit.');
+    }
+    if (!marketConfig.saleValues.containsKey(resource)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Objet non vendable.');
+    }
+    final existing =
+        marketStock.where((item) => item.resource == resource).firstOrNull;
+    if (existing == null && marketStock.length >= marketConfig.saleSlots) {
+      return const Zone0ActionResult(
+          success: false, message: 'Les trois emplacements sont occupés.');
+    }
+    final moved =
+        removeResource(resource, math.min(amount, resourceAmount(resource)));
+    if (moved <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Stock insuffisant.');
+    }
+    if (existing == null) {
+      marketStock.add(Zone0InventoryStack(resource: resource, amount: moved));
+    } else {
+      existing.amount += moved;
+    }
+    marketNextSaleAt ??= DateTime.now().add(_marketSaleInterval());
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$moved $resource placé au Marché.');
+  }
+
+  Zone0ActionResult returnMarketStock(String resource) {
+    final stack =
+        marketStock.where((item) => item.resource == resource).firstOrNull;
+    if (stack == null) {
+      return const Zone0ActionResult(success: false, message: 'Stock absent.');
+    }
+    final result = addResources(<String, int>{resource: stack.amount});
+    final returned = stack.amount - (result.pending[resource] ?? 0);
+    stack.amount -= returned;
+    if (stack.amount <= 0) marketStock.remove(stack);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: returned > 0,
+        message: '$returned $resource rendu à la Maison.');
+  }
+
+  Zone0ActionResult assignToMarket(PtipoteFigurine figurine) {
+    if (!isMarketBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Marché non construit.');
+    }
+    if (marketAssignedPtipoteId != null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Un P’TIPOTE travaille déjà au Marché.');
+    }
+    if (isBusy(figurine)) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIPOTE occupé.');
+    }
+    if (vitalityFor(figurine) <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIPOTE trop fatigué.');
+    }
+    marketAssignedPtipoteId = figurine.id;
+    marketAssignedPtipoteName = figurine.displayName;
+    marketLastWorkTickAt = DateTime.now();
+    vitalityOverrides.putIfAbsent(figurine.id, () => vitalityFor(figurine));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '${figurine.displayName} aide au Marché.');
+  }
+
+  Zone0ActionResult removeFromMarket({bool tired = false}) {
+    final id = marketAssignedPtipoteId;
+    if (id == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun P’TIPOTE affecté.');
+    }
+    if (tired) manualRestingIds.add(id);
+    final name = marketAssignedPtipoteName ?? 'Le P’TIPOTE';
+    marketAssignedPtipoteId = null;
+    marketAssignedPtipoteName = null;
+    marketLastWorkTickAt = null;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$name rentre à la Maison.');
+  }
+
+  Duration _marketSaleInterval() {
+    final populationModifier =
+        (10 / math.max(5, currentPopulation)).clamp(0.5, 2.0);
+    final wellbeingModifier = (1.3 - campWellbeing / 250).clamp(0.8, 1.3);
+    final ptipoteModifier = marketAssignedPtipoteId == null
+        ? 1.0
+        : marketConfig.ptipoteIntervalMultiplier;
+    return Duration(
+        seconds: math.max(
+            1,
+            (marketConfig.baseSaleIntervalMinutes *
+                    60 *
+                    populationModifier *
+                    wellbeingModifier *
+                    ptipoteModifier)
+                .round()));
+  }
+
+  Duration? marketSaleRemaining({DateTime? now}) {
+    final next = marketNextSaleAt;
+    if (next == null || marketStock.isEmpty) return null;
+    final remaining = next.difference(now ?? DateTime.now());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  bool resolveMarket({DateTime? now}) {
+    if (!isMarketBuilt) return false;
+    final current = now ?? DateTime.now();
+    var changed = false;
+    if (marketAssignedPtipoteId != null) {
+      marketLastWorkTickAt ??= current;
+      final ticks = current.difference(marketLastWorkTickAt!).inMinutes ~/
+          math.max(1, marketConfig.vitalityTickMinutes);
+      if (ticks > 0) {
+        final id = marketAssignedPtipoteId!;
+        vitalityOverrides[id] = math.max(
+          0,
+          (vitalityOverrides[id] ?? ptipoteStatsConfig.maxVitality) -
+              ticks * marketConfig.vitalityCostPerTick,
+        );
+        marketLastWorkTickAt = marketLastWorkTickAt!.add(
+          Duration(minutes: ticks * marketConfig.vitalityTickMinutes),
+        );
+        if (vitalityOverrides[id]! <=
+            ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+          removeFromMarket(tired: true);
+        }
+        changed = true;
+      }
+    }
+    if (marketStock.isNotEmpty) {
+      marketNextSaleAt ??= current.add(_marketSaleInterval());
+    }
+    var guard = 0;
+    while (marketStock.isNotEmpty &&
+        marketNextSaleAt != null &&
+        !current.isBefore(marketNextSaleAt!) &&
+        guard++ < 500) {
+      final stack = marketStock.first;
+      stack.amount -= 1;
+      marketValueRemainder += marketConfig.saleValues[stack.resource] ?? 0;
+      if (stack.amount <= 0) marketStock.removeAt(0);
+      final earned = marketValueRemainder ~/ marketConfig.valuePerBioBattery;
+      if (earned > 0) {
+        bioBatteries += earned;
+        marketBioBatteriesEarned += earned;
+        marketValueRemainder %= marketConfig.valuePerBioBattery;
+      }
+      if (marketAssignedPtipoteId != null &&
+          _random.nextDouble() < marketConfig.requestChance &&
+          marketRequests
+                  .where((item) => item.status != MarketRequestStatus.completed)
+                  .length <
+              marketConfig.maxActiveRequests) {
+        _createMarketRequest(current);
+      }
+      marketNextSaleAt = marketStock.isEmpty
+          ? null
+          : marketNextSaleAt!.add(_marketSaleInterval());
+      changed = true;
+    }
+    if (marketStock.isEmpty && marketAssignedPtipoteId != null) {
+      removeFromMarket();
+      changed = true;
+    }
+    for (final request in marketRequests.where((item) =>
+        item.status != MarketRequestStatus.completed &&
+        !current.isBefore(item.customerReturnTime))) {
+      final stock = marketStock
+          .where((item) => item.resource == request.requestedItemId)
+          .firstOrNull;
+      if (marketAssignedPtipoteId != null &&
+          stock != null &&
+          stock.amount >= request.requestedQuantity) {
+        stock.amount -= request.requestedQuantity;
+        if (stock.amount <= 0) marketStock.remove(stock);
+        bioBatteries += request.rewardBioBattery;
+        campWellbeing = math.min(100, campWellbeing + request.rewardWellbeing);
+        request.status = MarketRequestStatus.completed;
+        reports.add(PtipoteMissionReport.system(
+            message:
+                'Demande livrée : ${request.requestedQuantity} ${request.requestedItemId}.'));
+      } else {
+        request.status = MarketRequestStatus.waitingCustomer;
+        request.customerReturnTime = current.add(_randomMarketReturnDelay());
+      }
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
+  }
+
+  void _createMarketRequest(DateTime now) {
+    final entries = marketConfig.saleValues.keys
+        .where((item) => item != 'Organique' && item != 'Minéral')
+        .toList();
+    final item = entries[_random.nextInt(entries.length)];
+    marketRequests.add(MarketCustomerRequest(
+        id: 'request-${now.microsecondsSinceEpoch}-${marketRequests.length}',
+        requestedItemId: item,
+        requestedQuantity: 1 + _random.nextInt(3),
+        rewardBioBattery: math.max(
+            1,
+            (marketConfig.saleValues[item] ?? 1) ~/
+                marketConfig.valuePerBioBattery),
+        rewardWellbeing: 1,
+        createdAt: now,
+        customerReturnTime: now.add(_randomMarketReturnDelay()),
+        status: MarketRequestStatus.noted));
+    reports.add(PtipoteMissionReport.system(
+        message: 'Demande du Marché : $item recherché.'));
+  }
+
+  Duration _randomMarketReturnDelay() => Duration(
+      minutes: marketConfig.requestMinReturnMinutes +
+          _random.nextInt(math.max(
+              1,
+              marketConfig.requestMaxReturnMinutes -
+                  marketConfig.requestMinReturnMinutes +
+                  1)));
+
   bool isUnavailableForTower(PtipoteFigurine figurine) {
-    return isOnMission(figurine.id) || isAssignedToTower(figurine.id);
+    return isOnMission(figurine.id) ||
+        isAssignedToTower(figurine.id) ||
+        isAssignedToWorkshop(figurine.id) ||
+        isAssignedToMarket(figurine.id);
   }
 
   bool isHappy(PtipoteFigurine figurine) {
@@ -369,6 +911,11 @@ class Zone0GameState extends ChangeNotifier {
         }
         continue;
       }
+      if (isAssignedToTower(figurine.id) ||
+          isAssignedToWorkshop(figurine.id) ||
+          isAssignedToMarket(figurine.id)) {
+        continue;
+      }
       final currentVitality = vitalityFor(figurine);
       final resting = isResting(figurine);
       final happy = isHappy(figurine);
@@ -480,6 +1027,11 @@ class Zone0GameState extends ChangeNotifier {
     for (final figurine in figurines) {
       if (isOnMission(figurine.id)) continue;
       if (towerAssignedIds.contains(figurine.id)) continue;
+      if (isAssignedToTower(figurine.id) ||
+          isAssignedToWorkshop(figurine.id) ||
+          isAssignedToMarket(figurine.id)) {
+        continue;
+      }
 
       final resting = isResting(figurine);
       var currentHunger = hungerFor(figurine);
@@ -753,6 +1305,38 @@ class Zone0GameState extends ChangeNotifier {
       success: true,
       message: 'La Tour surveille maintenant les abords du refuge.',
     );
+  }
+
+  Duration towerManualRechargeRemaining({DateTime? now}) {
+    final last = lastManualTowerRechargeAt;
+    if (last == null) return Duration.zero;
+    final remaining = last
+        .add(Duration(
+            minutes: securityTowerConfig.manualRechargeCooldownMinutes))
+        .difference(now ?? DateTime.now());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  Zone0ActionResult manuallyRechargeTower() {
+    if (!isSecurityTowerBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Tour non construite.');
+    }
+    final remaining = towerManualRechargeRemaining();
+    if (remaining > Duration.zero) {
+      return Zone0ActionResult(
+          success: false,
+          message: 'Balises disponibles dans ${remaining.inMinutes + 1} min.');
+    }
+    refugeSafety = math.min(securityTowerConfig.maxSecurity,
+        refugeSafety + securityTowerConfig.manualRechargeSecurityGain);
+    lastManualTowerRechargeAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            '+${securityTowerConfig.manualRechargeSecurityGain} Sécurité.');
   }
 
   Zone0ActionResult assignToTower(PtipoteFigurine figurine) {
@@ -1052,6 +1636,33 @@ class Zone0GameState extends ChangeNotifier {
                 .whereType<TowerMission>(),
           );
       }
+      final workshopData = data['workshopOrder'];
+      workshopOrder = workshopData is Map
+          ? WorkshopCraftOrder.fromFirebase(workshopData)
+          : null;
+      final marketData = data['market'];
+      if (marketData is Map) {
+        marketStock
+          ..clear()
+          ..addAll((marketData['stock'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map((item) => Zone0InventoryStack(
+                  resource: '${item['resource'] ?? ''}',
+                  amount: _readInt(item['amount'])))
+              .where((item) => item.resource.isNotEmpty && item.amount > 0));
+        marketRequests
+          ..clear()
+          ..addAll((marketData['requests'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(MarketCustomerRequest.fromFirebase));
+        marketNextSaleAt = _readDate(marketData['nextSaleAt']);
+        marketLastWorkTickAt = _readDate(marketData['lastWorkTickAt']);
+        marketAssignedPtipoteId = marketData['assignedPtipoteId'] as String?;
+        marketAssignedPtipoteName =
+            marketData['assignedPtipoteName'] as String?;
+        marketValueRemainder = _readInt(marketData['valueRemainder']);
+        marketBioBatteriesEarned = _readInt(marketData['bioBatteriesEarned']);
+      }
 
       final reportData = data['reports'];
       if (reportData is List) {
@@ -1089,6 +1700,13 @@ class Zone0GameState extends ChangeNotifier {
             ..addAll(completedData.map((id) => '$id'));
         }
       }
+      final generatorData = data['campGenerator'];
+      if (generatorData is Map) {
+        generatorOrganic = _readInt(generatorData['organic']);
+        generatorMineral = _readInt(generatorData['mineral']);
+        generatorTotalProduced = _readInt(generatorData['totalProduced']);
+        generatorCycleStartedAt = _readDate(generatorData['cycleStartedAt']);
+      }
 
       final buildingsData = data['buildings'];
       if (buildingsData is Map) {
@@ -1103,6 +1721,11 @@ class Zone0GameState extends ChangeNotifier {
         if (towerData is Map) {
           securityTowerLevel = _readInt(towerData['currentLevel']).clamp(0, 3);
         }
+        final marketBuildingData = buildingsData['market'];
+        if (marketBuildingData is Map) {
+          marketLevel =
+              _readInt(marketBuildingData['currentLevel']).clamp(0, 5);
+        }
       }
       refugeSafety = _readInt(data['campSecurity']).clamp(
         0,
@@ -1116,6 +1739,7 @@ class Zone0GameState extends ChangeNotifier {
       }
       lastSimulationAt =
           _readDate(data['lastSimulationAt']) ?? _readDate(data['updatedAt']);
+      lastManualTowerRechargeAt = _readDate(data['lastManualTowerRechargeAt']);
 
       _loadedFromFirebase = true;
     });
@@ -1713,7 +2337,31 @@ class Zone0GameState extends ChangeNotifier {
           'towerAssignedIds': towerAssignedIds.toList(),
           'towerMissions':
               towerMissions.map((mission) => mission.toFirebase()).toList(),
+          'workshopOrder': workshopOrder?.toFirebase(),
+          'market': <String, dynamic>{
+            'stock': marketStock
+                .map((item) => <String, dynamic>{
+                      'resource': item.resource,
+                      'amount': item.amount
+                    })
+                .toList(),
+            'requests':
+                marketRequests.map((item) => item.toFirebase()).toList(),
+            'nextSaleAt': marketNextSaleAt == null
+                ? null
+                : Timestamp.fromDate(marketNextSaleAt!),
+            'lastWorkTickAt': marketLastWorkTickAt == null
+                ? null
+                : Timestamp.fromDate(marketLastWorkTickAt!),
+            'assignedPtipoteId': marketAssignedPtipoteId,
+            'assignedPtipoteName': marketAssignedPtipoteName,
+            'valueRemainder': marketValueRemainder,
+            'bioBatteriesEarned': marketBioBatteriesEarned,
+          },
           'campSecurity': refugeSafety,
+          'lastManualTowerRechargeAt': lastManualTowerRechargeAt == null
+              ? null
+              : Timestamp.fromDate(lastManualTowerRechargeAt!),
           'kernel': <String, dynamic>{
             'currentPopulation': currentPopulation,
             'bioBatteries': bioBatteries,
@@ -1721,6 +2369,14 @@ class Zone0GameState extends ChangeNotifier {
             'mealsPrepared': mealsPrepared,
             'plaineMissionsCompleted': plaineMissionsCompleted,
             'completedMissionIds': completedKernelMissionIds.toList(),
+          },
+          'campGenerator': <String, dynamic>{
+            'organic': generatorOrganic,
+            'mineral': generatorMineral,
+            'totalProduced': generatorTotalProduced,
+            'cycleStartedAt': generatorCycleStartedAt == null
+                ? null
+                : Timestamp.fromDate(generatorCycleStartedAt!),
           },
           'lastSimulationAt': lastSimulationAt == null
               ? FieldValue.serverTimestamp()
@@ -1765,6 +2421,16 @@ class Zone0GameState extends ChangeNotifier {
               'maxLevel': 3,
               'requiredCampHeartLevel':
                   securityTowerConfig.requiredCampHeartLevel,
+              'isVisible': true,
+            },
+            'market': <String, dynamic>{
+              'buildingId': 'market',
+              'buildingType': 'commerce',
+              'displayName': 'Marché',
+              'state': isMarketBuilt ? 'built' : 'constructible',
+              'currentLevel': marketLevel,
+              'maxLevel': 5,
+              'requiredCampHeartLevel': marketConfig.requiredCampHeartLevel,
               'isVisible': true,
             },
           },
@@ -1912,6 +2578,138 @@ class Zone0ActionResult {
 enum ForageMissionStatus { active, completed }
 
 enum TowerMissionStatus { active, completed }
+
+enum WorkshopOrderStatus { active, completed, cancelled }
+
+enum MarketRequestStatus { noted, ready, waitingCustomer, completed, cancelled }
+
+class MarketCustomerRequest {
+  MarketCustomerRequest(
+      {required this.id,
+      required this.requestedItemId,
+      required this.requestedQuantity,
+      required this.rewardBioBattery,
+      required this.rewardWellbeing,
+      required this.createdAt,
+      required this.customerReturnTime,
+      required this.status});
+
+  factory MarketCustomerRequest.fromFirebase(Map<dynamic, dynamic> data) =>
+      MarketCustomerRequest(
+        id: '${data['id'] ?? ''}',
+        requestedItemId: '${data['requestedItemId'] ?? ''}',
+        requestedQuantity:
+            Zone0GameState.instance._readInt(data['requestedQuantity']),
+        rewardBioBattery:
+            Zone0GameState.instance._readInt(data['rewardBioBattery']),
+        rewardWellbeing:
+            Zone0GameState.instance._readInt(data['rewardWellbeing']),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        customerReturnTime:
+            Zone0GameState.instance._readDate(data['customerReturnTime']) ??
+                DateTime.now(),
+        status: ForageMission._enumByName(MarketRequestStatus.values,
+            '${data['status'] ?? ''}', MarketRequestStatus.noted),
+      );
+
+  final String id;
+  final String requestedItemId;
+  final int requestedQuantity;
+  final int rewardBioBattery;
+  final int rewardWellbeing;
+  final DateTime createdAt;
+  DateTime customerReturnTime;
+  MarketRequestStatus status;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'requestedItemId': requestedItemId,
+        'requestedQuantity': requestedQuantity,
+        'rewardBioBattery': rewardBioBattery,
+        'rewardWellbeing': rewardWellbeing,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'customerReturnTime': Timestamp.fromDate(customerReturnTime),
+        'status': status.name,
+      };
+}
+
+class WorkshopCraftOrder {
+  WorkshopCraftOrder({
+    required this.id,
+    required this.recipeId,
+    required this.requestedQuantity,
+    required this.completedQuantity,
+    required this.assignedPtipoteId,
+    required this.assignedPtipoteName,
+    required this.startTime,
+    required this.nextCompletionTime,
+    required this.unitDurationSeconds,
+    required this.reservedResources,
+    this.status = WorkshopOrderStatus.active,
+  });
+
+  factory WorkshopCraftOrder.fromFirebase(Map<dynamic, dynamic> data) {
+    return WorkshopCraftOrder(
+      id: '${data['id'] ?? ''}',
+      recipeId: '${data['recipeId'] ?? ''}',
+      requestedQuantity:
+          Zone0GameState.instance._readInt(data['requestedQuantity']),
+      completedQuantity:
+          Zone0GameState.instance._readInt(data['completedQuantity']),
+      assignedPtipoteId: data['assignedPtipoteId'] as String?,
+      assignedPtipoteName: data['assignedPtipoteName'] as String?,
+      startTime: Zone0GameState.instance._readDate(data['startTime']) ??
+          DateTime.now(),
+      nextCompletionTime:
+          Zone0GameState.instance._readDate(data['nextCompletionTime']) ??
+              DateTime.now(),
+      unitDurationSeconds: math.max(
+          1,
+          Zone0GameState.instance
+              ._readInt(data['unitDurationSeconds'], fallback: 60)),
+      reservedResources: Map<String, int>.fromEntries(
+        (data['reservedResources'] as Map? ?? const <String, dynamic>{})
+            .entries
+            .map(
+              (entry) => MapEntry('${entry.key}',
+                  Zone0GameState.instance._readInt(entry.value)),
+            ),
+      ),
+      status: ForageMission._enumByName(
+        WorkshopOrderStatus.values,
+        '${data['status'] ?? ''}',
+        WorkshopOrderStatus.active,
+      ),
+    );
+  }
+
+  final String id;
+  final String recipeId;
+  final int requestedQuantity;
+  int completedQuantity;
+  final String? assignedPtipoteId;
+  final String? assignedPtipoteName;
+  final DateTime startTime;
+  DateTime nextCompletionTime;
+  final int unitDurationSeconds;
+  final Map<String, int> reservedResources;
+  WorkshopOrderStatus status;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'recipeId': recipeId,
+        'requestedQuantity': requestedQuantity,
+        'completedQuantity': completedQuantity,
+        'assignedPtipoteId': assignedPtipoteId,
+        'assignedPtipoteName': assignedPtipoteName,
+        'startTime': Timestamp.fromDate(startTime),
+        'nextCompletionTime': Timestamp.fromDate(nextCompletionTime),
+        'unitDurationSeconds': unitDurationSeconds,
+        'reservedResources': reservedResources,
+        'status': status.name,
+      };
+}
 
 enum TowerMissionPlan {
   oneHour,

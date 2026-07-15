@@ -7,13 +7,16 @@ import '../../services/figurine_service.dart';
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'camp_heart_config.dart';
+import 'camp_generator_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'game_asset_resolver.dart';
 import 'kernel_config.dart';
 import 'lisiere_forage_config.dart';
+import 'market_config.dart';
 import 'security_tower_config.dart';
 import 'zone0_game_state.dart';
+import 'workshop_config.dart';
 
 class RefugePage extends StatefulWidget {
   const RefugePage({super.key});
@@ -80,6 +83,14 @@ class _RefugePageState extends State<RefugePage> {
       width: 0.32,
       height: 0.11,
     ),
+    _RefugeBuilding(
+      name: 'Market',
+      title: 'Marché',
+      left: 0.18,
+      top: 0.56,
+      width: 0.25,
+      height: 0.10,
+    ),
   ];
 
   @override
@@ -88,10 +99,21 @@ class _RefugePageState extends State<RefugePage> {
     _zone0State.addListener(_onZone0StateChanged);
     _missionResolutionTimer = Timer.periodic(
       const Duration(seconds: 5),
-      (_) => _zone0State.resolveDueForageMissions(),
+      (_) {
+        _zone0State.resolveDueForageMissions();
+        _zone0State.resolveDueTowerMissions();
+        _zone0State.resolveGenerator(
+          heartLevel: _campHeartState.campHeartLevel,
+        );
+        _zone0State.resolveWorkshopOrder();
+        _zone0State.resolveMarket();
+      },
     );
     _warmAssets();
     _zone0State.resolveDueForageMissions();
+    _zone0State.resolveGenerator(
+      heartLevel: _campHeartState.campHeartLevel,
+    );
   }
 
   @override
@@ -112,6 +134,11 @@ class _RefugePageState extends State<RefugePage> {
     if (campHeartData != null) {
       _campHeartState.applyFirebaseData(campHeartData);
     }
+    _zone0State.resolveGenerator(
+      heartLevel: _campHeartState.campHeartLevel,
+    );
+    _zone0State.resolveWorkshopOrder();
+    _zone0State.resolveMarket();
     _zone0State.refreshKernelMissions(
       campHeartLevel: _campHeartState.campHeartLevel,
     );
@@ -153,6 +180,9 @@ class _RefugePageState extends State<RefugePage> {
               campHeartState: _campHeartState,
             );
           }
+          if (building.name == 'Market') {
+            return MarketPage(gameState: _zone0State);
+          }
           return _GameBuildingPage(building: building);
         },
       ),
@@ -183,6 +213,18 @@ class _RefugePageState extends State<RefugePage> {
         return;
       }
       _openBuilding(building);
+      return;
+    }
+    if (building.name == 'Market' && !_zone0State.isMarketBuilt) {
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (_) => _MarketConstructionSheet(
+          gameState: _zone0State,
+          campHeartLevel: _campHeartState.campHeartLevel,
+        ),
+      );
       return;
     }
     _openBuilding(building);
@@ -815,6 +857,9 @@ class _MaisonPageState extends State<_MaisonPage>
                             levelFor: _gameState.levelFor,
                             isOnMission: _gameState.isOnMission,
                             isAssignedToTower: _gameState.isAssignedToTower,
+                            isAssignedToActiveBuilding: (figurineId) =>
+                                _gameState.isAssignedToWorkshop(figurineId) ||
+                                _gameState.isAssignedToMarket(figurineId),
                             isResting: _gameState.isResting,
                             isHappy: _gameState.isHappy,
                             hasIndigestion: _gameState.hasIndigestion,
@@ -1309,6 +1354,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.levelFor,
     required this.isOnMission,
     required this.isAssignedToTower,
+    required this.isAssignedToActiveBuilding,
     required this.isResting,
     required this.isHappy,
     required this.hasIndigestion,
@@ -1340,6 +1386,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final int Function(PtipoteFigurine figurine) levelFor;
   final bool Function(String figurineId) isOnMission;
   final bool Function(String figurineId) isAssignedToTower;
+  final bool Function(String figurineId) isAssignedToActiveBuilding;
   final bool Function(PtipoteFigurine figurine) isResting;
   final bool Function(PtipoteFigurine figurine) isHappy;
   final bool Function(PtipoteFigurine figurine) hasIndigestion;
@@ -1466,6 +1513,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
           (figurine) =>
               !widget.isOnMission(figurine.id) &&
               !widget.isAssignedToTower(figurine.id) &&
+              !widget.isAssignedToActiveBuilding(figurine.id) &&
               widget.isResting(figurine),
         )
         .take(3)
@@ -1475,6 +1523,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
           (figurine) =>
               !widget.isOnMission(figurine.id) &&
               !widget.isAssignedToTower(figurine.id) &&
+              !widget.isAssignedToActiveBuilding(figurine.id) &&
               !widget.isResting(figurine),
         )
         .toList();
@@ -3718,45 +3767,143 @@ class _CampHeartPageState extends State<CampHeartPage> {
     final state = widget.state;
     final stage = state.currentStage;
     final nextStage = state.nextStage;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Cœur du Camp')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: <Widget>[
-            _CampHeartHero(state: state),
-            const SizedBox(height: 12),
-            _CampHeartProgressCard(state: state),
-            const SizedBox(height: 12),
-            _CampHeartDepositCard(
-              state: state,
-              gameState: widget.gameState,
-              onDeposit: _deposit,
-            ),
-            const SizedBox(height: 12),
-            _CampHeartStageCard(
-              title: nextStage == null
-                  ? 'Niveau max V1'
-                  : 'Prochain palier : ${nextStage.label}',
-              items: nextStage?.unlocks ?? stage.unlocks,
-              footer: nextStage == null
-                  ? 'Les prochains systèmes de Petite ville seront définis plus tard.'
-                  : 'Déblocages affichés comme données V1, branchés progressivement.',
-            ),
-            const SizedBox(height: 12),
-            _CampHeartStatsCard(stage: stage),
-            const SizedBox(height: 12),
-            _CampHeartStageCard(
-              title: 'Effets du stade ${stage.label}',
-              items: stage.effects,
-              footer:
-                  'Population, bonheur refuge et activité locale sont préparés; le Marché les lira plus tard.',
-            ),
-            const SizedBox(height: 12),
-            const _CampHeartPendingCard(),
-          ],
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Cœur du Camp'),
+          bottom: const TabBar(
+            tabs: <Widget>[
+              Tab(text: 'Végétalisation', icon: Icon(Icons.eco_outlined)),
+              Tab(text: 'Générateur', icon: Icon(Icons.battery_charging_full)),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: TabBarView(
+            children: <Widget>[
+              ListView(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  _CampHeartHero(state: state),
+                  const SizedBox(height: 12),
+                  _CampHeartProgressCard(state: state),
+                  const SizedBox(height: 12),
+                  _CampHeartDepositCard(
+                    state: state,
+                    gameState: widget.gameState,
+                    onDeposit: _deposit,
+                  ),
+                  const SizedBox(height: 12),
+                  _CampHeartStageCard(
+                    title: nextStage == null
+                        ? 'Niveau max V1'
+                        : 'Prochain palier : ${nextStage.label}',
+                    items: nextStage?.unlocks ?? stage.unlocks,
+                    footer: nextStage == null
+                        ? 'Les prochains systèmes de Petite ville seront définis plus tard.'
+                        : 'Déblocages affichés comme données V1, branchés progressivement.',
+                  ),
+                  const SizedBox(height: 12),
+                  _CampHeartStatsCard(stage: stage),
+                  const SizedBox(height: 12),
+                  _CampHeartStageCard(
+                    title: 'Effets du stade ${stage.label}',
+                    items: stage.effects,
+                    footer:
+                        'Population, bonheur refuge et activité locale sont préparés; le Marché les lira plus tard.',
+                  ),
+                  const SizedBox(height: 12),
+                  const _CampHeartPendingCard(),
+                ],
+              ),
+              _CampGeneratorView(
+                gameState: widget.gameState,
+                heartLevel: state.campHeartLevel,
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _CampGeneratorView extends StatelessWidget {
+  const _CampGeneratorView({required this.gameState, required this.heartLevel});
+
+  final Zone0GameState gameState;
+  final int heartLevel;
+
+  String _remainingLabel() {
+    final remaining = gameState.generatorRemaining(heartLevel);
+    if (remaining == null) return 'En attente de ressources';
+    final minutes = remaining.inMinutes;
+    final seconds = remaining.inSeconds.remainder(60);
+    return '${minutes}m ${seconds.toString().padLeft(2, '0')}s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget resourceCard(String resource, int stored, int capacity) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text('$resource : $stored / $capacity',
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              Text('Maison : ${gameState.resourceAmount(resource)}'),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                children: <int>[1, 5, 10, 9999].map((amount) {
+                  return OutlinedButton(
+                    onPressed: () {
+                      final result = gameState.transferToGenerator(
+                        resource: resource,
+                        amount: amount,
+                        heartLevel: heartLevel,
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(result.message)));
+                    },
+                    child: Text(amount == 9999 ? 'Max' : '+$amount'),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: <Widget>[
+        Text('Bio-réacteur niveau $heartLevel',
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        Text(
+            '5 Organique + 1 Minéral → 1 Bio-batterie toutes les ${campGeneratorConfig.cycleMinutes(heartLevel)} min.'),
+        const SizedBox(height: 12),
+        resourceCard('Organique', gameState.generatorOrganic,
+            gameState.generatorOrganicCapacity(heartLevel)),
+        resourceCard('Minéral', gameState.generatorMineral,
+            gameState.generatorMineralCapacity(heartLevel)),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.timer_outlined),
+            title: Text(_remainingLabel()),
+            subtitle: Text(
+                'Production totale : ${gameState.generatorTotalProduced} · Bio-batteries : ${gameState.bioBatteries}'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -4294,6 +4441,25 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                           value:
                               '-${securityTowerConfig.vitalityCostPerTick} Vitalité / tick',
                         ),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: widget.gameState
+                                      .towerManualRechargeRemaining() ==
+                                  Duration.zero
+                              ? () {
+                                  final result =
+                                      widget.gameState.manuallyRechargeTower();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(result.message)));
+                                }
+                              : null,
+                          icon: const Icon(Icons.electrical_services_outlined),
+                          label: Text(widget.gameState
+                                      .towerManualRechargeRemaining() ==
+                                  Duration.zero
+                              ? 'Recharger les balises (+${securityTowerConfig.manualRechargeSecurityGain})'
+                              : 'Recharge dans ${widget.gameState.towerManualRechargeRemaining().inMinutes + 1} min'),
+                        ),
                       ],
                     ),
                   ),
@@ -4582,6 +4748,209 @@ class FablabConstructionSheet extends StatelessWidget {
   }
 }
 
+class _MarketConstructionSheet extends StatelessWidget {
+  const _MarketConstructionSheet(
+      {required this.gameState, required this.campHeartLevel});
+  final Zone0GameState gameState;
+  final int campHeartLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    final canBuild = campHeartLevel >= marketConfig.requiredCampHeartLevel &&
+        gameState.currentPopulation >= marketConfig.requiredPopulation &&
+        gameState.hasResources(marketConfig.constructionCost);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 8, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text('Construire le Marché',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const Text(
+                'Trois emplacements de vente. Fonctionne sans P’TIPOTE.'),
+            const SizedBox(height: 12),
+            Text(
+                'Coût : ${marketConfig.constructionCost.entries.map((e) => '${e.value} ${e.key}').join(' + ')}'),
+            Text(
+                'Population : ${gameState.currentPopulation} / ${marketConfig.requiredPopulation} requise'),
+            Text(
+                'Cœur : $campHeartLevel / ${marketConfig.requiredCampHeartLevel} requis'),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: canBuild
+                  ? () {
+                      final result = gameState.constructMarket(campHeartLevel);
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(result.message)));
+                    }
+                  : null,
+              child: const Text('Construire'),
+            ),
+          ]),
+    );
+  }
+}
+
+class MarketPage extends StatefulWidget {
+  const MarketPage({super.key, required this.gameState});
+  final Zone0GameState gameState;
+
+  @override
+  State<MarketPage> createState() => _MarketPageState();
+}
+
+class _MarketPageState extends State<MarketPage> {
+  final FigurineService _figurineService = FigurineService();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.gameState.addListener(_changed);
+    _timer = Timer.periodic(
+        const Duration(seconds: 5), (_) => widget.gameState.resolveMarket());
+    widget.gameState.resolveMarket();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    widget.gameState.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Marché')),
+      body: SafeArea(
+        child: StreamBuilder<List<PtipoteFigurine>>(
+          stream: _figurineService.watchMyFigurines(),
+          builder: (context, snapshot) {
+            final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+            final available = figurines
+                .where((item) => !widget.gameState.isBusy(item))
+                .toList();
+            return ListView(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  Card(
+                      child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                    'Marché niveau ${widget.gameState.marketLevel}',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w900)),
+                                Text(
+                                    'Population ${widget.gameState.currentPopulation} · Bien-être ${widget.gameState.campWellbeing}%'),
+                                Text(
+                                    'Bio-batteries gagnées : ${widget.gameState.marketBioBatteriesEarned}'),
+                                Text(widget.gameState
+                                            .marketAssignedPtipoteName ==
+                                        null
+                                    ? 'Mode automatique'
+                                    : 'Aidé par ${widget.gameState.marketAssignedPtipoteName}'),
+                                Text(widget.gameState.marketSaleRemaining() ==
+                                        null
+                                    ? 'Prochaine vente : stock vide'
+                                    : 'Prochaine vente : ${widget.gameState.marketSaleRemaining()!.inMinutes}m ${widget.gameState.marketSaleRemaining()!.inSeconds.remainder(60).toString().padLeft(2, '0')}s'),
+                                if (widget.gameState.marketAssignedPtipoteId !=
+                                    null)
+                                  OutlinedButton(
+                                      onPressed: () =>
+                                          widget.gameState.removeFromMarket(),
+                                      child: const Text('Faire rentrer'))
+                                else
+                                  PopupMenuButton<PtipoteFigurine>(
+                                    onSelected: (figurine) => _message(widget
+                                        .gameState
+                                        .assignToMarket(figurine)
+                                        .message),
+                                    itemBuilder: (_) => available
+                                        .map((figurine) => PopupMenuItem(
+                                            value: figurine,
+                                            child: Text(
+                                                '${figurine.displayName} · Vit. ${widget.gameState.vitalityFor(figurine)}')))
+                                        .toList(),
+                                    child: const Padding(
+                                        padding:
+                                            EdgeInsets.symmetric(vertical: 12),
+                                        child: Text('Affecter un P’TIPOTE',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w900))),
+                                  ),
+                              ]))),
+                  const SizedBox(height: 10),
+                  Text(
+                      'Stock de vente (${widget.gameState.marketStock.length}/${marketConfig.saleSlots})',
+                      style: const TextStyle(fontWeight: FontWeight.w900)),
+                  ...widget.gameState.marketStock.map((stack) => ListTile(
+                      title: Text(stack.resource),
+                      trailing: Text('${stack.amount}'),
+                      onLongPress: () => _message(widget.gameState
+                          .returnMarketStock(stack.resource)
+                          .message))),
+                  if (widget.gameState.marketStock.isEmpty)
+                    const Text(
+                        'Stock vide. Ajoute volontairement des objets depuis la liste ci-dessous.'),
+                  const Divider(),
+                  ...marketConfig.saleValues.keys
+                      .where((resource) =>
+                          widget.gameState.resourceAmount(resource) > 0)
+                      .map((resource) => ListTile(
+                            title: Text(resource),
+                            subtitle: Text(
+                                'Maison : ${widget.gameState.resourceAmount(resource)} · valeur ${marketConfig.saleValues[resource]}'),
+                            trailing: Wrap(
+                                spacing: 4,
+                                children: <int>[1, 5, 10]
+                                    .map((amount) => TextButton(
+                                        onPressed: () => _message(widget
+                                            .gameState
+                                            .transferToMarket(resource, amount)
+                                            .message),
+                                        child: Text('+$amount')))
+                                    .toList()),
+                          )),
+                  const Divider(),
+                  const Text('Demandes des habitants',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  if (widget.gameState.marketAssignedPtipoteId == null)
+                    const Text(
+                        'Un P’TIPOTE doit être présent pour noter et livrer les demandes.'),
+                  ...widget.gameState.marketRequests.map((request) => ListTile(
+                        title: Text(
+                            '${request.requestedQuantity} ${request.requestedItemId}'),
+                        subtitle: Text(request.status ==
+                                MarketRequestStatus.completed
+                            ? 'Livrée'
+                            : 'Retour client : ${request.customerReturnTime.hour.toString().padLeft(2, '0')}:${request.customerReturnTime.minute.toString().padLeft(2, '0')}'),
+                        trailing: Text('+${request.rewardBioBattery} 🔋'),
+                      )),
+                ]);
+          },
+        ),
+      ),
+    );
+  }
+
+  void _message(String value) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(value)));
+}
+
 class _ResourceCostLine extends StatelessWidget {
   const _ResourceCostLine({
     required this.resource,
@@ -4645,12 +5014,14 @@ class FablabPage extends StatelessWidget {
           child: TabBarView(
             children: <Widget>[
               FablabCuisineView(gameState: gameState),
-              _BuildingPlaceholder(
-                icon: Icons.construction_outlined,
-                title: 'Atelier',
-                description:
-                    'Débloqué au Cœur du Camp niveau ${fablabConfig.atelierUnlockCampHeartLevel}. Niveau actuel : $campHeartLevel. Gameplay à venir.',
-              ),
+              campHeartLevel >= fablabConfig.atelierUnlockCampHeartLevel
+                  ? FablabWorkshopView(gameState: gameState)
+                  : _BuildingPlaceholder(
+                      icon: Icons.lock_outline,
+                      title: 'Atelier',
+                      description:
+                          'Débloqué au Cœur du Camp niveau ${fablabConfig.atelierUnlockCampHeartLevel}.',
+                    ),
               _BuildingPlaceholder(
                 icon: Icons.recycling_outlined,
                 title: 'Recycleur',
@@ -4662,6 +5033,157 @@ class FablabPage extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class FablabWorkshopView extends StatefulWidget {
+  const FablabWorkshopView({super.key, required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  State<FablabWorkshopView> createState() => _FablabWorkshopViewState();
+}
+
+class _FablabWorkshopViewState extends State<FablabWorkshopView> {
+  final FigurineService _figurineService = FigurineService();
+  int _quantity = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.gameState.addListener(_changed);
+    widget.gameState.resolveWorkshopOrder();
+  }
+
+  @override
+  void dispose() {
+    widget.gameState.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  String _remaining(WorkshopCraftOrder order) {
+    final seconds = math.max(
+        0, order.nextCompletionTime.difference(DateTime.now()).inSeconds);
+    return '${seconds ~/ 60}m ${seconds.remainder(60).toString().padLeft(2, '0')}s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final order = widget.gameState.workshopOrder;
+    return StreamBuilder<List<PtipoteFigurine>>(
+      stream: _figurineService.watchMyFigurines(),
+      builder: (context, snapshot) {
+        final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+        final available =
+            figurines.where((item) => !widget.gameState.isBusy(item)).toList();
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            Text('Atelier',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const Text(
+                'Une commande active à la fois. Les objets terminés vont dans le stock global.'),
+            const SizedBox(height: 12),
+            if (order != null && order.status == WorkshopOrderStatus.active)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Text(workshopConfig.recipe(order.recipeId).displayName,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w900)),
+                        Text(
+                            '${order.completedQuantity} / ${order.requestedQuantity} · prochaine unité ${_remaining(order)}'),
+                        Text(order.assignedPtipoteName == null
+                            ? 'Mode manuel'
+                            : 'Avec ${order.assignedPtipoteName}'),
+                        OutlinedButton(
+                            onPressed: () =>
+                                widget.gameState.cancelWorkshopOrder(),
+                            child: const Text('Annuler')),
+                      ]),
+                ),
+              )
+            else ...<Widget>[
+              SegmentedButton<int>(
+                  segments: const <ButtonSegment<int>>[
+                    ButtonSegment(value: 1, label: Text('1')),
+                    ButtonSegment(value: 5, label: Text('5')),
+                    ButtonSegment(value: 10, label: Text('10')),
+                  ],
+                  selected: <int>{
+                    _quantity
+                  },
+                  onSelectionChanged: (value) =>
+                      setState(() => _quantity = value.first)),
+              const SizedBox(height: 10),
+              ...workshopConfig.recipes.map((recipe) => Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Text(recipe.displayName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900)),
+                            Text(
+                                '${recipe.category} · ${recipe.durationMinutes} min/unité'),
+                            Text(recipe.ingredients.entries
+                                .map((e) => '${e.value * _quantity} ${e.key}')
+                                .join(' + ')),
+                            FilledButton(
+                                onPressed: () => _start(recipe, null),
+                                child: const Text('Lancer manuellement')),
+                            PopupMenuButton<PtipoteFigurine>(
+                              onSelected: (figurine) =>
+                                  _start(recipe, figurine),
+                              itemBuilder: (_) => available
+                                  .map((figurine) => PopupMenuItem(
+                                      value: figurine,
+                                      child: Text(
+                                          '${figurine.displayName} · Vit. ${widget.gameState.vitalityFor(figurine)}')))
+                                  .toList(),
+                              child: Container(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outline),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text('Confier à un P’TIPOTE',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w800)),
+                              ),
+                            ),
+                          ]),
+                    ),
+                  )),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  void _start(WorkshopRecipe recipe, PtipoteFigurine? figurine) {
+    final result = widget.gameState.startWorkshopOrder(
+        recipe: recipe, quantity: _quantity, figurine: figurine);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(result.message)));
   }
 }
 

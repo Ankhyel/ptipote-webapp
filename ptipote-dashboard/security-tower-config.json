@@ -8,6 +8,8 @@
   "tickMinutes": 10,
   "vitalityCostPerTick": 5,
   "securityDecayPerTick": 1,
+  "manualRechargeSecurityGain": 5,
+  "manualRechargeCooldownMinutes": 10,
   "minimumMissionRisk": 5,
   "securityRiskReductionFactor": 0.4,
   "slotsByLevel": {

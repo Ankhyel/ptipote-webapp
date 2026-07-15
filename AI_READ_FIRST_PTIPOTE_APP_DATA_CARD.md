@@ -931,3 +931,58 @@ Pour formater Dart:
 8. Stager seulement les fichiers lies a la demande.
 9. Si une fonction, un ecran, une route ou une collection est ajoutee: mettre a jour cette data card avant commit.
 10. Commit puis push sur `main` si Kevin demande ou si le workflow courant le prevoit.
+# ARCHITECTURE DES BATIMENTS V1 - GENERATEUR, ATELIER ET MARCHE
+
+## 1. Architecture commune
+
+- `ptipote-app/lib/features/game/zone0_game_state.dart` centralise les actions manuelles, les ordres temporises, l'occupation des P'TIPOTES, la simulation hors ligne et Firebase.
+- Un batiment reste utilisable sans P'TIPOTE. L'affectation apporte un bonus, masque le P'TIPOTE de la Maison via `isBusy`, puis le rend disponible a la fin ou l'envoie au repos si sa Vitalite atteint le seuil configure.
+- Etats prepares/reutilises: `helpingWorkshop`, `helpingMarket`, `helpingTower`, `resting`, `wanderingHome`, `onMission`.
+- Aucun axe de confiance Kernel et aucune nouvelle enveloppe ne sont utilises comme bonus P'TIPOTE.
+
+## 2. Generateur du Coeur
+
+- Config: `ptipote-app/lib/features/game/camp_generator_config.dart`, miroir dashboard `ptipote-dashboard/camp-generator-config.json`.
+- UI: second onglet `Generateur` dans `CampHeartPage`.
+- Niveau 1: stock 30 Organique / 6 Mineral; cycle 5 Organique + 1 Mineral vers 1 Bio-batterie en 60 min.
+- Les capacites et durees evoluent avec le niveau du Coeur. `generatorCycleStartedAt` permet de resoudre plusieurs cycles hors ligne sans depasser les ressources chargees.
+- Firebase: `users/{uid}/game/zone0.campGenerator`.
+
+## 3. Atelier
+
+- Config et six recettes V1: `ptipote-app/lib/features/game/workshop_config.dart`, miroir `ptipote-dashboard/workshop-config.json`.
+- Modele `WorkshopCraftOrder`: recette, quantite, progression, prochaine unite, ressources reservees, P'TIPOTE optionnel et statut.
+- Une commande multiple active maximum. L'annulation conserve les objets termines et rend les ressources des unites restantes.
+- Sans P'TIPOTE: duree normale. Avec P'TIPOTE: bonus vitesse de 1% par niveau plafonne a 15%, cout de 5 Vitalite par unite.
+- A la fin, le P'TIPOTE redevient disponible; s'il atteint le seuil de repos, il rentre dans une alcove.
+- Le prototype conserve les stacks globaux de 10; `stackLimit` est prepare dans les recettes pour une future gestion par type d'objet.
+- Firebase: `users/{uid}/game/zone0.workshopOrder`.
+- Effets reels de Filtre, Cartouche, Tenue, Meuble, Ventilation et Lumiere restent a brancher.
+
+## 4. Marche
+
+- Config: `ptipote-app/lib/features/game/market_config.dart`, miroir `ptipote-dashboard/market-config.json`.
+- Construction: Coeur niveau 1, population 5, cout 6 Organique + 6 Mineral.
+- Trois emplacements dedies. Seuls les objets explicitement `sellable` sont transferes; le stock Maison n'est jamais vendu automatiquement.
+- Sans P'TIPOTE: ventes automatiques selon Population et Bien-etre. Conversion V1: 5 points de valeur vers 1 Bio-batterie.
+- Avec P'TIPOTE: cadence -10%, cout 5 Vitalite / 20 min, demandes d'habitants et livraison automatique.
+- Demandes: maximum 3, retour aleatoire persistant, report sans perte si objet ou P'TIPOTE absent.
+- Firebase: `users/{uid}/game/zone0.market` et `buildings.market`.
+
+## 5. Tour
+
+- Action manuelle `Recharger les balises`: +5 Securite, cooldown 10 min.
+- Configuration Dart dans `security_tower_config.dart` et miroir dashboard `security-tower-config.json`.
+- Les missions temporisees de surveillance existantes restent intactes.
+
+## 6. Dashboard
+
+- Onglet `Batiments actifs`: editeurs JSON exportables pour Generateur, Atelier et Marche.
+- Les valeurs de recharge manuelle sont exposees dans `security-tower-config.json`.
+- Les JSON restent versionnes: l'export Dashboard doit etre reporte dans les configs Dart pour modifier le build mobile.
+
+## 7. Placeholders futurs
+
+- Effets de confort, protections anti-Brume, qualite d'objet, bonus de traits/preferences/modules, lignées et batiments energetiques de biomes ne sont pas actifs.
+- Recycleur reste verrouille au Coeur niveau 2.
+- Les axes de confiance du joueur ne modifient pas les bonus des P'TIPOTES.

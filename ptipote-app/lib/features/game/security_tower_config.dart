@@ -12,6 +12,8 @@ class SecurityTowerConfig {
     required this.level1Slots,
     required this.level2Slots,
     required this.level3Slots,
+    required this.manualRechargeSecurityGain,
+    required this.manualRechargeCooldownMinutes,
   });
 
   final int requiredCampHeartLevel;
@@ -26,6 +28,8 @@ class SecurityTowerConfig {
   final int level1Slots;
   final int level2Slots;
   final int level3Slots;
+  final int manualRechargeSecurityGain;
+  final int manualRechargeCooldownMinutes;
 
   Map<String, int> get constructionCost {
     return <String, int>{
@@ -55,4 +59,6 @@ const securityTowerConfig = SecurityTowerConfig(
   level1Slots: 1,
   level2Slots: 2,
   level3Slots: 3,
+  manualRechargeSecurityGain: 5,
+  manualRechargeCooldownMinutes: 10,
 );

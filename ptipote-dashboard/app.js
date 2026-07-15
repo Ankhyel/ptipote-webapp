@@ -136,6 +136,12 @@ const ids = [
   "craftRecipeList",
   "craftRecipeForm",
   "exportCraftButton",
+  "campGeneratorEditor",
+  "workshopEditor",
+  "marketEditor",
+  "exportCampGeneratorButton",
+  "exportWorkshopButton",
+  "exportMarketButton",
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -490,6 +496,8 @@ function renderSecurityTowerConfig() {
     ["Durée tick", `${securityTowerConfig.tickMinutes} min`],
     ["Coût Vitalité / tick", securityTowerConfig.vitalityCostPerTick],
     ["Décroissance sécurité", securityTowerConfig.securityDecayPerTick],
+    ["Recharge manuelle", `+${securityTowerConfig.manualRechargeSecurityGain} sécurité`],
+    ["Cooldown recharge", `${securityTowerConfig.manualRechargeCooldownMinutes} min`],
     ["Risque minimum", `${securityTowerConfig.minimumMissionRisk}%`],
     ["Coefficient réduction", securityTowerConfig.securityRiskReductionFactor],
     ["Slots", Object.entries(slots).map(([level, count]) => `niv. ${level}: ${count}`).join(" · ")],
@@ -729,6 +737,37 @@ el.exportCraftButton.addEventListener("click", () => {
 
 el.craftRecipeForm.addEventListener("submit", addCraftRecipe);
 
+async function loadActiveBuildingConfigs() {
+  const entries = [
+    ["camp-generator-config.json", el.campGeneratorEditor],
+    ["workshop-config.json", el.workshopEditor],
+    ["market-config.json", el.marketEditor],
+  ];
+  for (const [file, target] of entries) {
+    const response = await fetch(`./${file}`, { cache: "no-store" });
+    target.value = JSON.stringify(await response.json(), null, 2);
+  }
+}
+
+function exportEditor(editor, filename) {
+  const parsed = JSON.parse(editor.value);
+  downloadJson(filename, parsed);
+}
+
+function downloadJson(filename, value) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+el.exportCampGeneratorButton.addEventListener("click", () => exportEditor(el.campGeneratorEditor, "camp-generator-config.json"));
+el.exportWorkshopButton.addEventListener("click", () => exportEditor(el.workshopEditor, "workshop-config.json"));
+el.exportMarketButton.addEventListener("click", () => exportEditor(el.marketEditor, "market-config.json"));
+
 setupDashboardTabs();
 loadPtipoteStatsConfig();
 loadKernelConfig();
@@ -737,3 +776,4 @@ loadLisiereForageConfig();
 loadSecurityTowerConfig();
 loadFablabConfig();
 loadCraftConfig();
+loadActiveBuildingConfigs();

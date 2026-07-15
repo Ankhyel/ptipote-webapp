@@ -36,6 +36,7 @@
         <button class="tab-button" type="button" data-dashboard-tab="security-tower">Tour</button>
         <button class="tab-button" type="button" data-dashboard-tab="fablab">Fablab</button>
         <button class="tab-button" type="button" data-dashboard-tab="craft">Craft</button>
+        <button class="tab-button" type="button" data-dashboard-tab="active-buildings">Bâtiments actifs</button>
       </nav>
 
       <section class="dashboard-panel active" data-dashboard-panel="overview">
@@ -70,6 +71,16 @@
         <section class="panel">
           <div class="panel-head"><h2>Activite recente</h2><span class="pill">A brancher</span></div>
           <div class="empty-state">Aucune collection d'evenements admin n'est encore presente dans ce repo. Le dashboard affichera les vrais evenements des que l'app les remontera.</div>
+        </section>
+      </section>
+
+      <section class="dashboard-panel" data-dashboard-panel="active-buildings">
+        <section class="panel stat-ptipote-panel">
+          <div class="panel-head"><div><p class="eyebrow">Configuration V1</p><h2>Générateur, Atelier et Marché</h2></div></div>
+          <p class="panel-note">Modifie le JSON puis exporte le fichier correspondant pour le versionner avec l'application.</p>
+          <label>Générateur du Cœur</label><textarea id="campGeneratorEditor" rows="14"></textarea><button class="ghost" id="exportCampGeneratorButton" type="button">Exporter Générateur</button>
+          <label>Atelier</label><textarea id="workshopEditor" rows="14"></textarea><button class="ghost" id="exportWorkshopButton" type="button">Exporter Atelier</button>
+          <label>Marché</label><textarea id="marketEditor" rows="18"></textarea><button class="ghost" id="exportMarketButton" type="button">Exporter Marché</button>
         </section>
       </section>
 
