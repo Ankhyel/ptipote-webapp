@@ -152,7 +152,7 @@ class Zone0GameState extends ChangeNotifier {
   bool isOnMission(String figurineId) {
     return missions.any(
       (mission) =>
-          mission.figurineId == figurineId &&
+          mission.memberIds.contains(figurineId) &&
           mission.status == ForageMissionStatus.active,
     );
   }
@@ -744,7 +744,7 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'P’TIPOTE occupé.');
     }
-    if (vitalityFor(figurine) <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+    if (vitalityFor(figurine) < ptipoteStatsConfig.minimumMissionVitality) {
       return const Zone0ActionResult(
           success: false, message: 'P’TIPOTE trop fatigué.');
     }
@@ -1024,27 +1024,38 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   ForageMission startForageMission({
-    required PtipoteFigurine figurine,
+    required List<PtipoteFigurine> figurines,
     required ForageBiome biome,
     required ForageDuration duration,
     required ForageIntensity intensity,
     required Map<String, int> expectedRewards,
-    required int vitalityCost,
+    required Map<String, int> vitalityCostByMember,
     required int riskPercent,
     required String riskLabel,
     required int baseRiskPercent,
     required int securityAtLaunch,
     required int securityReduction,
-    required int xpGain,
+    required Map<String, int> xpGainByMember,
   }) {
     final start = DateTime.now();
     final durationConfig = lisiereForageConfig.durations[duration]!;
-    levelOverrides.putIfAbsent(figurine.id, () => figurine.levelValue);
-    xpOverrides.putIfAbsent(figurine.id, () => figurine.xpValue);
+    for (final figurine in figurines) {
+      levelOverrides.putIfAbsent(figurine.id, () => figurine.levelValue);
+      xpOverrides.putIfAbsent(figurine.id, () => figurine.xpValue);
+    }
+    final memberIds = figurines.map((figurine) => figurine.id).toList();
+    final memberNames =
+        figurines.map((figurine) => figurine.displayName).toList();
+    final totalVitalityCost =
+        vitalityCostByMember.values.fold(0, (total, cost) => total + cost);
+    final totalXpGain =
+        xpGainByMember.values.fold(0, (total, xp) => total + xp);
     final mission = ForageMission(
       id: 'mission-${start.microsecondsSinceEpoch}',
-      figurineId: figurine.id,
-      figurineName: figurine.displayName,
+      figurineId: memberIds.first,
+      figurineName: memberNames.join(', '),
+      memberIds: memberIds,
+      memberNames: memberNames,
       biome: biome,
       duration: duration,
       intensity: intensity,
@@ -1053,30 +1064,35 @@ class Zone0GameState extends ChangeNotifier {
         durationConfig.realDuration(lisiereForageConfig.forageTimeScale),
       ),
       expectedRewards: expectedRewards,
-      vitalityCost: vitalityCost,
+      vitalityCost: totalVitalityCost,
+      vitalityCostByMember: vitalityCostByMember,
       riskPercent: riskPercent,
       riskLabel: riskLabel,
       baseRiskPercent: baseRiskPercent,
       securityAtLaunch: securityAtLaunch,
       securityReduction: securityReduction,
-      xpGain: xpGain,
+      xpGain: totalXpGain,
+      xpGainByMember: xpGainByMember,
     );
     missions.add(mission);
-    vitalityOverrides[figurine.id] = math.max(
-      0,
-      vitalityFor(figurine) - vitalityCost,
-    );
-    hungerOverrides[figurine.id] = math.max(
-      0,
-      hungerFor(figurine) -
-          (vitalityCost * ptipoteStatsConfig.missionHungerCostRatio).round(),
-    );
-    restOverrides[figurine.id] = math.max(
-      0,
-      restFor(figurine) -
-          (vitalityCost * ptipoteStatsConfig.missionRestLossRatio).round(),
-    );
-    manualRestingIds.remove(figurine.id);
+    for (final figurine in figurines) {
+      final vitalityCost = vitalityCostByMember[figurine.id] ?? 0;
+      vitalityOverrides[figurine.id] = math.max(
+        0,
+        vitalityFor(figurine) - vitalityCost,
+      );
+      hungerOverrides[figurine.id] = math.max(
+        0,
+        hungerFor(figurine) -
+            (vitalityCost * ptipoteStatsConfig.missionHungerCostRatio).round(),
+      );
+      restOverrides[figurine.id] = math.max(
+        0,
+        restFor(figurine) -
+            (vitalityCost * ptipoteStatsConfig.missionRestLossRatio).round(),
+      );
+      manualRestingIds.remove(figurine.id);
+    }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return mission;
@@ -1096,6 +1112,46 @@ class Zone0GameState extends ChangeNotifier {
       unawaited(saveRuntimeToFirebase());
     }
     return resolvedAny;
+  }
+
+  Zone0ActionResult emergencyReturnForageMission(String missionId) {
+    ForageMission? mission;
+    for (final item in missions) {
+      if (item.id == missionId) {
+        mission = item;
+        break;
+      }
+    }
+    if (mission == null || mission.status != ForageMissionStatus.active) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Mission indisponible.',
+      );
+    }
+    final now = DateTime.now();
+    final totalSeconds = math.max(
+      1,
+      mission.endTime.difference(mission.startTime).inSeconds,
+    );
+    final elapsedSeconds = now.difference(mission.startTime).inSeconds.clamp(
+          0,
+          totalSeconds,
+        );
+    final ratio = (elapsedSeconds / totalSeconds).clamp(0.05, 1.0);
+    _resolveMission(
+      mission,
+      completedAt: now,
+      rewardRatio: ratio,
+      riskBonus: 5,
+      emergencyReturn: true,
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          'Retour d’urgence lancé. Butin récupéré à ${(ratio * 100).round()}%.',
+    );
   }
 
   int freeInventorySlots() {
@@ -1196,6 +1252,9 @@ class Zone0GameState extends ChangeNotifier {
   void _resolveMission(
     ForageMission mission, {
     required DateTime completedAt,
+    double rewardRatio = 1,
+    int riskBonus = 0,
+    bool emergencyReturn = false,
   }) {
     final biome = lisiereForageConfig.biomes[mission.biome]!;
     final duration = lisiereForageConfig.durations[mission.duration]!;
@@ -1203,7 +1262,12 @@ class Zone0GameState extends ChangeNotifier {
     var rewards = Map<String, int>.from(mission.expectedRewards);
     var incident = 'aucun';
 
-    if (_random.nextInt(100) < mission.riskPercent) {
+    rewards = rewards.map(
+      (key, value) => MapEntry(key, math.max(0, (value * rewardRatio).floor())),
+    );
+    final realRisk = math.min(100, mission.riskPercent + riskBonus);
+
+    if (_random.nextInt(100) < realRisk) {
       final hazards = biome.hazards.isEmpty
           ? ForageHazard.values.where((h) => h != ForageHazard.none).toList()
           : biome.hazards;
@@ -1229,35 +1293,66 @@ class Zone0GameState extends ChangeNotifier {
     }
 
     final inventoryResult = addResources(rewards);
-    final xpResult = addMissionXp(mission.figurineId, mission.xpGain);
+    final xpResults = <String, PtipoteXpGainResult>{};
+    for (final memberId in mission.memberIds) {
+      final xpGain = mission.xpGainByMember[memberId] ??
+          (mission.memberIds.isEmpty
+              ? mission.xpGain
+              : (mission.xpGain / mission.memberIds.length).round());
+      final xpResult = addMissionXp(memberId, xpGain);
+      xpResults[memberId] = xpResult;
+      unawaited(persistFigurineProgress(
+        figurineId: memberId,
+        xp: xpResult.xp,
+        level: xpResult.level,
+      ));
+    }
     if (mission.biome == ForageBiome.plaineRiche) {
       plaineMissionsCompleted += 1;
     }
     refreshKernelMissions();
-    unawaited(persistFigurineProgress(
-      figurineId: mission.figurineId,
-      xp: xpResult.xp,
-      level: xpResult.level,
-    ));
-    final vitality = vitalityOverrides[mission.figurineId] ?? 0;
-    final hunger =
-        hungerOverrides[mission.figurineId] ?? ptipoteStatsConfig.baseHunger;
-    final rest =
-        restOverrides[mission.figurineId] ?? ptipoteStatsConfig.maxRest;
-    final moodLabel = _moodLabelForValues(
-      hunger: hunger,
-      rest: rest,
-      figurineId: mission.figurineId,
-    );
-    if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
-      manualRestingIds.add(mission.figurineId);
+    final memberStateLabels = <String>[];
+    var lowestVitality = ptipoteStatsConfig.maxVitality;
+    var lowestHunger = ptipoteStatsConfig.baseHunger;
+    var leveledUp = false;
+    var highestLevel = 0;
+    for (var index = 0; index < mission.memberIds.length; index += 1) {
+      final memberId = mission.memberIds[index];
+      final memberName = index < mission.memberNames.length
+          ? mission.memberNames[index]
+          : mission.figurineName;
+      final vitality = vitalityOverrides[memberId] ?? 0;
+      final hunger = hungerOverrides[memberId] ?? ptipoteStatsConfig.baseHunger;
+      final rest = restOverrides[memberId] ?? ptipoteStatsConfig.maxRest;
+      lowestVitality = math.min(lowestVitality, vitality);
+      lowestHunger = math.min(lowestHunger, hunger);
+      final moodLabel = _moodLabelForValues(
+        hunger: hunger,
+        rest: rest,
+        figurineId: memberId,
+      );
+      if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+        manualRestingIds.add(memberId);
+      }
+      memberStateLabels.add(
+        _finalMissionStateLabel(
+          figurineName: memberName,
+          vitality: vitality,
+          hunger: hunger,
+          moodLabel: moodLabel,
+        ),
+      );
+      final xpResult = xpResults[memberId];
+      if (xpResult != null) {
+        leveledUp = leveledUp || xpResult.leveledUp;
+        highestLevel = math.max(highestLevel, xpResult.level);
+      }
     }
-    final finalState = _finalMissionStateLabel(
-      figurineName: mission.figurineName,
-      vitality: vitality,
-      hunger: hunger,
-      moodLabel: moodLabel,
-    );
+    final finalState = <String>[
+      if (emergencyReturn)
+        'Retour d’urgence : le butin est calculé au temps écoulé, avec +5% de risque événement.',
+      ...memberStateLabels,
+    ].join(' ');
     reports.add(
       PtipoteMissionReport(
         id: 'report-${completedAt.microsecondsSinceEpoch}',
@@ -1268,16 +1363,16 @@ class Zone0GameState extends ChangeNotifier {
         rewards: rewards,
         incidentLabel: incident,
         xpGain: mission.xpGain,
-        leveledUp: xpResult.leveledUp,
-        levelAfter: xpResult.level,
-        vitalityRemaining: vitality,
-        hungerRemaining: hunger,
-        moodLabel: moodLabel,
+        leveledUp: leveledUp,
+        levelAfter: highestLevel,
+        vitalityRemaining: lowestVitality,
+        hungerRemaining: lowestHunger,
+        moodLabel: 'Équipe',
         finalStateLabel: finalState,
         baseRiskPercent: mission.baseRiskPercent,
         securityAtLaunch: mission.securityAtLaunch,
         securityReduction: mission.securityReduction,
-        realRiskPercent: mission.riskPercent,
+        realRiskPercent: realRisk,
         completedAt: completedAt,
         inventoryFull: inventoryResult.hasPending,
       ),
@@ -1612,6 +1707,8 @@ class ForageMission {
     required this.id,
     required this.figurineId,
     required this.figurineName,
+    required this.memberIds,
+    required this.memberNames,
     required this.biome,
     required this.duration,
     required this.intensity,
@@ -1619,12 +1716,14 @@ class ForageMission {
     required this.endTime,
     required this.expectedRewards,
     required this.vitalityCost,
+    required this.vitalityCostByMember,
     required this.riskPercent,
     required this.riskLabel,
     required this.baseRiskPercent,
     required this.securityAtLaunch,
     required this.securityReduction,
     required this.xpGain,
+    required this.xpGainByMember,
   });
 
   factory ForageMission.fromFirebase(Map<dynamic, dynamic> data) {
@@ -1647,6 +1746,12 @@ class ForageMission {
       id: '${data['id'] ?? 'mission-${DateTime.now().microsecondsSinceEpoch}'}',
       figurineId: '${data['figurineId'] ?? ''}',
       figurineName: '${data['figurineName'] ?? 'P’TIPOTE'}',
+      memberIds: _readStringList(data['memberIds']).isEmpty
+          ? <String>['${data['figurineId'] ?? ''}']
+          : _readStringList(data['memberIds']),
+      memberNames: _readStringList(data['memberNames']).isEmpty
+          ? <String>['${data['figurineName'] ?? 'P’TIPOTE'}']
+          : _readStringList(data['memberNames']),
       biome: biome,
       duration: duration,
       intensity: intensity,
@@ -1654,12 +1759,14 @@ class ForageMission {
       endTime: _readDate(data['endTime']) ?? DateTime.now(),
       expectedRewards: _readIntMap(data['expectedRewards']),
       vitalityCost: _readStaticInt(data['vitalityCost']),
+      vitalityCostByMember: _readIntMap(data['vitalityCostByMember']),
       riskPercent: _readStaticInt(data['riskPercent']),
       riskLabel: '${data['riskLabel'] ?? 'normal'}',
       baseRiskPercent: _readStaticInt(data['baseRiskPercent']),
       securityAtLaunch: _readStaticInt(data['securityAtLaunch']),
       securityReduction: _readStaticInt(data['securityReduction']),
       xpGain: _readStaticInt(data['xpGain']),
+      xpGainByMember: _readIntMap(data['xpGainByMember']),
     );
     mission.status = _enumByName(
       ForageMissionStatus.values,
@@ -1672,6 +1779,8 @@ class ForageMission {
   final String id;
   final String figurineId;
   final String figurineName;
+  final List<String> memberIds;
+  final List<String> memberNames;
   final ForageBiome biome;
   final ForageDuration duration;
   final ForageIntensity intensity;
@@ -1679,12 +1788,14 @@ class ForageMission {
   final DateTime endTime;
   final Map<String, int> expectedRewards;
   final int vitalityCost;
+  final Map<String, int> vitalityCostByMember;
   final int riskPercent;
   final String riskLabel;
   final int baseRiskPercent;
   final int securityAtLaunch;
   final int securityReduction;
   final int xpGain;
+  final Map<String, int> xpGainByMember;
   ForageMissionStatus status = ForageMissionStatus.active;
 
   Map<String, dynamic> toFirebase() {
@@ -1692,6 +1803,8 @@ class ForageMission {
       'id': id,
       'figurineId': figurineId,
       'figurineName': figurineName,
+      'memberIds': memberIds,
+      'memberNames': memberNames,
       'biome': biome.name,
       'duration': duration.name,
       'intensity': intensity.name,
@@ -1699,12 +1812,14 @@ class ForageMission {
       'endTime': Timestamp.fromDate(endTime),
       'expectedRewards': expectedRewards,
       'vitalityCost': vitalityCost,
+      'vitalityCostByMember': vitalityCostByMember,
       'riskPercent': riskPercent,
       'riskLabel': riskLabel,
       'baseRiskPercent': baseRiskPercent,
       'securityAtLaunch': securityAtLaunch,
       'securityReduction': securityReduction,
       'xpGain': xpGain,
+      'xpGainByMember': xpGainByMember,
       'status': status.name,
     };
   }
@@ -1732,6 +1847,14 @@ class ForageMission {
     return value.map(
       (key, amount) => MapEntry('$key', _readStaticInt(amount)),
     )..removeWhere((_, amount) => amount <= 0);
+  }
+
+  static List<String> _readStringList(Object? value) {
+    if (value is! List) return const <String>[];
+    return value
+        .map((item) => '$item')
+        .where((item) => item.isNotEmpty)
+        .toList();
   }
 
   static int _readStaticInt(Object? value) {

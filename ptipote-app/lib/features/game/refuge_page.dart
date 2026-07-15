@@ -3238,33 +3238,41 @@ class _LisierePageState extends State<LisierePage> {
   }
 
   void _launchMissions(Map<PtipoteFigurine, ForageEstimate> estimates) {
-    var launched = 0;
-    for (final entry in estimates.entries) {
-      final estimate = entry.value;
-      if (!estimate.canLaunch) continue;
-      widget.gameState.startForageMission(
-        figurine: entry.key,
-        biome: _biome,
-        duration: _duration,
-        intensity: _intensity,
-        expectedRewards: estimate.rewards,
-        vitalityCost: estimate.vitalityCost,
-        riskPercent: estimate.riskPercent,
-        riskLabel: estimate.riskLabel,
-        baseRiskPercent: estimate.baseRiskPercent,
-        securityAtLaunch: estimate.securityAtLaunch,
-        securityReduction: estimate.securityReduction,
-        xpGain: estimate.xpGain,
-      );
-      launched += 1;
-    }
+    final launchable = estimates.entries
+        .where((entry) => entry.value.canLaunch)
+        .map((entry) => entry.key)
+        .toList();
+    if (launchable.isEmpty) return;
+    final groupEstimate = ForageGroupEstimate.fromEstimates(
+      launchable.map((figurine) => estimates[figurine]!),
+    );
+    widget.gameState.startForageMission(
+      figurines: launchable,
+      biome: _biome,
+      duration: _duration,
+      intensity: _intensity,
+      expectedRewards: groupEstimate.rewards,
+      vitalityCostByMember: <String, int>{
+        for (final figurine in launchable)
+          figurine.id: estimates[figurine]!.vitalityCost,
+      },
+      riskPercent: groupEstimate.riskPercent,
+      riskLabel: groupEstimate.riskLabel,
+      baseRiskPercent: groupEstimate.baseRiskPercent,
+      securityAtLaunch: groupEstimate.securityAtLaunch,
+      securityReduction: groupEstimate.securityReduction,
+      xpGainByMember: <String, int>{
+        for (final figurine in launchable)
+          figurine.id: estimates[figurine]!.xpGain,
+      },
+    );
     _selectedFigurineIds.clear();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          launched <= 1
+          launchable.length <= 1
               ? '1 P’TIPOTE part en Lisière.'
-              : '$launched P’TIPOTES partent en Lisière.',
+              : '${launchable.length} P’TIPOTES partent en équipe.',
         ),
       ),
     );
@@ -3485,11 +3493,62 @@ class _ActiveMissionsCard extends StatelessWidget {
             else
               ...active.map((mission) {
                 final biome = lisiereForageConfig.biomes[mission.biome]!;
-                return Text('${mission.figurineName} · ${biome.label}');
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          '${mission.figurineName} · ${biome.label}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => _confirmEmergencyReturn(
+                          context,
+                          mission,
+                        ),
+                        icon: const Icon(Icons.keyboard_return_outlined),
+                        label: const Text('Retour'),
+                      ),
+                    ],
+                  ),
+                );
               }),
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _confirmEmergencyReturn(
+    BuildContext context,
+    ForageMission mission,
+  ) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Retour d’urgence'),
+        content: const Text(
+          'Attention les P’TIPOTES rentrent en urgence. Un malus de +5% sur les événements sera appliqué.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Valider'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !context.mounted) return;
+    final result = gameState.emergencyReturnForageMission(mission.id);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
     );
   }
 }
@@ -4189,9 +4248,12 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                 .where(
                   (figurine) =>
                       !widget.gameState.isUnavailableForTower(figurine) &&
-                      widget.gameState.vitalityFor(figurine) >
-                          ptipoteStatsConfig.minVitalityBeforeAutoRest,
+                      widget.gameState.vitalityFor(figurine) >=
+                          ptipoteStatsConfig.minimumMissionVitality,
                 )
+                .toList();
+            final unavailable = figurines
+                .where((figurine) => !available.contains(figurine))
                 .toList();
             return ListView(
               padding: const EdgeInsets.all(18),
@@ -4281,9 +4343,25 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                         if (assigned.length >=
                             widget.gameState.securityTowerSlots)
                           const Text('Slot de Tour occupé.')
-                        else if (available.isEmpty)
-                          const Text('Aucun P’TIPOTE disponible.')
-                        else
+                        else if (available.isEmpty) ...<Widget>[
+                          const Text('Aucun P’TIPOTE disponible.'),
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: LinearProgressIndicator(),
+                            ),
+                          if (unavailable.isNotEmpty) ...<Widget>[
+                            const SizedBox(height: 10),
+                            ...unavailable.map(
+                              (figurine) => _TowerFigurineRow(
+                                name: figurine.displayName,
+                                subtitle: _towerUnavailableReason(figurine),
+                                action: const SizedBox.shrink(),
+                              ),
+                            ),
+                          ],
+                        ] else
                           ...available.map(
                             (figurine) => _TowerFigurineRow(
                               name: figurine.displayName,
@@ -4311,6 +4389,20 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
         ),
       ),
     );
+  }
+
+  String _towerUnavailableReason(PtipoteFigurine figurine) {
+    final vitality = widget.gameState.vitalityFor(figurine);
+    if (widget.gameState.isAssignedToTower(figurine.id)) {
+      return 'Déjà affecté · Vitalité $vitality/100';
+    }
+    if (widget.gameState.isOnMission(figurine.id)) {
+      return 'En mission · Vitalité $vitality/100';
+    }
+    if (vitality < ptipoteStatsConfig.minimumMissionVitality) {
+      return 'Trop fatigué · Vitalité $vitality/100';
+    }
+    return 'Indisponible · Vitalité $vitality/100';
   }
 }
 

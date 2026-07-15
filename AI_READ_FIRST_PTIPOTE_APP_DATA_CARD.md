@@ -311,11 +311,12 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 
 ### 5. Mission model
 
-- Modele `ForageMission`: id, figurineId, figurineName, biome, duree theorique, duree test, intensite, startTime, endTime, expectedRewards, vitalityCost, riskPercent, riskLabel, xpGain, status. Serialize/deserialise vers Firebase.
+- Modele `ForageMission`: id, champs solo compatibles (`figurineId`, `figurineName`), champs equipe (`memberIds`, `memberNames`), biome, duree, intensite, startTime, endTime, expectedRewards, cout Vitalite total et par membre, risque, XP total et par membre, status. Serialize/deserialise vers Firebase.
 - Etats mission: `active`, `completed`.
-- Lancement: choisit un ou plusieurs P'TIPOTES/duree/intensite/biome, verifie Vitalite et disponibilite (`non occupe`), deduit la Vitalite et cree une mission active par P'TIPOTE.
-- Resolution: centralisee dans `Zone0GameState.resolveDueForageMissions()`, appelee par un tick depuis `RefugePage` et a l'ouverture de la Lisiere. Elle applique max 1 incident doux, tente d'ajouter les gains a l'inventaire, ajoute l'XP au P'TIPOTE, gere le level-up, sauvegarde `fields.x/xp/l/level` dans Firestore, cree un rapport non lu.
-- Etat `onMission` determine via mission active sauvegardee; les champs Firestore P'TIPOTE `behaviorState` restent a brancher. Un P'TIPOTE en mission est masque de la Maison pendant la mission.
+- Lancement: si plusieurs P'TIPOTES sont selectionnes ensemble, ils forment une seule equipe dans une seule mission. Ils partagent le meme biome, risque, incident et rapport; couts Vitalite/XP restent stockes par membre.
+- Resolution: centralisee dans `Zone0GameState.resolveDueForageMissions()`, appelee par un tick depuis `RefugePage` et a l'ouverture de la Lisiere. Elle applique max 1 incident doux commun, tente d'ajouter les gains a l'inventaire, ajoute l'XP a chaque membre, gere le level-up, sauvegarde `fields.x/xp/l/level` dans Firestore, cree un rapport non lu par equipe.
+- Retour d'urgence: bouton sur mission active dans `LisierePage`; confirmation obligatoire, retour immediat, butin au prorata du temps ecoule et +5% de risque evenement.
+- Etat `onMission` determine via mission active sauvegardee et `memberIds`; les champs Firestore P'TIPOTE `behaviorState` restent a brancher. Un P'TIPOTE en mission est masque de la Maison pendant la mission.
 
 ### 6. Risques
 
