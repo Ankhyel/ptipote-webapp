@@ -143,6 +143,15 @@ class Zone0GameState extends ChangeNotifier {
         figurine.autoAssignmentPreference;
   }
 
+  void setAutoPreference(
+    PtipoteFigurine figurine,
+    PtipoteAutoAssignmentPreference preference,
+  ) {
+    autoPreferenceOverrides[figurine.id] = preference;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
   bool get hasUnreadReports => unreadReportCount > 0;
 
   int get unreadReportCount {
@@ -930,6 +939,24 @@ class Zone0GameState extends ChangeNotifier {
           ..addAll(restingData.map((id) => '$id'));
       }
 
+      final autoPreferenceData = data['autoPreferenceOverrides'];
+      if (autoPreferenceData is Map) {
+        autoPreferenceOverrides
+          ..clear()
+          ..addEntries(
+            autoPreferenceData.entries.map((entry) {
+              return MapEntry(
+                '${entry.key}',
+                ForageMission._enumByName(
+                  PtipoteAutoAssignmentPreference.values,
+                  '${entry.value}',
+                  PtipoteAutoAssignmentPreference.home,
+                ),
+              );
+            }),
+          );
+      }
+
       final cuddleData = data['lastCuddleAt'];
       if (cuddleData is Map) {
         lastCuddleAt
@@ -1073,6 +1100,10 @@ class Zone0GameState extends ChangeNotifier {
       securityReduction: securityReduction,
       xpGain: totalXpGain,
       xpGainByMember: xpGainByMember,
+      autoPreferenceByMember: <String, PtipoteAutoAssignmentPreference>{
+        for (final figurine in figurines)
+          figurine.id: autoPreferenceFor(figurine),
+      },
     );
     missions.add(mission);
     for (final figurine in figurines) {
@@ -1333,6 +1364,17 @@ class Zone0GameState extends ChangeNotifier {
       );
       if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
         manualRestingIds.add(memberId);
+        towerAssignedIds.remove(memberId);
+      } else {
+        manualRestingIds.remove(memberId);
+        final preference = mission.autoPreferenceByMember[memberId] ??
+            autoPreferenceOverrides[memberId] ??
+            PtipoteAutoAssignmentPreference.home;
+        if (preference == PtipoteAutoAssignmentPreference.tower &&
+            isSecurityTowerBuilt &&
+            towerAssignedIds.length < securityTowerSlots) {
+          towerAssignedIds.add(memberId);
+        }
       }
       memberStateLabels.add(
         _finalMissionStateLabel(
@@ -1503,6 +1545,9 @@ class Zone0GameState extends ChangeNotifier {
           'hungerOverrides': hungerOverrides,
           'restOverrides': restOverrides,
           'manualRestingIds': manualRestingIds.toList(),
+          'autoPreferenceOverrides': autoPreferenceOverrides.map(
+            (key, value) => MapEntry(key, value.name),
+          ),
           'towerAssignedIds': towerAssignedIds.toList(),
           'campSecurity': refugeSafety,
           'kernel': <String, dynamic>{
@@ -1724,6 +1769,7 @@ class ForageMission {
     required this.securityReduction,
     required this.xpGain,
     required this.xpGainByMember,
+    required this.autoPreferenceByMember,
   });
 
   factory ForageMission.fromFirebase(Map<dynamic, dynamic> data) {
@@ -1767,6 +1813,8 @@ class ForageMission {
       securityReduction: _readStaticInt(data['securityReduction']),
       xpGain: _readStaticInt(data['xpGain']),
       xpGainByMember: _readIntMap(data['xpGainByMember']),
+      autoPreferenceByMember:
+          _readAutoPreferenceMap(data['autoPreferenceByMember']),
     );
     mission.status = _enumByName(
       ForageMissionStatus.values,
@@ -1796,6 +1844,7 @@ class ForageMission {
   final int securityReduction;
   final int xpGain;
   final Map<String, int> xpGainByMember;
+  final Map<String, PtipoteAutoAssignmentPreference> autoPreferenceByMember;
   ForageMissionStatus status = ForageMissionStatus.active;
 
   Map<String, dynamic> toFirebase() {
@@ -1820,8 +1869,27 @@ class ForageMission {
       'securityReduction': securityReduction,
       'xpGain': xpGain,
       'xpGainByMember': xpGainByMember,
+      'autoPreferenceByMember': autoPreferenceByMember.map(
+        (key, value) => MapEntry(key, value.name),
+      ),
       'status': status.name,
     };
+  }
+
+  static Map<String, PtipoteAutoAssignmentPreference> _readAutoPreferenceMap(
+    Object? data,
+  ) {
+    if (data is! Map) return <String, PtipoteAutoAssignmentPreference>{};
+    return data.map((key, value) {
+      return MapEntry(
+        '$key',
+        _enumByName(
+          PtipoteAutoAssignmentPreference.values,
+          '$value',
+          PtipoteAutoAssignmentPreference.home,
+        ),
+      );
+    });
   }
 
   static T _enumByName<T extends Enum>(

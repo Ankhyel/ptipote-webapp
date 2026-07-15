@@ -675,6 +675,8 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 - Construction immediate, sans timer ni ouvrier.
 - Niveau 1: `1` slot P'TIPOTE; niveaux 2/3 prepares dans la config.
 - Un P'TIPOTE affecte passe en surveillance Tour, disparait de la Maison et devient indisponible pour les missions.
+- Les preferences auto Maison/Tour/Marche choisies dans la Maison sont sauvegardees dans `autoPreferenceOverrides` sur Firebase (`users/{uid}/game/zone0`).
+- Au lancement d'une mission, la preference auto de chaque membre est capturee dans `ForageMission.autoPreferenceByMember`; au retour, un P'TIPOTE avec preference `tower` rejoint la Tour si elle est construite, s'il reste un slot et si sa Vitalite est au-dessus du seuil de repos.
 
 ### 3. Securite
 
@@ -701,6 +703,7 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 
 - La securite est memorisee au lancement: `securityAtLaunch`.
 - Le rapport garde aussi `baseRiskPercent`, `securityReduction`, `realRiskPercent`.
+- Les missions d'equipe gardent une seule mission et un seul rapport; chaque membre conserve ses couts, XP et preference de retour.
 - Maximum un evenement impactant par mission.
 - Dangers V1:
   - Pollution: `-20% Organique`.

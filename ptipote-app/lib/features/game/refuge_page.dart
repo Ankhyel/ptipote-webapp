@@ -723,8 +723,8 @@ class _MaisonPageState extends State<_MaisonPage>
     PtipoteFigurine figurine,
     PtipoteAutoAssignmentPreference preference,
   ) {
+    _gameState.setAutoPreference(figurine, preference);
     setState(() {
-      _gameState.autoPreferenceOverrides[figurine.id] = preference;
       _selectedFigurineId = figurine.id;
     });
   }
@@ -4205,10 +4205,12 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
   void initState() {
     super.initState();
     widget.gameState.addListener(_onGameStateChanged);
+    widget.gameState.resolveDueForageMissions();
     _towerTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _tickTower(),
     );
+    _tickTower();
   }
 
   @override
