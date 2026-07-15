@@ -1,0 +1,85 @@
+{
+  "startingPopulation": 4,
+  "startingWellbeing": 70,
+  "startingBioBatteries": 0,
+  "maxRefugeRequests": 3,
+  "populationCapacityByCampHeartLevel": {
+    "1": 5,
+    "2": 10,
+    "3": 18,
+    "4": 30,
+    "5": 50
+  },
+  "wellbeingRedThreshold": 40,
+  "wellbeingOrangeThreshold": 70,
+  "missions": [
+    {
+      "id": "build-fablab",
+      "type": "main",
+      "title": "Construire le Fablab",
+      "conditionType": "fablabBuilt",
+      "requiredAmount": 1,
+      "populationReward": 1,
+      "bioBatteryReward": 0
+    },
+    {
+      "id": "build-security-tower",
+      "type": "refugeRequest",
+      "title": "Construire la Tour",
+      "conditionType": "securityTowerBuilt",
+      "requiredAmount": 1,
+      "populationReward": 1,
+      "bioBatteryReward": 0
+    },
+    {
+      "id": "prepare-five-meals",
+      "type": "refugeRequest",
+      "title": "Préparer 5 repas",
+      "conditionType": "mealsPrepared",
+      "requiredAmount": 5,
+      "populationReward": 2,
+      "bioBatteryReward": 0
+    },
+    {
+      "id": "plaine-forage-runs",
+      "type": "refugeRequest",
+      "title": "Explorer plusieurs fois la Plaine",
+      "conditionType": "plaineMissionsCompleted",
+      "requiredAmount": 3,
+      "populationReward": 1,
+      "bioBatteryReward": 0
+    }
+  ],
+  "plans": [
+    {
+      "id": "cuisine",
+      "title": "Cuisine",
+      "description": "Préparer repas et boissons pour les P’TIPOTES.",
+      "requiredCampHeartLevel": 1
+    },
+    {
+      "id": "atelier",
+      "title": "Atelier",
+      "description": "Fabrication simple. Gameplay à venir.",
+      "requiredCampHeartLevel": 2
+    },
+    {
+      "id": "security-tower",
+      "title": "Tour",
+      "description": "Réduit les risques en Lisière.",
+      "requiredCampHeartLevel": 2
+    },
+    {
+      "id": "recycler",
+      "title": "Recycleur",
+      "description": "Transformer les surplus. Gameplay à venir.",
+      "requiredCampHeartLevel": 3
+    },
+    {
+      "id": "ptibug-refuge",
+      "title": "Refuge PTIBUG",
+      "description": "Abri et schémas PTIBUG. À venir.",
+      "requiredCampHeartLevel": 2
+    }
+  ]
+}

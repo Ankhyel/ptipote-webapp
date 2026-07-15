@@ -30,6 +30,7 @@
       <nav class="dashboard-tabs" aria-label="Sections du dashboard">
         <button class="tab-button active" type="button" data-dashboard-tab="overview">Vue générale</button>
         <button class="tab-button" type="button" data-dashboard-tab="ptipote-stats">Stat Ptipote</button>
+        <button class="tab-button" type="button" data-dashboard-tab="kernel">Camp / Kernel</button>
         <button class="tab-button" type="button" data-dashboard-tab="camp-heart">Cœur du Camp</button>
         <button class="tab-button" type="button" data-dashboard-tab="lisiere-forage">Lisière / Fourrage</button>
         <button class="tab-button" type="button" data-dashboard-tab="security-tower">Tour</button>
@@ -83,6 +84,17 @@
           </div>
           <p class="panel-note" id="statPtipoteStatus">Charge les valeurs depuis ptipote-stats-config.json. Les changements sont gardes localement pour preparer la synchro app.</p>
           <form class="stat-form" id="statPtipoteForm"></form>
+        </section>
+      </section>
+
+      <section class="dashboard-panel" data-dashboard-panel="kernel">
+        <section class="panel stat-ptipote-panel" aria-labelledby="kernelTitle">
+          <div class="panel-head">
+            <div><p class="eyebrow">Configuration V1</p><h2 id="kernelTitle">Camp / Kernel</h2></div>
+            <button class="ghost" id="exportKernelButton" type="button">Exporter JSON</button>
+          </div>
+          <p class="panel-note" id="kernelStatus">Charge population, HUD et missions depuis kernel-config.json.</p>
+          <div class="stage-list" id="kernelConfigList"></div>
         </section>
       </section>
 

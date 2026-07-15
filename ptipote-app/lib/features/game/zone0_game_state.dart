@@ -9,6 +9,7 @@ import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
+import 'kernel_config.dart';
 import 'lisiere_forage_config.dart';
 import 'security_tower_config.dart';
 
@@ -32,10 +33,16 @@ class Zone0GameState extends ChangeNotifier {
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
   final List<ForageMission> missions = <ForageMission>[];
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
+  final Set<String> completedKernelMissionIds = <String>{};
 
   int refugeSafety = lisiereForageConfig.refugeSafetyFallback;
   int fablabLevel = 0;
   int securityTowerLevel = 0;
+  int currentPopulation = kernelConfig.startingPopulation;
+  int bioBatteries = kernelConfig.startingBioBatteries;
+  int campWellbeing = kernelConfig.startingWellbeing;
+  int mealsPrepared = 0;
+  int plaineMissionsCompleted = 0;
   final Set<String> towerAssignedIds = <String>{};
   DateTime? lastFirebaseSyncAt;
   DateTime? lastSimulationAt;
@@ -65,6 +72,50 @@ class Zone0GameState extends ChangeNotifier {
 
   int get inventoryUsedAmount {
     return inventory.fold(0, (total, stack) => total + stack.amount);
+  }
+
+  int populationCapacityForCampHeartLevel(int campHeartLevel) {
+    return kernelConfig.populationCapacityForCampHeartLevel(campHeartLevel);
+  }
+
+  String wellbeingColorLabel() {
+    if (campWellbeing < kernelConfig.wellbeingRedThreshold) return 'Rouge';
+    if (campWellbeing < kernelConfig.wellbeingOrangeThreshold) return 'Orange';
+    return 'Vert';
+  }
+
+  List<KernelMissionProgress> kernelMissionsForCampHeartLevel(
+    int campHeartLevel,
+  ) {
+    return kernelConfig.missions
+        .map(
+          (mission) => KernelMissionProgress(
+            config: mission,
+            progress: _kernelMissionProgress(mission),
+            status: completedKernelMissionIds.contains(mission.id)
+                ? KernelMissionStatus.completed
+                : KernelMissionStatus.active,
+          ),
+        )
+        .toList();
+  }
+
+  KernelMissionProgress? mainKernelMission(int campHeartLevel) {
+    final missions = kernelMissionsForCampHeartLevel(campHeartLevel)
+        .where((mission) => mission.config.type == KernelMissionType.main)
+        .toList();
+    for (final mission in missions) {
+      if (mission.status != KernelMissionStatus.completed) return mission;
+    }
+    return missions.isEmpty ? null : missions.last;
+  }
+
+  List<KernelMissionProgress> refugeRequests(int campHeartLevel) {
+    return kernelMissionsForCampHeartLevel(campHeartLevel)
+        .where(
+            (mission) => mission.config.type == KernelMissionType.refugeRequest)
+        .take(kernelConfig.maxRefugeRequests)
+        .toList();
   }
 
   int vitalityFor(PtipoteFigurine figurine) {
@@ -629,6 +680,7 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Le Fablab est prêt. La Cuisine est maintenant disponible.',
       ),
     );
+    refreshKernelMissions(campHeartLevel: 1);
     notifyListeners();
     unawaited(saveBuildingsToFirebase());
     unawaited(saveRuntimeToFirebase());
@@ -669,6 +721,7 @@ class Zone0GameState extends ChangeNotifier {
         message: 'La Tour de sécurité est construite.',
       ),
     );
+    refreshKernelMissions(campHeartLevel: campHeartLevel);
     notifyListeners();
     unawaited(saveBuildingsToFirebase());
     unawaited(saveRuntimeToFirebase());
@@ -745,7 +798,12 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     addResources(output);
+    if (recipe.resultItem == craftConfig.simpleMealRecipe.resultItem) {
+      mealsPrepared += recipe.resultAmount;
+    }
+    refreshKernelMissions();
     notifyListeners();
+    unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
       message: '${recipe.displayName} préparé.',
@@ -907,6 +965,31 @@ class Zone0GameState extends ChangeNotifier {
                 .map(PtipoteMissionReport.fromFirebase)
                 .whereType<PtipoteMissionReport>(),
           );
+      }
+
+      final kernelData = data['kernel'];
+      if (kernelData is Map) {
+        currentPopulation = _readInt(
+          kernelData['currentPopulation'],
+          fallback: kernelConfig.startingPopulation,
+        );
+        bioBatteries = _readInt(
+          kernelData['bioBatteries'],
+          fallback: kernelConfig.startingBioBatteries,
+        );
+        campWellbeing = _readInt(
+          kernelData['campWellbeing'],
+          fallback: kernelConfig.startingWellbeing,
+        ).clamp(0, 100);
+        mealsPrepared = _readInt(kernelData['mealsPrepared']);
+        plaineMissionsCompleted =
+            _readInt(kernelData['plaineMissionsCompleted']);
+        final completedData = kernelData['completedMissionIds'];
+        if (completedData is List) {
+          completedKernelMissionIds
+            ..clear()
+            ..addAll(completedData.map((id) => '$id'));
+        }
       }
 
       final buildingsData = data['buildings'];
@@ -1077,6 +1160,39 @@ class Zone0GameState extends ChangeNotifier {
     }
   }
 
+  int _kernelMissionProgress(KernelMissionConfig mission) {
+    return switch (mission.conditionType) {
+      KernelMissionConditionType.fablabBuilt => isFablabBuilt ? 1 : 0,
+      KernelMissionConditionType.securityTowerBuilt =>
+        isSecurityTowerBuilt ? 1 : 0,
+      KernelMissionConditionType.mealsPrepared => mealsPrepared,
+      KernelMissionConditionType.plaineMissionsCompleted =>
+        plaineMissionsCompleted,
+    };
+  }
+
+  bool refreshKernelMissions({int campHeartLevel = 1}) {
+    var changed = false;
+    final populationCapacity =
+        populationCapacityForCampHeartLevel(campHeartLevel);
+    for (final mission in kernelConfig.missions) {
+      if (completedKernelMissionIds.contains(mission.id)) continue;
+      if (_kernelMissionProgress(mission) < mission.requiredAmount) continue;
+      completedKernelMissionIds.add(mission.id);
+      currentPopulation = math.min(
+        populationCapacity,
+        currentPopulation + mission.populationReward,
+      );
+      bioBatteries += mission.bioBatteryReward;
+      reports.add(PtipoteMissionReport.system(message: mission.mailMessage));
+      changed = true;
+    }
+    if (changed) {
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
+  }
+
   void _resolveMission(
     ForageMission mission, {
     required DateTime completedAt,
@@ -1114,6 +1230,10 @@ class Zone0GameState extends ChangeNotifier {
 
     final inventoryResult = addResources(rewards);
     final xpResult = addMissionXp(mission.figurineId, mission.xpGain);
+    if (mission.biome == ForageBiome.plaineRiche) {
+      plaineMissionsCompleted += 1;
+    }
+    refreshKernelMissions();
     unawaited(persistFigurineProgress(
       figurineId: mission.figurineId,
       xp: xpResult.xp,
@@ -1290,6 +1410,14 @@ class Zone0GameState extends ChangeNotifier {
           'manualRestingIds': manualRestingIds.toList(),
           'towerAssignedIds': towerAssignedIds.toList(),
           'campSecurity': refugeSafety,
+          'kernel': <String, dynamic>{
+            'currentPopulation': currentPopulation,
+            'bioBatteries': bioBatteries,
+            'campWellbeing': campWellbeing,
+            'mealsPrepared': mealsPrepared,
+            'plaineMissionsCompleted': plaineMissionsCompleted,
+            'completedMissionIds': completedKernelMissionIds.toList(),
+          },
           'lastSimulationAt': lastSimulationAt == null
               ? FieldValue.serverTimestamp()
               : Timestamp.fromDate(lastSimulationAt!),
@@ -1384,10 +1512,10 @@ class Zone0GameState extends ChangeNotifier {
         .doc('zone0');
   }
 
-  int _readInt(Object? value) {
+  int _readInt(Object? value, {int fallback = 0}) {
     if (value is int) return value;
     if (value is num) return value.toInt();
-    return int.tryParse('$value') ?? 0;
+    return int.tryParse('$value') ?? fallback;
   }
 
   DateTime? _readDate(Object? value) {

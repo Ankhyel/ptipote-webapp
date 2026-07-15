@@ -10,6 +10,7 @@ import 'camp_heart_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'game_asset_resolver.dart';
+import 'kernel_config.dart';
 import 'lisiere_forage_config.dart';
 import 'security_tower_config.dart';
 import 'zone0_game_state.dart';
@@ -111,6 +112,9 @@ class _RefugePageState extends State<RefugePage> {
     if (campHeartData != null) {
       _campHeartState.applyFirebaseData(campHeartData);
     }
+    _zone0State.refreshKernelMissions(
+      campHeartLevel: _campHeartState.campHeartLevel,
+    );
     final figurines = await _figurineService.watchMyFigurines().first;
     _zone0State.recoverFigurineNeeds(figurines: figurines, tick: 1);
     _refugeAsset = await _assetResolver.resolve('Camp');
@@ -141,6 +145,12 @@ class _RefugePageState extends State<RefugePage> {
             return SecurityTowerPage(
               gameState: _zone0State,
               figurineService: FigurineService(),
+            );
+          }
+          if (building.name == 'Kernel') {
+            return KernelPage(
+              gameState: _zone0State,
+              campHeartState: _campHeartState,
             );
           }
           return _GameBuildingPage(building: building);
@@ -185,6 +195,13 @@ class _RefugePageState extends State<RefugePage> {
       body: SafeArea(
         child: Column(
           children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+              child: _CampHud(
+                gameState: _zone0State,
+                campHeartLevel: _campHeartState.campHeartLevel,
+              ),
+            ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -242,6 +259,382 @@ class _RefugePageState extends State<RefugePage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CampHud extends StatelessWidget {
+  const _CampHud({
+    required this.gameState,
+    required this.campHeartLevel,
+  });
+
+  final Zone0GameState gameState;
+  final int campHeartLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    final capacity = gameState.populationCapacityForCampHeartLevel(
+      campHeartLevel,
+    );
+    final wellbeingColor = _wellbeingColor(gameState.campWellbeing);
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: _HudChip(
+            icon: Icons.groups_2_outlined,
+            label: '${gameState.currentPopulation} / $capacity',
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _HudChip(
+            icon: Icons.battery_charging_full_outlined,
+            label: '${gameState.bioBatteries}',
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _HudChip(
+            icon: Icons.sentiment_satisfied_alt_outlined,
+            label: '${gameState.campWellbeing}%',
+            color: wellbeingColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _wellbeingColor(int value) {
+    if (value < kernelConfig.wellbeingRedThreshold) {
+      return const Color(0xFFB94A48);
+    }
+    if (value < kernelConfig.wellbeingOrangeThreshold) {
+      return const Color(0xFFD48425);
+    }
+    return const Color(0xFF4F7F52);
+  }
+}
+
+class _HudChip extends StatelessWidget {
+  const _HudChip({
+    required this.icon,
+    required this.label,
+    this.color = const Color(0xFF2F241A),
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class KernelPage extends StatelessWidget {
+  const KernelPage({
+    super.key,
+    required this.gameState,
+    required this.campHeartState,
+  });
+
+  final Zone0GameState gameState;
+  final CampHeartState campHeartState;
+
+  @override
+  Widget build(BuildContext context) {
+    gameState.refreshKernelMissions(
+      campHeartLevel: campHeartState.campHeartLevel,
+    );
+    return DefaultTabController(
+      length: 4,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Kernel'),
+          bottom: const TabBar(
+            isScrollable: true,
+            tabs: <Widget>[
+              Tab(text: 'Mission principale'),
+              Tab(text: 'Demandes'),
+              Tab(text: 'Plans'),
+              Tab(text: 'Progression'),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: TabBarView(
+            children: <Widget>[
+              _KernelMainMissionTab(
+                mission: gameState.mainKernelMission(
+                  campHeartState.campHeartLevel,
+                ),
+              ),
+              _KernelRequestsTab(
+                missions: gameState.refugeRequests(
+                  campHeartState.campHeartLevel,
+                ),
+              ),
+              _KernelPlansTab(campHeartLevel: campHeartState.campHeartLevel),
+              _KernelProgressTab(
+                gameState: gameState,
+                campHeartState: campHeartState,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KernelMainMissionTab extends StatelessWidget {
+  const _KernelMainMissionTab({required this.mission});
+
+  final KernelMissionProgress? mission;
+
+  @override
+  Widget build(BuildContext context) {
+    if (mission == null) {
+      return const _KernelEmptyState(
+        message: 'Aucune mission principale active.',
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: <Widget>[_KernelMissionCard(mission: mission!)],
+    );
+  }
+}
+
+class _KernelRequestsTab extends StatelessWidget {
+  const _KernelRequestsTab({required this.missions});
+
+  final List<KernelMissionProgress> missions;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: <Widget>[
+        if (missions.isEmpty)
+          const _KernelEmptyState(message: 'Aucune demande du refuge.')
+        else
+          ...missions.map((mission) => _KernelMissionCard(mission: mission)),
+      ],
+    );
+  }
+}
+
+class _KernelMissionCard extends StatelessWidget {
+  const _KernelMissionCard({required this.mission});
+
+  final KernelMissionProgress mission;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = mission.config;
+    final progress =
+        '${mission.progress.clamp(0, config.requiredAmount)} / ${config.requiredAmount}';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    config.title,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                _KernelStatusPill(completed: mission.isCompleted),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(config.description),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              value: config.requiredAmount <= 0
+                  ? 1
+                  : (mission.progress / config.requiredAmount).clamp(0.0, 1.0),
+            ),
+            const SizedBox(height: 8),
+            Text('Progression : $progress'),
+            const SizedBox(height: 8),
+            Text(
+              'Récompense : +${config.populationReward} habitant(s)'
+              '${config.bioBatteryReward > 0 ? ', +${config.bioBatteryReward} bio-batterie(s)' : ''}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _KernelStatusPill extends StatelessWidget {
+  const _KernelStatusPill({required this.completed});
+
+  final bool completed;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: completed ? const Color(0xFFE2F0DD) : const Color(0xFFFFF1CC),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text(
+          completed ? 'Terminé' : 'Actif',
+          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+        ),
+      ),
+    );
+  }
+}
+
+class _KernelPlansTab extends StatelessWidget {
+  const _KernelPlansTab({required this.campHeartLevel});
+
+  final int campHeartLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: kernelConfig.plans.map((plan) {
+        final unlocked = campHeartLevel >= plan.requiredCampHeartLevel;
+        return Opacity(
+          opacity: unlocked ? 1 : 0.45,
+          child: Card(
+            child: ListTile(
+              leading: Icon(
+                unlocked ? Icons.inventory_2_outlined : Icons.lock_outline,
+              ),
+              title: Text(plan.title),
+              subtitle: Text(
+                unlocked
+                    ? plan.description
+                    : '${plan.description}\nDébloqué au Cœur niveau ${plan.requiredCampHeartLevel}.',
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _KernelProgressTab extends StatelessWidget {
+  const _KernelProgressTab({
+    required this.gameState,
+    required this.campHeartState,
+  });
+
+  final Zone0GameState gameState;
+  final CampHeartState campHeartState;
+
+  @override
+  Widget build(BuildContext context) {
+    final stage = campHeartState.currentStage;
+    final capacity = gameState.populationCapacityForCampHeartLevel(
+      campHeartState.campHeartLevel,
+    );
+    final next = campHeartState.nextStage;
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: <Widget>[
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  stage.label,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 12),
+                _InfoLine(
+                  label: 'Niveau du Cœur',
+                  value: '${campHeartState.campHeartLevel}',
+                ),
+                _InfoLine(
+                  label: 'Population',
+                  value: '${gameState.currentPopulation} / $capacity',
+                ),
+                _InfoLine(
+                  label: 'Bien-être',
+                  value:
+                      '${gameState.campWellbeing}% (${gameState.wellbeingColorLabel()})',
+                ),
+                _InfoLine(
+                  label: 'Prochain objectif',
+                  value: next == null
+                      ? 'Stade maximum V1'
+                      : 'Atteindre ${next.label}',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _KernelEmptyState extends StatelessWidget {
+  const _KernelEmptyState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(message, textAlign: TextAlign.center),
       ),
     );
   }

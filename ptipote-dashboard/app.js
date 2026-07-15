@@ -34,6 +34,7 @@ const provider = new GoogleAuthProvider();
 let currentDashboardRole = "";
 let ptipoteStatsConfig = {};
 let campHeartConfig = {};
+let kernelConfig = {};
 let lisiereForageConfig = {};
 let securityTowerConfig = {};
 let fablabConfig = {};
@@ -116,6 +117,9 @@ const ids = [
   "statPtipoteStatus",
   "resetPtipoteStatsButton",
   "exportPtipoteStatsButton",
+  "kernelStatus",
+  "kernelConfigList",
+  "exportKernelButton",
   "campHeartStatus",
   "campHeartStageList",
   "exportCampHeartButton",
@@ -340,6 +344,56 @@ function exportPtipoteStatsConfig() {
   const link = document.createElement("a");
   link.href = url;
   link.download = "ptipote-stats-config.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function loadKernelConfig() {
+  try {
+    const response = await fetch("./kernel-config.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    kernelConfig = await response.json();
+    renderKernelConfig();
+    el.kernelStatus.textContent = "Configuration Camp / Kernel chargée depuis le JSON versionné.";
+  } catch (error) {
+    el.kernelStatus.textContent = `Configuration Kernel illisible: ${error.message}`;
+  }
+}
+
+function renderKernelConfig() {
+  const capacity = kernelConfig.populationCapacityByCampHeartLevel || {};
+  const missions = Array.isArray(kernelConfig.missions) ? kernelConfig.missions : [];
+  const plans = Array.isArray(kernelConfig.plans) ? kernelConfig.plans : [];
+  const rows = [
+    ["Population départ", kernelConfig.startingPopulation],
+    ["Bien-être départ", `${kernelConfig.startingWellbeing}%`],
+    ["Bio-batteries départ", kernelConfig.startingBioBatteries],
+    ["Demandes secondaires max", kernelConfig.maxRefugeRequests],
+    ["Couleurs HUD", `rouge < ${kernelConfig.wellbeingRedThreshold} · orange < ${kernelConfig.wellbeingOrangeThreshold} · vert au-delà`],
+    ["Capacité population", Object.entries(capacity).map(([level, value]) => `Cœur ${level}: ${value}`).join(" · ")],
+  ];
+  const missionRows = missions.map((mission) => [
+    `Mission: ${mission.title}`,
+    `${mission.type} · ${mission.conditionType} ${mission.requiredAmount} · +${mission.populationReward} habitant(s) · +${mission.bioBatteryReward || 0} bio-batterie(s)`,
+  ]);
+  const planRows = plans.map((plan) => [
+    `Plan: ${plan.title}`,
+    `Cœur requis ${plan.requiredCampHeartLevel} · ${plan.description}`,
+  ]);
+  el.kernelConfigList.innerHTML = [...rows, ...missionRows, ...planRows].map(([label, value]) => `
+    <div class="stage-row">
+      <div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>
+      <strong>Kernel</strong>
+    </div>
+  `).join("");
+}
+
+function exportKernelConfig() {
+  const blob = new Blob([JSON.stringify(kernelConfig, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "kernel-config.json";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -649,6 +703,10 @@ el.exportPtipoteStatsButton.addEventListener("click", () => {
   exportPtipoteStatsConfig();
 });
 
+el.exportKernelButton.addEventListener("click", () => {
+  exportKernelConfig();
+});
+
 el.exportCampHeartButton.addEventListener("click", () => {
   exportCampHeartConfig();
 });
@@ -673,6 +731,7 @@ el.craftRecipeForm.addEventListener("submit", addCraftRecipe);
 
 setupDashboardTabs();
 loadPtipoteStatsConfig();
+loadKernelConfig();
 loadCampHeartConfig();
 loadLisiereForageConfig();
 loadSecurityTowerConfig();

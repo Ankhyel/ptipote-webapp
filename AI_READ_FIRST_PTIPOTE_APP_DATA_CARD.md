@@ -802,6 +802,58 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 - Section Craft expose `FoodType` sur les nouvelles recettes locales.
 - Synchro automatique dashboard -> runtime non branchee; exporter JSON puis reporter dans les configs Dart si necessaire.
 
+## Kernel V1 — Progression, Population Et HUD
+
+### 1. Fichiers
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/game/kernel_config.dart` | Source Dart V1: population de depart, capacites par niveau du Cœur, bien-etre, missions Kernel, plans. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Stocke `currentPopulation`, `bioBatteries`, `campWellbeing`, compteurs de missions, missions Kernel terminees et persistance Firebase. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | HUD principal et ecran Kernel a 4 onglets: Mission principale, Demandes, Plans, Progression. |
+| `ptipote-dashboard/kernel-config.json` | Miroir JSON modifiable: Camp, HUD, recompenses population, missions et plans Kernel. |
+| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglet dashboard `Camp / Kernel`. |
+
+### 2. HUD
+
+- Affiche uniquement les stats camp principales:
+  - Population `currentPopulation / populationCapacity`.
+  - Bio-batteries.
+  - Bien-etre `campWellbeing %` avec couleur rouge/orange/verte.
+- Ne pas afficher Securite ni Vegetalisation dans le HUD: elles restent sur Tour et Cœur du Camp.
+
+### 3. Population
+
+- `populationCapacity` depend uniquement du niveau du Cœur via `kernelConfig.populationCapacityForCampHeartLevel`.
+- Le Cœur augmente la capacite, mais n'ajoute pas d'habitants.
+- Les habitants arrivent via les missions Kernel seulement.
+- Population de depart V1: `4`, pour permettre a la premiere mission `+1 habitant` d'etre testable avec une capacite Camp de `5`.
+
+### 4. Kernel
+
+- Onglet Mission principale: mission active principale, actuellement `Construire le Fablab`.
+- Onglet Demandes: maximum 3 demandes secondaires.
+- Onglet Plans: bibliotheque de batiments, verrouilles en gris si le niveau du Cœur est insuffisant.
+- Onglet Progression: stade actuel, niveau du Cœur, population, bien-etre, prochain objectif majeur.
+
+### 5. Missions Et Boite Aux Lettres
+
+- Missions generiques: `id`, type, titre, description, condition, recompenses, message consequence.
+- Conditions V1:
+  - Fablab construit.
+  - Tour construite.
+  - 5 repas prepares.
+  - 3 missions en Plaine terminees.
+- Les recompenses ajoutent la population sans depasser la capacite.
+- La Boite aux lettres recoit uniquement le message consequence via `PtipoteMissionReport.system`.
+- Le Kernel affiche les objectifs, la Boite raconte les resultats.
+
+### 6. Attentes
+
+- Commerce, routes commerciales, social, co-training, Refuge PTIBUG, Lisiere lointaine, evolution enveloppes et Mairie non branches.
+- Bio-batteries sont affichees et persistantes, mais pas encore generees par une boucle dediee.
+- Dashboard lit/exporte le JSON; synchro runtime automatique non branchee.
+
 ## Ou Modifier Selon La Demande
 
 | Demande | Modifier en premier | Verifier aussi |
