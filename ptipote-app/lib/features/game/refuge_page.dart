@@ -2884,6 +2884,7 @@ class _LisierePageState extends State<LisierePage> {
     super.initState();
     widget.gameState.addListener(_onGameStateChanged);
     widget.gameState.resolveDueForageMissions();
+    widget.gameState.resolveDueTowerMissions();
   }
 
   @override
@@ -4228,6 +4229,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
     _tick += 1;
     widget.figurineService.watchMyFigurines().first.then((figurines) {
       if (!mounted) return;
+      widget.gameState.resolveDueTowerMissions();
       widget.gameState.recoverFigurineNeeds(figurines: figurines, tick: _tick);
     });
   }
@@ -4241,10 +4243,8 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
           stream: widget.figurineService.watchMyFigurines(),
           builder: (context, snapshot) {
             final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-            final assigned = figurines
-                .where(
-                  (figurine) => widget.gameState.isAssignedToTower(figurine.id),
-                )
+            final activeTowerMissions = widget.gameState.towerMissions
+                .where((mission) => mission.status == TowerMissionStatus.active)
                 .toList();
             final available = figurines
                 .where(
@@ -4282,7 +4282,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                         _InfoLine(
                           label: 'Slots',
                           value:
-                              '${assigned.length}/${widget.gameState.securityTowerSlots}',
+                              '${activeTowerMissions.length}/${widget.gameState.securityTowerSlots}',
                         ),
                         _InfoLine(
                           label: 'Contribution',
@@ -4310,19 +4310,20 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 10),
-                        if (assigned.isEmpty)
+                        if (activeTowerMissions.isEmpty)
                           const Text('Aucun P’TIPOTE ne surveille la Tour.')
                         else
-                          ...assigned.map(
-                            (figurine) => _TowerFigurineRow(
-                              name: figurine.displayName,
+                          ...activeTowerMissions.map(
+                            (mission) => _TowerFigurineRow(
+                              name: mission.figurineName,
                               subtitle:
-                                  'Vitalité ${widget.gameState.vitalityFor(figurine)}/100',
+                                  '${_towerPlanLabel(mission.plan)} · retour ${_shortTime(mission.endTime)} · +${mission.securityGain} sécurité',
                               action: TextButton(
                                 onPressed: () {
-                                  widget.gameState.removeFromTower(figurine.id);
+                                  widget.gameState
+                                      .removeFromTower(mission.figurineId);
                                 },
-                                child: const Text('Retirer'),
+                                child: const Text('Retour'),
                               ),
                             ),
                           ),
@@ -4342,7 +4343,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 10),
-                        if (assigned.length >=
+                        if (activeTowerMissions.length >=
                             widget.gameState.securityTowerSlots)
                           const Text('Slot de Tour occupé.')
                         else if (available.isEmpty) ...<Widget>[
@@ -4369,15 +4370,46 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                               name: figurine.displayName,
                               subtitle:
                                   'Vitalité ${widget.gameState.vitalityFor(figurine)}/100',
-                              action: FilledButton(
-                                onPressed: () {
+                              action: PopupMenuButton<TowerMissionPlan>(
+                                onSelected: (plan) {
                                   final result =
-                                      widget.gameState.assignToTower(figurine);
+                                      widget.gameState.startTowerMission(
+                                    figurine: figurine,
+                                    plan: plan,
+                                  );
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(content: Text(result.message)),
                                   );
                                 },
-                                child: const Text('Affecter'),
+                                itemBuilder: (context) =>
+                                    TowerMissionPlan.values
+                                        .map(
+                                          (plan) => PopupMenuItem(
+                                            value: plan,
+                                            child: Text(_towerPlanLabel(plan)),
+                                          ),
+                                        )
+                                        .toList(),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    'Surveiller',
+                                    style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onPrimary,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -4405,6 +4437,22 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
       return 'Trop fatigué · Vitalité $vitality/100';
     }
     return 'Indisponible · Vitalité $vitality/100';
+  }
+
+  String _towerPlanLabel(TowerMissionPlan plan) {
+    return switch (plan) {
+      TowerMissionPlan.oneHour => '1h',
+      TowerMissionPlan.threeHours => '3h',
+      TowerMissionPlan.sixHours => '6h',
+      TowerMissionPlan.tenHours => '10h',
+      TowerMissionPlan.until25Vitality => 'Jusqu’à 25% puis dodo',
+    };
+  }
+
+  String _shortTime(DateTime date) {
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 }
 

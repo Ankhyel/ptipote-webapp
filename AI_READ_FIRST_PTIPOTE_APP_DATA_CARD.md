@@ -674,13 +674,16 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 - Cout V1: `6 Organique`, `8 Mineral`.
 - Construction immediate, sans timer ni ouvrier.
 - Niveau 1: `1` slot P'TIPOTE; niveaux 2/3 prepares dans la config.
-- Un P'TIPOTE affecte passe en surveillance Tour, disparait de la Maison et devient indisponible pour les missions.
+- La surveillance de Tour utilise maintenant un modele de mission (`TowerMission`) proche de la Lisiere: P'TIPOTE, plan, debut, fin, cout Vitalite, gain Securite et statut.
+- Plans V1: `1h`, `3h`, `6h`, `10h`, et `Jusqu'a 25% puis dodo`; ce dernier calcule les ticks possibles puis renvoie le P'TIPOTE en alcove.
+- Un P'TIPOTE en mission Tour disparait de la Maison et devient indisponible pour les missions Lisiere/craft.
 - Les preferences auto Maison/Tour/Marche choisies dans la Maison sont sauvegardees dans `autoPreferenceOverrides` sur Firebase (`users/{uid}/game/zone0`).
-- Au lancement d'une mission, la preference auto de chaque membre est capturee dans `ForageMission.autoPreferenceByMember`; au retour, un P'TIPOTE avec preference `tower` rejoint la Tour si elle est construite, s'il reste un slot et si sa Vitalite est au-dessus du seuil de repos.
+- Au lancement d'une mission Lisiere, la preference auto de chaque membre est capturee dans `ForageMission.autoPreferenceByMember`; au retour, un P'TIPOTE avec preference `tower` lance une mission Tour courte si elle est construite, s'il reste un slot et si sa Vitalite est au-dessus du seuil de repos.
 
 ### 3. Securite
 
 - Stockage runtime: `refugeSafety`, sauvegarde Firebase `users/{uid}/game/zone0.campSecurity`.
+- Missions Tour sauvegardees dans `users/{uid}/game/zone0.towerMissions`.
 - Minimum `0`, maximum `100`.
 - Gain V1: `+5` securite par tick de `10 min` avec P'TIPOTE affecte.
 - Cout V1: `-5 Vitalite` par tick pour le P'TIPOTE affecte.

@@ -32,6 +32,7 @@ class Zone0GameState extends ChangeNotifier {
       <String, PtipoteAutoAssignmentPreference>{};
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
   final List<ForageMission> missions = <ForageMission>[];
+  final List<TowerMission> towerMissions = <TowerMission>[];
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
   final Set<String> completedKernelMissionIds = <String>{};
 
@@ -55,9 +56,17 @@ class Zone0GameState extends ChangeNotifier {
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
   int get securityTowerSlots =>
       securityTowerConfig.slotsForLevel(securityTowerLevel);
+  bool get hasActiveTowerMission => towerMissions.any(
+        (mission) => mission.status == TowerMissionStatus.active,
+      );
 
   bool isAssignedToTower(String figurineId) {
-    return towerAssignedIds.contains(figurineId);
+    return towerAssignedIds.contains(figurineId) ||
+        towerMissions.any(
+          (mission) =>
+              mission.figurineId == figurineId &&
+              mission.status == TowerMissionStatus.active,
+        );
   }
 
   int get globalStockCapacity {
@@ -176,11 +185,11 @@ class Zone0GameState extends ChangeNotifier {
   bool isBusy(PtipoteFigurine figurine) {
     return isOnMission(figurine.id) ||
         isResting(figurine) ||
-        towerAssignedIds.contains(figurine.id);
+        isAssignedToTower(figurine.id);
   }
 
   bool isUnavailableForTower(PtipoteFigurine figurine) {
-    return isOnMission(figurine.id) || towerAssignedIds.contains(figurine.id);
+    return isOnMission(figurine.id) || isAssignedToTower(figurine.id);
   }
 
   bool isHappy(PtipoteFigurine figurine) {
@@ -326,6 +335,9 @@ class Zone0GameState extends ChangeNotifier {
     required int tick,
   }) {
     var changed = false;
+    if (resolveDueTowerMissions()) {
+      changed = true;
+    }
     if (_applyElapsedSimulation(figurines)) {
       changed = true;
     }
@@ -435,6 +447,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (isSecurityTowerBuilt &&
         towerAssignedIds.isEmpty &&
+        !hasActiveTowerMission &&
         tick % math.max(1, securityTowerConfig.tickMinutes * 2) == 0 &&
         refugeSafety > 0) {
       refugeSafety = math.max(
@@ -559,7 +572,9 @@ class Zone0GameState extends ChangeNotifier {
           }
           changed = true;
         }
-      } else if (isSecurityTowerBuilt && refugeSafety > 0) {
+      } else if (isSecurityTowerBuilt &&
+          !hasActiveTowerMission &&
+          refugeSafety > 0) {
         refugeSafety = math.max(
           0,
           refugeSafety - towerTicks * securityTowerConfig.securityDecayPerTick,
@@ -741,11 +756,25 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult assignToTower(PtipoteFigurine figurine) {
+    return startTowerMission(
+      figurine: figurine,
+      plan: TowerMissionPlan.oneHour,
+    );
+  }
+
+  Zone0ActionResult startTowerMission({
+    required PtipoteFigurine figurine,
+    required TowerMissionPlan plan,
+  }) {
     if (!isSecurityTowerBuilt) {
       return const Zone0ActionResult(
           success: false, message: 'Tour non construite.');
     }
-    if (towerAssignedIds.length >= securityTowerSlots) {
+    resolveDueTowerMissions();
+    final activeCount = towerMissions
+        .where((mission) => mission.status == TowerMissionStatus.active)
+        .length;
+    if (activeCount >= securityTowerSlots) {
       return const Zone0ActionResult(
           success: false, message: 'Aucun slot libre.');
     }
@@ -757,7 +786,29 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'P’TIPOTE trop fatigué.');
     }
-    towerAssignedIds.add(figurine.id);
+    final vitality = vitalityFor(figurine);
+    final ticks = _towerTicksForPlan(plan, vitality);
+    if (ticks <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Vitalité insuffisante pour surveiller la Tour.',
+      );
+    }
+    vitalityOverrides.putIfAbsent(figurine.id, () => vitality);
+    final start = DateTime.now();
+    towerMissions.add(
+      TowerMission(
+        id: 'tower-${start.microsecondsSinceEpoch}',
+        figurineId: figurine.id,
+        figurineName: figurine.displayName,
+        plan: plan,
+        startTime: start,
+        endTime: start.add(_towerDurationForTicks(ticks)),
+        vitalityCost: ticks * securityTowerConfig.vitalityCostPerTick,
+        securityGain: ticks * securityTowerConfig.securityGainPerTick,
+        sleepAfter: plan == TowerMissionPlan.until25Vitality,
+      ),
+    );
     manualRestingIds.remove(figurine.id);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -768,7 +819,15 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   void removeFromTower(String figurineId) {
-    if (towerAssignedIds.remove(figurineId)) {
+    var changed = towerAssignedIds.remove(figurineId);
+    for (final mission in towerMissions) {
+      if (mission.figurineId == figurineId &&
+          mission.status == TowerMissionStatus.active) {
+        _resolveTowerMission(mission, early: true);
+        changed = true;
+      }
+    }
+    if (changed) {
       notifyListeners();
       unawaited(saveRuntimeToFirebase());
     }
@@ -982,6 +1041,18 @@ class Zone0GameState extends ChangeNotifier {
           );
       }
 
+      final towerMissionData = data['towerMissions'];
+      if (towerMissionData is List) {
+        towerMissions
+          ..clear()
+          ..addAll(
+            towerMissionData
+                .whereType<Map>()
+                .map(TowerMission.fromFirebase)
+                .whereType<TowerMission>(),
+          );
+      }
+
       final reportData = data['reports'];
       if (reportData is List) {
         reports
@@ -1136,6 +1207,22 @@ class Zone0GameState extends ChangeNotifier {
       if (mission.status != ForageMissionStatus.active) continue;
       if (mission.endTime.isAfter(currentTime)) continue;
       _resolveMission(mission, completedAt: currentTime);
+      resolvedAny = true;
+    }
+    if (resolvedAny) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return resolvedAny;
+  }
+
+  bool resolveDueTowerMissions({DateTime? now}) {
+    final currentTime = now ?? DateTime.now();
+    var resolvedAny = false;
+    for (final mission in towerMissions) {
+      if (mission.status != TowerMissionStatus.active) continue;
+      if (mission.endTime.isAfter(currentTime)) continue;
+      _resolveTowerMission(mission);
       resolvedAny = true;
     }
     if (resolvedAny) {
@@ -1372,8 +1459,29 @@ class Zone0GameState extends ChangeNotifier {
             PtipoteAutoAssignmentPreference.home;
         if (preference == PtipoteAutoAssignmentPreference.tower &&
             isSecurityTowerBuilt &&
-            towerAssignedIds.length < securityTowerSlots) {
-          towerAssignedIds.add(memberId);
+            towerMissions
+                    .where(
+                      (mission) => mission.status == TowerMissionStatus.active,
+                    )
+                    .length <
+                securityTowerSlots) {
+          final ticks = _towerTicksForPlan(
+            TowerMissionPlan.oneHour,
+            vitality,
+          );
+          towerMissions.add(
+            TowerMission(
+              id: 'tower-${DateTime.now().microsecondsSinceEpoch}-$memberId',
+              figurineId: memberId,
+              figurineName: memberName,
+              plan: TowerMissionPlan.oneHour,
+              startTime: completedAt,
+              endTime: completedAt.add(_towerDurationForTicks(ticks)),
+              vitalityCost: ticks * securityTowerConfig.vitalityCostPerTick,
+              securityGain: ticks * securityTowerConfig.securityGainPerTick,
+              sleepAfter: false,
+            ),
+          );
         }
       }
       memberStateLabels.add(
@@ -1420,6 +1528,60 @@ class Zone0GameState extends ChangeNotifier {
       ),
     );
     mission.status = ForageMissionStatus.completed;
+  }
+
+  int _towerTicksForPlan(TowerMissionPlan plan, int vitality) {
+    if (plan == TowerMissionPlan.until25Vitality) {
+      final spendable = math.max(0, vitality - 25);
+      return spendable ~/ math.max(1, securityTowerConfig.vitalityCostPerTick);
+    }
+    final hours = switch (plan) {
+      TowerMissionPlan.oneHour => 1,
+      TowerMissionPlan.threeHours => 3,
+      TowerMissionPlan.sixHours => 6,
+      TowerMissionPlan.tenHours => 10,
+      TowerMissionPlan.until25Vitality => 0,
+    };
+    final minutes = hours * 60;
+    return math.max(1, minutes ~/ math.max(1, securityTowerConfig.tickMinutes));
+  }
+
+  Duration _towerDurationForTicks(int ticks) {
+    final theoreticalMinutes = ticks * securityTowerConfig.tickMinutes;
+    final realMinutes = math.max(
+        1, (theoreticalMinutes / lisiereForageConfig.forageTimeScale).round());
+    return Duration(minutes: realMinutes);
+  }
+
+  void _resolveTowerMission(TowerMission mission, {bool early = false}) {
+    final elapsedRatio = early
+        ? (DateTime.now().difference(mission.startTime).inSeconds /
+            math.max(
+                1, mission.endTime.difference(mission.startTime).inSeconds))
+        : 1.0;
+    final ratio = elapsedRatio.clamp(0.05, 1.0);
+    final vitalityCost = math.max(1, (mission.vitalityCost * ratio).round());
+    final securityGain = math.max(1, (mission.securityGain * ratio).round());
+    final currentVitality =
+        vitalityOverrides[mission.figurineId] ?? ptipoteStatsConfig.maxVitality;
+    final nextVitality = math.max(0, currentVitality - vitalityCost);
+    vitalityOverrides[mission.figurineId] = nextVitality;
+    refugeSafety = math.min(
+      securityTowerConfig.maxSecurity,
+      refugeSafety + securityGain,
+    );
+    if (mission.sleepAfter ||
+        nextVitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+      manualRestingIds.add(mission.figurineId);
+    }
+    mission.status = TowerMissionStatus.completed;
+    reports.add(
+      PtipoteMissionReport.system(
+        message: early
+            ? '${mission.figurineName} revient de la Tour plus tôt : +$securityGain sécurité, -$vitalityCost Vitalité.'
+            : '${mission.figurineName} termine sa surveillance : +$securityGain sécurité, -$vitalityCost Vitalité.',
+      ),
+    );
   }
 
   String _moodLabelForValues({
@@ -1549,6 +1711,8 @@ class Zone0GameState extends ChangeNotifier {
             (key, value) => MapEntry(key, value.name),
           ),
           'towerAssignedIds': towerAssignedIds.toList(),
+          'towerMissions':
+              towerMissions.map((mission) => mission.toFirebase()).toList(),
           'campSecurity': refugeSafety,
           'kernel': <String, dynamic>{
             'currentPopulation': currentPopulation,
@@ -1746,6 +1910,80 @@ class Zone0ActionResult {
 }
 
 enum ForageMissionStatus { active, completed }
+
+enum TowerMissionStatus { active, completed }
+
+enum TowerMissionPlan {
+  oneHour,
+  threeHours,
+  sixHours,
+  tenHours,
+  until25Vitality,
+}
+
+class TowerMission {
+  TowerMission({
+    required this.id,
+    required this.figurineId,
+    required this.figurineName,
+    required this.plan,
+    required this.startTime,
+    required this.endTime,
+    required this.vitalityCost,
+    required this.securityGain,
+    required this.sleepAfter,
+  });
+
+  factory TowerMission.fromFirebase(Map<dynamic, dynamic> data) {
+    final mission = TowerMission(
+      id: '${data['id'] ?? 'tower-${DateTime.now().microsecondsSinceEpoch}'}',
+      figurineId: '${data['figurineId'] ?? ''}',
+      figurineName: '${data['figurineName'] ?? 'P’TIPOTE'}',
+      plan: ForageMission._enumByName(
+        TowerMissionPlan.values,
+        '${data['plan'] ?? ''}',
+        TowerMissionPlan.oneHour,
+      ),
+      startTime: ForageMission._readDate(data['startTime']) ?? DateTime.now(),
+      endTime: ForageMission._readDate(data['endTime']) ?? DateTime.now(),
+      vitalityCost: ForageMission._readStaticInt(data['vitalityCost']),
+      securityGain: ForageMission._readStaticInt(data['securityGain']),
+      sleepAfter: data['sleepAfter'] == true,
+    );
+    mission.status = ForageMission._enumByName(
+      TowerMissionStatus.values,
+      '${data['status'] ?? ''}',
+      TowerMissionStatus.active,
+    );
+    return mission;
+  }
+
+  final String id;
+  final String figurineId;
+  final String figurineName;
+  final TowerMissionPlan plan;
+  final DateTime startTime;
+  final DateTime endTime;
+  final int vitalityCost;
+  final int securityGain;
+  final bool sleepAfter;
+  TowerMissionStatus status = TowerMissionStatus.active;
+
+  Map<String, dynamic> toFirebase() {
+    return <String, dynamic>{
+      'id': id,
+      'figurineId': figurineId,
+      'figurineName': figurineName,
+      'plan': plan.name,
+      'startTime': Timestamp.fromDate(startTime),
+      'endTime': Timestamp.fromDate(endTime),
+      'vitalityCost': vitalityCost,
+      'securityGain': securityGain,
+      'sleepAfter': sleepAfter,
+      'status': status.name,
+    };
+  }
+}
 
 class ForageMission {
   ForageMission({
