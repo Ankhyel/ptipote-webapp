@@ -4,12 +4,16 @@ class WorkshopConfig {
     required this.vitalityCostPerUnit,
     required this.levelSpeedBonusPercent,
     required this.maxLevelSpeedBonusPercent,
+    required this.slotsPerLevel,
   });
 
   final List<WorkshopRecipe> recipes;
   final int vitalityCostPerUnit;
   final double levelSpeedBonusPercent;
   final double maxLevelSpeedBonusPercent;
+  final int slotsPerLevel;
+
+  int slotsForLevel(int level) => level.clamp(1, 99) * slotsPerLevel;
 
   WorkshopRecipe recipe(String id) =>
       recipes.firstWhere((item) => item.id == id);
@@ -27,6 +31,7 @@ class WorkshopRecipe {
     required this.stackLimit,
     required this.sellable,
     required this.baseSaleValue,
+    required this.isEquipment,
   });
 
   final String id;
@@ -39,12 +44,14 @@ class WorkshopRecipe {
   final int stackLimit;
   final bool sellable;
   final int baseSaleValue;
+  final bool isEquipment;
 }
 
 const workshopConfig = WorkshopConfig(
   vitalityCostPerUnit: 5,
   levelSpeedBonusPercent: 0.01,
   maxLevelSpeedBonusPercent: 0.15,
+  slotsPerLevel: 1,
   recipes: <WorkshopRecipe>[
     WorkshopRecipe(
         id: 'filter',
@@ -56,7 +63,8 @@ const workshopConfig = WorkshopConfig(
         durationMinutes: 2,
         stackLimit: 10,
         sellable: true,
-        baseSaleValue: 3),
+        baseSaleValue: 3,
+        isEquipment: false),
     WorkshopRecipe(
         id: 'filterCartridge',
         displayName: 'Cartouche de filtration',
@@ -67,7 +75,8 @@ const workshopConfig = WorkshopConfig(
         durationMinutes: 1,
         stackLimit: 10,
         sellable: true,
-        baseSaleValue: 4),
+        baseSaleValue: 4,
+        isEquipment: false),
     WorkshopRecipe(
         id: 'shadeSuit',
         displayName: 'Tenue ombragée',
@@ -78,7 +87,8 @@ const workshopConfig = WorkshopConfig(
         durationMinutes: 5,
         stackLimit: 1,
         sellable: true,
-        baseSaleValue: 8),
+        baseSaleValue: 8,
+        isEquipment: true),
     WorkshopRecipe(
         id: 'simpleFurniture',
         displayName: 'Meuble simple',
@@ -87,9 +97,10 @@ const workshopConfig = WorkshopConfig(
         resultItem: 'Meuble simple',
         resultAmount: 1,
         durationMinutes: 3,
-        stackLimit: 10,
+        stackLimit: 1,
         sellable: true,
-        baseSaleValue: 5),
+        baseSaleValue: 5,
+        isEquipment: true),
     WorkshopRecipe(
         id: 'termiteVentilation',
         displayName: 'Ventilation Termite',
@@ -98,9 +109,10 @@ const workshopConfig = WorkshopConfig(
         resultItem: 'Ventilation Termite',
         resultAmount: 1,
         durationMinutes: 8,
-        stackLimit: 10,
+        stackLimit: 1,
         sellable: true,
-        baseSaleValue: 12),
+        baseSaleValue: 12,
+        isEquipment: true),
     WorkshopRecipe(
         id: 'solarLight',
         displayName: 'Lumière solaire',
@@ -109,8 +121,9 @@ const workshopConfig = WorkshopConfig(
         resultItem: 'Lumière solaire',
         resultAmount: 1,
         durationMinutes: 8,
-        stackLimit: 10,
+        stackLimit: 1,
         sellable: true,
-        baseSaleValue: 12),
+        baseSaleValue: 12,
+        isEquipment: true),
   ],
 );

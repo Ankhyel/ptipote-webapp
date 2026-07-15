@@ -2,12 +2,13 @@
   "vitalityCostPerUnit": 5,
   "levelSpeedBonusPercent": 0.01,
   "maxLevelSpeedBonusPercent": 0.15,
+  "slotsPerLevel": 1,
   "recipes": [
-    {"id":"filter","displayName":"Filtre","category":"Protection","ingredients":{"Organique":2,"Minéral":1},"resultItem":"Filtre","resultAmount":1,"durationMinutes":2,"stackLimit":10,"sellable":true,"baseSaleValue":3},
-    {"id":"filterCartridge","displayName":"Cartouche de filtration","category":"Consommable","ingredients":{"Filtre":1,"Organique":1,"Minéral":1},"resultItem":"Cartouche de filtration","resultAmount":1,"durationMinutes":1,"stackLimit":10,"sellable":true,"baseSaleValue":4},
-    {"id":"shadeSuit","displayName":"Tenue ombragée","category":"Équipement","ingredients":{"Organique":4,"Minéral":2},"resultItem":"Tenue ombragée","resultAmount":1,"durationMinutes":5,"stackLimit":1,"sellable":true,"baseSaleValue":8},
-    {"id":"simpleFurniture","displayName":"Meuble simple","category":"Habitat","ingredients":{"Organique":3,"Minéral":2},"resultItem":"Meuble simple","resultAmount":1,"durationMinutes":3,"stackLimit":10,"sellable":true,"baseSaleValue":5},
-    {"id":"termiteVentilation","displayName":"Ventilation Termite","category":"Installation","ingredients":{"Organique":6,"Minéral":4},"resultItem":"Ventilation Termite","resultAmount":1,"durationMinutes":8,"stackLimit":10,"sellable":true,"baseSaleValue":12},
-    {"id":"solarLight","displayName":"Lumière solaire","category":"Installation","ingredients":{"Organique":5,"Minéral":5},"resultItem":"Lumière solaire","resultAmount":1,"durationMinutes":8,"stackLimit":10,"sellable":true,"baseSaleValue":12}
+    {"id":"filter","displayName":"Filtre","category":"Protection","ingredients":{"Organique":2,"Minéral":1},"resultItem":"Filtre","resultAmount":1,"durationMinutes":2,"stackLimit":10,"sellable":true,"baseSaleValue":3,"isEquipment":false},
+    {"id":"filterCartridge","displayName":"Cartouche de filtration","category":"Consommable","ingredients":{"Filtre":1,"Organique":1,"Minéral":1},"resultItem":"Cartouche de filtration","resultAmount":1,"durationMinutes":1,"stackLimit":10,"sellable":true,"baseSaleValue":4,"isEquipment":false},
+    {"id":"shadeSuit","displayName":"Tenue ombragée","category":"Équipement","ingredients":{"Organique":4,"Minéral":2},"resultItem":"Tenue ombragée","resultAmount":1,"durationMinutes":5,"stackLimit":1,"sellable":true,"baseSaleValue":8,"isEquipment":true},
+    {"id":"simpleFurniture","displayName":"Meuble simple","category":"Habitat","ingredients":{"Organique":3,"Minéral":2},"resultItem":"Meuble simple","resultAmount":1,"durationMinutes":3,"stackLimit":1,"sellable":true,"baseSaleValue":5,"isEquipment":true},
+    {"id":"termiteVentilation","displayName":"Ventilation Termite","category":"Installation","ingredients":{"Organique":6,"Minéral":4},"resultItem":"Ventilation Termite","resultAmount":1,"durationMinutes":8,"stackLimit":1,"sellable":true,"baseSaleValue":12,"isEquipment":true},
+    {"id":"solarLight","displayName":"Lumière solaire","category":"Installation","ingredients":{"Organique":5,"Minéral":5},"resultItem":"Lumière solaire","resultAmount":1,"durationMinutes":8,"stackLimit":1,"sellable":true,"baseSaleValue":12,"isEquipment":true}
   ]
 }

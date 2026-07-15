@@ -3,7 +3,7 @@ class MarketConfig {
     required this.constructionCost,
     required this.requiredCampHeartLevel,
     required this.requiredPopulation,
-    required this.saleSlots,
+    required this.saleSlotsPerLevel,
     required this.baseSaleIntervalMinutes,
     required this.valuePerBioBattery,
     required this.ptipoteIntervalMultiplier,
@@ -19,7 +19,7 @@ class MarketConfig {
   final Map<String, int> constructionCost;
   final int requiredCampHeartLevel;
   final int requiredPopulation;
-  final int saleSlots;
+  final int saleSlotsPerLevel;
   final int baseSaleIntervalMinutes;
   final int valuePerBioBattery;
   final double ptipoteIntervalMultiplier;
@@ -30,13 +30,15 @@ class MarketConfig {
   final int requestMinReturnMinutes;
   final int requestMaxReturnMinutes;
   final Map<String, int> saleValues;
+
+  int slotsForLevel(int level) => level.clamp(0, 99) * saleSlotsPerLevel;
 }
 
 const marketConfig = MarketConfig(
   constructionCost: <String, int>{'Organique': 6, 'Minéral': 6},
   requiredCampHeartLevel: 1,
   requiredPopulation: 5,
-  saleSlots: 3,
+  saleSlotsPerLevel: 3,
   baseSaleIntervalMinutes: 10,
   valuePerBioBattery: 5,
   ptipoteIntervalMultiplier: 0.9,

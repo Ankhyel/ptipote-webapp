@@ -953,18 +953,19 @@ Pour formater Dart:
 
 - Config et six recettes V1: `ptipote-app/lib/features/game/workshop_config.dart`, miroir `ptipote-dashboard/workshop-config.json`.
 - Modele `WorkshopCraftOrder`: recette, quantite, progression, prochaine unite, ressources reservees, P'TIPOTE optionnel et statut.
-- Une commande multiple active maximum. L'annulation conserve les objets termines et rend les ressources des unites restantes.
+- Les commandes sont limitees par les emplacements de l'Atelier: 1 au niveau 1, puis +1 emplacement par niveau. L'annulation conserve les objets termines et rend les ressources des unites restantes.
 - Sans P'TIPOTE: duree normale. Avec P'TIPOTE: bonus vitesse de 1% par niveau plafonne a 15%, cout de 5 Vitalite par unite.
 - A la fin, le P'TIPOTE redevient disponible; s'il atteint le seuil de repos, il rentre dans une alcove.
 - Le prototype conserve les stacks globaux de 10; `stackLimit` est prepare dans les recettes pour une future gestion par type d'objet.
-- Firebase: `users/{uid}/game/zone0.workshopOrder`.
+- Firebase: `users/{uid}/game/zone0.workshopOrders`; l'ancien champ unique `workshopOrder` est migre automatiquement a la lecture.
 - Effets reels de Filtre, Cartouche, Tenue, Meuble, Ventilation et Lumiere restent a brancher.
 
 ## 4. Marche
 
 - Config: `ptipote-app/lib/features/game/market_config.dart`, miroir `ptipote-dashboard/market-config.json`.
 - Construction: Coeur niveau 1, population 5, cout 6 Organique + 6 Mineral.
-- Trois emplacements dedies. Seuls les objets explicitement `sellable` sont transferes; le stock Maison n'est jamais vendu automatiquement.
+- Trois emplacements dedies au niveau 1, puis +3 par niveau. Les cases vides ouvrent un ajout depuis le stock Maison; une pile contient 10 materiaux/crafts ou 1 equipement. Le stock Maison n'est jamais vendu automatiquement.
+- `WorkshopRecipe.isEquipment` identifie les equipements V1: Tenue ombragee, Meuble simple, Ventilation Termite et Lumiere solaire.
 - Sans P'TIPOTE: ventes automatiques selon Population et Bien-etre. Conversion V1: 5 points de valeur vers 1 Bio-batterie.
 - Avec P'TIPOTE: cadence -10%, cout 5 Vitalite / 20 min, demandes d'habitants et livraison automatique.
 - Demandes: maximum 3, retour aleatoire persistant, report sans perte si objet ou P'TIPOTE absent.
@@ -975,6 +976,7 @@ Pour formater Dart:
 - Action manuelle `Recharger les balises`: +5 Securite, cooldown 10 min.
 - Configuration Dart dans `security_tower_config.dart` et miroir dashboard `security-tower-config.json`.
 - Les missions temporisees de surveillance existantes restent intactes.
+- La feuille de selection par puces de la Lisiere est reutilisee pour l'affectation a la Tour, au Marche et a l'Atelier; elle affiche egalement les indisponibilites (mission, repos, autre batiment, vitalite basse).
 
 ## 6. Dashboard
 

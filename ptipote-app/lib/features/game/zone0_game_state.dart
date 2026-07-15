@@ -36,7 +36,7 @@ class Zone0GameState extends ChangeNotifier {
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
   final List<ForageMission> missions = <ForageMission>[];
   final List<TowerMission> towerMissions = <TowerMission>[];
-  WorkshopCraftOrder? workshopOrder;
+  final List<WorkshopCraftOrder> workshopOrders = <WorkshopCraftOrder>[];
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
   final List<Zone0InventoryStack> marketStock = <Zone0InventoryStack>[];
   final List<MarketCustomerRequest> marketRequests = <MarketCustomerRequest>[];
@@ -93,12 +93,30 @@ class Zone0GameState extends ChangeNotifier {
         );
   }
 
-  bool isAssignedToWorkshop(String figurineId) =>
-      workshopOrder?.status == WorkshopOrderStatus.active &&
-      workshopOrder?.assignedPtipoteId == figurineId;
+  List<WorkshopCraftOrder> get activeWorkshopOrders => workshopOrders
+      .where((order) => order.status == WorkshopOrderStatus.active)
+      .toList();
+
+  int get workshopSlots => workshopConfig.slotsForLevel(fablabLevel);
+
+  bool isAssignedToWorkshop(String figurineId) => activeWorkshopOrders.any(
+        (order) => order.assignedPtipoteId == figurineId,
+      );
 
   bool isAssignedToMarket(String figurineId) =>
       marketAssignedPtipoteId == figurineId;
+
+  int get marketSlotLimit => marketConfig.slotsForLevel(marketLevel);
+
+  bool isEquipmentResource(String resource) {
+    return workshopConfig.recipes.any(
+      (recipe) => recipe.resultItem == resource && recipe.isEquipment,
+    );
+  }
+
+  int marketStackLimitFor(String resource) => isEquipmentResource(resource)
+      ? 1
+      : lisiereForageConfig.inventoryStackLimit;
 
   int get globalStockCapacity {
     return fablabConfig.baseGlobalStockCapacity +
@@ -322,9 +340,10 @@ class Zone0GameState extends ChangeNotifier {
     PtipoteFigurine? figurine,
   }) {
     resolveWorkshopOrder();
-    if (workshopOrder?.status == WorkshopOrderStatus.active) {
+    if (activeWorkshopOrders.length >= workshopSlots) {
       return const Zone0ActionResult(
-          success: false, message: 'Une commande est déjà en cours.');
+          success: false,
+          message: 'Tous les emplacements de l’Atelier sont occupés.');
     }
     if (quantity <= 0) {
       return const Zone0ActionResult(
@@ -356,7 +375,7 @@ class Zone0GameState extends ChangeNotifier {
         (Duration(minutes: recipe.durationMinutes).inSeconds * (1 - speedBonus))
             .round());
     final now = DateTime.now();
-    workshopOrder = WorkshopCraftOrder(
+    workshopOrders.add(WorkshopCraftOrder(
       id: 'workshop-${now.microsecondsSinceEpoch}',
       recipeId: recipe.id,
       requestedQuantity: quantity,
@@ -367,7 +386,7 @@ class Zone0GameState extends ChangeNotifier {
       nextCompletionTime: now.add(Duration(seconds: unitSeconds)),
       unitDurationSeconds: unitSeconds,
       reservedResources: totalCosts,
-    );
+    ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -377,10 +396,15 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool resolveWorkshopOrder({DateTime? now}) {
-    final order = workshopOrder;
-    if (order == null || order.status != WorkshopOrderStatus.active) {
-      return false;
+    var changed = false;
+    for (final order in List<WorkshopCraftOrder>.from(workshopOrders)) {
+      changed = _resolveWorkshopOrder(order, now: now) || changed;
     }
+    return changed;
+  }
+
+  bool _resolveWorkshopOrder(WorkshopCraftOrder order, {DateTime? now}) {
+    if (order.status != WorkshopOrderStatus.active) return false;
     final current = now ?? DateTime.now();
     if (current.isBefore(order.nextCompletionTime)) return false;
     final recipe = workshopConfig.recipe(order.recipeId);
@@ -441,8 +465,9 @@ class Zone0GameState extends ChangeNotifier {
     return true;
   }
 
-  Zone0ActionResult cancelWorkshopOrder() {
-    final order = workshopOrder;
+  Zone0ActionResult cancelWorkshopOrder(String orderId) {
+    final order =
+        workshopOrders.where((item) => item.id == orderId).firstOrNull;
     if (order == null || order.status != WorkshopOrderStatus.active) {
       return const Zone0ActionResult(
           success: false, message: 'Aucune commande active.');
@@ -505,12 +530,22 @@ class Zone0GameState extends ChangeNotifier {
     }
     final existing =
         marketStock.where((item) => item.resource == resource).firstOrNull;
-    if (existing == null && marketStock.length >= marketConfig.saleSlots) {
+    if (existing == null && marketStock.length >= marketSlotLimit) {
       return const Zone0ActionResult(
           success: false, message: 'Les trois emplacements sont occupés.');
     }
-    final moved =
-        removeResource(resource, math.min(amount, resourceAmount(resource)));
+    final freeInStack = marketStackLimitFor(resource) - (existing?.amount ?? 0);
+    if (freeInStack <= 0) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Cet emplacement accepte ${marketStackLimitFor(resource)} $resource maximum.',
+      );
+    }
+    final moved = removeResource(
+      resource,
+      math.min(amount, math.min(resourceAmount(resource), freeInStack)),
+    );
     if (moved <= 0) {
       return const Zone0ActionResult(
           success: false, message: 'Stock insuffisant.');
@@ -1641,10 +1676,21 @@ class Zone0GameState extends ChangeNotifier {
                 .whereType<TowerMission>(),
           );
       }
-      final workshopData = data['workshopOrder'];
-      workshopOrder = workshopData is Map
-          ? WorkshopCraftOrder.fromFirebase(workshopData)
-          : null;
+      workshopOrders.clear();
+      final workshopOrdersData = data['workshopOrders'];
+      if (workshopOrdersData is List) {
+        workshopOrders.addAll(
+          workshopOrdersData
+              .whereType<Map>()
+              .map(WorkshopCraftOrder.fromFirebase),
+        );
+      } else {
+        // V1 stored one order only. Keep it when upgrading the save format.
+        final workshopData = data['workshopOrder'];
+        if (workshopData is Map) {
+          workshopOrders.add(WorkshopCraftOrder.fromFirebase(workshopData));
+        }
+      }
       final marketData = data['market'];
       if (marketData is Map) {
         marketStock
@@ -2401,7 +2447,9 @@ class Zone0GameState extends ChangeNotifier {
           'towerAssignedIds': towerAssignedIds.toList(),
           'towerMissions':
               towerMissions.map((mission) => mission.toFirebase()).toList(),
-          'workshopOrder': workshopOrder?.toFirebase(),
+          'workshopOrder': null,
+          'workshopOrders':
+              workshopOrders.map((order) => order.toFirebase()).toList(),
           'market': <String, dynamic>{
             'stock': marketStock
                 .map((item) => <String, dynamic>{

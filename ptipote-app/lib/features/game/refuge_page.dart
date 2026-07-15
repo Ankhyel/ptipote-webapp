@@ -2793,8 +2793,80 @@ IconData _resourceIcon(String? resource) {
     'Minéral' || 'Mineral' => Icons.diamond_outlined,
     'Énergie' || 'Energie' => Icons.bolt_outlined,
     'Repas' || 'Repas simple' => Icons.restaurant_outlined,
+    'Filtre' || 'Cartouche de filtration' => Icons.filter_alt_outlined,
+    'Tenue ombragée' => Icons.checkroom_outlined,
+    'Meuble simple' => Icons.chair_outlined,
+    'Ventilation Termite' => Icons.air_outlined,
+    'Lumière solaire' => Icons.lightbulb_outline,
     _ => Icons.inventory_2_outlined,
   };
+}
+
+String _ptipoteActivityUnavailableReason(
+  Zone0GameState gameState,
+  PtipoteFigurine figurine,
+) {
+  final vitality = gameState.vitalityFor(figurine);
+  if (gameState.isOnMission(figurine.id)) return 'en mission';
+  if (gameState.isResting(figurine)) return 'au repos';
+  if (gameState.isAssignedToTower(figurine.id)) return 'à la Tour';
+  if (gameState.isAssignedToWorkshop(figurine.id)) return 'à l’Atelier';
+  if (gameState.isAssignedToMarket(figurine.id)) return 'au Marché';
+  if (vitality < ptipoteStatsConfig.minimumMissionVitality) {
+    return 'trop fatigué';
+  }
+  return 'indisponible';
+}
+
+Future<PtipoteFigurine?> _pickPtipoteForActivity({
+  required BuildContext context,
+  required Zone0GameState gameState,
+  required List<PtipoteFigurine> figurines,
+  required String title,
+}) {
+  return showModalBottomSheet<PtipoteFigurine>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(title,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 12),
+            if (figurines.isEmpty)
+              const Text('Aucun P’TIPOTE trouvé.')
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: figurines.map((figurine) {
+                  final selectable = !gameState.isBusy(figurine) &&
+                      gameState.vitalityFor(figurine) >=
+                          ptipoteStatsConfig.minimumMissionVitality;
+                  final suffix = selectable
+                      ? 'V${gameState.vitalityFor(figurine)}'
+                      : _ptipoteActivityUnavailableReason(gameState, figurine);
+                  return ChoiceChip(
+                    label: Text('${figurine.displayName} · $suffix'),
+                    selected: false,
+                    onSelected: selectable
+                        ? (_) => Navigator.of(context).pop(figurine)
+                        : null,
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class MissionReportsSheet extends StatelessWidget {
@@ -4531,53 +4603,10 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                             ),
                           ],
                         ] else
-                          ...available.map(
-                            (figurine) => _TowerFigurineRow(
-                              name: figurine.displayName,
-                              subtitle:
-                                  'Vitalité ${widget.gameState.vitalityFor(figurine)}/100',
-                              action: PopupMenuButton<TowerMissionPlan>(
-                                onSelected: (plan) {
-                                  final result =
-                                      widget.gameState.startTowerMission(
-                                    figurine: figurine,
-                                    plan: plan,
-                                  );
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(result.message)),
-                                  );
-                                },
-                                itemBuilder: (context) =>
-                                    TowerMissionPlan.values
-                                        .map(
-                                          (plan) => PopupMenuItem(
-                                            value: plan,
-                                            child: Text(_towerPlanLabel(plan)),
-                                          ),
-                                        )
-                                        .toList(),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    'Surveiller',
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onPrimary,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
+                          FilledButton.icon(
+                            onPressed: () => _chooseTowerMission(figurines),
+                            icon: const Icon(Icons.person_add_alt_1),
+                            label: const Text('Choisir un P’TIPOTE'),
                           ),
                       ],
                     ),
@@ -4603,6 +4632,44 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
       return 'Trop fatigué · Vitalité $vitality/100';
     }
     return 'Indisponible · Vitalité $vitality/100';
+  }
+
+  Future<void> _chooseTowerMission(List<PtipoteFigurine> figurines) async {
+    final figurine = await _pickPtipoteForActivity(
+      context: context,
+      gameState: widget.gameState,
+      figurines: figurines,
+      title: 'Affecter à la Tour',
+    );
+    if (figurine == null || !mounted) return;
+    final plan = await showModalBottomSheet<TowerMissionPlan>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          children: TowerMissionPlan.values
+              .map(
+                (plan) => ListTile(
+                  title: Text(_towerPlanLabel(plan)),
+                  subtitle: Text(plan == TowerMissionPlan.until25Vitality
+                      ? '${figurine.displayName} rentrera puis ira dormir.'
+                      : '${figurine.displayName} surveillera les abords.'),
+                  onTap: () => Navigator.of(context).pop(plan),
+                ),
+              )
+              .toList(),
+        ),
+      ),
+    );
+    if (plan == null || !mounted) return;
+    final result = widget.gameState.startTowerMission(
+      figurine: figurine,
+      plan: plan,
+    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   String _towerPlanLabel(TowerMissionPlan plan) {
@@ -4838,9 +4905,6 @@ class _MarketPageState extends State<MarketPage> {
           stream: _figurineService.watchMyFigurines(),
           builder: (context, snapshot) {
             final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-            final available = figurines
-                .where((item) => !widget.gameState.isBusy(item))
-                .toList();
             return ListView(
                 padding: const EdgeInsets.all(16),
                 children: <Widget>[
@@ -4874,57 +4938,53 @@ class _MarketPageState extends State<MarketPage> {
                                           widget.gameState.removeFromMarket(),
                                       child: const Text('Faire rentrer'))
                                 else
-                                  PopupMenuButton<PtipoteFigurine>(
-                                    onSelected: (figurine) => _message(widget
-                                        .gameState
-                                        .assignToMarket(figurine)
-                                        .message),
-                                    itemBuilder: (_) => available
-                                        .map((figurine) => PopupMenuItem(
-                                            value: figurine,
-                                            child: Text(
-                                                '${figurine.displayName} · Vit. ${widget.gameState.vitalityFor(figurine)}')))
-                                        .toList(),
-                                    child: const Padding(
-                                        padding:
-                                            EdgeInsets.symmetric(vertical: 12),
-                                        child: Text('Affecter un P’TIPOTE',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w900))),
+                                  FilledButton.icon(
+                                    onPressed: () async {
+                                      final figurine =
+                                          await _pickPtipoteForActivity(
+                                        context: context,
+                                        gameState: widget.gameState,
+                                        figurines: figurines,
+                                        title: 'Affecter au Marché',
+                                      );
+                                      if (figurine == null ||
+                                          !context.mounted) {
+                                        return;
+                                      }
+                                      _message(widget.gameState
+                                          .assignToMarket(figurine)
+                                          .message);
+                                    },
+                                    icon: const Icon(Icons.person_add_alt_1),
+                                    label: const Text('Affecter un P’TIPOTE'),
                                   ),
                               ]))),
                   const SizedBox(height: 10),
                   Text(
-                      'Stock de vente (${widget.gameState.marketStock.length}/${marketConfig.saleSlots})',
-                      style: const TextStyle(fontWeight: FontWeight.w900)),
-                  ...widget.gameState.marketStock.map((stack) => ListTile(
-                      title: Text(stack.resource),
-                      trailing: Text('${stack.amount}'),
-                      onLongPress: () => _message(widget.gameState
-                          .returnMarketStock(stack.resource)
-                          .message))),
-                  if (widget.gameState.marketStock.isEmpty)
-                    const Text(
-                        'Stock vide. Ajoute volontairement des objets depuis la liste ci-dessous.'),
-                  const Divider(),
-                  ...marketConfig.saleValues.keys
-                      .where((resource) =>
-                          widget.gameState.resourceAmount(resource) > 0)
-                      .map((resource) => ListTile(
-                            title: Text(resource),
-                            subtitle: Text(
-                                'Maison : ${widget.gameState.resourceAmount(resource)} · valeur ${marketConfig.saleValues[resource]}'),
-                            trailing: Wrap(
-                                spacing: 4,
-                                children: <int>[1, 5, 10]
-                                    .map((amount) => TextButton(
-                                        onPressed: () => _message(widget
-                                            .gameState
-                                            .transferToMarket(resource, amount)
-                                            .message),
-                                        child: Text('+$amount')))
-                                    .toList()),
-                          )),
+                    'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  GridView.count(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: List<Widget>.generate(
+                      widget.gameState.marketSlotLimit,
+                      (index) {
+                        final stack =
+                            index < widget.gameState.marketStock.length
+                                ? widget.gameState.marketStock[index]
+                                : null;
+                        return _MarketStockSlot(
+                          stack: stack,
+                          onTap: () => _editMarketSlot(stack?.resource),
+                        );
+                      },
+                    ),
+                  ),
                   const Divider(),
                   const Text('Demandes des habitants',
                       style: TextStyle(fontWeight: FontWeight.w900)),
@@ -4949,6 +5009,131 @@ class _MarketPageState extends State<MarketPage> {
 
   void _message(String value) => ScaffoldMessenger.of(context)
       .showSnackBar(SnackBar(content: Text(value)));
+
+  Future<void> _editMarketSlot(String? initialResource) async {
+    final resources = marketConfig.saleValues.keys
+        .where((resource) =>
+            widget.gameState.resourceAmount(resource) > 0 ||
+            resource == initialResource)
+        .toList();
+    if (resources.isEmpty) {
+      _message('Aucun objet vendable dans le stock Maison.');
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          children: <Widget>[
+            Text(initialResource ?? 'Ajouter au Marché',
+                style: Theme.of(sheetContext)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            ...resources.map((resource) => ListTile(
+                  leading: Icon(_resourceIcon(resource)),
+                  title: Text(resource),
+                  subtitle: Text(
+                    'Maison : ${widget.gameState.resourceAmount(resource)} · '
+                    '${widget.gameState.isEquipmentResource(resource) ? 'équipement : 1 par case' : '10 par case'}',
+                  ),
+                  trailing: Wrap(
+                    spacing: 2,
+                    children: <int>[1, 5, 10]
+                        .map((amount) => TextButton(
+                              onPressed: () {
+                                final result = widget.gameState
+                                    .transferToMarket(resource, amount);
+                                _message(result.message);
+                                if (result.success) {
+                                  Navigator.of(sheetContext).pop();
+                                }
+                              },
+                              child: Text('+$amount'),
+                            ))
+                        .toList(),
+                  ),
+                )),
+            if (initialResource != null) ...<Widget>[
+              const Divider(),
+              OutlinedButton.icon(
+                onPressed: () {
+                  _message(widget.gameState
+                      .returnMarketStock(initialResource)
+                      .message);
+                  Navigator.of(sheetContext).pop();
+                },
+                icon: const Icon(Icons.undo_outlined),
+                label: const Text('Rendre à la Maison'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MarketStockSlot extends StatelessWidget {
+  const _MarketStockSlot({required this.stack, required this.onTap});
+
+  final Zone0InventoryStack? stack;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final filled = stack != null;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: filled
+              ? Theme.of(context).colorScheme.surface
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color:
+                Theme.of(context).colorScheme.outline.withValues(alpha: 0.32),
+          ),
+        ),
+        child: Stack(
+          children: <Widget>[
+            Center(
+              child: Icon(
+                filled ? _resourceIcon(stack!.resource) : Icons.add,
+                size: 34,
+                color: filled ? Theme.of(context).colorScheme.primary : null,
+              ),
+            ),
+            if (filled)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Text('${stack!.amount}',
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+              ),
+            if (filled)
+              Positioned(
+                left: 6,
+                right: 6,
+                bottom: 7,
+                child: Text(stack!.resource,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w800)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ResourceCostLine extends StatelessWidget {
@@ -5074,13 +5259,11 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
 
   @override
   Widget build(BuildContext context) {
-    final order = widget.gameState.workshopOrder;
+    final orders = widget.gameState.activeWorkshopOrders;
     return StreamBuilder<List<PtipoteFigurine>>(
       stream: _figurineService.watchMyFigurines(),
       builder: (context, snapshot) {
         final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-        final available =
-            figurines.where((item) => !widget.gameState.isBusy(item)).toList();
         return ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
@@ -5089,32 +5272,35 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                     .textTheme
                     .titleLarge
                     ?.copyWith(fontWeight: FontWeight.w900)),
-            const Text(
-                'Une commande active à la fois. Les objets terminés vont dans le stock global.'),
+            Text(
+              'Atelier niv. ${widget.gameState.fablabLevel} · '
+              '${orders.length}/${widget.gameState.workshopSlots} emplacement(s) occupé(s). '
+              'Chaque niveau ajoute un emplacement de craft.',
+            ),
             const SizedBox(height: 12),
-            if (order != null && order.status == WorkshopOrderStatus.active)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        Text(workshopConfig.recipe(order.recipeId).displayName,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w900)),
-                        Text(
-                            '${order.completedQuantity} / ${order.requestedQuantity} · prochaine unité ${_remaining(order)}'),
-                        Text(order.assignedPtipoteName == null
-                            ? 'Mode manuel'
-                            : 'Avec ${order.assignedPtipoteName}'),
-                        OutlinedButton(
-                            onPressed: () =>
-                                widget.gameState.cancelWorkshopOrder(),
-                            child: const Text('Annuler')),
-                      ]),
-                ),
-              )
-            else ...<Widget>[
+            ...orders.map((order) => Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Text(
+                              workshopConfig.recipe(order.recipeId).displayName,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w900)),
+                          Text(
+                              '${order.completedQuantity} / ${order.requestedQuantity} · prochaine unité ${_remaining(order)}'),
+                          Text(order.assignedPtipoteName == null
+                              ? 'Mode manuel'
+                              : 'Avec ${order.assignedPtipoteName}'),
+                          OutlinedButton(
+                              onPressed: () => widget.gameState
+                                  .cancelWorkshopOrder(order.id),
+                              child: const Text('Annuler')),
+                        ]),
+                  ),
+                )),
+            if (orders.length < widget.gameState.workshopSlots) ...<Widget>[
               SegmentedButton<int>(
                   segments: const <ButtonSegment<int>>[
                     ButtonSegment(value: 1, label: Text('1')),
@@ -5144,35 +5330,29 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                             FilledButton(
                                 onPressed: () => _start(recipe, null),
                                 child: const Text('Lancer manuellement')),
-                            PopupMenuButton<PtipoteFigurine>(
-                              onSelected: (figurine) =>
-                                  _start(recipe, figurine),
-                              itemBuilder: (_) => available
-                                  .map((figurine) => PopupMenuItem(
-                                      value: figurine,
-                                      child: Text(
-                                          '${figurine.displayName} · Vit. ${widget.gameState.vitalityFor(figurine)}')))
-                                  .toList(),
-                              child: Container(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .outline),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text('Confier à un P’TIPOTE',
-                                    style:
-                                        TextStyle(fontWeight: FontWeight.w800)),
-                              ),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final figurine = await _pickPtipoteForActivity(
+                                  context: context,
+                                  gameState: widget.gameState,
+                                  figurines: figurines,
+                                  title: 'Confier ${recipe.displayName}',
+                                );
+                                if (figurine != null && context.mounted) {
+                                  _start(recipe, figurine);
+                                }
+                              },
+                              icon: const Icon(Icons.person_add_alt_1),
+                              label: const Text('Confier à un P’TIPOTE'),
                             ),
                           ]),
                     ),
                   )),
-            ],
+            ] else
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: Text('Tous les emplacements sont occupés.'),
+              ),
           ],
         );
       },
