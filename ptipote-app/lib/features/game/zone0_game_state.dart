@@ -9,6 +9,7 @@ import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'building_construction_config.dart';
 import 'camp_generator_config.dart';
+import 'housing_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'kernel_config.dart';
@@ -85,6 +86,12 @@ class Zone0GameState extends ChangeNotifier {
   int atelierLevel = 0;
   int cuisineLevel = 0;
   int houseLevel = 1;
+  // Existing saves started with three drawn alcoves. Keep that capacity during
+  // migration even though new House level 1 starts with two.
+  int alcoveCapacity = 3;
+  int housingUnits = 0;
+  int housingCapacity = kernelConfig.startingPopulation;
+  CommunityConstructionThanks? communityConstructionThanks;
   int plaineNurseryLevel = 0;
   PTibugCreationOrder? pTibugCreationOrder;
   int securityTowerLevel = 0;
@@ -145,8 +152,25 @@ class Zone0GameState extends ChangeNotifier {
   int get securityWellbeingModifier =>
       towerOperationsConfig.wellbeingBandFor(refugeSafety).wellbeingModifier;
 
-  int get displayedCampWellbeing =>
-      (campWellbeing + securityWellbeingModifier).clamp(0, 100);
+  int get unhousedPopulation =>
+      math.max(0, currentPopulation - housingCapacity);
+
+  int get housingWellbeingPenalty => math.min(
+        housingConfig.maximumHousingWellbeingPenalty,
+        unhousedPopulation * housingConfig.wellbeingPenaltyPerUnhousedResident,
+      );
+
+  int get communityThanksWellbeingBonus {
+    final thanks = communityConstructionThanks;
+    if (thanks == null || !thanks.isActive) return 0;
+    return thanks.bonusValue;
+  }
+
+  int get displayedCampWellbeing => (campWellbeing +
+          securityWellbeingModifier -
+          housingWellbeingPenalty +
+          communityThanksWellbeingBonus)
+      .clamp(0, 100);
 
   bool get isMerchantAvailable =>
       merchantAvailableUntil != null &&
@@ -1769,27 +1793,64 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   ConstructionProject projectFor(String targetId) {
+    final existing = constructionProjects[targetId];
+    final currentLevel = _buildingLevel(targetId);
+    if (existing != null) {
+      if (!existing.isInProgress &&
+          existing.state == ConstructionProjectState.built &&
+          existing.currentLevel == currentLevel) {
+        final targetLevel = currentLevel + 1;
+        existing.prepareNextLevel(
+          targetLevel: targetLevel,
+          requirements: _projectRequirements(targetId, targetLevel),
+          constructionDuration: _projectDuration(targetId),
+        );
+      }
+      return existing;
+    }
     return constructionProjects.putIfAbsent(targetId, () {
-      final definition = buildingConstructionConfig.project(targetId);
+      final targetLevel = currentLevel + 1;
       return ConstructionProject(
         projectId: 'project-$targetId',
         targetId: targetId,
         targetType: targetId,
-        currentLevel: _buildingLevel(targetId),
-        targetLevel: _buildingLevel(targetId) + 1,
-        requirements: definition.requirements(
-          buildingConstructionConfig.mineralCostMultiplier,
-        ),
-        constructionDuration: Duration(minutes: definition.durationMinutes),
+        currentLevel: currentLevel,
+        targetLevel: targetLevel,
+        requirements: _projectRequirements(targetId, targetLevel),
+        constructionDuration: _projectDuration(targetId),
       );
     });
   }
+
+  Map<String, int> _projectRequirements(String targetId, int targetLevel) {
+    if (targetId == 'housing') {
+      return housingConfig.housingRequirementsForUnit(targetLevel).map(
+            (resource, amount) => MapEntry(
+              resource,
+              resource == 'Minéral'
+                  ? (amount * buildingConstructionConfig.mineralCostMultiplier)
+                      .ceil()
+                  : amount,
+            ),
+          );
+    }
+    return buildingConstructionConfig
+        .project(targetId)
+        .requirements(buildingConstructionConfig.mineralCostMultiplier);
+  }
+
+  Duration _projectDuration(String targetId) => Duration(
+        minutes: targetId == 'housing'
+            ? housingConfig.housingDurationMinutes
+            : buildingConstructionConfig.project(targetId).durationMinutes,
+      );
 
   int _buildingLevel(String targetId) => switch (targetId) {
         'fablab' => atelierLevel,
         'securityTower' => securityTowerLevel,
         'market' => marketLevel,
         'house' => houseLevel,
+        'housing' => housingUnits,
         'plaineNursery' => plaineNurseryLevel,
         _ => 0,
       };
@@ -1896,6 +1957,11 @@ class Zone0GameState extends ChangeNotifier {
   bool resolveConstructionProjects({DateTime? now}) {
     final current = now ?? DateTime.now();
     var changed = false;
+    if (communityConstructionThanks != null &&
+        !communityConstructionThanks!.isActiveAt(current)) {
+      communityConstructionThanks = null;
+      changed = true;
+    }
     for (final project in constructionProjects.values) {
       if (!project.isInProgress || project.endsAt!.isAfter(current)) continue;
       _completeConstructionProject(project, current);
@@ -1931,6 +1997,13 @@ class Zone0GameState extends ChangeNotifier {
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
       case 'house':
         houseLevel = project.currentLevel;
+        alcoveCapacity = math.max(
+          alcoveCapacity,
+          housingConfig.alcovesForHouseLevel(houseLevel),
+        );
+      case 'housing':
+        housingUnits = project.currentLevel;
+        housingCapacity += housingConfig.residentsPerHousingUnit;
       case 'plaineNursery':
         plaineNurseryLevel = project.currentLevel;
         if (activePTibugPatterns.isEmpty) {
@@ -1941,6 +2014,50 @@ class Zone0GameState extends ChangeNotifier {
       message:
           'Les travaux de ${buildingConstructionConfig.project(project.targetId).label} sont terminés. Niveau ${project.currentLevel}.',
     ));
+  }
+
+  Zone0ActionResult thankResidentsForHousing(String projectId) {
+    final project = constructionProjects[projectId];
+    if (project == null ||
+        project.targetId != 'housing' ||
+        project.completedAt == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucun logement termine a remercier.',
+      );
+    }
+    if (communityConstructionThanks?.sourceProjectId == projectId) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Les habitants ont deja ete remercies.',
+      );
+    }
+    if (bioBatteries < housingConfig.thanksBioBatteryCost) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            '${housingConfig.thanksBioBatteryCost} Bio-batteries requises.',
+      );
+    }
+    bioBatteries -= housingConfig.thanksBioBatteryCost;
+    final now = DateTime.now();
+    communityConstructionThanks = CommunityConstructionThanks(
+      bonusValue: housingConfig.thanksWellbeingBonus,
+      startedAt: now,
+      endsAt: now.add(Duration(hours: housingConfig.thanksDurationHours)),
+      sourceProjectId: projectId,
+    );
+    reports.add(PtipoteMissionReport.system(
+      message:
+          'Les habitants remercient le refuge : +${housingConfig.thanksWellbeingBonus} Bien-etre temporaire.',
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    unawaited(saveBuildingsToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Remerciement offert.',
+    );
   }
 
   Zone0ActionResult startPTibugCreation(PTibugSpecies species) {
@@ -2655,8 +2772,22 @@ class Zone0GameState extends ChangeNotifier {
         }
         final houseData = buildingsData['house'];
         if (houseData is Map) {
-          houseLevel =
-              _readInt(houseData['currentLevel'], fallback: 1).clamp(1, 5);
+          houseLevel = _readInt(houseData['currentLevel'], fallback: 1)
+              .clamp(1, housingConfig.houseMaxLevel);
+          alcoveCapacity = _readInt(
+            houseData['alcoveCapacity'],
+            fallback: alcoveCapacity,
+          ).clamp(1, 8);
+        }
+        final housingData = buildingsData['housing'];
+        if (housingData is Map) {
+          housingUnits = _readInt(housingData['units']);
+          housingCapacity = _readInt(
+            housingData['capacity'],
+            fallback: currentPopulation,
+          );
+          communityConstructionThanks =
+              CommunityConstructionThanks.fromFirebase(housingData['thanks']);
         }
         final projectData = buildingsData['projects'];
         if (projectData is Map) {
@@ -2670,6 +2801,11 @@ class Zone0GameState extends ChangeNotifier {
       // Migration for saves created before the Fablab units were independent.
       if (atelierLevel == 0 && fablabLevel > 0) atelierLevel = fablabLevel;
       if (cuisineLevel == 0 && atelierLevel > 0) cuisineLevel = 1;
+      housingCapacity = math.max(housingCapacity, currentPopulation);
+      alcoveCapacity = math.max(
+        alcoveCapacity,
+        housingConfig.alcovesForHouseLevel(houseLevel),
+      );
       refugeSafety = _readInt(data['campSecurity']).clamp(
         0,
         securityTowerConfig.maxSecurity,
@@ -3747,8 +3883,14 @@ class Zone0GameState extends ChangeNotifier {
               'displayName': 'Maison',
               'state': 'built',
               'currentLevel': houseLevel,
-              'maxLevel': 5,
+              'maxLevel': housingConfig.houseMaxLevel,
+              'alcoveCapacity': alcoveCapacity,
               'isVisible': true,
+            },
+            'housing': <String, dynamic>{
+              'units': housingUnits,
+              'capacity': housingCapacity,
+              'thanks': communityConstructionThanks?.toFirebase(),
             },
             'projects': constructionProjects.map(
               (key, value) => MapEntry(key, value.toFirebase()),
@@ -4096,6 +4238,49 @@ enum ConstructionProjectState {
   maxLevel,
 }
 
+class CommunityConstructionThanks {
+  const CommunityConstructionThanks({
+    required this.bonusValue,
+    required this.startedAt,
+    required this.endsAt,
+    required this.sourceProjectId,
+  });
+
+  factory CommunityConstructionThanks.fromFirebase(Object? value) {
+    if (value is! Map) {
+      return CommunityConstructionThanks(
+        bonusValue: 0,
+        startedAt: DateTime.fromMillisecondsSinceEpoch(0),
+        endsAt: DateTime.fromMillisecondsSinceEpoch(0),
+        sourceProjectId: '',
+      );
+    }
+    return CommunityConstructionThanks(
+      bonusValue: Zone0GameState.instance._readInt(value['bonusValue']),
+      startedAt: Zone0GameState.instance._readDate(value['startedAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      endsAt: Zone0GameState.instance._readDate(value['endsAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      sourceProjectId: '${value['sourceProjectId'] ?? ''}',
+    );
+  }
+
+  final int bonusValue;
+  final DateTime startedAt;
+  final DateTime endsAt;
+  final String sourceProjectId;
+
+  bool get isActive => isActiveAt(DateTime.now());
+  bool isActiveAt(DateTime now) => now.isBefore(endsAt);
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'bonusValue': bonusValue,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'endsAt': Timestamp.fromDate(endsAt),
+        'sourceProjectId': sourceProjectId,
+      };
+}
+
 class ConstructionProject {
   ConstructionProject({
     required this.projectId,
@@ -4148,9 +4333,9 @@ class ConstructionProject {
   final String targetType;
   int currentLevel;
   int targetLevel;
-  final Map<String, int> requirements;
+  Map<String, int> requirements;
   final Map<String, int> depositedMaterials;
-  final Duration constructionDuration;
+  Duration constructionDuration;
   ConstructionProjectState state;
   DateTime? startedAt;
   DateTime? endsAt;
@@ -4166,6 +4351,21 @@ class ConstructionProject {
       .every((entry) => (depositedMaterials[entry.key] ?? 0) >= entry.value);
   int missingFor(String resource) => math.max(
       0, (requirements[resource] ?? 0) - (depositedMaterials[resource] ?? 0));
+
+  void prepareNextLevel({
+    required int targetLevel,
+    required Map<String, int> requirements,
+    required Duration constructionDuration,
+  }) {
+    this.targetLevel = targetLevel;
+    this.requirements = requirements;
+    this.constructionDuration = constructionDuration;
+    depositedMaterials.clear();
+    startedAt = null;
+    endsAt = null;
+    completedAt = null;
+    state = ConstructionProjectState.available;
+  }
 
   void refreshState() {
     if (isInProgress || state == ConstructionProjectState.built) return;

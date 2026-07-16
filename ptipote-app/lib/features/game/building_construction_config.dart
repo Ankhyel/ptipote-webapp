@@ -63,6 +63,12 @@ const buildingConstructionConfig = BuildingConstructionConfig(
       baseRequirements: <String, int>{'Organique': 5, 'Minéral': 9},
       durationMinutes: 1,
     ),
+    'housing': BuildingProjectDefinition(
+      id: 'housing',
+      label: 'Logement',
+      baseRequirements: <String, int>{'Organique': 30, 'Minéral': 60},
+      durationMinutes: 60,
+    ),
     'plaineNursery': BuildingProjectDefinition(
       id: 'plaineNursery',
       label: 'Nurserie P’TIBUG',

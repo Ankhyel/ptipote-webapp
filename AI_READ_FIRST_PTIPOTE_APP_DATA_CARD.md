@@ -999,7 +999,21 @@ Pour formater Dart:
 - Le Fablab, la Tour et le Marche utilisent les memes controles: +1, +5, Max, recuperation par ressource puis `Commencer les travaux`. La Tour controle le niveau du Coeur et le Marche controle niveau du Coeur et Population avant de permettre les depots. Ces preconditions sont aussi verifiees par le moteur au lancement.
 - La construction Fablab applique `atelierLevel`, conserve `fablabLevel` en compatibilite, initialise Cuisine niveau 1 et maintient le bonus de stock sur l'Atelier. Les chantiers Tour et Marche conservent leurs effets existants seulement lorsque le timer est termine.
 - Migration de sauvegarde: un ancien `fablabLevel` initialise `atelierLevel`; Cuisine est initialisee au niveau 1 quand l'ancien Fablab etait construit. Les niveaux existants Tour, Marche et Recycleur ne sont pas supprimes.
-- Attentes de migration: Maison, logements agreges, alcoves supplementaires, malus Bien-etre des habitants non loges et remerciement communautaire restent a raccorder a leurs ecrans respectifs. Les boutons historiques de construction Tour/Marche sont conserves en compatibilite interne mais ne sont plus utilises par l'UI.
+- Maison et logements sont maintenant branches au projet commun: amelioration Maison, capacite d'alcoves persistante, logements agreges, habitants non loges, malus de Bien-etre et remerciement communautaire temporaire. Les boutons historiques de construction Tour/Marche sont conserves en compatibilite interne mais ne sont plus utilises par l'UI.
+
+### Maison Et Logements
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/game/housing_config.dart` | Niveaux de Maison, alcoves, cout/duree des logements, malus et bonus communautaire. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Capacites persistantes, chantier `housing`, calcul des habitants non loges et effet temporaire de remerciement. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Action Maison, fiche Amelioration/Logements et alcoves affichees selon la capacite. |
+
+- La Maison part de la capacite visuelle existante de trois alcoves pour ne retirer aucune alcove aux anciennes sauvegardes. Les nouveaux paliers configures restent 2, 3, 4, 6 et 8; la migration conserve toujours la valeur la plus favorable deja possedee.
+- Un logement ajoute trois places. `unhousedPopulation = max(0, currentPopulation - housingCapacity)` et applique `-3 Bien-etre` par habitant, plafonne a `-30`.
+- La capacite initiale de logement est migree a la Population actuelle: aucun joueur existant ne recoit un malus brutal a la premiere ouverture. Les logements n'ajoutent jamais d'habitants.
+- Apres un logement termine, le joueur peut depenser 2 Bio-batteries pour un bonus temporaire de Bien-etre de +3 pendant 48 h. Cet effet est sauvegarde avec ses timestamps et expire hors ligne.
+- Attentes: le Dashboard HTML doit encore exposer `housing_config.dart`; l'etat `waitingForBed` et une Pépiniere active restent prepares pour une prochaine iteration.
 
 ## Dechets Et Recycleur V1
 

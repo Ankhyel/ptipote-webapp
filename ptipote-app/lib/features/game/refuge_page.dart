@@ -1029,7 +1029,21 @@ class _MaisonPageState extends State<_MaisonPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Maison')),
+      appBar: AppBar(
+        title: const Text('Maison'),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Amelioration et logements',
+            icon: const Icon(Icons.construction_outlined),
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              showDragHandle: true,
+              isScrollControlled: true,
+              builder: (_) => _HouseManagementSheet(gameState: _gameState),
+            ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -1058,7 +1072,7 @@ class _MaisonPageState extends State<_MaisonPage>
                       ),
                     ),
                   ),
-                  const _AlcoveLayer(),
+                  _AlcoveLayer(alcoveCount: _gameState.alcoveCapacity),
                   const _FloorLayer(),
                   StreamBuilder<List<PtipoteFigurine>>(
                     stream: _figurineService.watchMyFigurines(),
@@ -1102,6 +1116,7 @@ class _MaisonPageState extends State<_MaisonPage>
                             availableSimpleMeals: _gameState.resourceAmount(
                               craftConfig.simpleMealRecipe.resultItem,
                             ),
+                            alcoveCapacity: _gameState.alcoveCapacity,
                             lastCuddleAt: (figurine) =>
                                 _gameState.lastCuddleAt[figurine.id],
                             onToggleFigurine: _toggleFigurine,
@@ -1143,6 +1158,149 @@ class _MaisonPageState extends State<_MaisonPage>
       context: context,
       showDragHandle: true,
       builder: (_) => MissionReportsSheet(gameState: _gameState),
+    );
+  }
+}
+
+class _HouseManagementSheet extends StatefulWidget {
+  const _HouseManagementSheet({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  State<_HouseManagementSheet> createState() => _HouseManagementSheetState();
+}
+
+class _HouseManagementSheetState extends State<_HouseManagementSheet> {
+  @override
+  void initState() {
+    super.initState();
+    widget.gameState.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    widget.gameState.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  void _openProject({
+    required String targetId,
+    required String title,
+    required String description,
+    String? footer,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => _ConstructionProjectSheet(
+        gameState: widget.gameState,
+        targetId: targetId,
+        title: title,
+        description: description,
+        footer: footer,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.gameState;
+    final finishedHousing = state.constructionProjects['housing'];
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          18,
+          12,
+          18,
+          18 + MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'Maison',
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Niveau ${state.houseLevel} · ${state.alcoveCapacity} alcoves actives',
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: state.houseLevel >= 5
+                  ? null
+                  : () => _openProject(
+                        targetId: 'house',
+                        title: 'Ameliorer la Maison',
+                        description:
+                            'Une Maison plus stable ajoute des alcoves pour le repos des P’TIPOTES.',
+                        footer: 'Niveau suivant : alcoves supplementaires.',
+                      ),
+              icon: const Icon(Icons.bedroom_parent_outlined),
+              label: const Text('Amelioration'),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Logements',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            Text(
+              'Population ${state.currentPopulation} · capacite ${state.housingCapacity} · sans logement ${state.unhousedPopulation}',
+            ),
+            if (state.housingWellbeingPenalty > 0)
+              Text(
+                'Bien-etre : -${state.housingWellbeingPenalty} (logements)',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: () => _openProject(
+                targetId: 'housing',
+                title: 'Construire un logement',
+                description:
+                    'Un logement accueille trois habitants. Les materiaux sont poses avant le chantier.',
+                footer: 'Capacite : +3 habitants a la fin des travaux.',
+              ),
+              icon: const Icon(Icons.home_work_outlined),
+              label: const Text('Construire un logement'),
+            ),
+            if (finishedHousing != null &&
+                finishedHousing.completedAt != null &&
+                state.communityConstructionThanks?.sourceProjectId !=
+                    finishedHousing.projectId) ...<Widget>[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () {
+                  final result = state.thankResidentsForHousing(
+                    finishedHousing.projectId,
+                  );
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text(result.message)));
+                },
+                child: const Text('Remercier les habitants'),
+              ),
+            ],
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1541,21 +1699,27 @@ class _FloorLayer extends StatelessWidget {
 }
 
 class _AlcoveLayer extends StatelessWidget {
-  const _AlcoveLayer();
+  const _AlcoveLayer({required this.alcoveCount});
+
+  final int alcoveCount;
 
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final alcoveWidth = constraints.maxWidth * 0.24;
+          final columns = math.min(4, alcoveCount);
+          final alcoveWidth = constraints.maxWidth * 0.20;
           final alcoveHeight = alcoveWidth * 0.52;
           return Stack(
-            children: List<Widget>.generate(3, (index) {
-              final left = constraints.maxWidth * (0.18 + index * 0.29);
+            children: List<Widget>.generate(alcoveCount, (index) {
+              final column = index % columns;
+              final row = index ~/ columns;
+              final left = constraints.maxWidth *
+                  (0.10 + column * (0.80 / math.max(1, columns - 1)));
               return Positioned(
                 left: left,
-                top: constraints.maxHeight * 0.28,
+                top: constraints.maxHeight * (0.28 + row * 0.08),
                 width: alcoveWidth,
                 height: alcoveHeight,
                 child: CustomPaint(painter: _AlcovePainter()),
@@ -1593,6 +1757,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.cuddleProgress,
     required this.autoPreferenceFor,
     required this.availableSimpleMeals,
+    required this.alcoveCapacity,
     required this.lastCuddleAt,
     required this.onToggleFigurine,
     required this.onAutoPreferenceChanged,
@@ -1626,6 +1791,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final PtipoteAutoAssignmentPreference Function(PtipoteFigurine figurine)
       autoPreferenceFor;
   final int availableSimpleMeals;
+  final int alcoveCapacity;
   final DateTime? Function(PtipoteFigurine figurine) lastCuddleAt;
   final ValueChanged<PtipoteFigurine> onToggleFigurine;
   final void Function(
@@ -1734,7 +1900,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
   @override
   Widget build(BuildContext context) {
     _syncMotions();
-    final resting = widget.figurines
+    final allResting = widget.figurines
         .where(
           (figurine) =>
               !widget.isOnMission(figurine.id) &&
@@ -1742,15 +1908,17 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
               !widget.isAssignedToActiveBuilding(figurine.id) &&
               widget.isResting(figurine),
         )
-        .take(3)
         .toList();
+    final resting = allResting.take(widget.alcoveCapacity).toList();
+    final restingIds = resting.map((figurine) => figurine.id).toSet();
     final active = widget.figurines
         .where(
           (figurine) =>
               !widget.isOnMission(figurine.id) &&
               !widget.isAssignedToTower(figurine.id) &&
               !widget.isAssignedToActiveBuilding(figurine.id) &&
-              !widget.isResting(figurine),
+              (!widget.isResting(figurine) ||
+                  !restingIds.contains(figurine.id)),
         )
         .toList();
 
@@ -1810,10 +1978,13 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
               }),
               ...List<Widget>.generate(resting.length, (index) {
                 final figurine = resting[index];
-                final alcoveCenter =
-                    constraints.maxWidth * (0.30 + index * 0.29);
+                final columns = math.min(4, widget.alcoveCapacity);
+                final column = index % columns;
+                final row = index ~/ columns;
+                final alcoveCenter = constraints.maxWidth *
+                    (0.20 + column * (0.60 / math.max(1, columns - 1)));
                 final left = alcoveCenter - spriteSize / 2;
-                final top = constraints.maxHeight * 0.26;
+                final top = constraints.maxHeight * (0.26 + row * 0.08);
                 placements[figurine.id] = _PtipotePlacement(
                   left: left,
                   top: top,
