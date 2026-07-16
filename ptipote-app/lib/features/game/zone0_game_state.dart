@@ -1846,7 +1846,33 @@ class Zone0GameState extends ChangeNotifier {
         success: true, message: '$amount $resource rendu à la Maison.');
   }
 
-  Zone0ActionResult startConstructionProject(String targetId) {
+  Zone0ActionResult startConstructionProject(
+    String targetId, {
+    int? campHeartLevel,
+  }) {
+    if (targetId == 'securityTower' &&
+        (campHeartLevel ?? 0) < securityTowerConfig.requiredCampHeartLevel) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Le Cœur du Camp doit atteindre le niveau ${securityTowerConfig.requiredCampHeartLevel}.',
+      );
+    }
+    if (targetId == 'market') {
+      if ((campHeartLevel ?? 0) < marketConfig.requiredCampHeartLevel) {
+        return Zone0ActionResult(
+          success: false,
+          message:
+              'Le Cœur du Camp doit atteindre le niveau ${marketConfig.requiredCampHeartLevel}.',
+        );
+      }
+      if (currentPopulation < marketConfig.requiredPopulation) {
+        return Zone0ActionResult(
+          success: false,
+          message: 'Population requise : ${marketConfig.requiredPopulation}.',
+        );
+      }
+    }
     final project = projectFor(targetId);
     if (!project.isReady) {
       return const Zone0ActionResult(

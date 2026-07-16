@@ -4549,90 +4549,20 @@ class SecurityTowerConstructionSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cost = securityTowerConfig.constructionCost;
     final levelOk =
         campHeartLevel >= securityTowerConfig.requiredCampHeartLevel;
-    final canBuild = levelOk && gameState.hasResources(cost);
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 18,
-          right: 18,
-          bottom: 18 + MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              'Tour de sécurité',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'La Tour surveille les abords du refuge et réduit les risques lors des sorties en Lisière.',
-            ),
-            const SizedBox(height: 14),
-            if (!levelOk)
-              Text(
-                'Le Cœur du Camp doit atteindre le niveau ${securityTowerConfig.requiredCampHeartLevel}.',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontWeight: FontWeight.w900,
-                ),
-              )
-            else ...<Widget>[
-              _ResourceCostLine(
-                resource: 'Organique',
-                owned: gameState.resourceAmount('Organique'),
-                required: cost['Organique'] ?? 0,
-              ),
-              _ResourceCostLine(
-                resource: 'Minéral',
-                owned: gameState.resourceAmount('Minéral'),
-                required: cost['Minéral'] ?? 0,
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Niveau 1 : ${securityTowerConfig.level1Slots} P’TIPOTE affecté · +${securityTowerConfig.securityGainPerTick} sécurité par tick.',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              if (!gameState.hasResources(cost)) ...<Widget>[
-                const SizedBox(height: 8),
-                Text(
-                  gameState.missingResourcesLabel(cost),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ],
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: canBuild
-                  ? () {
-                      final result =
-                          gameState.constructSecurityTower(campHeartLevel);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(result.message)),
-                      );
-                      if (result.success) Navigator.of(context).pop();
-                    }
-                  : null,
-              icon: const Icon(Icons.shield_outlined),
-              label: const Text('Construire'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Fermer'),
-            ),
-          ],
-        ),
-      ),
+    return _ConstructionProjectSheet(
+      gameState: gameState,
+      targetId: 'securityTower',
+      title: 'Tour de sécurité',
+      description:
+          'La Tour surveille les abords du refuge et réduit les risques lors des sorties en Lisière.',
+      campHeartLevel: campHeartLevel,
+      blockedReason: levelOk
+          ? null
+          : 'Le Cœur du Camp doit atteindre le niveau ${securityTowerConfig.requiredCampHeartLevel}.',
+      footer:
+          'Niveau 1 : ${securityTowerConfig.level1Slots} P’TIPOTE affecté · +${securityTowerConfig.securityGainPerTick} sécurité par tick.',
     );
   }
 }
@@ -5327,6 +5257,8 @@ class _ConstructionProjectSheet extends StatefulWidget {
     required this.title,
     required this.description,
     this.footer,
+    this.blockedReason,
+    this.campHeartLevel,
   });
 
   final Zone0GameState gameState;
@@ -5334,6 +5266,8 @@ class _ConstructionProjectSheet extends StatefulWidget {
   final String title;
   final String description;
   final String? footer;
+  final String? blockedReason;
+  final int? campHeartLevel;
 
   @override
   State<_ConstructionProjectSheet> createState() =>
@@ -5376,6 +5310,13 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                   ?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
           Text(widget.description),
+          if (widget.blockedReason != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(widget.blockedReason!,
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.w800)),
+          ],
           const SizedBox(height: 14),
           if (project.isInProgress)
             Text(_countdownLabel(project.endsAt!),
@@ -5389,21 +5330,24 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                         ),
                       ),
                       TextButton(
-                        onPressed: project.missingFor(entry.key) > 0
+                        onPressed: widget.blockedReason == null &&
+                                project.missingFor(entry.key) > 0
                             ? () => widget.gameState.depositProjectMaterial(
                                 widget.targetId, entry.key, 1)
                             : null,
                         child: const Text('+1'),
                       ),
                       TextButton(
-                        onPressed: project.missingFor(entry.key) > 0
+                        onPressed: widget.blockedReason == null &&
+                                project.missingFor(entry.key) > 0
                             ? () => widget.gameState.depositProjectMaterial(
                                 widget.targetId, entry.key, 5)
                             : null,
                         child: const Text('+5'),
                       ),
                       TextButton(
-                        onPressed: project.missingFor(entry.key) > 0
+                        onPressed: widget.blockedReason == null &&
+                                project.missingFor(entry.key) > 0
                             ? () => widget.gameState.depositProjectMaterial(
                                   widget.targetId,
                                   entry.key,
@@ -5430,10 +5374,14 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
           ],
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: project.isReady && !project.isInProgress
+            onPressed: widget.blockedReason == null &&
+                    project.isReady &&
+                    !project.isInProgress
                 ? () {
-                    final result = widget.gameState
-                        .startConstructionProject(widget.targetId);
+                    final result = widget.gameState.startConstructionProject(
+                      widget.targetId,
+                      campHeartLevel: widget.campHeartLevel,
+                    );
                     ScaffoldMessenger.of(context)
                         .showSnackBar(SnackBar(content: Text(result.message)));
                   }
@@ -5461,43 +5409,22 @@ class _MarketConstructionSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canBuild = campHeartLevel >= marketConfig.requiredCampHeartLevel &&
-        gameState.currentPopulation >= marketConfig.requiredPopulation &&
-        gameState.hasResources(marketConfig.constructionCost);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          20, 8, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
-      child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text('Construire le Marché',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w900)),
-            const Text(
-                'Trois emplacements de vente. Fonctionne sans P’TIPOTE.'),
-            const SizedBox(height: 12),
-            Text(
-                'Coût : ${marketConfig.constructionCost.entries.map((e) => '${e.value} ${e.key}').join(' + ')}'),
-            Text(
-                'Population : ${gameState.currentPopulation} / ${marketConfig.requiredPopulation} requise'),
-            Text(
-                'Cœur : $campHeartLevel / ${marketConfig.requiredCampHeartLevel} requis'),
-            const SizedBox(height: 14),
-            FilledButton(
-              onPressed: canBuild
-                  ? () {
-                      final result = gameState.constructMarket(campHeartLevel);
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(result.message)));
-                    }
-                  : null,
-              child: const Text('Construire'),
-            ),
-          ]),
+    final missingRequirements = <String>[
+      if (campHeartLevel < marketConfig.requiredCampHeartLevel)
+        'Le Cœur du Camp doit atteindre le niveau ${marketConfig.requiredCampHeartLevel}.',
+      if (gameState.currentPopulation < marketConfig.requiredPopulation)
+        'Population requise : ${marketConfig.requiredPopulation}.',
+    ];
+    return _ConstructionProjectSheet(
+      gameState: gameState,
+      targetId: 'market',
+      title: 'Marché',
+      description: 'Trois emplacements de vente. Fonctionne sans P’TIPOTE.',
+      campHeartLevel: campHeartLevel,
+      blockedReason:
+          missingRequirements.isEmpty ? null : missingRequirements.join('\n'),
+      footer:
+          'Population : ${gameState.currentPopulation} / ${marketConfig.requiredPopulation} requise.',
     );
   }
 }
@@ -5841,40 +5768,6 @@ class _MarketStockSlot extends StatelessWidget {
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ResourceCostLine extends StatelessWidget {
-  const _ResourceCostLine({
-    required this.resource,
-    required this.owned,
-    required this.required,
-  });
-
-  final String resource;
-  final int owned;
-  final int required;
-
-  @override
-  Widget build(BuildContext context) {
-    final ok = owned >= required;
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        children: <Widget>[
-          Icon(_resourceIcon(resource), size: 20),
-          const SizedBox(width: 8),
-          Expanded(child: Text(resource)),
-          Text(
-            '$owned / $required',
-            style: TextStyle(
-              color: ok ? null : Theme.of(context).colorScheme.error,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
       ),
     );
   }
