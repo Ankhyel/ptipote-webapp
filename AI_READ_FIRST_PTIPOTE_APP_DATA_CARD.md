@@ -1017,6 +1017,12 @@ Pour formater Dart:
 - `SecurityTowerPage` expose `Surveillance`, `Exploration`, `Meteo`, `Amelioration` et `Infos`. L'ecran Marche conserve ses fonctions actuelles et donne acces a `Amelioration` et `Infos` depuis sa carte principale.
 - Les reglages de niveaux existants sont exposes par `security-tower-config.json` et `market-config.json` dans le Dashboard. Les couts/durees communs de chantier restent centralises dans `building_construction_config.dart` en attendant une edition Dashboard dediee.
 
+### Dashboard - Architecture Et Logements
+
+- `ptipote-dashboard/building-architecture-config.json` est le miroir editable/exportable des projets communs: coefficient Mineral, depots recuperables, comportement pendant une amelioration, couts et durees V1.
+- `ptipote-dashboard/housing-config.json` expose les niveaux de Maison, alcoves, logements agreges, malus de Bien-etre et remerciement communautaire.
+- L'onglet Dashboard `Batiments actifs` charge ces deux fichiers et peut les exporter. Comme les configurations Dart restent la source executee par Flutter en V1, un JSON exporte doit etre reporte dans le fichier Dart correspondant avant livraison; aucune modification directe de donnees Firebase n'est faite par le Dashboard.
+
 ### Maison Et Logements
 
 | Fichier | Role |

@@ -1,0 +1,15 @@
+{
+  "mineralCostMultiplier": 1.3,
+  "defaultDurationMinutes": 1,
+  "allowMaterialWithdrawalBeforeStart": true,
+  "buildingRemainsUsableDuringUpgrade": true,
+  "projects": {
+    "fablab": { "organic": 8, "mineral": 4, "durationMinutes": 1 },
+    "cuisine": { "organic": 6, "mineral": 12, "durationMinutes": 1 },
+    "atelier": { "organic": 8, "mineral": 16, "durationMinutes": 1 },
+    "recycler": { "organic": 10, "mineral": 18, "durationMinutes": 1 },
+    "securityTower": { "organic": 6, "mineral": 8, "durationMinutes": 1 },
+    "market": { "organic": 6, "mineral": 6, "durationMinutes": 1 },
+    "house": { "organic": 5, "mineral": 9, "durationMinutes": 1 }
+  }
+}

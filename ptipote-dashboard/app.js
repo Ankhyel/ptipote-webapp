@@ -146,10 +146,14 @@ const ids = [
   "workshopEditor",
   "marketEditor",
   "towerOperationsEditor",
+  "buildingArchitectureEditor",
+  "housingEditor",
   "exportCampGeneratorButton",
   "exportWorkshopButton",
   "exportTowerOperationsButton",
   "exportMarketButton",
+  "exportBuildingArchitectureButton",
+  "exportHousingButton",
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -796,6 +800,8 @@ async function loadActiveBuildingConfigs() {
     ["workshop-config.json", el.workshopEditor],
     ["market-config.json", el.marketEditor],
     ["tower-operations-config.json", el.towerOperationsEditor],
+    ["building-architecture-config.json", el.buildingArchitectureEditor],
+    ["housing-config.json", el.housingEditor],
   ];
   for (const [file, target] of entries) {
     const response = await fetch(`./${file}`, { cache: "no-store" });
@@ -827,6 +833,8 @@ function downloadJson(filename, value) {
 el.exportCampGeneratorButton.addEventListener("click", () => exportEditor(el.campGeneratorEditor, "camp-generator-config.json"));
 el.exportWorkshopButton.addEventListener("click", () => exportEditor(el.workshopEditor, "workshop-config.json"));
 el.exportMarketButton.addEventListener("click", () => exportEditor(el.marketEditor, "market-config.json"));
+el.exportBuildingArchitectureButton.addEventListener("click", () => exportEditor(el.buildingArchitectureEditor, "building-architecture-config.json"));
+el.exportHousingButton.addEventListener("click", () => exportEditor(el.housingEditor, "housing-config.json"));
 el.exportTowerOperationsButton.addEventListener("click", () => exportEditor(el.towerOperationsEditor, "tower-operations-config.json"));
 el.exportRecyclerButton.addEventListener("click", () => exportRecyclerConfig());
 el.exportKernelProgressButton.addEventListener("click", () => exportEditor(el.kernelProgressEditor, "kernel-progress-config.json"));

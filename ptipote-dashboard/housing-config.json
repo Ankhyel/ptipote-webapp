@@ -1,0 +1,13 @@
+{
+  "houseMaxLevel": 5,
+  "alcovesByHouseLevel": { "1": 2, "2": 3, "3": 4, "4": 6, "5": 8 },
+  "residentsPerHousingUnit": 3,
+  "initialHousingOrganicCost": 30,
+  "initialHousingMineralCost": 60,
+  "housingDurationMinutes": 60,
+  "wellbeingPenaltyPerUnhousedResident": 3,
+  "maximumHousingWellbeingPenalty": 30,
+  "thanksBioBatteryCost": 2,
+  "thanksWellbeingBonus": 3,
+  "thanksDurationHours": 48
+}
