@@ -12,6 +12,7 @@ import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'game_asset_resolver.dart';
 import 'kernel_config.dart';
+import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'security_tower_config.dart';
@@ -446,7 +447,7 @@ class KernelPage extends StatelessWidget {
                   campHeartState.campHeartLevel,
                 ),
               ),
-              _KernelPlansTab(campHeartLevel: campHeartState.campHeartLevel),
+              _KernelPlansTab(gameState: gameState),
               _KernelProgressTab(
                 gameState: gameState,
                 campHeartState: campHeartState,
@@ -573,35 +574,117 @@ class _KernelStatusPill extends StatelessWidget {
   }
 }
 
-class _KernelPlansTab extends StatelessWidget {
-  const _KernelPlansTab({required this.campHeartLevel});
+class _KernelPlansTab extends StatefulWidget {
+  const _KernelPlansTab({required this.gameState});
 
-  final int campHeartLevel;
+  final Zone0GameState gameState;
+
+  @override
+  State<_KernelPlansTab> createState() => _KernelPlansTabState();
+}
+
+class _KernelPlansTabState extends State<_KernelPlansTab> {
+  KernelPlanCategory? _category;
 
   @override
   Widget build(BuildContext context) {
+    final plans = kernelProgressConfig.plans
+        .where((plan) => _category == null || plan.category == _category)
+        .toList();
     return ListView(
       padding: const EdgeInsets.all(18),
-      children: kernelConfig.plans.map((plan) {
-        final unlocked = campHeartLevel >= plan.requiredCampHeartLevel;
-        return Opacity(
-          opacity: unlocked ? 1 : 0.45,
-          child: Card(
-            child: ListTile(
-              leading: Icon(
-                unlocked ? Icons.inventory_2_outlined : Icons.lock_outline,
-              ),
-              title: Text(plan.title),
-              subtitle: Text(
-                unlocked
-                    ? plan.description
-                    : '${plan.description}\nDébloqué au Cœur niveau ${plan.requiredCampHeartLevel}.',
+      children: <Widget>[
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <KernelPlanCategory?>[null, ...KernelPlanCategory.values]
+              .map(
+                (category) => ChoiceChip(
+                  label: Text(_categoryLabel(category)),
+                  selected: _category == category,
+                  onSelected: (_) => setState(() => _category = category),
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 12),
+        ...plans.map((plan) {
+          final state = widget.gameState.kernelPlanState(plan);
+          final visible = state != KernelPlanState.unknown;
+          return Opacity(
+            opacity: visible ? 1 : 0.48,
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Icon(_planIcon(plan.iconName)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            visible ? plan.title : 'Plan inconnu',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        _KernelPlanStatePill(state: state),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(visible
+                        ? plan.description
+                        : 'Le Kernel n’a encore rien identifié.'),
+                    if (visible) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text('Origine : ${plan.origin}'),
+                      Text('Kernel : ${plan.kernelText}'),
+                    ],
+                    if (state == KernelPlanState.discovered) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text(
+                          'Pré-requis : confiance niv. ${plan.requiredTrustLevel}'
+                          '${plan.requiredAxis == null ? '' : ' · ${_axisLabel(plan.requiredAxis!)} niv. ${plan.requiredAxisLevel}'}'),
+                    ],
+                    if (state == KernelPlanState.ready) ...<Widget>[
+                      const SizedBox(height: 10),
+                      FilledButton(
+                        onPressed: () {
+                          final result =
+                              widget.gameState.activateKernelPlan(plan.id);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)),
+                          );
+                        },
+                        child: const Text('Activer le Plan'),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      }).toList(),
+          );
+        }),
+      ],
     );
+  }
+}
+
+class _KernelPlanStatePill extends StatelessWidget {
+  const _KernelPlanStatePill({required this.state});
+
+  final KernelPlanState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (state) {
+      KernelPlanState.unknown => 'Inconnu',
+      KernelPlanState.discovered => 'Découvert',
+      KernelPlanState.ready => 'Prêt',
+      KernelPlanState.active => 'Actif',
+    };
+    return Text(label, style: const TextStyle(fontWeight: FontWeight.w900));
   }
 }
 
@@ -661,10 +744,107 @@ class _KernelProgressTab extends StatelessWidget {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        _KernelXpCard(
+          title: 'Confiance du Kernel',
+          level: gameState.kernelTrustLevel,
+          xp: gameState.kernelTrustXp,
+          requiredXp: gameState.kernelTrustXpRequired,
+          description: 'Le Kernel observe la continuité de vos choix.',
+          next: 'De nouveaux Plans pourront être partagés.',
+        ),
+        ...KernelAxis.values.map(
+          (axis) => Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: _KernelXpCard(
+              title: _axisLabel(axis),
+              level: gameState.kernelAxisLevel(axis),
+              xp: gameState.kernelAxisCurrentXp(axis),
+              requiredXp: gameState.kernelAxisXpRequired(axis),
+              description: _axisDescription(axis),
+              next: _axisNext(axis),
+            ),
+          ),
+        ),
       ],
     );
   }
 }
+
+class _KernelXpCard extends StatelessWidget {
+  const _KernelXpCard({
+    required this.title,
+    required this.level,
+    required this.xp,
+    required this.requiredXp,
+    required this.description,
+    required this.next,
+  });
+
+  final String title;
+  final int level;
+  final int xp;
+  final int requiredXp;
+  final String description;
+  final String next;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('$title · niv. $level',
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(value: (xp / requiredXp).clamp(0, 1)),
+              Text('$xp / $requiredXp XP'),
+              const SizedBox(height: 8),
+              Text(description),
+              Text('Prochain déblocage : $next'),
+            ],
+          ),
+        ),
+      );
+}
+
+String _categoryLabel(KernelPlanCategory? category) => switch (category) {
+      null => 'Tous',
+      KernelPlanCategory.buildings => 'Bâtiments',
+      KernelPlanCategory.workshop => 'Atelier',
+      KernelPlanCategory.cuisine => 'Cuisine',
+      KernelPlanCategory.ptibug => 'PTIBUG',
+      KernelPlanCategory.installations => 'Installations',
+    };
+
+String _axisLabel(KernelAxis axis) => switch (axis) {
+      KernelAxis.breeder => 'Éleveur',
+      KernelAxis.builder => 'Bâtisseur',
+      KernelAxis.restorer => 'Restaurateur',
+    };
+
+String _axisDescription(KernelAxis axis) => switch (axis) {
+      KernelAxis.breeder => 'Vous prenez soin des formes de vie artificielles.',
+      KernelAxis.builder =>
+        'Vous consolidez les outils et les lieux du refuge.',
+      KernelAxis.restorer => 'Vous restaurez un environnement plus habitable.',
+    };
+
+String _axisNext(KernelAxis axis) => switch (axis) {
+      KernelAxis.breeder => 'Premier Pattern PTIBUG.',
+      KernelAxis.builder => 'Nouvelles installations de refuge.',
+      KernelAxis.restorer => 'Technologies de filtration.',
+    };
+
+IconData _planIcon(String iconName) => switch (iconName) {
+      'chair' => Icons.chair_outlined,
+      'filter' || 'cartridge' => Icons.filter_alt_outlined,
+      'suit' => Icons.checkroom_outlined,
+      'air' => Icons.air_outlined,
+      'light' => Icons.lightbulb_outline,
+      _ => Icons.memory_outlined,
+    };
 
 class _KernelEmptyState extends StatelessWidget {
   const _KernelEmptyState({required this.message});
@@ -5313,41 +5493,45 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                   onSelectionChanged: (value) =>
                       setState(() => _quantity = value.first)),
               const SizedBox(height: 10),
-              ...workshopConfig.recipes.map((recipe) => Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            Text(recipe.displayName,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w900)),
-                            Text(
-                                '${recipe.category} · ${recipe.durationMinutes} min/unité'),
-                            Text(recipe.ingredients.entries
-                                .map((e) => '${e.value * _quantity} ${e.key}')
-                                .join(' + ')),
-                            FilledButton(
-                                onPressed: () => _start(recipe, null),
-                                child: const Text('Lancer manuellement')),
-                            OutlinedButton.icon(
-                              onPressed: () async {
-                                final figurine = await _pickPtipoteForActivity(
-                                  context: context,
-                                  gameState: widget.gameState,
-                                  figurines: figurines,
-                                  title: 'Confier ${recipe.displayName}',
-                                );
-                                if (figurine != null && context.mounted) {
-                                  _start(recipe, figurine);
-                                }
-                              },
-                              icon: const Icon(Icons.person_add_alt_1),
-                              label: const Text('Confier à un P’TIPOTE'),
-                            ),
-                          ]),
-                    ),
-                  )),
+              ...workshopConfig.recipes
+                  .where(widget.gameState.isWorkshopRecipeActive)
+                  .map((recipe) => Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                Text(recipe.displayName,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w900)),
+                                Text(
+                                    '${recipe.category} · ${recipe.durationMinutes} min/unité'),
+                                Text(recipe.ingredients.entries
+                                    .map((e) =>
+                                        '${e.value * _quantity} ${e.key}')
+                                    .join(' + ')),
+                                FilledButton(
+                                    onPressed: () => _start(recipe, null),
+                                    child: const Text('Lancer manuellement')),
+                                OutlinedButton.icon(
+                                  onPressed: () async {
+                                    final figurine =
+                                        await _pickPtipoteForActivity(
+                                      context: context,
+                                      gameState: widget.gameState,
+                                      figurines: figurines,
+                                      title: 'Confier ${recipe.displayName}',
+                                    );
+                                    if (figurine != null && context.mounted) {
+                                      _start(recipe, figurine);
+                                    }
+                                  },
+                                  icon: const Icon(Icons.person_add_alt_1),
+                                  label: const Text('Confier à un P’TIPOTE'),
+                                ),
+                              ]),
+                        ),
+                      )),
             ] else
               const Padding(
                 padding: EdgeInsets.only(top: 10),

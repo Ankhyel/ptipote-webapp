@@ -1,0 +1,21 @@
+{
+  "trustXpRequiredBase": 100,
+  "axisXpRequiredBase": 80,
+  "xpRequiredMultiplier": 1.25,
+  "eventRewards": {
+    "buildingConstructed": {"trustXp": 25, "builderXp": 25},
+    "buildingUpgraded": {"trustXp": 20, "builderXp": 20},
+    "craftCompleted": {"trustXp": 8, "builderXp": 4, "restorerXp": 4},
+    "missionCompleted": {"trustXp": 10, "restorerXp": 10},
+    "pollutionObserved": {"trustXp": 5, "restorerXp": 12},
+    "ecosystemLevelUp": {"trustXp": 30, "restorerXp": 25}
+  },
+  "plans": [
+    {"id":"simple-furniture","state":"active","category":"workshop","workshopRecipeId":"simpleFurniture"},
+    {"id":"filter","state":"unknown","discoveryEvent":"pollutionObserved","discoveryThreshold":3,"requiredTrustLevel":2,"requiredAxis":"restorer","requiredAxisLevel":1},
+    {"id":"filter-cartridge","state":"unknown","discoveryEvent":"craftCompleted","discoveryThreshold":3,"requiredTrustLevel":2,"requiredAxis":"restorer","requiredAxisLevel":2},
+    {"id":"shade-suit","state":"unknown","discoveryEvent":"missionCompleted","discoveryThreshold":3,"requiredTrustLevel":2,"requiredAxis":"builder","requiredAxisLevel":2},
+    {"id":"termite-ventilation","state":"unknown","discoveryEvent":"buildingConstructed","discoveryThreshold":3,"requiredTrustLevel":3,"requiredAxis":"builder","requiredAxisLevel":2},
+    {"id":"solar-light","state":"unknown","discoveryEvent":"ecosystemLevelUp","discoveryThreshold":1,"requiredTrustLevel":3,"requiredAxis":"builder","requiredAxisLevel":2}
+  ]
+}

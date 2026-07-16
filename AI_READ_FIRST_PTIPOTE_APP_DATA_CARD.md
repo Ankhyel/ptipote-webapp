@@ -932,6 +932,46 @@ Pour formater Dart:
 8. Stager seulement les fichiers lies a la demande.
 9. Si une fonction, un ecran, une route ou une collection est ajoutee: mettre a jour cette data card avant commit.
 10. Commit puis push sur `main` si Kevin demande ou si le workflow courant le prevoit.
+## Kernel Progression V1 — Confiance, Axes Et Plans
+
+### Fichiers
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/game/kernel_progress_config.dart` | Source Dart des seuils XP, recompenses `ProgressEvent`, axes et Plans technologiques. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Moteur d'evenements, niveaux/XPs, decouvertes, activation, historique et persistance Firebase. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Onglets Kernel Plans et Progression, categories, activation et cartes de progression. |
+| `ptipote-dashboard/kernel-progress-config.json` | Miroir Dashboard modifiable/exportable de la configuration Kernel Progression. |
+| `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Editeur JSON additionnel dans l'onglet Camp / Kernel. |
+
+### Confiance Et Axes
+
+- La Confiance du Kernel est independante des axes et stocke niveau, XP et historique.
+- Axes V1: `breeder` (Eleveur), `builder` (Batisseur) et `restorer` (Restaurateur). Ils ne sont pas des classes de P'TIPOTES.
+- Les niveaux utilisent `trustXpRequiredBase`, `axisXpRequiredBase` et `xpRequiredMultiplier` dans `kernel_progress_config.dart`.
+- L'historique est limite aux 50 dernieres entrees dans `users/{uid}/game/zone0.kernel.progressHistory`.
+
+### Progress Events
+
+- Types prepares: `buildingConstructed`, `buildingUpgraded`, `craftCompleted`, `missionCompleted`, `pollutionObserved`, `ecosystemLevelUp`.
+- Branches V1: construction Fablab/Tour/Marche, craft Cuisine/Atelier termine, mission Lisiere terminee et incident Pollution.
+- Chaque gain vient de `kernelProgressConfig.eventRewards`, jamais des widgets.
+- `buildingUpgraded` et `ecosystemLevelUp` sont prepares pour les futures actions correspondantes.
+
+### Plans Et Decouvertes
+
+- Etats: `unknown`, `discovered`, `ready`, `active`.
+- Plans V1: Meuble simple actif apres construction du Fablab, Filtre, Cartouche de filtration, Tenue ombragee, Ventilation Termite et Lumiere solaire.
+- Une observation passe le plan a `discovered`; lorsque Confiance et axe requis sont atteints, il devient `ready`; le joueur utilise `Activer le Plan` pour le rendre `active`.
+- Les recettes Atelier sont filtrees par plan actif et le moteur refuse egalement un lancement non actif.
+- L'origine et le texte Kernel sont affiches dans la fiche de Plan; les observations et activations sont envoyees dans les rapports.
+
+### Attentes
+
+- Les detections exactes de biomes chauds, des batiments souterrains, des upgrades et des paliers ecologiques seront branchees lorsque ces donnees auront leur propre modele.
+- Les categories Cuisine, Batiments et PTIBUG sont preparees dans le filtre Plans; les premiers Plans V1 actifs ciblent l'Atelier et les Installations.
+- Le Dashboard exporte les valeurs. Comme les autres configs versionnees, il ne modifie pas le build mobile en direct.
+
 # ARCHITECTURE DES BATIMENTS V1 - GENERATEUR, ATELIER ET MARCHE
 
 ## 1. Architecture commune

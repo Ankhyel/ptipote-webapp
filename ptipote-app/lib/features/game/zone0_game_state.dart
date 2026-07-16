@@ -11,6 +11,7 @@ import 'camp_generator_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'kernel_config.dart';
+import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'security_tower_config.dart';
@@ -44,6 +45,19 @@ class Zone0GameState extends ChangeNotifier {
   // Kept separately from completion: a completed mission can wait for room
   // in the refuge before all of its population reward is credited.
   final Map<String, int> kernelPopulationRewardsGranted = <String, int>{};
+  final Map<KernelAxis, int> kernelAxisLevels = <KernelAxis, int>{
+    for (final axis in KernelAxis.values) axis: 1,
+  };
+  final Map<KernelAxis, int> kernelAxisXp = <KernelAxis, int>{
+    for (final axis in KernelAxis.values) axis: 0,
+  };
+  final Map<KernelProgressEventType, int> kernelEventCounts =
+      <KernelProgressEventType, int>{};
+  final Set<String> discoveredKernelPlanIds = <String>{};
+  final Set<String> readyKernelPlanIds = <String>{};
+  final Set<String> activeKernelPlanIds = <String>{};
+  final List<KernelProgressHistoryEntry> kernelProgressHistory =
+      <KernelProgressHistoryEntry>[];
   bool _needsKernelPopulationRewardMigration = false;
   int _lastKnownCampHeartLevel = 1;
 
@@ -52,6 +66,8 @@ class Zone0GameState extends ChangeNotifier {
   int securityTowerLevel = 0;
   int marketLevel = 0;
   int currentPopulation = kernelConfig.startingPopulation;
+  int kernelTrustLevel = 1;
+  int kernelTrustXp = 0;
   int bioBatteries = kernelConfig.startingBioBatteries;
   int campWellbeing = kernelConfig.startingWellbeing;
   int mealsPrepared = 0;
@@ -265,6 +281,132 @@ class Zone0GameState extends ChangeNotifier {
         .toList();
   }
 
+  int kernelAxisLevel(KernelAxis axis) => kernelAxisLevels[axis] ?? 1;
+
+  int kernelAxisCurrentXp(KernelAxis axis) => kernelAxisXp[axis] ?? 0;
+
+  int get kernelTrustXpRequired => kernelProgressConfig.xpRequired(
+        level: kernelTrustLevel,
+        isTrust: true,
+      );
+
+  int kernelAxisXpRequired(KernelAxis axis) => kernelProgressConfig.xpRequired(
+        level: kernelAxisLevel(axis),
+        isTrust: false,
+      );
+
+  KernelPlanState kernelPlanState(KernelTechnologyPlanConfig plan) {
+    if (activeKernelPlanIds.contains(plan.id) ||
+        (plan.initialState == KernelPlanState.active && isFablabBuilt)) {
+      return KernelPlanState.active;
+    }
+    if (readyKernelPlanIds.contains(plan.id)) return KernelPlanState.ready;
+    if (discoveredKernelPlanIds.contains(plan.id)) {
+      return KernelPlanState.discovered;
+    }
+    return KernelPlanState.unknown;
+  }
+
+  bool isWorkshopRecipeActive(WorkshopRecipe recipe) {
+    final matchingPlan = kernelProgressConfig.plans.where(
+      (plan) => plan.workshopRecipeId == recipe.id,
+    );
+    if (matchingPlan.isEmpty) return true;
+    return matchingPlan.any(
+      (plan) => kernelPlanState(plan) == KernelPlanState.active,
+    );
+  }
+
+  void emitKernelProgressEvent(KernelProgressEventType type) {
+    final reward = kernelProgressConfig.eventRewards[type];
+    if (reward == null) return;
+    kernelEventCounts[type] = (kernelEventCounts[type] ?? 0) + 1;
+    _addKernelTrustXp(reward.trustXp);
+    for (final axis in KernelAxis.values) {
+      _addKernelAxisXp(axis, reward.xpFor(axis));
+    }
+    kernelProgressHistory.add(
+      KernelProgressHistoryEntry(
+        occurredAt: DateTime.now(),
+        eventType: type,
+        trustXp: reward.trustXp,
+        breederXp: reward.breederXp,
+        builderXp: reward.builderXp,
+        restorerXp: reward.restorerXp,
+      ),
+    );
+    _refreshKernelPlanReadiness();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  Zone0ActionResult activateKernelPlan(String planId) {
+    final plan = kernelProgressConfig.plans
+        .where((item) => item.id == planId)
+        .firstOrNull;
+    if (plan == null || kernelPlanState(plan) != KernelPlanState.ready) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce Plan n’est pas encore prêt.',
+      );
+    }
+    readyKernelPlanIds.remove(planId);
+    activeKernelPlanIds.add(planId);
+    reports.add(PtipoteMissionReport.system(
+      message: 'Plan activé : ${plan.title}. ${plan.kernelText}',
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '${plan.title} est maintenant disponible.',
+    );
+  }
+
+  void _addKernelTrustXp(int amount) {
+    kernelTrustXp += amount;
+    while (kernelTrustXp >= kernelTrustXpRequired) {
+      kernelTrustXp -= kernelTrustXpRequired;
+      kernelTrustLevel += 1;
+    }
+  }
+
+  void _addKernelAxisXp(KernelAxis axis, int amount) {
+    if (amount <= 0) return;
+    var xp = kernelAxisCurrentXp(axis) + amount;
+    var level = kernelAxisLevel(axis);
+    while (
+        xp >= kernelProgressConfig.xpRequired(level: level, isTrust: false)) {
+      xp -= kernelProgressConfig.xpRequired(level: level, isTrust: false);
+      level += 1;
+    }
+    kernelAxisXp[axis] = xp;
+    kernelAxisLevels[axis] = level;
+  }
+
+  void _refreshKernelPlanReadiness() {
+    for (final plan in kernelProgressConfig.plans) {
+      if (kernelPlanState(plan) == KernelPlanState.unknown &&
+          plan.discoveryEvent != null &&
+          (kernelEventCounts[plan.discoveryEvent] ?? 0) >=
+              plan.discoveryThreshold) {
+        discoveredKernelPlanIds.add(plan.id);
+        reports.add(PtipoteMissionReport.system(
+          message: 'Observation Kernel : ${plan.kernelText}',
+        ));
+      }
+      if (kernelPlanState(plan) != KernelPlanState.discovered) continue;
+      final axisReady = plan.requiredAxis == null ||
+          kernelAxisLevel(plan.requiredAxis!) >= plan.requiredAxisLevel;
+      if (kernelTrustLevel >= plan.requiredTrustLevel && axisReady) {
+        readyKernelPlanIds.add(plan.id);
+        reports.add(PtipoteMissionReport.system(
+          message: 'Plan prêt : ${plan.title}. Le Kernel peut le partager.',
+        ));
+      }
+    }
+  }
+
   int vitalityFor(PtipoteFigurine figurine) {
     return vitalityOverrides[figurine.id] ?? figurine.vitality;
   }
@@ -340,6 +482,12 @@ class Zone0GameState extends ChangeNotifier {
     PtipoteFigurine? figurine,
   }) {
     resolveWorkshopOrder();
+    if (!isWorkshopRecipeActive(recipe)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Kernel n’a pas encore activé ce Plan.',
+      );
+    }
     if (activeWorkshopOrders.length >= workshopSlots) {
       return const Zone0ActionResult(
           success: false,
@@ -458,6 +606,7 @@ class Zone0GameState extends ChangeNotifier {
           message: tired
               ? '${order.assignedPtipoteName} rentre fatigué de l’Atelier.'
               : 'Commande Atelier terminée : ${recipe.displayName}.'));
+      emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
     }
     notifyListeners();
     unawaited(saveInventoryToFirebase());
@@ -511,6 +660,7 @@ class Zone0GameState extends ChangeNotifier {
           success: false, message: 'Ressources indisponibles.');
     }
     marketLevel = 1;
+    emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
     reports.add(PtipoteMissionReport.system(message: 'Le Marché est ouvert.'));
     notifyListeners();
     unawaited(saveBuildingsToFirebase());
@@ -1291,6 +1441,7 @@ class Zone0GameState extends ChangeNotifier {
     }
 
     fablabLevel = 1;
+    emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
     reports.add(
       PtipoteMissionReport.system(
         message: 'Le Fablab est prêt. La Cuisine est maintenant disponible.',
@@ -1331,6 +1482,7 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     securityTowerLevel = 1;
+    emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
     refugeSafety = math.max(refugeSafety, securityTowerConfig.initialSecurity);
     reports.add(
       PtipoteMissionReport.system(
@@ -1490,6 +1642,7 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     addResources(output);
+    emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
     if (recipe.resultItem == craftConfig.simpleMealRecipe.resultItem) {
       mealsPrepared += recipe.resultAmount;
     }
@@ -1744,6 +1897,39 @@ class Zone0GameState extends ChangeNotifier {
         mealsPrepared = _readInt(kernelData['mealsPrepared']);
         plaineMissionsCompleted =
             _readInt(kernelData['plaineMissionsCompleted']);
+        kernelTrustLevel = _readInt(kernelData['trustLevel'], fallback: 1);
+        kernelTrustXp = _readInt(kernelData['trustXp']);
+        for (final axis in KernelAxis.values) {
+          kernelAxisLevels[axis] = _readInt(
+            (kernelData['axisLevels'] as Map?)?[axis.name],
+            fallback: 1,
+          );
+          kernelAxisXp[axis] = _readInt(
+            (kernelData['axisXp'] as Map?)?[axis.name],
+          );
+        }
+        kernelEventCounts.clear();
+        final eventCounts = kernelData['eventCounts'] as Map?;
+        for (final type in KernelProgressEventType.values) {
+          kernelEventCounts[type] = _readInt(eventCounts?[type.name]);
+        }
+        discoveredKernelPlanIds
+          ..clear()
+          ..addAll((kernelData['discoveredPlanIds'] as List? ?? const [])
+              .map((id) => '$id'));
+        readyKernelPlanIds
+          ..clear()
+          ..addAll((kernelData['readyPlanIds'] as List? ?? const [])
+              .map((id) => '$id'));
+        activeKernelPlanIds
+          ..clear()
+          ..addAll((kernelData['activePlanIds'] as List? ?? const [])
+              .map((id) => '$id'));
+        kernelProgressHistory
+          ..clear()
+          ..addAll((kernelData['progressHistory'] as List? ?? const [])
+              .whereType<Map>()
+              .map(KernelProgressHistoryEntry.fromFirebase));
         final completedData = kernelData['completedMissionIds'];
         if (completedData is List) {
           completedKernelMissionIds
@@ -2162,6 +2348,10 @@ class Zone0GameState extends ChangeNotifier {
     if (mission.biome == ForageBiome.plaineRiche) {
       plaineMissionsCompleted += 1;
     }
+    emitKernelProgressEvent(KernelProgressEventType.missionCompleted);
+    if (incident.startsWith('pollution')) {
+      emitKernelProgressEvent(KernelProgressEventType.pollutionObserved);
+    }
     refreshKernelMissions();
     final memberStateLabels = <String>[];
     var lowestVitality = ptipoteStatsConfig.maxVitality;
@@ -2480,6 +2670,24 @@ class Zone0GameState extends ChangeNotifier {
             'campWellbeing': campWellbeing,
             'mealsPrepared': mealsPrepared,
             'plaineMissionsCompleted': plaineMissionsCompleted,
+            'trustLevel': kernelTrustLevel,
+            'trustXp': kernelTrustXp,
+            'axisLevels': kernelAxisLevels.map(
+              (key, value) => MapEntry(key.name, value),
+            ),
+            'axisXp': kernelAxisXp.map(
+              (key, value) => MapEntry(key.name, value),
+            ),
+            'eventCounts': kernelEventCounts.map(
+              (key, value) => MapEntry(key.name, value),
+            ),
+            'discoveredPlanIds': discoveredKernelPlanIds.toList(),
+            'readyPlanIds': readyKernelPlanIds.toList(),
+            'activePlanIds': activeKernelPlanIds.toList(),
+            'progressHistory': kernelProgressHistory
+                .take(50)
+                .map((entry) => entry.toFirebase())
+                .toList(),
             'completedMissionIds': completedKernelMissionIds.toList(),
             'populationRewardsGranted': kernelPopulationRewardsGranted,
           },
@@ -2686,6 +2894,49 @@ class Zone0ActionResult {
 
   final bool success;
   final String message;
+}
+
+class KernelProgressHistoryEntry {
+  const KernelProgressHistoryEntry({
+    required this.occurredAt,
+    required this.eventType,
+    required this.trustXp,
+    required this.breederXp,
+    required this.builderXp,
+    required this.restorerXp,
+  });
+
+  factory KernelProgressHistoryEntry.fromFirebase(Map<dynamic, dynamic> data) {
+    return KernelProgressHistoryEntry(
+      occurredAt: Zone0GameState.instance._readDate(data['occurredAt']) ??
+          DateTime.now(),
+      eventType: ForageMission._enumByName(
+        KernelProgressEventType.values,
+        '${data['eventType'] ?? ''}',
+        KernelProgressEventType.craftCompleted,
+      ),
+      trustXp: Zone0GameState.instance._readInt(data['trustXp']),
+      breederXp: Zone0GameState.instance._readInt(data['breederXp']),
+      builderXp: Zone0GameState.instance._readInt(data['builderXp']),
+      restorerXp: Zone0GameState.instance._readInt(data['restorerXp']),
+    );
+  }
+
+  final DateTime occurredAt;
+  final KernelProgressEventType eventType;
+  final int trustXp;
+  final int breederXp;
+  final int builderXp;
+  final int restorerXp;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'occurredAt': Timestamp.fromDate(occurredAt),
+        'eventType': eventType.name,
+        'trustXp': trustXp,
+        'breederXp': breederXp,
+        'builderXp': builderXp,
+        'restorerXp': restorerXp,
+      };
 }
 
 enum ForageMissionStatus { active, completed }

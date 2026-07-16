@@ -120,6 +120,8 @@ const ids = [
   "kernelStatus",
   "kernelConfigList",
   "exportKernelButton",
+  "kernelProgressEditor",
+  "exportKernelProgressButton",
   "campHeartStatus",
   "campHeartStageList",
   "exportCampHeartButton",
@@ -749,6 +751,12 @@ async function loadActiveBuildingConfigs() {
   }
 }
 
+async function loadKernelProgressConfig() {
+  const response = await fetch("./kernel-progress-config.json", { cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  el.kernelProgressEditor.value = JSON.stringify(await response.json(), null, 2);
+}
+
 function exportEditor(editor, filename) {
   const parsed = JSON.parse(editor.value);
   downloadJson(filename, parsed);
@@ -767,6 +775,7 @@ function downloadJson(filename, value) {
 el.exportCampGeneratorButton.addEventListener("click", () => exportEditor(el.campGeneratorEditor, "camp-generator-config.json"));
 el.exportWorkshopButton.addEventListener("click", () => exportEditor(el.workshopEditor, "workshop-config.json"));
 el.exportMarketButton.addEventListener("click", () => exportEditor(el.marketEditor, "market-config.json"));
+el.exportKernelProgressButton.addEventListener("click", () => exportEditor(el.kernelProgressEditor, "kernel-progress-config.json"));
 
 setupDashboardTabs();
 loadPtipoteStatsConfig();
@@ -777,3 +786,6 @@ loadSecurityTowerConfig();
 loadFablabConfig();
 loadCraftConfig();
 loadActiveBuildingConfigs();
+loadKernelProgressConfig().catch((error) => {
+  el.kernelStatus.textContent = `Configuration progression Kernel illisible: ${error.message}`;
+});
