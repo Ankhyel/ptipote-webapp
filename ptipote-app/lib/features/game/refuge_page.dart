@@ -109,6 +109,7 @@ class _RefugePageState extends State<RefugePage> {
           heartLevel: _campHeartState.campHeartLevel,
         );
         _zone0State.resolveWorkshopOrder();
+        _zone0State.resolveConstructionProjects();
         _zone0State.resolveMarket();
         _zone0State.resolveWasteAndRecycler(
           campHeartLevel: _campHeartState.campHeartLevel,
@@ -145,6 +146,7 @@ class _RefugePageState extends State<RefugePage> {
       heartLevel: _campHeartState.campHeartLevel,
     );
     _zone0State.resolveWorkshopOrder();
+    _zone0State.resolveConstructionProjects();
     _zone0State.resolveMarket();
     _zone0State.resolveWasteAndRecycler(
       campHeartLevel: _campHeartState.campHeartLevel,
@@ -5304,76 +5306,146 @@ class FablabConstructionSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cost = fablabConfig.constructionCostLevel1;
-    final canBuild = gameState.hasResources(cost);
+    return _ConstructionProjectSheet(
+      gameState: gameState,
+      targetId: 'fablab',
+      title: 'Fablab',
+      description:
+          'Le Fablab permet au refuge de cuisiner, fabriquer et recycler progressivement ses ressources.',
+      footer:
+          'Atelier niveau 1 : +${fablabConfig.stockCapacityBonusPerFablabLevel} unités de stock.',
+    );
+  }
+}
+
+class _ConstructionProjectSheet extends StatefulWidget {
+  const _ConstructionProjectSheet({
+    required this.gameState,
+    required this.targetId,
+    required this.title,
+    required this.description,
+    this.footer,
+  });
+
+  final Zone0GameState gameState;
+  final String targetId;
+  final String title;
+  final String description;
+  final String? footer;
+
+  @override
+  State<_ConstructionProjectSheet> createState() =>
+      _ConstructionProjectSheetState();
+}
+
+class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
+  @override
+  void initState() {
+    super.initState();
+    widget.gameState.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    widget.gameState.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final project = widget.gameState.projectFor(widget.targetId);
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.only(
-          left: 18,
-          right: 18,
-          bottom: 18 + MediaQuery.of(context).viewInsets.bottom,
+        padding: EdgeInsets.fromLTRB(
+          18,
+          12,
+          18,
+          18 + MediaQuery.viewInsetsOf(context).bottom,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              'Fablab',
+        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+          Text(widget.title,
               style: Theme.of(context)
                   .textTheme
                   .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w900),
-            ),
+                  ?.copyWith(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          Text(widget.description),
+          const SizedBox(height: 14),
+          if (project.isInProgress)
+            Text(_countdownLabel(project.endsAt!),
+                style: const TextStyle(fontWeight: FontWeight.w900))
+          else
+            ...project.requirements.entries
+                .map((entry) => Row(children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          '${entry.key} : ${project.depositedMaterials[entry.key] ?? 0} / ${entry.value}',
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: project.missingFor(entry.key) > 0
+                            ? () => widget.gameState.depositProjectMaterial(
+                                widget.targetId, entry.key, 1)
+                            : null,
+                        child: const Text('+1'),
+                      ),
+                      TextButton(
+                        onPressed: project.missingFor(entry.key) > 0
+                            ? () => widget.gameState.depositProjectMaterial(
+                                widget.targetId, entry.key, 5)
+                            : null,
+                        child: const Text('+5'),
+                      ),
+                      TextButton(
+                        onPressed: project.missingFor(entry.key) > 0
+                            ? () => widget.gameState.depositProjectMaterial(
+                                  widget.targetId,
+                                  entry.key,
+                                  project.missingFor(entry.key),
+                                )
+                            : null,
+                        child: const Text('Max'),
+                      ),
+                      IconButton(
+                        tooltip: 'Récupérer',
+                        onPressed:
+                            (project.depositedMaterials[entry.key] ?? 0) > 0
+                                ? () => widget.gameState
+                                    .withdrawProjectMaterial(
+                                        widget.targetId, entry.key)
+                                : null,
+                        icon: const Icon(Icons.undo),
+                      ),
+                    ])),
+          if (widget.footer != null) ...<Widget>[
             const SizedBox(height: 8),
-            const Text(
-              'Le Fablab permet au refuge de cuisiner, fabriquer et recycler progressivement ses ressources.',
-            ),
-            const SizedBox(height: 14),
-            _ResourceCostLine(
-              resource: 'Organique',
-              owned: gameState.resourceAmount('Organique'),
-              required: cost['Organique'] ?? 0,
-            ),
-            _ResourceCostLine(
-              resource: 'Minéral',
-              owned: gameState.resourceAmount('Minéral'),
-              required: cost['Minéral'] ?? 0,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Stock ajouté : +${fablabConfig.stockCapacityBonusPerFablabLevel} unités',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            if (!canBuild) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                gameState.missingResourcesLabel(cost),
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: canBuild
-                  ? () {
-                      final result = gameState.constructFablabLevel1();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(result.message)),
-                      );
-                      if (result.success) Navigator.of(context).pop();
-                    }
-                  : null,
-              icon: const Icon(Icons.construction_outlined),
-              label: const Text('Construire'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Fermer'),
-            ),
+            Text(widget.footer!,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
           ],
-        ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: project.isReady && !project.isInProgress
+                ? () {
+                    final result = widget.gameState
+                        .startConstructionProject(widget.targetId);
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(SnackBar(content: Text(result.message)));
+                  }
+                : null,
+            icon: const Icon(Icons.construction_outlined),
+            label: Text(project.isInProgress
+                ? 'Travaux en cours'
+                : 'Commencer les travaux'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fermer'),
+          ),
+        ]),
       ),
     );
   }

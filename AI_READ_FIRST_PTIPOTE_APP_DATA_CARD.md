@@ -974,6 +974,20 @@ Pour formater Dart:
 
 # ARCHITECTURE DES BATIMENTS V1 - GENERATEUR, ATELIER ET MARCHE
 
+## Refonte Batiments - Projets De Construction V1
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/game/building_construction_config.dart` | Definitions V1 des projets, durees et coefficient Mineral `1.30`. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | `ConstructionProject`, etats generiques, depot/retrait, lancement, resolution hors ligne, application du niveau et sauvegarde Firebase. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | Feuille de chantier reutilisable; Fablab migre vers le depot progressif. |
+
+- Etats communs: `locked`, `available`, `collectingMaterials`, `readyToBuild`, `underConstruction`, `built`, `upgradeAvailable`, `upgrading`, `maxLevel`.
+- Un projet garde ses exigences, apports reserves, niveau courant/cible, debut, fin et fin effective. Les materiaux peuvent etre recuperes avant le demarrage; ils sont bloques apres. `endsAt` est persiste dans `users/{uid}/game/zone0.buildings.projects`, donc le chantier est resolu une seule fois apres une absence.
+- Le Fablab est le premier ecran migre: +1, +5, Max et recuperation par ressource, puis `Commencer les travaux`. Sa construction applique `atelierLevel`, conserve `fablabLevel` en compatibilite, initialise Cuisine niveau 1 et maintient le bonus de stock sur l'Atelier.
+- Migration de sauvegarde: un ancien `fablabLevel` initialise `atelierLevel`; Cuisine est initialisee au niveau 1 quand l'ancien Fablab etait construit. Les niveaux existants Tour, Marche et Recycleur ne sont pas supprimes.
+- Attentes de migration: Tour, Marche et Maison utilisent encore leur bouton de construction historique dans cette iteration; leurs definitions sont deja presentes dans le projet generique pour la prochaine migration UI. Maison niveau, logements agreges, alcoves supplementaires, malus Bien-etre des habitants non loges et remerciement communautaire restent a raccorder a leurs ecrans respectifs.
+
 ## Dechets Et Recycleur V1
 
 | Fichier | Role |

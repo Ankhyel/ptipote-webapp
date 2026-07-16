@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
+import 'building_construction_config.dart';
 import 'camp_generator_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
@@ -40,6 +41,8 @@ class Zone0GameState extends ChangeNotifier {
   final List<ForageMission> missions = <ForageMission>[];
   final List<TowerMission> towerMissions = <TowerMission>[];
   final List<WorkshopCraftOrder> workshopOrders = <WorkshopCraftOrder>[];
+  final Map<String, ConstructionProject> constructionProjects =
+      <String, ConstructionProject>{};
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
   final List<Zone0InventoryStack> marketStock = <Zone0InventoryStack>[];
   final List<MarketCustomerRequest> marketRequests = <MarketCustomerRequest>[];
@@ -74,6 +77,10 @@ class Zone0GameState extends ChangeNotifier {
 
   int refugeSafety = lisiereForageConfig.refugeSafetyFallback;
   int fablabLevel = 0;
+  // Compatibility level. New code should read atelierLevel for stock and slots.
+  int atelierLevel = 0;
+  int cuisineLevel = 0;
+  int houseLevel = 1;
   int securityTowerLevel = 0;
   int marketLevel = 0;
   int currentPopulation = kernelConfig.startingPopulation;
@@ -111,7 +118,7 @@ class Zone0GameState extends ChangeNotifier {
   bool isFirebaseSyncing = false;
   bool _loadedFromFirebase = false;
 
-  bool get isFablabBuilt => fablabLevel >= fablabConfig.cuisineUnlockLevel;
+  bool get isFablabBuilt => atelierLevel >= fablabConfig.cuisineUnlockLevel;
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
   bool get isMarketBuilt => marketLevel >= 1;
   bool isRecyclerUnlocked(int campHeartLevel) =>
@@ -181,7 +188,7 @@ class Zone0GameState extends ChangeNotifier {
       .where((order) => order.assignedPtipoteId != null)
       .length;
 
-  int get workshopSlots => workshopConfig.slotsForLevel(fablabLevel);
+  int get workshopSlots => workshopConfig.slotsForLevel(atelierLevel);
 
   bool isAssignedToWorkshop(String figurineId) => activeWorkshopOrders.any(
         (order) => order.assignedPtipoteId == figurineId,
@@ -232,7 +239,7 @@ class Zone0GameState extends ChangeNotifier {
 
   int get globalStockCapacity {
     return fablabConfig.baseGlobalStockCapacity +
-        fablabLevel * fablabConfig.stockCapacityBonusPerFablabLevel;
+        atelierLevel * fablabConfig.stockCapacityBonusPerFablabLevel;
   }
 
   int get inventorySlotLimit {
@@ -1754,6 +1761,149 @@ class Zone0GameState extends ChangeNotifier {
     return true;
   }
 
+  ConstructionProject projectFor(String targetId) {
+    return constructionProjects.putIfAbsent(targetId, () {
+      final definition = buildingConstructionConfig.project(targetId);
+      return ConstructionProject(
+        projectId: 'project-$targetId',
+        targetId: targetId,
+        targetType: targetId,
+        currentLevel: _buildingLevel(targetId),
+        targetLevel: _buildingLevel(targetId) + 1,
+        requirements: definition.requirements(
+          buildingConstructionConfig.mineralCostMultiplier,
+        ),
+        constructionDuration: Duration(minutes: definition.durationMinutes),
+      );
+    });
+  }
+
+  int _buildingLevel(String targetId) => switch (targetId) {
+        'fablab' => atelierLevel,
+        'securityTower' => securityTowerLevel,
+        'market' => marketLevel,
+        'house' => houseLevel,
+        _ => 0,
+      };
+
+  Zone0ActionResult depositProjectMaterial(
+    String targetId,
+    String resource,
+    int amount,
+  ) {
+    final project = projectFor(targetId);
+    if (!project.canEditMaterials) {
+      return const Zone0ActionResult(
+          success: false, message: 'Les matériaux ne sont plus modifiables.');
+    }
+    final missing = project.missingFor(resource);
+    final deposit =
+        math.min(amount, math.min(missing, resourceAmount(resource)));
+    if (deposit <= 0) {
+      return Zone0ActionResult(
+          success: false, message: 'Aucun $resource à déposer.');
+    }
+    removeResource(resource, deposit);
+    project.depositedMaterials[resource] =
+        (project.depositedMaterials[resource] ?? 0) + deposit;
+    project.refreshState();
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$deposit $resource déposé.');
+  }
+
+  Zone0ActionResult withdrawProjectMaterial(String targetId, String resource) {
+    final project = projectFor(targetId);
+    if (!project.canEditMaterials) {
+      return const Zone0ActionResult(
+          success: false, message: 'Les travaux ont déjà commencé.');
+    }
+    final amount = project.depositedMaterials[resource] ?? 0;
+    if (amount <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun matériau à récupérer.');
+    }
+    if (!hasInventoryCapacityFor(<String, int>{resource: amount})) {
+      return const Zone0ActionResult(
+          success: false, message: 'Inventaire insuffisant.');
+    }
+    addResources(<String, int>{resource: amount});
+    project.depositedMaterials.remove(resource);
+    project.refreshState();
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$amount $resource rendu à la Maison.');
+  }
+
+  Zone0ActionResult startConstructionProject(String targetId) {
+    final project = projectFor(targetId);
+    if (!project.isReady) {
+      return const Zone0ActionResult(
+          success: false, message: 'Tous les matériaux sont requis.');
+    }
+    final now = DateTime.now();
+    project.startedAt = now;
+    project.endsAt = now.add(project.constructionDuration);
+    project.state = project.currentLevel == 0
+        ? ConstructionProjectState.underConstruction
+        : ConstructionProjectState.upgrading;
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            'Travaux lancés. Fin dans ${project.constructionDuration.inMinutes} min.');
+  }
+
+  bool resolveConstructionProjects({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = false;
+    for (final project in constructionProjects.values) {
+      if (!project.isInProgress || project.endsAt!.isAfter(current)) continue;
+      _completeConstructionProject(project, current);
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveBuildingsToFirebase());
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
+  }
+
+  void _completeConstructionProject(ConstructionProject project, DateTime now) {
+    project.currentLevel = project.targetLevel;
+    project.completedAt = now;
+    project.depositedMaterials.clear();
+    project.state = ConstructionProjectState.built;
+    switch (project.targetId) {
+      case 'fablab':
+        atelierLevel = project.currentLevel;
+        fablabLevel = atelierLevel;
+        cuisineLevel = math.max(cuisineLevel, 1);
+        emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
+        refreshKernelMissions();
+      case 'securityTower':
+        securityTowerLevel = project.currentLevel;
+        refugeSafety =
+            math.max(refugeSafety, securityTowerConfig.initialSecurity);
+        ensureWeatherForecast();
+      case 'market':
+        marketLevel = project.currentLevel;
+        emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
+      case 'house':
+        houseLevel = project.currentLevel;
+    }
+    reports.add(PtipoteMissionReport.system(
+      message:
+          'Les travaux de ${buildingConstructionConfig.project(project.targetId).label} sont terminés. Niveau ${project.currentLevel}.',
+    ));
+  }
+
   Zone0ActionResult constructFablabLevel1() {
     if (isFablabBuilt) {
       return const Zone0ActionResult(
@@ -2352,6 +2502,12 @@ class Zone0GameState extends ChangeNotifier {
             0,
             fablabConfig.fablabMaxLevel,
           );
+          atelierLevel =
+              _readInt(fablabData['atelierLevel'], fallback: fablabLevel)
+                  .clamp(0, fablabConfig.fablabMaxLevel);
+          cuisineLevel = _readInt(fablabData['cuisineLevel'],
+                  fallback: fablabLevel > 0 ? 1 : 0)
+              .clamp(0, fablabConfig.fablabMaxLevel);
         }
         final towerData = buildingsData['securityTower'];
         if (towerData is Map) {
@@ -2362,7 +2518,23 @@ class Zone0GameState extends ChangeNotifier {
           marketLevel =
               _readInt(marketBuildingData['currentLevel']).clamp(0, 5);
         }
+        final houseData = buildingsData['house'];
+        if (houseData is Map) {
+          houseLevel =
+              _readInt(houseData['currentLevel'], fallback: 1).clamp(1, 5);
+        }
+        final projectData = buildingsData['projects'];
+        if (projectData is Map) {
+          constructionProjects
+            ..clear()
+            ..addEntries(projectData.entries.whereType<MapEntry>().map(
+                (entry) => MapEntry('${entry.key}',
+                    ConstructionProject.fromFirebase(entry.value as Map))));
+        }
       }
+      // Migration for saves created before the Fablab units were independent.
+      if (atelierLevel == 0 && fablabLevel > 0) atelierLevel = fablabLevel;
+      if (cuisineLevel == 0 && atelierLevel > 0) cuisineLevel = 1;
       refugeSafety = _readInt(data['campSecurity']).clamp(
         0,
         securityTowerConfig.maxSecurity,
@@ -3396,6 +3568,8 @@ class Zone0GameState extends ChangeNotifier {
               'displayName': 'Fablab',
               'state': isFablabBuilt ? 'built' : 'constructible',
               'currentLevel': fablabLevel,
+              'atelierLevel': atelierLevel,
+              'cuisineLevel': cuisineLevel,
               'maxLevel': fablabConfig.fablabMaxLevel,
               'requiredCampHeartLevel': 0,
               'stockCapacityBonusPerLevel':
@@ -3423,6 +3597,18 @@ class Zone0GameState extends ChangeNotifier {
               'requiredCampHeartLevel': marketConfig.requiredCampHeartLevel,
               'isVisible': true,
             },
+            'house': <String, dynamic>{
+              'buildingId': 'house',
+              'buildingType': 'home',
+              'displayName': 'Maison',
+              'state': 'built',
+              'currentLevel': houseLevel,
+              'maxLevel': 5,
+              'isVisible': true,
+            },
+            'projects': constructionProjects.map(
+              (key, value) => MapEntry(key, value.toFirebase()),
+            ),
           },
           'updatedAt': FieldValue.serverTimestamp(),
         },
@@ -3753,6 +3939,118 @@ class WorkshopCraftOrder {
 }
 
 enum WorkshopOrderArea { workshop, kitchen }
+
+enum ConstructionProjectState {
+  locked,
+  available,
+  collectingMaterials,
+  readyToBuild,
+  underConstruction,
+  built,
+  upgradeAvailable,
+  upgrading,
+  maxLevel,
+}
+
+class ConstructionProject {
+  ConstructionProject({
+    required this.projectId,
+    required this.targetId,
+    required this.targetType,
+    required this.currentLevel,
+    required this.targetLevel,
+    required this.requirements,
+    required this.constructionDuration,
+    Map<String, int>? depositedMaterials,
+    this.state = ConstructionProjectState.available,
+    this.startedAt,
+    this.endsAt,
+    this.completedAt,
+    this.notificationCreated = false,
+  }) : depositedMaterials = depositedMaterials ?? <String, int>{};
+
+  factory ConstructionProject.fromFirebase(Map<dynamic, dynamic> data) {
+    final durationSeconds = Zone0GameState.instance
+        ._readInt(data['constructionDurationSeconds'], fallback: 60);
+    Map<String, int> mapValue(Object? value) => Map<String, int>.fromEntries(
+          (value as Map? ?? const <dynamic, dynamic>{}).entries.map(
+                (entry) => MapEntry('${entry.key}',
+                    Zone0GameState.instance._readInt(entry.value)),
+              ),
+        );
+    return ConstructionProject(
+      projectId: '${data['projectId'] ?? ''}',
+      targetId: '${data['targetId'] ?? ''}',
+      targetType: '${data['targetType'] ?? ''}',
+      currentLevel: Zone0GameState.instance._readInt(data['currentLevel']),
+      targetLevel: Zone0GameState.instance._readInt(data['targetLevel']),
+      requirements: mapValue(data['requirements']),
+      depositedMaterials: mapValue(data['depositedMaterials']),
+      constructionDuration: Duration(seconds: math.max(1, durationSeconds)),
+      state: ForageMission._enumByName(
+        ConstructionProjectState.values,
+        '${data['state'] ?? ''}',
+        ConstructionProjectState.available,
+      ),
+      startedAt: Zone0GameState.instance._readDate(data['startedAt']),
+      endsAt: Zone0GameState.instance._readDate(data['endsAt']),
+      completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+      notificationCreated: data['notificationCreated'] == true,
+    );
+  }
+
+  final String projectId;
+  final String targetId;
+  final String targetType;
+  int currentLevel;
+  int targetLevel;
+  final Map<String, int> requirements;
+  final Map<String, int> depositedMaterials;
+  final Duration constructionDuration;
+  ConstructionProjectState state;
+  DateTime? startedAt;
+  DateTime? endsAt;
+  DateTime? completedAt;
+  bool notificationCreated;
+
+  bool get isInProgress =>
+      state == ConstructionProjectState.underConstruction ||
+      state == ConstructionProjectState.upgrading;
+  bool get canEditMaterials =>
+      !isInProgress && state != ConstructionProjectState.built;
+  bool get isReady => requirements.entries
+      .every((entry) => (depositedMaterials[entry.key] ?? 0) >= entry.value);
+  int missingFor(String resource) => math.max(
+      0, (requirements[resource] ?? 0) - (depositedMaterials[resource] ?? 0));
+
+  void refreshState() {
+    if (isInProgress || state == ConstructionProjectState.built) return;
+    if (depositedMaterials.isEmpty) {
+      state = ConstructionProjectState.available;
+    } else if (isReady) {
+      state = ConstructionProjectState.readyToBuild;
+    } else {
+      state = ConstructionProjectState.collectingMaterials;
+    }
+  }
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'projectId': projectId,
+        'targetId': targetId,
+        'targetType': targetType,
+        'currentLevel': currentLevel,
+        'targetLevel': targetLevel,
+        'requirements': requirements,
+        'depositedMaterials': depositedMaterials,
+        'constructionDurationSeconds': constructionDuration.inSeconds,
+        'state': state.name,
+        'startedAt': startedAt == null ? null : Timestamp.fromDate(startedAt!),
+        'endsAt': endsAt == null ? null : Timestamp.fromDate(endsAt!),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
+        'notificationCreated': notificationCreated,
+      };
+}
 
 enum TowerMissionPlan {
   oneHour,
