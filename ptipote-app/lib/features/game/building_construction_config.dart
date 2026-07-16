@@ -63,5 +63,11 @@ const buildingConstructionConfig = BuildingConstructionConfig(
       baseRequirements: <String, int>{'Organique': 5, 'Minéral': 9},
       durationMinutes: 1,
     ),
+    'plaineNursery': BuildingProjectDefinition(
+      id: 'plaineNursery',
+      label: 'Nurserie P’TIBUG',
+      baseRequirements: <String, int>{'Organique': 20, 'Minéral': 35},
+      durationMinutes: 1,
+    ),
   },
 );

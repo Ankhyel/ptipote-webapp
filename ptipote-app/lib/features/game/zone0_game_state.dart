@@ -15,6 +15,7 @@ import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
+import 'ptibug_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'waste_recycler_config.dart';
@@ -41,6 +42,9 @@ class Zone0GameState extends ChangeNotifier {
   final List<ForageMission> missions = <ForageMission>[];
   final List<TowerMission> towerMissions = <TowerMission>[];
   final List<WorkshopCraftOrder> workshopOrders = <WorkshopCraftOrder>[];
+  final List<PTibug> pTibugs = <PTibug>[];
+  final List<PTibugTraitData> pTibugTraitData = <PTibugTraitData>[];
+  final Set<PTibugSpecies> activePTibugPatterns = <PTibugSpecies>{};
   final Map<String, ConstructionProject> constructionProjects =
       <String, ConstructionProject>{};
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
@@ -81,6 +85,8 @@ class Zone0GameState extends ChangeNotifier {
   int atelierLevel = 0;
   int cuisineLevel = 0;
   int houseLevel = 1;
+  int plaineNurseryLevel = 0;
+  PTibugCreationOrder? pTibugCreationOrder;
   int securityTowerLevel = 0;
   int marketLevel = 0;
   int currentPopulation = kernelConfig.startingPopulation;
@@ -121,6 +127,7 @@ class Zone0GameState extends ChangeNotifier {
   bool get isFablabBuilt => atelierLevel >= fablabConfig.cuisineUnlockLevel;
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
   bool get isMarketBuilt => marketLevel >= 1;
+  bool get isPlaineNurseryBuilt => plaineNurseryLevel >= 1;
   bool isRecyclerUnlocked(int campHeartLevel) =>
       isFablabBuilt &&
       campHeartLevel >= wasteRecyclerConfig.recyclerUnlockCampHeartLevel;
@@ -1783,6 +1790,7 @@ class Zone0GameState extends ChangeNotifier {
         'securityTower' => securityTowerLevel,
         'market' => marketLevel,
         'house' => houseLevel,
+        'plaineNursery' => plaineNurseryLevel,
         _ => 0,
       };
 
@@ -1897,11 +1905,86 @@ class Zone0GameState extends ChangeNotifier {
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
       case 'house':
         houseLevel = project.currentLevel;
+      case 'plaineNursery':
+        plaineNurseryLevel = project.currentLevel;
+        if (activePTibugPatterns.isEmpty) {
+          activePTibugPatterns.add(PTibugSpecies.scarabe);
+        }
     }
     reports.add(PtipoteMissionReport.system(
       message:
           'Les travaux de ${buildingConstructionConfig.project(project.targetId).label} sont terminés. Niveau ${project.currentLevel}.',
     ));
+  }
+
+  Zone0ActionResult startPTibugCreation(PTibugSpecies species) {
+    if (!isPlaineNurseryBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Construis la Nurserie P’TIBUG.');
+    }
+    if (!activePTibugPatterns.contains(species)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Pattern P’TIBUG non actif.');
+    }
+    if (pTibugCreationOrder?.isActive == true) {
+      return const Zone0ActionResult(
+          success: false, message: 'La Nurserie crée déjà un P’TIBUG.');
+    }
+    final config = pTibugConfig.species[species]!;
+    if (!hasResources(config.creationCost) ||
+        energyUnits < config.creationEnergyCost) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ressources ou énergie insuffisantes.');
+    }
+    removeResources(config.creationCost);
+    energyUnits -= config.creationEnergyCost;
+    final now = DateTime.now();
+    pTibugCreationOrder = PTibugCreationOrder(
+      species: species,
+      startedAt: now,
+      endsAt: now.add(Duration(minutes: config.creationMinutes)),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: 'Création ${config.displayName} lancée.');
+  }
+
+  bool resolvePTibugProduction({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = false;
+    final creation = pTibugCreationOrder;
+    if (creation != null &&
+        creation.isActive &&
+        !creation.endsAt.isAfter(current)) {
+      final config = pTibugConfig.species[creation.species]!;
+      pTibugs.add(PTibug(
+        id: 'ptibug-${current.microsecondsSinceEpoch}',
+        displayName: config.displayName,
+        species: creation.species,
+        styleVariant: config.styles[_random.nextInt(config.styles.length)],
+        createdAt: current,
+      ));
+      pTibugCreationOrder!.completedAt = current;
+      if (pTibugTraitData.isEmpty) {
+        const traits = PTibugTraitType.values;
+        pTibugTraitData.add(PTibugTraitData(
+          id: 'trait-${current.microsecondsSinceEpoch}',
+          type: traits[_random.nextInt(traits.length)],
+          grade: PTibugTraitGrade.commun,
+        ));
+      }
+      reports.add(PtipoteMissionReport.system(
+          message:
+              '${config.displayName} est né dans la Nurserie. Une Donnée de trait commune a été reçue.'));
+      emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
   }
 
   Zone0ActionResult constructFablabLevel1() {
@@ -2492,6 +2575,32 @@ class Zone0GameState extends ChangeNotifier {
         recyclerCycleStartedAt = _readDate(recyclerData['cycleStartedAt']);
         lastWasteGenerationAt =
             _readDate(recyclerData['lastWasteGenerationAt']);
+      }
+      final ptibugData = data['ptibug'];
+      if (ptibugData is Map) {
+        plaineNurseryLevel = _readInt(ptibugData['nurseryLevel']).clamp(0, 3);
+        activePTibugPatterns
+          ..clear()
+          ..addAll((ptibugData['activePatterns'] as List? ?? const <dynamic>[])
+              .map((name) => ForageMission._enumByName(
+                    PTibugSpecies.values,
+                    '$name',
+                    PTibugSpecies.scarabe,
+                  )));
+        pTibugs
+          ..clear()
+          ..addAll((ptibugData['items'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(PTibug.fromFirebase));
+        pTibugTraitData
+          ..clear()
+          ..addAll((ptibugData['traitData'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(PTibugTraitData.fromFirebase));
+        final creationData = ptibugData['creation'];
+        pTibugCreationOrder = creationData is Map
+            ? PTibugCreationOrder.fromFirebase(creationData)
+            : null;
       }
 
       final buildingsData = data['buildings'];
@@ -3540,6 +3649,15 @@ class Zone0GameState extends ChangeNotifier {
                 ? null
                 : Timestamp.fromDate(lastWasteGenerationAt!),
           },
+          'ptibug': <String, dynamic>{
+            'nurseryLevel': plaineNurseryLevel,
+            'activePatterns':
+                activePTibugPatterns.map((item) => item.name).toList(),
+            'creation': pTibugCreationOrder?.toFirebase(),
+            'items': pTibugs.map((item) => item.toFirebase()).toList(),
+            'traitData':
+                pTibugTraitData.map((item) => item.toFirebase()).toList(),
+          },
           'lastSimulationAt': lastSimulationAt == null
               ? FieldValue.serverTimestamp()
               : Timestamp.fromDate(lastSimulationAt!),
@@ -4049,6 +4167,126 @@ class ConstructionProject {
         'completedAt':
             completedAt == null ? null : Timestamp.fromDate(completedAt!),
         'notificationCreated': notificationCreated,
+      };
+}
+
+class PTibug {
+  PTibug({
+    required this.id,
+    required this.displayName,
+    required this.species,
+    required this.styleVariant,
+    required this.createdAt,
+    this.assignedSlotIndex,
+    this.storedResources = const <String, int>{},
+  });
+
+  final String id;
+  final String displayName;
+  final PTibugSpecies species;
+  final String styleVariant;
+  final DateTime createdAt;
+  final int? assignedSlotIndex;
+  final Map<String, int> storedResources;
+
+  factory PTibug.fromFirebase(Map<dynamic, dynamic> data) => PTibug(
+        id: '${data['id'] ?? ''}',
+        displayName: '${data['displayName'] ?? 'P’TIBUG'}',
+        species: ForageMission._enumByName(
+          PTibugSpecies.values,
+          '${data['species'] ?? ''}',
+          PTibugSpecies.scarabe,
+        ),
+        styleVariant: '${data['styleVariant'] ?? 'compact'}',
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        assignedSlotIndex: data['assignedSlotIndex'] as int?,
+        storedResources: Map<String, int>.fromEntries(
+          (data['storedResources'] as Map? ?? const <dynamic, dynamic>{})
+              .entries
+              .map((entry) => MapEntry('${entry.key}',
+                  Zone0GameState.instance._readInt(entry.value))),
+        ),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'displayName': displayName,
+        'species': species.name,
+        'styleVariant': styleVariant,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'assignedSlotIndex': assignedSlotIndex,
+        'storedResources': storedResources,
+      };
+}
+
+class PTibugTraitData {
+  const PTibugTraitData({
+    required this.id,
+    required this.type,
+    required this.grade,
+  });
+
+  final String id;
+  final PTibugTraitType type;
+  final PTibugTraitGrade grade;
+
+  factory PTibugTraitData.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugTraitData(
+        id: '${data['id'] ?? ''}',
+        type: ForageMission._enumByName(
+          PTibugTraitType.values,
+          '${data['type'] ?? ''}',
+          PTibugTraitType.pollinisateur,
+        ),
+        grade: ForageMission._enumByName(
+          PTibugTraitGrade.values,
+          '${data['grade'] ?? ''}',
+          PTibugTraitGrade.commun,
+        ),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'type': type.name,
+        'grade': grade.name,
+      };
+}
+
+class PTibugCreationOrder {
+  PTibugCreationOrder({
+    required this.species,
+    required this.startedAt,
+    required this.endsAt,
+    this.completedAt,
+  });
+
+  final PTibugSpecies species;
+  final DateTime startedAt;
+  final DateTime endsAt;
+  DateTime? completedAt;
+  bool get isActive => completedAt == null;
+
+  factory PTibugCreationOrder.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugCreationOrder(
+        species: ForageMission._enumByName(
+          PTibugSpecies.values,
+          '${data['species'] ?? ''}',
+          PTibugSpecies.scarabe,
+        ),
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']) ??
+            DateTime.now(),
+        endsAt:
+            Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
+        completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'species': species.name,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'endsAt': Timestamp.fromDate(endsAt),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
       };
 }
 

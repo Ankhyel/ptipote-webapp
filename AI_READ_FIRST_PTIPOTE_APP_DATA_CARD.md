@@ -974,6 +974,18 @@ Pour formater Dart:
 
 # ARCHITECTURE DES BATIMENTS V1 - GENERATEUR, ATELIER ET MARCHE
 
+## P'TIBUG V1 - Nurserie De Plaine (socle)
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/game/ptibug_config.dart` | Especes, couts, energie, durees, styles, slots et capacite de transport V1. |
+| `ptipote-app/lib/features/game/building_construction_config.dart` | Projet `plaineNursery`, 20 Organique et 35 Mineral. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etats Nurserie, Patterns actifs, ordre de creation, premier P'TIBUG et paquet de Donnee de trait. |
+
+- Especes V1: Scarabe (Mineral), Hyme (Organique), Arac (opportuniste prepare). Le premier Pattern garanti a la fin du chantier est Scarabe; les autres restent prepares pour Kernel/Sourcier.
+- Une creation consomme ses ressources et `energyUnits`, reste temporisee hors ligne, puis genere un style aleatoire et une Donnee de trait commune. Les P'TIBUG restent des entites distinctes des figurines P'TIPOTE.
+- Firebase: `users/{uid}/game/zone0.ptibug` contient niveau de Nurserie, Patterns actifs, ordre de creation, P'TIBUG et Donnees. La production de biome, les slots UI, traits/modules equipables, fusion, Sourcier et Dashboard sont les prochaines integrations de cette fonctionnalite.
+
 ## Refonte Batiments - Projets De Construction V1
 
 | Fichier | Role |

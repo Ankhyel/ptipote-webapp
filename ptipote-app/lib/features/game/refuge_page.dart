@@ -110,6 +110,7 @@ class _RefugePageState extends State<RefugePage> {
         );
         _zone0State.resolveWorkshopOrder();
         _zone0State.resolveConstructionProjects();
+        _zone0State.resolvePTibugProduction();
         _zone0State.resolveMarket();
         _zone0State.resolveWasteAndRecycler(
           campHeartLevel: _campHeartState.campHeartLevel,
@@ -147,6 +148,7 @@ class _RefugePageState extends State<RefugePage> {
     );
     _zone0State.resolveWorkshopOrder();
     _zone0State.resolveConstructionProjects();
+    _zone0State.resolvePTibugProduction();
     _zone0State.resolveMarket();
     _zone0State.resolveWasteAndRecycler(
       campHeartLevel: _campHeartState.campHeartLevel,
