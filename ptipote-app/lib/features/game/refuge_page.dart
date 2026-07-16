@@ -3435,7 +3435,8 @@ class _LisierePageState extends State<LisierePage> {
     final cost =
         (duration.baseVitalityCost * intensity.vitalityMultiplier).round();
     final baseRiskPercent = _baseRiskPercent();
-    final securityAtLaunch = widget.gameState.refugeSafety;
+    final securityAtLaunch =
+        widget.gameState.biomeSecurity[_biome]?.localSecurity ?? 0;
     final securityReduction = _securityReduction();
     final riskPercent = _riskPercent(figurine);
     final vitality = widget.gameState.vitalityFor(figurine);
@@ -3547,8 +3548,11 @@ class _LisierePageState extends State<LisierePage> {
   }
 
   int _securityReduction() {
-    return (widget.gameState.refugeSafety *
-            lisiereForageConfig.securityRiskReductionFactor)
+    final localSecurity =
+        widget.gameState.biomeSecurity[_biome]?.localSecurity ?? 0;
+    return (localSecurity *
+            towerOperationsConfig.maximumLocalRiskReductionPercent /
+            100)
         .round();
   }
 
@@ -3790,7 +3794,7 @@ class _ForageEstimateCard extends StatelessWidget {
             Text('Gain : ${_formatRewards(estimate.rewards)}'),
             Text('Vitalité consommée : ${estimate.vitalityCost}'),
             Text('XP gagnée : ${estimate.xpGain} total'),
-            Text('Sécurité du refuge : ${estimate.securityAtLaunch}'),
+            Text('Sécurité locale : ${estimate.securityAtLaunch}%'),
             Text('Danger du biome : ${estimate.baseRiskPercent}%'),
             Text('Réduction Tour : -${estimate.securityReduction}%'),
             Text(
@@ -4883,7 +4887,13 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
         child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-          children: TowerMissionPlan.values
+          children: <TowerMissionPlan>[
+            TowerMissionPlan.oneHour,
+            TowerMissionPlan.twoHours,
+            TowerMissionPlan.fourHours,
+            TowerMissionPlan.eightHours,
+            TowerMissionPlan.until25Vitality,
+          ]
               .map(
                 (plan) => ListTile(
                   title: Text(_towerPlanLabel(plan)),
@@ -4909,6 +4919,9 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
   String _towerPlanLabel(TowerMissionPlan plan) {
     return switch (plan) {
       TowerMissionPlan.oneHour => '1h',
+      TowerMissionPlan.twoHours => '2h',
+      TowerMissionPlan.fourHours => '4h',
+      TowerMissionPlan.eightHours => '8h',
       TowerMissionPlan.threeHours => '3h',
       TowerMissionPlan.sixHours => '6h',
       TowerMissionPlan.tenHours => '10h',
@@ -4983,16 +4996,36 @@ class _TowerExplorationTab extends StatelessWidget {
                                           : revealed
                                               ? 'À explorer'
                                               : 'Balises insuffisantes'),
-                                  if (!unlocked)
+                                  Text(
+                                      'Danger potentiel : ${lisiereForageConfig.biomes[biome]!.baseRiskPercent}%'),
+                                  if (!unlocked) ...<Widget>[
                                     Text(
                                         'Exploration : ${state.explorationProgress}% / 100%'),
+                                    LinearProgressIndicator(
+                                      value: state.explorationProgress / 100,
+                                    ),
+                                  ],
                                   if (state.explorationProgress >= 30)
-                                    Text(_biomeResourceHints(biome,
-                                        detailed:
-                                            state.explorationProgress >= 50)),
-                                  if (unlocked)
+                                    Text(_biomeResourceHints(
+                                      biome,
+                                      detailLevel:
+                                          state.explorationProgress >= 70
+                                              ? 2
+                                              : state.explorationProgress >= 50
+                                                  ? 1
+                                                  : 0,
+                                    )),
+                                  if (unlocked) ...<Widget>[
                                     Text(
-                                        'Sécurité locale : ${state.localSecurity}%'),
+                                        'Réduction de danger : -${_localRiskReduction(state.localSecurity)}%'),
+                                    Text(
+                                        'Sécurisation : ${state.localSecurity}% / 100%'),
+                                    LinearProgressIndicator(
+                                      value: state.localSecurity / 100,
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ],
                                   if (enabled)
                                     FilledButton(
                                         onPressed: () async {
@@ -5039,10 +5072,18 @@ class _TowerExplorationTab extends StatelessWidget {
                                                 title: 'Sécuriser $label');
                                         if (figurine != null &&
                                             context.mounted) {
+                                          final plan =
+                                              await _pickPatrolPlan(context);
+                                          if (plan == null ||
+                                              !context.mounted) {
+                                            return;
+                                          }
                                           final result =
                                               gameState.startBiomePatrol(
-                                                  biome: biome,
-                                                  figurine: figurine);
+                                            biome: biome,
+                                            figurine: figurine,
+                                            plan: plan,
+                                          );
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(SnackBar(
                                                   content:
@@ -5099,17 +5140,17 @@ class _TowerWeatherTab extends StatelessWidget {
   }
 }
 
-String _biomeResourceHints(ForageBiome biome, {required bool detailed}) {
+String _biomeResourceHints(ForageBiome biome, {required int detailLevel}) {
   final rewards = lisiereForageConfig.biomes[biome]!.baseRewards;
   String strength(String resource) {
     final amount = rewards[resource] ?? 0;
-    return detailed
-        ? (amount >= 4
-            ? '++'
-            : amount >= 2
-                ? '+'
-                : '')
-        : '';
+    if (detailLevel == 0) return '';
+    if (detailLevel == 2) return ' $amount';
+    return amount >= 4
+        ? ' ++'
+        : amount >= 2
+            ? ' +'
+            : ' -';
   }
 
   return '🌿${strength('Organique')}  ⛏️${strength('Minéral')}';
@@ -5135,12 +5176,67 @@ Future<int?> _pickExplorationDuration(BuildContext context) =>
                 style: TextStyle(fontWeight: FontWeight.w900)),
             const Text(
                 '10 h d’exploration au total. Chaque heure apporte 10% de progression.'),
-            ...<int>[2, 6].map((hours) => ListTile(
+            ...<int>[1, 2, 4, 8].map((hours) => ListTile(
                 title: Text('${hours}h de mission'),
                 subtitle: Text('+${hours * 10}% exploration'),
                 onTap: () => Navigator.of(context).pop(hours))),
           ])),
     );
+
+Future<TowerMissionPlan?> _pickPatrolPlan(BuildContext context) =>
+    showModalBottomSheet<TowerMissionPlan>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          children: <Widget>[
+            const Text('Durée de sécurisation',
+                style: TextStyle(fontWeight: FontWeight.w900)),
+            const Text(
+                '8 h au total permettent de sécuriser entièrement un biome.'),
+            ...<TowerMissionPlan>[
+              TowerMissionPlan.oneHour,
+              TowerMissionPlan.twoHours,
+              TowerMissionPlan.fourHours,
+              TowerMissionPlan.eightHours,
+            ].map((plan) => ListTile(
+                  title: Text(_towerPlanLabelForPicker(plan)),
+                  subtitle: Text('+${_patrolSecurityGain(plan)}% au retour'),
+                  onTap: () => Navigator.of(context).pop(plan),
+                )),
+          ],
+        ),
+      ),
+    );
+
+String _towerPlanLabelForPicker(TowerMissionPlan plan) => switch (plan) {
+      TowerMissionPlan.oneHour => '1h',
+      TowerMissionPlan.twoHours => '2h',
+      TowerMissionPlan.fourHours => '4h',
+      TowerMissionPlan.eightHours => '8h',
+      TowerMissionPlan.threeHours => '3h',
+      TowerMissionPlan.sixHours => '6h',
+      TowerMissionPlan.tenHours => '10h',
+      TowerMissionPlan.until25Vitality => 'Jusqu’à 25%',
+    };
+
+int _patrolSecurityGain(TowerMissionPlan plan) => switch (plan) {
+      TowerMissionPlan.oneHour => 13,
+      TowerMissionPlan.twoHours => 25,
+      TowerMissionPlan.fourHours => 50,
+      TowerMissionPlan.eightHours => 100,
+      TowerMissionPlan.threeHours => 38,
+      TowerMissionPlan.sixHours => 75,
+      TowerMissionPlan.tenHours => 100,
+      TowerMissionPlan.until25Vitality => 0,
+    };
+
+int _localRiskReduction(int localSecurity) => (localSecurity.clamp(0, 100) *
+        towerOperationsConfig.maximumLocalRiskReductionPercent /
+        100)
+    .round();
 
 class _TowerFigurineRow extends StatelessWidget {
   const _TowerFigurineRow({

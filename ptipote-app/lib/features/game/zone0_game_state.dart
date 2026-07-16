@@ -1586,6 +1586,7 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult startTowerMission({
     required PtipoteFigurine figurine,
     required TowerMissionPlan plan,
+    ForageBiome? patrolBiome,
   }) {
     if (!isSecurityTowerBuilt) {
       return const Zone0ActionResult(
@@ -1628,6 +1629,7 @@ class Zone0GameState extends ChangeNotifier {
         vitalityCost: ticks * securityTowerConfig.vitalityCostPerTick,
         securityGain: ticks * securityTowerConfig.securityGainPerTick,
         sleepAfter: plan == TowerMissionPlan.until25Vitality,
+        patrolBiome: patrolBiome,
       ),
     );
     manualRestingIds.remove(figurine.id);
@@ -2187,7 +2189,12 @@ class Zone0GameState extends ChangeNotifier {
       biome: biome,
       memberIds: figurines.map((item) => item.id).toList(),
       memberNames: figurines.map((item) => item.displayName).toList(),
-      endTime: now.add(Duration(hours: durationHours)),
+      endTime: now.add(Duration(
+        minutes: math.max(
+          1,
+          (durationHours * 60 / lisiereForageConfig.forageTimeScale).round(),
+        ),
+      )),
       explorationProgressGain: durationHours * 10,
     ));
     state.status = BiomeDiscoveryStatus.exploring;
@@ -2202,26 +2209,27 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult startBiomePatrol({
     required ForageBiome biome,
     required PtipoteFigurine figurine,
+    required TowerMissionPlan plan,
   }) {
     if (!isBiomeUnlocked(biome)) {
       return const Zone0ActionResult(
           success: false, message: 'Termine d’abord l’exploration.');
     }
-    final result =
-        startTowerMission(figurine: figurine, plan: TowerMissionPlan.oneHour);
+    final result = startTowerMission(
+      figurine: figurine,
+      plan: plan,
+      patrolBiome: biome,
+    );
     if (!result.success) return result;
-    final state = biomeSecurity[biome]!;
-    state.localSecurity = math.min(towerOperationsConfig.localSecurityMaximum,
-        state.localSecurity + towerOperationsConfig.localSecurityGainPerPatrol);
-    state.lastPatrolAt = DateTime.now();
-    state.lastDecayAt = state.lastPatrolAt;
     reports.add(PtipoteMissionReport.system(
         message:
             '${figurine.displayName} sécurise les abords de ${lisiereForageConfig.biomes[biome]!.label}.'));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '${figurine.displayName} est en ronde locale.');
+        success: true,
+        message:
+            '${figurine.displayName} est en ronde locale. Le gain sera appliqué au retour.');
   }
 
   void resolveTowerOperations({DateTime? now}) {
@@ -2237,10 +2245,6 @@ class Zone0GameState extends ChangeNotifier {
           ? BiomeDiscoveryStatus.unlocked
           : BiomeDiscoveryStatus.discovered;
       state.lastMissionAt = current;
-      state.localSecurity = math.min(
-          towerOperationsConfig.localSecurityMaximum,
-          state.localSecurity +
-              towerOperationsConfig.localSecurityGainPerPatrol);
       reports.add(PtipoteMissionReport.system(
           message: state.status == BiomeDiscoveryStatus.unlocked
               ? '${mission.memberNames.join(', ')} a découvert ${lisiereForageConfig.biomes[mission.biome]!.label}. Le biome est disponible en Lisière.'
@@ -2634,11 +2638,6 @@ class Zone0GameState extends ChangeNotifier {
     final localState = biomeSecurity[mission.biome];
     if (localState != null) {
       localState.lastMissionAt = completedAt;
-      localState.localSecurity = math.min(
-        towerOperationsConfig.localSecurityMaximum,
-        localState.localSecurity +
-            towerOperationsConfig.localSecurityGainPerPatrol,
-      );
       localState.lastDecayAt = completedAt;
     }
     emitKernelProgressEvent(KernelProgressEventType.missionCompleted);
@@ -2754,6 +2753,9 @@ class Zone0GameState extends ChangeNotifier {
     }
     final hours = switch (plan) {
       TowerMissionPlan.oneHour => 1,
+      TowerMissionPlan.twoHours => 2,
+      TowerMissionPlan.fourHours => 4,
+      TowerMissionPlan.eightHours => 8,
       TowerMissionPlan.threeHours => 3,
       TowerMissionPlan.sixHours => 6,
       TowerMissionPlan.tenHours => 10,
@@ -2782,11 +2784,30 @@ class Zone0GameState extends ChangeNotifier {
     final currentVitality =
         vitalityOverrides[mission.figurineId] ?? ptipoteStatsConfig.maxVitality;
     final nextVitality = math.max(0, currentVitality - vitalityCost);
+    var localGain = 0;
     vitalityOverrides[mission.figurineId] = nextVitality;
-    refugeSafety = math.min(
-      securityTowerConfig.maxSecurity,
-      refugeSafety + securityGain,
-    );
+    if (mission.patrolBiome == null) {
+      refugeSafety = math.min(
+        securityTowerConfig.maxSecurity,
+        refugeSafety + securityGain,
+      );
+    } else {
+      final state = biomeSecurity[mission.patrolBiome]!;
+      localGain = math.max(
+        1,
+        (towerOperationsConfig.localSecurityMaximum *
+                _towerHoursForPlan(mission.plan) /
+                towerOperationsConfig.localSecurityHoursForFullPatrol *
+                ratio)
+            .round(),
+      );
+      state.localSecurity = math.min(
+        towerOperationsConfig.localSecurityMaximum,
+        state.localSecurity + localGain,
+      );
+      state.lastPatrolAt = DateTime.now();
+      state.lastDecayAt = state.lastPatrolAt;
+    }
     if (mission.sleepAfter ||
         nextVitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
       manualRestingIds.add(mission.figurineId);
@@ -2795,11 +2816,24 @@ class Zone0GameState extends ChangeNotifier {
     reports.add(
       PtipoteMissionReport.system(
         message: early
-            ? '${mission.figurineName} revient de la Tour plus tôt : +$securityGain sécurité, -$vitalityCost Vitalité.'
-            : '${mission.figurineName} termine sa surveillance : +$securityGain sécurité, -$vitalityCost Vitalité.',
+            ? '${mission.figurineName} revient de la Tour plus tôt : -$vitalityCost Vitalité.'
+            : mission.patrolBiome == null
+                ? '${mission.figurineName} termine sa surveillance : +$securityGain sécurité camp, -$vitalityCost Vitalité.'
+                : '${mission.figurineName} termine sa ronde : +$localGain sécurité locale, -$vitalityCost Vitalité.',
       ),
     );
   }
+
+  int _towerHoursForPlan(TowerMissionPlan plan) => switch (plan) {
+        TowerMissionPlan.oneHour => 1,
+        TowerMissionPlan.twoHours => 2,
+        TowerMissionPlan.fourHours => 4,
+        TowerMissionPlan.eightHours => 8,
+        TowerMissionPlan.threeHours => 3,
+        TowerMissionPlan.sixHours => 6,
+        TowerMissionPlan.tenHours => 10,
+        TowerMissionPlan.until25Vitality => 1,
+      };
 
   String _moodLabelForValues({
     required int hunger,
@@ -3384,6 +3418,9 @@ class WorkshopCraftOrder {
 
 enum TowerMissionPlan {
   oneHour,
+  twoHours,
+  fourHours,
+  eightHours,
   threeHours,
   sixHours,
   tenHours,
@@ -3416,7 +3453,11 @@ class BiomeSecurityState {
         biome: biome,
         status: ForageMission._enumByName(BiomeDiscoveryStatus.values,
             '${data['status'] ?? ''}', BiomeDiscoveryStatus.discovered),
-        localSecurity: ForageMission._readStaticInt(data['localSecurity']),
+        // V1 stored local security for exploration and forage missions too.
+        // Those values were not actual completed patrols, so reset them once.
+        localSecurity: ForageMission._readStaticInt(data['securitySchema']) >= 2
+            ? ForageMission._readStaticInt(data['localSecurity'])
+            : 0,
         explorationProgress:
             ForageMission._readStaticInt(data['explorationProgress']),
         lastPatrolAt: ForageMission._readDate(data['lastPatrolAt']),
@@ -3433,6 +3474,7 @@ class BiomeSecurityState {
   DateTime? lastDecayAt;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'securitySchema': 2,
         'status': status.name,
         'localSecurity': localSecurity,
         'explorationProgress': explorationProgress,
@@ -3524,6 +3566,7 @@ class TowerMission {
     required this.vitalityCost,
     required this.securityGain,
     required this.sleepAfter,
+    this.patrolBiome,
   });
 
   factory TowerMission.fromFirebase(Map<dynamic, dynamic> data) {
@@ -3541,6 +3584,10 @@ class TowerMission {
       vitalityCost: ForageMission._readStaticInt(data['vitalityCost']),
       securityGain: ForageMission._readStaticInt(data['securityGain']),
       sleepAfter: data['sleepAfter'] == true,
+      patrolBiome: data['patrolBiome'] == null
+          ? null
+          : ForageMission._enumByName(ForageBiome.values,
+              '${data['patrolBiome']}', ForageBiome.plaineRiche),
     );
     mission.status = ForageMission._enumByName(
       TowerMissionStatus.values,
@@ -3559,6 +3606,7 @@ class TowerMission {
   final int vitalityCost;
   final int securityGain;
   final bool sleepAfter;
+  final ForageBiome? patrolBiome;
   TowerMissionStatus status = TowerMissionStatus.active;
 
   Map<String, dynamic> toFirebase() {
@@ -3572,6 +3620,7 @@ class TowerMission {
       'vitalityCost': vitalityCost,
       'securityGain': securityGain,
       'sleepAfter': sleepAfter,
+      'patrolBiome': patrolBiome?.name,
       'status': status.name,
     };
   }

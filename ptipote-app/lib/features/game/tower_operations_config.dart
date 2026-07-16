@@ -37,7 +37,8 @@ class TowerOperationsConfig {
     required this.biomeRevealSecurityThreshold,
     required this.explorationDurationMinutes,
     required this.localSecurityMaximum,
-    required this.localSecurityGainPerPatrol,
+    required this.localSecurityHoursForFullPatrol,
+    required this.maximumLocalRiskReductionPercent,
     required this.localSecurityDecayPerHour,
     required this.localSecurityRecentMissionHours,
     required this.merchantPresenceHours,
@@ -49,7 +50,8 @@ class TowerOperationsConfig {
   final int biomeRevealSecurityThreshold;
   final int explorationDurationMinutes;
   final int localSecurityMaximum;
-  final int localSecurityGainPerPatrol;
+  final int localSecurityHoursForFullPatrol;
+  final int maximumLocalRiskReductionPercent;
   final int localSecurityDecayPerHour;
   final int localSecurityRecentMissionHours;
   final int merchantPresenceHours;
@@ -67,7 +69,8 @@ const towerOperationsConfig = TowerOperationsConfig(
   biomeRevealSecurityThreshold: 60,
   explorationDurationMinutes: 20,
   localSecurityMaximum: 100,
-  localSecurityGainPerPatrol: 15,
+  localSecurityHoursForFullPatrol: 8,
+  maximumLocalRiskReductionPercent: 30,
   localSecurityDecayPerHour: 2,
   localSecurityRecentMissionHours: 6,
   merchantPresenceHours: 24,

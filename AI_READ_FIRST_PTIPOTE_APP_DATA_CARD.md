@@ -985,11 +985,11 @@ Pour formater Dart:
 
 - La Securite du camp fournit un modificateur de Bien-etre visible dans le HUD: Vulnerable, Fragile, Stable, Protege ou Serein.
 - Etats biome: `discovered`, `exploring`, `unlocked`. Seule la Plaine commence `unlocked`; les autres sont reveles a partir du seuil de securite puis debloques par exploration.
-- Chaque biome conserve sa securite locale, derniere mission, derniere ronde et derniere decroissance. Une mission rehausse la securite locale; l'absence d'activite declenche une decroissance lente.
+- Chaque biome conserve sa securite locale, derniere mission, derniere ronde et derniere decroissance. L'exploration ne modifie jamais cette securite: seule une ronde terminee l'augmente. L'absence d'activite declenche une decroissance lente.
 - La Tour annonce un evenement meteo avec une preparation. `WeatherPreparationType` prepare les trois modes `craft`, `own`, `provide`; V1 affiche et utilise `provide` pour retirer l'objet seulement a validation.
 - Le Marchand est volontairement une interaction de prototype: il propose des Plans contre des Bio-batteries, reste 24 h selon config et repart sans malus. La carte du Marche permet de le faire apparaitre pour test.
 - Attentes: les effets mecaniques complets de chaque meteo, les rondes locales explicites et la generation aleatoire serveur du Marchand restent a enrichir; aucune boucle existante de mission, sommeil, craft ou vente n'est supprimee.
-- Correctif exploration: l'exploration est une jauge de 100 %, avec sorties de 2 h (+20 %) ou 6 h (+60 %), retour affiche, indices de ressources a 30 % et intensite a 50 %. La securite locale n'est affichee qu'apres deblocage; une ronde peut alors y affecter un P'TIPOTE.
+- Correctif exploration et rondes: l'exploration est une jauge de 100 %, avec sorties de 1 h, 2 h, 4 h ou 8 h (+10 % par heure theorique; echelle de test Lisiere). Les indices ressources apparaissent a 30 %, leur ratio a 50 % et les valeurs a 70 %. Une ronde utilise les memes choix de duree; 8 h remplissent 100 % de securisation et le gain est applique uniquement au retour. Chaque biome affiche son danger potentiel, sa reduction actuelle (maximum -30 % a 100 % de securisation) et sa jauge de securisation.
 - Correctif Atelier: un emplacement manuel reste toujours disponible en plus des emplacements P'TIPOTE, qui augmentent avec le niveau de Fablab.
 - Correctif Marche: les ressources sont demandees par stack de 10 et les objets par unite; les valeurs V1 sont Filtre 1, module 2, tenue/meuble 2, installation 3 Bio-batteries.
 
