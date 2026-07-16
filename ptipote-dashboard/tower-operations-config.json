@@ -1,0 +1,22 @@
+{
+  "biomeRevealSecurityThreshold": 60,
+  "explorationDurationMinutes": 20,
+  "localSecurityMaximum": 100,
+  "localSecurityGainPerPatrol": 15,
+  "localSecurityDecayPerHour": 2,
+  "localSecurityRecentMissionHours": 6,
+  "merchantPresenceHours": 24,
+  "merchantOfferPrices": {
+    "Plan Filtre": 4,
+    "Plan Ventilation Termite": 6,
+    "Plan Lumière solaire": 6
+  },
+  "wellbeingBands": [
+    {"minimumSecurity": 0, "wellbeingModifier": -12, "label": "Vulnérable"},
+    {"minimumSecurity": 20, "wellbeingModifier": -5, "label": "Fragile"},
+    {"minimumSecurity": 40, "wellbeingModifier": 0, "label": "Stable"},
+    {"minimumSecurity": 60, "wellbeingModifier": 5, "label": "Protégé"},
+    {"minimumSecurity": 80, "wellbeingModifier": 10, "label": "Serein"}
+  ],
+  "weather": {"forecastWarningMinutes": 30, "defaultDurationMinutes": 90}
+}

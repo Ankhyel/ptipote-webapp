@@ -16,6 +16,7 @@ import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'security_tower_config.dart';
+import 'tower_operations_config.dart';
 import 'zone0_game_state.dart';
 import 'workshop_config.dart';
 
@@ -328,6 +329,8 @@ class _CampHud extends StatelessWidget {
           child: _HudChip(
             icon: Icons.groups_2_outlined,
             label: '${gameState.currentPopulation} / $capacity',
+            onTap: () => _showHudInfo(context, 'Population',
+                'La communauté installée au refuge. Elle arrive par les missions du Kernel et ne dépasse jamais la capacité du Cœur du Camp.'),
           ),
         ),
         const SizedBox(width: 8),
@@ -335,14 +338,18 @@ class _CampHud extends StatelessWidget {
           child: _HudChip(
             icon: Icons.battery_charging_full_outlined,
             label: '${gameState.bioBatteries}',
+            onTap: () => _showHudInfo(context, 'Bio-batteries',
+                'La ressource énergétique du refuge. Le Générateur, le Marché et certaines récompenses peuvent en produire.'),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: _HudChip(
             icon: Icons.sentiment_satisfied_alt_outlined,
-            label: '${gameState.campWellbeing}%',
+            label: '${gameState.displayedCampWellbeing}%',
             color: wellbeingColor,
+            onTap: () => _showHudInfo(context, 'Bien-être',
+                'Le bien-être du refuge reflète sa stabilité. La Sécurité actuelle apporte ${gameState.securityWellbeingModifier >= 0 ? '+' : ''}${gameState.securityWellbeingModifier}% (${towerOperationsConfig.wellbeingBandFor(gameState.refugeSafety).label}).'),
           ),
         ),
       ],
@@ -358,6 +365,27 @@ class _CampHud extends StatelessWidget {
     }
     return const Color(0xFF4F7F52);
   }
+
+  void _showHudInfo(BuildContext context, String title, String body) {
+    showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+            child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(title,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 10),
+                      Text(body)
+                    ]))));
+  }
 }
 
 class _HudChip extends StatelessWidget {
@@ -365,39 +393,45 @@ class _HudChip extends StatelessWidget {
     required this.icon,
     required this.label,
     this.color = const Color(0xFF2F241A),
+    this.onTap,
   });
 
   final IconData icon;
   final String label;
   final Color color;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.22)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w900,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.22)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -3175,7 +3209,7 @@ class LisierePage extends StatefulWidget {
 
 class _LisierePageState extends State<LisierePage> {
   final _figurineService = FigurineService();
-  ForageBiome _biome = ForageBiome.colline;
+  ForageBiome _biome = ForageBiome.plaineRiche;
   ForageDuration _duration = ForageDuration.oneHour;
   ForageIntensity _intensity = ForageIntensity.normal;
   final Set<String> _selectedFigurineIds = <String>{};
@@ -3242,7 +3276,9 @@ class _LisierePageState extends State<LisierePage> {
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: ForageBiome.values.map((biome) {
+                    children: ForageBiome.values
+                        .where(widget.gameState.isBiomeUnlocked)
+                        .map((biome) {
                       final config = lisiereForageConfig.biomes[biome]!;
                       return ChoiceChip(
                         label: Text(config.label),
@@ -4635,167 +4671,185 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Tour de sécurité')),
-      body: SafeArea(
-        child: StreamBuilder<List<PtipoteFigurine>>(
-          stream: widget.figurineService.watchMyFigurines(),
-          builder: (context, snapshot) {
-            final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-            final activeTowerMissions = widget.gameState.towerMissions
-                .where((mission) => mission.status == TowerMissionStatus.active)
-                .toList();
-            final available = figurines
-                .where(
-                  (figurine) =>
-                      !widget.gameState.isUnavailableForTower(figurine) &&
-                      widget.gameState.vitalityFor(figurine) >=
-                          ptipoteStatsConfig.minimumMissionVitality,
-                )
-                .toList();
-            final unavailable = figurines
-                .where((figurine) => !available.contains(figurine))
-                .toList();
-            return ListView(
-              padding: const EdgeInsets.all(18),
-              children: <Widget>[
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          'Tour niveau ${widget.gameState.securityTowerLevel}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 8),
-                        _InfoLine(
-                          label: 'Sécurité',
-                          value:
-                              '${widget.gameState.refugeSafety}/${securityTowerConfig.maxSecurity}',
-                        ),
-                        _InfoLine(
-                          label: 'Slots',
-                          value:
-                              '${activeTowerMissions.length}/${widget.gameState.securityTowerSlots}',
-                        ),
-                        _InfoLine(
-                          label: 'Contribution',
-                          value:
-                              '+${securityTowerConfig.securityGainPerTick} sécurité / ${securityTowerConfig.tickMinutes} min',
-                        ),
-                        _InfoLine(
-                          label: 'Coût',
-                          value:
-                              '-${securityTowerConfig.vitalityCostPerTick} Vitalité / tick',
-                        ),
-                        const SizedBox(height: 10),
-                        FilledButton.icon(
-                          onPressed: widget.gameState
-                                      .towerManualRechargeRemaining() ==
-                                  Duration.zero
-                              ? () {
-                                  final result =
-                                      widget.gameState.manuallyRechargeTower();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(result.message)));
-                                }
-                              : null,
-                          icon: const Icon(Icons.electrical_services_outlined),
-                          label: Text(widget.gameState
-                                      .towerManualRechargeRemaining() ==
-                                  Duration.zero
-                              ? 'Recharger les balises (+${securityTowerConfig.manualRechargeSecurityGain})'
-                              : 'Recharge dans ${widget.gameState.towerManualRechargeRemaining().inMinutes + 1} min'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Text(
-                          'P’TIPOTES affectés',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 10),
-                        if (activeTowerMissions.isEmpty)
-                          const Text('Aucun P’TIPOTE ne surveille la Tour.')
-                        else
-                          ...activeTowerMissions.map(
-                            (mission) => _TowerFigurineRow(
-                              name: mission.figurineName,
-                              subtitle:
-                                  '${_towerPlanLabel(mission.plan)} · retour ${_shortTime(mission.endTime)} · +${mission.securityGain} sécurité',
-                              action: TextButton(
-                                onPressed: () {
-                                  widget.gameState
-                                      .removeFromTower(mission.figurineId);
-                                },
-                                child: const Text('Retour'),
-                              ),
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+            title: const Text('Tour de sécurité'),
+            bottom: const TabBar(tabs: <Widget>[
+              Tab(text: 'Surveillance'),
+              Tab(text: 'Exploration'),
+              Tab(text: 'Météo')
+            ])),
+        body: TabBarView(children: <Widget>[
+          SafeArea(
+            child: StreamBuilder<List<PtipoteFigurine>>(
+              stream: widget.figurineService.watchMyFigurines(),
+              builder: (context, snapshot) {
+                final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+                final activeTowerMissions = widget.gameState.towerMissions
+                    .where((mission) =>
+                        mission.status == TowerMissionStatus.active)
+                    .toList();
+                final available = figurines
+                    .where(
+                      (figurine) =>
+                          !widget.gameState.isUnavailableForTower(figurine) &&
+                          widget.gameState.vitalityFor(figurine) >=
+                              ptipoteStatsConfig.minimumMissionVitality,
+                    )
+                    .toList();
+                final unavailable = figurines
+                    .where((figurine) => !available.contains(figurine))
+                    .toList();
+                return ListView(
+                  padding: const EdgeInsets.all(18),
+                  children: <Widget>[
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              'Tour niveau ${widget.gameState.securityTowerLevel}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w900),
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Text(
-                          'Affecter',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 10),
-                        if (activeTowerMissions.length >=
-                            widget.gameState.securityTowerSlots)
-                          const Text('Slot de Tour occupé.')
-                        else if (available.isEmpty) ...<Widget>[
-                          const Text('Aucun P’TIPOTE disponible.'),
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 8),
-                              child: LinearProgressIndicator(),
+                            const SizedBox(height: 8),
+                            _InfoLine(
+                              label: 'Sécurité',
+                              value:
+                                  '${widget.gameState.refugeSafety}/${securityTowerConfig.maxSecurity}',
                             ),
-                          if (unavailable.isNotEmpty) ...<Widget>[
+                            _InfoLine(
+                              label: 'Slots',
+                              value:
+                                  '${activeTowerMissions.length}/${widget.gameState.securityTowerSlots}',
+                            ),
+                            _InfoLine(
+                              label: 'Contribution',
+                              value:
+                                  '+${securityTowerConfig.securityGainPerTick} sécurité / ${securityTowerConfig.tickMinutes} min',
+                            ),
+                            _InfoLine(
+                              label: 'Coût',
+                              value:
+                                  '-${securityTowerConfig.vitalityCostPerTick} Vitalité / tick',
+                            ),
                             const SizedBox(height: 10),
-                            ...unavailable.map(
-                              (figurine) => _TowerFigurineRow(
-                                name: figurine.displayName,
-                                subtitle: _towerUnavailableReason(figurine),
-                                action: const SizedBox.shrink(),
-                              ),
+                            FilledButton.icon(
+                              onPressed: widget.gameState
+                                          .towerManualRechargeRemaining() ==
+                                      Duration.zero
+                                  ? () {
+                                      final result = widget.gameState
+                                          .manuallyRechargeTower();
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(SnackBar(
+                                              content: Text(result.message)));
+                                    }
+                                  : null,
+                              icon: const Icon(
+                                  Icons.electrical_services_outlined),
+                              label: Text(widget.gameState
+                                          .towerManualRechargeRemaining() ==
+                                      Duration.zero
+                                  ? 'Recharger les balises (+${securityTowerConfig.manualRechargeSecurityGain})'
+                                  : 'Recharge dans ${widget.gameState.towerManualRechargeRemaining().inMinutes + 1} min'),
                             ),
                           ],
-                        ] else
-                          FilledButton.icon(
-                            onPressed: () => _chooseTowerMission(figurines),
-                            icon: const Icon(Icons.person_add_alt_1),
-                            label: const Text('Choisir un P’TIPOTE'),
-                          ),
-                      ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
+                    const SizedBox(height: 10),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const Text(
+                              'P’TIPOTES affectés',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            const SizedBox(height: 10),
+                            if (activeTowerMissions.isEmpty)
+                              const Text('Aucun P’TIPOTE ne surveille la Tour.')
+                            else
+                              ...activeTowerMissions.map(
+                                (mission) => _TowerFigurineRow(
+                                  name: mission.figurineName,
+                                  subtitle:
+                                      '${_towerPlanLabel(mission.plan)} · retour ${_shortTime(mission.endTime)} · +${mission.securityGain} sécurité',
+                                  action: TextButton(
+                                    onPressed: () {
+                                      widget.gameState
+                                          .removeFromTower(mission.figurineId);
+                                    },
+                                    child: const Text('Retour'),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const Text(
+                              'Affecter',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            const SizedBox(height: 10),
+                            if (activeTowerMissions.length >=
+                                widget.gameState.securityTowerSlots)
+                              const Text('Slot de Tour occupé.')
+                            else if (available.isEmpty) ...<Widget>[
+                              const Text('Aucun P’TIPOTE disponible.'),
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 8),
+                                  child: LinearProgressIndicator(),
+                                ),
+                              if (unavailable.isNotEmpty) ...<Widget>[
+                                const SizedBox(height: 10),
+                                ...unavailable.map(
+                                  (figurine) => _TowerFigurineRow(
+                                    name: figurine.displayName,
+                                    subtitle: _towerUnavailableReason(figurine),
+                                    action: const SizedBox.shrink(),
+                                  ),
+                                ),
+                              ],
+                            ] else
+                              FilledButton.icon(
+                                onPressed: () => _chooseTowerMission(figurines),
+                                icon: const Icon(Icons.person_add_alt_1),
+                                label: const Text('Choisir un P’TIPOTE'),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          _TowerExplorationTab(
+              gameState: widget.gameState,
+              figurineService: widget.figurineService),
+          _TowerWeatherTab(gameState: widget.gameState),
+        ]),
       ),
     );
   }
@@ -4866,6 +4920,139 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
     final hour = date.hour.toString().padLeft(2, '0');
     final minute = date.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+}
+
+class _TowerExplorationTab extends StatelessWidget {
+  const _TowerExplorationTab(
+      {required this.gameState, required this.figurineService});
+  final Zone0GameState gameState;
+  final FigurineService figurineService;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+          child: StreamBuilder<List<PtipoteFigurine>>(
+        stream: figurineService.watchMyFigurines(),
+        builder: (context, snapshot) {
+          final available = (snapshot.data ?? const <PtipoteFigurine>[])
+              .where((item) =>
+                  !gameState.isBusy(item) &&
+                  gameState.vitalityFor(item) >=
+                      ptipoteStatsConfig.minimumMissionVitality)
+              .toList();
+          final revealed = gameState.refugeSafety >=
+              towerOperationsConfig.biomeRevealSecurityThreshold;
+          return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+            Card(
+                child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                        'Camp au centre. Les balises révèlent les biomes à ${towerOperationsConfig.biomeRevealSecurityThreshold}% de Sécurité. Sécurité actuelle : ${gameState.refugeSafety}%'))),
+            const SizedBox(height: 10),
+            Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: ForageBiome.values.map((biome) {
+                  final state = gameState.biomeSecurity[biome]!;
+                  final label = lisiereForageConfig.biomes[biome]!.label;
+                  final unlocked = gameState.isBiomeUnlocked(biome);
+                  final exploring = gameState.isBiomeExploring(biome);
+                  final enabled = revealed &&
+                      !unlocked &&
+                      !exploring &&
+                      available.isNotEmpty;
+                  return SizedBox(
+                    width: 160,
+                    child: Card(
+                        child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Icon(unlocked
+                                      ? Icons.travel_explore
+                                      : Icons.lock_outline),
+                                  const SizedBox(height: 6),
+                                  Text(label,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w900)),
+                                  Text(unlocked
+                                      ? 'Disponible en Lisière'
+                                      : exploring
+                                          ? 'Exploration en cours'
+                                          : revealed
+                                              ? 'À explorer'
+                                              : 'Balises insuffisantes'),
+                                  Text(
+                                      'Sécurité locale ${state.localSecurity}%'),
+                                  if (enabled)
+                                    FilledButton(
+                                        onPressed: () async {
+                                          final figurine =
+                                              await _pickPtipoteForActivity(
+                                                  context: context,
+                                                  gameState: gameState,
+                                                  figurines: available,
+                                                  title: 'Explorer $label');
+                                          if (figurine != null &&
+                                              context.mounted) {
+                                            final result = gameState
+                                                .startBiomeExploration(
+                                                    biome: biome,
+                                                    figurines: <PtipoteFigurine>[
+                                                  figurine
+                                                ]);
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(SnackBar(
+                                                    content:
+                                                        Text(result.message)));
+                                          }
+                                        },
+                                        child: const Text('Explorer')),
+                                ]))),
+                  );
+                }).toList()),
+          ]);
+        },
+      ));
+}
+
+class _TowerWeatherTab extends StatelessWidget {
+  const _TowerWeatherTab({required this.gameState});
+  final Zone0GameState gameState;
+  @override
+  Widget build(BuildContext context) {
+    final alerts = gameState.weatherAlerts;
+    return SafeArea(
+        child: ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+      Card(
+          child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(alerts.isEmpty
+                  ? 'Aucun événement météo annoncé. La Tour préviendra le refuge avant les prochaines perturbations.'
+                  : 'Événements annoncés'))),
+      ...alerts.map((alert) {
+        final config = towerOperationsConfig.weatherEvents
+            .firstWhere((item) => item.type == alert.type);
+        return Card(
+            child: ListTile(
+                title: Text(config.label),
+                subtitle: Text(
+                    '${config.description}\nPréparation : ${config.preparationAmount} ${config.preparationItem}'),
+                trailing: alert.preparationCompleted
+                    ? const Text('Préparé')
+                    : FilledButton(
+                        onPressed: () {
+                          final result =
+                              gameState.fulfillWeatherPreparation(alert);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)),
+                          );
+                        },
+                        child: const Text('Fournir'),
+                      )));
+      }),
+    ]));
   }
 }
 
@@ -5139,6 +5326,49 @@ class _MarketPageState extends State<MarketPage> {
                                     label: const Text('Affecter un P’TIPOTE'),
                                   ),
                               ]))),
+                  const SizedBox(height: 10),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text('Marchand',
+                              style: TextStyle(fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 6),
+                          if (!widget.gameState.isMerchantAvailable)
+                            FilledButton(
+                              onPressed: widget.gameState.openMerchant,
+                              child: const Text('Attendre le Marchand'),
+                            )
+                          else ...<Widget>[
+                            Text(
+                                'Présent encore ${widget.gameState.merchantAvailableUntil!.difference(DateTime.now()).inHours + 1}h'),
+                            ...widget.gameState.merchantOffers
+                                .map((offer) => ListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Text(offer.planName),
+                                      subtitle:
+                                          Text('${offer.price} Bio-batteries'),
+                                      trailing: offer.purchased
+                                          ? const Text('Acheté')
+                                          : FilledButton(
+                                              onPressed: () => _message(widget
+                                                  .gameState
+                                                  .buyMerchantOffer(offer)
+                                                  .message),
+                                              child: const Text('Acheter'),
+                                            ),
+                                    )),
+                            TextButton(
+                                onPressed: () => _message(
+                                    'Le Marchand reviendra plus tard.'),
+                                child: const Text('Plus tard')),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 10),
                   Text(
                     'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',

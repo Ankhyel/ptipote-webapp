@@ -974,6 +974,22 @@ Pour formater Dart:
 
 # ARCHITECTURE DES BATIMENTS V1 - GENERATEUR, ATELIER ET MARCHE
 
+## Tour, Exploration, Meteo Et Marchand V1
+
+| Fichier | Role |
+| --- | --- |
+| `ptipote-app/lib/features/game/tower_operations_config.dart` | Seuils de bien-etre issus de la Securite, exploration, securite locale, meteo et marchand. |
+| `ptipote-app/lib/features/game/zone0_game_state.dart` | Etats des biomes, explorations, securite locale, marchand et persistance Firebase. |
+| `ptipote-app/lib/features/game/refuge_page.dart` | HUD cliquable, onglets Tour Surveillance/Exploration/Meteo et carte Marchand du Marche. |
+| `ptipote-dashboard/tower-operations-config.json` | Miroir editable/exportable des reglages operationnels Tour. |
+
+- La Securite du camp fournit un modificateur de Bien-etre visible dans le HUD: Vulnerable, Fragile, Stable, Protege ou Serein.
+- Etats biome: `discovered`, `exploring`, `unlocked`. Seule la Plaine commence `unlocked`; les autres sont reveles a partir du seuil de securite puis debloques par exploration.
+- Chaque biome conserve sa securite locale, derniere mission, derniere ronde et derniere decroissance. Une mission rehausse la securite locale; l'absence d'activite declenche une decroissance lente.
+- La Tour annonce un evenement meteo avec une preparation. `WeatherPreparationType` prepare les trois modes `craft`, `own`, `provide`; V1 affiche et utilise `provide` pour retirer l'objet seulement a validation.
+- Le Marchand est volontairement une interaction de prototype: il propose des Plans contre des Bio-batteries, reste 24 h selon config et repart sans malus. La carte du Marche permet de le faire apparaitre pour test.
+- Attentes: les effets mecaniques complets de chaque meteo, les rondes locales explicites et la generation aleatoire serveur du Marchand restent a enrichir; aucune boucle existante de mission, sommeil, craft ou vente n'est supprimee.
+
 ## 1. Architecture commune
 
 - `ptipote-app/lib/features/game/zone0_game_state.dart` centralise les actions manuelles, les ordres temporises, l'occupation des P'TIPOTES, la simulation hors ligne et Firebase.

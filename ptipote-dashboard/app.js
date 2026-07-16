@@ -141,8 +141,10 @@ const ids = [
   "campGeneratorEditor",
   "workshopEditor",
   "marketEditor",
+  "towerOperationsEditor",
   "exportCampGeneratorButton",
   "exportWorkshopButton",
+  "exportTowerOperationsButton",
   "exportMarketButton",
 ];
 
@@ -744,6 +746,7 @@ async function loadActiveBuildingConfigs() {
     ["camp-generator-config.json", el.campGeneratorEditor],
     ["workshop-config.json", el.workshopEditor],
     ["market-config.json", el.marketEditor],
+    ["tower-operations-config.json", el.towerOperationsEditor],
   ];
   for (const [file, target] of entries) {
     const response = await fetch(`./${file}`, { cache: "no-store" });
@@ -775,6 +778,7 @@ function downloadJson(filename, value) {
 el.exportCampGeneratorButton.addEventListener("click", () => exportEditor(el.campGeneratorEditor, "camp-generator-config.json"));
 el.exportWorkshopButton.addEventListener("click", () => exportEditor(el.workshopEditor, "workshop-config.json"));
 el.exportMarketButton.addEventListener("click", () => exportEditor(el.marketEditor, "market-config.json"));
+el.exportTowerOperationsButton.addEventListener("click", () => exportEditor(el.towerOperationsEditor, "tower-operations-config.json"));
 el.exportKernelProgressButton.addEventListener("click", () => exportEditor(el.kernelProgressEditor, "kernel-progress-config.json"));
 
 setupDashboardTabs();

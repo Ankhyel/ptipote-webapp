@@ -15,6 +15,7 @@ import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'security_tower_config.dart';
+import 'tower_operations_config.dart';
 import 'workshop_config.dart';
 
 class Zone0GameState extends ChangeNotifier {
@@ -41,6 +42,15 @@ class Zone0GameState extends ChangeNotifier {
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
   final List<Zone0InventoryStack> marketStock = <Zone0InventoryStack>[];
   final List<MarketCustomerRequest> marketRequests = <MarketCustomerRequest>[];
+  final Map<ForageBiome, BiomeSecurityState> biomeSecurity =
+      <ForageBiome, BiomeSecurityState>{
+    for (final biome in ForageBiome.values)
+      biome: BiomeSecurityState.initial(biome),
+  };
+  final List<BiomeExplorationMission> explorationMissions =
+      <BiomeExplorationMission>[];
+  final List<WeatherAlert> weatherAlerts = <WeatherAlert>[];
+  final List<MerchantOffer> merchantOffers = <MerchantOffer>[];
   final Set<String> completedKernelMissionIds = <String>{};
   // Kept separately from completion: a completed mission can wait for room
   // in the refuge before all of its population reward is credited.
@@ -79,6 +89,7 @@ class Zone0GameState extends ChangeNotifier {
   DateTime? marketNextSaleAt;
   DateTime? marketLastWorkTickAt;
   DateTime? lastManualTowerRechargeAt;
+  DateTime? merchantAvailableUntil;
   String? marketAssignedPtipoteId;
   String? marketAssignedPtipoteName;
   int marketValueRemainder = 0;
@@ -99,6 +110,22 @@ class Zone0GameState extends ChangeNotifier {
   bool get hasActiveTowerMission => towerMissions.any(
         (mission) => mission.status == TowerMissionStatus.active,
       );
+
+  int get securityWellbeingModifier =>
+      towerOperationsConfig.wellbeingBandFor(refugeSafety).wellbeingModifier;
+
+  int get displayedCampWellbeing =>
+      (campWellbeing + securityWellbeingModifier).clamp(0, 100);
+
+  bool get isMerchantAvailable =>
+      merchantAvailableUntil != null &&
+      DateTime.now().isBefore(merchantAvailableUntil!);
+
+  bool isBiomeUnlocked(ForageBiome biome) =>
+      biomeSecurity[biome]?.status == BiomeDiscoveryStatus.unlocked;
+
+  bool isBiomeExploring(ForageBiome biome) => explorationMissions
+      .any((mission) => mission.biome == biome && mission.isActive);
 
   bool isAssignedToTower(String figurineId) {
     return towerAssignedIds.contains(figurineId) ||
@@ -449,10 +476,14 @@ class Zone0GameState extends ChangeNotifier {
 
   bool isOnMission(String figurineId) {
     return missions.any(
-      (mission) =>
-          mission.memberIds.contains(figurineId) &&
-          mission.status == ForageMissionStatus.active,
-    );
+          (mission) =>
+              mission.memberIds.contains(figurineId) &&
+              mission.status == ForageMissionStatus.active,
+        ) ||
+        explorationMissions.any(
+          (mission) =>
+              mission.isActive && mission.memberIds.contains(figurineId),
+        );
   }
 
   bool isResting(PtipoteFigurine figurine) {
@@ -1489,6 +1520,7 @@ class Zone0GameState extends ChangeNotifier {
         message: 'La Tour de sécurité est construite.',
       ),
     );
+    ensureWeatherForecast();
     refreshKernelMissions(campHeartLevel: campHeartLevel);
     notifyListeners();
     unawaited(saveBuildingsToFirebase());
@@ -1866,6 +1898,37 @@ class Zone0GameState extends ChangeNotifier {
             marketData['assignedPtipoteName'] as String?;
         marketValueRemainder = _readInt(marketData['valueRemainder']);
         marketBioBatteriesEarned = _readInt(marketData['bioBatteriesEarned']);
+        merchantAvailableUntil =
+            _readDate(marketData['merchantAvailableUntil']);
+        merchantOffers
+          ..clear()
+          ..addAll((marketData['merchantOffers'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map((item) => MerchantOffer(
+                    planName: '${item['planName'] ?? ''}',
+                    price: _readInt(item['price']),
+                    purchased: item['purchased'] == true,
+                  ))
+              .where((item) => item.planName.isNotEmpty));
+      }
+
+      final localSecurityData = data['biomeSecurity'];
+      if (localSecurityData is Map) {
+        for (final biome in ForageBiome.values) {
+          final value = localSecurityData[biome.name];
+          if (value is Map) {
+            biomeSecurity[biome] =
+                BiomeSecurityState.fromFirebase(biome, value);
+          }
+        }
+      }
+      final explorationData = data['explorationMissions'];
+      if (explorationData is List) {
+        explorationMissions
+          ..clear()
+          ..addAll(explorationData
+              .whereType<Map>()
+              .map(BiomeExplorationMission.fromFirebase));
       }
 
       final reportData = data['reports'];
@@ -2077,8 +2140,184 @@ class Zone0GameState extends ChangeNotifier {
     return mission;
   }
 
+  Zone0ActionResult startBiomeExploration({
+    required ForageBiome biome,
+    required List<PtipoteFigurine> figurines,
+  }) {
+    if (!isSecurityTowerBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'La Tour est nécessaire pour explorer.');
+    }
+    if (refugeSafety < towerOperationsConfig.biomeRevealSecurityThreshold) {
+      return Zone0ActionResult(
+          success: false,
+          message:
+              'La Sécurité doit atteindre ${towerOperationsConfig.biomeRevealSecurityThreshold}% pour révéler les environs.');
+    }
+    final state = biomeSecurity[biome]!;
+    if (state.status == BiomeDiscoveryStatus.unlocked) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ce biome est déjà disponible en Lisière.');
+    }
+    if (isBiomeExploring(biome) || figurines.isEmpty) {
+      return const Zone0ActionResult(
+          success: false, message: 'Exploration indisponible.');
+    }
+    if (figurines.any(isUnavailableForTower)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Un P’TIPOTE choisi est occupé.');
+    }
+    final now = DateTime.now();
+    explorationMissions.add(BiomeExplorationMission(
+      id: 'exploration-${now.microsecondsSinceEpoch}',
+      biome: biome,
+      memberIds: figurines.map((item) => item.id).toList(),
+      memberNames: figurines.map((item) => item.displayName).toList(),
+      endTime: now.add(
+          Duration(minutes: towerOperationsConfig.explorationDurationMinutes)),
+    ));
+    state.status = BiomeDiscoveryStatus.exploring;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            'Exploration de ${lisiereForageConfig.biomes[biome]!.label} lancée.');
+  }
+
+  void resolveTowerOperations({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = false;
+    for (final mission in explorationMissions
+        .where((item) => item.isActive && !item.endTime.isAfter(current))) {
+      mission.completedAt = current;
+      final state = biomeSecurity[mission.biome]!;
+      state.status = BiomeDiscoveryStatus.unlocked;
+      state.lastMissionAt = current;
+      state.localSecurity = math.min(
+          towerOperationsConfig.localSecurityMaximum,
+          state.localSecurity +
+              towerOperationsConfig.localSecurityGainPerPatrol);
+      reports.add(PtipoteMissionReport.system(
+          message:
+              '${mission.memberNames.join(', ')} a découvert ${lisiereForageConfig.biomes[mission.biome]!.label}. Le biome est disponible en Lisière.'));
+      changed = true;
+    }
+    for (final state in biomeSecurity.values) {
+      final lastActivity = state.lastMissionAt ?? state.lastPatrolAt;
+      if (lastActivity == null ||
+          current.difference(lastActivity).inHours >=
+              towerOperationsConfig.localSecurityRecentMissionHours) {
+        final elapsedHours = state.lastDecayAt == null
+            ? 0
+            : current.difference(state.lastDecayAt!).inHours;
+        if (elapsedHours > 0 && state.localSecurity > 0) {
+          state.localSecurity = math.max(
+              0,
+              state.localSecurity -
+                  elapsedHours *
+                      towerOperationsConfig.localSecurityDecayPerHour);
+          state.lastDecayAt = current;
+          changed = true;
+        }
+      }
+    }
+    if (merchantAvailableUntil != null &&
+        !current.isBefore(merchantAvailableUntil!)) {
+      merchantAvailableUntil = null;
+      merchantOffers.clear();
+      reports.add(PtipoteMissionReport.system(
+          message: 'Le Marchand est reparti sans attente.'));
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+  }
+
+  void openMerchant() {
+    if (isMerchantAvailable) return;
+    merchantAvailableUntil = DateTime.now()
+        .add(Duration(hours: towerOperationsConfig.merchantPresenceHours));
+    merchantOffers
+      ..clear()
+      ..addAll(towerOperationsConfig.merchantOfferPrices.entries.map(
+          (entry) => MerchantOffer(planName: entry.key, price: entry.value)));
+    reports.add(PtipoteMissionReport.system(
+        message: 'Un Marchand est arrivé au Marché avec des Plans rares.'));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  Zone0ActionResult buyMerchantOffer(MerchantOffer offer) {
+    if (!isMerchantAvailable || offer.purchased) {
+      return const Zone0ActionResult(
+          success: false, message: 'Offre indisponible.');
+    }
+    if (bioBatteries < offer.price) {
+      return const Zone0ActionResult(
+          success: false, message: 'Bio-batteries insuffisantes.');
+    }
+    bioBatteries -= offer.price;
+    offer.purchased = true;
+    reports.add(PtipoteMissionReport.system(
+        message: '${offer.planName} a été acquis auprès du Marchand.'));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '${offer.planName} acheté.');
+  }
+
+  void ensureWeatherForecast() {
+    if (!isSecurityTowerBuilt ||
+        weatherAlerts.any((item) => item.endsAt.isAfter(DateTime.now()))) {
+      return;
+    }
+    final now = DateTime.now();
+    final config = towerOperationsConfig.weatherEvents[
+        _random.nextInt(towerOperationsConfig.weatherEvents.length)];
+    weatherAlerts.add(WeatherAlert(
+        type: config.type,
+        startsAt: now.add(Duration(minutes: config.warningMinutes)),
+        endsAt: now.add(Duration(
+            minutes: config.warningMinutes + config.durationMinutes))));
+    reports.add(PtipoteMissionReport.system(
+        message:
+            'Alerte Tour : ${config.label} approche. Le Kernel demande ${config.preparationAmount} ${config.preparationItem}.'));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  Zone0ActionResult fulfillWeatherPreparation(WeatherAlert alert,
+      {WeatherPreparationType type = WeatherPreparationType.provide}) {
+    final config = towerOperationsConfig.weatherEvents
+        .firstWhere((item) => item.type == alert.type);
+    if (alert.preparationCompleted) {
+      return const Zone0ActionResult(
+          success: false, message: 'Préparation déjà terminée.');
+    }
+    if (resourceAmount(config.preparationItem) < config.preparationAmount) {
+      return Zone0ActionResult(
+          success: false,
+          message:
+              'Il faut ${config.preparationAmount} ${config.preparationItem}.');
+    }
+    if (type == WeatherPreparationType.provide) {
+      removeResource(config.preparationItem, config.preparationAmount);
+    }
+    alert.preparationCompleted = true;
+    reports.add(PtipoteMissionReport.system(
+        message: 'Préparation météo validée : ${config.label} sera atténué.'));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Préparation validée.');
+  }
+
   bool resolveDueForageMissions({DateTime? now}) {
     final currentTime = now ?? DateTime.now();
+    resolveTowerOperations(now: currentTime);
     var resolvedAny = false;
     for (final mission in missions) {
       if (mission.status != ForageMissionStatus.active) continue;
@@ -2347,6 +2586,16 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (mission.biome == ForageBiome.plaineRiche) {
       plaineMissionsCompleted += 1;
+    }
+    final localState = biomeSecurity[mission.biome];
+    if (localState != null) {
+      localState.lastMissionAt = completedAt;
+      localState.localSecurity = math.min(
+        towerOperationsConfig.localSecurityMaximum,
+        localState.localSecurity +
+            towerOperationsConfig.localSecurityGainPerPatrol,
+      );
+      localState.lastDecayAt = completedAt;
     }
     emitKernelProgressEvent(KernelProgressEventType.missionCompleted);
     if (incident.startsWith('pollution')) {
@@ -2659,7 +2908,21 @@ class Zone0GameState extends ChangeNotifier {
             'assignedPtipoteName': marketAssignedPtipoteName,
             'valueRemainder': marketValueRemainder,
             'bioBatteriesEarned': marketBioBatteriesEarned,
+            'merchantAvailableUntil': merchantAvailableUntil == null
+                ? null
+                : Timestamp.fromDate(merchantAvailableUntil!),
+            'merchantOffers': merchantOffers
+                .map((item) => <String, dynamic>{
+                      'planName': item.planName,
+                      'price': item.price,
+                      'purchased': item.purchased
+                    })
+                .toList(),
           },
+          'biomeSecurity': biomeSecurity
+              .map((key, value) => MapEntry(key.name, value.toFirebase())),
+          'explorationMissions':
+              explorationMissions.map((item) => item.toFirebase()).toList(),
           'campSecurity': refugeSafety,
           'lastManualTowerRechargeAt': lastManualTowerRechargeAt == null
               ? null
@@ -3081,6 +3344,119 @@ enum TowerMissionPlan {
   sixHours,
   tenHours,
   until25Vitality,
+}
+
+enum BiomeDiscoveryStatus { discovered, exploring, unlocked }
+
+class BiomeSecurityState {
+  BiomeSecurityState({
+    required this.biome,
+    required this.status,
+    this.localSecurity = 0,
+    this.lastPatrolAt,
+    this.lastMissionAt,
+    this.lastDecayAt,
+  });
+
+  factory BiomeSecurityState.initial(ForageBiome biome) => BiomeSecurityState(
+        biome: biome,
+        status: biome == ForageBiome.plaineRiche
+            ? BiomeDiscoveryStatus.unlocked
+            : BiomeDiscoveryStatus.discovered,
+      );
+
+  factory BiomeSecurityState.fromFirebase(
+          ForageBiome biome, Map<dynamic, dynamic> data) =>
+      BiomeSecurityState(
+        biome: biome,
+        status: ForageMission._enumByName(BiomeDiscoveryStatus.values,
+            '${data['status'] ?? ''}', BiomeDiscoveryStatus.discovered),
+        localSecurity: ForageMission._readStaticInt(data['localSecurity']),
+        lastPatrolAt: ForageMission._readDate(data['lastPatrolAt']),
+        lastMissionAt: ForageMission._readDate(data['lastMissionAt']),
+        lastDecayAt: ForageMission._readDate(data['lastDecayAt']),
+      );
+
+  final ForageBiome biome;
+  BiomeDiscoveryStatus status;
+  int localSecurity;
+  DateTime? lastPatrolAt;
+  DateTime? lastMissionAt;
+  DateTime? lastDecayAt;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'status': status.name,
+        'localSecurity': localSecurity,
+        'lastPatrolAt':
+            lastPatrolAt == null ? null : Timestamp.fromDate(lastPatrolAt!),
+        'lastMissionAt':
+            lastMissionAt == null ? null : Timestamp.fromDate(lastMissionAt!),
+        'lastDecayAt':
+            lastDecayAt == null ? null : Timestamp.fromDate(lastDecayAt!),
+      };
+}
+
+class BiomeExplorationMission {
+  BiomeExplorationMission(
+      {required this.id,
+      required this.biome,
+      required this.memberIds,
+      required this.memberNames,
+      required this.endTime,
+      DateTime? startTime})
+      : startTime = startTime ?? DateTime.now();
+
+  factory BiomeExplorationMission.fromFirebase(Map<dynamic, dynamic> data) =>
+      BiomeExplorationMission(
+        id: '${data['id'] ?? ''}',
+        biome: ForageMission._enumByName(ForageBiome.values,
+            '${data['biome'] ?? ''}', ForageBiome.plaineRiche),
+        memberIds: ForageMission._readStringList(data['memberIds']),
+        memberNames: ForageMission._readStringList(data['memberNames']),
+        startTime: ForageMission._readDate(data['startTime']) ?? DateTime.now(),
+        endTime: ForageMission._readDate(data['endTime']) ?? DateTime.now(),
+      )..completedAt = ForageMission._readDate(data['completedAt']);
+
+  final String id;
+  final ForageBiome biome;
+  final List<String> memberIds;
+  final List<String> memberNames;
+  final DateTime startTime;
+  final DateTime endTime;
+  DateTime? completedAt;
+  bool get isActive => completedAt == null;
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'biome': biome.name,
+        'memberIds': memberIds,
+        'memberNames': memberNames,
+        'startTime': Timestamp.fromDate(startTime),
+        'endTime': Timestamp.fromDate(endTime),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
+      };
+}
+
+enum WeatherPreparationType { craft, own, provide }
+
+class WeatherAlert {
+  WeatherAlert(
+      {required this.type,
+      required this.startsAt,
+      required this.endsAt,
+      this.preparationCompleted = false});
+  final TowerWeatherType type;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  bool preparationCompleted;
+}
+
+class MerchantOffer {
+  MerchantOffer(
+      {required this.planName, required this.price, this.purchased = false});
+  final String planName;
+  final int price;
+  bool purchased;
 }
 
 class TowerMission {
