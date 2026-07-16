@@ -16,6 +16,7 @@ import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
+import 'waste_recycler_config.dart';
 import 'workshop_config.dart';
 
 class Zone0GameState extends ChangeNotifier {
@@ -79,6 +80,14 @@ class Zone0GameState extends ChangeNotifier {
   int kernelTrustLevel = 1;
   int kernelTrustXp = 0;
   int bioBatteries = kernelConfig.startingBioBatteries;
+  int energyUnits = 0;
+  int recyclerLevel = 0;
+  int recyclerWasteTank = 0;
+  int recyclerOutputOrganic = 0;
+  int recyclerOutputMineral = 0;
+  int pendingWaste = 0;
+  DateTime? recyclerCycleStartedAt;
+  DateTime? lastWasteGenerationAt;
   int campWellbeing = kernelConfig.startingWellbeing;
   int mealsPrepared = 0;
   int plaineMissionsCompleted = 0;
@@ -105,6 +114,14 @@ class Zone0GameState extends ChangeNotifier {
   bool get isFablabBuilt => fablabLevel >= fablabConfig.cuisineUnlockLevel;
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
   bool get isMarketBuilt => marketLevel >= 1;
+  bool isRecyclerUnlocked(int campHeartLevel) =>
+      isFablabBuilt &&
+      campHeartLevel >= wasteRecyclerConfig.recyclerUnlockCampHeartLevel;
+  int get recyclerWasteRequired =>
+      wasteRecyclerConfig.wasteRequired(recyclerLevel);
+  int get recyclerTankCapacity =>
+      wasteRecyclerConfig.tankCapacity(recyclerLevel);
+  int get recyclerOutputAmount => recyclerOutputOrganic + recyclerOutputMineral;
   int get securityTowerSlots =>
       securityTowerConfig.slotsForLevel(securityTowerLevel);
   bool get hasActiveTowerMission => towerMissions.any(
@@ -1379,6 +1396,151 @@ class Zone0GameState extends ChangeNotifier {
         .fold(0, (total, stack) => total + stack.amount);
   }
 
+  Zone0ActionResult openBioBattery() {
+    if (bioBatteries <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucune Bio-batterie disponible.');
+    }
+    bioBatteries -= 1;
+    energyUnits += wasteRecyclerConfig.energyUnitsPerBioBattery;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '+${wasteRecyclerConfig.energyUnitsPerBioBattery} Énergie.',
+    );
+  }
+
+  Zone0ActionResult transferWasteToRecycler(int amount, int campHeartLevel) {
+    if (!isRecyclerUnlocked(campHeartLevel)) {
+      return Zone0ActionResult(
+          success: false,
+          message:
+              'Débloqué au Cœur du Camp niveau ${wasteRecyclerConfig.recyclerUnlockCampHeartLevel}.');
+    }
+    if (recyclerLevel == 0) {
+      recyclerLevel = 1;
+    }
+    final moved = math.min(
+      math.min(amount, resourceAmount('Déchets')),
+      recyclerTankCapacity - recyclerWasteTank,
+    );
+    if (moved <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun Déchet transféré.');
+    }
+    removeResource('Déchets', moved);
+    recyclerWasteTank += moved;
+    resolveWasteAndRecycler(campHeartLevel: campHeartLevel);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$moved Déchet(s) vers la cuve.');
+  }
+
+  Zone0ActionResult retrieveRecyclerOutput() {
+    final rewards = <String, int>{
+      'Organique': recyclerOutputOrganic,
+      'Minéral': recyclerOutputMineral,
+    };
+    final result = addResources(rewards);
+    final organicLeft = result.pending['Organique'] ?? 0;
+    final mineralLeft = result.pending['Minéral'] ?? 0;
+    recyclerOutputOrganic = organicLeft;
+    recyclerOutputMineral = mineralLeft;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: result.addedAny,
+      message: result.hasPending
+          ? 'Inventaire plein : production conservée dans le Recycleur.'
+          : 'Production récupérée.',
+    );
+  }
+
+  bool resolveWasteAndRecycler({required int campHeartLevel, DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = false;
+    final builtBuildings = <bool>[
+          isFablabBuilt,
+          isSecurityTowerBuilt,
+          isMarketBuilt
+        ].where((item) => item).length +
+        1;
+    final lastWaste = lastWasteGenerationAt ?? current;
+    final wasteCycles = current.difference(lastWaste).inMinutes ~/
+        wasteRecyclerConfig.wasteGenerationCycleMinutes;
+    if (wasteCycles > 0) {
+      final perCycle = wasteRecyclerConfig.baseWastePerCycle +
+          currentPopulation ~/ wasteRecyclerConfig.populationPerWasteUnit +
+          builtBuildings ~/ wasteRecyclerConfig.buildingsPerWasteUnit;
+      if (perCycle > 0) {
+        final generated = perCycle * wasteCycles;
+        final result = addResources(<String, int>{'Déchets': generated});
+        pendingWaste += result.pending['Déchets'] ?? 0;
+      }
+      lastWasteGenerationAt = lastWaste.add(Duration(
+          minutes:
+              wasteCycles * wasteRecyclerConfig.wasteGenerationCycleMinutes));
+      changed = true;
+    }
+    if (!isRecyclerUnlocked(campHeartLevel)) return changed;
+    if (recyclerLevel == 0) {
+      recyclerLevel = 1;
+      changed = true;
+    }
+    var completedCycles = 0;
+    var producedOrganic = 0;
+    var producedMineral = 0;
+    while (recyclerCycleStartedAt != null) {
+      final finishedAt = recyclerCycleStartedAt!.add(
+          Duration(minutes: wasteRecyclerConfig.cycleMinutes(recyclerLevel)));
+      if (finishedAt.isAfter(current)) break;
+      final split = wasteRecyclerConfig.outputSplits[
+          _random.nextInt(wasteRecyclerConfig.outputSplits.length)];
+      recyclerOutputOrganic += split.organic;
+      recyclerOutputMineral += split.mineral;
+      completedCycles += 1;
+      producedOrganic += split.organic;
+      producedMineral += split.mineral;
+      recyclerCycleStartedAt = finishedAt;
+      changed = true;
+      if (recyclerOutputAmount + wasteRecyclerConfig.outputResourcesPerCycle >
+          wasteRecyclerConfig.outputStorageCapacity) {
+        recyclerCycleStartedAt = null;
+      } else if (recyclerWasteTank < recyclerWasteRequired ||
+          energyUnits < wasteRecyclerConfig.energyCostPerCycle) {
+        recyclerCycleStartedAt = null;
+      } else {
+        recyclerWasteTank -= recyclerWasteRequired;
+        energyUnits -= wasteRecyclerConfig.energyCostPerCycle;
+      }
+    }
+    if (recyclerCycleStartedAt == null &&
+        recyclerOutputAmount + wasteRecyclerConfig.outputResourcesPerCycle <=
+            wasteRecyclerConfig.outputStorageCapacity &&
+        recyclerWasteTank >= recyclerWasteRequired &&
+        energyUnits >= wasteRecyclerConfig.energyCostPerCycle) {
+      recyclerWasteTank -= recyclerWasteRequired;
+      energyUnits -= wasteRecyclerConfig.energyCostPerCycle;
+      recyclerCycleStartedAt = current;
+      changed = true;
+    }
+    if (completedCycles > 0) {
+      reports.add(PtipoteMissionReport.system(
+        message: 'Recycleur : $completedCycles cycle(s) terminé(s). '
+            'Déchets traités : ${completedCycles * recyclerWasteRequired}. '
+            'Énergie consommée : ${completedCycles * wasteRecyclerConfig.energyCostPerCycle}. '
+            '+$producedOrganic Organique, +$producedMineral Minéral.',
+      ));
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
+  }
+
   int inventoryFreeCapacityFor(Map<String, int> rewards) {
     final simulated = inventory
         .map(
@@ -1968,6 +2130,7 @@ class Zone0GameState extends ChangeNotifier {
           kernelData['bioBatteries'],
           fallback: kernelConfig.startingBioBatteries,
         );
+        energyUnits = _readInt(kernelData['energyUnits']);
         campWellbeing = _readInt(
           kernelData['campWellbeing'],
           fallback: kernelConfig.startingWellbeing,
@@ -2037,6 +2200,17 @@ class Zone0GameState extends ChangeNotifier {
         generatorMineral = _readInt(generatorData['mineral']);
         generatorTotalProduced = _readInt(generatorData['totalProduced']);
         generatorCycleStartedAt = _readDate(generatorData['cycleStartedAt']);
+      }
+      final recyclerData = data['recycler'];
+      if (recyclerData is Map) {
+        recyclerLevel = _readInt(recyclerData['level']).clamp(0, 5);
+        recyclerWasteTank = _readInt(recyclerData['wasteTank']);
+        recyclerOutputOrganic = _readInt(recyclerData['outputOrganic']);
+        recyclerOutputMineral = _readInt(recyclerData['outputMineral']);
+        pendingWaste = _readInt(recyclerData['pendingWaste']);
+        recyclerCycleStartedAt = _readDate(recyclerData['cycleStartedAt']);
+        lastWasteGenerationAt =
+            _readDate(recyclerData['lastWasteGenerationAt']);
       }
 
       final buildingsData = data['buildings'];
@@ -2617,6 +2791,15 @@ class Zone0GameState extends ChangeNotifier {
       }
     }
 
+    final mainRewards = (rewards['Organique'] ?? 0) + (rewards['Minéral'] ?? 0);
+    if (mainRewards > 0) {
+      final percent = wasteRecyclerConfig.wasteRewardMinimumPercent +
+          _random.nextInt(wasteRecyclerConfig.wasteRewardMaximumPercent -
+              wasteRecyclerConfig.wasteRewardMinimumPercent +
+              1);
+      final waste = (mainRewards * percent / 100).floor();
+      if (waste > 0) rewards['Déchets'] = waste;
+    }
     final inventoryResult = addResources(rewards);
     final xpResults = <String, PtipoteXpGainResult>{};
     for (final memberId in mission.memberIds) {
@@ -3008,6 +3191,7 @@ class Zone0GameState extends ChangeNotifier {
           'kernel': <String, dynamic>{
             'currentPopulation': currentPopulation,
             'bioBatteries': bioBatteries,
+            'energyUnits': energyUnits,
             'campWellbeing': campWellbeing,
             'mealsPrepared': mealsPrepared,
             'plaineMissionsCompleted': plaineMissionsCompleted,
@@ -3039,6 +3223,19 @@ class Zone0GameState extends ChangeNotifier {
             'cycleStartedAt': generatorCycleStartedAt == null
                 ? null
                 : Timestamp.fromDate(generatorCycleStartedAt!),
+          },
+          'recycler': <String, dynamic>{
+            'level': recyclerLevel,
+            'wasteTank': recyclerWasteTank,
+            'outputOrganic': recyclerOutputOrganic,
+            'outputMineral': recyclerOutputMineral,
+            'pendingWaste': pendingWaste,
+            'cycleStartedAt': recyclerCycleStartedAt == null
+                ? null
+                : Timestamp.fromDate(recyclerCycleStartedAt!),
+            'lastWasteGenerationAt': lastWasteGenerationAt == null
+                ? null
+                : Timestamp.fromDate(lastWasteGenerationAt!),
           },
           'lastSimulationAt': lastSimulationAt == null
               ? FieldValue.serverTimestamp()

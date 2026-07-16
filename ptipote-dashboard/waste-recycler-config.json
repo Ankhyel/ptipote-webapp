@@ -1,0 +1,19 @@
+{
+  "wasteStackMaximum": 10,
+  "wasteGenerationCycleMinutes": 120,
+  "baseWastePerCycle": 0,
+  "populationPerWasteUnit": 5,
+  "buildingsPerWasteUnit": 3,
+  "wasteRewardMinimumPercent": 15,
+  "wasteRewardMaximumPercent": 30,
+  "recyclerUnlockCampHeartLevel": 2,
+  "baseWasteTankCapacity": 34,
+  "wasteTankCapacityPerLevel": 12,
+  "baseWasteRequired": 17,
+  "minimumWasteRequired": 13,
+  "outputResourcesPerCycle": 10,
+  "energyUnitsPerBioBattery": 10,
+  "energyCostPerCycle": 1,
+  "cycleMinutesByLevel": {"1": 20, "2": 18, "3": 16, "4": 14, "5": 12},
+  "outputSplits": [[7, 3], [6, 4], [5, 5], [4, 6], [3, 7]]
+}

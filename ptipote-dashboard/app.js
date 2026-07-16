@@ -38,6 +38,7 @@ let kernelConfig = {};
 let lisiereForageConfig = {};
 let securityTowerConfig = {};
 let fablabConfig = {};
+let recyclerConfig = {};
 let craftConfig = {};
 
 const PTIPOTE_STATS_STORAGE_KEY = "ptipote_stats_config_v1";
@@ -134,6 +135,9 @@ const ids = [
   "fablabStatus",
   "fablabConfigList",
   "exportFablabButton",
+  "recyclerStatus",
+  "recyclerConfigList",
+  "exportRecyclerButton",
   "craftStatus",
   "craftRecipeList",
   "craftRecipeForm",
@@ -556,6 +560,42 @@ function renderFablabConfig() {
   `).join("");
 }
 
+async function loadRecyclerConfig() {
+  try {
+    const response = await fetch("./waste-recycler-config.json", { cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    recyclerConfig = await response.json();
+    const rows = [
+      ["Cycle déchets refuge", `${recyclerConfig.wasteGenerationCycleMinutes} min`],
+      ["Population par Déchet", recyclerConfig.populationPerWasteUnit],
+      ["Bâtiments par Déchet", recyclerConfig.buildingsPerWasteUnit],
+      ["Déchets Lisière", `${recyclerConfig.wasteRewardMinimumPercent}–${recyclerConfig.wasteRewardMaximumPercent}%`],
+      ["Cœur requis", recyclerConfig.recyclerUnlockCampHeartLevel],
+      ["Cuve de base", recyclerConfig.baseWasteTankCapacity],
+      ["Coût niveau 1", `${recyclerConfig.baseWasteRequired} Déchets → ${recyclerConfig.outputResourcesPerCycle} ressources`],
+      ["Énergie / Bio-batterie", recyclerConfig.energyUnitsPerBioBattery],
+      ["Coût par cycle", recyclerConfig.energyCostPerCycle],
+      ["Temps par niveau", JSON.stringify(recyclerConfig.cycleMinutesByLevel)],
+    ];
+    el.recyclerConfigList.innerHTML = rows.map(([label, value]) => `
+      <div class="stage-row"><div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div><strong>V1</strong></div>
+    `).join("");
+    el.recyclerStatus.textContent = "Configuration Déchets / Recycleur chargée depuis le JSON versionné.";
+  } catch (error) {
+    el.recyclerStatus.textContent = "Configuration Recycleur illisible: " + error.message;
+  }
+}
+
+function exportRecyclerConfig() {
+  const blob = new Blob([JSON.stringify(recyclerConfig, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "waste-recycler-config.json";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function loadCraftConfig({ reset = false } = {}) {
   try {
     const response = await fetch("./craft-config.json", { cache: "no-store" });
@@ -779,6 +819,7 @@ el.exportCampGeneratorButton.addEventListener("click", () => exportEditor(el.cam
 el.exportWorkshopButton.addEventListener("click", () => exportEditor(el.workshopEditor, "workshop-config.json"));
 el.exportMarketButton.addEventListener("click", () => exportEditor(el.marketEditor, "market-config.json"));
 el.exportTowerOperationsButton.addEventListener("click", () => exportEditor(el.towerOperationsEditor, "tower-operations-config.json"));
+el.exportRecyclerButton.addEventListener("click", () => exportRecyclerConfig());
 el.exportKernelProgressButton.addEventListener("click", () => exportEditor(el.kernelProgressEditor, "kernel-progress-config.json"));
 
 setupDashboardTabs();
@@ -788,6 +829,7 @@ loadCampHeartConfig();
 loadLisiereForageConfig();
 loadSecurityTowerConfig();
 loadFablabConfig();
+loadRecyclerConfig();
 loadCraftConfig();
 loadActiveBuildingConfigs();
 loadKernelProgressConfig().catch((error) => {

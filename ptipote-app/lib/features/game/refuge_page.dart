@@ -17,6 +17,7 @@ import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
+import 'waste_recycler_config.dart';
 import 'zone0_game_state.dart';
 import 'workshop_config.dart';
 
@@ -109,6 +110,9 @@ class _RefugePageState extends State<RefugePage> {
         );
         _zone0State.resolveWorkshopOrder();
         _zone0State.resolveMarket();
+        _zone0State.resolveWasteAndRecycler(
+          campHeartLevel: _campHeartState.campHeartLevel,
+        );
       },
     );
     _warmAssets();
@@ -141,6 +145,9 @@ class _RefugePageState extends State<RefugePage> {
     );
     _zone0State.resolveWorkshopOrder();
     _zone0State.resolveMarket();
+    _zone0State.resolveWasteAndRecycler(
+      campHeartLevel: _campHeartState.campHeartLevel,
+    );
     _zone0State.refreshKernelMissions(
       campHeartLevel: _campHeartState.campHeartLevel,
     );
@@ -3004,6 +3011,7 @@ IconData _resourceIcon(String? resource) {
   return switch (resource) {
     'Organique' => Icons.eco_outlined,
     'Débris' || 'Debris' => Icons.construction_outlined,
+    'Déchets' || 'Dechets' => Icons.delete_sweep_outlined,
     'Minéral' || 'Mineral' => Icons.diamond_outlined,
     'Énergie' || 'Energie' => Icons.bolt_outlined,
     'Repas' || 'Repas simple' => Icons.restaurant_outlined,
@@ -5828,16 +5836,164 @@ class FablabPage extends StatelessWidget {
                       description:
                           'Débloqué au Cœur du Camp niveau ${fablabConfig.atelierUnlockCampHeartLevel}.',
                     ),
-              _BuildingPlaceholder(
-                icon: Icons.recycling_outlined,
-                title: 'Recycleur',
-                description:
-                    'Débloqué au Cœur du Camp niveau ${fablabConfig.recyclerUnlockCampHeartLevel}. Niveau actuel : $campHeartLevel. Gameplay à venir.',
-              ),
+              gameState.isRecyclerUnlocked(campHeartLevel)
+                  ? FablabRecyclerView(
+                      gameState: gameState,
+                      campHeartLevel: campHeartLevel,
+                    )
+                  : _BuildingPlaceholder(
+                      icon: Icons.recycling_outlined,
+                      title: 'Recycleur',
+                      description:
+                          'Débloqué au Cœur du Camp niveau ${fablabConfig.recyclerUnlockCampHeartLevel}. Niveau actuel : $campHeartLevel.',
+                    ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class FablabRecyclerView extends StatelessWidget {
+  const FablabRecyclerView({
+    super.key,
+    required this.gameState,
+    required this.campHeartLevel,
+  });
+
+  final Zone0GameState gameState;
+  final int campHeartLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    final needed = gameState.recyclerWasteRequired;
+    final running = gameState.recyclerCycleStartedAt != null;
+    final remaining = running
+        ? gameState.recyclerCycleStartedAt!
+            .add(Duration(
+                minutes:
+                    wasteRecyclerConfig.cycleMinutes(gameState.recyclerLevel)))
+            .difference(DateTime.now())
+        : null;
+    final transferable = gameState.resourceAmount('Déchets');
+    final cycles = gameState.recyclerWasteTank ~/ needed;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: <Widget>[
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('Recycleur niveau ${gameState.recyclerLevel}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 8),
+                  Text(
+                      '$needed Déchets → ${wasteRecyclerConfig.outputResourcesPerCycle} ressources'),
+                  Text(
+                      '${wasteRecyclerConfig.cycleMinutes(gameState.recyclerLevel)} min par cycle · ${wasteRecyclerConfig.energyCostPerCycle} Énergie'),
+                  Text(
+                      'Énergie : ${gameState.energyUnits} · Bio-batteries : ${gameState.bioBatteries}'),
+                  if (gameState.bioBatteries > 0)
+                    TextButton.icon(
+                      onPressed: () {
+                        final result = gameState.openBioBattery();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)));
+                      },
+                      icon: const Icon(Icons.bolt_outlined),
+                      label: const Text('Ouvrir 1 Bio-batterie (+10 Énergie)'),
+                    ),
+                ]),
+          ),
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Cuve d’entrée',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  Text(
+                      'Déchets : ${gameState.recyclerWasteTank}/${gameState.recyclerTankCapacity} · $cycles cycle(s) possible(s)'),
+                  Text('Inventaire : $transferable Déchet(s)'),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
+                    ...<int>[1, 5, 10].map((amount) => OutlinedButton(
+                        onPressed: transferable == 0
+                            ? null
+                            : () {
+                                final result =
+                                    gameState.transferWasteToRecycler(
+                                        amount, campHeartLevel);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(result.message)));
+                              },
+                        child: Text('+$amount'))),
+                    FilledButton(
+                        onPressed: transferable == 0
+                            ? null
+                            : () {
+                                final result =
+                                    gameState.transferWasteToRecycler(
+                                        transferable, campHeartLevel);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(result.message)));
+                              },
+                        child: const Text('Max')),
+                  ]),
+                ]),
+          ),
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Production',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  Text(running
+                      ? 'Recyclage en cours · ${math.max(0, remaining!.inMinutes)} min restantes'
+                      : gameState.recyclerWasteTank < needed
+                          ? 'En attente de Déchets'
+                          : gameState.energyUnits <
+                                  wasteRecyclerConfig.energyCostPerCycle
+                              ? 'En attente d’Énergie'
+                              : 'En attente'),
+                  if (running)
+                    LinearProgressIndicator(
+                        value: (1 -
+                                remaining!.inSeconds /
+                                    Duration(
+                                            minutes: wasteRecyclerConfig
+                                                .cycleMinutes(
+                                                    gameState.recyclerLevel))
+                                        .inSeconds)
+                            .clamp(0, 1)),
+                  const SizedBox(height: 8),
+                  Text(
+                      'Sortie : ${gameState.recyclerOutputOrganic} Organique · ${gameState.recyclerOutputMineral} Minéral'),
+                  FilledButton(
+                    onPressed: gameState.recyclerOutputAmount == 0
+                        ? null
+                        : () {
+                            final result = gameState.retrieveRecyclerOutput();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(result.message)));
+                          },
+                    child: const Text('Récupérer la production'),
+                  ),
+                ]),
+          ),
+        ),
+      ],
     );
   }
 }
