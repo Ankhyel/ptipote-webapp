@@ -985,11 +985,11 @@ Pour formater Dart:
 | `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js` | Onglet Dashboard `Dechets / Recycleur`. |
 
 - `Dechets` est une ressource de l'inventaire global, avec les memes stacks de 10 que les autres ressources. La Lisiere en rapporte un pourcentage aleatoire de 15 a 30 % des gains Organique + Mineral effectivement obtenus, apres les incidents.
-- Le refuge produit des Dechets toutes les 120 minutes: `base + population / 5 + batiments construits / 3`. Le calcul est applique a partir du temps ecoule, est persiste et les excedents sont conserves dans `pendingWaste` lorsque l'inventaire est plein.
+- Le refuge produit des Dechets toutes les 120 minutes: `base + population / 5 + batiments construits / 3`. Le calcul est applique a partir du temps ecoule, est persiste et les excedents sont conserves dans `pendingWaste` (capacite configurable) lorsque l'inventaire est plein; ils sont re-injectes automatiquement des qu'une place se libere.
 - Recycleur: actif seulement lorsque Fablab construit et Coeur niveau 2. Niveau initial 1, cuve 34, rendement `17 Dechets -> 10 ressources`, puis le cout diminue jusqu'a 13 aux niveaux futurs. Les repartitions sont bornees entre 7/3 et 3/7 Organique/Mineral.
 - Energie: `1 Bio-batterie = 10 energyUnits`. Le bouton d'ouverture convertit volontairement une Bio-batterie; le Recycleur consomme une unite au demarrage de chaque cycle, jamais une Bio-batterie entiere.
-- Les cycles sont automatiques, resolus hors ligne et gardent leur production dans un stock de sortie avant recuperation. Les rapports sont ajoutes par cycle; le regroupement complet des notifications est une amelioration future.
-- Placeholders: bonus P'TIPOTE, upgrades du Recycleur, Mycelium, drag and drop et cout energie applique a tous les crafts ne sont pas encore actifs. Les recettes peuvent preparer un cout energie plus tard sans modifier les crafts actuels.
+- Les cycles sont automatiques, resolus hors ligne et gardent leur production dans un stock de sortie avant recuperation. Les cycles termines durant une meme resolution sont regroupes dans un seul rapport. L'UI distingue attente de Dechets, attente d'Energie, recyclage en cours, production prete et stock de sortie plein.
+- Placeholders: bonus P'TIPOTE, upgrades du Recycleur, Mycelium, drag and drop et cout energie applique a tous les crafts ne sont pas encore actifs. `CraftRecipe.energyCost` est prepare avec une valeur par defaut de zero, sans modifier les crafts actuels.
 
 ## Tour, Exploration, Meteo Et Marchand V1
 

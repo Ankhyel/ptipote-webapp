@@ -5961,12 +5961,17 @@ class FablabRecyclerView extends StatelessWidget {
                       style: TextStyle(fontWeight: FontWeight.w900)),
                   Text(running
                       ? 'Recyclage en cours · ${math.max(0, remaining!.inMinutes)} min restantes'
-                      : gameState.recyclerWasteTank < needed
-                          ? 'En attente de Déchets'
-                          : gameState.energyUnits <
-                                  wasteRecyclerConfig.energyCostPerCycle
-                              ? 'En attente d’Énergie'
-                              : 'En attente'),
+                      : gameState.recyclerOutputAmount >=
+                              wasteRecyclerConfig.outputStorageCapacity
+                          ? 'Stock de sortie plein'
+                          : gameState.recyclerOutputAmount > 0
+                              ? 'Production prête'
+                              : gameState.recyclerWasteTank < needed
+                                  ? 'En attente de Déchets'
+                                  : gameState.energyUnits <
+                                          wasteRecyclerConfig.energyCostPerCycle
+                                      ? 'En attente d’Énergie'
+                                      : 'En attente'),
                   if (running)
                     LinearProgressIndicator(
                         value: (1 -

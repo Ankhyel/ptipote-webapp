@@ -34,6 +34,7 @@ class CraftRecipe {
     required this.hungerRestore,
     required this.vitalityRestore,
     this.isEquipment = false,
+    this.energyCost = 0,
   });
 
   final String id;
@@ -48,6 +49,7 @@ class CraftRecipe {
   final int hungerRestore;
   final int vitalityRestore;
   final bool isEquipment;
+  final int energyCost;
 }
 
 const craftConfig = CraftConfig(

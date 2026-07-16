@@ -571,10 +571,12 @@ async function loadRecyclerConfig() {
       ["Bâtiments par Déchet", recyclerConfig.buildingsPerWasteUnit],
       ["Déchets Lisière", `${recyclerConfig.wasteRewardMinimumPercent}–${recyclerConfig.wasteRewardMaximumPercent}%`],
       ["Cœur requis", recyclerConfig.recyclerUnlockCampHeartLevel],
+      ["Niveau initial / maximum", `${recyclerConfig.initialRecyclerLevel} / ${recyclerConfig.recyclerMaxLevel}`],
       ["Cuve de base", recyclerConfig.baseWasteTankCapacity],
       ["Coût niveau 1", `${recyclerConfig.baseWasteRequired} Déchets → ${recyclerConfig.outputResourcesPerCycle} ressources`],
       ["Énergie / Bio-batterie", recyclerConfig.energyUnitsPerBioBattery],
       ["Coût par cycle", recyclerConfig.energyCostPerCycle],
+      ["Stock sortie / attente", `${recyclerConfig.outputStorageCapacity} / ${recyclerConfig.pendingWasteCapacity}`],
       ["Temps par niveau", JSON.stringify(recyclerConfig.cycleMinutesByLevel)],
     ];
     el.recyclerConfigList.innerHTML = rows.map(([label, value]) => `

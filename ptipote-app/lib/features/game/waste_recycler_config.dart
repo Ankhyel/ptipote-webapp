@@ -7,6 +7,8 @@ class WasteRecyclerConfig {
     required this.wasteRewardMinimumPercent,
     required this.wasteRewardMaximumPercent,
     required this.recyclerUnlockCampHeartLevel,
+    required this.initialRecyclerLevel,
+    required this.recyclerMaxLevel,
     required this.baseWasteTankCapacity,
     required this.wasteTankCapacityPerLevel,
     required this.baseWasteRequired,
@@ -15,6 +17,7 @@ class WasteRecyclerConfig {
     required this.energyUnitsPerBioBattery,
     required this.energyCostPerCycle,
     required this.outputStorageCapacity,
+    required this.pendingWasteCapacity,
     required this.cycleMinutesByLevel,
     required this.outputSplits,
   });
@@ -26,6 +29,8 @@ class WasteRecyclerConfig {
   final int wasteRewardMinimumPercent;
   final int wasteRewardMaximumPercent;
   final int recyclerUnlockCampHeartLevel;
+  final int initialRecyclerLevel;
+  final int recyclerMaxLevel;
   final int baseWasteTankCapacity;
   final int wasteTankCapacityPerLevel;
   final int baseWasteRequired;
@@ -34,6 +39,7 @@ class WasteRecyclerConfig {
   final int energyUnitsPerBioBattery;
   final int energyCostPerCycle;
   final int outputStorageCapacity;
+  final int pendingWasteCapacity;
   final Map<int, int> cycleMinutesByLevel;
   final List<RecyclerOutputSplit> outputSplits;
 
@@ -58,6 +64,8 @@ const wasteRecyclerConfig = WasteRecyclerConfig(
   wasteRewardMinimumPercent: 15,
   wasteRewardMaximumPercent: 30,
   recyclerUnlockCampHeartLevel: 2,
+  initialRecyclerLevel: 1,
+  recyclerMaxLevel: 5,
   baseWasteTankCapacity: 34,
   wasteTankCapacityPerLevel: 12,
   baseWasteRequired: 17,
@@ -66,6 +74,7 @@ const wasteRecyclerConfig = WasteRecyclerConfig(
   energyUnitsPerBioBattery: 10,
   energyCostPerCycle: 1,
   outputStorageCapacity: 100,
+  pendingWasteCapacity: 100,
   cycleMinutesByLevel: <int, int>{1: 20, 2: 18, 3: 16, 4: 14, 5: 12},
   outputSplits: <RecyclerOutputSplit>[
     RecyclerOutputSplit(7, 3),

@@ -1419,7 +1419,7 @@ class Zone0GameState extends ChangeNotifier {
               'Débloqué au Cœur du Camp niveau ${wasteRecyclerConfig.recyclerUnlockCampHeartLevel}.');
     }
     if (recyclerLevel == 0) {
-      recyclerLevel = 1;
+      recyclerLevel = wasteRecyclerConfig.initialRecyclerLevel;
     }
     final moved = math.min(
       math.min(amount, resourceAmount('Déchets')),
@@ -1461,6 +1461,11 @@ class Zone0GameState extends ChangeNotifier {
   bool resolveWasteAndRecycler({required int campHeartLevel, DateTime? now}) {
     final current = now ?? DateTime.now();
     var changed = false;
+    if (pendingWaste > 0) {
+      final result = addResources(<String, int>{'Déchets': pendingWaste});
+      pendingWaste = result.pending['Déchets'] ?? 0;
+      changed = result.addedAny;
+    }
     final builtBuildings = <bool>[
           isFablabBuilt,
           isSecurityTowerBuilt,
@@ -1477,7 +1482,10 @@ class Zone0GameState extends ChangeNotifier {
       if (perCycle > 0) {
         final generated = perCycle * wasteCycles;
         final result = addResources(<String, int>{'Déchets': generated});
-        pendingWaste += result.pending['Déchets'] ?? 0;
+        pendingWaste = math.min(
+          wasteRecyclerConfig.pendingWasteCapacity,
+          pendingWaste + (result.pending['Déchets'] ?? 0),
+        );
       }
       lastWasteGenerationAt = lastWaste.add(Duration(
           minutes:
@@ -1486,7 +1494,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (!isRecyclerUnlocked(campHeartLevel)) return changed;
     if (recyclerLevel == 0) {
-      recyclerLevel = 1;
+      recyclerLevel = wasteRecyclerConfig.initialRecyclerLevel;
       changed = true;
     }
     var completedCycles = 0;
