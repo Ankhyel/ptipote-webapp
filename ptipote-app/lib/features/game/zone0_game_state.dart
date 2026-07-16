@@ -140,6 +140,14 @@ class Zone0GameState extends ChangeNotifier {
       .where((order) => order.status == WorkshopOrderStatus.active)
       .toList();
 
+  int get activeManualWorkshopOrders => activeWorkshopOrders
+      .where((order) => order.assignedPtipoteId == null)
+      .length;
+
+  int get activePtipoteWorkshopOrders => activeWorkshopOrders
+      .where((order) => order.assignedPtipoteId != null)
+      .length;
+
   int get workshopSlots => workshopConfig.slotsForLevel(fablabLevel);
 
   bool isAssignedToWorkshop(String figurineId) => activeWorkshopOrders.any(
@@ -519,10 +527,15 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Le Kernel n’a pas encore activé ce Plan.',
       );
     }
-    if (activeWorkshopOrders.length >= workshopSlots) {
+    if (figurine == null && activeManualWorkshopOrders >= 1) {
       return const Zone0ActionResult(
           success: false,
-          message: 'Tous les emplacements de l’Atelier sont occupés.');
+          message: 'Le créneau manuel de l’Atelier est occupé.');
+    }
+    if (figurine != null && activePtipoteWorkshopOrders >= workshopSlots) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Tous les emplacements P’TIPOTE sont occupés.');
     }
     if (quantity <= 0) {
       return const Zone0ActionResult(
@@ -920,14 +933,14 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   void _createMarketRequest(DateTime now) {
-    final entries = marketConfig.saleValues.keys
-        .where((item) => item != 'Organique' && item != 'Minéral')
-        .toList();
+    final entries = marketConfig.saleValues.keys.toList();
     final item = entries[_random.nextInt(entries.length)];
+    final isResource = item == 'Organique' || item == 'Minéral';
     marketRequests.add(MarketCustomerRequest(
         id: 'request-${now.microsecondsSinceEpoch}-${marketRequests.length}',
         requestedItemId: item,
-        requestedQuantity: 1 + _random.nextInt(3),
+        requestedQuantity:
+            isResource ? lisiereForageConfig.inventoryStackLimit : 1,
         rewardBioBattery: math.max(
             1,
             (marketConfig.saleValues[item] ?? 1) ~/
@@ -2143,6 +2156,7 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult startBiomeExploration({
     required ForageBiome biome,
     required List<PtipoteFigurine> figurines,
+    int durationHours = 2,
   }) {
     if (!isSecurityTowerBuilt) {
       return const Zone0ActionResult(
@@ -2173,8 +2187,8 @@ class Zone0GameState extends ChangeNotifier {
       biome: biome,
       memberIds: figurines.map((item) => item.id).toList(),
       memberNames: figurines.map((item) => item.displayName).toList(),
-      endTime: now.add(
-          Duration(minutes: towerOperationsConfig.explorationDurationMinutes)),
+      endTime: now.add(Duration(hours: durationHours)),
+      explorationProgressGain: durationHours * 10,
     ));
     state.status = BiomeDiscoveryStatus.exploring;
     notifyListeners();
@@ -2185,6 +2199,31 @@ class Zone0GameState extends ChangeNotifier {
             'Exploration de ${lisiereForageConfig.biomes[biome]!.label} lancée.');
   }
 
+  Zone0ActionResult startBiomePatrol({
+    required ForageBiome biome,
+    required PtipoteFigurine figurine,
+  }) {
+    if (!isBiomeUnlocked(biome)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Termine d’abord l’exploration.');
+    }
+    final result =
+        startTowerMission(figurine: figurine, plan: TowerMissionPlan.oneHour);
+    if (!result.success) return result;
+    final state = biomeSecurity[biome]!;
+    state.localSecurity = math.min(towerOperationsConfig.localSecurityMaximum,
+        state.localSecurity + towerOperationsConfig.localSecurityGainPerPatrol);
+    state.lastPatrolAt = DateTime.now();
+    state.lastDecayAt = state.lastPatrolAt;
+    reports.add(PtipoteMissionReport.system(
+        message:
+            '${figurine.displayName} sécurise les abords de ${lisiereForageConfig.biomes[biome]!.label}.'));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '${figurine.displayName} est en ronde locale.');
+  }
+
   void resolveTowerOperations({DateTime? now}) {
     final current = now ?? DateTime.now();
     var changed = false;
@@ -2192,15 +2231,20 @@ class Zone0GameState extends ChangeNotifier {
         .where((item) => item.isActive && !item.endTime.isAfter(current))) {
       mission.completedAt = current;
       final state = biomeSecurity[mission.biome]!;
-      state.status = BiomeDiscoveryStatus.unlocked;
+      state.explorationProgress = math.min(
+          100, state.explorationProgress + mission.explorationProgressGain);
+      state.status = state.explorationProgress >= 100
+          ? BiomeDiscoveryStatus.unlocked
+          : BiomeDiscoveryStatus.discovered;
       state.lastMissionAt = current;
       state.localSecurity = math.min(
           towerOperationsConfig.localSecurityMaximum,
           state.localSecurity +
               towerOperationsConfig.localSecurityGainPerPatrol);
       reports.add(PtipoteMissionReport.system(
-          message:
-              '${mission.memberNames.join(', ')} a découvert ${lisiereForageConfig.biomes[mission.biome]!.label}. Le biome est disponible en Lisière.'));
+          message: state.status == BiomeDiscoveryStatus.unlocked
+              ? '${mission.memberNames.join(', ')} a découvert ${lisiereForageConfig.biomes[mission.biome]!.label}. Le biome est disponible en Lisière.'
+              : '${mission.memberNames.join(', ')} progresse dans l’exploration de ${lisiereForageConfig.biomes[mission.biome]!.label} : ${state.explorationProgress}%.'));
       changed = true;
     }
     for (final state in biomeSecurity.values) {
@@ -3353,6 +3397,7 @@ class BiomeSecurityState {
     required this.biome,
     required this.status,
     this.localSecurity = 0,
+    this.explorationProgress = 0,
     this.lastPatrolAt,
     this.lastMissionAt,
     this.lastDecayAt,
@@ -3372,6 +3417,8 @@ class BiomeSecurityState {
         status: ForageMission._enumByName(BiomeDiscoveryStatus.values,
             '${data['status'] ?? ''}', BiomeDiscoveryStatus.discovered),
         localSecurity: ForageMission._readStaticInt(data['localSecurity']),
+        explorationProgress:
+            ForageMission._readStaticInt(data['explorationProgress']),
         lastPatrolAt: ForageMission._readDate(data['lastPatrolAt']),
         lastMissionAt: ForageMission._readDate(data['lastMissionAt']),
         lastDecayAt: ForageMission._readDate(data['lastDecayAt']),
@@ -3380,6 +3427,7 @@ class BiomeSecurityState {
   final ForageBiome biome;
   BiomeDiscoveryStatus status;
   int localSecurity;
+  int explorationProgress;
   DateTime? lastPatrolAt;
   DateTime? lastMissionAt;
   DateTime? lastDecayAt;
@@ -3387,6 +3435,7 @@ class BiomeSecurityState {
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'status': status.name,
         'localSecurity': localSecurity,
+        'explorationProgress': explorationProgress,
         'lastPatrolAt':
             lastPatrolAt == null ? null : Timestamp.fromDate(lastPatrolAt!),
         'lastMissionAt':
@@ -3403,6 +3452,7 @@ class BiomeExplorationMission {
       required this.memberIds,
       required this.memberNames,
       required this.endTime,
+      required this.explorationProgressGain,
       DateTime? startTime})
       : startTime = startTime ?? DateTime.now();
 
@@ -3415,6 +3465,8 @@ class BiomeExplorationMission {
         memberNames: ForageMission._readStringList(data['memberNames']),
         startTime: ForageMission._readDate(data['startTime']) ?? DateTime.now(),
         endTime: ForageMission._readDate(data['endTime']) ?? DateTime.now(),
+        explorationProgressGain:
+            ForageMission._readStaticInt(data['explorationProgressGain']),
       )..completedAt = ForageMission._readDate(data['completedAt']);
 
   final String id;
@@ -3423,6 +3475,7 @@ class BiomeExplorationMission {
   final List<String> memberNames;
   final DateTime startTime;
   final DateTime endTime;
+  final int explorationProgressGain;
   DateTime? completedAt;
   bool get isActive => completedAt == null;
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -3432,6 +3485,7 @@ class BiomeExplorationMission {
         'memberNames': memberNames,
         'startTime': Timestamp.fromDate(startTime),
         'endTime': Timestamp.fromDate(endTime),
+        'explorationProgressGain': explorationProgressGain,
         'completedAt':
             completedAt == null ? null : Timestamp.fromDate(completedAt!),
       };

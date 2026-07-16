@@ -989,6 +989,9 @@ Pour formater Dart:
 - La Tour annonce un evenement meteo avec une preparation. `WeatherPreparationType` prepare les trois modes `craft`, `own`, `provide`; V1 affiche et utilise `provide` pour retirer l'objet seulement a validation.
 - Le Marchand est volontairement une interaction de prototype: il propose des Plans contre des Bio-batteries, reste 24 h selon config et repart sans malus. La carte du Marche permet de le faire apparaitre pour test.
 - Attentes: les effets mecaniques complets de chaque meteo, les rondes locales explicites et la generation aleatoire serveur du Marchand restent a enrichir; aucune boucle existante de mission, sommeil, craft ou vente n'est supprimee.
+- Correctif exploration: l'exploration est une jauge de 100 %, avec sorties de 2 h (+20 %) ou 6 h (+60 %), retour affiche, indices de ressources a 30 % et intensite a 50 %. La securite locale n'est affichee qu'apres deblocage; une ronde peut alors y affecter un P'TIPOTE.
+- Correctif Atelier: un emplacement manuel reste toujours disponible en plus des emplacements P'TIPOTE, qui augmentent avec le niveau de Fablab.
+- Correctif Marche: les ressources sont demandees par stack de 10 et les objets par unite; les valeurs V1 sont Filtre 1, module 2, tenue/meuble 2, installation 3 Bio-batteries.
 
 ## 1. Architecture commune
 

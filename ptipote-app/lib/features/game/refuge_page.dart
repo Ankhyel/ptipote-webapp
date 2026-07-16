@@ -4983,8 +4983,16 @@ class _TowerExplorationTab extends StatelessWidget {
                                           : revealed
                                               ? 'À explorer'
                                               : 'Balises insuffisantes'),
-                                  Text(
-                                      'Sécurité locale ${state.localSecurity}%'),
+                                  if (!unlocked)
+                                    Text(
+                                        'Exploration : ${state.explorationProgress}% / 100%'),
+                                  if (state.explorationProgress >= 30)
+                                    Text(_biomeResourceHints(biome,
+                                        detailed:
+                                            state.explorationProgress >= 50)),
+                                  if (unlocked)
+                                    Text(
+                                        'Sécurité locale : ${state.localSecurity}%'),
                                   if (enabled)
                                     FilledButton(
                                         onPressed: () async {
@@ -4996,12 +5004,20 @@ class _TowerExplorationTab extends StatelessWidget {
                                                   title: 'Explorer $label');
                                           if (figurine != null &&
                                               context.mounted) {
-                                            final result = gameState
-                                                .startBiomeExploration(
+                                            final hours =
+                                                await _pickExplorationDuration(
+                                                    context);
+                                            if (hours == null ||
+                                                !context.mounted) {
+                                              return;
+                                            }
+                                            final result =
+                                                gameState.startBiomeExploration(
                                                     biome: biome,
                                                     figurines: <PtipoteFigurine>[
-                                                  figurine
-                                                ]);
+                                                      figurine
+                                                    ],
+                                                    durationHours: hours);
                                             ScaffoldMessenger.of(context)
                                                 .showSnackBar(SnackBar(
                                                     content:
@@ -5009,6 +5025,33 @@ class _TowerExplorationTab extends StatelessWidget {
                                           }
                                         },
                                         child: const Text('Explorer')),
+                                  if (exploring)
+                                    Text(
+                                        'Retour prévu : ${_explorationReturn(gameState, biome)}'),
+                                  if (unlocked && available.isNotEmpty)
+                                    OutlinedButton.icon(
+                                      onPressed: () async {
+                                        final figurine =
+                                            await _pickPtipoteForActivity(
+                                                context: context,
+                                                gameState: gameState,
+                                                figurines: available,
+                                                title: 'Sécuriser $label');
+                                        if (figurine != null &&
+                                            context.mounted) {
+                                          final result =
+                                              gameState.startBiomePatrol(
+                                                  biome: biome,
+                                                  figurine: figurine);
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(SnackBar(
+                                                  content:
+                                                      Text(result.message)));
+                                        }
+                                      },
+                                      icon: const Icon(Icons.shield_outlined),
+                                      label: const Text('Sécuriser'),
+                                    ),
                                 ]))),
                   );
                 }).toList()),
@@ -5055,6 +5098,49 @@ class _TowerWeatherTab extends StatelessWidget {
     ]));
   }
 }
+
+String _biomeResourceHints(ForageBiome biome, {required bool detailed}) {
+  final rewards = lisiereForageConfig.biomes[biome]!.baseRewards;
+  String strength(String resource) {
+    final amount = rewards[resource] ?? 0;
+    return detailed
+        ? (amount >= 4
+            ? '++'
+            : amount >= 2
+                ? '+'
+                : '')
+        : '';
+  }
+
+  return '🌿${strength('Organique')}  ⛏️${strength('Minéral')}';
+}
+
+String _explorationReturn(Zone0GameState state, ForageBiome biome) {
+  final mission = state.explorationMissions
+      .firstWhere((item) => item.biome == biome && item.isActive);
+  final time = mission.endTime;
+  return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+}
+
+Future<int?> _pickExplorationDuration(BuildContext context) =>
+    showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+          child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+              children: <Widget>[
+            const Text('Durée de reconnaissance',
+                style: TextStyle(fontWeight: FontWeight.w900)),
+            const Text(
+                '10 h d’exploration au total. Chaque heure apporte 10% de progression.'),
+            ...<int>[2, 6].map((hours) => ListTile(
+                title: Text('${hours}h de mission'),
+                subtitle: Text('+${hours * 10}% exploration'),
+                onTap: () => Navigator.of(context).pop(hours))),
+          ])),
+    );
 
 class _TowerFigurineRow extends StatelessWidget {
   const _TowerFigurineRow({
@@ -5344,22 +5430,51 @@ class _MarketPageState extends State<MarketPage> {
                           else ...<Widget>[
                             Text(
                                 'Présent encore ${widget.gameState.merchantAvailableUntil!.difference(DateTime.now()).inHours + 1}h'),
-                            ...widget.gameState.merchantOffers
-                                .map((offer) => ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      title: Text(offer.planName),
-                                      subtitle:
+                            ...widget.gameState.merchantOffers.map(
+                              (offer) => Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .outline
+                                            .withValues(alpha: 0.25)),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(10),
+                                    child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: <Widget>[
+                                          Text(offer.planName,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.w800)),
+                                          const SizedBox(height: 4),
                                           Text('${offer.price} Bio-batteries'),
-                                      trailing: offer.purchased
-                                          ? const Text('Acheté')
-                                          : FilledButton(
-                                              onPressed: () => _message(widget
-                                                  .gameState
-                                                  .buyMerchantOffer(offer)
-                                                  .message),
-                                              child: const Text('Acheter'),
-                                            ),
-                                    )),
+                                          const SizedBox(height: 8),
+                                          SizedBox(
+                                              width: double.infinity,
+                                              child: offer.purchased
+                                                  ? const OutlinedButton(
+                                                      onPressed: null,
+                                                      child: Text('Acheté'))
+                                                  : FilledButton(
+                                                      onPressed: () => _message(
+                                                          widget.gameState
+                                                              .buyMerchantOffer(
+                                                                  offer)
+                                                              .message),
+                                                      child: const Text(
+                                                          'Acheter'))),
+                                        ]),
+                                  ),
+                                ),
+                              ),
+                            ),
                             TextButton(
                                 onPressed: () => _message(
                                     'Le Marchand reviendra plus tard.'),
@@ -5684,8 +5799,8 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                     ?.copyWith(fontWeight: FontWeight.w900)),
             Text(
               'Atelier niv. ${widget.gameState.fablabLevel} · '
-              '${orders.length}/${widget.gameState.workshopSlots} emplacement(s) occupé(s). '
-              'Chaque niveau ajoute un emplacement de craft.',
+              '${widget.gameState.activePtipoteWorkshopOrders}/${widget.gameState.workshopSlots} emplacement(s) P’TIPOTE · '
+              '${widget.gameState.activeManualWorkshopOrders}/1 créneau manuel. Chaque niveau ajoute un emplacement P’TIPOTE.',
             ),
             const SizedBox(height: 12),
             ...orders.map((order) => Card(
@@ -5710,7 +5825,9 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                         ]),
                   ),
                 )),
-            if (orders.length < widget.gameState.workshopSlots) ...<Widget>[
+            if (widget.gameState.activeManualWorkshopOrders < 1 ||
+                widget.gameState.activePtipoteWorkshopOrders <
+                    widget.gameState.workshopSlots) ...<Widget>[
               SegmentedButton<int>(
                   segments: const <ButtonSegment<int>>[
                     ButtonSegment(value: 1, label: Text('1')),
@@ -5741,21 +5858,31 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                                         '${e.value * _quantity} ${e.key}')
                                     .join(' + ')),
                                 FilledButton(
-                                    onPressed: () => _start(recipe, null),
+                                    onPressed: widget.gameState
+                                                .activeManualWorkshopOrders <
+                                            1
+                                        ? () => _start(recipe, null)
+                                        : null,
                                     child: const Text('Lancer manuellement')),
                                 OutlinedButton.icon(
-                                  onPressed: () async {
-                                    final figurine =
-                                        await _pickPtipoteForActivity(
-                                      context: context,
-                                      gameState: widget.gameState,
-                                      figurines: figurines,
-                                      title: 'Confier ${recipe.displayName}',
-                                    );
-                                    if (figurine != null && context.mounted) {
-                                      _start(recipe, figurine);
-                                    }
-                                  },
+                                  onPressed: widget.gameState
+                                              .activePtipoteWorkshopOrders <
+                                          widget.gameState.workshopSlots
+                                      ? () async {
+                                          final figurine =
+                                              await _pickPtipoteForActivity(
+                                            context: context,
+                                            gameState: widget.gameState,
+                                            figurines: figurines,
+                                            title:
+                                                'Confier ${recipe.displayName}',
+                                          );
+                                          if (figurine != null &&
+                                              context.mounted) {
+                                            _start(recipe, figurine);
+                                          }
+                                        }
+                                      : null,
                                   icon: const Icon(Icons.person_add_alt_1),
                                   label: const Text('Confier à un P’TIPOTE'),
                                 ),
@@ -5765,7 +5892,7 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
             ] else
               const Padding(
                 padding: EdgeInsets.only(top: 10),
-                child: Text('Tous les emplacements sont occupés.'),
+                child: Text('Créneau manuel et emplacements P’TIPOTE occupés.'),
               ),
           ],
         );
