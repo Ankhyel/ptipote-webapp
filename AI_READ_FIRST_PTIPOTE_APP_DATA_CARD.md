@@ -1023,6 +1023,12 @@ Pour formater Dart:
 - `ptipote-dashboard/housing-config.json` expose les niveaux de Maison, alcoves, logements agreges, malus de Bien-etre et remerciement communautaire.
 - L'onglet Dashboard `Batiments actifs` charge ces deux fichiers et peut les exporter. Comme les configurations Dart restent la source executee par Flutter en V1, un JSON exporte doit etre reporte dans le fichier Dart correspondant avant livraison; aucune modification directe de donnees Firebase n'est faite par le Dashboard.
 
+### Notifications De Chantier
+
+- La fin d'un `ConstructionProject` cree un unique rapport systeme persiste, marque par `notificationCreated` pour ne jamais etre duplique apres un retour hors ligne.
+- Les rapports de chantier ont maintenant `sourceBuildingId`. La Maison conserve sa pastille globale de messages; les hotspots Fablab, Tour et Marche affichent aussi leur propre pastille tant que le rapport de chantier correspondant est non lu.
+- L'ouverture de la boite aux lettres conserve son comportement existant: les messages sont marques lus, les pastilles disparaissent, et la suppression manuelle ne modifie ni niveaux ni gains.
+
 ### Maison Et Logements
 
 | Fichier | Role |

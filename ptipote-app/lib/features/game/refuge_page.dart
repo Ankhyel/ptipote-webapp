@@ -296,9 +296,10 @@ class _RefugePageState extends State<RefugePage> {
                           (building) => _BuildingHotspot(
                             building: building,
                             campHeartState: _campHeartState,
-                            notificationCount: building.name == 'Maison'
-                                ? _zone0State.unreadReportCount
-                                : 0,
+                            notificationCount:
+                                _zone0State.unreadBuildingNotificationCount(
+                              building.name,
+                            ),
                             gameState: _zone0State,
                             onTap: () => _handleBuildingTap(building),
                           ),

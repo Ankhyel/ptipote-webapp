@@ -583,6 +583,21 @@ class Zone0GameState extends ChangeNotifier {
     return reports.where((report) => !report.read).length;
   }
 
+  int unreadBuildingNotificationCount(String buildingName) {
+    if (buildingName == 'Maison') return unreadReportCount;
+    final targets = switch (buildingName) {
+      'FabLab' => const <String>{'fablab', 'cuisine', 'atelier', 'recycler'},
+      'Tour' => const <String>{'securityTower'},
+      'Market' => const <String>{'market'},
+      _ => const <String>{},
+    };
+    return reports
+        .where(
+          (report) => !report.read && targets.contains(report.sourceBuildingId),
+        )
+        .length;
+  }
+
   bool isOnMission(String figurineId) {
     return missions.any(
           (mission) =>
@@ -2062,10 +2077,14 @@ class Zone0GameState extends ChangeNotifier {
           activePTibugPatterns.add(PTibugSpecies.scarabe);
         }
     }
-    reports.add(PtipoteMissionReport.system(
-      message:
-          'Les travaux de ${buildingConstructionConfig.project(project.targetId).label} sont terminés. Niveau ${project.currentLevel}.',
-    ));
+    if (!project.notificationCreated) {
+      reports.add(PtipoteMissionReport.system(
+        message:
+            'Les travaux de ${buildingConstructionConfig.project(project.targetId).label} sont terminés. Niveau ${project.currentLevel}.',
+        sourceBuildingId: project.targetId,
+      ));
+      project.notificationCreated = true;
+    }
   }
 
   Zone0ActionResult thankResidentsForHousing(String projectId) {
@@ -4987,6 +5006,7 @@ class PtipoteMissionReport {
     required this.realRiskPercent,
     required this.completedAt,
     required this.inventoryFull,
+    this.sourceBuildingId,
     this.read = false,
   });
 
@@ -5015,11 +5035,15 @@ class PtipoteMissionReport {
       completedAt:
           ForageMission._readDate(data['completedAt']) ?? DateTime.now(),
       inventoryFull: data['inventoryFull'] == true,
+      sourceBuildingId: data['sourceBuildingId']?.toString(),
       read: data['read'] == true,
     );
   }
 
-  factory PtipoteMissionReport.system({required String message}) {
+  factory PtipoteMissionReport.system({
+    required String message,
+    String? sourceBuildingId,
+  }) {
     final now = DateTime.now();
     return PtipoteMissionReport(
       id: 'system-${now.microsecondsSinceEpoch}',
@@ -5042,6 +5066,7 @@ class PtipoteMissionReport {
       realRiskPercent: 0,
       completedAt: now,
       inventoryFull: false,
+      sourceBuildingId: sourceBuildingId,
     );
   }
 
@@ -5065,6 +5090,7 @@ class PtipoteMissionReport {
   final int realRiskPercent;
   final DateTime completedAt;
   final bool inventoryFull;
+  final String? sourceBuildingId;
   bool read;
 
   Map<String, dynamic> toFirebase() {
@@ -5089,6 +5115,7 @@ class PtipoteMissionReport {
       'realRiskPercent': realRiskPercent,
       'completedAt': Timestamp.fromDate(completedAt),
       'inventoryFull': inventoryFull,
+      'sourceBuildingId': sourceBuildingId,
       'read': read,
     };
   }
