@@ -158,10 +158,26 @@ class Zone0GameState extends ChangeNotifier {
       .toList();
 
   int get activeManualWorkshopOrders => activeWorkshopOrders
-      .where((order) => order.assignedPtipoteId == null)
+      .where((order) =>
+          order.area == WorkshopOrderArea.workshop &&
+          order.assignedPtipoteId == null)
       .length;
 
   int get activePtipoteWorkshopOrders => activeWorkshopOrders
+      .where((order) =>
+          order.area == WorkshopOrderArea.workshop &&
+          order.assignedPtipoteId != null)
+      .length;
+
+  List<WorkshopCraftOrder> get activeKitchenOrders => activeWorkshopOrders
+      .where((order) => order.area == WorkshopOrderArea.kitchen)
+      .toList();
+
+  int get activeManualKitchenOrders => activeKitchenOrders
+      .where((order) => order.assignedPtipoteId == null)
+      .length;
+
+  int get activePtipoteKitchenOrders => activeKitchenOrders
       .where((order) => order.assignedPtipoteId != null)
       .length;
 
@@ -170,6 +186,34 @@ class Zone0GameState extends ChangeNotifier {
   bool isAssignedToWorkshop(String figurineId) => activeWorkshopOrders.any(
         (order) => order.assignedPtipoteId == figurineId,
       );
+
+  Map<String, int> _orderIngredients(WorkshopCraftOrder order) =>
+      order.area == WorkshopOrderArea.kitchen
+          ? craftConfig.recipes
+              .firstWhere((recipe) => recipe.id == order.recipeId)
+              .ingredients
+          : workshopConfig.recipe(order.recipeId).ingredients;
+
+  String _orderDisplayName(WorkshopCraftOrder order) =>
+      order.area == WorkshopOrderArea.kitchen
+          ? craftConfig.recipes
+              .firstWhere((recipe) => recipe.id == order.recipeId)
+              .displayName
+          : workshopConfig.recipe(order.recipeId).displayName;
+
+  String _orderResultItem(WorkshopCraftOrder order) =>
+      order.area == WorkshopOrderArea.kitchen
+          ? craftConfig.recipes
+              .firstWhere((recipe) => recipe.id == order.recipeId)
+              .resultItem
+          : workshopConfig.recipe(order.recipeId).resultItem;
+
+  int _orderResultAmount(WorkshopCraftOrder order) =>
+      order.area == WorkshopOrderArea.kitchen
+          ? craftConfig.recipes
+              .firstWhere((recipe) => recipe.id == order.recipeId)
+              .resultAmount
+          : workshopConfig.recipe(order.recipeId).resultAmount;
 
   bool isAssignedToMarket(String figurineId) =>
       marketAssignedPtipoteId == figurineId;
@@ -604,6 +648,78 @@ class Zone0GameState extends ChangeNotifier {
             '${recipe.displayName} lancé${figurine == null ? '' : ' avec ${figurine.displayName}'}.');
   }
 
+  Zone0ActionResult startKitchenOrder({
+    required CraftRecipe recipe,
+    PtipoteFigurine? figurine,
+  }) {
+    resolveWorkshopOrder();
+    if (!isFablabBuilt) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Construis le Fablab pour utiliser la Cuisine.');
+    }
+    if (fablabLevel < recipe.cuisineLevel) {
+      return Zone0ActionResult(
+          success: false,
+          message: 'Cuisine niveau ${recipe.cuisineLevel} requise.');
+    }
+    if (figurine == null && activeManualKitchenOrders >= 1) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Le créneau manuel de la Cuisine est occupé.');
+    }
+    if (figurine != null && activePtipoteKitchenOrders >= workshopSlots) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Tous les emplacements P’TIPOTE sont occupés.');
+    }
+    if (figurine != null && isBusy(figurine)) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIPOTE occupé.');
+    }
+    final output = <String, int>{recipe.resultItem: recipe.resultAmount};
+    if (!hasResources(recipe.ingredients)) {
+      return Zone0ActionResult(
+          success: false, message: missingResourcesLabel(recipe.ingredients));
+    }
+    if (!hasInventoryCapacityFor(output)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Inventaire insuffisant pour la commande.');
+    }
+    if (!removeResources(recipe.ingredients)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ressources indisponibles.');
+    }
+    final speedBonus =
+        figurine == null ? 0.0 : calculateWorkshopEfficiency(figurine);
+    final unitSeconds = math.max(
+      1,
+      (Duration(minutes: recipe.durationMinutes).inSeconds * (1 - speedBonus))
+          .round(),
+    );
+    final now = DateTime.now();
+    workshopOrders.add(WorkshopCraftOrder(
+      id: 'kitchen-${now.microsecondsSinceEpoch}',
+      area: WorkshopOrderArea.kitchen,
+      recipeId: recipe.id,
+      requestedQuantity: 1,
+      completedQuantity: 0,
+      assignedPtipoteId: figurine?.id,
+      assignedPtipoteName: figurine?.displayName,
+      startTime: now,
+      nextCompletionTime: now.add(Duration(seconds: unitSeconds)),
+      unitDurationSeconds: unitSeconds,
+      reservedResources: recipe.ingredients,
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          '${recipe.displayName} lancé${figurine == null ? '' : ' avec ${figurine.displayName}'}.',
+    );
+  }
+
   bool resolveWorkshopOrder({DateTime? now}) {
     var changed = false;
     for (final order in List<WorkshopCraftOrder>.from(workshopOrders)) {
@@ -616,7 +732,10 @@ class Zone0GameState extends ChangeNotifier {
     if (order.status != WorkshopOrderStatus.active) return false;
     final current = now ?? DateTime.now();
     if (current.isBefore(order.nextCompletionTime)) return false;
-    final recipe = workshopConfig.recipe(order.recipeId);
+    final ingredients = _orderIngredients(order);
+    final resultItem = _orderResultItem(order);
+    final resultAmount = _orderResultAmount(order);
+    final displayName = _orderDisplayName(order);
     final elapsedUnits = 1 +
         current.difference(order.nextCompletionTime).inSeconds ~/
             order.unitDurationSeconds;
@@ -632,8 +751,7 @@ class Zone0GameState extends ChangeNotifier {
       units = math.min(units, possible);
     }
     if (units > 0) {
-      addResources(
-          <String, int>{recipe.resultItem: recipe.resultAmount * units});
+      addResources(<String, int>{resultItem: resultAmount * units});
       order.completedQuantity += units;
       order.nextCompletionTime = order.nextCompletionTime
           .add(Duration(seconds: order.unitDurationSeconds * units));
@@ -659,14 +777,19 @@ class Zone0GameState extends ChangeNotifier {
         manualRestingIds.add(order.assignedPtipoteId!);
         final remaining = order.requestedQuantity - order.completedQuantity;
         if (remaining > 0) {
-          addResources(recipe.ingredients
+          addResources(ingredients
               .map((key, value) => MapEntry(key, value * remaining)));
         }
       }
       reports.add(PtipoteMissionReport.system(
           message: tired
-              ? '${order.assignedPtipoteName} rentre fatigué de l’Atelier.'
-              : 'Commande Atelier terminée : ${recipe.displayName}.'));
+              ? '${order.assignedPtipoteName} rentre fatigué de ${order.area == WorkshopOrderArea.kitchen ? 'la Cuisine' : 'l’Atelier'}.'
+              : 'Commande ${order.area == WorkshopOrderArea.kitchen ? 'Cuisine' : 'Atelier'} terminée : $displayName.'));
+      if (order.area == WorkshopOrderArea.kitchen &&
+          resultItem == craftConfig.simpleMealRecipe.resultItem) {
+        mealsPrepared += resultAmount * order.completedQuantity;
+        refreshKernelMissions();
+      }
       emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
     }
     notifyListeners();
@@ -684,10 +807,10 @@ class Zone0GameState extends ChangeNotifier {
     }
     resolveWorkshopOrder();
     final remaining = order.requestedQuantity - order.completedQuantity;
-    final recipe = workshopConfig.recipe(order.recipeId);
+    final ingredients = _orderIngredients(order);
     if (remaining > 0) {
-      addResources(recipe.ingredients
-          .map((key, value) => MapEntry(key, value * remaining)));
+      addResources(
+          ingredients.map((key, value) => MapEntry(key, value * remaining)));
     }
     order.status = WorkshopOrderStatus.cancelled;
     notifyListeners();
@@ -3548,6 +3671,7 @@ class WorkshopCraftOrder {
   WorkshopCraftOrder({
     required this.id,
     required this.recipeId,
+    this.area = WorkshopOrderArea.workshop,
     required this.requestedQuantity,
     required this.completedQuantity,
     required this.assignedPtipoteId,
@@ -3563,6 +3687,11 @@ class WorkshopCraftOrder {
     return WorkshopCraftOrder(
       id: '${data['id'] ?? ''}',
       recipeId: '${data['recipeId'] ?? ''}',
+      area: ForageMission._enumByName(
+        WorkshopOrderArea.values,
+        '${data['area'] ?? ''}',
+        WorkshopOrderArea.workshop,
+      ),
       requestedQuantity:
           Zone0GameState.instance._readInt(data['requestedQuantity']),
       completedQuantity:
@@ -3596,6 +3725,7 @@ class WorkshopCraftOrder {
 
   final String id;
   final String recipeId;
+  final WorkshopOrderArea area;
   final int requestedQuantity;
   int completedQuantity;
   final String? assignedPtipoteId;
@@ -3609,6 +3739,7 @@ class WorkshopCraftOrder {
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'id': id,
         'recipeId': recipeId,
+        'area': area.name,
         'requestedQuantity': requestedQuantity,
         'completedQuantity': completedQuantity,
         'assignedPtipoteId': assignedPtipoteId,
@@ -3620,6 +3751,8 @@ class WorkshopCraftOrder {
         'status': status.name,
       };
 }
+
+enum WorkshopOrderArea { workshop, kitchen }
 
 enum TowerMissionPlan {
   oneHour,

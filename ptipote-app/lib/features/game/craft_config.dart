@@ -33,6 +33,7 @@ class CraftRecipe {
     required this.foodType,
     required this.hungerRestore,
     required this.vitalityRestore,
+    this.durationMinutes = 1,
     this.isEquipment = false,
     this.energyCost = 0,
   });
@@ -48,6 +49,7 @@ class CraftRecipe {
   final FoodType foodType;
   final int hungerRestore;
   final int vitalityRestore;
+  final int durationMinutes;
   final bool isEquipment;
   final int energyCost;
 }
@@ -66,6 +68,7 @@ const craftConfig = CraftConfig(
       foodType: FoodType.meal,
       hungerRestore: 35,
       vitalityRestore: 5,
+      durationMinutes: 2,
     ),
     CraftRecipe(
       id: 'vitalityDrink',
@@ -79,6 +82,7 @@ const craftConfig = CraftConfig(
       foodType: FoodType.drink,
       hungerRestore: 5,
       vitalityRestore: 15,
+      durationMinutes: 3,
     ),
   ],
 );

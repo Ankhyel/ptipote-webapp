@@ -113,6 +113,7 @@ class _RefugePageState extends State<RefugePage> {
         _zone0State.resolveWasteAndRecycler(
           campHeartLevel: _campHeartState.campHeartLevel,
         );
+        if (mounted) setState(() {});
       },
     );
     _warmAssets();
@@ -3854,6 +3855,7 @@ class _ActiveMissionsCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      Text(_countdownLabel(mission.endTime)),
                       TextButton.icon(
                         onPressed: () => _confirmEmergencyReturn(
                           context,
@@ -4795,7 +4797,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                                 (mission) => _TowerFigurineRow(
                                   name: mission.figurineName,
                                   subtitle:
-                                      '${_towerPlanLabel(mission.plan)} · retour ${_shortTime(mission.endTime)} · +${mission.securityGain} sécurité',
+                                      '${_towerPlanLabel(mission.plan)} · ${_countdownLabel(mission.endTime)} · +${mission.securityGain} sécurité',
                                   action: TextButton(
                                     onPressed: () {
                                       widget.gameState
@@ -4936,12 +4938,6 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
       TowerMissionPlan.until25Vitality => 'Jusqu’à 25% puis dodo',
     };
   }
-
-  String _shortTime(DateTime date) {
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
-  }
 }
 
 class _TowerExplorationTab extends StatelessWidget {
@@ -5067,8 +5063,7 @@ class _TowerExplorationTab extends StatelessWidget {
                                         },
                                         child: const Text('Explorer')),
                                   if (exploring)
-                                    Text(
-                                        'Retour prévu : ${_explorationReturn(gameState, biome)}'),
+                                    Text(_explorationReturn(gameState, biome)),
                                   if (unlocked && available.isNotEmpty)
                                     OutlinedButton.icon(
                                       onPressed: () async {
@@ -5167,8 +5162,20 @@ String _biomeResourceHints(ForageBiome biome, {required int detailLevel}) {
 String _explorationReturn(Zone0GameState state, ForageBiome biome) {
   final mission = state.explorationMissions
       .firstWhere((item) => item.biome == biome && item.isActive);
-  final time = mission.endTime;
-  return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  return _countdownLabel(mission.endTime);
+}
+
+String _countdownLabel(DateTime endTime) {
+  final remaining = endTime.difference(DateTime.now());
+  if (remaining <= Duration.zero) return 'Retour imminent';
+  final hours = remaining.inHours;
+  final minutes = remaining.inMinutes.remainder(60);
+  final seconds = remaining.inSeconds.remainder(60);
+  if (hours > 0) {
+    return 'Temps restant : $hours h ${minutes.toString().padLeft(2, '0')}';
+  }
+  if (minutes > 0) return 'Temps restant : $minutes min';
+  return 'Temps restant : ${seconds}s';
 }
 
 Future<int?> _pickExplorationDuration(BuildContext context) =>
@@ -6175,49 +6182,100 @@ class FablabCuisineView extends StatefulWidget {
 }
 
 class _FablabCuisineViewState extends State<FablabCuisineView> {
+  final FigurineService _figurineService = FigurineService();
   String? _lastResult;
 
   @override
+  void initState() {
+    super.initState();
+    widget.gameState.addListener(_changed);
+    widget.gameState.resolveWorkshopOrder();
+  }
+
+  @override
+  void dispose() {
+    widget.gameState.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(18),
-      children: <Widget>[
-        Text(
-          'Cuisine',
-          style: Theme.of(context)
-              .textTheme
-              .titleLarge
-              ?.copyWith(fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 6),
-        const Text('Eau disponible gratuitement dans la Cuisine.'),
-        const SizedBox(height: 14),
-        ...craftConfig.recipes.map((recipe) {
-          final canPrepare =
-              widget.gameState.hasResources(recipe.ingredients) &&
-                  widget.gameState.hasInventoryCapacityFor(
-                    <String, int>{recipe.resultItem: recipe.resultAmount},
-                  );
-          return _CuisineRecipeCard(
-            recipe: recipe,
-            gameState: widget.gameState,
-            canPrepare: canPrepare,
-            onPrepare: () {
-              final result = widget.gameState.prepareRecipe(recipe);
-              setState(() => _lastResult = result.message);
-            },
-          );
-        }),
-        if (_lastResult != null) ...<Widget>[
-          const SizedBox(height: 10),
+    return StreamBuilder<List<PtipoteFigurine>>(
+      stream: _figurineService.watchMyFigurines(),
+      builder: (context, snapshot) {
+        final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+        final orders = widget.gameState.activeKitchenOrders;
+        return ListView(padding: const EdgeInsets.all(18), children: <Widget>[
+          Text('Cuisine',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
           Text(
-            _lastResult!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.w800),
+            'Eau disponible gratuitement. ${widget.gameState.activePtipoteKitchenOrders}/${widget.gameState.workshopSlots} emplacement(s) P’TIPOTE · ${widget.gameState.activeManualKitchenOrders}/1 créneau manuel.',
           ),
-        ],
-      ],
+          const SizedBox(height: 12),
+          ...orders.map((order) => Card(
+                child: ListTile(
+                  title: Text(craftConfig.recipes
+                      .firstWhere((recipe) => recipe.id == order.recipeId)
+                      .displayName),
+                  subtitle: Text(
+                    '${order.completedQuantity}/${order.requestedQuantity} · ${_countdownLabel(order.nextCompletionTime)}\n${order.assignedPtipoteName == null ? 'Mode manuel' : 'Avec ${order.assignedPtipoteName}'}',
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Annuler',
+                    onPressed: () =>
+                        widget.gameState.cancelWorkshopOrder(order.id),
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+              )),
+          ...craftConfig.recipes.map((recipe) => _CuisineRecipeCard(
+                recipe: recipe,
+                gameState: widget.gameState,
+                canPrepare: widget.gameState.hasResources(recipe.ingredients) &&
+                    widget.gameState.hasInventoryCapacityFor(
+                      <String, int>{recipe.resultItem: recipe.resultAmount},
+                    ),
+                manualAvailable: widget.gameState.activeManualKitchenOrders < 1,
+                ptipoteAvailable: widget.gameState.activePtipoteKitchenOrders <
+                    widget.gameState.workshopSlots,
+                onPrepare: () => _start(recipe, null),
+                onAssign: () async {
+                  final figurine = await _pickPtipoteForActivity(
+                    context: context,
+                    gameState: widget.gameState,
+                    figurines: figurines,
+                    title: 'Confier ${recipe.displayName}',
+                  );
+                  if (figurine != null && context.mounted) {
+                    _start(recipe, figurine);
+                  }
+                },
+              )),
+          if (_lastResult != null) ...<Widget>[
+            const SizedBox(height: 10),
+            Text(_lastResult!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+          ],
+        ]);
+      },
     );
+  }
+
+  void _start(CraftRecipe recipe, PtipoteFigurine? figurine) {
+    final result = widget.gameState.startKitchenOrder(
+      recipe: recipe,
+      figurine: figurine,
+    );
+    setState(() => _lastResult = result.message);
   }
 }
 
@@ -6226,13 +6284,19 @@ class _CuisineRecipeCard extends StatelessWidget {
     required this.recipe,
     required this.gameState,
     required this.canPrepare,
+    required this.manualAvailable,
+    required this.ptipoteAvailable,
     required this.onPrepare,
+    required this.onAssign,
   });
 
   final CraftRecipe recipe;
   final Zone0GameState gameState;
   final bool canPrepare;
+  final bool manualAvailable;
+  final bool ptipoteAvailable;
   final VoidCallback onPrepare;
+  final Future<void> Function() onAssign;
 
   @override
   Widget build(BuildContext context) {
@@ -6296,13 +6360,18 @@ class _CuisineRecipeCard extends StatelessWidget {
             ],
             const SizedBox(height: 14),
             FilledButton.icon(
-              onPressed: canPrepare ? onPrepare : null,
+              onPressed: canPrepare && manualAvailable ? onPrepare : null,
               icon: Icon(
                 recipe.foodType == FoodType.drink
                     ? Icons.local_drink_outlined
                     : Icons.restaurant_outlined,
               ),
-              label: const Text('Préparer'),
+              label: const Text('Lancer manuellement'),
+            ),
+            OutlinedButton.icon(
+              onPressed: canPrepare && ptipoteAvailable ? onAssign : null,
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Confier à un P’TIPOTE'),
             ),
           ],
         ),

@@ -1036,6 +1036,12 @@ Pour formater Dart:
 - Firebase: `users/{uid}/game/zone0.workshopOrders`; l'ancien champ unique `workshopOrder` est migre automatiquement a la lecture.
 - Effets reels de Filtre, Cartouche, Tenue, Meuble, Ventilation et Lumiere restent a brancher.
 
+### Convergence Cuisine / Atelier et compteurs
+
+- `WorkshopCraftOrder` porte maintenant `area: workshop | kitchen`. Les commandes Cuisine et Atelier utilisent donc le meme cycle persistant: ressources reservees au lancement, commande manuelle ou P'TIPOTE, temps par unite, annulation avec remboursement des unites restantes, resolution hors ligne et rapport de fin.
+- La Cuisine conserve son propre creneau manuel et ses propres emplacements P'TIPOTE; elle n'occupe jamais un creneau de l'Atelier. Les recettes Cuisine ont une `durationMinutes` configurable dans `craft_config.dart`. L'eau reste contextuelle et gratuite.
+- `RefugePage` rafraichit les compteurs toutes les cinq secondes. Les missions de Lisiere, les explorations de biome et les rondes de Tour affichent desormais `Temps restant` au lieu d'une simple heure de retour. Les donnees de fin restent les timestamps Firebase existants, donc les compteurs restent justes apres fermeture et retour dans l'application.
+
 ## 4. Marche
 
 - Config: `ptipote-app/lib/features/game/market_config.dart`, miroir `ptipote-dashboard/market-config.json`.
