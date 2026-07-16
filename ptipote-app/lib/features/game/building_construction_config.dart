@@ -45,6 +45,24 @@ const buildingConstructionConfig = BuildingConstructionConfig(
       baseRequirements: <String, int>{'Organique': 8, 'Minéral': 4},
       durationMinutes: 1,
     ),
+    'cuisine': BuildingProjectDefinition(
+      id: 'cuisine',
+      label: 'Cuisine',
+      baseRequirements: <String, int>{'Organique': 6, 'Minéral': 12},
+      durationMinutes: 1,
+    ),
+    'atelier': BuildingProjectDefinition(
+      id: 'atelier',
+      label: 'Atelier',
+      baseRequirements: <String, int>{'Organique': 8, 'Minéral': 16},
+      durationMinutes: 1,
+    ),
+    'recycler': BuildingProjectDefinition(
+      id: 'recycler',
+      label: 'Recycleur',
+      baseRequirements: <String, int>{'Organique': 10, 'Minéral': 18},
+      durationMinutes: 1,
+    ),
     'securityTower': BuildingProjectDefinition(
       id: 'securityTower',
       label: 'Tour de sécurité',

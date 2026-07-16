@@ -5,6 +5,8 @@ class FablabConfig {
     required this.baseGlobalStockCapacity,
     required this.stockCapacityBonusPerFablabLevel,
     required this.fablabMaxLevel,
+    required this.cuisineMaxLevel,
+    required this.atelierMaxLevel,
     required this.cuisineUnlockLevel,
     required this.atelierUnlockCampHeartLevel,
     required this.recyclerUnlockCampHeartLevel,
@@ -17,6 +19,8 @@ class FablabConfig {
   final int baseGlobalStockCapacity;
   final int stockCapacityBonusPerFablabLevel;
   final int fablabMaxLevel;
+  final int cuisineMaxLevel;
+  final int atelierMaxLevel;
   final int cuisineUnlockLevel;
   final int atelierUnlockCampHeartLevel;
   final int recyclerUnlockCampHeartLevel;
@@ -37,6 +41,8 @@ const fablabConfig = FablabConfig(
   baseGlobalStockCapacity: 100,
   stockCapacityBonusPerFablabLevel: 100,
   fablabMaxLevel: 5,
+  cuisineMaxLevel: 5,
+  atelierMaxLevel: 5,
   cuisineUnlockLevel: 1,
   atelierUnlockCampHeartLevel: 1,
   recyclerUnlockCampHeartLevel: 2,

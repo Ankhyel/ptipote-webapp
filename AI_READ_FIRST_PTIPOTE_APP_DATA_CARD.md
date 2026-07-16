@@ -1001,6 +1001,14 @@ Pour formater Dart:
 - Migration de sauvegarde: un ancien `fablabLevel` initialise `atelierLevel`; Cuisine est initialisee au niveau 1 quand l'ancien Fablab etait construit. Les niveaux existants Tour, Marche et Recycleur ne sont pas supprimes.
 - Maison et logements sont maintenant branches au projet commun: amelioration Maison, capacite d'alcoves persistante, logements agreges, habitants non loges, malus de Bien-etre et remerciement communautaire temporaire. Les boutons historiques de construction Tour/Marche sont conserves en compatibilite interne mais ne sont plus utilises par l'UI.
 
+### Fablab - Unites Independantes
+
+- `Cuisine`, `Atelier` et `Recycleur` possedent des niveaux independants dans `Zone0GameState`.
+- Les projets `cuisine`, `atelier` et `recycler` reutilisent `ConstructionProject`: depots, retraits, timer et resolution hors ligne sont communs aux autres batiments.
+- La Cuisine lit `cuisineLevel` pour les recettes et ses emplacements P'TIPOTE. L'Atelier lit `atelierLevel` pour ses emplacements et la capacite du stock global. Le Recycleur conserve `recyclerLevel` pour ses cycles et rendements.
+- `fablabLevel` est conserve temporairement pour compatibilite de sauvegarde et est aligne sur `atelierLevel`; aucun niveau moyen n'est affiche dans l'interface.
+- `building_construction_config.dart` contient les couts/durees prototypes des ameliorations. `ptipote-dashboard/fablab-config.json` et l'onglet Fablab exposent leurs limites et valeurs miroir; la synchronisation automatique Dashboard -> Flutter reste a brancher.
+
 ### Maison Et Logements
 
 | Fichier | Role |

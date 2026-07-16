@@ -221,6 +221,8 @@ class Zone0GameState extends ChangeNotifier {
 
   int get workshopSlots => workshopConfig.slotsForLevel(atelierLevel);
 
+  int get kitchenSlots => workshopConfig.slotsForLevel(cuisineLevel);
+
   bool isAssignedToWorkshop(String figurineId) => activeWorkshopOrders.any(
         (order) => order.assignedPtipoteId == figurineId,
       );
@@ -696,7 +698,7 @@ class Zone0GameState extends ChangeNotifier {
           success: false,
           message: 'Construis le Fablab pour utiliser la Cuisine.');
     }
-    if (fablabLevel < recipe.cuisineLevel) {
+    if (cuisineLevel < recipe.cuisineLevel) {
       return Zone0ActionResult(
           success: false,
           message: 'Cuisine niveau ${recipe.cuisineLevel} requise.');
@@ -706,7 +708,7 @@ class Zone0GameState extends ChangeNotifier {
           success: false,
           message: 'Le créneau manuel de la Cuisine est occupé.');
     }
-    if (figurine != null && activePtipoteKitchenOrders >= workshopSlots) {
+    if (figurine != null && activePtipoteKitchenOrders >= kitchenSlots) {
       return const Zone0ActionResult(
           success: false,
           message: 'Tous les emplacements P’TIPOTE sont occupés.');
@@ -1795,7 +1797,28 @@ class Zone0GameState extends ChangeNotifier {
   ConstructionProject projectFor(String targetId) {
     final existing = constructionProjects[targetId];
     final currentLevel = _buildingLevel(targetId);
+    final maxLevel = _projectMaxLevel(targetId);
+    if (existing == null && currentLevel >= maxLevel) {
+      return constructionProjects.putIfAbsent(
+          targetId,
+          () => ConstructionProject(
+                projectId: 'project-$targetId',
+                targetId: targetId,
+                targetType: targetId,
+                currentLevel: currentLevel,
+                targetLevel: currentLevel,
+                requirements: const <String, int>{},
+                constructionDuration: Duration.zero,
+                state: ConstructionProjectState.maxLevel,
+              ));
+    }
     if (existing != null) {
+      if (!existing.isInProgress && currentLevel >= maxLevel) {
+        existing.currentLevel = currentLevel;
+        existing.targetLevel = currentLevel;
+        existing.state = ConstructionProjectState.maxLevel;
+        return existing;
+      }
       if (!existing.isInProgress &&
           existing.state == ConstructionProjectState.built &&
           existing.currentLevel == currentLevel) {
@@ -1847,12 +1870,28 @@ class Zone0GameState extends ChangeNotifier {
 
   int _buildingLevel(String targetId) => switch (targetId) {
         'fablab' => atelierLevel,
+        'cuisine' => cuisineLevel,
+        'atelier' => atelierLevel,
+        'recycler' => recyclerLevel,
         'securityTower' => securityTowerLevel,
         'market' => marketLevel,
         'house' => houseLevel,
         'housing' => housingUnits,
         'plaineNursery' => plaineNurseryLevel,
         _ => 0,
+      };
+
+  int _projectMaxLevel(String targetId) => switch (targetId) {
+        'fablab' => 1,
+        'cuisine' => fablabConfig.cuisineMaxLevel,
+        'atelier' => fablabConfig.atelierMaxLevel,
+        'recycler' => wasteRecyclerConfig.recyclerMaxLevel,
+        'securityTower' => 3,
+        'market' => 5,
+        'house' => housingConfig.houseMaxLevel,
+        'housing' => 99,
+        'plaineNursery' => 3,
+        _ => 1,
       };
 
   Zone0ActionResult depositProjectMaterial(
@@ -1935,6 +1974,12 @@ class Zone0GameState extends ChangeNotifier {
       }
     }
     final project = projectFor(targetId);
+    if (project.state == ConstructionProjectState.maxLevel) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce batiment est deja au niveau maximum.',
+      );
+    }
     if (!project.isReady) {
       return const Zone0ActionResult(
           success: false, message: 'Tous les matériaux sont requis.');
@@ -1987,6 +2032,13 @@ class Zone0GameState extends ChangeNotifier {
         cuisineLevel = math.max(cuisineLevel, 1);
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
         refreshKernelMissions();
+      case 'cuisine':
+        cuisineLevel = project.currentLevel;
+      case 'atelier':
+        atelierLevel = project.currentLevel;
+        fablabLevel = atelierLevel;
+      case 'recycler':
+        recyclerLevel = project.currentLevel;
       case 'securityTower':
         securityTowerLevel = project.currentLevel;
         refugeSafety =
@@ -4346,7 +4398,9 @@ class ConstructionProject {
       state == ConstructionProjectState.underConstruction ||
       state == ConstructionProjectState.upgrading;
   bool get canEditMaterials =>
-      !isInProgress && state != ConstructionProjectState.built;
+      !isInProgress &&
+      state != ConstructionProjectState.built &&
+      state != ConstructionProjectState.maxLevel;
   bool get isReady => requirements.entries
       .every((entry) => (depositedMaterials[entry.key] ?? 0) >= entry.value);
   int missingFor(String resource) => math.max(

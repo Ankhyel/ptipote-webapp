@@ -1470,7 +1470,9 @@ class _FablabHotspotContent extends StatelessWidget {
             ),
             const SizedBox(height: 3),
             Text(
-              built ? 'Fablab niv. ${gameState.fablabLevel}' : 'Fablab à bâtir',
+              built
+                  ? 'Cuisine ${gameState.cuisineLevel} · Atelier ${gameState.atelierLevel}'
+                  : 'Fablab à bâtir',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Color(0xFF2B2116),
@@ -5421,6 +5423,25 @@ class FablabConstructionSheet extends StatelessWidget {
   }
 }
 
+void _showFablabUnitProject(
+  BuildContext context, {
+  required Zone0GameState gameState,
+  required String targetId,
+  required String title,
+  required String description,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => _ConstructionProjectSheet(
+      gameState: gameState,
+      targetId: targetId,
+      title: title,
+      description: description,
+    ),
+  );
+}
+
 class _ConstructionProjectSheet extends StatefulWidget {
   const _ConstructionProjectSheet({
     required this.gameState,
@@ -5489,7 +5510,12 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                     fontWeight: FontWeight.w800)),
           ],
           const SizedBox(height: 14),
-          if (project.isInProgress)
+          if (project.state == ConstructionProjectState.maxLevel)
+            const Text(
+              'Niveau maximum atteint.',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            )
+          else if (project.isInProgress)
             Text(_countdownLabel(project.endsAt!),
                 style: const TextStyle(fontWeight: FontWeight.w900))
           else
@@ -5547,7 +5573,8 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
           FilledButton.icon(
             onPressed: widget.blockedReason == null &&
                     project.isReady &&
-                    !project.isInProgress
+                    !project.isInProgress &&
+                    project.state != ConstructionProjectState.maxLevel
                 ? () {
                     final result = widget.gameState.startConstructionProject(
                       widget.targetId,
@@ -5560,7 +5587,9 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
             icon: const Icon(Icons.construction_outlined),
             label: Text(project.isInProgress
                 ? 'Travaux en cours'
-                : 'Commencer les travaux'),
+                : project.state == ConstructionProjectState.maxLevel
+                    ? 'Niveau maximum'
+                    : 'Commencer les travaux'),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -5960,7 +5989,7 @@ class FablabPage extends StatelessWidget {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: Text('Fablab niveau ${gameState.fablabLevel}'),
+          title: const Text('Fablab'),
           bottom: const TabBar(
             tabs: <Widget>[
               Tab(text: 'Cuisine', icon: Icon(Icons.soup_kitchen_outlined)),
@@ -6032,11 +6061,29 @@ class FablabRecyclerView extends StatelessWidget {
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text('Recycleur niveau ${gameState.recyclerLevel}',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w900)),
+                  Row(children: <Widget>[
+                    Expanded(
+                      child: Text('Recycleur niveau ${gameState.recyclerLevel}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w900)),
+                    ),
+                    IconButton(
+                      tooltip: 'Améliorer le Recycleur',
+                      onPressed: gameState.recyclerLevel == 0
+                          ? null
+                          : () => _showFablabUnitProject(
+                                context,
+                                gameState: gameState,
+                                targetId: 'recycler',
+                                title: 'Améliorer le Recycleur',
+                                description:
+                                    'Réduit les déchets requis et raccourcit les cycles.',
+                              ),
+                      icon: const Icon(Icons.upgrade_outlined),
+                    ),
+                  ]),
                   const SizedBox(height: 8),
                   Text(
                       '$needed Déchets → ${wasteRecyclerConfig.outputResourcesPerCycle} ressources'),
@@ -6200,9 +6247,24 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                     .titleLarge
                     ?.copyWith(fontWeight: FontWeight.w900)),
             Text(
-              'Atelier niv. ${widget.gameState.fablabLevel} · '
+              'Atelier niv. ${widget.gameState.atelierLevel} · '
               '${widget.gameState.activePtipoteWorkshopOrders}/${widget.gameState.workshopSlots} emplacement(s) P’TIPOTE · '
               '${widget.gameState.activeManualWorkshopOrders}/1 créneau manuel. Chaque niveau ajoute un emplacement P’TIPOTE.',
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _showFablabUnitProject(
+                  context,
+                  gameState: widget.gameState,
+                  targetId: 'atelier',
+                  title: 'Améliorer l’Atelier',
+                  description:
+                      'Augmente le stock global et les emplacements de craft P’TIPOTE.',
+                ),
+                icon: const Icon(Icons.upgrade_outlined),
+                label: const Text('Amélioration'),
+              ),
             ),
             const SizedBox(height: 12),
             ...orders.map((order) => Card(
@@ -6348,14 +6410,29 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
         final figurines = snapshot.data ?? const <PtipoteFigurine>[];
         final orders = widget.gameState.activeKitchenOrders;
         return ListView(padding: const EdgeInsets.all(18), children: <Widget>[
-          Text('Cuisine',
+          Text('Cuisine niveau ${widget.gameState.cuisineLevel}',
               style: Theme.of(context)
                   .textTheme
                   .titleLarge
                   ?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _showFablabUnitProject(
+                context,
+                gameState: widget.gameState,
+                targetId: 'cuisine',
+                title: 'Améliorer la Cuisine',
+                description:
+                    'Augmente les emplacements de préparation et prépare les recettes futures.',
+              ),
+              icon: const Icon(Icons.upgrade_outlined),
+              label: const Text('Amélioration'),
+            ),
+          ),
           Text(
-            'Eau disponible gratuitement. ${widget.gameState.activePtipoteKitchenOrders}/${widget.gameState.workshopSlots} emplacement(s) P’TIPOTE · ${widget.gameState.activeManualKitchenOrders}/1 créneau manuel.',
+            'Eau disponible gratuitement. ${widget.gameState.activePtipoteKitchenOrders}/${widget.gameState.kitchenSlots} emplacement(s) P’TIPOTE · ${widget.gameState.activeManualKitchenOrders}/1 créneau manuel.',
           ),
           const SizedBox(height: 12),
           ...orders.map((order) => Card(
@@ -6383,7 +6460,7 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
                     ),
                 manualAvailable: widget.gameState.activeManualKitchenOrders < 1,
                 ptipoteAvailable: widget.gameState.activePtipoteKitchenOrders <
-                    widget.gameState.workshopSlots,
+                    widget.gameState.kitchenSlots,
                 onPrepare: () => _start(recipe, null),
                 onAssign: () async {
                   final figurine = await _pickPtipoteForActivity(
