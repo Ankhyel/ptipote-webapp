@@ -1009,6 +1009,14 @@ Pour formater Dart:
 - `fablabLevel` est conserve temporairement pour compatibilite de sauvegarde et est aligne sur `atelierLevel`; aucun niveau moyen n'est affiche dans l'interface.
 - `building_construction_config.dart` contient les couts/durees prototypes des ameliorations. `ptipote-dashboard/fablab-config.json` et l'onglet Fablab exposent leurs limites et valeurs miroir; la synchronisation automatique Dashboard -> Flutter reste a brancher.
 
+### Tour Et Marche - Ameliorations
+
+- Les niveaux de Tour et Marche sont deja persistants dans `buildings.tower.currentLevel` et `buildings.market.currentLevel`. Leurs projets `securityTower` et `market` utilisent maintenant la feuille commune de depot et de travaux aussi pour les niveaux suivants.
+- Tour: niveaux 1 a 3, avec respectivement 1, 2 et 3 slots de surveillance. Les rondes existantes restent actives pendant une amelioration; le nombre de slots ne change qu'a la fin du chantier.
+- Marche: le niveau conserve le fonctionnement des ventes, et `marketSlotLimit` applique `saleSlotsPerLevel` (+3 au niveau 1) au niveau effectif apres fin de chantier. Les stocks et demandes existants ne sont pas retires pendant les travaux.
+- `SecurityTowerPage` expose `Surveillance`, `Exploration`, `Meteo`, `Amelioration` et `Infos`. L'ecran Marche conserve ses fonctions actuelles et donne acces a `Amelioration` et `Infos` depuis sa carte principale.
+- Les reglages de niveaux existants sont exposes par `security-tower-config.json` et `market-config.json` dans le Dashboard. Les couts/durees communs de chantier restent centralises dans `building_construction_config.dart` en attendant une edition Dashboard dediee.
+
 ### Maison Et Logements
 
 | Fichier | Role |

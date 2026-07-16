@@ -186,6 +186,7 @@ class _RefugePageState extends State<RefugePage> {
             return SecurityTowerPage(
               gameState: _zone0State,
               figurineService: FigurineService(),
+              campHeartLevel: _campHeartState.campHeartLevel,
             );
           }
           if (building.name == 'Kernel') {
@@ -195,7 +196,10 @@ class _RefugePageState extends State<RefugePage> {
             );
           }
           if (building.name == 'Market') {
-            return MarketPage(gameState: _zone0State);
+            return MarketPage(
+              gameState: _zone0State,
+              campHeartLevel: _campHeartState.campHeartLevel,
+            );
           }
           return _GameBuildingPage(building: building);
         },
@@ -4745,10 +4749,12 @@ class SecurityTowerPage extends StatefulWidget {
     super.key,
     required this.gameState,
     required this.figurineService,
+    required this.campHeartLevel,
   });
 
   final Zone0GameState gameState;
   final FigurineService figurineService;
+  final int campHeartLevel;
 
   @override
   State<SecurityTowerPage> createState() => _SecurityTowerPageState();
@@ -4793,14 +4799,16 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
             title: const Text('Tour de sécurité'),
             bottom: const TabBar(tabs: <Widget>[
               Tab(text: 'Surveillance'),
               Tab(text: 'Exploration'),
-              Tab(text: 'Météo')
+              Tab(text: 'Météo'),
+              Tab(text: 'Amélioration'),
+              Tab(text: 'Infos'),
             ])),
         body: TabBarView(children: <Widget>[
           SafeArea(
@@ -4970,6 +4978,27 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
               gameState: widget.gameState,
               figurineService: widget.figurineService),
           _TowerWeatherTab(gameState: widget.gameState),
+          _BuildingUpgradeTab(
+            gameState: widget.gameState,
+            targetId: 'securityTower',
+            title: 'Améliorer la Tour',
+            description:
+                'La Tour reste active pendant les travaux. Le nouveau nombre de slots sera appliqué à la fin.',
+            currentEffects: <String>[
+              '${widget.gameState.securityTowerSlots} slot(s) de surveillance',
+              '+${securityTowerConfig.securityGainPerTick} sécurité par tick',
+            ],
+            nextEffects: <String>[
+              '${securityTowerConfig.slotsForLevel(widget.gameState.securityTowerLevel + 1)} slot(s) de surveillance',
+              'Les rondes en cours ne sont pas interrompues.',
+            ],
+            campHeartLevel: widget.campHeartLevel,
+          ),
+          const _BuildingInformationTab(
+            title: 'Tour de sécurité',
+            description:
+                'La Tour organise les rondes, sécurise les biomes et prépare la météo. Les P’TIPOTES affectés restent indisponibles pendant leur ronde.',
+          ),
         ]),
       ),
     );
@@ -5430,6 +5459,23 @@ void _showFablabUnitProject(
   required String title,
   required String description,
 }) {
+  _showBuildingProject(
+    context,
+    gameState: gameState,
+    targetId: targetId,
+    title: title,
+    description: description,
+  );
+}
+
+void _showBuildingProject(
+  BuildContext context, {
+  required Zone0GameState gameState,
+  required String targetId,
+  required String title,
+  required String description,
+  int? campHeartLevel,
+}) {
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -5438,8 +5484,127 @@ void _showFablabUnitProject(
       targetId: targetId,
       title: title,
       description: description,
+      campHeartLevel: campHeartLevel,
     ),
   );
+}
+
+class _BuildingUpgradeTab extends StatelessWidget {
+  const _BuildingUpgradeTab({
+    required this.gameState,
+    required this.targetId,
+    required this.title,
+    required this.description,
+    required this.currentEffects,
+    required this.nextEffects,
+    this.campHeartLevel,
+  });
+
+  final Zone0GameState gameState;
+  final String targetId;
+  final String title;
+  final String description;
+  final List<String> currentEffects;
+  final List<String> nextEffects;
+  final int? campHeartLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    final project = gameState.projectFor(targetId);
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(18),
+        children: <Widget>[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(title,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 8),
+                  Text(description),
+                  const SizedBox(height: 14),
+                  const Text('Effets actuels',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  ...currentEffects.map(Text.new),
+                  const SizedBox(height: 10),
+                  const Text('Niveau suivant',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  ...nextEffects.map(Text.new),
+                  if (project.isInProgress) ...<Widget>[
+                    const SizedBox(height: 12),
+                    Text('Travaux : ${_countdownLabel(project.endsAt!)}',
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                  ],
+                  const SizedBox(height: 14),
+                  FilledButton.icon(
+                    onPressed:
+                        project.state == ConstructionProjectState.maxLevel
+                            ? null
+                            : () => _showBuildingProject(
+                                  context,
+                                  gameState: gameState,
+                                  targetId: targetId,
+                                  title: title,
+                                  description: description,
+                                  campHeartLevel: campHeartLevel,
+                                ),
+                    icon: const Icon(Icons.upgrade_outlined),
+                    label: Text(
+                        project.state == ConstructionProjectState.maxLevel
+                            ? 'Niveau maximum'
+                            : 'Préparer l’amélioration'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BuildingInformationTab extends StatelessWidget {
+  const _BuildingInformationTab({
+    required this.title,
+    required this.description,
+  });
+
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(18),
+          children: <Widget>[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(title,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 8),
+                    Text(description),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _ConstructionProjectSheet extends StatefulWidget {
@@ -5630,8 +5795,13 @@ class _MarketConstructionSheet extends StatelessWidget {
 }
 
 class MarketPage extends StatefulWidget {
-  const MarketPage({super.key, required this.gameState});
+  const MarketPage({
+    super.key,
+    required this.gameState,
+    required this.campHeartLevel,
+  });
   final Zone0GameState gameState;
+  final int campHeartLevel;
 
   @override
   State<MarketPage> createState() => _MarketPageState();
@@ -5696,6 +5866,38 @@ class _MarketPageState extends State<MarketPage> {
                                         null
                                     ? 'Prochaine vente : stock vide'
                                     : 'Prochaine vente : ${widget.gameState.marketSaleRemaining()!.inMinutes}m ${widget.gameState.marketSaleRemaining()!.inSeconds.remainder(60).toString().padLeft(2, '0')}s'),
+                                Wrap(
+                                  spacing: 8,
+                                  children: <Widget>[
+                                    OutlinedButton.icon(
+                                      onPressed: () => _showBuildingProject(
+                                        context,
+                                        gameState: widget.gameState,
+                                        targetId: 'market',
+                                        title: 'Améliorer le Marché',
+                                        description:
+                                            'Le Marché reste ouvert pendant les travaux. Les nouveaux emplacements seront ajoutés à la fin.',
+                                        campHeartLevel: widget.campHeartLevel,
+                                      ),
+                                      icon: const Icon(Icons.upgrade_outlined),
+                                      label: const Text('Amélioration'),
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: () =>
+                                          showModalBottomSheet<void>(
+                                        context: context,
+                                        builder: (_) =>
+                                            const _BuildingInformationTab(
+                                          title: 'Marché',
+                                          description:
+                                              'Le Marché vend automatiquement le stock confié. Un P’TIPOTE accélère les ventes et peut traiter les demandes des habitants.',
+                                        ),
+                                      ),
+                                      icon: const Icon(Icons.info_outline),
+                                      label: const Text('Infos'),
+                                    ),
+                                  ],
+                                ),
                                 if (widget.gameState.marketAssignedPtipoteId !=
                                     null)
                                   OutlinedButton(
