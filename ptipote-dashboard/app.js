@@ -126,6 +126,7 @@ const ids = [
   "ptibugStatus",
   "ptibugConfigList",
   "ptibugPatternList",
+  "ptibugTraitForm",
   "publishPTibugButton",
   "campHeartStatus",
   "campHeartStageList",
@@ -1053,6 +1054,41 @@ function renderPTibugEditor() {
   bindZone0Inputs(el.ptibugPatternList);
 }
 
+function addPTibugTrait(event) {
+  event.preventDefault();
+  const form = new FormData(el.ptibugTraitForm);
+  const id = String(form.get("id") || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  const displayName = String(form.get("displayName") || "").trim();
+  const resource = String(form.get("resource") || "").trim();
+  const amount = craftNumber(form.get("amount"));
+  if (!id || !displayName || !resource || amount <= 0) {
+    el.ptibugStatus.textContent = "Renseigne un identifiant stable, un nom, une ressource et un effet supérieur à zéro.";
+    return;
+  }
+  zone0Settings.ptibug ||= {};
+  zone0Settings.ptibug.traitDefinitions ||= {};
+  if (zone0Settings.ptibug.traitDefinitions[id]) {
+    el.ptibugStatus.textContent = "Cet identifiant de trait existe déjà et ne peut pas être remplacé par erreur.";
+    return;
+  }
+  zone0Settings.ptibug.traitDefinitions[id] = {
+    id,
+    displayName,
+    description: String(form.get("description") || "").trim(),
+    effects: { [resource]: amount },
+    gradeMultipliers: {
+      commun: craftNumber(form.get("commun"), 1),
+      rare: craftNumber(form.get("rare"), 2),
+      avance: craftNumber(form.get("avance"), 3),
+    },
+    colorHex: String(form.get("colorHex") || "#817D66").trim(),
+    isActive: true,
+  };
+  el.ptibugTraitForm.reset();
+  renderPTibugEditor();
+  el.ptibugStatus.textContent = "Trait ajouté localement. Publie pour l'envoyer à l'application.";
+}
+
 function addKernelMission(event) {
   event.preventDefault();
   const form = new FormData(el.kernelMissionForm);
@@ -1270,6 +1306,7 @@ document.getElementById("goToCraftPlanButton")?.addEventListener("click", () => 
   document.getElementById("kernelPlanList")?.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 el.kernelMissionForm.addEventListener("submit", addKernelMission);
+el.ptibugTraitForm.addEventListener("submit", addPTibugTrait);
 
 async function loadKernelProgressConfig() {
   const response = await fetch("./kernel-progress-config.json", { cache: "no-store" });

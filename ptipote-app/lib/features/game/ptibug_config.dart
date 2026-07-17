@@ -1,7 +1,5 @@
 enum PTibugSpecies { scarabe, hyme, arac }
 
-enum PTibugTraitType { pollinisateur, mineur, decomposeur }
-
 enum PTibugTraitGrade { commun, rare, avance }
 
 enum PTibugModuleType { ailes, pinces, reservoir }
@@ -43,6 +41,8 @@ class PTibugTraitDefinition {
     required this.description,
     required this.effects,
     required this.gradeMultipliers,
+    required this.colorHex,
+    required this.isActive,
   });
 
   final String id;
@@ -50,6 +50,8 @@ class PTibugTraitDefinition {
   final String description;
   final Map<String, int> effects;
   final Map<PTibugTraitGrade, int> gradeMultipliers;
+  final String colorHex;
+  final bool isActive;
 
   Map<String, int> productionFor(PTibugTraitGrade grade) => effects.map(
         (resource, amount) => MapEntry(
@@ -99,6 +101,11 @@ class PTibugConfig {
   int traitMultiplier(PTibugTraitGrade grade) => grade.index + 1;
 
   PTibugTraitDefinition? traitDefinitionFor(String id) => traitDefinitions[id];
+
+  List<PTibugTraitDefinition> get activeTraitDefinitions =>
+      traitDefinitions.values
+          .where((definition) => definition.isActive)
+          .toList();
 
   PTibugPatternConfig? patternForKernelPlanId(String planId) {
     for (final pattern in patterns.values) {
@@ -174,6 +181,8 @@ const PTibugConfig defaultPTibugConfig = PTibugConfig(
         PTibugTraitGrade.rare: 2,
         PTibugTraitGrade.avance: 3
       },
+      colorHex: '#5D8D71',
+      isActive: true,
     ),
     'mineur': PTibugTraitDefinition(
       id: 'mineur',
@@ -185,6 +194,8 @@ const PTibugConfig defaultPTibugConfig = PTibugConfig(
         PTibugTraitGrade.rare: 2,
         PTibugTraitGrade.avance: 3
       },
+      colorHex: '#4977A6',
+      isActive: true,
     ),
     'decomposeur': PTibugTraitDefinition(
       id: 'decomposeur',
@@ -196,6 +207,8 @@ const PTibugConfig defaultPTibugConfig = PTibugConfig(
         PTibugTraitGrade.rare: 2,
         PTibugTraitGrade.avance: 3
       },
+      colorHex: '#8C5AA2',
+      isActive: true,
     ),
   },
 );

@@ -298,22 +298,33 @@ PTibugConfig _ptibug(Object? value) {
         entry.key: _int(rawPrices?[entry.key.name], entry.value),
     },
     traitDefinitions: <String, PTibugTraitDefinition>{
-      for (final entry in base.traitDefinitions.entries)
-        entry.key: () {
-          final item = _map(rawTraits?[entry.key]);
-          final fallback = entry.value;
-          final rawEffects = _resourceMap(item?['effects'], fallback.effects);
+      for (final id in <String>{
+        ...base.traitDefinitions.keys,
+        ...?rawTraits?.keys
+      })
+        id: () {
+          final item = _map(rawTraits?[id]);
+          final fallback = base.traitDefinitions[id];
+          final rawEffects = _resourceMap(
+              item?['effects'], fallback?.effects ?? const <String, int>{});
           final rawGrades = _map(item?['gradeMultipliers']);
           return PTibugTraitDefinition(
-            id: _string(item?['id'], fallback.id),
-            displayName: _string(item?['displayName'], fallback.displayName),
-            description: _string(item?['description'], fallback.description),
+            id: _string(item?['id'], fallback?.id ?? id),
+            displayName:
+                _string(item?['displayName'], fallback?.displayName ?? id),
+            description:
+                _string(item?['description'], fallback?.description ?? ''),
             effects: rawEffects,
             gradeMultipliers: <PTibugTraitGrade, int>{
               for (final grade in PTibugTraitGrade.values)
                 grade: _int(rawGrades?[grade.name],
-                    fallback.gradeMultipliers[grade] ?? 1),
+                    fallback?.gradeMultipliers[grade] ?? 1),
             },
+            colorHex:
+                _string(item?['colorHex'], fallback?.colorHex ?? '#817D66'),
+            isActive: item?['isActive'] is bool
+                ? item!['isActive'] as bool
+                : fallback?.isActive ?? true,
           );
         }(),
     },

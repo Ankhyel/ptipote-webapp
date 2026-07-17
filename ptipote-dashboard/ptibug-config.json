@@ -48,8 +48,8 @@
   },
   "sourcierPatternPrices": {"hyme": 6, "arac": 8},
   "traitDefinitions": {
-    "pollinisateur": {"id": "pollinisateur", "displayName": "Pollinisateur", "description": "Améliore la collecte organique.", "effects": {"Organique": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}},
-    "mineur": {"id": "mineur", "displayName": "Mineur", "description": "Améliore la collecte minérale.", "effects": {"Minéral": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}},
-    "decomposeur": {"id": "decomposeur", "displayName": "Décomposeur", "description": "Transforme les matières en organique et mycélium.", "effects": {"Organique": 1, "Mycélium": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}}
+    "pollinisateur": {"id": "pollinisateur", "displayName": "Pollinisateur", "description": "Améliore la collecte organique.", "effects": {"Organique": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#5D8D71", "isActive": true},
+    "mineur": {"id": "mineur", "displayName": "Mineur", "description": "Améliore la collecte minérale.", "effects": {"Minéral": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#4977A6", "isActive": true},
+    "decomposeur": {"id": "decomposeur", "displayName": "Décomposeur", "description": "Transforme les matières en organique et mycélium.", "effects": {"Organique": 1, "Mycélium": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#8C5AA2", "isActive": true}
   }
 }

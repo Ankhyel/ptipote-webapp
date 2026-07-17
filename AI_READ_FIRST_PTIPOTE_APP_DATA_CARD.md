@@ -1232,6 +1232,12 @@ Le passage à l'état `Bien reposé` est dédupliqué par P'TIPOTE et par cycle 
 
 Les définitions globales de traits P'TIBUG vivent dans `gameConfigs/zone0.ptibug.traitDefinitions`. Elles contiennent un identifiant stable, un nom, une description, des effets par ressource et des multiplicateurs par grade. Les instances joueur conservent `type` et `grade` historiques et peuvent porter `definitionId`; Flutter résout d'abord `definitionId`, puis le type historique. Les définitions Dart restent le fallback hors ligne.
 
+### Migration Traits P'TIBUG Extensibles
+
+`PTibugTraitData.definitionId` est la référence de runtime. À la lecture d'une ancienne sauvegarde, Flutter récupère automatiquement `type` comme identifiant de définition; à l'écriture, il conserve également `type` pour les anciennes versions de l'app. Les nouveaux traits sont tirés uniquement parmi les définitions `isActive: true`. Les traits désactivés restent interprétés pour ne jamais dégrader une sauvegarde joueur. La production, l'équipement, la fusion, les libellés, descriptions et couleurs passent par la définition distante; les anciennes définitions Dart restent disponibles hors ligne.
+
+Le Dashboard P'TIBUG permet de créer une définition avec un identifiant stable, un nom, une description, un effet de ressource, les multiplicateurs de grade et une couleur. L'identifiant n'est pas modifiable après création. Pour retirer un trait du tirage sans casser les traits acquis, régler `isActive` sur `false`; ne pas supprimer une définition déjà publiée.
+
 - L'onglet Dashboard est nommé `Kernel`. Il est rangé en accordéons : `Bâtiments` (missions de construction), `Missions`, `Éditeur de mission`, `Confiance, axes et récompenses`, puis `Plans & Patterns`.
 - Les prérequis d'un craft ne doivent plus être édités dans la carte Craft : `patternRequired` est activé par défaut. Lorsqu'une recette est créée avec ce réglage, le Dashboard ajoute son Plan Kernel `craft-{recipeId}` si nécessaire.
 - Les prérequis de Plan configurables sont : Confiance du Kernel, Éleveur, Bâtisseur, Restaurateur et niveaux de bâtiments. Les Plans générés portent `workshopRecipeId` afin de relier la recette au Plan.

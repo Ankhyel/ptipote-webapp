@@ -6856,7 +6856,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                         _LoadoutPill(
                           icon: Icons.auto_awesome_outlined,
                           label: _traitLabel(bug.traitDataId),
-                          color: _traitColor(_traitFor(bug)?.grade),
+                          color: _traitColor(
+                              _traitFor(bug)?.grade, _traitFor(bug)),
                         ),
                         ...List<Widget>.generate(
                           pTibugConfig.moduleSlotsForLevel(
@@ -6923,11 +6924,13 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         return Card(
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: _traitColor(trait.grade).withValues(alpha: 0.16),
-              child: Icon(Icons.auto_awesome, color: _traitColor(trait.grade)),
+              backgroundColor:
+                  _traitColor(trait.grade, trait).withValues(alpha: 0.16),
+              child: Icon(Icons.auto_awesome,
+                  color: _traitColor(trait.grade, trait)),
             ),
             title: Text(
-                '${_traitTitle(trait.type)} · ${_traitGradeTitle(trait.grade)}'),
+                '${_traitTitle(trait)} · ${_traitGradeTitle(trait.grade)}'),
             subtitle: Text(owner == null
                 ? _traitDescription(trait)
                 : '${_traitDescription(trait)}\nÉquipée par ${owner.displayName}'),
@@ -6973,7 +6976,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       final partner = available
           .where((item) =>
               item.id != trait.id &&
-              item.type == trait.type &&
+              item.definitionId == trait.definitionId &&
               item.grade == trait.grade)
           .firstOrNull;
       if (partner == null ||
@@ -6986,7 +6989,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             widget.gameState.fusePTibugTraitData(trait, partner).message),
         icon: const Icon(Icons.merge_type_outlined),
         label: Text(
-            'Fusionner 2 ${_traitTitle(trait.type)} ${_traitGradeTitle(trait.grade)}'),
+            'Fusionner 2 ${_traitTitle(trait)} ${_traitGradeTitle(trait.grade)}'),
       ));
     }
     return widgets;
@@ -7023,9 +7026,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   const SizedBox(height: 8),
                   ...availableTraits.map((trait) => ListTile(
                         leading: Icon(Icons.auto_awesome,
-                            color: _traitColor(trait.grade)),
+                            color: _traitColor(trait.grade, trait)),
                         title: Text(
-                            '${_traitTitle(trait.type)} · ${_traitGradeTitle(trait.grade)}'),
+                            '${_traitTitle(trait)} · ${_traitGradeTitle(trait.grade)}'),
                         subtitle: Text(_traitDescription(trait)),
                         trailing: trait.id == bug.traitDataId
                             ? const Icon(Icons.check_circle)
@@ -7103,11 +7106,11 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           '+${pTibugConfig.reservoirCapacityBonus} de capacité de réserve.',
       };
 
-  String _traitTitle(PTibugTraitType type) => switch (type) {
-        PTibugTraitType.pollinisateur => 'Pollinisateur',
-        PTibugTraitType.mineur => 'Mineur',
-        PTibugTraitType.decomposeur => 'Décomposeur',
-      };
+  PTibugTraitDefinition? _traitDefinition(PTibugTraitData trait) =>
+      pTibugConfig.traitDefinitionFor(trait.definitionId);
+
+  String _traitTitle(PTibugTraitData trait) =>
+      _traitDefinition(trait)?.displayName ?? trait.definitionId;
 
   String _traitGradeTitle(PTibugTraitGrade grade) => switch (grade) {
         PTibugTraitGrade.commun => 'Commun',
@@ -7115,21 +7118,28 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         PTibugTraitGrade.avance => 'Avancé',
       };
 
-  Color _traitColor(PTibugTraitGrade? grade) => switch (grade) {
-        PTibugTraitGrade.commun => const Color(0xFF5D8D71),
-        PTibugTraitGrade.rare => const Color(0xFF4977A6),
-        PTibugTraitGrade.avance => const Color(0xFF8C5AA2),
-        null => const Color(0xFF817D66),
-      };
+  Color _traitColor(PTibugTraitGrade? grade, [PTibugTraitData? trait]) {
+    final hex = trait == null ? null : _traitDefinition(trait)?.colorHex;
+    final parsed = int.tryParse((hex ?? '').replaceFirst('#', ''), radix: 16);
+    if (parsed != null) return Color(0xFF000000 | parsed);
+    return switch (grade) {
+      PTibugTraitGrade.commun => const Color(0xFF5D8D71),
+      PTibugTraitGrade.rare => const Color(0xFF4977A6),
+      PTibugTraitGrade.avance => const Color(0xFF8C5AA2),
+      null => const Color(0xFF817D66),
+    };
+  }
 
   String _traitDescription(PTibugTraitData trait) {
-    final value = pTibugConfig.traitMultiplier(trait.grade);
-    return switch (trait.type) {
-      PTibugTraitType.pollinisateur => '+$value Organique par cycle.',
-      PTibugTraitType.mineur => '+$value Minéral par cycle.',
-      PTibugTraitType.decomposeur =>
-        '+$value Organique et +$value Mycélium par cycle.',
-    };
+    final definition = _traitDefinition(trait);
+    if (definition == null) return 'Trait inconnu : ${trait.definitionId}.';
+    final effects = definition
+        .productionFor(trait.grade)
+        .entries
+        .where((entry) => entry.value != 0)
+        .map((entry) => '+${entry.value} ${entry.key}')
+        .join(' · ');
+    return effects.isEmpty ? definition.description : '$effects par cycle.';
   }
 
   int _firstFreeSlot() {
@@ -7147,7 +7157,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         .firstOrNull;
     return trait == null
         ? 'Donnée libre'
-        : '${_traitTitle(trait.type)} · ${_traitGradeTitle(trait.grade)}';
+        : '${_traitTitle(trait)} · ${_traitGradeTitle(trait.grade)}';
   }
 }
 

@@ -137,6 +137,13 @@
             <button class="ghost" id="publishPTibugButton" type="button">Publier dans l'app</button>
           </div>
           <p class="panel-note" id="ptibugStatus">Les coûts de Nurserie, espèces, traits et prérequis de Pattern sont publiés dans Firestore. Les traits joueur déjà obtenus restent dans leur sauvegarde.</p>
+          <details class="config-card"><summary><span><strong>Créer un trait</strong><small>Un identifiant ne doit jamais être réutilisé ni renommé.</small></span><span class="card-chevron">⌄</span></summary><form class="stat-grid config-card-body" id="ptibugTraitForm">
+            <div class="stat-field"><label>Identifiant<input name="id" placeholder="ex. collecteur-ambiant" required></label></div><div class="stat-field"><label>Nom<input name="displayName" placeholder="Collecteur ambiant" required></label></div>
+            <div class="stat-field stat-field-wide"><label>Description<input name="description" placeholder="Effet affiché dans l'app"></label></div>
+            <div class="stat-field"><label>Ressource produite<input name="resource" placeholder="ex. Organique" required></label></div><div class="stat-field"><label>Effet par cycle<input name="amount" type="number" min="1" value="1" required></label></div>
+            <div class="stat-field"><label>Multiplicateur commun<input name="commun" type="number" min="1" value="1"></label></div><div class="stat-field"><label>Multiplicateur rare<input name="rare" type="number" min="1" value="2"></label></div><div class="stat-field"><label>Multiplicateur avancé<input name="avance" type="number" min="1" value="3"></label></div><div class="stat-field"><label>Couleur<input name="colorHex" value="#817D66" pattern="#[0-9A-Fa-f]{6}"></label></div>
+            <div class="stat-field stat-field-wide"><button class="button" type="submit">Ajouter le trait</button></div>
+          </form></details>
           <div class="stage-list" id="ptibugConfigList"></div>
           <div class="panel-head"><div><p class="eyebrow">Patterns</p><h3>Pré-requis d’activation</h3></div></div>
           <p class="panel-note">Un Pattern est une connaissance Kernel : ce n’est ni une recette, ni un produit consommable. Les niveaux Éleveur, Bâtisseur, Régénérateur et les bâtiments requis sont contrôlés par Flutter.</p>

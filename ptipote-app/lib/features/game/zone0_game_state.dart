@@ -2534,12 +2534,15 @@ class Zone0GameState extends ChangeNotifier {
       pTibugCreationOrder!.completedAt = current;
       unlockedPTibugModules.add(PTibugModuleType.reservoir);
       if (pTibugTraitData.isEmpty) {
-        const traits = PTibugTraitType.values;
-        pTibugTraitData.add(PTibugTraitData(
-          id: 'trait-${current.microsecondsSinceEpoch}',
-          type: traits[_random.nextInt(traits.length)],
-          grade: PTibugTraitGrade.commun,
-        ));
+        final traits = pTibugConfig.activeTraitDefinitions;
+        if (traits.isNotEmpty) {
+          final trait = traits[_random.nextInt(traits.length)];
+          pTibugTraitData.add(PTibugTraitData(
+            id: 'trait-${current.microsecondsSinceEpoch}',
+            definitionId: trait.id,
+            grade: PTibugTraitGrade.commun,
+          ));
+        }
       }
       reports.add(PtipoteMissionReport.system(
           message:
@@ -2626,8 +2629,7 @@ class Zone0GameState extends ChangeNotifier {
             .where((item) => item.id == bug.traitDataId)
             .firstOrNull;
     if (trait != null) {
-      final definitionId = trait.definitionId ?? trait.type.name;
-      final definition = pTibugConfig.traitDefinitionFor(definitionId);
+      final definition = pTibugConfig.traitDefinitionFor(trait.definitionId);
       final effects =
           definition?.productionFor(trait.grade) ?? const <String, int>{};
       effects.forEach(add);
@@ -2714,7 +2716,7 @@ class Zone0GameState extends ChangeNotifier {
     PTibugTraitData second,
   ) {
     if (first.id == second.id ||
-        first.type != second.type ||
+        first.definitionId != second.definitionId ||
         first.grade != second.grade ||
         first.grade == PTibugTraitGrade.avance ||
         pTibugs.any((bug) =>
@@ -2727,7 +2729,7 @@ class Zone0GameState extends ChangeNotifier {
         .removeWhere((item) => item.id == first.id || item.id == second.id);
     pTibugTraitData.add(PTibugTraitData(
       id: 'trait-${DateTime.now().microsecondsSinceEpoch}',
-      type: first.type,
+      definitionId: first.definitionId,
       grade: PTibugTraitGrade.values[first.grade.index + 1],
     ));
     emitKernelProgressEvent(KernelProgressEventType.traitDataFused);
@@ -5318,35 +5320,30 @@ class PTibug {
 class PTibugTraitData {
   const PTibugTraitData({
     required this.id,
-    required this.type,
+    required this.definitionId,
     required this.grade,
-    this.definitionId,
   });
 
   final String id;
-  final PTibugTraitType type;
+  final String definitionId;
   final PTibugTraitGrade grade;
-  final String? definitionId;
 
   factory PTibugTraitData.fromFirebase(Map<dynamic, dynamic> data) =>
       PTibugTraitData(
         id: '${data['id'] ?? ''}',
-        type: ForageMission._enumByName(
-          PTibugTraitType.values,
-          '${data['type'] ?? ''}',
-          PTibugTraitType.pollinisateur,
-        ),
+        definitionId:
+            '${data['definitionId'] ?? data['type'] ?? 'pollinisateur'}',
         grade: ForageMission._enumByName(
           PTibugTraitGrade.values,
           '${data['grade'] ?? ''}',
           PTibugTraitGrade.commun,
         ),
-        definitionId: data['definitionId'] as String?,
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'id': id,
-        'type': type.name,
+        // Kept for application versions that still read the historical field.
+        'type': definitionId,
         'grade': grade.name,
         'definitionId': definitionId,
       };
