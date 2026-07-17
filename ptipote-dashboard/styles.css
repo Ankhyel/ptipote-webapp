@@ -44,6 +44,69 @@ textarea {
   font-size: 0.98rem;
 }
 
+.config-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.config-card summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 62px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.config-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.config-card summary span:first-child {
+  min-width: 0;
+}
+
+.config-card summary strong,
+.config-card summary small {
+  display: block;
+}
+
+.config-card summary small {
+  margin-top: 4px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-card[open] summary {
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-strong);
+}
+
+.card-chevron {
+  flex: 0 0 auto;
+  color: var(--sage-dark);
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+
+.config-card[open] .card-chevron {
+  transform: rotate(180deg);
+}
+
+.config-card-body {
+  padding: 14px;
+}
+
+.craft-card .pill {
+  flex: 0 0 auto;
+}
+
 .toggle-field {
   display: flex;
   align-items: center;

@@ -146,6 +146,9 @@ const ids = [
   "zone0SettingsForm",
   "zone0SettingsStatus",
   "publishZone0SettingsButton",
+  "marketSettingsForm",
+  "marketSettingsStatus",
+  "publishMarketButton",
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -631,7 +634,7 @@ async function loadCraftConfig({ reset = false } = {}) {
 
 function renderCraftConfig() {
   const recipes = Array.isArray(craftConfig.recipes) ? craftConfig.recipes : [];
-  el.craftRecipeList.innerHTML = recipes.map((recipe) => {
+  el.craftRecipeList.innerHTML = recipes.map((recipe, index) => {
     const ingredients = Array.isArray(recipe.ingredients)
       ? recipe.ingredients.map((item) => `${escapeHtml(item.amount)} ${escapeHtml(item.resource)}`).join(" + ")
       : "";
@@ -641,16 +644,26 @@ function renderCraftConfig() {
     const effects = recipe.isConsumable
       ? `${escapeHtml(recipe.foodType || "meal")} · consommable · faim +${escapeHtml(recipe.hungerRestore || 0)} · vitalité +${escapeHtml(recipe.vitalityRestore || 0)}`
       : "non consommable";
-    return `
-      <div class="stage-row">
-        <div>
-          <strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong>
-          <span>Cuisine niv. ${escapeHtml(recipe.cuisineLevel || 1)} · ${ingredients}${context} => ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${effects}</span>
-        </div>
-        <strong>${escapeHtml(recipe.id || "recette")}</strong>
+    const stackLimit = Math.max(1, Number(recipe.stackLimit || (recipe.isEquipment ? 1 : 10)));
+    return `<details class="config-card craft-card">
+      <summary><span><strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong><small>${ingredients}${context} → ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${effects}</small></span><span class="pill">pile ${stackLimit}</span></summary>
+      <div class="stat-form config-card-body">
+        <div class="stat-field"><label>Nom</label><input type="text" data-craft-index="${index}" data-craft-field="displayName" value="${escapeHtml(recipe.displayName || "")}"></div>
+        <div class="stat-field"><label>Niveau Cuisine</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="cuisineLevel" value="${escapeHtml(recipe.cuisineLevel || 1)}"></div>
+        <div class="stat-field"><label>Quantité créée</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="resultAmount" value="${escapeHtml(recipe.resultAmount || 1)}"></div>
+        <div class="stat-field"><label>Taille maximale d'une pile</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="stackLimit" value="${stackLimit}"></div>
       </div>
-    `;
+    </details>`;
   }).join("");
+  el.craftRecipeList.querySelectorAll("[data-craft-index]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const recipe = craftConfig.recipes[Number(input.dataset.craftIndex)];
+      const field = input.dataset.craftField;
+      recipe[field] = input.type === "number" ? Math.max(1, Number(input.value) || 1) : input.value;
+      localStorage.setItem(CRAFT_STORAGE_KEY, JSON.stringify(craftConfig, null, 2));
+      el.craftStatus.textContent = "Recette modifiée localement. Exporte le JSON pour versionner la configuration.";
+    });
+  });
 }
 
 function addCraftRecipe(event) {
@@ -677,6 +690,7 @@ function addCraftRecipe(event) {
     cuisineLevel: Number(form.get("cuisineLevel") || 1),
     resultItem,
     resultAmount: Number(form.get("resultAmount") || 1),
+    stackLimit: Math.max(1, Number(form.get("stackLimit") || 1)),
     isConsumable: form.get("isConsumable") === "true",
     foodType: String(form.get("foodType") || "meal"),
     hungerRestore: Number(form.get("hungerRestore") || 0),
@@ -823,19 +837,24 @@ function configFields(value, path = []) {
   return Object.entries(value).flatMap(([key, child]) => configFields(child, [...path, key]));
 }
 
-function renderConfigEditor(target, keys) {
-  target.innerHTML = keys.map((key) => {
-    const config = zone0Settings[key];
-    const fields = configFields(config).filter((field) => !ZONE0_NON_RUNTIME_PATHS.has(`${key}.${field.path.join(".")}`));
-    return `<section class="config-section"><h3>${escapeHtml(ZONE0_SECTION_LABELS[key])}</h3><div class="stat-form">${fields.map((field) => {
+function configFieldControls(key, value, prefix = []) {
+  return configFields(value, prefix)
+    .filter((field) => !ZONE0_NON_RUNTIME_PATHS.has(`${key}.${field.path.join(".")}`))
+    .map((field) => {
       const path = field.path.join(".");
-      const label = `${ZONE0_SECTION_LABELS[key]} / ${prettyPath(field.path)}`;
+      const label = prettyPath(field.path.slice(prefix.length));
       if (typeof field.value === "boolean") {
         return `<label class="toggle-field"><input type="checkbox" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" ${field.value ? "checked" : ""}>${escapeHtml(label)}</label>`;
       }
       return `<div class="stat-field"><label for="zone0-${escapeHtml(key)}-${escapeHtml(path)}">${escapeHtml(label)}</label><input id="zone0-${escapeHtml(key)}-${escapeHtml(path)}" type="number" step="0.01" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" value="${escapeHtml(field.value)}"></div>`;
-    }).join("")}</div></section>`;
-  }).join("");
+    }).join("");
+}
+
+function configCard(title, key, value, prefix = [], { open = false, meta = "" } = {}) {
+  return `<details class="config-card" ${open ? "open" : ""}><summary><span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(meta)}</small></span><span class="card-chevron">⌄</span></summary><div class="stat-form config-card-body">${configFieldControls(key, value, prefix)}</div></details>`;
+}
+
+function bindZone0Inputs(target) {
   target.querySelectorAll("[data-zone0-key]").forEach((input) => {
     input.addEventListener("input", () => {
       const path = input.dataset.zone0Path.split(".").map((key) => /^\d+$/.test(key) ? Number(key) : key);
@@ -846,12 +865,63 @@ function renderConfigEditor(target, keys) {
   });
 }
 
+function renderConfigEditor(target, keys) {
+  target.innerHTML = keys.map((key) => configCard(ZONE0_SECTION_LABELS[key], key, zone0Settings[key], [], { open: true })).join("");
+  bindZone0Inputs(target);
+}
+
+function renderCampHeartEditor() {
+  const stages = zone0Settings.campHeart?.stages || [];
+  el.campHeartStageList.innerHTML = stages.map((stage, index) => configCard(
+    `Niveau ${stage.level} · ${stage.label}`,
+    "campHeart",
+    stage,
+    ["stages", index],
+    { open: index === 0, meta: `Palier ${stage.stage || "Cœur"}` },
+  )).join("");
+  bindZone0Inputs(el.campHeartStageList);
+}
+
+function renderLisiereEditor() {
+  const { biomes = [], durations = [], intensities = [], ...general } = zone0Settings.lisiere || {};
+  el.lisiereForageList.innerHTML = [
+    configCard("Réglages généraux", "lisiere", general, [], { open: true, meta: "Temps, inventaire et sécurité" }),
+    configCard("Durées de mission", "lisiere", durations, ["durations"], { meta: "Durées et coût de vitalité" }),
+    configCard("Intensités", "lisiere", intensities, ["intensities"], { meta: "Gains, fatigue et risque" }),
+    ...biomes.map((biome, index) => configCard(biome.label || `Biome ${index + 1}`, "lisiere", biome, ["biomes", index], { meta: "Récompenses et risque" })),
+  ].join("");
+  bindZone0Inputs(el.lisiereForageList);
+}
+
+function renderWorkshopEditor() {
+  const { recipes = [], ...general } = zone0Settings.workshop || {};
+  el.zone0SettingsForm.innerHTML = [
+    configCard("Atelier · réglages généraux", "workshop", general, [], { open: true, meta: "Emplacements, vitalité et vitesse" }),
+    ...recipes.map((recipe, index) => configCard(recipe.displayName || recipe.resultItem || `Recette ${index + 1}`, "workshop", recipe, ["recipes", index], { meta: "Coûts, durée, résultat et empilement" })),
+    configCard("Maison et logements", "housing", zone0Settings.housing, [], { meta: "Capacité, coûts et bien-être" }),
+  ].join("");
+  bindZone0Inputs(el.zone0SettingsForm);
+}
+
+function renderMarketEditor() {
+  const market = zone0Settings.market || {};
+  const construction = Object.fromEntries(["constructionCost", "requiredCampHeartLevel", "requiredPopulation", "saleSlotsPerLevel"].map((key) => [key, market[key]]));
+  const { constructionCost, requiredCampHeartLevel, requiredPopulation, saleSlotsPerLevel, saleValues, ...activity } = market;
+  el.marketSettingsForm.innerHTML = [
+    configCard("Construction et prérequis", "market", construction, [], { open: true, meta: "Accès au bâtiment et emplacements" }),
+    configCard("Activité du marché", "market", activity, [], { meta: "Vitalité, fréquence et demandes" }),
+    configCard("Tarifs des ressources et objets", "market", saleValues || {}, ["saleValues"], { meta: "Prix par matériau et objet fabriqué" }),
+  ].join("");
+  bindZone0Inputs(el.marketSettingsForm);
+}
+
 function renderZone0Settings() {
-  renderConfigEditor(el.campHeartStageList, ["campHeart"]);
-  renderConfigEditor(el.lisiereForageList, ["lisiere"]);
+  renderCampHeartEditor();
+  renderLisiereEditor();
   renderConfigEditor(el.securityTowerConfigList, ["tower", "towerOperations"]);
   renderConfigEditor(el.fablabConfigList, ["fablab"]);
-  renderConfigEditor(el.zone0SettingsForm, ["workshop", "market", "housing"]);
+  renderWorkshopEditor();
+  renderMarketEditor();
 }
 
 function validateZone0Settings() {
@@ -872,6 +942,7 @@ async function publishZone0Settings() {
     zone0SettingsUpdatedBy: auth.currentUser.uid,
   }, { merge: true });
   el.zone0SettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
+  el.marketSettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
 }
 
 async function handleAuthClick() {
@@ -941,10 +1012,12 @@ el.exportKernelButton.addEventListener("click", () => {
   el.publishSecurityTowerButton,
   el.publishFablabButton,
   el.publishZone0SettingsButton,
+  el.publishMarketButton,
 ].forEach((button) => {
   button.addEventListener("click", () => {
     publishZone0Settings().catch((error) => {
       el.zone0SettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
+      el.marketSettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
     });
   });
 });

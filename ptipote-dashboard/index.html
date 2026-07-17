@@ -37,7 +37,8 @@
         <button class="tab-button" type="button" data-dashboard-tab="fablab">Fablab</button>
         <button class="tab-button" type="button" data-dashboard-tab="recycler">Déchets / Recycleur</button>
         <button class="tab-button" type="button" data-dashboard-tab="craft">Craft</button>
-        <button class="tab-button" type="button" data-dashboard-tab="active-buildings">Atelier, Marché, Maison</button>
+        <button class="tab-button" type="button" data-dashboard-tab="market">Marché</button>
+        <button class="tab-button" type="button" data-dashboard-tab="active-buildings">Atelier & Maison</button>
       </nav>
 
       <section class="dashboard-panel active" data-dashboard-panel="overview">
@@ -77,9 +78,17 @@
 
       <section class="dashboard-panel" data-dashboard-panel="active-buildings">
         <section class="panel stat-ptipote-panel">
-          <div class="panel-head"><div><p class="eyebrow">Configuration distante</p><h2>Atelier, Marché, Maison et Logements</h2></div><button class="ghost" id="publishZone0SettingsButton" type="button">Publier dans l'app</button></div>
+          <div class="panel-head"><div><p class="eyebrow">Configuration distante</p><h2>Atelier, Maison et Logements</h2></div><button class="ghost" id="publishZone0SettingsButton" type="button">Publier dans l'app</button></div>
           <p class="panel-note" id="zone0SettingsStatus">Valeurs Dart/JSON de secours chargées tant qu'aucune configuration n'est publiée.</p>
           <div class="config-section-list" id="zone0SettingsForm"></div>
+        </section>
+      </section>
+
+      <section class="dashboard-panel" data-dashboard-panel="market">
+        <section class="panel stat-ptipote-panel">
+          <div class="panel-head"><div><p class="eyebrow">Configuration distante</p><h2>Marché</h2></div><button class="ghost" id="publishMarketButton" type="button">Publier dans l'app</button></div>
+          <p class="panel-note" id="marketSettingsStatus">Construction, activité et tarifs du Marché.</p>
+          <div class="config-section-list" id="marketSettingsForm"></div>
         </section>
       </section>
 
@@ -186,6 +195,7 @@
             <div class="stat-field"><label for="craftIngredientAmount2">Quantité 2</label><input id="craftIngredientAmount2" name="ingredientAmount2" type="number" min="0" value="0"></div>
             <div class="stat-field"><label for="craftResultItem">Objet résultat</label><input id="craftResultItem" name="resultItem" value="Repas nutritif"></div>
             <div class="stat-field"><label for="craftResultAmount">Quantité résultat</label><input id="craftResultAmount" name="resultAmount" type="number" min="1" value="1"></div>
+            <div class="stat-field"><label for="craftStackLimit">Taille maximale d'une pile</label><input id="craftStackLimit" name="stackLimit" type="number" min="1" value="10"></div>
             <div class="stat-field"><label for="craftIsConsumable">Consommable</label><select id="craftIsConsumable" name="isConsumable"><option value="true">Oui</option><option value="false">Non</option></select></div>
             <div class="stat-field"><label for="craftFoodType">FoodType</label><select id="craftFoodType" name="foodType"><option value="meal">Meal</option><option value="drink">Drink</option></select></div>
             <div class="stat-field"><label for="craftHungerRestore">Faim récupérée</label><input id="craftHungerRestore" name="hungerRestore" type="number" min="0" value="20"></div>
