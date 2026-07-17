@@ -440,7 +440,7 @@ function renderCampHeartConfig() {
         <strong>Niv. ${escapeHtml(stage.level)} - ${escapeHtml(stage.label)}</strong>
         <span>${escapeHtml(stage.populationLabel)} · ${escapeHtml(stage.activePtipoteComfortLimit)} P'TIPOTE(s) confort · bonheur +${escapeHtml(stage.refugeHappinessBonus)}</span>
       </div>
-      <strong>${stage.xpRequiredForNextLevel == null ? "max V1" : `${escapeHtml(stage.xpRequiredForNextLevel)} XP`}</strong>
+      <strong>${stage.organicRequiredForNextLevel == null ? "max V1" : `${escapeHtml(stage.organicRequiredForNextLevel)} Organique`}</strong>
     </div>
   `).join("");
 }
@@ -806,6 +806,16 @@ async function loadZone0Settings() {
       if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) published = candidate;
     }
     zone0Settings = mergeConfig(base, published || {});
+    const publishedStages = published?.campHeart?.stages;
+    if (Array.isArray(publishedStages)) {
+      publishedStages.forEach((stage, index) => {
+        if (stage?.organicRequiredForNextLevel === undefined &&
+            stage?.xpRequiredForNextLevel !== undefined &&
+            zone0Settings.campHeart?.stages?.[index]) {
+          zone0Settings.campHeart.stages[index].organicRequiredForNextLevel = stage.xpRequiredForNextLevel;
+        }
+      });
+    }
     if (Array.isArray(published?.craft?.recipes)) {
       const baselineById = new Map((base.craft?.recipes || []).map((recipe) => [recipe.id, recipe]));
       zone0Settings.craft.recipes = published.craft.recipes.map((recipe) => mergeConfig(baselineById.get(recipe.id) || {}, recipe));
@@ -833,7 +843,17 @@ function writePath(source, path, value) {
 }
 
 function prettyPath(path) {
-  return path.map((key) => String(key).replace(/([A-Z])/g, " $1")).join(" / ");
+  const labels = {
+    organicRequiredForNextLevel: "Organique requis pour le niveau suivant",
+    populationCapacityByCampHeartLevel: "Capacité de population par niveau du Cœur",
+    startingPopulation: "Population de départ",
+    startingWellbeing: "Bien-être de départ",
+    startingBioBatteries: "Bio-batteries de départ",
+    maxRefugeRequests: "Demandes d'accueil maximum",
+    wellbeingRedThreshold: "Seuil de bien-être rouge",
+    wellbeingOrangeThreshold: "Seuil de bien-être orange",
+  };
+  return path.map((key) => labels[key] || String(key).replace(/([A-Z])/g, " $1")).join(" / ");
 }
 
 function configFields(value, path = []) {
@@ -877,23 +897,27 @@ function renderConfigEditor(target, keys) {
 
 function renderCampHeartEditor() {
   const stages = zone0Settings.campHeart?.stages || [];
-  el.campHeartStageList.innerHTML = stages.map((stage, index) => configCard(
-    `Niveau ${stage.level} · ${stage.label}`,
-    "campHeart",
-    stage,
-    ["stages", index],
-    { open: index === 0, meta: `Palier ${stage.stage || "Cœur"}` },
-  )).join("");
+  const kernel = zone0Settings.kernel || {};
+  const { missions: _missions, plans: _plans, ...campSettings } = kernel;
+  el.campHeartStageList.innerHTML = [
+    configCard("Camp et capacité", "kernel", campSettings, [], { open: true, meta: "Population, accueil et bien-être du Cœur" }),
+    ...stages.map((stage, index) => configCard(
+      `Niveau ${stage.level} · ${stage.label}`,
+      "campHeart",
+      stage,
+      ["stages", index],
+      { open: index === 0, meta: `Palier ${stage.stage || "Cœur"}` },
+    )),
+  ].join("");
   bindZone0Inputs(el.campHeartStageList);
 }
 
 function renderKernelEditor() {
   const kernel = zone0Settings.kernel || {};
-  const { missions = [], plans = [], ...general } = kernel;
+  const { missions = [], plans = [] } = kernel;
   const progress = zone0Settings.kernelProgress || {};
   const { eventRewards = {}, plans: patternPlans = [], ...progressGeneral } = progress;
   el.kernelConfigList.innerHTML = [
-    configCard("Camp et capacité", "kernel", general, [], { open: true, meta: "Population, bien-être et demandes" }),
     ...missions.map((mission, index) => configCard(
       mission.title || `Mission ${index + 1}`,
       "kernel",

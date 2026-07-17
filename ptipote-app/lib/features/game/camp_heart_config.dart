@@ -21,7 +21,7 @@ class CampHeartStageConfig {
     required this.level,
     required this.stage,
     required this.label,
-    required this.xpRequiredForNextLevel,
+    required this.organicRequiredForNextLevel,
     required this.populationLabel,
     required this.populationMin,
     required this.populationMax,
@@ -35,7 +35,7 @@ class CampHeartStageConfig {
   final int level;
   final CampStage stage;
   final String label;
-  final int? xpRequiredForNextLevel;
+  final int? organicRequiredForNextLevel;
   final String populationLabel;
   final int? populationMin;
   final int? populationMax;
@@ -52,7 +52,7 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
       level: 1,
       stage: CampStage.camp,
       label: 'Camp',
-      xpRequiredForNextLevel: 100,
+      organicRequiredForNextLevel: 100,
       populationLabel: 'environ 5 personnes + visiteurs',
       populationMin: 5,
       populationMax: null,
@@ -78,7 +78,7 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
       level: 2,
       stage: CampStage.refuge,
       label: 'Refuge',
-      xpRequiredForNextLevel: 250,
+      organicRequiredForNextLevel: 250,
       populationLabel: '7 à 12 habitants',
       populationMin: 7,
       populationMax: 12,
@@ -104,7 +104,7 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
       level: 3,
       stage: CampStage.bourgade,
       label: 'Bourgade',
-      xpRequiredForNextLevel: 500,
+      organicRequiredForNextLevel: 500,
       populationLabel: '15 à 21 habitants',
       populationMin: 15,
       populationMax: 21,
@@ -130,7 +130,7 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
       level: 4,
       stage: CampStage.village,
       label: 'Village',
-      xpRequiredForNextLevel: 900,
+      organicRequiredForNextLevel: 900,
       populationLabel: 'communauté stable',
       populationMin: null,
       populationMax: null,
@@ -154,7 +154,7 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
       level: 5,
       stage: CampStage.petiteVille,
       label: 'Petite ville',
-      xpRequiredForNextLevel: null,
+      organicRequiredForNextLevel: null,
       populationLabel: 'à définir plus tard',
       populationMin: null,
       populationMax: null,

@@ -200,10 +200,12 @@ CampHeartConfig _campHeart(Object? value) {
         level: base.level,
         stage: base.stage,
         label: _string(item?['label'], base.label),
-        xpRequiredForNextLevel: base.xpRequiredForNextLevel == null
+        organicRequiredForNextLevel: base.organicRequiredForNextLevel == null
             ? null
             : _int(
-                item?['xpRequiredForNextLevel'], base.xpRequiredForNextLevel!),
+                item?['organicRequiredForNextLevel'] ??
+                    item?['xpRequiredForNextLevel'],
+                base.organicRequiredForNextLevel!),
         populationLabel:
             _string(item?['populationLabel'], base.populationLabel),
         populationMin: base.populationMin == null

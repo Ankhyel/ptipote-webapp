@@ -4251,14 +4251,17 @@ class CampHeartState extends ChangeNotifier {
     return campHeartConfig.nextStageForLevel(campHeartLevel);
   }
 
-  int? get vegetalizationXpRequired {
-    return currentStage.xpRequiredForNextLevel;
+  int? get organicRequiredForNextLevel {
+    return currentStage.organicRequiredForNextLevel;
   }
 
-  bool get isMaxLevel => vegetalizationXpRequired == null;
+  // Legacy state key and existing widgets still use this progress name.
+  int? get vegetalizationXpRequired => organicRequiredForNextLevel;
+
+  bool get isMaxLevel => organicRequiredForNextLevel == null;
 
   double get progressRatio {
-    final required = vegetalizationXpRequired;
+    final required = organicRequiredForNextLevel;
     if (required == null) return 1;
     return (vegetalizationXp / required).clamp(0, 1);
   }
@@ -4287,7 +4290,7 @@ class CampHeartState extends ChangeNotifier {
 
     String? levelUpMessage;
     while (!isMaxLevel) {
-      final required = vegetalizationXpRequired!;
+      final required = organicRequiredForNextLevel!;
       if (vegetalizationXp < required) break;
       vegetalizationXp -= required;
       campHeartLevel =
