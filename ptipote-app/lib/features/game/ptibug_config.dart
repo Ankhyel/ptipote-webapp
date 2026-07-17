@@ -50,6 +50,7 @@ class PTibugConfig {
     required this.reservoirCapacityBonus,
     required this.species,
     required this.patterns,
+    required this.sourcierPatternPrices,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -64,6 +65,7 @@ class PTibugConfig {
   final int reservoirCapacityBonus;
   final Map<PTibugSpecies, PTibugSpeciesConfig> species;
   final Map<PTibugSpecies, PTibugPatternConfig> patterns;
+  final Map<PTibugSpecies, int> sourcierPatternPrices;
 
   int slotsForLevel(int level) => slotsByLevel[level.clamp(1, 3)] ?? 1;
   int moduleSlotsForLevel(int level) =>
@@ -129,5 +131,9 @@ const pTibugConfig = PTibugConfig(
       kernelPlanId: 'ptibug-pattern-arac',
       description: 'Un collecteur agile capable de s’adapter à sa collecte.',
     ),
+  },
+  sourcierPatternPrices: <PTibugSpecies, int>{
+    PTibugSpecies.hyme: 6,
+    PTibugSpecies.arac: 8,
   },
 );

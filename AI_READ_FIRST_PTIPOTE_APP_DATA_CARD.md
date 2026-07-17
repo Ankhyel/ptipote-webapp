@@ -1198,6 +1198,15 @@ Pour formater Dart:
 - `ptipote-app/lib/features/game/zone0_game_state.dart` active un Pattern lors de l'activation de son Plan Kernel et persiste la liste dans `users/{uid}/game/zone0.ptibug`. Les créations restent refusées tant que le Pattern concerné n'est pas actif.
 - La Nurserie affiche tous les Patterns, avec leur état Kernel. Seuls les Patterns actifs proposent le bouton `Créer`.
 - Attente : la vente ou le partage social de Patterns via le Marché/Sourcier reste une étape ultérieure ; aucun Pattern n'est consommé à la création.
+
+### Premier P'TIBUG et Sourcier V1
+
+- À la fin de la construction de la Nurserie, le Kernel affiche une carte de choix unique : Scarabé, Hymé ou Arac. Aucun Pattern n'est attribué automatiquement aux nouvelles sauvegardes.
+- Le choix est gratuit, actif immédiatement et sauvegardé dans `users/{uid}/game/zone0.ptibug.starterChoiceMade`. Les sauvegardes existantes ayant déjà un Pattern actif sont considérées comme ayant effectué ce choix afin d'éviter toute perte de progression.
+- Chaque proposition présente le rôle du P'TIBUG. Le Pattern choisi devient actif et permet sa création dans la Nurserie.
+- Le Marché héberge le `Sourcier du savoir`. Lors de sa présence, il propose les Patterns Hymé et Arac encore inactifs contre des Bio-batteries configurées dans `ptibug_config.dart`. L'achat active directement le Pattern et le Plan Kernel correspondant.
+- Les découvertes par événements Kernel restent actives en parallèle : premier P'TIBUG pour Hymé, trois collectes P'TIBUG pour Arac. Les Plans déjà acquis ne sont pas proposés une seconde fois par le Sourcier.
+- Attente : les prix et la fréquence du Sourcier seront migrés vers les réglages Dashboard/Firestore pendant l'étape Dashboard. Les Données et Modules gardent leur UI actuelle jusqu'à la refonte visuelle dédiée.
 - Production : Scarabé produit du Minéral, Hyme de l'Organique et Arac une combinaison aléatoire d'Organique, Minéral ou Déchets. La capacité individuelle bloque les cycles pleins. XP : +1 par cycle.
 - Mycélium : la ressource est produite exclusivement par une Donnée Décomposeur. Elle n'est ajoutée à aucune recette existante dans cette étape.
 - `ptipote-app/lib/features/game/refuge_page.dart` expose une Nurserie P'TIBUG dans la Plaine/refuge : construction commune, Aperçu, Création, Collection et Amélioration. Les P'TIBUG peuvent être installés ou retirés des slots actifs et leur production récupérée.

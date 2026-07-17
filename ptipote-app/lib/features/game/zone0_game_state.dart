@@ -57,6 +57,7 @@ class Zone0GameState extends ChangeNotifier {
   final List<PTibugTraitData> pTibugTraitData = <PTibugTraitData>[];
   final Set<PTibugModuleType> unlockedPTibugModules = <PTibugModuleType>{};
   final Set<PTibugSpecies> activePTibugPatterns = <PTibugSpecies>{};
+  bool starterPTibugChoiceMade = false;
   final Map<String, ConstructionProject> constructionProjects =
       <String, ConstructionProject>{};
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
@@ -146,6 +147,9 @@ class Zone0GameState extends ChangeNotifier {
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
   bool get isMarketBuilt => marketLevel >= 1;
   bool get isPlaineNurseryBuilt => plaineNurseryLevel >= 1;
+
+  bool get hasPendingStarterPTibugChoice =>
+      isPlaineNurseryBuilt && !starterPTibugChoiceMade;
   bool isRecyclerUnlocked(int campHeartLevel) =>
       isFablabBuilt &&
       campHeartLevel >= wasteRecyclerConfig.recyclerUnlockCampHeartLevel;
@@ -456,6 +460,38 @@ class Zone0GameState extends ChangeNotifier {
         .where((item) => item.id == planId)
         .firstOrNull;
     return plan == null ? KernelPlanState.unknown : kernelPlanState(plan);
+  }
+
+  Zone0ActionResult chooseStarterPTibugPattern(PTibugSpecies species) {
+    if (!isPlaineNurseryBuilt) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Construis d’abord la Nurserie P’TIBUG.',
+      );
+    }
+    if (starterPTibugChoiceMade) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le premier Pattern a déjà été choisi.',
+      );
+    }
+    starterPTibugChoiceMade = true;
+    activePTibugPatterns.add(species);
+    final planId = pTibugConfig.patterns[species]!.kernelPlanId;
+    discoveredKernelPlanIds.remove(planId);
+    readyKernelPlanIds.remove(planId);
+    activeKernelPlanIds.add(planId);
+    reports.add(PtipoteMissionReport.system(
+      message:
+          'Le Kernel transmet le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut lancer sa première création.',
+      sourceBuildingId: 'plaineNursery',
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Pattern ${pTibugConfig.species[species]!.displayName} choisi.',
+    );
   }
 
   bool isWorkshopRecipeActive(CraftRecipe recipe) {
@@ -2195,9 +2231,6 @@ class Zone0GameState extends ChangeNotifier {
         housingCapacity += housingConfig.residentsPerHousingUnit;
       case 'plaineNursery':
         plaineNurseryLevel = project.currentLevel;
-        if (activePTibugPatterns.isEmpty) {
-          activePTibugPatterns.add(PTibugSpecies.scarabe);
-        }
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
     }
     if (!project.notificationCreated) {
@@ -3010,6 +3043,13 @@ class Zone0GameState extends ChangeNotifier {
                     planName: '${item['planName'] ?? ''}',
                     price: _readInt(item['price']),
                     purchased: item['purchased'] == true,
+                    pTibugSpecies: item['ptibugSpecies'] == null
+                        ? null
+                        : ForageMission._enumByName(
+                            PTibugSpecies.values,
+                            '${item['ptibugSpecies']}',
+                            PTibugSpecies.scarabe,
+                          ),
                   ))
               .where((item) => item.planName.isNotEmpty));
       }
@@ -3148,6 +3188,8 @@ class Zone0GameState extends ChangeNotifier {
                     '$name',
                     PTibugSpecies.scarabe,
                   )));
+        starterPTibugChoiceMade = ptibugData['starterChoiceMade'] == true ||
+            activePTibugPatterns.isNotEmpty;
         pTibugs
           ..clear()
           ..addAll((ptibugData['items'] as List? ?? const <dynamic>[])
@@ -3474,8 +3516,21 @@ class Zone0GameState extends ChangeNotifier {
       ..clear()
       ..addAll(towerOperationsConfig.merchantOfferPrices.entries.map(
           (entry) => MerchantOffer(planName: entry.key, price: entry.value)));
+    merchantOffers.addAll(
+      pTibugConfig.sourcierPatternPrices.entries
+          .where((entry) => !activePTibugPatterns.contains(entry.key))
+          .map(
+            (entry) => MerchantOffer(
+              planName:
+                  'Pattern ${pTibugConfig.species[entry.key]!.displayName}',
+              price: entry.value,
+              pTibugSpecies: entry.key,
+            ),
+          ),
+    );
     reports.add(PtipoteMissionReport.system(
-        message: 'Un Marchand est arrivé au Marché avec des Plans rares.'));
+        message:
+            'Le Sourcier est arrivé au Marché avec des Plans et Patterns rares.'));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
   }
@@ -3491,8 +3546,22 @@ class Zone0GameState extends ChangeNotifier {
     }
     bioBatteries -= offer.price;
     offer.purchased = true;
-    reports.add(PtipoteMissionReport.system(
-        message: '${offer.planName} a été acquis auprès du Marchand.'));
+    if (offer.pTibugSpecies != null) {
+      final species = offer.pTibugSpecies!;
+      activePTibugPatterns.add(species);
+      final planId = pTibugConfig.patterns[species]!.kernelPlanId;
+      discoveredKernelPlanIds.remove(planId);
+      readyKernelPlanIds.remove(planId);
+      activeKernelPlanIds.add(planId);
+      reports.add(PtipoteMissionReport.system(
+        message:
+            'Le Sourcier partage le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut maintenant l’utiliser.',
+        sourceBuildingId: 'market',
+      ));
+    } else {
+      reports.add(PtipoteMissionReport.system(
+          message: '${offer.planName} a été acquis auprès du Sourcier.'));
+    }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -4186,7 +4255,8 @@ class Zone0GameState extends ChangeNotifier {
                 .map((item) => <String, dynamic>{
                       'planName': item.planName,
                       'price': item.price,
-                      'purchased': item.purchased
+                      'purchased': item.purchased,
+                      'ptibugSpecies': item.pTibugSpecies?.name,
                     })
                 .toList(),
           },
@@ -4251,6 +4321,7 @@ class Zone0GameState extends ChangeNotifier {
             'nurseryLevel': plaineNurseryLevel,
             'activePatterns':
                 activePTibugPatterns.map((item) => item.name).toList(),
+            'starterChoiceMade': starterPTibugChoiceMade,
             'creation': pTibugCreationOrder?.toFirebase(),
             'items': pTibugs.map((item) => item.toFirebase()).toList(),
             'traitData':
@@ -5131,10 +5202,14 @@ class WeatherAlert {
 
 class MerchantOffer {
   MerchantOffer(
-      {required this.planName, required this.price, this.purchased = false});
+      {required this.planName,
+      required this.price,
+      this.purchased = false,
+      this.pTibugSpecies});
   final String planName;
   final int price;
   bool purchased;
+  final PTibugSpecies? pTibugSpecies;
 }
 
 class TowerMission {

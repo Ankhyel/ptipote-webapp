@@ -525,6 +525,7 @@ class KernelPage extends StatelessWidget {
                 mission: gameState.mainKernelMission(
                   campHeartState.campHeartLevel,
                 ),
+                gameState: gameState,
               ),
               _KernelRequestsTab(
                 missions: gameState.refugeRequests(
@@ -545,22 +546,89 @@ class KernelPage extends StatelessWidget {
 }
 
 class _KernelMainMissionTab extends StatelessWidget {
-  const _KernelMainMissionTab({required this.mission});
+  const _KernelMainMissionTab({
+    required this.mission,
+    required this.gameState,
+  });
 
   final KernelMissionProgress? mission;
+  final Zone0GameState gameState;
 
   @override
   Widget build(BuildContext context) {
-    if (mission == null) {
+    if (mission == null && !gameState.hasPendingStarterPTibugChoice) {
       return const _KernelEmptyState(
         message: 'Aucune mission principale active.',
       );
     }
     return ListView(
       padding: const EdgeInsets.all(18),
-      children: <Widget>[_KernelMissionCard(mission: mission!)],
+      children: <Widget>[
+        if (gameState.hasPendingStarterPTibugChoice)
+          _StarterPTibugChoiceCard(gameState: gameState),
+        if (mission != null) ...<Widget>[
+          if (gameState.hasPendingStarterPTibugChoice)
+            const SizedBox(height: 12),
+          _KernelMissionCard(mission: mission!),
+        ],
+      ],
     );
   }
+}
+
+class _StarterPTibugChoiceCard extends StatelessWidget {
+  const _StarterPTibugChoiceCard({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('Choisir le premier P’TIBUG',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              const Text(
+                  'Le Kernel peut stabiliser un seul Pattern de départ. Les autres se découvriront ensuite grâce aux missions ou au Sourcier.'),
+              const SizedBox(height: 12),
+              ...PTibugSpecies.values.map((species) {
+                final config = pTibugConfig.species[species]!;
+                final pattern = pTibugConfig.patterns[species]!;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: OutlinedButton(
+                    onPressed: () {
+                      final result =
+                          gameState.chooseStarterPTibugPattern(species);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(result.message)),
+                      );
+                    },
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(config.displayName,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w900)),
+                          Text(pattern.description),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      );
 }
 
 class _KernelRequestsTab extends StatelessWidget {
@@ -5994,13 +6062,13 @@ class _MarketPageState extends State<MarketPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          const Text('Marchand',
+                          const Text('Sourcier du savoir',
                               style: TextStyle(fontWeight: FontWeight.w900)),
                           const SizedBox(height: 6),
                           if (!widget.gameState.isMerchantAvailable)
                             FilledButton(
                               onPressed: widget.gameState.openMerchant,
-                              child: const Text('Attendre le Marchand'),
+                              child: const Text('Appeler le Sourcier'),
                             )
                           else ...<Widget>[
                             Text(
@@ -6052,7 +6120,7 @@ class _MarketPageState extends State<MarketPage> {
                             ),
                             TextButton(
                                 onPressed: () => _message(
-                                    'Le Marchand reviendra plus tard.'),
+                                    'Le Sourcier reviendra plus tard.'),
                                 child: const Text('Plus tard')),
                           ],
                         ],
