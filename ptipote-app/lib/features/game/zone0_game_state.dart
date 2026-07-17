@@ -55,6 +55,7 @@ class Zone0GameState extends ChangeNotifier {
   final List<WorkshopCraftOrder> workshopOrders = <WorkshopCraftOrder>[];
   final List<PTibug> pTibugs = <PTibug>[];
   final List<PTibugTraitData> pTibugTraitData = <PTibugTraitData>[];
+  final Set<PTibugModuleType> unlockedPTibugModules = <PTibugModuleType>{};
   final Set<PTibugSpecies> activePTibugPatterns = <PTibugSpecies>{};
   final Map<String, ConstructionProject> constructionProjects =
       <String, ConstructionProject>{};
@@ -2256,6 +2257,7 @@ class Zone0GameState extends ChangeNotifier {
         createdAt: current,
       ));
       pTibugCreationOrder!.completedAt = current;
+      unlockedPTibugModules.add(PTibugModuleType.reservoir);
       if (pTibugTraitData.isEmpty) {
         const traits = PTibugTraitType.values;
         pTibugTraitData.add(PTibugTraitData(
@@ -2267,7 +2269,7 @@ class Zone0GameState extends ChangeNotifier {
       reports.add(PtipoteMissionReport.system(
           message:
               '${config.displayName} est né dans la Nurserie. Une Donnée de trait commune a été reçue.'));
-      emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
+      emitKernelProgressEvent(KernelProgressEventType.ptibugCreated);
       changed = true;
     }
     for (final bug in pTibugs.where((item) => item.assignedSlotIndex != null)) {
@@ -2415,11 +2417,68 @@ class Zone0GameState extends ChangeNotifier {
     for (final bug in pTibugs) {
       bug.storedResources.clear();
     }
-    emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
+    emitKernelProgressEvent(KernelProgressEventType.ptibugProductionCollected);
+    if (output.containsKey('Mycélium') &&
+        (kernelEventCounts[KernelProgressEventType.firstMyceliumProduced] ??
+                0) ==
+            0) {
+      emitKernelProgressEvent(KernelProgressEventType.firstMyceliumProduced);
+    }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
         success: true, message: 'Production récupérée.');
+  }
+
+  Zone0ActionResult equipPTibugTrait(PTibug bug, PTibugTraitData data) {
+    bug.traitDataId = data.id;
+    emitKernelProgressEvent(KernelProgressEventType.ptibugTraitEquipped);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Donnée de trait attribuée.');
+  }
+
+  Zone0ActionResult fusePTibugTraitData(
+    PTibugTraitData first,
+    PTibugTraitData second,
+  ) {
+    if (first.id == second.id ||
+        first.type != second.type ||
+        first.grade != second.grade ||
+        first.grade == PTibugTraitGrade.avance ||
+        pTibugs.any((bug) =>
+            bug.traitDataId == first.id || bug.traitDataId == second.id)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Ces Données ne peuvent pas être fusionnées.');
+    }
+    pTibugTraitData
+        .removeWhere((item) => item.id == first.id || item.id == second.id);
+    pTibugTraitData.add(PTibugTraitData(
+      id: 'trait-${DateTime.now().microsecondsSinceEpoch}',
+      type: first.type,
+      grade: PTibugTraitGrade.values[first.grade.index + 1],
+    ));
+    emitKernelProgressEvent(KernelProgressEventType.traitDataFused);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(success: true, message: 'Fusion réussie.');
+  }
+
+  Zone0ActionResult equipPTibugModule(PTibug bug, PTibugModuleType module) {
+    if (!unlockedPTibugModules.contains(module) ||
+        bug.hasModule(module) ||
+        bug.equippedModules.length >=
+            pTibugConfig.moduleSlotsForLevel(plaineNurseryLevel)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Module indisponible ou aucun slot libre.');
+    }
+    bug.equippedModules.add(module);
+    emitKernelProgressEvent(KernelProgressEventType.ptibugModuleEquipped);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(success: true, message: 'Module équipé.');
   }
 
   Zone0ActionResult constructFablabLevel1() {
@@ -3042,6 +3101,14 @@ class Zone0GameState extends ChangeNotifier {
           ..addAll((ptibugData['traitData'] as List? ?? const <dynamic>[])
               .whereType<Map>()
               .map(PTibugTraitData.fromFirebase));
+        unlockedPTibugModules
+          ..clear()
+          ..addAll((ptibugData['unlockedModules'] as List? ?? const <dynamic>[])
+              .map((value) => ForageMission._enumByName(
+                    PTibugModuleType.values,
+                    '$value',
+                    PTibugModuleType.reservoir,
+                  )));
         final creationData = ptibugData['creation'];
         pTibugCreationOrder = creationData is Map
             ? PTibugCreationOrder.fromFirebase(creationData)
@@ -4131,6 +4198,8 @@ class Zone0GameState extends ChangeNotifier {
             'items': pTibugs.map((item) => item.toFirebase()).toList(),
             'traitData':
                 pTibugTraitData.map((item) => item.toFirebase()).toList(),
+            'unlockedModules':
+                unlockedPTibugModules.map((item) => item.name).toList(),
           },
           'lastSimulationAt': lastSimulationAt == null
               ? FieldValue.serverTimestamp()

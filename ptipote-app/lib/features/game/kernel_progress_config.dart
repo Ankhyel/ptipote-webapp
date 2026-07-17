@@ -7,6 +7,12 @@ enum KernelProgressEventType {
   missionCompleted,
   pollutionObserved,
   ecosystemLevelUp,
+  ptibugCreated,
+  ptibugTraitEquipped,
+  traitDataFused,
+  ptibugModuleEquipped,
+  ptibugProductionCollected,
+  firstMyceliumProduced,
 }
 
 enum KernelPlanCategory { buildings, workshop, cuisine, ptibug, installations }
@@ -109,6 +115,18 @@ const kernelProgressConfig = KernelProgressConfig(
         KernelProgressReward(trustXp: 5, restorerXp: 12),
     KernelProgressEventType.ecosystemLevelUp:
         KernelProgressReward(trustXp: 30, restorerXp: 25),
+    KernelProgressEventType.ptibugCreated:
+        KernelProgressReward(trustXp: 15, breederXp: 25),
+    KernelProgressEventType.ptibugTraitEquipped:
+        KernelProgressReward(trustXp: 5, breederXp: 10),
+    KernelProgressEventType.traitDataFused:
+        KernelProgressReward(trustXp: 10, breederXp: 18),
+    KernelProgressEventType.ptibugModuleEquipped:
+        KernelProgressReward(trustXp: 6, breederXp: 10),
+    KernelProgressEventType.ptibugProductionCollected:
+        KernelProgressReward(trustXp: 2, breederXp: 3),
+    KernelProgressEventType.firstMyceliumProduced:
+        KernelProgressReward(trustXp: 12, breederXp: 16),
   },
   plans: <KernelTechnologyPlanConfig>[
     KernelTechnologyPlanConfig(

@@ -6388,6 +6388,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       Text(bug.assignedSlotIndex == null
                           ? 'En réserve'
                           : 'Production active · prochain cycle ${bug.nextProductionAt == null ? 'à lancer' : _countdownLabel(bug.nextProductionAt!)}'),
+                      Text('Trait : ${_traitLabel(bug.traitDataId)}'),
+                      Text(
+                          'Modules : ${bug.equippedModules.isEmpty ? 'aucun' : bug.equippedModules.map((item) => item.name).join(', ')}'),
                       const SizedBox(height: 8),
                       bug.assignedSlotIndex == null
                           ? FilledButton(
@@ -6400,6 +6403,25 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                                   .removePTibugSlot(bug)
                                   .message),
                               child: const Text('Retirer')),
+                      Wrap(spacing: 6, children: <Widget>[
+                        ...widget.gameState.pTibugTraitData
+                            .where((data) => !widget.gameState.pTibugs.any(
+                                (item) =>
+                                    item.id != bug.id &&
+                                    item.traitDataId == data.id))
+                            .map((data) => TextButton(
+                                onPressed: () => _message(widget.gameState
+                                    .equipPTibugTrait(bug, data)
+                                    .message),
+                                child: Text(
+                                    '${data.type.name} ${data.grade.name}'))),
+                        ...widget.gameState.unlockedPTibugModules.map(
+                            (module) => TextButton(
+                                onPressed: () => _message(widget.gameState
+                                    .equipPTibugModule(bug, module)
+                                    .message),
+                                child: Text('Module ${module.name}'))),
+                      ]),
                     ])))),
       ]);
 
@@ -6410,6 +6432,13 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       }
     }
     return -1;
+  }
+
+  String _traitLabel(String? id) {
+    final trait = widget.gameState.pTibugTraitData
+        .where((item) => item.id == id)
+        .firstOrNull;
+    return trait == null ? 'aucun' : '${trait.type.name} · ${trait.grade.name}';
   }
 }
 
