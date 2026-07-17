@@ -612,17 +612,25 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   String? _recipeRequirementsMessage(CraftRecipe recipe) {
-    if (kernelTrustLevel < recipe.kernelTrustLevel) {
-      return 'Confiance du Kernel niveau ${recipe.kernelTrustLevel} requise.';
+    final matchingPlans = kernelProgressConfig.plans
+        .where((plan) => plan.workshopRecipeId == recipe.id)
+        .toList();
+    final plan = matchingPlans.isEmpty ? null : matchingPlans.first;
+    final requiredTrustLevel = plan?.requiredTrustLevel ?? recipe.kernelTrustLevel;
+    final requiredBreederLevel = plan?.requiredBreederLevel ?? recipe.breederLevel;
+    final requiredBuilderLevel = plan?.requiredBuilderLevel ?? recipe.builderLevel;
+    final requiredRestorerLevel = plan?.requiredRestorerLevel ?? recipe.restorerLevel;
+    if (kernelTrustLevel < requiredTrustLevel) {
+      return 'Confiance du Kernel niveau $requiredTrustLevel requise.';
     }
-    if (kernelAxisLevel(KernelAxis.breeder) < recipe.breederLevel) {
-      return 'Éleveur niveau ${recipe.breederLevel} requis.';
+    if (kernelAxisLevel(KernelAxis.breeder) < requiredBreederLevel) {
+      return 'Éleveur niveau $requiredBreederLevel requis.';
     }
-    if (kernelAxisLevel(KernelAxis.builder) < recipe.builderLevel) {
-      return 'Bâtisseur niveau ${recipe.builderLevel} requis.';
+    if (kernelAxisLevel(KernelAxis.builder) < requiredBuilderLevel) {
+      return 'Bâtisseur niveau $requiredBuilderLevel requis.';
     }
-    if (kernelAxisLevel(KernelAxis.restorer) < recipe.restorerLevel) {
-      return 'Restaurateur niveau ${recipe.restorerLevel} requis.';
+    if (kernelAxisLevel(KernelAxis.restorer) < requiredRestorerLevel) {
+      return 'Régénérateur niveau $requiredRestorerLevel requis.';
     }
     if (recipe.craftSection == CraftSection.cuisine &&
         cuisineLevel < recipe.cuisineLevel) {
@@ -1089,6 +1097,9 @@ class Zone0GameState extends ChangeNotifier {
         refreshKernelMissions();
       }
       emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
+      if (order.assignedPtipoteId != null) {
+        emitKernelProgressEvent(KernelProgressEventType.ptipoteCraftCompleted);
+      }
     }
     notifyListeners();
     unawaited(saveInventoryToFirebase());
@@ -2978,6 +2989,11 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Repas indisponible.',
       );
     }
+    final previousMood = _moodLabelForValues(
+      hunger: hungerFor(figurine),
+      rest: restOverrides[figurine.id] ?? ptipoteStatsConfig.maxRest,
+      figurineId: figurine.id,
+    );
     hungerOverrides[figurine.id] = math.min(
       ptipoteStatsConfig.maxOverfedHunger,
       hungerFor(figurine) + recipe.hungerRestore,
@@ -2986,6 +3002,15 @@ class Zone0GameState extends ChangeNotifier {
       ptipoteStatsConfig.maxVitality,
       vitalityFor(figurine) + recipe.vitalityRestore,
     );
+    emitKernelProgressEvent(KernelProgressEventType.ptipoteFed);
+    final nextMood = _moodLabelForValues(
+      hunger: hungerFor(figurine),
+      rest: restOverrides[figurine.id] ?? ptipoteStatsConfig.maxRest,
+      figurineId: figurine.id,
+    );
+    if (previousMood != 'Heureux' && nextMood == 'Heureux') {
+      emitKernelProgressEvent(KernelProgressEventType.ptipoteHappy);
+    }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -4316,6 +4341,7 @@ class Zone0GameState extends ChangeNotifier {
       manualRestingIds.add(mission.figurineId);
     }
     mission.status = TowerMissionStatus.completed;
+    emitKernelProgressEvent(KernelProgressEventType.towerMissionCompleted);
     reports.add(
       PtipoteMissionReport.system(
         message: early

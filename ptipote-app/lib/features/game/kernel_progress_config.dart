@@ -4,7 +4,12 @@ enum KernelProgressEventType {
   buildingConstructed,
   buildingUpgraded,
   craftCompleted,
+  ptipoteCraftCompleted,
   missionCompleted,
+  towerMissionCompleted,
+  ptipoteFed,
+  ptipoteHappy,
+  ptipoteWellRested,
   pollutionObserved,
   ecosystemLevelUp,
   ptibugCreated,
@@ -117,8 +122,17 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
         KernelProgressReward(trustXp: 20, builderXp: 20),
     KernelProgressEventType.craftCompleted:
         KernelProgressReward(trustXp: 8, builderXp: 4, restorerXp: 4),
+    KernelProgressEventType.ptipoteCraftCompleted:
+        KernelProgressReward(trustXp: 1, breederXp: 5),
     KernelProgressEventType.missionCompleted:
-        KernelProgressReward(trustXp: 10, restorerXp: 10),
+        KernelProgressReward(trustXp: 2, breederXp: 10),
+    KernelProgressEventType.towerMissionCompleted:
+        KernelProgressReward(trustXp: 2, breederXp: 10),
+    KernelProgressEventType.ptipoteFed: KernelProgressReward(breederXp: 1),
+    KernelProgressEventType.ptipoteHappy:
+        KernelProgressReward(trustXp: 1, breederXp: 5),
+    KernelProgressEventType.ptipoteWellRested:
+        KernelProgressReward(breederXp: 1),
     KernelProgressEventType.pollutionObserved:
         KernelProgressReward(trustXp: 5, restorerXp: 12),
     KernelProgressEventType.ecosystemLevelUp:

@@ -1226,6 +1226,8 @@ Pour formater Dart:
 
 ### Organisation Kernel et Craft
 
+Les prérequis d'axes des recettes sont désormais lus depuis le Plan Kernel dont `workshopRecipeId` correspond à la recette. Les anciens champs de recette restent un fallback pour les sauvegardes et configurations antérieures. Les récompenses d'axes sont entièrement configurables dans `kernelProgress.eventRewards`; les événements distincts couvrent les missions Lisière, les missions Tour, les crafts réalisés par un Ptipote, l'alimentation et le passage à l'état Heureux.
+
 - L'onglet Dashboard est nommé `Kernel`. Il est rangé en accordéons : `Bâtiments` (missions de construction), `Missions`, `Éditeur de mission`, `Confiance, axes et récompenses`, puis `Plans & Patterns`.
 - Les prérequis d'un craft ne doivent plus être édités dans la carte Craft : `patternRequired` est activé par défaut. Lorsqu'une recette est créée avec ce réglage, le Dashboard ajoute son Plan Kernel `craft-{recipeId}` si nécessaire.
 - Les prérequis de Plan configurables sont : Confiance du Kernel, Éleveur, Bâtisseur, Restaurateur et niveaux de bâtiments. Les Plans générés portent `workshopRecipeId` afin de relier la recette au Plan.
