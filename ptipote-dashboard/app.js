@@ -14,6 +14,8 @@ import {
   getDoc,
   getFirestore,
   query,
+  serverTimestamp,
+  setDoc,
   where,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
@@ -41,7 +43,6 @@ let fablabConfig = {};
 let recyclerConfig = {};
 let craftConfig = {};
 
-const PTIPOTE_STATS_STORAGE_KEY = "ptipote_stats_config_v1";
 const CRAFT_STORAGE_KEY = "craft_config_v1";
 const PTIPOTE_STATS_FIELDS = [
   "maxVitality",
@@ -298,22 +299,24 @@ function setLoading(isLoading) {
   el.authButton.disabled = isLoading;
 }
 
-async function loadPtipoteStatsConfig({ reset = false } = {}) {
+async function loadPtipoteStatsConfig() {
   try {
     const response = await fetch("./ptipote-stats-config.json", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const baseConfig = await response.json();
-    const savedConfig = reset
-      ? null
-      : JSON.parse(localStorage.getItem(PTIPOTE_STATS_STORAGE_KEY) || "null");
-    ptipoteStatsConfig = { ...baseConfig, ...(savedConfig || {}) };
-    if (reset) {
-      localStorage.removeItem(PTIPOTE_STATS_STORAGE_KEY);
+    let publishedConfig = null;
+    if (auth.currentUser && currentDashboardRole) {
+      const snapshot = await getDoc(doc(db, "gameConfigs", "zone0"));
+      const values = snapshot.data()?.ptipoteStats;
+      if (values && typeof values === "object" && !Array.isArray(values)) {
+        publishedConfig = values;
+      }
     }
+    ptipoteStatsConfig = { ...baseConfig, ...(publishedConfig || {}) };
     renderPtipoteStatsForm();
-    el.statPtipoteStatus.textContent = reset
-      ? "Valeurs rechargees depuis le JSON versionne."
-      : "Valeurs chargees. Les modifications restent locales jusqu'a integration Firestore/app.";
+    el.statPtipoteStatus.textContent = publishedConfig
+      ? "Configuration publiee chargee depuis Firestore."
+      : "Valeurs V1 embarquees chargees. Publie-les pour les appliquer a l'application.";
   } catch (error) {
     el.statPtipoteStatus.textContent = `Configuration Stat Ptipote illisible: ${error.message}`;
   }
@@ -337,9 +340,8 @@ function renderPtipoteStatsForm() {
     input.addEventListener("input", () => {
       const value = Number(input.value);
       ptipoteStatsConfig[input.name] = Number.isFinite(value) ? value : input.value;
-      localStorage.setItem(PTIPOTE_STATS_STORAGE_KEY, JSON.stringify(ptipoteStatsConfig, null, 2));
       renderXpRequiredPreview();
-      el.statPtipoteStatus.textContent = "Modification locale sauvegardee. Exporter le JSON pour synchroniser le fichier source.";
+      el.statPtipoteStatus.textContent = "Modifications en attente. Clique sur Publier dans l'application.";
     });
   });
 }
@@ -354,16 +356,28 @@ function renderXpRequiredPreview() {
     .join(" · ");
 }
 
-function exportPtipoteStatsConfig() {
-  const blob = new Blob([JSON.stringify(ptipoteStatsConfig, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "ptipote-stats-config.json";
-  link.click();
-  URL.revokeObjectURL(url);
+async function publishPtipoteStatsConfig() {
+  if (!auth.currentUser || !currentDashboardRole) {
+    throw new Error("Connexion admin ou dev requise.");
+  }
+  const values = Object.fromEntries(
+    PTIPOTE_STATS_FIELDS.map((field) => [field, Number(ptipoteStatsConfig[field])]),
+  );
+  const invalidField = Object.entries(values).find(([, value]) => !Number.isFinite(value));
+  if (invalidField) {
+    throw new Error(`Valeur invalide pour ${invalidField[0]}.`);
+  }
+  await setDoc(
+    doc(db, "gameConfigs", "zone0"),
+    {
+      schemaVersion: 1,
+      ptipoteStats: values,
+      ptipoteStatsUpdatedAt: serverTimestamp(),
+      ptipoteStatsUpdatedBy: auth.currentUser.uid,
+    },
+    { merge: true },
+  );
+  el.statPtipoteStatus.textContent = "Configuration publiee. Les applications connectees se mettent a jour.";
 }
 
 async function loadKernelConfig() {
@@ -741,6 +755,7 @@ onAuthStateChanged(auth, (user) => {
       currentDashboardRole = role;
       el.authDetail.textContent = role ? `${user.email || user.uid} - ${role}` : user.email || user.uid;
       loadStats(role);
+      loadPtipoteStatsConfig();
     })
     .catch((error) => {
       currentDashboardRole = "";
@@ -761,11 +776,13 @@ el.refreshButton.addEventListener("click", () => {
 });
 
 el.resetPtipoteStatsButton.addEventListener("click", () => {
-  loadPtipoteStatsConfig({ reset: true });
+  loadPtipoteStatsConfig();
 });
 
 el.exportPtipoteStatsButton.addEventListener("click", () => {
-  exportPtipoteStatsConfig();
+  publishPtipoteStatsConfig().catch((error) => {
+    el.statPtipoteStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
+  });
 });
 
 el.exportKernelButton.addEventListener("click", () => {

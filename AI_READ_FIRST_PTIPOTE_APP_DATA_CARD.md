@@ -651,8 +651,33 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 ### 10. Dashboard
 
 - Champs exposes: mission minimum, seuils faim/vitalite, cooldown/duree calin, seuils bulles, intervalles bulles, besoins requis.
-- Synchro automatique Dashboard -> Flutter runtime non branchee; exporter le JSON et reporter dans `ptipote_stats_config.dart`.
+- Les champs `Stat Ptipote` sont publies dans Firestore (`gameConfigs/zone0.ptipoteStats`) avec le bouton **Publier dans l'app**. Flutter charge ces valeurs au demarrage et ecoute les mises a jour du document pendant que l'application est ouverte.
+- Les valeurs embarquees de `ptipote_stats_config.dart` restent le fallback hors ligne ou tant qu'aucune configuration n'est publiee. Les modificateurs de type et d'enveloppe restent versionnes dans l'application pour cette V1.
 - Mise a jour hors-ligne fine non finalisee: la simulation applique les ticks en Maison et persiste les valeurs, mais la chronologie hors-ligne mission/repos/craft devra etre raffinee quand les activites longues seront toutes modelisees.
+
+## CONFIGURATION DISTANTE V1 — DASHBOARD VERS FLUTTER
+
+### Fichiers
+
+- `ptipote-dashboard/app.js` : charge et publie les champs P'TIPOTE dans Firestore, sans export de fichier.
+- `ptipote-dashboard/index.html` : action **Publier dans l'app** dans l'onglet Stat Ptipote.
+- `ptipote-app/lib/features/figurines/ptipote_stats_config.dart` : valeurs V1 par defaut, serialisation des champs Dashboard et configuration active a l'execution.
+- `ptipote-app/lib/features/game/remote_game_config_service.dart` : ecoute le document global de reglages et applique les valeurs publiees.
+- `ptipote-app/lib/features/game/zone0_game_state.dart` : demarre la synchronisation avant le chargement de l'etat Zone 0 et redessine l'interface apres une mise a jour.
+- `firestore.rules` : lecture authentifiee de `gameConfigs/*`, ecriture reservee aux roles admin/dev du Dashboard.
+
+### Flux
+
+1. Un admin/dev modifie les champs dans **Stat Ptipote**.
+2. **Publier dans l'app** enregistre `gameConfigs/zone0.ptipoteStats`, avec la version et les metadonnees de publication.
+3. Flutter charge ces valeurs a l'ouverture puis ecoute les changements en direct.
+4. Sans reseau ou sans document publie, Flutter conserve les valeurs integrees au build.
+
+### Limites V1
+
+- Cette premiere connexion reelle couvre les statistiques P'TIPOTE a champs numeriques.
+- Les onglets Coeur, Lisiere, Tour, Fablab et Architecture restent actuellement des miroirs JSON versionnes : ils doivent etre migres section par section vers le meme document Firestore pour devenir editables en direct.
+- Aucun reglages de type/enveloppe n'est encore edite depuis le Dashboard afin de ne pas exposer une structure de modificateurs incomplete.
 
 ## TOUR DE SECURITE ET LISIERE V1
 

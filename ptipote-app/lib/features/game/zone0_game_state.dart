@@ -17,18 +17,25 @@ import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
+import 'remote_game_config_service.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'waste_recycler_config.dart';
 import 'workshop_config.dart';
 
 class Zone0GameState extends ChangeNotifier {
-  Zone0GameState._();
+  Zone0GameState._() {
+    RemoteGameConfigService.instance.addListener(_onRemoteConfigChanged);
+  }
 
   static final Zone0GameState instance = Zone0GameState._();
   final math.Random _random = math.Random();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  void _onRemoteConfigChanged() {
+    notifyListeners();
+  }
 
   final Map<String, int> vitalityOverrides = <String, int>{};
   final Map<String, int> hungerOverrides = <String, int>{};
@@ -2548,6 +2555,7 @@ class Zone0GameState extends ChangeNotifier {
     if (_loadedFromFirebase) return;
     final user = await _currentUser();
     if (user == null) return;
+    await RemoteGameConfigService.instance.start();
     await _runFirebaseSync('Chargement Zone 0', () async {
       final snapshot = await _zone0Doc(user.uid).get();
       final data = snapshot.data();

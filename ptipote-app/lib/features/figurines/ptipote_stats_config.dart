@@ -148,6 +148,166 @@ class PtipoteStatsConfig {
     if (rest >= tiredThreshold) return PtipoteRestState.tired;
     return PtipoteRestState.exhausted;
   }
+
+  /// Only the scalar values edited by the Dashboard are persisted remotely.
+  /// Type and envelope modifiers remain versioned with the application for V1.
+  Map<String, num> toDashboardMap() => <String, num>{
+        'maxVitality': maxVitality,
+        'vitalityRecoveryPerMinute': vitalityRecoveryPerMinute,
+        'alcoveVitalityRecoveryPerMinute': alcoveVitalityRecoveryPerMinute,
+        'naturalVitalityRecoveryMinutes': naturalVitalityRecoveryMinutes,
+        'happyVitalityRecoveryPerMinute': happyVitalityRecoveryPerMinute,
+        'minVitalityBeforeAutoRest': minVitalityBeforeAutoRest,
+        'minimumMissionVitality': minimumMissionVitality,
+        'maxRest': maxRest,
+        'sleepRestRecoveryPerMinute': sleepRestRecoveryPerMinute,
+        'awakeRestLossMinutes': awakeRestLossMinutes,
+        'missionRestLossRatio': missionRestLossRatio,
+        'wellRestedThreshold': wellRestedThreshold,
+        'restedThreshold': restedThreshold,
+        'tiredThreshold': tiredThreshold,
+        'exhaustedThreshold': exhaustedThreshold,
+        'wellRestedXpBonus': wellRestedXpBonus,
+        'wellRestedRewardBonus': wellRestedRewardBonus,
+        'tiredXpPenalty': tiredXpPenalty,
+        'tiredRewardPenalty': tiredRewardPenalty,
+        'indigestionXpPenalty': indigestionXpPenalty,
+        'maxHunger': maxHunger,
+        'maxOverfedHunger': maxOverfedHunger,
+        'baseHunger': baseHunger,
+        'hungerDecayMinutes': hungerDecayMinutes,
+        'missionHungerCostRatio': missionHungerCostRatio,
+        'wellFedHungerThreshold': wellFedHungerThreshold,
+        'wellFedVitalityRecoveryBonus': wellFedVitalityRecoveryBonus,
+        'indigestionHungerThreshold': indigestionHungerThreshold,
+        'indigestionVitalityRecoveryPenalty':
+            indigestionVitalityRecoveryPenalty,
+        'happyVitalityThreshold': happyVitalityThreshold,
+        'happyHungerThreshold': happyHungerThreshold,
+        'cuddleCooldownMinutes': cuddleCooldownMinutes,
+        'cuddleCareDurationMinutes': cuddleCareDurationMinutes,
+        'vitalityBubbleThreshold': vitalityBubbleThreshold,
+        'hungerBubbleThreshold': hungerBubbleThreshold,
+        'cuddleBubbleWarningMinutes': cuddleBubbleWarningMinutes,
+        'needBubbleMinIntervalMinutes': needBubbleMinIntervalMinutes,
+        'needBubbleMaxIntervalMinutes': needBubbleMaxIntervalMinutes,
+        'needBubbleDisplayDurationSeconds': needBubbleDisplayDurationSeconds,
+        'happyNeedsRequired': happyNeedsRequired,
+        'okayNeedsRequired': okayNeedsRequired,
+        'baseHappiness': baseHappiness,
+        'maxHappiness': maxHappiness,
+        'happinessDecayPerHour': happinessDecayPerHour,
+        'xpRequiredBase': xpRequiredBase,
+        'xpRequiredMultiplier': xpRequiredMultiplier,
+        'baseEVG': baseEVG,
+        'baseForageEfficiency': baseForageEfficiency,
+        'baseSafetyContribution': baseSafetyContribution,
+        'baseMarketContribution': baseMarketContribution,
+      };
+
+  factory PtipoteStatsConfig.fromDashboardMap(Map<String, dynamic> values) {
+    const fallback = defaultPtipoteStatsConfig;
+    int integer(String key, int value) =>
+        (values[key] as num?)?.round() ?? value;
+    double decimal(String key, double value) =>
+        (values[key] as num?)?.toDouble() ?? value;
+
+    return PtipoteStatsConfig(
+      maxVitality: integer('maxVitality', fallback.maxVitality),
+      vitalityRecoveryPerMinute: integer(
+          'vitalityRecoveryPerMinute', fallback.vitalityRecoveryPerMinute),
+      alcoveVitalityRecoveryPerMinute: integer(
+          'alcoveVitalityRecoveryPerMinute',
+          fallback.alcoveVitalityRecoveryPerMinute),
+      naturalVitalityRecoveryMinutes: integer('naturalVitalityRecoveryMinutes',
+          fallback.naturalVitalityRecoveryMinutes),
+      happyVitalityRecoveryPerMinute: integer('happyVitalityRecoveryPerMinute',
+          fallback.happyVitalityRecoveryPerMinute),
+      minVitalityBeforeAutoRest: integer(
+          'minVitalityBeforeAutoRest', fallback.minVitalityBeforeAutoRest),
+      minimumMissionVitality:
+          integer('minimumMissionVitality', fallback.minimumMissionVitality),
+      maxRest: integer('maxRest', fallback.maxRest),
+      sleepRestRecoveryPerMinute: integer(
+          'sleepRestRecoveryPerMinute', fallback.sleepRestRecoveryPerMinute),
+      awakeRestLossMinutes:
+          integer('awakeRestLossMinutes', fallback.awakeRestLossMinutes),
+      missionRestLossRatio:
+          decimal('missionRestLossRatio', fallback.missionRestLossRatio),
+      wellRestedThreshold:
+          integer('wellRestedThreshold', fallback.wellRestedThreshold),
+      restedThreshold: integer('restedThreshold', fallback.restedThreshold),
+      tiredThreshold: integer('tiredThreshold', fallback.tiredThreshold),
+      exhaustedThreshold:
+          integer('exhaustedThreshold', fallback.exhaustedThreshold),
+      wellRestedXpBonus:
+          decimal('wellRestedXpBonus', fallback.wellRestedXpBonus),
+      wellRestedRewardBonus:
+          decimal('wellRestedRewardBonus', fallback.wellRestedRewardBonus),
+      tiredXpPenalty: decimal('tiredXpPenalty', fallback.tiredXpPenalty),
+      tiredRewardPenalty:
+          decimal('tiredRewardPenalty', fallback.tiredRewardPenalty),
+      indigestionXpPenalty:
+          decimal('indigestionXpPenalty', fallback.indigestionXpPenalty),
+      maxHunger: integer('maxHunger', fallback.maxHunger),
+      maxOverfedHunger: integer('maxOverfedHunger', fallback.maxOverfedHunger),
+      baseHunger: integer('baseHunger', fallback.baseHunger),
+      hungerDecayMinutes:
+          integer('hungerDecayMinutes', fallback.hungerDecayMinutes),
+      missionHungerCostRatio:
+          decimal('missionHungerCostRatio', fallback.missionHungerCostRatio),
+      wellFedHungerThreshold:
+          integer('wellFedHungerThreshold', fallback.wellFedHungerThreshold),
+      wellFedVitalityRecoveryBonus: decimal('wellFedVitalityRecoveryBonus',
+          fallback.wellFedVitalityRecoveryBonus),
+      indigestionHungerThreshold: integer(
+          'indigestionHungerThreshold', fallback.indigestionHungerThreshold),
+      indigestionVitalityRecoveryPenalty: decimal(
+          'indigestionVitalityRecoveryPenalty',
+          fallback.indigestionVitalityRecoveryPenalty),
+      happyVitalityThreshold:
+          integer('happyVitalityThreshold', fallback.happyVitalityThreshold),
+      happyHungerThreshold:
+          integer('happyHungerThreshold', fallback.happyHungerThreshold),
+      cuddleCooldownMinutes:
+          integer('cuddleCooldownMinutes', fallback.cuddleCooldownMinutes),
+      cuddleCareDurationMinutes: integer(
+          'cuddleCareDurationMinutes', fallback.cuddleCareDurationMinutes),
+      vitalityBubbleThreshold:
+          integer('vitalityBubbleThreshold', fallback.vitalityBubbleThreshold),
+      hungerBubbleThreshold:
+          integer('hungerBubbleThreshold', fallback.hungerBubbleThreshold),
+      cuddleBubbleWarningMinutes: integer(
+          'cuddleBubbleWarningMinutes', fallback.cuddleBubbleWarningMinutes),
+      needBubbleMinIntervalMinutes: integer('needBubbleMinIntervalMinutes',
+          fallback.needBubbleMinIntervalMinutes),
+      needBubbleMaxIntervalMinutes: integer('needBubbleMaxIntervalMinutes',
+          fallback.needBubbleMaxIntervalMinutes),
+      needBubbleDisplayDurationSeconds: integer(
+          'needBubbleDisplayDurationSeconds',
+          fallback.needBubbleDisplayDurationSeconds),
+      happyNeedsRequired:
+          integer('happyNeedsRequired', fallback.happyNeedsRequired),
+      okayNeedsRequired:
+          integer('okayNeedsRequired', fallback.okayNeedsRequired),
+      baseHappiness: integer('baseHappiness', fallback.baseHappiness),
+      maxHappiness: integer('maxHappiness', fallback.maxHappiness),
+      happinessDecayPerHour:
+          integer('happinessDecayPerHour', fallback.happinessDecayPerHour),
+      xpRequiredBase: integer('xpRequiredBase', fallback.xpRequiredBase),
+      xpRequiredMultiplier:
+          decimal('xpRequiredMultiplier', fallback.xpRequiredMultiplier),
+      baseEVG: integer('baseEVG', fallback.baseEVG),
+      baseForageEfficiency:
+          decimal('baseForageEfficiency', fallback.baseForageEfficiency),
+      baseSafetyContribution:
+          decimal('baseSafetyContribution', fallback.baseSafetyContribution),
+      baseMarketContribution:
+          decimal('baseMarketContribution', fallback.baseMarketContribution),
+      typeModifiers: fallback.typeModifiers,
+      envelopeModifiers: fallback.envelopeModifiers,
+    );
+  }
 }
 
 class PtipoteStatModifier {
@@ -170,7 +330,7 @@ class PtipoteStatModifier {
   final double xpGainBonus;
 }
 
-const ptipoteStatsConfig = PtipoteStatsConfig(
+const defaultPtipoteStatsConfig = PtipoteStatsConfig(
   maxVitality: 100,
   vitalityRecoveryPerMinute: 1,
   alcoveVitalityRecoveryPerMinute: 2,
@@ -252,3 +412,15 @@ const ptipoteStatsConfig = PtipoteStatsConfig(
     ),
   },
 );
+
+PtipoteStatsConfig _activePtipoteStatsConfig = defaultPtipoteStatsConfig;
+
+/// Current configuration used by gameplay. It starts with the app defaults and
+/// can be replaced by the signed-in Dashboard configuration at runtime.
+PtipoteStatsConfig get ptipoteStatsConfig => _activePtipoteStatsConfig;
+
+void applyRemotePtipoteStatsConfig(Map<String, dynamic>? values) {
+  _activePtipoteStatsConfig = values == null
+      ? defaultPtipoteStatsConfig
+      : PtipoteStatsConfig.fromDashboardMap(values);
+}
