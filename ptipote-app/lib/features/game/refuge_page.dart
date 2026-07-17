@@ -20,7 +20,6 @@ import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'waste_recycler_config.dart';
 import 'zone0_game_state.dart';
-import 'workshop_config.dart';
 
 class RefugePage extends StatefulWidget {
   const RefugePage({super.key});
@@ -6345,30 +6344,45 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
 
   Widget _creation() =>
       ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-        const Text('Patterns actifs',
+        const Text('Patterns P’TIBUG',
             style: TextStyle(fontWeight: FontWeight.w900)),
-        if (widget.gameState.activePTibugPatterns.isEmpty)
-          const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text(
-                  'Le Kernel offrira le premier Pattern à la fin des travaux.')),
-        ...widget.gameState.activePTibugPatterns.map((species) {
+        const Padding(
+          padding: EdgeInsets.only(top: 6, bottom: 8),
+          child: Text(
+              'Les Patterns se découvrent et s’activent depuis le Kernel.'),
+        ),
+        ...PTibugSpecies.values.map((species) {
           final config = pTibugConfig.species[species]!;
+          final pattern = pTibugConfig.patterns[species]!;
+          final state = widget.gameState.pTibugPatternState(species);
+          final isActive = state == KernelPlanState.active;
           return Card(
               child: ListTile(
                   title: Text('Pattern ${config.displayName}'),
-                  subtitle: Text(
-                      '${config.creationCost.entries.map((e) => '${e.value} ${e.key}').join(' · ')} · ${config.creationEnergyCost} Énergie · ${config.creationMinutes} min'),
-                  trailing: FilledButton(
-                      onPressed:
-                          widget.gameState.pTibugCreationOrder?.isActive == true
-                              ? null
-                              : () => _message(widget.gameState
-                                  .startPTibugCreation(species)
-                                  .message),
-                      child: const Text('Créer'))));
+                  subtitle: Text(isActive
+                      ? '${config.creationCost.entries.map((e) => '${e.value} ${e.key}').join(' · ')} · ${config.creationEnergyCost} Énergie · ${config.creationMinutes} min'
+                      : '${pattern.description}\nKernel : ${_patternStateLabel(state)}'),
+                  isThreeLine: !isActive,
+                  trailing: isActive
+                      ? FilledButton(
+                          onPressed:
+                              widget.gameState.pTibugCreationOrder?.isActive ==
+                                      true
+                                  ? null
+                                  : () => _message(widget.gameState
+                                      .startPTibugCreation(species)
+                                      .message),
+                          child: const Text('Créer'))
+                      : const Icon(Icons.lock_outline)));
         }),
       ]);
+
+  String _patternStateLabel(KernelPlanState state) => switch (state) {
+        KernelPlanState.unknown => 'Pattern inconnu',
+        KernelPlanState.discovered => 'Plan découvert',
+        KernelPlanState.ready => 'À activer dans le Kernel',
+        KernelPlanState.active => 'Actif',
+      };
 
   Widget _collection() =>
       ListView(padding: const EdgeInsets.all(16), children: <Widget>[
@@ -6885,7 +6899,13 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
                           Text(
-                              workshopConfig.recipe(order.recipeId).displayName,
+                              craftConfig.recipes
+                                  .firstWhere(
+                                    (recipe) => recipe.id == order.recipeId,
+                                    orElse: () =>
+                                        defaultCraftConfig.simpleMealRecipe,
+                                  )
+                                  .displayName,
                               style:
                                   const TextStyle(fontWeight: FontWeight.w900)),
                           Text(
@@ -6915,7 +6935,9 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                   onSelectionChanged: (value) =>
                       setState(() => _quantity = value.first)),
               const SizedBox(height: 10),
-              ...workshopConfig.recipes
+              ...craftConfig.recipes
+                  .where(
+                      (recipe) => recipe.craftSection == CraftSection.atelier)
                   .where(widget.gameState.isWorkshopRecipeActive)
                   .map((recipe) => Card(
                         child: Padding(
@@ -6927,7 +6949,7 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                                     style: const TextStyle(
                                         fontWeight: FontWeight.w900)),
                                 Text(
-                                    '${recipe.category} · ${recipe.durationMinutes} min/unité'),
+                                    'Pattern Kernel · ${recipe.durationMinutes} min/unité'),
                                 Text(recipe.ingredients.entries
                                     .map((e) =>
                                         '${e.value * _quantity} ${e.key}')
@@ -6975,7 +6997,7 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
     );
   }
 
-  void _start(WorkshopRecipe recipe, PtipoteFigurine? figurine) {
+  void _start(CraftRecipe recipe, PtipoteFigurine? figurine) {
     final result = widget.gameState.startWorkshopOrder(
         recipe: recipe, quantity: _quantity, figurine: figurine);
     ScaffoldMessenger.of(context)
@@ -7062,29 +7084,36 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
                   ),
                 ),
               )),
-          ...craftConfig.recipes.map((recipe) => _CuisineRecipeCard(
-                recipe: recipe,
-                gameState: widget.gameState,
-                canPrepare: widget.gameState.hasResources(recipe.ingredients) &&
-                    widget.gameState.hasInventoryCapacityFor(
-                      <String, int>{recipe.resultItem: recipe.resultAmount},
-                    ),
-                manualAvailable: widget.gameState.activeManualKitchenOrders < 1,
-                ptipoteAvailable: widget.gameState.activePtipoteKitchenOrders <
-                    widget.gameState.kitchenSlots,
-                onPrepare: () => _start(recipe, null),
-                onAssign: () async {
-                  final figurine = await _pickPtipoteForActivity(
-                    context: context,
+          ...craftConfig.recipes
+              .where((recipe) => recipe.craftSection == CraftSection.cuisine)
+              .map((recipe) => _CuisineRecipeCard(
+                    recipe: recipe,
                     gameState: widget.gameState,
-                    figurines: figurines,
-                    title: 'Confier ${recipe.displayName}',
-                  );
-                  if (figurine != null && context.mounted) {
-                    _start(recipe, figurine);
-                  }
-                },
-              )),
+                    canPrepare:
+                        widget.gameState.hasResources(recipe.ingredients) &&
+                            widget.gameState.hasInventoryCapacityFor(
+                              <String, int>{
+                                recipe.resultItem: recipe.resultAmount
+                              },
+                            ),
+                    manualAvailable:
+                        widget.gameState.activeManualKitchenOrders < 1,
+                    ptipoteAvailable:
+                        widget.gameState.activePtipoteKitchenOrders <
+                            widget.gameState.kitchenSlots,
+                    onPrepare: () => _start(recipe, null),
+                    onAssign: () async {
+                      final figurine = await _pickPtipoteForActivity(
+                        context: context,
+                        gameState: widget.gameState,
+                        figurines: figurines,
+                        title: 'Confier ${recipe.displayName}',
+                      );
+                      if (figurine != null && context.mounted) {
+                        _start(recipe, figurine);
+                      }
+                    },
+                  )),
           if (_lastResult != null) ...<Widget>[
             const SizedBox(height: 10),
             Text(_lastResult!,

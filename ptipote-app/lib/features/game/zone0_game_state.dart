@@ -240,33 +240,21 @@ class Zone0GameState extends ChangeNotifier {
         (order) => order.assignedPtipoteId == figurineId,
       );
 
+  CraftRecipe _orderRecipe(WorkshopCraftOrder order) =>
+      craftConfig.recipes.firstWhere((recipe) => recipe.id == order.recipeId,
+          orElse: () => defaultCraftConfig.simpleMealRecipe);
+
   Map<String, int> _orderIngredients(WorkshopCraftOrder order) =>
-      order.area == WorkshopOrderArea.kitchen
-          ? craftConfig.recipes
-              .firstWhere((recipe) => recipe.id == order.recipeId)
-              .ingredients
-          : workshopConfig.recipe(order.recipeId).ingredients;
+      _orderRecipe(order).ingredients;
 
   String _orderDisplayName(WorkshopCraftOrder order) =>
-      order.area == WorkshopOrderArea.kitchen
-          ? craftConfig.recipes
-              .firstWhere((recipe) => recipe.id == order.recipeId)
-              .displayName
-          : workshopConfig.recipe(order.recipeId).displayName;
+      _orderRecipe(order).displayName;
 
   String _orderResultItem(WorkshopCraftOrder order) =>
-      order.area == WorkshopOrderArea.kitchen
-          ? craftConfig.recipes
-              .firstWhere((recipe) => recipe.id == order.recipeId)
-              .resultItem
-          : workshopConfig.recipe(order.recipeId).resultItem;
+      _orderRecipe(order).resultItem;
 
   int _orderResultAmount(WorkshopCraftOrder order) =>
-      order.area == WorkshopOrderArea.kitchen
-          ? craftConfig.recipes
-              .firstWhere((recipe) => recipe.id == order.recipeId)
-              .resultAmount
-          : workshopConfig.recipe(order.recipeId).resultAmount;
+      _orderRecipe(order).resultAmount;
 
   bool isAssignedToMarket(String figurineId) =>
       marketAssignedPtipoteId == figurineId;
@@ -274,7 +262,7 @@ class Zone0GameState extends ChangeNotifier {
   int get marketSlotLimit => marketConfig.slotsForLevel(marketLevel);
 
   bool isEquipmentResource(String resource) {
-    return workshopConfig.recipes.any(
+    return craftConfig.recipes.any(
       (recipe) => recipe.resultItem == resource && recipe.isEquipment,
     );
   }
@@ -445,7 +433,10 @@ class Zone0GameState extends ChangeNotifier {
       );
 
   KernelPlanState kernelPlanState(KernelTechnologyPlanConfig plan) {
+    final pTibugPattern = pTibugConfig.patternForKernelPlanId(plan.id);
     if (activeKernelPlanIds.contains(plan.id) ||
+        (pTibugPattern != null &&
+            activePTibugPatterns.contains(pTibugPattern.species)) ||
         (plan.initialState == KernelPlanState.active && isFablabBuilt)) {
       return KernelPlanState.active;
     }
@@ -453,10 +444,21 @@ class Zone0GameState extends ChangeNotifier {
     if (discoveredKernelPlanIds.contains(plan.id)) {
       return KernelPlanState.discovered;
     }
+    if (plan.initialState == KernelPlanState.discovered) {
+      return KernelPlanState.discovered;
+    }
     return KernelPlanState.unknown;
   }
 
-  bool isWorkshopRecipeActive(WorkshopRecipe recipe) {
+  KernelPlanState pTibugPatternState(PTibugSpecies species) {
+    final planId = pTibugConfig.patterns[species]!.kernelPlanId;
+    final plan = kernelProgressConfig.plans
+        .where((item) => item.id == planId)
+        .firstOrNull;
+    return plan == null ? KernelPlanState.unknown : kernelPlanState(plan);
+  }
+
+  bool isWorkshopRecipeActive(CraftRecipe recipe) {
     final matchingPlan = kernelProgressConfig.plans.where(
       (plan) => plan.workshopRecipeId == recipe.id,
     );
@@ -464,6 +466,30 @@ class Zone0GameState extends ChangeNotifier {
     return matchingPlan.any(
       (plan) => kernelPlanState(plan) == KernelPlanState.active,
     );
+  }
+
+  String? _recipeRequirementsMessage(CraftRecipe recipe) {
+    if (kernelTrustLevel < recipe.kernelTrustLevel) {
+      return 'Confiance du Kernel niveau ${recipe.kernelTrustLevel} requise.';
+    }
+    if (kernelAxisLevel(KernelAxis.breeder) < recipe.breederLevel) {
+      return 'Éleveur niveau ${recipe.breederLevel} requis.';
+    }
+    if (kernelAxisLevel(KernelAxis.builder) < recipe.builderLevel) {
+      return 'Bâtisseur niveau ${recipe.builderLevel} requis.';
+    }
+    if (kernelAxisLevel(KernelAxis.restorer) < recipe.restorerLevel) {
+      return 'Restaurateur niveau ${recipe.restorerLevel} requis.';
+    }
+    if (recipe.craftSection == CraftSection.cuisine &&
+        cuisineLevel < recipe.cuisineLevel) {
+      return 'Cuisine niveau ${recipe.cuisineLevel} requise.';
+    }
+    if (recipe.craftSection == CraftSection.atelier &&
+        atelierLevel < recipe.atelierLevel) {
+      return 'Atelier niveau ${recipe.atelierLevel} requis.';
+    }
+    return null;
   }
 
   void emitKernelProgressEvent(KernelProgressEventType type) {
@@ -501,6 +527,10 @@ class Zone0GameState extends ChangeNotifier {
     }
     readyKernelPlanIds.remove(planId);
     activeKernelPlanIds.add(planId);
+    final pTibugPattern = pTibugConfig.patternForKernelPlanId(planId);
+    if (pTibugPattern != null) {
+      activePTibugPatterns.add(pTibugPattern.species);
+    }
     reports.add(PtipoteMissionReport.system(
       message: 'Plan activé : ${plan.title}. ${plan.kernelText}',
     ));
@@ -663,11 +693,21 @@ class Zone0GameState extends ChangeNotifier {
             );
 
   Zone0ActionResult startWorkshopOrder({
-    required WorkshopRecipe recipe,
+    required CraftRecipe recipe,
     required int quantity,
     PtipoteFigurine? figurine,
   }) {
     resolveWorkshopOrder();
+    if (recipe.craftSection != CraftSection.atelier) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cette recette se prépare dans la Cuisine.',
+      );
+    }
+    final requirements = _recipeRequirementsMessage(recipe);
+    if (requirements != null) {
+      return Zone0ActionResult(success: false, message: requirements);
+    }
     if (!isWorkshopRecipeActive(recipe)) {
       return const Zone0ActionResult(
         success: false,
@@ -738,15 +778,20 @@ class Zone0GameState extends ChangeNotifier {
     PtipoteFigurine? figurine,
   }) {
     resolveWorkshopOrder();
+    if (recipe.craftSection != CraftSection.cuisine) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cette recette se fabrique dans l’Atelier.',
+      );
+    }
     if (!isFablabBuilt) {
       return const Zone0ActionResult(
           success: false,
           message: 'Construis le Fablab pour utiliser la Cuisine.');
     }
-    if (cuisineLevel < recipe.cuisineLevel) {
-      return Zone0ActionResult(
-          success: false,
-          message: 'Cuisine niveau ${recipe.cuisineLevel} requise.');
+    final requirements = _recipeRequirementsMessage(recipe);
+    if (requirements != null) {
+      return Zone0ActionResult(success: false, message: requirements);
     }
     if (figurine == null && activeManualKitchenOrders >= 1) {
       return const Zone0ActionResult(
@@ -2153,6 +2198,7 @@ class Zone0GameState extends ChangeNotifier {
         if (activePTibugPatterns.isEmpty) {
           activePTibugPatterns.add(PTibugSpecies.scarabe);
         }
+        emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
     }
     if (!project.notificationCreated) {
       reports.add(PtipoteMissionReport.system(
@@ -2684,11 +2730,22 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult prepareRecipe(CraftRecipe recipe) {
+    if (recipe.craftSection != CraftSection.cuisine) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cette recette se fabrique dans l’Atelier.',
+      );
+    }
     if (!isFablabBuilt) {
       return const Zone0ActionResult(
         success: false,
         message: 'Construis le Fablab pour utiliser la Cuisine.',
       );
+    }
+
+    final requirements = _recipeRequirementsMessage(recipe);
+    if (requirements != null) {
+      return Zone0ActionResult(success: false, message: requirements);
     }
 
     final cost = recipe.ingredients;

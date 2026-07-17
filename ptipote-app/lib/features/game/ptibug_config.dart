@@ -22,6 +22,20 @@ class PTibugSpeciesConfig {
   final int creationMinutes;
 }
 
+/// A Pattern is the Kernel knowledge required before the Nurserie can create
+/// a species. The creation recipe itself stays on [PTibugSpeciesConfig].
+class PTibugPatternConfig {
+  const PTibugPatternConfig({
+    required this.species,
+    required this.kernelPlanId,
+    required this.description,
+  });
+
+  final PTibugSpecies species;
+  final String kernelPlanId;
+  final String description;
+}
+
 class PTibugConfig {
   const PTibugConfig({
     required this.nurseryRequirements,
@@ -35,6 +49,7 @@ class PTibugConfig {
     required this.clawProductionBonus,
     required this.reservoirCapacityBonus,
     required this.species,
+    required this.patterns,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -48,12 +63,20 @@ class PTibugConfig {
   final int clawProductionBonus;
   final int reservoirCapacityBonus;
   final Map<PTibugSpecies, PTibugSpeciesConfig> species;
+  final Map<PTibugSpecies, PTibugPatternConfig> patterns;
 
   int slotsForLevel(int level) => slotsByLevel[level.clamp(1, 3)] ?? 1;
   int moduleSlotsForLevel(int level) =>
       moduleSlotsByLevel[level.clamp(1, 3)] ?? 1;
 
   int traitMultiplier(PTibugTraitGrade grade) => grade.index + 1;
+
+  PTibugPatternConfig? patternForKernelPlanId(String planId) {
+    for (final pattern in patterns.values) {
+      if (pattern.kernelPlanId == planId) return pattern;
+    }
+    return null;
+  }
 }
 
 const pTibugConfig = PTibugConfig(
@@ -88,6 +111,23 @@ const pTibugConfig = PTibugConfig(
       creationCost: <String, int>{'Organique': 3, 'Minéral': 3},
       creationEnergyCost: 5,
       creationMinutes: 25,
+    ),
+  },
+  patterns: <PTibugSpecies, PTibugPatternConfig>{
+    PTibugSpecies.scarabe: PTibugPatternConfig(
+      species: PTibugSpecies.scarabe,
+      kernelPlanId: 'ptibug-pattern-scarabe',
+      description: 'Un premier collecteur robuste pour les sols du refuge.',
+    ),
+    PTibugSpecies.hyme: PTibugPatternConfig(
+      species: PTibugSpecies.hyme,
+      kernelPlanId: 'ptibug-pattern-hyme',
+      description: 'Un P’TIBUG rapide, adapté aux ressources organiques.',
+    ),
+    PTibugSpecies.arac: PTibugPatternConfig(
+      species: PTibugSpecies.arac,
+      kernelPlanId: 'ptibug-pattern-arac',
+      description: 'Un collecteur agile capable de s’adapter à sa collecte.',
     ),
   },
 );

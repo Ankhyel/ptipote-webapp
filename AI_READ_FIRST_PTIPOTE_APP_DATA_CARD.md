@@ -1190,6 +1190,14 @@ Pour formater Dart:
 
 - `ptipote-app/lib/features/game/ptibug_config.dart` centralise les espèces Scarabé, Hyme et Arac, leurs recettes de création, styles, slots de Nurserie, cycles, capacité et modules V1.
 - `ptipote-app/lib/features/game/zone0_game_state.dart` conserve les P'TIBUG dans le document Firebase `ptibug`, termine la création hors ligne et résout les cycles terminés sans les verser automatiquement dans l'inventaire. La collecte est explicite afin de respecter la capacité globale.
+
+### Patterns P'TIBUG - Kernel
+
+- `ptipote-app/lib/features/game/ptibug_config.dart` centralise les trois Patterns V1 et leur lien avec les Plans Kernel : Scarabé, Hymé et Arac.
+- `ptipote-app/lib/features/game/kernel_progress_config.dart` définit les Plans de Pattern. Scarabé est offert à la construction de la Nurserie ; Hymé se découvre après le premier P'TIBUG ; Arac après trois collectes P'TIBUG, avec les prérequis de Confiance et d'axe Éleveur affichés par le Kernel.
+- `ptipote-app/lib/features/game/zone0_game_state.dart` active un Pattern lors de l'activation de son Plan Kernel et persiste la liste dans `users/{uid}/game/zone0.ptibug`. Les créations restent refusées tant que le Pattern concerné n'est pas actif.
+- La Nurserie affiche tous les Patterns, avec leur état Kernel. Seuls les Patterns actifs proposent le bouton `Créer`.
+- Attente : la vente ou le partage social de Patterns via le Marché/Sourcier reste une étape ultérieure ; aucun Pattern n'est consommé à la création.
 - Production : Scarabé produit du Minéral, Hyme de l'Organique et Arac une combinaison aléatoire d'Organique, Minéral ou Déchets. La capacité individuelle bloque les cycles pleins. XP : +1 par cycle.
 - Mycélium : la ressource est produite exclusivement par une Donnée Décomposeur. Elle n'est ajoutée à aucune recette existante dans cette étape.
 - `ptipote-app/lib/features/game/refuge_page.dart` expose une Nurserie P'TIBUG dans la Plaine/refuge : construction commune, Aperçu, Création, Collection et Amélioration. Les P'TIBUG peuvent être installés ou retirés des slots actifs et leur production récupérée.

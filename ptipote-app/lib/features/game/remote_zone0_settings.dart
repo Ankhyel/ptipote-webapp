@@ -1,4 +1,5 @@
 import 'camp_heart_config.dart';
+import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'housing_config.dart';
 import 'lisiere_forage_config.dart';
@@ -16,6 +17,7 @@ void applyRemoteZone0Settings(Map<String, dynamic>? raw) {
   towerOperationsConfig = _towerOperations(raw?['towerOperations']);
   fablabConfig = _fablab(raw?['fablab']);
   workshopConfig = _workshop(raw?['workshop']);
+  craftConfig = _craft(raw?['craft']);
   marketConfig = _market(raw?['market']);
   housingConfig = _housing(raw?['housing']);
 }
@@ -286,8 +288,6 @@ WorkshopConfig _workshop(Object? value) {
   final raw = _map(value);
   const b = defaultWorkshopConfig;
   if (raw == null) return b;
-  final recipes = raw['recipes'] is List ? raw['recipes'] as List : const [];
-  final fallbackById = {for (final item in b.recipes) item.id: item};
   return WorkshopConfig(
       vitalityCostPerUnit:
           _int(raw['vitalityCostPerUnit'], b.vitalityCostPerUnit),
@@ -300,37 +300,82 @@ WorkshopConfig _workshop(Object? value) {
           b.buildingLevelSpeedBonusPercent),
       maxBuildingSpeedBonusPercent: _double(
           raw['maxBuildingSpeedBonusPercent'], b.maxBuildingSpeedBonusPercent),
-      slotsPerLevel: _int(raw['slotsPerLevel'], b.slotsPerLevel),
-      recipes: recipes
-          .map(_map)
-          .whereType<Map<String, dynamic>>()
-          .map((rawRecipe) {
-            final base = fallbackById[_string(rawRecipe['id'], '')];
-            return base == null
-                ? null
-                : WorkshopRecipe(
-                    id: base.id,
-                    displayName:
-                        _string(rawRecipe['displayName'], base.displayName),
-                    category: base.category,
-                    ingredients: _resourceMap(
-                        rawRecipe['ingredients'], base.ingredients),
-                    resultItem:
-                        _string(rawRecipe['resultItem'], base.resultItem),
-                    resultAmount:
-                        _int(rawRecipe['resultAmount'], base.resultAmount),
-                    durationMinutes: _int(
-                        rawRecipe['durationMinutes'], base.durationMinutes),
-                    stackLimit: _int(rawRecipe['stackLimit'], base.stackLimit),
-                    sellable: rawRecipe['sellable'] is bool
-                        ? rawRecipe['sellable'] as bool
-                        : base.sellable,
-                    baseSaleValue:
-                        _int(rawRecipe['baseSaleValue'], base.baseSaleValue),
-                    isEquipment: base.isEquipment);
-          })
-          .whereType<WorkshopRecipe>()
-          .toList());
+      slotsPerLevel: _int(raw['slotsPerLevel'], b.slotsPerLevel));
+}
+
+CraftConfig _craft(Object? value) {
+  final raw = _map(value);
+  final recipes = raw?['recipes'];
+  if (recipes is! List || recipes.isEmpty) return defaultCraftConfig;
+  final defaults = {
+    for (final recipe in defaultCraftConfig.recipes) recipe.id: recipe
+  };
+  final parsed = recipes
+      .map(_map)
+      .whereType<Map<String, dynamic>>()
+      .map(
+          (recipe) => _craftRecipe(recipe, defaults[_string(recipe['id'], '')]))
+      .whereType<CraftRecipe>()
+      .toList();
+  return parsed.any((recipe) => recipe.id == 'simpleMeal')
+      ? CraftConfig(recipes: parsed)
+      : defaultCraftConfig;
+}
+
+CraftRecipe? _craftRecipe(Map<String, dynamic> raw, CraftRecipe? fallback) {
+  final id = _string(raw['id'], fallback?.id ?? '');
+  if (id.isEmpty) return null;
+  final section =
+      _string(raw['craftSection'], fallback?.craftSection.name ?? 'cuisine');
+  final craftSection = section == CraftSection.atelier.name
+      ? CraftSection.atelier
+      : CraftSection.cuisine;
+  final foodType = _string(raw['foodType'], fallback?.foodType.name ?? 'meal');
+  return CraftRecipe(
+    id: id,
+    displayName: _string(raw['displayName'], fallback?.displayName ?? id),
+    craftSection: craftSection,
+    ingredients:
+        _recipeResources(raw['ingredients'], fallback?.ingredients ?? const {}),
+    contextIngredients: _recipeResources(
+        raw['contextIngredients'], fallback?.contextIngredients ?? const {}),
+    cuisineLevel: _int(raw['cuisineLevel'], fallback?.cuisineLevel ?? 0),
+    atelierLevel: _int(raw['atelierLevel'], fallback?.atelierLevel ?? 0),
+    kernelTrustLevel:
+        _int(raw['kernelTrustLevel'], fallback?.kernelTrustLevel ?? 1),
+    breederLevel: _int(raw['breederLevel'], fallback?.breederLevel ?? 1),
+    builderLevel: _int(raw['builderLevel'], fallback?.builderLevel ?? 1),
+    restorerLevel: _int(raw['restorerLevel'], fallback?.restorerLevel ?? 1),
+    resultItem: _string(raw['resultItem'], fallback?.resultItem ?? id),
+    resultAmount: _int(raw['resultAmount'], fallback?.resultAmount ?? 1),
+    isConsumable: raw['isConsumable'] is bool
+        ? raw['isConsumable'] as bool
+        : fallback?.isConsumable ?? false,
+    foodType: foodType == FoodType.drink.name ? FoodType.drink : FoodType.meal,
+    hungerRestore: _int(raw['hungerRestore'], fallback?.hungerRestore ?? 0),
+    vitalityRestore:
+        _int(raw['vitalityRestore'], fallback?.vitalityRestore ?? 0),
+    durationMinutes:
+        _int(raw['durationMinutes'], fallback?.durationMinutes ?? 1),
+    isEquipment: raw['isEquipment'] is bool
+        ? raw['isEquipment'] as bool
+        : fallback?.isEquipment ?? false,
+    energyCost: _int(raw['energyCost'], fallback?.energyCost ?? 0),
+    stackLimit: _int(raw['stackLimit'], fallback?.stackLimit ?? 1),
+  );
+}
+
+Map<String, int> _recipeResources(Object? value, Map<String, int> fallback) {
+  if (value is List) {
+    final entries =
+        value.map(_map).whereType<Map<String, dynamic>>().map((item) {
+      final resource = _string(item['resource'], '');
+      return MapEntry(resource, _int(item['amount'], 0));
+    }).where((entry) => entry.key.isNotEmpty && entry.value > 0);
+    final result = Map<String, int>.fromEntries(entries);
+    return result.isEmpty ? fallback : result;
+  }
+  return _resourceMap(value, fallback);
 }
 
 MarketConfig _market(Object? value) {
