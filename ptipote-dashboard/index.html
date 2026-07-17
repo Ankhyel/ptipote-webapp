@@ -118,6 +118,16 @@
             <div><p class="eyebrow">Progression</p><h3>Confiance, axes et Patterns</h3></div>
           </div>
           <div class="stage-list" id="kernelProgressConfigList"></div>
+          <div class="panel-head"><div><p class="eyebrow">Nouvelle mission</p><h3>Mission Kernel ou météo</h3></div></div>
+          <form class="stat-form" id="kernelMissionForm">
+            <div class="stat-field"><label>Titre<input name="title" value="Nouvelle mission Kernel"></label></div><div class="stat-field"><label>Type<select name="type"><option value="refugeRequest">Demande du refuge</option><option value="main">Mission principale</option><option value="weather">Mission météo</option></select></label></div>
+            <div class="stat-field stat-field-wide"><label>Description<input name="description" value="Une nouvelle demande du Kernel."></label></div>
+            <div class="stat-field"><label>Bâtiment requis<select name="building"><option value="">Aucun</option><option value="campHeart">Cœur du Camp</option><option value="fablab">Fablab</option><option value="cuisine">Cuisine</option><option value="atelier">Atelier</option><option value="securityTower">Tour</option><option value="market">Marché</option><option value="house">Maison</option></select></label></div><div class="stat-field"><label>Niveau bâtiment<input name="buildingLevel" type="number" min="0" value="0"></label></div>
+            <div class="stat-field"><label>Confiance Kernel<input name="trustLevel" type="number" min="1" value="1"></label></div><div class="stat-field"><label>Niveau Éleveur<input name="breederLevel" type="number" min="1" value="1"></label></div><div class="stat-field"><label>Niveau Bâtisseur<input name="builderLevel" type="number" min="1" value="1"></label></div><div class="stat-field"><label>Niveau Restaurateur<input name="restorerLevel" type="number" min="1" value="1"></label></div>
+            <div class="stat-field"><label>Produit demandé<input name="requestedItem" placeholder="ex. Filtre"></label></div><div class="stat-field"><label>Quantité demandée<input name="requestedAmount" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Intempérie liée<select name="weatherType"><option value="">Aucune</option><option value="toxicCloud">Nuage toxique</option><option value="heatWave">Forte chaleur</option><option value="heavyRain">Pluie intense</option></select></label></div>
+            <div class="stat-field"><label>Produit récompense<input name="rewardItem" placeholder="ex. Bio-batterie"></label></div><div class="stat-field"><label>Quantité récompense<input name="rewardAmount" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Habitants récompense<input name="populationReward" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Bio-batteries<input name="bioBatteryReward" type="number" min="0" value="0"></label></div><div class="stat-field"><label>XP confiance<input name="xpReward" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Pattern / Plan récompense<input name="rewardPatternId" placeholder="id du Pattern"></label></div>
+            <div class="stat-field stat-field-wide"><button class="button" type="submit">Créer la mission</button></div>
+          </form>
         </section>
       </section>
 

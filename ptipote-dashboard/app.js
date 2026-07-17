@@ -119,6 +119,7 @@ const ids = [
   "kernelStatus",
   "kernelConfigList",
   "kernelProgressConfigList",
+  "kernelMissionForm",
   "publishKernelButton",
   "campHeartStatus",
   "campHeartStageList",
@@ -820,6 +821,10 @@ async function loadZone0Settings() {
       const baselineById = new Map((base.craft?.recipes || []).map((recipe) => [recipe.id, recipe]));
       zone0Settings.craft.recipes = published.craft.recipes.map((recipe) => mergeConfig(baselineById.get(recipe.id) || {}, recipe));
     }
+    if (Array.isArray(published?.kernel?.missions)) {
+      const baselineById = new Map((base.kernel?.missions || []).map((mission) => [mission.id, mission]));
+      zone0Settings.kernel.missions = published.kernel.missions.map((mission) => mergeConfig(baselineById.get(mission.id) || {}, mission));
+    }
     renderZone0Settings();
     el.zone0SettingsStatus.textContent = published
       ? "Configuration publiée chargée depuis Firestore."
@@ -918,13 +923,13 @@ function renderKernelEditor() {
   const progress = zone0Settings.kernelProgress || {};
   const { eventRewards = {}, plans: patternPlans = [], ...progressGeneral } = progress;
   el.kernelConfigList.innerHTML = [
-    ...missions.map((mission, index) => configCard(
+    ...missions.map((mission, index) => `${configCard(
       mission.title || `Mission ${index + 1}`,
       "kernel",
       mission,
       ["missions", index],
-      { meta: `${mission.conditionType || "condition"} · récompenses de mission` },
-    )),
+      { meta: `${mission.type || "mission"} · demande : ${mission.requestedAmount || 0} ${mission.requestedItem || "aucune"} · Pattern : ${mission.rewardPatternId || "aucun"}` },
+    )}<button class="ghost" type="button" data-delete-kernel-mission="${index}">Supprimer cette mission</button>`,),
     ...plans.map((plan, index) => configCard(
       plan.title || `Plan ${index + 1}`,
       "kernel",
@@ -952,6 +957,60 @@ function renderKernelEditor() {
   ].join("");
   bindZone0Inputs(el.kernelConfigList);
   bindZone0Inputs(el.kernelProgressConfigList);
+  el.kernelConfigList.querySelectorAll("[data-delete-kernel-mission]").forEach((button) => {
+    button.addEventListener("click", () => {
+      zone0Settings.kernel.missions.splice(Number(button.dataset.deleteKernelMission), 1);
+      renderKernelEditor();
+      el.kernelStatus.textContent = "Mission supprimée. Clique sur Publier dans l'app pour appliquer ce retrait.";
+    });
+  });
+}
+
+function addKernelMission(event) {
+  event.preventDefault();
+  const form = new FormData(el.kernelMissionForm);
+  const title = String(form.get("title") || "Nouvelle mission Kernel").trim();
+  const id = title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `mission-${Date.now()}`;
+  if (zone0Settings.kernel.missions.some((mission) => mission.id === id)) {
+    el.kernelStatus.textContent = "Une mission porte déjà cet identifiant. Change son titre avant de l'ajouter.";
+    return;
+  }
+  const type = String(form.get("type") || "refugeRequest");
+  const weatherType = String(form.get("weatherType") || "");
+  if (type === "weather" && !weatherType) {
+    el.kernelStatus.textContent = "Choisis l'intempérie associée à la mission météo.";
+    return;
+  }
+  const building = String(form.get("building") || "");
+  const buildingLevel = craftNumber(form.get("buildingLevel"));
+  const requestedItem = String(form.get("requestedItem") || "").trim();
+  const requestedAmount = craftNumber(form.get("requestedAmount"));
+  const rewardItem = String(form.get("rewardItem") || "").trim();
+  const rewardAmount = craftNumber(form.get("rewardAmount"));
+  zone0Settings.kernel.missions.push({
+    id,
+    type,
+    title,
+    description: String(form.get("description") || "").trim(),
+    conditionType: "requirementsMet",
+    requiredAmount: 1,
+    populationReward: craftNumber(form.get("populationReward")),
+    bioBatteryReward: craftNumber(form.get("bioBatteryReward")),
+    xpReward: craftNumber(form.get("xpReward")),
+    mailMessage: `${title} terminée.`,
+    requiredBuildingLevels: building && buildingLevel > 0 ? { [building]: buildingLevel } : {},
+    requiredKernelTrustLevel: craftNumber(form.get("trustLevel"), 1),
+    requiredBreederLevel: craftNumber(form.get("breederLevel"), 1),
+    requiredBuilderLevel: craftNumber(form.get("builderLevel"), 1),
+    requiredRestorerLevel: craftNumber(form.get("restorerLevel"), 1),
+    requestedItem: requestedItem || null,
+    requestedAmount,
+    resourceRewards: rewardItem && rewardAmount > 0 ? { [rewardItem]: rewardAmount } : {},
+    rewardPatternId: String(form.get("rewardPatternId") || "").trim() || null,
+    weatherType: type === "weather" ? weatherType : null,
+  });
+  renderKernelEditor();
+  el.kernelStatus.textContent = "Mission ajoutée. Clique sur Publier dans l'app pour la rendre disponible.";
 }
 
 function renderLisiereEditor() {
@@ -1115,6 +1174,7 @@ el.exportPtipoteStatsButton.addEventListener("click", () => {
 });
 
 el.craftRecipeForm.addEventListener("submit", addCraftRecipe);
+el.kernelMissionForm.addEventListener("submit", addKernelMission);
 
 async function loadKernelProgressConfig() {
   const response = await fetch("./kernel-progress-config.json", { cache: "no-store" });

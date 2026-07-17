@@ -52,10 +52,6 @@ KernelConfig _kernel(Object? value) {
   final capacities = _map(raw['populationCapacityByCampHeartLevel']);
   final missions = raw['missions'] is List ? raw['missions'] as List : const [];
   final plans = raw['plans'] is List ? raw['plans'] as List : const [];
-  final missionById = <String, Map<String, dynamic>>{
-    for (final item in missions)
-      if (_map(item) case final map?) _string(map['id'], ''): map,
-  };
   final planById = <String, Map<String, dynamic>>{
     for (final item in plans)
       if (_map(item) case final map?) _string(map['id'], ''): map,
@@ -75,23 +71,18 @@ KernelConfig _kernel(Object? value) {
         _int(raw['wellbeingRedThreshold'], base.wellbeingRedThreshold),
     wellbeingOrangeThreshold:
         _int(raw['wellbeingOrangeThreshold'], base.wellbeingOrangeThreshold),
-    missions: base.missions.map((fallback) {
-      final item = missionById[fallback.id];
-      return KernelMissionConfig(
-        id: fallback.id,
-        type: fallback.type,
-        title: _string(item?['title'], fallback.title),
-        description: _string(item?['description'], fallback.description),
-        conditionType: fallback.conditionType,
-        requiredAmount: _int(item?['requiredAmount'], fallback.requiredAmount),
-        populationReward:
-            _int(item?['populationReward'], fallback.populationReward),
-        bioBatteryReward:
-            _int(item?['bioBatteryReward'], fallback.bioBatteryReward),
-        xpReward: _int(item?['xpReward'], fallback.xpReward),
-        mailMessage: _string(item?['mailMessage'], fallback.mailMessage),
-      );
-    }).toList(),
+    missions: missions.isEmpty
+        ? base.missions
+        : missions
+            .map(_map)
+            .whereType<Map<String, dynamic>>()
+            .map((item) => _kernelMission(
+                item,
+                base.missions
+                    .where((mission) => mission.id == item['id'])
+                    .firstOrNull))
+            .whereType<KernelMissionConfig>()
+            .toList(),
     plans: base.plans.map((fallback) {
       final item = planById[fallback.id];
       return KernelPlanConfig(
@@ -104,6 +95,71 @@ KernelConfig _kernel(Object? value) {
     }).toList(),
   );
 }
+
+KernelMissionConfig? _kernelMission(
+  Map<String, dynamic> raw,
+  KernelMissionConfig? fallback,
+) {
+  final id = _string(raw['id'], fallback?.id ?? '');
+  if (id.isEmpty) return null;
+  final requestedItem = _string(raw['requestedItem'], '');
+  final rewardPatternId = _string(raw['rewardPatternId'], '');
+  final weatherType = _string(raw['weatherType'], '');
+  return KernelMissionConfig(
+    id: id,
+    type: _kernelMissionType(
+        raw['type'], fallback?.type ?? KernelMissionType.refugeRequest),
+    title: _string(raw['title'], fallback?.title ?? id),
+    description: _string(raw['description'], fallback?.description ?? ''),
+    conditionType: _kernelMissionCondition(raw['conditionType'],
+        fallback?.conditionType ?? KernelMissionConditionType.requirementsMet),
+    requiredAmount: _int(raw['requiredAmount'], fallback?.requiredAmount ?? 1),
+    populationReward:
+        _int(raw['populationReward'], fallback?.populationReward ?? 0),
+    bioBatteryReward:
+        _int(raw['bioBatteryReward'], fallback?.bioBatteryReward ?? 0),
+    xpReward: _int(raw['xpReward'], fallback?.xpReward ?? 0),
+    mailMessage: _string(raw['mailMessage'],
+        fallback?.mailMessage ?? 'Mission Kernel terminée.'),
+    requiredBuildingLevels: _positiveMap(raw['requiredBuildingLevels']),
+    requiredKernelTrustLevel: _int(raw['requiredKernelTrustLevel'],
+        fallback?.requiredKernelTrustLevel ?? 1),
+    requiredBreederLevel:
+        _int(raw['requiredBreederLevel'], fallback?.requiredBreederLevel ?? 1),
+    requiredBuilderLevel:
+        _int(raw['requiredBuilderLevel'], fallback?.requiredBuilderLevel ?? 1),
+    requiredRestorerLevel: _int(
+        raw['requiredRestorerLevel'], fallback?.requiredRestorerLevel ?? 1),
+    requestedItem: requestedItem.isEmpty ? null : requestedItem,
+    requestedAmount:
+        _int(raw['requestedAmount'], fallback?.requestedAmount ?? 0),
+    resourceRewards: _positiveMap(raw['resourceRewards']),
+    rewardPatternId: rewardPatternId.isEmpty ? null : rewardPatternId,
+    weatherType: weatherType.isEmpty ? null : weatherType,
+  );
+}
+
+Map<String, int> _positiveMap(Object? value) {
+  final raw = _map(value);
+  if (raw == null) return const <String, int>{};
+  return <String, int>{
+    for (final entry in raw.entries)
+      if (entry.value is num && (entry.value as num) > 0)
+        entry.key: (entry.value as num).round(),
+  };
+}
+
+KernelMissionType _kernelMissionType(
+        Object? value, KernelMissionType fallback) =>
+    KernelMissionType.values.where((type) => type.name == value).firstOrNull ??
+    fallback;
+
+KernelMissionConditionType _kernelMissionCondition(
+        Object? value, KernelMissionConditionType fallback) =>
+    KernelMissionConditionType.values
+        .where((type) => type.name == value)
+        .firstOrNull ??
+    fallback;
 
 KernelProgressConfig _kernelProgress(Object? value) {
   final raw = _map(value);

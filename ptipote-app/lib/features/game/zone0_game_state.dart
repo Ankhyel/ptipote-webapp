@@ -398,7 +398,9 @@ class Zone0GameState extends ChangeNotifier {
             progress: _kernelMissionProgress(mission),
             status: completedKernelMissionIds.contains(mission.id)
                 ? KernelMissionStatus.completed
-                : KernelMissionStatus.active,
+                : _kernelMissionPrerequisiteMessage(mission) == null
+                    ? KernelMissionStatus.active
+                    : KernelMissionStatus.locked,
           ),
         )
         .toList();
@@ -419,6 +421,12 @@ class Zone0GameState extends ChangeNotifier {
         .where(
             (mission) => mission.config.type == KernelMissionType.refugeRequest)
         .take(kernelConfig.maxRefugeRequests)
+        .toList();
+  }
+
+  List<KernelMissionProgress> weatherKernelMissions(int campHeartLevel) {
+    return kernelMissionsForCampHeartLevel(campHeartLevel)
+        .where((mission) => mission.config.type == KernelMissionType.weather)
         .toList();
   }
 
@@ -3757,7 +3765,104 @@ class Zone0GameState extends ChangeNotifier {
       KernelMissionConditionType.mealsPrepared => mealsPrepared,
       KernelMissionConditionType.plaineMissionsCompleted =>
         plaineMissionsCompleted,
+      KernelMissionConditionType.requirementsMet => 1,
     };
+  }
+
+  int _kernelBuildingLevel(String buildingId) => switch (buildingId) {
+        'campHeart' => _lastKnownCampHeartLevel,
+        'fablab' => fablabLevel,
+        'cuisine' => cuisineLevel,
+        'atelier' => atelierLevel,
+        'securityTower' => securityTowerLevel,
+        'market' => marketLevel,
+        'house' => houseLevel,
+        _ => 0,
+      };
+
+  String? _kernelMissionPrerequisiteMessage(KernelMissionConfig mission) {
+    for (final requirement in mission.requiredBuildingLevels.entries) {
+      if (_kernelBuildingLevel(requirement.key) < requirement.value) {
+        return '${requirement.key} niveau ${requirement.value} requis.';
+      }
+    }
+    if (kernelTrustLevel < mission.requiredKernelTrustLevel) {
+      return 'Confiance du Kernel niveau ${mission.requiredKernelTrustLevel} requise.';
+    }
+    if (kernelAxisLevel(KernelAxis.breeder) < mission.requiredBreederLevel) {
+      return 'Éleveur niveau ${mission.requiredBreederLevel} requis.';
+    }
+    if (kernelAxisLevel(KernelAxis.builder) < mission.requiredBuilderLevel) {
+      return 'Bâtisseur niveau ${mission.requiredBuilderLevel} requis.';
+    }
+    if (kernelAxisLevel(KernelAxis.restorer) < mission.requiredRestorerLevel) {
+      return 'Restaurateur niveau ${mission.requiredRestorerLevel} requis.';
+    }
+    if (mission.type == KernelMissionType.weather &&
+        !weatherAlerts.any((alert) =>
+            alert.type.name == mission.weatherType &&
+            alert.endsAt.isAfter(DateTime.now()))) {
+      return 'En attente de l’intempérie annoncée par la Tour.';
+    }
+    return null;
+  }
+
+  Zone0ActionResult fulfillKernelMission(String missionId) {
+    final mission =
+        kernelConfig.missions.where((item) => item.id == missionId).firstOrNull;
+    if (mission == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Mission inconnue.');
+    }
+    if (completedKernelMissionIds.contains(mission.id)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Mission déjà terminée.');
+    }
+    final prerequisite = _kernelMissionPrerequisiteMessage(mission);
+    if (prerequisite != null) {
+      return Zone0ActionResult(success: false, message: prerequisite);
+    }
+    if (mission.requestedItem == null || mission.requestedAmount <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message:
+            'Cette mission se valide automatiquement quand ses prérequis sont remplis.',
+      );
+    }
+    if (resourceAmount(mission.requestedItem!) < mission.requestedAmount) {
+      return Zone0ActionResult(
+        success: false,
+        message: 'Il faut ${mission.requestedAmount} ${mission.requestedItem}.',
+      );
+    }
+    removeResource(mission.requestedItem!, mission.requestedAmount);
+    if (mission.type == KernelMissionType.weather) {
+      final alert = weatherAlerts
+          .where((item) =>
+              item.type.name == mission.weatherType &&
+              item.endsAt.isAfter(DateTime.now()))
+          .firstOrNull;
+      if (alert != null) alert.preparationCompleted = true;
+    }
+    _completeKernelMission(mission);
+    refreshKernelMissions();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '${mission.title} terminée.');
+  }
+
+  void _completeKernelMission(KernelMissionConfig mission) {
+    if (!completedKernelMissionIds.add(mission.id)) return;
+    bioBatteries += mission.bioBatteryReward;
+    if (mission.resourceRewards.isNotEmpty) {
+      addResources(mission.resourceRewards);
+    }
+    if (mission.rewardPatternId case final patternId?) {
+      activeKernelPlanIds.add(patternId);
+    }
+    if (mission.xpReward > 0) _addKernelTrustXp(mission.xpReward);
+    reports.add(PtipoteMissionReport.system(message: mission.mailMessage));
   }
 
   bool refreshKernelMissions({int? campHeartLevel}) {
@@ -3789,10 +3894,12 @@ class Zone0GameState extends ChangeNotifier {
     for (final mission in kernelConfig.missions) {
       final wasCompleted = completedKernelMissionIds.contains(mission.id);
       if (!wasCompleted) {
+        if (mission.requestedItem != null ||
+            _kernelMissionPrerequisiteMessage(mission) != null) {
+          continue;
+        }
         if (_kernelMissionProgress(mission) < mission.requiredAmount) continue;
-        completedKernelMissionIds.add(mission.id);
-        bioBatteries += mission.bioBatteryReward;
-        reports.add(PtipoteMissionReport.system(message: mission.mailMessage));
+        _completeKernelMission(mission);
         changed = true;
       }
 

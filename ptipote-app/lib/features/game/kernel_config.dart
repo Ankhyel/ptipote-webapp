@@ -1,4 +1,4 @@
-enum KernelMissionType { main, refugeRequest }
+enum KernelMissionType { main, refugeRequest, weather }
 
 enum KernelMissionStatus { locked, active, completed }
 
@@ -7,6 +7,7 @@ enum KernelMissionConditionType {
   securityTowerBuilt,
   mealsPrepared,
   plaineMissionsCompleted,
+  requirementsMet,
 }
 
 class KernelConfig {
@@ -51,6 +52,16 @@ class KernelMissionConfig {
     required this.bioBatteryReward,
     required this.xpReward,
     required this.mailMessage,
+    this.requiredBuildingLevels = const <String, int>{},
+    this.requiredKernelTrustLevel = 1,
+    this.requiredBreederLevel = 1,
+    this.requiredBuilderLevel = 1,
+    this.requiredRestorerLevel = 1,
+    this.requestedItem,
+    this.requestedAmount = 0,
+    this.resourceRewards = const <String, int>{},
+    this.rewardPatternId,
+    this.weatherType,
   });
 
   final String id;
@@ -63,6 +74,16 @@ class KernelMissionConfig {
   final int bioBatteryReward;
   final int xpReward;
   final String mailMessage;
+  final Map<String, int> requiredBuildingLevels;
+  final int requiredKernelTrustLevel;
+  final int requiredBreederLevel;
+  final int requiredBuilderLevel;
+  final int requiredRestorerLevel;
+  final String? requestedItem;
+  final int requestedAmount;
+  final Map<String, int> resourceRewards;
+  final String? rewardPatternId;
+  final String? weatherType;
 }
 
 class KernelMissionProgress {

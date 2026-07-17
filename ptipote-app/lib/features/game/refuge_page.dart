@@ -513,6 +513,7 @@ class KernelPage extends StatelessWidget {
             tabs: <Widget>[
               Tab(text: 'Mission principale'),
               Tab(text: 'Demandes'),
+              Tab(text: 'Météo'),
               Tab(text: 'Plans'),
               Tab(text: 'Progression'),
             ],
@@ -531,6 +532,14 @@ class KernelPage extends StatelessWidget {
                 missions: gameState.refugeRequests(
                   campHeartState.campHeartLevel,
                 ),
+                gameState: gameState,
+              ),
+              _KernelRequestsTab(
+                missions: gameState.weatherKernelMissions(
+                  campHeartState.campHeartLevel,
+                ),
+                gameState: gameState,
+                emptyMessage: 'Aucune mission météo annoncée par la Tour.',
               ),
               _KernelPlansTab(gameState: gameState),
               _KernelProgressTab(
@@ -569,7 +578,7 @@ class _KernelMainMissionTab extends StatelessWidget {
         if (mission != null) ...<Widget>[
           if (gameState.hasPendingStarterPTibugChoice)
             const SizedBox(height: 12),
-          _KernelMissionCard(mission: mission!),
+          _KernelMissionCard(mission: mission!, gameState: gameState),
         ],
       ],
     );
@@ -632,9 +641,15 @@ class _StarterPTibugChoiceCard extends StatelessWidget {
 }
 
 class _KernelRequestsTab extends StatelessWidget {
-  const _KernelRequestsTab({required this.missions});
+  const _KernelRequestsTab({
+    required this.missions,
+    required this.gameState,
+    this.emptyMessage = 'Aucune demande du refuge.',
+  });
 
   final List<KernelMissionProgress> missions;
+  final Zone0GameState gameState;
+  final String emptyMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -642,18 +657,20 @@ class _KernelRequestsTab extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       children: <Widget>[
         if (missions.isEmpty)
-          const _KernelEmptyState(message: 'Aucune demande du refuge.')
+          _KernelEmptyState(message: emptyMessage)
         else
-          ...missions.map((mission) => _KernelMissionCard(mission: mission)),
+          ...missions.map((mission) =>
+              _KernelMissionCard(mission: mission, gameState: gameState)),
       ],
     );
   }
 }
 
 class _KernelMissionCard extends StatelessWidget {
-  const _KernelMissionCard({required this.mission});
+  const _KernelMissionCard({required this.mission, required this.gameState});
 
   final KernelMissionProgress mission;
+  final Zone0GameState gameState;
 
   @override
   Widget build(BuildContext context) {
@@ -693,9 +710,29 @@ class _KernelMissionCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Récompense : +${config.populationReward} habitant(s)'
-              '${config.bioBatteryReward > 0 ? ', +${config.bioBatteryReward} bio-batterie(s)' : ''}',
+              '${config.bioBatteryReward > 0 ? ', +${config.bioBatteryReward} bio-batterie(s)' : ''}'
+              '${config.resourceRewards.isNotEmpty ? ', ${_formatRewards(config.resourceRewards)}' : ''}'
+              '${config.rewardPatternId != null ? ', Pattern ${config.rewardPatternId}' : ''}',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
+            if (mission.status == KernelMissionStatus.locked) ...<Widget>[
+              const SizedBox(height: 8),
+              const Text('Prérequis Kernel ou bâtiment non remplis.'),
+            ],
+            if (mission.status == KernelMissionStatus.active &&
+                config.requestedItem != null &&
+                config.requestedAmount > 0) ...<Widget>[
+              const SizedBox(height: 10),
+              FilledButton(
+                onPressed: () {
+                  final result = gameState.fulfillKernelMission(config.id);
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text(result.message)));
+                },
+                child: Text(
+                    'Remettre ${config.requestedAmount} ${config.requestedItem}'),
+              ),
+            ],
           ],
         ),
       ),
