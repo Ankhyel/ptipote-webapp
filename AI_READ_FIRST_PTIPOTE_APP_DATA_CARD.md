@@ -1276,3 +1276,12 @@ Pour formater Dart:
 - Le Dashboard Tour sépare `Tour de sécurité`, `Rondes, exploration et marchand` et les cartes d'`Intempéries`.
 - Une mission Kernel `weather` reste verrouillée jusqu'à l'alerte correspondante de la Tour. Sa remise consomme le produit demandé, marque l'alerte comme préparée et attribue la récompense de mission.
 - Le flux historique `fulfillWeatherPreparation` reste disponible dans l'onglet Météo de la Tour; ne pas le supprimer lors d'une évolution des missions météo.
+
+### Correctifs refuge : habitation, énergie et cartes V1
+
+- `ptipote-app/lib/features/game/refuge_page.dart` : les Logements ne sont plus dans la Maison. Le Cœur du Camp possède l'onglet `Habitation`, avec Population, Bien-être et Activité locale cliquables, puis le chantier de logement et le remerciement communautaire facultatif.
+- La Maison reste dédiée aux P'TIPOTES, aux alcôves et à sa propre amélioration. Le chantier `housing` reste inchangé côté sauvegarde : aucun logement existant n'est retiré ou reconstruit.
+- La Tour affiche une carte 3x3 stable : Camp en bas au centre, biomes autour. L'exploration d'un biome verrouillé exige désormais la moyenne de sécurité de ses voisins déjà déverrouillés, plutôt qu'une sécurité globale du camp. Les missions de surveillance sont limitées par périmètre : Camp et chaque biome possèdent leurs propres slots de niveau de Tour.
+- La Lisière possède un onglet `Récolte` et crée un onglet supplémentaire pour chaque biome déverrouillé. La Plaine expose la Nurserie P'TIBUG avec son chantier existant ; les autres emplacements conservent un placeholder de Plan Kernel.
+- Cuisine, Atelier et Recycleur affichent la même carte `Alimenter le Fablab`. Ouvrir une Bio-batterie ajoute l'énergie configurée. Un lancement manuel de Cuisine ou d'Atelier consomme 1 Énergie, mais une affectation P'TIPOTE ne la consomme pas. La Cuisine accepte les quantités 1, 5 et 10 comme l'Atelier.
+- Les compteurs de refuge et de Tour sont rafraîchis chaque seconde. Lorsqu'un P'TIPOTE atteint le repos maximal dans une alcôve, il en sort automatiquement afin de libérer la place.

@@ -109,7 +109,7 @@ class _RefugePageState extends State<RefugePage> {
     super.initState();
     _zone0State.addListener(_onZone0StateChanged);
     _missionResolutionTimer = Timer.periodic(
-      const Duration(seconds: 5),
+      const Duration(seconds: 1),
       (_) {
         _zone0State.resolveDueForageMissions();
         _zone0State.resolveDueTowerMissions();
@@ -176,7 +176,10 @@ class _RefugePageState extends State<RefugePage> {
         builder: (_) {
           if (building.name == 'Maison') return const _MaisonPage();
           if (building.name == 'Lisiere') {
-            return LisierePage(gameState: _zone0State);
+            return LisierePage(
+              gameState: _zone0State,
+              campHeartLevel: _campHeartState.campHeartLevel,
+            );
           }
           if (building.name == 'CampHeart') {
             return CampHeartPage(
@@ -1078,7 +1081,7 @@ class _MaisonPageState extends State<_MaisonPage>
       duration: const Duration(seconds: 1),
     )..repeat();
     _vitalityRecoveryTimer = Timer.periodic(
-      const Duration(seconds: 30),
+      const Duration(seconds: 1),
       (_) => _recoverVitalityStep(),
     );
     _loadAsset();
@@ -1368,7 +1371,6 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
   @override
   Widget build(BuildContext context) {
     final state = widget.gameState;
-    final finishedHousing = state.constructionProjects['housing'];
     return SafeArea(
       child: ListView(
         padding: EdgeInsets.fromLTRB(
@@ -1406,50 +1408,6 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
                 icon: const Icon(Icons.bedroom_parent_outlined),
                 label: const Text('Amelioration'),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Logements',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              Text(
-                'Population ${state.currentPopulation} · capacite ${state.housingCapacity} · sans logement ${state.unhousedPopulation}',
-              ),
-              if (state.housingWellbeingPenalty > 0)
-                Text(
-                  'Bien-etre : -${state.housingWellbeingPenalty} (logements)',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                onPressed: () => _openProject(
-                  targetId: 'housing',
-                  title: 'Construire un logement',
-                  description:
-                      'Un logement accueille trois habitants. Les materiaux sont poses avant le chantier.',
-                  footer: 'Capacite : +3 habitants a la fin des travaux.',
-                ),
-                icon: const Icon(Icons.home_work_outlined),
-                label: const Text('Construire un logement'),
-              ),
-              if (finishedHousing != null &&
-                  finishedHousing.completedAt != null &&
-                  state.communityConstructionThanks?.sourceProjectId !=
-                      finishedHousing.projectId) ...<Widget>[
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed: () {
-                    final result = state.thankResidentsForHousing(
-                      finishedHousing.projectId,
-                    );
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(SnackBar(content: Text(result.message)));
-                  },
-                  child: const Text('Remercier les habitants'),
-                ),
-              ],
             ],
           ),
         ],
@@ -3554,9 +3512,11 @@ class _SheetEmptyState extends StatelessWidget {
 }
 
 class LisierePage extends StatefulWidget {
-  const LisierePage({super.key, required this.gameState});
+  const LisierePage(
+      {super.key, required this.gameState, required this.campHeartLevel});
 
   final Zone0GameState gameState;
+  final int campHeartLevel;
 
   @override
   State<LisierePage> createState() => _LisierePageState();
@@ -3589,196 +3549,220 @@ class _LisierePageState extends State<LisierePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Lisière proche')),
-      body: SafeArea(
-        child: StreamBuilder<List<PtipoteFigurine>>(
-          stream: _figurineService.watchMyFigurines(),
-          builder: (context, snapshot) {
-            final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-            _selectedFigurineIds.removeWhere((id) {
-              return figurines.any(
-                (figurine) =>
-                    figurine.id == id &&
-                    (widget.gameState.isBusy(figurine) ||
-                        widget.gameState.vitalityFor(figurine) <
-                            ptipoteStatsConfig.minimumMissionVitality),
-              );
-            });
-            final selectedFigurines = figurines
-                .where((figurine) => _selectedFigurineIds.contains(figurine.id))
-                .toList();
-            final estimates = <PtipoteFigurine, ForageEstimate>{
-              for (final figurine in selectedFigurines)
-                figurine: _estimate(figurine),
-            };
-            final groupEstimate = estimates.isEmpty
-                ? null
-                : ForageGroupEstimate.fromEstimates(estimates.values);
-            final inventoryOverflow = groupEstimate == null
-                ? 0
-                : math.max(
-                    0,
-                    groupEstimate.totalRewards -
-                        widget.gameState
-                            .inventoryFreeCapacityFor(groupEstimate.rewards),
-                  );
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: <Widget>[
-                _ForageChoiceCard(
-                  title: 'Biome',
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: ForageBiome.values
-                        .where(widget.gameState.isBiomeUnlocked)
-                        .map((biome) {
-                      final config = lisiereForageConfig.biomes[biome]!;
-                      return ChoiceChip(
-                        label: Text(config.label),
-                        selected: _biome == biome,
-                        onSelected: (_) => setState(() => _biome = biome),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                _ForageChoiceCard(
-                  title: 'P’TIPOTE',
-                  child: figurines.isEmpty
-                      ? const Text('Aucun P’TIPOTE disponible.')
-                      : Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: figurines.map((figurine) {
-                            final vitality =
-                                widget.gameState.vitalityFor(figurine);
-                            final onMission =
-                                widget.gameState.isOnMission(figurine.id);
-                            final resting =
-                                widget.gameState.isResting(figurine);
-                            final busy = widget.gameState.isBusy(figurine);
-                            final tooTired = vitality <
-                                ptipoteStatsConfig.minimumMissionVitality;
-                            final suffix = onMission
-                                ? ' · mission'
-                                : resting
-                                    ? ' · repos'
-                                    : tooTired
-                                        ? ' · trop fatigué'
-                                        : '';
-                            return ChoiceChip(
-                              label: Text(
-                                '${figurine.displayName} · V$vitality$suffix',
-                              ),
-                              selected:
-                                  _selectedFigurineIds.contains(figurine.id),
-                              onSelected: busy || tooTired
-                                  ? null
-                                  : (_) => setState(() {
-                                        if (_selectedFigurineIds
-                                            .contains(figurine.id)) {
-                                          _selectedFigurineIds
-                                              .remove(figurine.id);
-                                        } else {
-                                          _selectedFigurineIds.add(figurine.id);
-                                        }
-                                      }),
-                            );
-                          }).toList(),
-                        ),
-                ),
-                _ForageChoiceCard(
-                  title: 'Durée',
-                  child: Wrap(
-                    spacing: 8,
-                    children: ForageDuration.values.map((duration) {
-                      final config = lisiereForageConfig.durations[duration]!;
-                      final real = config.realDuration(
-                        lisiereForageConfig.forageTimeScale,
-                      );
-                      return ChoiceChip(
-                        label: Text(
-                            '${config.label} (${real.inMinutes} min test)'),
-                        selected: _duration == duration,
-                        onSelected: (_) => setState(() => _duration = duration),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                _ForageChoiceCard(
-                  title: 'Intensité',
-                  child: Wrap(
-                    spacing: 8,
-                    children: ForageIntensity.values.map((intensity) {
-                      return ChoiceChip(
-                        label: Text(
-                            lisiereForageConfig.intensities[intensity]!.label),
-                        selected: _intensity == intensity,
-                        onSelected: (_) =>
-                            setState(() => _intensity = intensity),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                if (groupEstimate != null)
-                  _ForageEstimateCard(
-                    estimate: groupEstimate,
-                    selectedCount: selectedFigurines.length,
-                  ),
-                const SizedBox(height: 12),
-                if (inventoryOverflow > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      'Attention : les gains potentiels dépassent le stock disponible. Environ $inventoryOverflow ressource(s) seront perdues si rien n’est rangé.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                if (groupEstimate != null &&
-                    groupEstimate.restWarningLabels.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      groupEstimate.restWarningLabels.length == 1
-                          ? '${groupEstimate.restWarningLabels.first} risque de revenir très fatigué et ira directement se coucher.'
-                          : '${groupEstimate.restWarningLabels.join(', ')} risquent de revenir très fatigués et iront directement se coucher.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                FilledButton.icon(
-                  onPressed: groupEstimate?.canLaunch == true
-                      ? () => _launchMissions(estimates)
-                      : null,
-                  icon: const Icon(Icons.forest_outlined),
-                  label: Text(
-                    selectedFigurines.length <= 1
-                        ? 'Envoyer récolter'
-                        : 'Envoyer ${selectedFigurines.length} P’TIPOTES',
-                  ),
-                ),
-                if (groupEstimate != null && !groupEstimate.canLaunch)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Un ou plusieurs P’TIPOTES sont trop fatigués pour partir.',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                _ActiveMissionsCard(gameState: widget.gameState),
-              ],
-            );
-          },
+    final unlockedBiomes =
+        ForageBiome.values.where(widget.gameState.isBiomeUnlocked).toList();
+    return DefaultTabController(
+      length: 1 + unlockedBiomes.length,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Lisière proche'),
+          bottom: TabBar(
+            isScrollable: true,
+            tabs: <Widget>[
+              const Tab(text: 'Récolte'),
+              ...unlockedBiomes.map((biome) =>
+                  Tab(text: lisiereForageConfig.biomes[biome]!.label)),
+            ],
+          ),
         ),
+        body: TabBarView(children: <Widget>[
+          SafeArea(
+              child: StreamBuilder<List<PtipoteFigurine>>(
+            stream: _figurineService.watchMyFigurines(),
+            builder: (context, snapshot) {
+              final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+              _selectedFigurineIds.removeWhere((id) {
+                return figurines.any(
+                  (figurine) =>
+                      figurine.id == id &&
+                      (widget.gameState.isBusy(figurine) ||
+                          widget.gameState.vitalityFor(figurine) <
+                              ptipoteStatsConfig.minimumMissionVitality),
+                );
+              });
+              final selectedFigurines = figurines
+                  .where(
+                      (figurine) => _selectedFigurineIds.contains(figurine.id))
+                  .toList();
+              final estimates = <PtipoteFigurine, ForageEstimate>{
+                for (final figurine in selectedFigurines)
+                  figurine: _estimate(figurine),
+              };
+              final groupEstimate = estimates.isEmpty
+                  ? null
+                  : ForageGroupEstimate.fromEstimates(estimates.values);
+              final inventoryOverflow = groupEstimate == null
+                  ? 0
+                  : math.max(
+                      0,
+                      groupEstimate.totalRewards -
+                          widget.gameState
+                              .inventoryFreeCapacityFor(groupEstimate.rewards),
+                    );
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  _ForageChoiceCard(
+                    title: 'Biome',
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: ForageBiome.values
+                          .where(widget.gameState.isBiomeUnlocked)
+                          .map((biome) {
+                        final config = lisiereForageConfig.biomes[biome]!;
+                        return ChoiceChip(
+                          label: Text(config.label),
+                          selected: _biome == biome,
+                          onSelected: (_) => setState(() => _biome = biome),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  _ForageChoiceCard(
+                    title: 'P’TIPOTE',
+                    child: figurines.isEmpty
+                        ? const Text('Aucun P’TIPOTE disponible.')
+                        : Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: figurines.map((figurine) {
+                              final vitality =
+                                  widget.gameState.vitalityFor(figurine);
+                              final onMission =
+                                  widget.gameState.isOnMission(figurine.id);
+                              final resting =
+                                  widget.gameState.isResting(figurine);
+                              final busy = widget.gameState.isBusy(figurine);
+                              final tooTired = vitality <
+                                  ptipoteStatsConfig.minimumMissionVitality;
+                              final suffix = onMission
+                                  ? ' · mission'
+                                  : resting
+                                      ? ' · repos'
+                                      : tooTired
+                                          ? ' · trop fatigué'
+                                          : '';
+                              return ChoiceChip(
+                                label: Text(
+                                  '${figurine.displayName} · V$vitality$suffix',
+                                ),
+                                selected:
+                                    _selectedFigurineIds.contains(figurine.id),
+                                onSelected: busy || tooTired
+                                    ? null
+                                    : (_) => setState(() {
+                                          if (_selectedFigurineIds
+                                              .contains(figurine.id)) {
+                                            _selectedFigurineIds
+                                                .remove(figurine.id);
+                                          } else {
+                                            _selectedFigurineIds
+                                                .add(figurine.id);
+                                          }
+                                        }),
+                              );
+                            }).toList(),
+                          ),
+                  ),
+                  _ForageChoiceCard(
+                    title: 'Durée',
+                    child: Wrap(
+                      spacing: 8,
+                      children: ForageDuration.values.map((duration) {
+                        final config = lisiereForageConfig.durations[duration]!;
+                        final real = config.realDuration(
+                          lisiereForageConfig.forageTimeScale,
+                        );
+                        return ChoiceChip(
+                          label: Text(
+                              '${config.label} (${real.inMinutes} min test)'),
+                          selected: _duration == duration,
+                          onSelected: (_) =>
+                              setState(() => _duration = duration),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  _ForageChoiceCard(
+                    title: 'Intensité',
+                    child: Wrap(
+                      spacing: 8,
+                      children: ForageIntensity.values.map((intensity) {
+                        return ChoiceChip(
+                          label: Text(lisiereForageConfig
+                              .intensities[intensity]!.label),
+                          selected: _intensity == intensity,
+                          onSelected: (_) =>
+                              setState(() => _intensity = intensity),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  if (groupEstimate != null)
+                    _ForageEstimateCard(
+                      estimate: groupEstimate,
+                      selectedCount: selectedFigurines.length,
+                    ),
+                  const SizedBox(height: 12),
+                  if (inventoryOverflow > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        'Attention : les gains potentiels dépassent le stock disponible. Environ $inventoryOverflow ressource(s) seront perdues si rien n’est rangé.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  if (groupEstimate != null &&
+                      groupEstimate.restWarningLabels.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        groupEstimate.restWarningLabels.length == 1
+                            ? '${groupEstimate.restWarningLabels.first} risque de revenir très fatigué et ira directement se coucher.'
+                            : '${groupEstimate.restWarningLabels.join(', ')} risquent de revenir très fatigués et iront directement se coucher.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  FilledButton.icon(
+                    onPressed: groupEstimate?.canLaunch == true
+                        ? () => _launchMissions(estimates)
+                        : null,
+                    icon: const Icon(Icons.forest_outlined),
+                    label: Text(
+                      selectedFigurines.length <= 1
+                          ? 'Envoyer récolter'
+                          : 'Envoyer ${selectedFigurines.length} P’TIPOTES',
+                    ),
+                  ),
+                  if (groupEstimate != null && !groupEstimate.canLaunch)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Un ou plusieurs P’TIPOTES sont trop fatigués pour partir.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  _ActiveMissionsCard(gameState: widget.gameState),
+                ],
+              );
+            },
+          )),
+          ...unlockedBiomes.map((biome) => _BiomeBuildingsTab(
+                gameState: widget.gameState,
+                biome: biome,
+                campHeartLevel: widget.campHeartLevel,
+              )),
+        ]),
       ),
     );
   }
@@ -4101,6 +4085,84 @@ class ForageGroupEstimate {
   }
 }
 
+class _BiomeBuildingsTab extends StatelessWidget {
+  const _BiomeBuildingsTab(
+      {required this.gameState,
+      required this.biome,
+      required this.campHeartLevel});
+  final Zone0GameState gameState;
+  final ForageBiome biome;
+  final int campHeartLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = lisiereForageConfig.biomes[biome]!.label;
+    if (biome != ForageBiome.plaineRiche) {
+      return Center(
+          child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+            'Les bâtiments de $label seront révélés avec les prochains Plans du Kernel.',
+            textAlign: TextAlign.center),
+      ));
+    }
+    final built = gameState.plaineNurseryLevel > 0;
+    return SafeArea(
+      child: ListView(padding: const EdgeInsets.all(18), children: <Widget>[
+        Text(label,
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 10),
+        Card(
+            child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const Text('Nurserie P’TIBUG',
+                    style: TextStyle(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 6),
+                Text(built
+                    ? 'Construite · niveau ${gameState.plaineNurseryLevel}'
+                    : 'La végétalisation de la Plaine doit être stabilisée avant de développer la nurserie.'),
+                const SizedBox(height: 10),
+                if (!built)
+                  FilledButton.icon(
+                    onPressed: () => showModalBottomSheet<void>(
+                      context: context,
+                      showDragHandle: true,
+                      isScrollControlled: true,
+                      builder: (_) => _ConstructionProjectSheet(
+                        gameState: gameState,
+                        targetId: 'plaineNursery',
+                        title: 'Construire la Nurserie P’TIBUG',
+                        description:
+                            'La Nurserie a besoin d’une Plaine végétalisée et de matériaux réservés.',
+                        footer:
+                            'Les prérequis et ressources du chantier sont affichés ici.',
+                      ),
+                    ),
+                    icon: const Icon(Icons.pets_outlined),
+                    label: const Text('Voir les prérequis'),
+                  )
+                else
+                  OutlinedButton(
+                    onPressed: () =>
+                        Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => PTibugNurseryPage(
+                          gameState: gameState, campHeartLevel: campHeartLevel),
+                    )),
+                    child: const Text('Ouvrir la Nurserie'),
+                  ),
+              ]),
+        )),
+      ]),
+    );
+  }
+}
+
 class _ForageChoiceCard extends StatelessWidget {
   const _ForageChoiceCard({required this.title, required this.child});
 
@@ -4388,6 +4450,165 @@ class CampHeartPage extends StatefulWidget {
   State<CampHeartPage> createState() => _CampHeartPageState();
 }
 
+class _CampHousingTab extends StatelessWidget {
+  const _CampHousingTab({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  void _showStatInfo(BuildContext context, String title, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final project = gameState.constructionProjects['housing'];
+    final activity = math.max(0, gameState.currentPopulation * 10);
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(18),
+        children: <Widget>[
+          Text('Habitation',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          const Text(
+              'Le Cœur organise la communauté. Touchez une statistique pour comprendre son rôle.'),
+          const SizedBox(height: 14),
+          _HabitationStatCard(
+            icon: Icons.groups_outlined,
+            title: 'Population',
+            value:
+                '${gameState.currentPopulation} / ${gameState.housingCapacity}',
+            onTap: () => _showStatInfo(context, 'Population',
+                'Les habitants arrivent grâce aux missions du Kernel. Le Cœur fixe la capacité générale du refuge.'),
+          ),
+          _HabitationStatCard(
+            icon: Icons.sentiment_satisfied_alt_outlined,
+            title: 'Bien-être',
+            value: '${gameState.campWellbeing}%',
+            subtitle: gameState.housingWellbeingPenalty > 0
+                ? 'Logements : -${gameState.housingWellbeingPenalty}'
+                : 'Aucun malus de logement',
+            onTap: () => _showStatInfo(context, 'Bien-être',
+                'Le bien-être reflète la stabilité du refuge. Les habitants sans logement appliquent un malus jusqu’à la fin d’un chantier de logement.'),
+          ),
+          _HabitationStatCard(
+            icon: Icons.hub_outlined,
+            title: 'Activité locale',
+            value: '$activity%',
+            subtitle: 'Préparée pour le Marché',
+            onTap: () => _showStatInfo(context, 'Activité locale',
+                'Cette valeur agrégée représentera plus tard la vitalité du refuge et les opportunités du Marché.'),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Text('Logements',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  Text(
+                      '${gameState.housingUnits} unité(s) · ${gameState.unhousedPopulation} habitant(s) sans logement'),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: () => showModalBottomSheet<void>(
+                      context: context,
+                      showDragHandle: true,
+                      isScrollControlled: true,
+                      builder: (_) => _ConstructionProjectSheet(
+                        gameState: gameState,
+                        targetId: 'housing',
+                        title: 'Construire un logement',
+                        description:
+                            'Un logement accueille trois habitants. Les matériaux sont posés avant le chantier.',
+                        footer: 'Capacité : +3 habitants à la fin des travaux.',
+                      ),
+                    ),
+                    icon: const Icon(Icons.home_work_outlined),
+                    label: const Text('Construire un logement'),
+                  ),
+                  if (project != null &&
+                      project.completedAt != null &&
+                      gameState.communityConstructionThanks?.sourceProjectId !=
+                          project.projectId) ...<Widget>[
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: () {
+                        final result = gameState
+                            .thankResidentsForHousing(project.projectId);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)));
+                      },
+                      child: const Text('Remercier les habitants'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HabitationStatCard extends StatelessWidget {
+  const _HabitationStatCard(
+      {required this.icon,
+      required this.title,
+      required this.value,
+      required this.onTap,
+      this.subtitle});
+  final IconData icon;
+  final String title;
+  final String value;
+  final String? subtitle;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => Card(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(children: <Widget>[
+              Icon(icon),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                    Text(title,
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                    if (subtitle != null) Text(subtitle!),
+                  ])),
+              Text(value, style: const TextStyle(fontWeight: FontWeight.w900)),
+            ]),
+          ),
+        ),
+      );
+}
+
 class _CampHeartPageState extends State<CampHeartPage> {
   @override
   void initState() {
@@ -4419,7 +4640,7 @@ class _CampHeartPageState extends State<CampHeartPage> {
     final stage = state.currentStage;
     final nextStage = state.nextStage;
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Cœur du Camp'),
@@ -4427,6 +4648,7 @@ class _CampHeartPageState extends State<CampHeartPage> {
             tabs: <Widget>[
               Tab(text: 'Végétalisation', icon: Icon(Icons.eco_outlined)),
               Tab(text: 'Générateur', icon: Icon(Icons.battery_charging_full)),
+              Tab(text: 'Habitation', icon: Icon(Icons.home_work_outlined)),
             ],
           ),
         ),
@@ -4472,6 +4694,7 @@ class _CampHeartPageState extends State<CampHeartPage> {
                 gameState: widget.gameState,
                 heartLevel: state.campHeartLevel,
               ),
+              _CampHousingTab(gameState: widget.gameState),
             ],
           ),
         ),
@@ -5262,15 +5485,15 @@ class _TowerExplorationTab extends StatelessWidget {
                   gameState.vitalityFor(item) >=
                       ptipoteStatsConfig.minimumMissionVitality)
               .toList();
-          final revealed = gameState.refugeSafety >=
-              towerOperationsConfig.biomeRevealSecurityThreshold;
           return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
             Card(
                 child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                        'Camp au centre. Les balises révèlent les biomes à ${towerOperationsConfig.biomeRevealSecurityThreshold}% de Sécurité. Sécurité actuelle : ${gameState.refugeSafety}%'))),
+                        'Carte des abords. Chaque exploration demande ${towerOperationsConfig.biomeRevealSecurityThreshold}% de sécurité moyenne sur les biomes adjacents.'))),
             const SizedBox(height: 10),
+            _ExplorationMap3x3(gameState: gameState),
+            const SizedBox(height: 12),
             Wrap(
                 spacing: 10,
                 runSpacing: 10,
@@ -5279,7 +5502,10 @@ class _TowerExplorationTab extends StatelessWidget {
                   final label = lisiereForageConfig.biomes[biome]!.label;
                   final unlocked = gameState.isBiomeUnlocked(biome);
                   final exploring = gameState.isBiomeExploring(biome);
-                  final enabled = revealed &&
+                  final adjacentSecurity =
+                      gameState.adjacentBiomeSecurityFor(biome);
+                  final enabled = adjacentSecurity >=
+                          towerOperationsConfig.biomeRevealSecurityThreshold &&
                       !unlocked &&
                       !exploring &&
                       available.isNotEmpty;
@@ -5302,9 +5528,14 @@ class _TowerExplorationTab extends StatelessWidget {
                                       ? 'Disponible en Lisière'
                                       : exploring
                                           ? 'Exploration en cours'
-                                          : revealed
+                                          : adjacentSecurity >=
+                                                  towerOperationsConfig
+                                                      .biomeRevealSecurityThreshold
                                               ? 'À explorer'
-                                              : 'Balises insuffisantes'),
+                                              : 'Sécurité voisine insuffisante'),
+                                  if (!unlocked)
+                                    Text(
+                                        'Sécurité voisine : $adjacentSecurity% / ${towerOperationsConfig.biomeRevealSecurityThreshold}%'),
                                   Text(
                                       'Danger potentiel : ${lisiereForageConfig.biomes[biome]!.baseRiskPercent}%'),
                                   if (!unlocked) ...<Widget>[
@@ -5407,6 +5638,93 @@ class _TowerExplorationTab extends StatelessWidget {
           ]);
         },
       ));
+}
+
+class _ExplorationMap3x3 extends StatelessWidget {
+  const _ExplorationMap3x3({required this.gameState});
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    // Topology is deliberately stable: the Camp stays at the bottom centre.
+    const cells = <ForageBiome?>[
+      ForageBiome.colline,
+      null,
+      ForageBiome.bassinMineral,
+      null,
+      ForageBiome.plaineRiche,
+      ForageBiome.sousBois,
+      null,
+      null,
+      null,
+    ];
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 1.2,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
+      ),
+      itemCount: 9,
+      itemBuilder: (context, index) {
+        if (index == 7) {
+          return const _ExplorationMapCell(
+              label: 'Camp', icon: Icons.home_outlined, active: true);
+        }
+        final biome = cells[index];
+        if (biome == null) return const SizedBox.shrink();
+        final state = gameState.biomeSecurity[biome]!;
+        return _ExplorationMapCell(
+          label: lisiereForageConfig.biomes[biome]!.label,
+          icon: gameState.isBiomeUnlocked(biome)
+              ? Icons.travel_explore
+              : Icons.lock_outline,
+          active: gameState.isBiomeUnlocked(biome),
+          progress: state.explorationProgress,
+        );
+      },
+    );
+  }
+}
+
+class _ExplorationMapCell extends StatelessWidget {
+  const _ExplorationMapCell(
+      {required this.label,
+      required this.icon,
+      required this.active,
+      this.progress});
+  final String label;
+  final IconData icon;
+  final bool active;
+  final int? progress;
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: active
+              ? Theme.of(context).colorScheme.primaryContainer
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(icon, size: 18),
+                const SizedBox(height: 3),
+                Text(label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w800)),
+                if (progress != null && progress! > 0)
+                  Text('$progress%', style: const TextStyle(fontSize: 10)),
+              ]),
+        ),
+      );
 }
 
 class _TowerWeatherTab extends StatelessWidget {
@@ -7062,6 +7380,42 @@ class _FablabUnitUpgradeCard extends StatelessWidget {
   }
 }
 
+class _FablabEnergyCard extends StatelessWidget {
+  const _FablabEnergyCard({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const Text('Alimenter le Fablab',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text(
+                  '⚡ ${gameState.energyUnits} énergie · ${gameState.bioBatteries} bio-batterie(s)'),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: gameState.bioBatteries <= 0
+                    ? null
+                    : () {
+                        final result = gameState.openBioBattery();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)));
+                      },
+                icon: const Icon(Icons.bolt_outlined),
+                label: Text(
+                    'Ouvrir 1 bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)'),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
 class FablabRecyclerView extends StatelessWidget {
   const FablabRecyclerView({
     super.key,
@@ -7088,52 +7442,24 @@ class FablabRecyclerView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
+        _FablabEnergyCard(gameState: gameState),
+        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Row(children: <Widget>[
-                    Expanded(
-                      child: Text('Recycleur niveau ${gameState.recyclerLevel}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w900)),
-                    ),
-                    IconButton(
-                      tooltip: 'Améliorer le Recycleur',
-                      onPressed: gameState.recyclerLevel == 0
-                          ? null
-                          : () => _showFablabUnitProject(
-                                context,
-                                gameState: gameState,
-                                targetId: 'recycler',
-                                title: 'Améliorer le Recycleur',
-                                description:
-                                    'Réduit les déchets requis et raccourcit les cycles.',
-                              ),
-                      icon: const Icon(Icons.upgrade_outlined),
-                    ),
-                  ]),
+                  Text('Recycleur niveau ${gameState.recyclerLevel}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 8),
                   Text(
                       '$needed Déchets → ${wasteRecyclerConfig.outputResourcesPerCycle} ressources'),
                   Text(
                       '${wasteRecyclerConfig.cycleMinutes(gameState.recyclerLevel)} min par cycle · ${wasteRecyclerConfig.energyCostPerCycle} Énergie'),
-                  Text(
-                      'Énergie : ${gameState.energyUnits} · Bio-batteries : ${gameState.bioBatteries}'),
-                  if (gameState.bioBatteries > 0)
-                    TextButton.icon(
-                      onPressed: () {
-                        final result = gameState.openBioBattery();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(result.message)));
-                      },
-                      icon: const Icon(Icons.bolt_outlined),
-                      label: const Text('Ouvrir 1 Bio-batterie (+10 Énergie)'),
-                    ),
                 ]),
           ),
         ),
@@ -7274,6 +7600,8 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
+            _FablabEnergyCard(gameState: widget.gameState),
+            const SizedBox(height: 12),
             Text('Atelier',
                 style: Theme.of(context)
                     .textTheme
@@ -7283,21 +7611,6 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
               'Atelier niv. ${widget.gameState.atelierLevel} · '
               '${widget.gameState.activePtipoteWorkshopOrders}/${widget.gameState.workshopSlots} emplacement(s) P’TIPOTE · '
               '${widget.gameState.activeManualWorkshopOrders}/1 créneau manuel. Chaque niveau ajoute un emplacement P’TIPOTE.',
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => _showFablabUnitProject(
-                  context,
-                  gameState: widget.gameState,
-                  targetId: 'atelier',
-                  title: 'Améliorer l’Atelier',
-                  description:
-                      'Augmente le stock global et les emplacements de craft P’TIPOTE.',
-                ),
-                icon: const Icon(Icons.upgrade_outlined),
-                label: const Text('Amélioration'),
-              ),
             ),
             const SizedBox(height: 12),
             ...orders.map((order) => Card(
@@ -7364,11 +7677,19 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                                     .join(' + ')),
                                 FilledButton(
                                     onPressed: widget.gameState
-                                                .activeManualWorkshopOrders <
-                                            1
+                                                    .activeManualWorkshopOrders <
+                                                1 &&
+                                            widget.gameState.energyUnits >= 1
                                         ? () => _start(recipe, null)
                                         : null,
-                                    child: const Text('Lancer manuellement')),
+                                    child: const Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        Text('Lancer manuellement'),
+                                        Text('utilise 1 unité d’énergie',
+                                            style: TextStyle(fontSize: 11)),
+                                      ],
+                                    )),
                                 OutlinedButton.icon(
                                   onPressed: widget.gameState
                                               .activePtipoteWorkshopOrders <
@@ -7425,6 +7746,7 @@ class FablabCuisineView extends StatefulWidget {
 class _FablabCuisineViewState extends State<FablabCuisineView> {
   final FigurineService _figurineService = FigurineService();
   String? _lastResult;
+  int _quantity = 1;
 
   @override
   void initState() {
@@ -7451,29 +7773,27 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
         final figurines = snapshot.data ?? const <PtipoteFigurine>[];
         final orders = widget.gameState.activeKitchenOrders;
         return ListView(padding: const EdgeInsets.all(18), children: <Widget>[
+          _FablabEnergyCard(gameState: widget.gameState),
+          const SizedBox(height: 12),
           Text('Cuisine niveau ${widget.gameState.cuisineLevel}',
               style: Theme.of(context)
                   .textTheme
                   .titleLarge
                   ?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 6),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => _showFablabUnitProject(
-                context,
-                gameState: widget.gameState,
-                targetId: 'cuisine',
-                title: 'Améliorer la Cuisine',
-                description:
-                    'Augmente les emplacements de préparation et prépare les recettes futures.',
-              ),
-              icon: const Icon(Icons.upgrade_outlined),
-              label: const Text('Amélioration'),
-            ),
-          ),
           Text(
             'Eau disponible gratuitement. ${widget.gameState.activePtipoteKitchenOrders}/${widget.gameState.kitchenSlots} emplacement(s) P’TIPOTE · ${widget.gameState.activeManualKitchenOrders}/1 créneau manuel.',
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            children: <int>[1, 5, 10]
+                .map((quantity) => ChoiceChip(
+                      label: Text('x$quantity'),
+                      selected: _quantity == quantity,
+                      onSelected: (_) => setState(() => _quantity = quantity),
+                    ))
+                .toList(),
           ),
           const SizedBox(height: 12),
           ...orders.map((order) => Card(
@@ -7497,13 +7817,15 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
               .map((recipe) => _CuisineRecipeCard(
                     recipe: recipe,
                     gameState: widget.gameState,
-                    canPrepare:
-                        widget.gameState.hasResources(recipe.ingredients) &&
-                            widget.gameState.hasInventoryCapacityFor(
-                              <String, int>{
-                                recipe.resultItem: recipe.resultAmount
-                              },
-                            ),
+                    quantity: _quantity,
+                    canPrepare: widget.gameState.hasResources(recipe.ingredients
+                            .map((key, value) =>
+                                MapEntry(key, value * _quantity))) &&
+                        widget.gameState.hasInventoryCapacityFor(
+                          <String, int>{
+                            recipe.resultItem: recipe.resultAmount * _quantity
+                          },
+                        ),
                     manualAvailable:
                         widget.gameState.activeManualKitchenOrders < 1,
                     ptipoteAvailable:
@@ -7536,6 +7858,7 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
   void _start(CraftRecipe recipe, PtipoteFigurine? figurine) {
     final result = widget.gameState.startKitchenOrder(
       recipe: recipe,
+      quantity: _quantity,
       figurine: figurine,
     );
     setState(() => _lastResult = result.message);
@@ -7546,6 +7869,7 @@ class _CuisineRecipeCard extends StatelessWidget {
   const _CuisineRecipeCard({
     required this.recipe,
     required this.gameState,
+    required this.quantity,
     required this.canPrepare,
     required this.manualAvailable,
     required this.ptipoteAvailable,
@@ -7555,6 +7879,7 @@ class _CuisineRecipeCard extends StatelessWidget {
 
   final CraftRecipe recipe;
   final Zone0GameState gameState;
+  final int quantity;
   final bool canPrepare;
   final bool manualAvailable;
   final bool ptipoteAvailable;
@@ -7563,13 +7888,16 @@ class _CuisineRecipeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final output = <String, int>{recipe.resultItem: recipe.resultAmount};
-    final missingLabel = !gameState.hasResources(recipe.ingredients)
-        ? gameState.missingResourcesLabel(recipe.ingredients)
+    final costs =
+        recipe.ingredients.map((key, value) => MapEntry(key, value * quantity));
+    final output = <String, int>{
+      recipe.resultItem: recipe.resultAmount * quantity
+    };
+    final missingLabel = !gameState.hasResources(costs)
+        ? gameState.missingResourcesLabel(costs)
         : 'Inventaire plein : impossible de ranger ${recipe.resultItem}.';
-    final ingredientText = recipe.ingredients.entries
-        .map((entry) => '${entry.value} ${entry.key}')
-        .join(' + ');
+    final ingredientText =
+        costs.entries.map((entry) => '${entry.value} ${entry.key}').join(' + ');
     final contextText = recipe.contextIngredients.entries
         .map((entry) => '${entry.value} ${entry.key}')
         .join(' + ');
@@ -7604,7 +7932,8 @@ class _CuisineRecipeCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Text('Résultat : ${recipe.resultAmount} ${recipe.resultItem}'),
+            Text(
+                'Résultat : ${recipe.resultAmount * quantity} ${recipe.resultItem}'),
             Text(
               'Type : ${recipe.foodType.name} · faim +${recipe.hungerRestore} · vitalité +${recipe.vitalityRestore}',
             ),
@@ -7623,13 +7952,23 @@ class _CuisineRecipeCard extends StatelessWidget {
             ],
             const SizedBox(height: 14),
             FilledButton.icon(
-              onPressed: canPrepare && manualAvailable ? onPrepare : null,
+              onPressed:
+                  canPrepare && manualAvailable && gameState.energyUnits >= 1
+                      ? onPrepare
+                      : null,
               icon: Icon(
                 recipe.foodType == FoodType.drink
                     ? Icons.local_drink_outlined
                     : Icons.restaurant_outlined,
               ),
-              label: const Text('Lancer manuellement'),
+              label: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text('Lancer manuellement'),
+                  Text('utilise 1 unité d’énergie',
+                      style: TextStyle(fontSize: 11)),
+                ],
+              ),
             ),
             OutlinedButton.icon(
               onPressed: canPrepare && ptipoteAvailable ? onAssign : null,

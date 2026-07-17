@@ -199,6 +199,38 @@ class Zone0GameState extends ChangeNotifier {
   bool isBiomeExploring(ForageBiome biome) => explorationMissions
       .any((mission) => mission.biome == biome && mission.isActive);
 
+  /// The exploration map expands from already discovered neighbouring biomes.
+  /// Locked biomes never dilute the average before the player can reach them.
+  List<ForageBiome> adjacentBiomesFor(ForageBiome biome) => switch (biome) {
+        ForageBiome.plaineRiche => <ForageBiome>[
+            ForageBiome.colline,
+            ForageBiome.sousBois,
+          ],
+        ForageBiome.colline => <ForageBiome>[
+            ForageBiome.plaineRiche,
+            ForageBiome.bassinMineral,
+          ],
+        ForageBiome.sousBois => <ForageBiome>[
+            ForageBiome.plaineRiche,
+            ForageBiome.bassinMineral,
+          ],
+        ForageBiome.bassinMineral => <ForageBiome>[
+            ForageBiome.colline,
+            ForageBiome.sousBois,
+          ],
+      };
+
+  int adjacentBiomeSecurityFor(ForageBiome biome) {
+    final neighbours = adjacentBiomesFor(biome)
+        .where(isBiomeUnlocked)
+        .map((item) => biomeSecurity[item]?.localSecurity ?? 0)
+        .toList();
+    if (neighbours.isEmpty) return 0;
+    return (neighbours.reduce((left, right) => left + right) /
+            neighbours.length)
+        .round();
+  }
+
   bool isAssignedToTower(String figurineId) {
     return towerAssignedIds.contains(figurineId) ||
         towerMissions.any(
@@ -828,6 +860,12 @@ class Zone0GameState extends ChangeNotifier {
           success: false,
           message: 'Le créneau manuel de l’Atelier est occupé.');
     }
+    if (figurine == null && energyUnits < 1) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Il faut 1 unité d’énergie pour lancer un craft manuel.',
+      );
+    }
     if (figurine != null && activePtipoteWorkshopOrders >= workshopSlots) {
       return const Zone0ActionResult(
           success: false,
@@ -855,6 +893,9 @@ class Zone0GameState extends ChangeNotifier {
     if (!removeResources(totalCosts)) {
       return const Zone0ActionResult(
           success: false, message: 'Ressources indisponibles.');
+    }
+    if (figurine == null) {
+      energyUnits -= 1;
     }
     final speedBonus = craftSpeedBonus(figurine, atelierLevel);
     final unitSeconds = math.max(
@@ -884,6 +925,7 @@ class Zone0GameState extends ChangeNotifier {
 
   Zone0ActionResult startKitchenOrder({
     required CraftRecipe recipe,
+    required int quantity,
     PtipoteFigurine? figurine,
   }) {
     resolveWorkshopOrder();
@@ -907,6 +949,13 @@ class Zone0GameState extends ChangeNotifier {
           success: false,
           message: 'Le créneau manuel de la Cuisine est occupé.');
     }
+    if (figurine == null && energyUnits < 1) {
+      return const Zone0ActionResult(
+        success: false,
+        message:
+            'Il faut 1 unité d’énergie pour lancer une préparation manuelle.',
+      );
+    }
     if (figurine != null && activePtipoteKitchenOrders >= kitchenSlots) {
       return const Zone0ActionResult(
           success: false,
@@ -916,18 +965,29 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'P’TIPOTE occupé.');
     }
-    final output = <String, int>{recipe.resultItem: recipe.resultAmount};
-    if (!hasResources(recipe.ingredients)) {
+    if (quantity <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Quantité invalide.');
+    }
+    final totalCosts =
+        recipe.ingredients.map((key, value) => MapEntry(key, value * quantity));
+    final output = <String, int>{
+      recipe.resultItem: recipe.resultAmount * quantity
+    };
+    if (!hasResources(totalCosts)) {
       return Zone0ActionResult(
-          success: false, message: missingResourcesLabel(recipe.ingredients));
+          success: false, message: missingResourcesLabel(totalCosts));
     }
     if (!hasInventoryCapacityFor(output)) {
       return const Zone0ActionResult(
           success: false, message: 'Inventaire insuffisant pour la commande.');
     }
-    if (!removeResources(recipe.ingredients)) {
+    if (!removeResources(totalCosts)) {
       return const Zone0ActionResult(
           success: false, message: 'Ressources indisponibles.');
+    }
+    if (figurine == null) {
+      energyUnits -= 1;
     }
     final speedBonus = craftSpeedBonus(figurine, cuisineLevel);
     final unitSeconds = math.max(
@@ -940,14 +1000,14 @@ class Zone0GameState extends ChangeNotifier {
       id: 'kitchen-${now.microsecondsSinceEpoch}',
       area: WorkshopOrderArea.kitchen,
       recipeId: recipe.id,
-      requestedQuantity: 1,
+      requestedQuantity: quantity,
       completedQuantity: 0,
       assignedPtipoteId: figurine?.id,
       assignedPtipoteName: figurine?.displayName,
       startTime: now,
       nextCompletionTime: now.add(Duration(seconds: unitSeconds)),
       unitDurationSeconds: unitSeconds,
-      reservedResources: recipe.ingredients,
+      reservedResources: totalCosts,
     ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -1606,6 +1666,12 @@ class Zone0GameState extends ChangeNotifier {
             math.min(ptipoteStatsConfig.maxRest, currentRest + restGain);
         if (nextRest != currentRest) {
           restOverrides[figurine.id] = nextRest;
+          changed = true;
+        }
+        // A full rest frees the alcove so another tired P'TIPOTE can use it.
+        if (nextRest >= ptipoteStatsConfig.maxRest) {
+          manualRestingIds.remove(figurine.id);
+          waitingForBedIds.remove(figurine.id);
           changed = true;
         }
       } else if (tick % restLossTick == 0 && currentRest > 0) {
@@ -2767,8 +2833,11 @@ class Zone0GameState extends ChangeNotifier {
           success: false, message: 'Tour non construite.');
     }
     resolveDueTowerMissions();
+    // Each secured biome, plus the camp, owns its own surveillance slot.
     final activeCount = towerMissions
-        .where((mission) => mission.status == TowerMissionStatus.active)
+        .where((mission) =>
+            mission.status == TowerMissionStatus.active &&
+            mission.patrolBiome == patrolBiome)
         .length;
     if (activeCount >= securityTowerSlots) {
       return const Zone0ActionResult(
@@ -3461,11 +3530,12 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'La Tour est nécessaire pour explorer.');
     }
-    if (refugeSafety < towerOperationsConfig.biomeRevealSecurityThreshold) {
+    final adjacentSecurity = adjacentBiomeSecurityFor(biome);
+    if (adjacentSecurity < towerOperationsConfig.biomeRevealSecurityThreshold) {
       return Zone0ActionResult(
           success: false,
           message:
-              'La Sécurité doit atteindre ${towerOperationsConfig.biomeRevealSecurityThreshold}% pour révéler les environs.');
+              'La sécurité moyenne des biomes adjacents doit atteindre ${towerOperationsConfig.biomeRevealSecurityThreshold}%.');
     }
     final state = biomeSecurity[biome]!;
     if (state.status == BiomeDiscoveryStatus.unlocked) {
