@@ -504,7 +504,7 @@ class KernelPage extends StatelessWidget {
       campHeartLevel: campHeartState.campHeartLevel,
     );
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Kernel'),
@@ -6349,12 +6349,14 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
               Tab(text: 'Aperçu'),
               Tab(text: 'Créer'),
               Tab(text: 'Collection'),
+              Tab(text: 'Données'),
               Tab(text: 'Amélioration')
             ])),
         body: TabBarView(children: <Widget>[
           _overview(),
           _creation(),
           _collection(),
+          _dataAndModules(),
           _BuildingUpgradeTab(
               gameState: widget.gameState,
               targetId: 'plaineNursery',
@@ -6454,58 +6456,323 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
 
   Widget _collection() =>
       ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+        const Text('Collection', style: TextStyle(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 4),
+        const Text('Tape un P’TIBUG pour consulter et ajuster son équipement.'),
+        const SizedBox(height: 10),
         if (widget.gameState.pTibugs.isEmpty)
-          const Text('Aucun P’TIBUG créé pour le moment.'),
+          const Padding(
+            padding: EdgeInsets.only(top: 16),
+            child: Text('Aucun P’TIBUG créé pour le moment.'),
+          ),
         ...widget.gameState.pTibugs.map((bug) => Card(
-            child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _showPTibugLoadout(bug),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
+                      Row(children: <Widget>[
+                        CircleAvatar(
+                          child: Icon(_speciesIcon(bug.species)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(bug.displayName,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w900, fontSize: 17)),
+                        ),
+                        Text('Niv. ${bug.level}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w900)),
+                      ]),
+                      const SizedBox(height: 10),
                       Text(
-                          '${bug.displayName} · ${bug.styleVariant} · niv. ${bug.level}',
-                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                          '${pTibugConfig.species[bug.species]!.displayName} · ${bug.styleVariant}'),
                       Text(
                           'XP ${bug.xp} · Réserve ${bug.storedAmount}/${pTibugConfig.carryingCapacity}'),
+                      const SizedBox(height: 8),
+                      Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                        _LoadoutPill(
+                          icon: Icons.auto_awesome_outlined,
+                          label: _traitLabel(bug.traitDataId),
+                          color: _traitColor(_traitFor(bug)?.grade),
+                        ),
+                        ...List<Widget>.generate(
+                          pTibugConfig.moduleSlotsForLevel(
+                              widget.gameState.plaineNurseryLevel),
+                          (index) {
+                            final module = index < bug.equippedModules.length
+                                ? bug.equippedModules[index]
+                                : null;
+                            return _LoadoutPill(
+                              icon: module == null
+                                  ? Icons.add_circle_outline
+                                  : _moduleIcon(module),
+                              label: module == null
+                                  ? 'Module libre'
+                                  : _moduleTitle(module),
+                              color: module == null
+                                  ? Theme.of(context).colorScheme.outline
+                                  : Theme.of(context).colorScheme.secondary,
+                            );
+                          },
+                        ),
+                      ]),
+                      const SizedBox(height: 10),
                       Text(bug.assignedSlotIndex == null
                           ? 'En réserve'
                           : 'Production active · prochain cycle ${bug.nextProductionAt == null ? 'à lancer' : _countdownLabel(bug.nextProductionAt!)}'),
-                      Text('Trait : ${_traitLabel(bug.traitDataId)}'),
-                      Text(
-                          'Modules : ${bug.equippedModules.isEmpty ? 'aucun' : bug.equippedModules.map((item) => item.name).join(', ')}'),
                       const SizedBox(height: 8),
                       bug.assignedSlotIndex == null
-                          ? FilledButton(
+                          ? FilledButton.icon(
                               onPressed: () => _message(widget.gameState
                                   .assignPTibugSlot(bug, _firstFreeSlot())
                                   .message),
-                              child: const Text('Installer'))
-                          : OutlinedButton(
+                              icon: const Icon(Icons.play_arrow_outlined),
+                              label: const Text('Installer en production'))
+                          : OutlinedButton.icon(
                               onPressed: () => _message(widget.gameState
                                   .removePTibugSlot(bug)
                                   .message),
-                              child: const Text('Retirer')),
-                      Wrap(spacing: 6, children: <Widget>[
-                        ...widget.gameState.pTibugTraitData
-                            .where((data) => !widget.gameState.pTibugs.any(
-                                (item) =>
-                                    item.id != bug.id &&
-                                    item.traitDataId == data.id))
-                            .map((data) => TextButton(
-                                onPressed: () => _message(widget.gameState
-                                    .equipPTibugTrait(bug, data)
-                                    .message),
-                                child: Text(
-                                    '${data.type.name} ${data.grade.name}'))),
-                        ...widget.gameState.unlockedPTibugModules.map(
-                            (module) => TextButton(
-                                onPressed: () => _message(widget.gameState
-                                    .equipPTibugModule(bug, module)
-                                    .message),
-                                child: Text('Module ${module.name}'))),
-                      ]),
-                    ])))),
+                              icon: const Icon(Icons.inventory_2_outlined),
+                              label: const Text('Retirer de la production')),
+                    ],
+                  ),
+                ),
+              ),
+            )),
       ]);
+
+  Widget _dataAndModules() {
+    final traits = widget.gameState.pTibugTraitData;
+    final unlockedModules = widget.gameState.unlockedPTibugModules;
+    return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+      const Text('Données de traits',
+          style: TextStyle(fontWeight: FontWeight.w900)),
+      const SizedBox(height: 4),
+      const Text(
+          'Les Données attribuées restent visibles ici. Deux Données identiques non équipées peuvent être fusionnées.'),
+      const SizedBox(height: 10),
+      if (traits.isEmpty)
+        const Card(child: ListTile(title: Text('Aucune Donnée disponible.'))),
+      ...traits.map((trait) {
+        final owner = widget.gameState.pTibugs
+            .where((bug) => bug.traitDataId == trait.id)
+            .firstOrNull;
+        return Card(
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: _traitColor(trait.grade).withValues(alpha: 0.16),
+              child: Icon(Icons.auto_awesome, color: _traitColor(trait.grade)),
+            ),
+            title: Text(
+                '${_traitTitle(trait.type)} · ${_traitGradeTitle(trait.grade)}'),
+            subtitle: Text(owner == null
+                ? _traitDescription(trait)
+                : '${_traitDescription(trait)}\nÉquipée par ${owner.displayName}'),
+            isThreeLine: owner != null,
+          ),
+        );
+      }),
+      const SizedBox(height: 8),
+      ..._fusionActions(),
+      const SizedBox(height: 18),
+      const Text('Modules', style: TextStyle(fontWeight: FontWeight.w900)),
+      const SizedBox(height: 4),
+      Text(
+          '${unlockedModules.length}/${PTibugModuleType.values.length} Modules déverrouillés'),
+      const SizedBox(height: 10),
+      ...PTibugModuleType.values.map((module) {
+        final unlocked = unlockedModules.contains(module);
+        return Opacity(
+          opacity: unlocked ? 1 : 0.48,
+          child: Card(
+            child: ListTile(
+              leading: CircleAvatar(child: Icon(_moduleIcon(module))),
+              title: Text(_moduleTitle(module)),
+              subtitle: Text(unlocked
+                  ? _moduleDescription(module)
+                  : 'Module verrouillé · à obtenir plus tard.'),
+              trailing: Icon(
+                  unlocked ? Icons.check_circle_outline : Icons.lock_outline),
+            ),
+          ),
+        );
+      }),
+    ]);
+  }
+
+  List<Widget> _fusionActions() {
+    final available = widget.gameState.pTibugTraitData
+        .where((data) =>
+            !widget.gameState.pTibugs.any((bug) => bug.traitDataId == data.id))
+        .toList();
+    final widgets = <Widget>[];
+    for (final trait in available) {
+      final partner = available
+          .where((item) =>
+              item.id != trait.id &&
+              item.type == trait.type &&
+              item.grade == trait.grade)
+          .firstOrNull;
+      if (partner == null ||
+          trait.grade == PTibugTraitGrade.avance ||
+          widgets.isNotEmpty) {
+        continue;
+      }
+      widgets.add(OutlinedButton.icon(
+        onPressed: () => _message(
+            widget.gameState.fusePTibugTraitData(trait, partner).message),
+        icon: const Icon(Icons.merge_type_outlined),
+        label: Text(
+            'Fusionner 2 ${_traitTitle(trait.type)} ${_traitGradeTitle(trait.grade)}'),
+      ));
+    }
+    return widgets;
+  }
+
+  Future<void> _showPTibugLoadout(PTibug bug) => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (sheetContext) {
+          final availableTraits = widget.gameState.pTibugTraitData.where(
+              (data) => !widget.gameState.pTibugs.any(
+                  (item) => item.id != bug.id && item.traitDataId == data.id));
+          return SafeArea(
+            child: DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.72,
+              minChildSize: 0.45,
+              maxChildSize: 0.92,
+              builder: (_, controller) => ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
+                children: <Widget>[
+                  Text(bug.displayName,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900)),
+                  Text(
+                      '${pTibugConfig.species[bug.species]!.displayName} · niveau ${bug.level}'),
+                  const SizedBox(height: 18),
+                  const Text('Donnée équipée',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 8),
+                  ...availableTraits.map((trait) => ListTile(
+                        leading: Icon(Icons.auto_awesome,
+                            color: _traitColor(trait.grade)),
+                        title: Text(
+                            '${_traitTitle(trait.type)} · ${_traitGradeTitle(trait.grade)}'),
+                        subtitle: Text(_traitDescription(trait)),
+                        trailing: trait.id == bug.traitDataId
+                            ? const Icon(Icons.check_circle)
+                            : TextButton(
+                                onPressed: () {
+                                  _message(widget.gameState
+                                      .equipPTibugTrait(bug, trait)
+                                      .message);
+                                  Navigator.of(sheetContext).pop();
+                                },
+                                child: const Text('Équiper')),
+                      )),
+                  const Divider(height: 28),
+                  Text(
+                      'Modules (${bug.equippedModules.length}/${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel)})',
+                      style: const TextStyle(fontWeight: FontWeight.w900)),
+                  ...PTibugModuleType.values.map((module) {
+                    final unlocked =
+                        widget.gameState.unlockedPTibugModules.contains(module);
+                    final equipped = bug.hasModule(module);
+                    return ListTile(
+                      leading: Icon(_moduleIcon(module)),
+                      title: Text(_moduleTitle(module)),
+                      subtitle: Text(
+                          unlocked ? _moduleDescription(module) : 'Verrouillé'),
+                      trailing: equipped
+                          ? const Icon(Icons.check_circle)
+                          : unlocked
+                              ? TextButton(
+                                  onPressed: () {
+                                    _message(widget.gameState
+                                        .equipPTibugModule(bug, module)
+                                        .message);
+                                    Navigator.of(sheetContext).pop();
+                                  },
+                                  child: const Text('Équiper'))
+                              : const Icon(Icons.lock_outline),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
+  PTibugTraitData? _traitFor(PTibug bug) => widget.gameState.pTibugTraitData
+      .where((trait) => trait.id == bug.traitDataId)
+      .firstOrNull;
+
+  IconData _speciesIcon(PTibugSpecies species) => switch (species) {
+        PTibugSpecies.scarabe => Icons.shield_outlined,
+        PTibugSpecies.hyme => Icons.hive_outlined,
+        PTibugSpecies.arac => Icons.hub_outlined,
+      };
+
+  IconData _moduleIcon(PTibugModuleType module) => switch (module) {
+        PTibugModuleType.ailes => Icons.air_outlined,
+        PTibugModuleType.pinces => Icons.content_cut_outlined,
+        PTibugModuleType.reservoir => Icons.inventory_2_outlined,
+      };
+
+  String _moduleTitle(PTibugModuleType module) => switch (module) {
+        PTibugModuleType.ailes => 'Ailes',
+        PTibugModuleType.pinces => 'Pinces',
+        PTibugModuleType.reservoir => 'Réservoir',
+      };
+
+  String _moduleDescription(PTibugModuleType module) => switch (module) {
+        PTibugModuleType.ailes =>
+          '-${(pTibugConfig.wingsCycleReduction * 100).round()} % de durée de cycle.',
+        PTibugModuleType.pinces =>
+          '+${pTibugConfig.clawProductionBonus} ressource selon l’espèce.',
+        PTibugModuleType.reservoir =>
+          '+${pTibugConfig.reservoirCapacityBonus} de capacité de réserve.',
+      };
+
+  String _traitTitle(PTibugTraitType type) => switch (type) {
+        PTibugTraitType.pollinisateur => 'Pollinisateur',
+        PTibugTraitType.mineur => 'Mineur',
+        PTibugTraitType.decomposeur => 'Décomposeur',
+      };
+
+  String _traitGradeTitle(PTibugTraitGrade grade) => switch (grade) {
+        PTibugTraitGrade.commun => 'Commun',
+        PTibugTraitGrade.rare => 'Rare',
+        PTibugTraitGrade.avance => 'Avancé',
+      };
+
+  Color _traitColor(PTibugTraitGrade? grade) => switch (grade) {
+        PTibugTraitGrade.commun => const Color(0xFF5D8D71),
+        PTibugTraitGrade.rare => const Color(0xFF4977A6),
+        PTibugTraitGrade.avance => const Color(0xFF8C5AA2),
+        null => const Color(0xFF817D66),
+      };
+
+  String _traitDescription(PTibugTraitData trait) {
+    final value = pTibugConfig.traitMultiplier(trait.grade);
+    return switch (trait.type) {
+      PTibugTraitType.pollinisateur => '+$value Organique par cycle.',
+      PTibugTraitType.mineur => '+$value Minéral par cycle.',
+      PTibugTraitType.decomposeur =>
+        '+$value Organique et +$value Mycélium par cycle.',
+    };
+  }
 
   int _firstFreeSlot() {
     for (var i = 0; i < widget.gameState.pTibugActiveSlots; i += 1) {
@@ -6520,8 +6787,41 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     final trait = widget.gameState.pTibugTraitData
         .where((item) => item.id == id)
         .firstOrNull;
-    return trait == null ? 'aucun' : '${trait.type.name} · ${trait.grade.name}';
+    return trait == null
+        ? 'Donnée libre'
+        : '${_traitTitle(trait.type)} · ${_traitGradeTitle(trait.grade)}';
   }
+}
+
+class _LoadoutPill extends StatelessWidget {
+  const _LoadoutPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          child: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(
+                    color: color, fontSize: 12, fontWeight: FontWeight.w800)),
+          ]),
+        ),
+      );
 }
 
 class FablabPage extends StatelessWidget {

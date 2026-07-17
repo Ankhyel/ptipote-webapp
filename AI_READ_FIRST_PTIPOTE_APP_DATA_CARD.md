@@ -1207,6 +1207,15 @@ Pour formater Dart:
 - Le Marché héberge le `Sourcier du savoir`. Lors de sa présence, il propose les Patterns Hymé et Arac encore inactifs contre des Bio-batteries configurées dans `ptibug_config.dart`. L'achat active directement le Pattern et le Plan Kernel correspondant.
 - Les découvertes par événements Kernel restent actives en parallèle : premier P'TIBUG pour Hymé, trois collectes P'TIBUG pour Arac. Les Plans déjà acquis ne sont pas proposés une seconde fois par le Sourcier.
 - Attente : les prix et la fréquence du Sourcier seront migrés vers les réglages Dashboard/Firestore pendant l'étape Dashboard. Les Données et Modules gardent leur UI actuelle jusqu'à la refonte visuelle dédiée.
+
+### Nurserie P'TIBUG - UI Données et Modules
+
+- `ptipote-app/lib/features/game/refuge_page.dart` : la Nurserie possède désormais les onglets `Aperçu`, `Créer`, `Collection`, `Données` et `Amélioration`.
+- La `Collection` affiche chaque P'TIBUG comme une carte : espèce, niveau, XP, réserve, état de production, Donnée équipée et emplacements de Modules. Un tap ouvre sa fiche d'équipement.
+- La fiche d'équipement permet d'attribuer une Donnée non utilisée par un autre P'TIBUG et d'équiper un Module déverrouillé, dans la limite des emplacements de la Nurserie. Les règles métier existantes restent appliquées par `Zone0GameState`.
+- L'onglet `Données` présente le type, la rareté, le bonus de production et le propriétaire éventuel de chaque Donnée. Il propose une fusion lorsqu'une paire identique non équipée est disponible.
+- Le même onglet présente les Modules Ailes, Pinces et Réservoir, avec leur bonus réel et leur état verrouillé/déverrouillé.
+- Attente : l'origine détaillée des Données, les probabilités, les images dédiées et les réglages Firestore/Dashboard des traits et Modules seront ajoutés pendant les étapes Dashboard et UI visuelle enrichie.
 - Production : Scarabé produit du Minéral, Hyme de l'Organique et Arac une combinaison aléatoire d'Organique, Minéral ou Déchets. La capacité individuelle bloque les cycles pleins. XP : +1 par cycle.
 - Mycélium : la ressource est produite exclusivement par une Donnée Décomposeur. Elle n'est ajoutée à aucune recette existante dans cette étape.
 - `ptipote-app/lib/features/game/refuge_page.dart` expose une Nurserie P'TIBUG dans la Plaine/refuge : construction commune, Aperçu, Création, Collection et Amélioration. Les P'TIBUG peuvent être installés ou retirés des slots actifs et leur production récupérée.
