@@ -175,7 +175,7 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
         'securityTower': 0,
         'market': 0,
       },
-      initialState: KernelPlanState.discovered,
+      initialState: KernelPlanState.unknown,
     ),
     KernelTechnologyPlanConfig(
       id: 'ptibug-pattern-hyme',

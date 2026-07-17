@@ -58,5 +58,39 @@
       "rewards": { "Organique": 5, "Minéral": 1 },
       "hazards": ["pollution", "climatDifficile"]
     }
+  ],
+  "upcomingBiomes": [
+    {
+      "id": "montagne",
+      "label": "Montagne",
+      "availableSoon": true,
+      "baseRiskPercent": 55,
+      "rewards": { "Organique": 1, "Minéral": 6 },
+      "hazards": ["terrainInstable", "climatDifficile"]
+    },
+    {
+      "id": "savane",
+      "label": "Savane",
+      "availableSoon": true,
+      "baseRiskPercent": 45,
+      "rewards": { "Organique": 4, "Minéral": 2 },
+      "hazards": ["climatDifficile", "droneErrant"]
+    },
+    {
+      "id": "mangrove",
+      "label": "Mangrove",
+      "availableSoon": true,
+      "baseRiskPercent": 50,
+      "rewards": { "Organique": 5, "Minéral": 2 },
+      "hazards": ["pollution", "climatDifficile"]
+    },
+    {
+      "id": "littoral",
+      "label": "Littoral",
+      "availableSoon": true,
+      "baseRiskPercent": 35,
+      "rewards": { "Organique": 3, "Minéral": 3 },
+      "hazards": ["droneErrant", "climatDifficile"]
+    }
   ]
 }

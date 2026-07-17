@@ -11,6 +11,7 @@ import 'camp_generator_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'game_asset_resolver.dart';
+import 'housing_config.dart';
 import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
@@ -92,14 +93,6 @@ class _RefugePageState extends State<RefugePage> {
       left: 0.18,
       top: 0.56,
       width: 0.25,
-      height: 0.10,
-    ),
-    _RefugeBuilding(
-      name: 'Nursery',
-      title: 'Nurserie P’TIBUG',
-      left: 0.22,
-      top: 0.62,
-      width: 0.30,
       height: 0.10,
     ),
   ];
@@ -514,17 +507,22 @@ class KernelPage extends StatelessWidget {
           bottom: const TabBar(
             isScrollable: true,
             tabs: <Widget>[
+              Tab(text: 'Progression'),
+              Tab(text: 'Plans'),
               Tab(text: 'Mission principale'),
               Tab(text: 'Demandes'),
               Tab(text: 'Météo'),
-              Tab(text: 'Plans'),
-              Tab(text: 'Progression'),
             ],
           ),
         ),
         body: SafeArea(
           child: TabBarView(
             children: <Widget>[
+              _KernelProgressTab(
+                gameState: gameState,
+                campHeartState: campHeartState,
+              ),
+              _KernelPlansTab(gameState: gameState),
               _KernelMainMissionTab(
                 mission: gameState.mainKernelMission(
                   campHeartState.campHeartLevel,
@@ -543,11 +541,6 @@ class KernelPage extends StatelessWidget {
                 ),
                 gameState: gameState,
                 emptyMessage: 'Aucune mission météo annoncée par la Tour.',
-              ),
-              _KernelPlansTab(gameState: gameState),
-              _KernelProgressTab(
-                gameState: gameState,
-                campHeartState: campHeartState,
               ),
             ],
           ),
@@ -680,7 +673,7 @@ class _KernelMissionCard extends StatelessWidget {
     final config = mission.config;
     final progress =
         '${mission.progress.clamp(0, config.requiredAmount)} / ${config.requiredAmount}';
-    return Card(
+    final card = Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -739,6 +732,20 @@ class _KernelMissionCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+    if (!mission.isCompleted) return card;
+    return Dismissible(
+      key: ValueKey<String>('kernel-mission-${config.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        color: Theme.of(context).colorScheme.error,
+        child: Icon(Icons.delete_outline,
+            color: Theme.of(context).colorScheme.onError),
+      ),
+      onDismissed: (_) => gameState.dismissCompletedKernelMission(config.id),
+      child: card,
     );
   }
 }
@@ -4126,7 +4133,7 @@ class _BiomeBuildingsTab extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(built
                     ? 'Construite · niveau ${gameState.plaineNurseryLevel}'
-                    : 'La végétalisation de la Plaine doit être stabilisée avant de développer la nurserie.'),
+                    : 'Prérequis : Cœur du Camp niveau 2 (niveau actuel : $campHeartLevel).'),
                 const SizedBox(height: 10),
                 if (!built)
                   FilledButton.icon(
@@ -4145,7 +4152,7 @@ class _BiomeBuildingsTab extends StatelessWidget {
                       ),
                     ),
                     icon: const Icon(Icons.pets_outlined),
-                    label: const Text('Voir les prérequis'),
+                    label: const Text('Préparer la construction'),
                   )
                 else
                   OutlinedButton(
@@ -4451,9 +4458,13 @@ class CampHeartPage extends StatefulWidget {
 }
 
 class _CampHousingTab extends StatelessWidget {
-  const _CampHousingTab({required this.gameState});
+  const _CampHousingTab({
+    required this.gameState,
+    required this.campHeartLevel,
+  });
 
   final Zone0GameState gameState;
+  final int campHeartLevel;
 
   void _showStatInfo(BuildContext context, String title, String message) {
     showDialog<void>(
@@ -4492,9 +4503,27 @@ class _CampHousingTab extends StatelessWidget {
             icon: Icons.groups_outlined,
             title: 'Population',
             value:
-                '${gameState.currentPopulation} / ${gameState.housingCapacity}',
+                '${gameState.currentPopulation} / ${gameState.populationCapacityForCampHeartLevel(campHeartLevel)}',
             onTap: () => _showStatInfo(context, 'Population',
                 'Les habitants arrivent grâce aux missions du Kernel. Le Cœur fixe la capacité générale du refuge.'),
+          ),
+          _HabitationStatCard(
+            icon: Icons.home_work_outlined,
+            title: 'Logements actuels',
+            value: '${gameState.housingUnits}',
+            subtitle:
+                '${housingConfig.residentsPerHousingUnit} habitants par logement',
+            onTap: () => _showStatInfo(context, 'Logements',
+                'Chaque logement ajoute ${housingConfig.residentsPerHousingUnit} places habitables.'),
+          ),
+          _HabitationStatCard(
+            icon: Icons.meeting_room_outlined,
+            title: 'Places de logement',
+            value: '${gameState.housingCapacity}',
+            subtitle:
+                '${gameState.unhousedPopulation} habitant(s) sans logement',
+            onTap: () => _showStatInfo(context, 'Places de logement',
+                'Les habitants sans logement correspondent à la population moins les places disponibles.'),
           ),
           _HabitationStatCard(
             icon: Icons.sentiment_satisfied_alt_outlined,
@@ -4647,8 +4676,8 @@ class _CampHeartPageState extends State<CampHeartPage> {
           bottom: const TabBar(
             tabs: <Widget>[
               Tab(text: 'Végétalisation', icon: Icon(Icons.eco_outlined)),
-              Tab(text: 'Générateur', icon: Icon(Icons.battery_charging_full)),
               Tab(text: 'Habitation', icon: Icon(Icons.home_work_outlined)),
+              Tab(text: 'Générateur', icon: Icon(Icons.battery_charging_full)),
             ],
           ),
         ),
@@ -4678,8 +4707,6 @@ class _CampHeartPageState extends State<CampHeartPage> {
                         : 'Déblocages affichés comme données V1, branchés progressivement.',
                   ),
                   const SizedBox(height: 12),
-                  _CampHeartStatsCard(stage: stage),
-                  const SizedBox(height: 12),
                   _CampHeartStageCard(
                     title: 'Effets du stade ${stage.label}',
                     items: stage.effects,
@@ -4690,11 +4717,14 @@ class _CampHeartPageState extends State<CampHeartPage> {
                   const _CampHeartPendingCard(),
                 ],
               ),
+              _CampHousingTab(
+                gameState: widget.gameState,
+                campHeartLevel: state.campHeartLevel,
+              ),
               _CampGeneratorView(
                 gameState: widget.gameState,
                 heartLevel: state.campHeartLevel,
               ),
-              _CampHousingTab(gameState: widget.gameState),
             ],
           ),
         ),
@@ -5013,38 +5043,6 @@ class _CampHeartStageCard extends StatelessWidget {
             Text(
               footer,
               style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CampHeartStatsCard extends StatelessWidget {
-  const _CampHeartStatsCard({required this.stage});
-
-  final CampHeartStageConfig stage;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: <Widget>[
-            _InfoLine(label: 'Population', value: stage.populationLabel),
-            _InfoLine(
-              label: 'P’TIPOTES confort',
-              value: '${stage.activePtipoteComfortLimit}',
-            ),
-            _InfoLine(
-              label: 'Bonheur refuge',
-              value: '+${stage.refugeHappinessBonus}',
-            ),
-            _InfoLine(
-              label: 'Activité locale',
-              value: 'x${stage.localActivityModifier.toStringAsFixed(2)}',
             ),
           ],
         ),
@@ -5648,16 +5646,22 @@ class _ExplorationMap3x3 extends StatelessWidget {
   Widget build(BuildContext context) {
     // Topology is deliberately stable: the Camp stays at the bottom centre.
     const cells = <ForageBiome?>[
+      null,
+      ForageBiome.sousBois,
+      null,
       ForageBiome.colline,
+      ForageBiome.plaineRiche,
       null,
       ForageBiome.bassinMineral,
       null,
-      ForageBiome.plaineRiche,
-      ForageBiome.sousBois,
-      null,
-      null,
       null,
     ];
+    const futureLabels = <int, String>{
+      0: 'Montagne',
+      2: 'Savane',
+      5: 'Mangrove',
+      8: 'Littoral',
+    };
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -5674,7 +5678,14 @@ class _ExplorationMap3x3 extends StatelessWidget {
               label: 'Camp', icon: Icons.home_outlined, active: true);
         }
         final biome = cells[index];
-        if (biome == null) return const SizedBox.shrink();
+        if (biome == null) {
+          return _ExplorationMapCell(
+            label:
+                '${futureLabels[index] ?? 'Zone inconnue'}\nBientôt disponible',
+            icon: Icons.lock_outline,
+            active: false,
+          );
+        }
         final state = gameState.biomeSecurity[biome]!;
         return _ExplorationMapCell(
           label: lisiereForageConfig.biomes[biome]!.label,
@@ -7396,34 +7407,52 @@ class _FablabEnergyCard extends StatelessWidget {
   final Zone0GameState gameState;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const Text('Alimenter le Fablab',
-                  style: TextStyle(fontWeight: FontWeight.w900)),
-              const SizedBox(height: 6),
-              Text(
-                  '⚡ ${gameState.energyUnits} énergie · ${gameState.bioBatteries} bio-batterie(s)'),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: gameState.bioBatteries <= 0
-                    ? null
-                    : () {
-                        final result = gameState.openBioBattery();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(result.message)));
-                      },
-                icon: const Icon(Icons.bolt_outlined),
-                label: Text(
-                    'Ouvrir 1 bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)'),
+  Widget build(BuildContext context) {
+    final capacity = math.max(
+      wasteRecyclerConfig.energyUnitsPerBioBattery,
+      ((gameState.energyUnits + 9) ~/ 10) * 10,
+    );
+    final level = (gameState.energyUnits / capacity).clamp(0.0, 1.0);
+    final color = level <= .3 ? Colors.orange : Colors.lightBlue;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text('Alimenter le Fablab',
+                style: TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            Text(
+                '⚡ ${gameState.energyUnits} énergie · ${gameState.bioBatteries} bio-batterie(s)'),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LinearProgressIndicator(
+                value: level,
+                minHeight: 12,
+                color: color,
+                backgroundColor: color.withValues(alpha: .18),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: gameState.bioBatteries <= 0
+                  ? null
+                  : () {
+                      final result = gameState.openBioBattery();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(result.message)));
+                    },
+              icon: const Icon(Icons.bolt_outlined),
+              label: Text(
+                  'Ouvrir 1 bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)'),
+            ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
 
 class FablabRecyclerView extends StatelessWidget {

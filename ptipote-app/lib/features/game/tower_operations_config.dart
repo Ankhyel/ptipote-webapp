@@ -67,7 +67,7 @@ class TowerOperationsConfig {
 
 const TowerOperationsConfig defaultTowerOperationsConfig =
     TowerOperationsConfig(
-  biomeRevealSecurityThreshold: 60,
+  biomeRevealSecurityThreshold: 40,
   explorationDurationMinutes: 20,
   localSecurityMaximum: 100,
   localSecurityHoursForFullPatrol: 8,

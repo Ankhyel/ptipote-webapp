@@ -32,8 +32,8 @@ class HousingConfig {
   Map<String, int> housingRequirementsForUnit(int unitNumber) {
     final offset = (unitNumber - 1).clamp(0, 99);
     return <String, int>{
-      'Organique': initialHousingOrganicCost + offset * 5,
-      'Minéral': initialHousingMineralCost + offset * 10,
+      'Organique': initialHousingOrganicCost + offset * 2,
+      'Minéral': initialHousingMineralCost + offset * 4,
     };
   }
 }
@@ -42,8 +42,8 @@ const HousingConfig defaultHousingConfig = HousingConfig(
   houseMaxLevel: 5,
   alcovesByHouseLevel: <int, int>{1: 2, 2: 3, 3: 4, 4: 6, 5: 8},
   residentsPerHousingUnit: 3,
-  initialHousingOrganicCost: 30,
-  initialHousingMineralCost: 60,
+  initialHousingOrganicCost: 10,
+  initialHousingMineralCost: 20,
   housingDurationMinutes: 60,
   wellbeingPenaltyPerUnhousedResident: 3,
   maximumHousingWellbeingPenalty: 30,

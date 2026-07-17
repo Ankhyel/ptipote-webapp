@@ -1305,3 +1305,12 @@ Le Dashboard P'TIBUG permet de créer une définition avec un identifiant stable
 - La Lisière possède un onglet `Récolte` et crée un onglet supplémentaire pour chaque biome déverrouillé. La Plaine expose la Nurserie P'TIBUG avec son chantier existant ; les autres emplacements conservent un placeholder de Plan Kernel.
 - Cuisine, Atelier et Recycleur affichent la même carte `Alimenter le Fablab`. Ouvrir une Bio-batterie ajoute l'énergie configurée. Un lancement manuel de Cuisine ou d'Atelier consomme 1 Énergie, mais une affectation P'TIPOTE ne la consomme pas. La Cuisine accepte les quantités 1, 5 et 10 comme l'Atelier.
 - Les compteurs de refuge et de Tour sont rafraîchis chaque seconde. Lorsqu'un P'TIPOTE atteint le repos maximal dans une alcôve, il en sort automatiquement afin de libérer la place.
+
+### Correctifs UI refuge et biomes futurs
+
+- L'onglet `Habitation` est la seconde section du Cœur. La Végétalisation ne répète plus les statistiques de population. La capacité d'accueil affichée dépend du niveau du Cœur, tandis que les places habitables sont strictement `housingUnits * residentsPerHousingUnit`; les habitants sans logement sont `max(0, population - places)`.
+- Les logements démarrent à `10 Organique / 20 Minéral` avant le coefficient structurel, avec une progression réduite. Les anciennes sauvegardes ne reçoivent pas de logement rétroactif : elles sont recalculées à partir de leurs unités réellement construites.
+- `zone0Settings.lisiere.upcomingBiomes` prépare Montagne, Savane, Mangrove et Littoral dans le Dashboard. Ces entrées exposent risque, gains et dangers mais restent verrouillées dans Flutter jusqu'à leur implémentation de gameplay; elles ne sont pas ajoutées artificiellement à l'enum des missions.
+- Le seuil de sécurité moyen pour explorer un biome est maintenant `40` dans `tower-operations-config.json` et `tower_operations_config.dart`. La carte affiche les neuf cases, dont les zones futures grisées et verrouillées.
+- Les missions Kernel terminées peuvent être supprimées par un glissement vers la gauche. Les identifiants supprimés sont persistés dans `kernel.dismissedMissionIds`; une mission active ou verrouillée ne peut pas être retirée.
+- Le Pattern Scarabé démarre `unknown` et ne devient actif qu'après la construction de la Nurserie et le choix initial du joueur.

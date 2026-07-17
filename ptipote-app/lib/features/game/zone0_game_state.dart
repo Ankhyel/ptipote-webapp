@@ -75,6 +75,7 @@ class Zone0GameState extends ChangeNotifier {
   final List<WeatherAlert> weatherAlerts = <WeatherAlert>[];
   final List<MerchantOffer> merchantOffers = <MerchantOffer>[];
   final Set<String> completedKernelMissionIds = <String>{};
+  final Set<String> dismissedKernelMissionIds = <String>{};
   // Kept separately from completion: a completed mission can wait for room
   // in the refuge before all of its population reward is credited.
   final Map<String, int> kernelPopulationRewardsGranted = <String, int>{};
@@ -104,7 +105,8 @@ class Zone0GameState extends ChangeNotifier {
   // migration even though new House level 1 starts with two.
   int alcoveCapacity = 3;
   int housingUnits = 0;
-  int housingCapacity = kernelConfig.startingPopulation;
+  // Housing remains separate from the Camp Heart population capacity.
+  int housingCapacity = 0;
   CommunityConstructionThanks? communityConstructionThanks;
   int plaineNurseryLevel = 0;
   PTibugCreationOrder? pTibugCreationOrder;
@@ -426,6 +428,7 @@ class Zone0GameState extends ChangeNotifier {
     int campHeartLevel,
   ) {
     return kernelConfig.missions
+        .where((mission) => !dismissedKernelMissionIds.contains(mission.id))
         .map(
           (mission) => KernelMissionProgress(
             config: mission,
@@ -456,6 +459,13 @@ class Zone0GameState extends ChangeNotifier {
             (mission) => mission.config.type == KernelMissionType.refugeRequest)
         .take(kernelConfig.maxRefugeRequests)
         .toList();
+  }
+
+  void dismissCompletedKernelMission(String missionId) {
+    if (!completedKernelMissionIds.contains(missionId)) return;
+    dismissedKernelMissionIds.add(missionId);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
   }
 
   List<KernelMissionProgress> weatherKernelMissions(int campHeartLevel) {
@@ -2424,7 +2434,7 @@ class Zone0GameState extends ChangeNotifier {
         );
       case 'housing':
         housingUnits = project.currentLevel;
-        housingCapacity += housingConfig.residentsPerHousingUnit;
+        housingCapacity = housingUnits * housingConfig.residentsPerHousingUnit;
       case 'plaineNursery':
         plaineNurseryLevel = project.currentLevel;
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
@@ -3358,6 +3368,10 @@ class Zone0GameState extends ChangeNotifier {
             ..clear()
             ..addAll(completedData.map((id) => '$id'));
         }
+        dismissedKernelMissionIds
+          ..clear()
+          ..addAll((kernelData['dismissedMissionIds'] as List? ?? const [])
+              .map((id) => '$id'));
         kernelPopulationRewardsGranted.clear();
         final grantedData = kernelData['populationRewardsGranted'];
         if (grantedData is Map) {
@@ -3466,10 +3480,10 @@ class Zone0GameState extends ChangeNotifier {
         final housingData = buildingsData['housing'];
         if (housingData is Map) {
           housingUnits = _readInt(housingData['units']);
-          housingCapacity = _readInt(
-            housingData['capacity'],
-            fallback: currentPopulation,
-          );
+          // Capacity is derived from real, aggregated housing units. Older
+          // builds saved a temporary population-sized fallback here.
+          housingCapacity =
+              housingUnits * housingConfig.residentsPerHousingUnit;
           communityConstructionThanks =
               CommunityConstructionThanks.fromFirebase(housingData['thanks']);
         }
@@ -3492,7 +3506,9 @@ class Zone0GameState extends ChangeNotifier {
           recyclerLevel.clamp(0, wasteRecyclerConfig.recyclerMaxLevel);
       securityTowerLevel = securityTowerLevel.clamp(0, 3);
       marketLevel = marketLevel.clamp(0, 5);
-      housingCapacity = math.max(housingCapacity, currentPopulation);
+      // New saves always expose the real number of places built. Do not keep
+      // the former migration fallback equal to the current population.
+      housingCapacity = housingUnits * housingConfig.residentsPerHousingUnit;
       alcoveCapacity = math.max(
         alcoveCapacity,
         housingConfig.alcovesForHouseLevel(houseLevel),
@@ -4612,6 +4628,7 @@ class Zone0GameState extends ChangeNotifier {
                 .map((entry) => entry.toFirebase())
                 .toList(),
             'completedMissionIds': completedKernelMissionIds.toList(),
+            'dismissedMissionIds': dismissedKernelMissionIds.toList(),
             'populationRewardsGranted': kernelPopulationRewardsGranted,
           },
           'campGenerator': <String, dynamic>{
