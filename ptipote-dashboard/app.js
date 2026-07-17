@@ -41,9 +41,6 @@ let lisiereForageConfig = {};
 let securityTowerConfig = {};
 let fablabConfig = {};
 let recyclerConfig = {};
-let craftConfig = {};
-
-const CRAFT_STORAGE_KEY = "craft_config_v1";
 const PTIPOTE_STATS_FIELDS = [
   "maxVitality",
   "vitalityRecoveryPerMinute",
@@ -142,7 +139,7 @@ const ids = [
   "craftStatus",
   "craftRecipeList",
   "craftRecipeForm",
-  "exportCraftButton",
+  "publishCraftButton",
   "zone0SettingsForm",
   "zone0SettingsStatus",
   "publishZone0SettingsButton",
@@ -617,51 +614,69 @@ function exportRecyclerConfig() {
   URL.revokeObjectURL(url);
 }
 
-async function loadCraftConfig({ reset = false } = {}) {
-  try {
-    const response = await fetch("./craft-config.json", { cache: "no-store" });
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    const baseConfig = await response.json();
-    const savedConfig = reset ? null : JSON.parse(localStorage.getItem(CRAFT_STORAGE_KEY) || "null");
-    craftConfig = { ...baseConfig, ...(savedConfig || {}) };
-    if (reset) localStorage.removeItem(CRAFT_STORAGE_KEY);
-    renderCraftConfig();
-    el.craftStatus.textContent = "Recettes chargées. Les ajouts restent locaux jusqu'a export JSON.";
-  } catch (error) {
-    el.craftStatus.textContent = "Configuration Craft illisible: " + error.message;
-  }
+function craftNumber(value, minimum = 0) {
+  return Math.max(minimum, Number(value) || minimum);
+}
+
+function craftIngredients(recipe) {
+  return Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
 }
 
 function renderCraftConfig() {
-  const recipes = Array.isArray(craftConfig.recipes) ? craftConfig.recipes : [];
+  const recipes = Array.isArray(zone0Settings.craft?.recipes) ? zone0Settings.craft.recipes : [];
   el.craftRecipeList.innerHTML = recipes.map((recipe, index) => {
-    const ingredients = Array.isArray(recipe.ingredients)
-      ? recipe.ingredients.map((item) => `${escapeHtml(item.amount)} ${escapeHtml(item.resource)}`).join(" + ")
-      : "";
-    const context = Array.isArray(recipe.contextIngredients) && recipe.contextIngredients.length
-      ? ` + ${recipe.contextIngredients.map(escapeHtml).join(" + ")}`
-      : "";
-    const effects = recipe.isConsumable
-      ? `${escapeHtml(recipe.foodType || "meal")} · consommable · faim +${escapeHtml(recipe.hungerRestore || 0)} · vitalité +${escapeHtml(recipe.vitalityRestore || 0)}`
-      : "non consommable";
-    const stackLimit = Math.max(1, Number(recipe.stackLimit || (recipe.isEquipment ? 1 : 10)));
+    const ingredients = craftIngredients(recipe)
+      .map((item) => `${escapeHtml(item.amount)} ${escapeHtml(item.resource)}`).join(" + ");
+    const section = recipe.craftSection === "atelier" ? "Atelier" : "Cuisine";
+    const stackLimit = craftNumber(recipe.stackLimit || 1, 1);
+    const requirement = `Kernel ${craftNumber(recipe.kernelTrustLevel, 1)} · Éleveur ${craftNumber(recipe.breederLevel, 1)} · Bâtisseur ${craftNumber(recipe.builderLevel, 1)} · Restaurateur ${craftNumber(recipe.restorerLevel, 1)} · Cuisine ${craftNumber(recipe.cuisineLevel)} · Atelier ${craftNumber(recipe.atelierLevel)}`;
+    const ingredientFields = [0, 1, 2].map((slot) => {
+      const ingredient = craftIngredients(recipe)[slot] || { resource: "", amount: 0 };
+      return `<div class="stat-field"><label>Ingrédient ${slot + 1}</label><input type="text" data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="resource" value="${escapeHtml(ingredient.resource)}"></div><div class="stat-field"><label>Quantité ${slot + 1}</label><input type="number" min="0" data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="amount" value="${escapeHtml(ingredient.amount)}"></div>`;
+    }).join("");
     return `<details class="config-card craft-card">
-      <summary><span><strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong><small>${ingredients}${context} → ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${effects}</small></span><span class="pill">pile ${stackLimit}</span></summary>
+      <summary><span><strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong><small>${section} · ${ingredients || "sans ingrédient"} → ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${requirement}</small></span><span class="pill">pile ${stackLimit}</span></summary>
       <div class="stat-form config-card-body">
         <div class="stat-field"><label>Nom</label><input type="text" data-craft-index="${index}" data-craft-field="displayName" value="${escapeHtml(recipe.displayName || "")}"></div>
-        <div class="stat-field"><label>Niveau Cuisine</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="cuisineLevel" value="${escapeHtml(recipe.cuisineLevel || 1)}"></div>
+        <div class="stat-field"><label>Section de fabrication</label><select data-craft-index="${index}" data-craft-field="craftSection"><option value="cuisine" ${recipe.craftSection !== "atelier" ? "selected" : ""}>Cuisine</option><option value="atelier" ${recipe.craftSection === "atelier" ? "selected" : ""}>Atelier</option></select></div>
+        <div class="stat-field"><label>Objet résultat</label><input type="text" data-craft-index="${index}" data-craft-field="resultItem" value="${escapeHtml(recipe.resultItem || "")}"></div>
         <div class="stat-field"><label>Quantité créée</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="resultAmount" value="${escapeHtml(recipe.resultAmount || 1)}"></div>
+        <div class="stat-field"><label>Durée (minutes)</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="durationMinutes" value="${escapeHtml(recipe.durationMinutes || 1)}"></div>
         <div class="stat-field"><label>Taille maximale d'une pile</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="stackLimit" value="${stackLimit}"></div>
+        ${ingredientFields}
+        <div class="stat-field"><label>Confiance du Kernel</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="kernelTrustLevel" value="${craftNumber(recipe.kernelTrustLevel, 1)}"></div>
+        <div class="stat-field"><label>Niveau Éleveur</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="breederLevel" value="${craftNumber(recipe.breederLevel, 1)}"></div>
+        <div class="stat-field"><label>Niveau Bâtisseur</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="builderLevel" value="${craftNumber(recipe.builderLevel, 1)}"></div>
+        <div class="stat-field"><label>Niveau Restaurateur</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="restorerLevel" value="${craftNumber(recipe.restorerLevel, 1)}"></div>
+        <div class="stat-field"><label>Niveau Cuisine</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="cuisineLevel" value="${craftNumber(recipe.cuisineLevel)}"></div>
+        <div class="stat-field"><label>Niveau Atelier</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="atelierLevel" value="${craftNumber(recipe.atelierLevel)}"></div>
+        <div class="stat-field stat-field-wide"><button class="ghost" type="button" data-delete-craft="${index}" ${recipe.id === "simpleMeal" ? "disabled" : ""}>${recipe.id === "simpleMeal" ? "Recette de départ" : "Supprimer la recette"}</button></div>
       </div>
     </details>`;
   }).join("");
   el.craftRecipeList.querySelectorAll("[data-craft-index]").forEach((input) => {
-    input.addEventListener("input", () => {
-      const recipe = craftConfig.recipes[Number(input.dataset.craftIndex)];
-      const field = input.dataset.craftField;
-      recipe[field] = input.type === "number" ? Math.max(1, Number(input.value) || 1) : input.value;
-      localStorage.setItem(CRAFT_STORAGE_KEY, JSON.stringify(craftConfig, null, 2));
-      el.craftStatus.textContent = "Recette modifiée localement. Exporte le JSON pour versionner la configuration.";
+    const updateRecipe = () => {
+      const recipe = zone0Settings.craft.recipes[Number(input.dataset.craftIndex)];
+      if (input.dataset.craftIngredient !== undefined) {
+        const slot = Number(input.dataset.craftIngredient);
+        recipe.ingredients = craftIngredients(recipe);
+        recipe.ingredients[slot] ||= { resource: "", amount: 0 };
+        recipe.ingredients[slot][input.dataset.craftPart] = input.dataset.craftPart === "amount" ? craftNumber(input.value) : input.value;
+        recipe.ingredients = recipe.ingredients.filter((item) => item.resource && craftNumber(item.amount) > 0);
+      } else {
+        const field = input.dataset.craftField;
+        recipe[field] = input.type === "number" ? craftNumber(input.value, field === "cuisineLevel" || field === "atelierLevel" ? 0 : 1) : input.value;
+      }
+      el.craftStatus.textContent = "Modifications en attente. Clique sur Publier dans l'app.";
+    };
+    input.addEventListener("input", updateRecipe);
+    input.addEventListener("change", updateRecipe);
+  });
+  el.craftRecipeList.querySelectorAll("[data-delete-craft]").forEach((button) => {
+    button.addEventListener("click", () => {
+      zone0Settings.craft.recipes.splice(Number(button.dataset.deleteCraft), 1);
+      renderCraftConfig();
+      el.craftStatus.textContent = "Recette supprimée. Clique sur Publier dans l'app pour appliquer ce retrait.";
     });
   });
 }
@@ -669,47 +684,25 @@ function renderCraftConfig() {
 function addCraftRecipe(event) {
   event.preventDefault();
   const form = new FormData(el.craftRecipeForm);
-  const ingredients = [
-    {
-      resource: String(form.get("ingredientResource") || "Organique"),
-      amount: Number(form.get("ingredientAmount") || 1),
-    },
-  ];
-  const resource2 = String(form.get("ingredientResource2") || "");
-  const amount2 = Number(form.get("ingredientAmount2") || 0);
-  if (resource2 && amount2 > 0) {
-    ingredients.push({ resource: resource2, amount: amount2 });
-  }
   const displayName = String(form.get("displayName") || "Nouvelle recette").trim();
   const resultItem = String(form.get("resultItem") || displayName).trim();
-  const recipe = {
-    id: displayName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `recipe-${Date.now()}`,
-    displayName,
-    ingredients,
-    contextIngredients: ["Eau"],
-    cuisineLevel: Number(form.get("cuisineLevel") || 1),
-    resultItem,
-    resultAmount: Number(form.get("resultAmount") || 1),
-    stackLimit: Math.max(1, Number(form.get("stackLimit") || 1)),
-    isConsumable: form.get("isConsumable") === "true",
-    foodType: String(form.get("foodType") || "meal"),
-    hungerRestore: Number(form.get("hungerRestore") || 0),
-    vitalityRestore: Number(form.get("vitalityRestore") || 0),
-  };
-  craftConfig.recipes = Array.isArray(craftConfig.recipes) ? [...craftConfig.recipes, recipe] : [recipe];
-  localStorage.setItem(CRAFT_STORAGE_KEY, JSON.stringify(craftConfig, null, 2));
+  const resource2 = String(form.get("ingredientResource2") || "");
+  const ingredients = [{ resource: String(form.get("ingredientResource") || "Organique"), amount: craftNumber(form.get("ingredientAmount"), 1) }];
+  if (resource2 && craftNumber(form.get("ingredientAmount2")) > 0) ingredients.push({ resource: resource2, amount: craftNumber(form.get("ingredientAmount2")) });
+  const id = displayName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `recipe-${Date.now()}`;
+  if (zone0Settings.craft.recipes.some((recipe) => recipe.id === id)) {
+    el.craftStatus.textContent = "Une recette utilise déjà cet identifiant. Change son nom avant de l'ajouter.";
+    return;
+  }
+  zone0Settings.craft.recipes.push({
+    id, displayName, craftSection: String(form.get("craftSection") || "cuisine"), ingredients, contextIngredients: {},
+    cuisineLevel: craftNumber(form.get("cuisineLevel")), atelierLevel: craftNumber(form.get("atelierLevel")), kernelTrustLevel: craftNumber(form.get("kernelTrustLevel"), 1),
+    breederLevel: craftNumber(form.get("breederLevel"), 1), builderLevel: craftNumber(form.get("builderLevel"), 1), restorerLevel: craftNumber(form.get("restorerLevel"), 1),
+    resultItem, resultAmount: craftNumber(form.get("resultAmount"), 1), durationMinutes: 1, stackLimit: craftNumber(form.get("stackLimit"), 1),
+    isConsumable: form.get("isConsumable") === "true", foodType: String(form.get("foodType") || "meal"), hungerRestore: craftNumber(form.get("hungerRestore")), vitalityRestore: craftNumber(form.get("vitalityRestore")), energyCost: 0,
+  });
   renderCraftConfig();
-  el.craftStatus.textContent = "Recette ajoutée localement. Exporte le JSON pour versionner la configuration.";
-}
-
-function exportCraftConfig() {
-  const blob = new Blob([JSON.stringify(craftConfig, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "craft-config.json";
-  link.click();
-  URL.revokeObjectURL(url);
+  el.craftStatus.textContent = "Recette ajoutée. Clique sur Publier dans l'app pour l'ajouter à l'application.";
 }
 
 function exportFablabConfig() {
@@ -741,6 +734,7 @@ const ZONE0_SECTION_SOURCES = {
   towerOperations: "tower-operations-config.json",
   fablab: "fablab-config.json",
   workshop: "workshop-config.json",
+  craft: "craft-config.json",
   market: "market-config.json",
   housing: "housing-config.json",
 };
@@ -752,6 +746,7 @@ const ZONE0_SECTION_LABELS = {
   towerOperations: "Exploration, météo et marchand",
   fablab: "Fablab",
   workshop: "Atelier",
+  craft: "Craft",
   market: "Marché",
   housing: "Maison et logements",
 };
@@ -808,10 +803,17 @@ async function loadZone0Settings() {
       if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) published = candidate;
     }
     zone0Settings = mergeConfig(base, published || {});
+    if (Array.isArray(published?.craft?.recipes)) {
+      const baselineById = new Map((base.craft?.recipes || []).map((recipe) => [recipe.id, recipe]));
+      zone0Settings.craft.recipes = published.craft.recipes.map((recipe) => mergeConfig(baselineById.get(recipe.id) || {}, recipe));
+    }
     renderZone0Settings();
     el.zone0SettingsStatus.textContent = published
       ? "Configuration publiée chargée depuis Firestore."
       : "Valeurs versionnées chargées. Publie-les pour les appliquer à l'application.";
+    el.craftStatus.textContent = published?.craft
+      ? "Recettes publiées chargées depuis Firestore."
+      : "Recettes versionnées chargées. Publie-les pour les appliquer à l'application.";
   } catch (error) {
     el.zone0SettingsStatus.textContent = `Configuration Zone 0 illisible: ${error.message}`;
   }
@@ -894,10 +896,9 @@ function renderLisiereEditor() {
 }
 
 function renderWorkshopEditor() {
-  const { recipes = [], ...general } = zone0Settings.workshop || {};
+  const { recipes: _legacyRecipes, ...general } = zone0Settings.workshop || {};
   el.zone0SettingsForm.innerHTML = [
     configCard("Atelier · réglages généraux", "workshop", general, [], { open: true, meta: "Emplacements, vitalité et vitesse" }),
-    ...recipes.map((recipe, index) => configCard(recipe.displayName || recipe.resultItem || `Recette ${index + 1}`, "workshop", recipe, ["recipes", index], { meta: "Coûts, durée, résultat et empilement" })),
     configCard("Maison et logements", "housing", zone0Settings.housing, [], { meta: "Capacité, coûts et bien-être" }),
   ].join("");
   bindZone0Inputs(el.zone0SettingsForm);
@@ -921,6 +922,7 @@ function renderZone0Settings() {
   renderConfigEditor(el.securityTowerConfigList, ["tower", "towerOperations"]);
   renderConfigEditor(el.fablabConfigList, ["fablab"]);
   renderWorkshopEditor();
+  renderCraftConfig();
   renderMarketEditor();
 }
 
@@ -942,6 +944,7 @@ async function publishZone0Settings() {
     zone0SettingsUpdatedBy: auth.currentUser.uid,
   }, { merge: true });
   el.zone0SettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
+  el.craftStatus.textContent = "Configuration Craft publiée. Les applications connectées se mettent à jour.";
   el.marketSettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
 }
 
@@ -1012,18 +1015,16 @@ el.exportKernelButton.addEventListener("click", () => {
   el.publishSecurityTowerButton,
   el.publishFablabButton,
   el.publishZone0SettingsButton,
+  el.publishCraftButton,
   el.publishMarketButton,
 ].forEach((button) => {
   button.addEventListener("click", () => {
     publishZone0Settings().catch((error) => {
       el.zone0SettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
+      el.craftStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
       el.marketSettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
     });
   });
-});
-
-el.exportCraftButton.addEventListener("click", () => {
-  exportCraftConfig();
 });
 
 el.craftRecipeForm.addEventListener("submit", addCraftRecipe);
@@ -1060,7 +1061,6 @@ loadLisiereForageConfig();
 loadSecurityTowerConfig();
 loadFablabConfig();
 loadRecyclerConfig();
-loadCraftConfig();
 loadZone0Settings();
 loadKernelProgressConfig().catch((error) => {
   el.kernelStatus.textContent = `Configuration progression Kernel illisible: ${error.message}`;

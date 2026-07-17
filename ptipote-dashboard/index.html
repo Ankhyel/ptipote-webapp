@@ -181,14 +181,20 @@
       <section class="dashboard-panel" data-dashboard-panel="craft">
         <section class="panel stat-ptipote-panel" aria-labelledby="craftTitle">
           <div class="panel-head">
-            <div><p class="eyebrow">Configuration V1</p><h2 id="craftTitle">Craft</h2></div>
-            <button class="ghost" id="exportCraftButton" type="button">Exporter JSON</button>
+            <div><p class="eyebrow">Configuration distante</p><h2 id="craftTitle">Craft</h2></div>
+            <button class="ghost" id="publishCraftButton" type="button">Publier dans l'app</button>
           </div>
-          <p class="panel-note" id="craftStatus">Charge les recettes depuis craft-config.json. Les ajouts restent locaux jusqu'a export.</p>
+          <p class="panel-note" id="craftStatus">Les recettes sont versionnées localement et publiées dans Firestore pour l'application.</p>
           <div class="stage-list" id="craftRecipeList"></div>
           <form class="stat-form" id="craftRecipeForm">
             <div class="stat-field"><label for="craftDisplayName">Nom recette</label><input id="craftDisplayName" name="displayName" value="Repas nutritif"></div>
-            <div class="stat-field"><label for="craftCuisineLevel">Niveau Cuisine</label><input id="craftCuisineLevel" name="cuisineLevel" type="number" min="1" value="1"></div>
+            <div class="stat-field"><label for="craftSection">Section de fabrication</label><select id="craftSection" name="craftSection"><option value="cuisine">Cuisine</option><option value="atelier">Atelier</option></select></div>
+            <div class="stat-field"><label for="craftCuisineLevel">Niveau Cuisine</label><input id="craftCuisineLevel" name="cuisineLevel" type="number" min="0" value="1"></div>
+            <div class="stat-field"><label for="craftAtelierLevel">Niveau Atelier</label><input id="craftAtelierLevel" name="atelierLevel" type="number" min="0" value="0"></div>
+            <div class="stat-field"><label for="craftKernelTrustLevel">Confiance du Kernel</label><input id="craftKernelTrustLevel" name="kernelTrustLevel" type="number" min="1" value="1"></div>
+            <div class="stat-field"><label for="craftBreederLevel">Niveau Éleveur</label><input id="craftBreederLevel" name="breederLevel" type="number" min="1" value="1"></div>
+            <div class="stat-field"><label for="craftBuilderLevel">Niveau Bâtisseur</label><input id="craftBuilderLevel" name="builderLevel" type="number" min="1" value="1"></div>
+            <div class="stat-field"><label for="craftRestorerLevel">Niveau Restaurateur</label><input id="craftRestorerLevel" name="restorerLevel" type="number" min="1" value="1"></div>
             <div class="stat-field"><label for="craftIngredientResource">Matériau 1</label><select id="craftIngredientResource" name="ingredientResource"><option>Organique</option><option>Minéral</option><option>Débris</option><option>Repas simple</option></select></div>
             <div class="stat-field"><label for="craftIngredientAmount">Quantité 1</label><input id="craftIngredientAmount" name="ingredientAmount" type="number" min="1" value="1"></div>
             <div class="stat-field"><label for="craftIngredientResource2">Matériau 2</label><select id="craftIngredientResource2" name="ingredientResource2"><option value="">Aucun</option><option>Organique</option><option>Minéral</option><option>Débris</option><option>Repas simple</option></select></div>
@@ -200,7 +206,7 @@
             <div class="stat-field"><label for="craftFoodType">FoodType</label><select id="craftFoodType" name="foodType"><option value="meal">Meal</option><option value="drink">Drink</option></select></div>
             <div class="stat-field"><label for="craftHungerRestore">Faim récupérée</label><input id="craftHungerRestore" name="hungerRestore" type="number" min="0" value="20"></div>
             <div class="stat-field"><label for="craftVitalityRestore">Vitalité récupérée</label><input id="craftVitalityRestore" name="vitalityRestore" type="number" min="0" value="15"></div>
-            <div class="stat-field stat-field-wide"><button class="button" id="addCraftRecipeButton" type="submit">Ajouter recette locale</button></div>
+            <div class="stat-field stat-field-wide"><button class="button" id="addCraftRecipeButton" type="submit">Ajouter la recette</button></div>
           </form>
         </section>
       </section>
