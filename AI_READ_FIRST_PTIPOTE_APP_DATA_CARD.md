@@ -1224,6 +1224,14 @@ Pour formater Dart:
 
 ## Dashboard Interne Et Configuration Distante Zone 0 (2026-07-17)
 
+### Organisation Kernel et Craft
+
+- L'onglet Dashboard est nommé `Kernel`. Il est rangé en accordéons : `Bâtiments` (missions de construction), `Missions`, `Éditeur de mission`, `Confiance, axes et récompenses`, puis `Plans & Patterns`.
+- Les prérequis d'un craft ne doivent plus être édités dans la carte Craft : `patternRequired` est activé par défaut. Lorsqu'une recette est créée avec ce réglage, le Dashboard ajoute son Plan Kernel `craft-{recipeId}` si nécessaire.
+- Les prérequis de Plan configurables sont : Confiance du Kernel, Éleveur, Bâtisseur, Restaurateur et niveaux de bâtiments. Les Plans générés portent `workshopRecipeId` afin de relier la recette au Plan.
+- Le bouton `Aller aux prérequis` du formulaire Craft ouvre l'onglet Kernel, section `Plans & Patterns`.
+- L'onglet P'TIBUG existant reste la source Dashboard de la Nurserie, espèces et Patterns. Les données de traits sont actuellement des entités joueur générées dans `users/{uid}/game/zone0.ptibug.traitData`; ne pas les confondre avec les Patterns de configuration.
+
 ### Source, droits et publication
 
 - Dashboard déployé : `https://ptipote-13508.web.app` ; sources : `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`, `ptipote-dashboard/styles.css`.

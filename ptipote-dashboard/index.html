@@ -30,7 +30,7 @@
       <nav class="dashboard-tabs" aria-label="Sections du dashboard">
         <button class="tab-button active" type="button" data-dashboard-tab="overview">Vue générale</button>
         <button class="tab-button" type="button" data-dashboard-tab="ptipote-stats">Stat Ptipote</button>
-        <button class="tab-button" type="button" data-dashboard-tab="kernel">Camp / Kernel</button>
+        <button class="tab-button" type="button" data-dashboard-tab="kernel">Kernel</button>
         <button class="tab-button" type="button" data-dashboard-tab="ptibug">P’TIBUG</button>
         <button class="tab-button" type="button" data-dashboard-tab="camp-heart">Cœur du Camp</button>
         <button class="tab-button" type="button" data-dashboard-tab="lisiere-forage">Lisière / Fourrage</button>
@@ -110,17 +110,13 @@
       <section class="dashboard-panel" data-dashboard-panel="kernel">
         <section class="panel stat-ptipote-panel" aria-labelledby="kernelTitle">
           <div class="panel-head">
-            <div><p class="eyebrow">Configuration distante</p><h2 id="kernelTitle">Camp / Kernel</h2></div>
+            <div><p class="eyebrow">Configuration distante</p><h2 id="kernelTitle">Kernel</h2></div>
             <button class="ghost" id="publishKernelButton" type="button">Publier dans l'app</button>
           </div>
           <p class="panel-note" id="kernelStatus">Missions, Plans, Patterns et récompenses sont publiés dans Firestore.</p>
-          <div class="stage-list" id="kernelConfigList"></div>
-          <div class="panel-head">
-            <div><p class="eyebrow">Progression</p><h3>Confiance, axes et Patterns</h3></div>
-          </div>
-          <div class="stage-list" id="kernelProgressConfigList"></div>
-          <div class="panel-head"><div><p class="eyebrow">Nouvelle mission</p><h3>Mission Kernel ou météo</h3></div></div>
-          <form class="stat-form" id="kernelMissionForm">
+          <details class="config-card" open><summary><span><strong>Bâtiments</strong><small>Prérequis, habitants et bio-batteries</small></span><span class="card-chevron">⌄</span></summary><div class="stage-list config-card-body" id="kernelBuildingList"></div></details>
+          <details class="config-card"><summary><span><strong>Missions</strong><small>Demandes, météo et récompenses</small></span><span class="card-chevron">⌄</span></summary><div class="stage-list config-card-body" id="kernelMissionList"></div></details>
+          <details class="config-card"><summary><span><strong>Éditeur de mission</strong><small>Créer une mission Kernel ou météo</small></span><span class="card-chevron">⌄</span></summary><div class="config-card-body"><form class="stat-form" id="kernelMissionForm">
             <div class="stat-field"><label>Titre<input name="title" value="Nouvelle mission Kernel"></label></div><div class="stat-field"><label>Type<select name="type"><option value="refugeRequest">Demande du refuge</option><option value="main">Mission principale</option><option value="weather">Mission météo</option></select></label></div>
             <div class="stat-field stat-field-wide"><label>Description<input name="description" value="Une nouvelle demande du Kernel."></label></div>
             <div class="stat-field"><label>Bâtiment requis<select name="building"><option value="">Aucun</option><option value="campHeart">Cœur du Camp</option><option value="fablab">Fablab</option><option value="cuisine">Cuisine</option><option value="atelier">Atelier</option><option value="securityTower">Tour</option><option value="market">Marché</option><option value="house">Maison</option></select></label></div><div class="stat-field"><label>Niveau bâtiment<input name="buildingLevel" type="number" min="0" value="0"></label></div>
@@ -128,7 +124,9 @@
             <div class="stat-field"><label>Produit demandé<input name="requestedItem" placeholder="ex. Filtre"></label></div><div class="stat-field"><label>Quantité demandée<input name="requestedAmount" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Intempérie liée<select name="weatherType"><option value="">Aucune</option><option value="toxicCloud">Nuage toxique</option><option value="heatWave">Forte chaleur</option><option value="heavyRain">Pluie intense</option></select></label></div>
             <div class="stat-field"><label>Produit récompense<input name="rewardItem" placeholder="ex. Bio-batterie"></label></div><div class="stat-field"><label>Quantité récompense<input name="rewardAmount" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Habitants récompense<input name="populationReward" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Bio-batteries<input name="bioBatteryReward" type="number" min="0" value="0"></label></div><div class="stat-field"><label>XP confiance<input name="xpReward" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Pattern / Plan récompense<input name="rewardPatternId" placeholder="id du Pattern"></label></div>
             <div class="stat-field stat-field-wide"><button class="button" type="submit">Créer la mission</button></div>
-          </form>
+          </form></div></details>
+          <details class="config-card"><summary><span><strong>Confiance, axes et récompenses</strong><small>XP des actions et progression</small></span><span class="card-chevron">⌄</span></summary><div class="stage-list config-card-body" id="kernelProgressConfigList"></div></details>
+          <details class="config-card"><summary><span><strong>Plans & Patterns</strong><small>Pré-requis de craft et Plans actifs</small></span><span class="card-chevron">⌄</span></summary><div class="stage-list config-card-body" id="kernelPlanList"></div></details>
         </section>
       </section>
 
@@ -214,10 +212,7 @@
             <div class="stat-field"><label for="craftSection">Section de fabrication</label><select id="craftSection" name="craftSection"><option value="cuisine">Cuisine</option><option value="atelier">Atelier</option></select></div>
             <div class="stat-field"><label for="craftCuisineLevel">Niveau Cuisine</label><input id="craftCuisineLevel" name="cuisineLevel" type="number" min="0" value="1"></div>
             <div class="stat-field"><label for="craftAtelierLevel">Niveau Atelier</label><input id="craftAtelierLevel" name="atelierLevel" type="number" min="0" value="0"></div>
-            <div class="stat-field"><label for="craftKernelTrustLevel">Confiance du Kernel</label><input id="craftKernelTrustLevel" name="kernelTrustLevel" type="number" min="1" value="1"></div>
-            <div class="stat-field"><label for="craftBreederLevel">Niveau Éleveur</label><input id="craftBreederLevel" name="breederLevel" type="number" min="1" value="1"></div>
-            <div class="stat-field"><label for="craftBuilderLevel">Niveau Bâtisseur</label><input id="craftBuilderLevel" name="builderLevel" type="number" min="1" value="1"></div>
-            <div class="stat-field"><label for="craftRestorerLevel">Niveau Restaurateur</label><input id="craftRestorerLevel" name="restorerLevel" type="number" min="1" value="1"></div>
+            <div class="stat-field"><label for="craftPatternRequired">Pattern requis</label><select id="craftPatternRequired" name="patternRequired"><option value="true">Oui</option><option value="false">Non</option></select></div>
             <div class="stat-field"><label for="craftIngredientResource">Matériau 1</label><select id="craftIngredientResource" name="ingredientResource"><option>Organique</option><option>Minéral</option><option>Débris</option><option>Repas simple</option></select></div>
             <div class="stat-field"><label for="craftIngredientAmount">Quantité 1</label><input id="craftIngredientAmount" name="ingredientAmount" type="number" min="1" value="1"></div>
             <div class="stat-field"><label for="craftIngredientResource2">Matériau 2</label><select id="craftIngredientResource2" name="ingredientResource2"><option value="">Aucun</option><option>Organique</option><option>Minéral</option><option>Débris</option><option>Repas simple</option></select></div>
@@ -229,7 +224,7 @@
             <div class="stat-field"><label for="craftFoodType">FoodType</label><select id="craftFoodType" name="foodType"><option value="meal">Meal</option><option value="drink">Drink</option></select></div>
             <div class="stat-field"><label for="craftHungerRestore">Faim récupérée</label><input id="craftHungerRestore" name="hungerRestore" type="number" min="0" value="20"></div>
             <div class="stat-field"><label for="craftVitalityRestore">Vitalité récupérée</label><input id="craftVitalityRestore" name="vitalityRestore" type="number" min="0" value="15"></div>
-            <div class="stat-field stat-field-wide"><button class="button" id="addCraftRecipeButton" type="submit">Ajouter la recette</button></div>
+            <div class="stat-field stat-field-wide"><button class="button" id="addCraftRecipeButton" type="submit">Ajouter la recette</button><button class="ghost" id="goToCraftPlanButton" type="button">Aller aux prérequis</button></div>
           </form>
         </section>
       </section>

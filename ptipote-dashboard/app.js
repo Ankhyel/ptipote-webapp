@@ -117,8 +117,10 @@ const ids = [
   "resetPtipoteStatsButton",
   "exportPtipoteStatsButton",
   "kernelStatus",
-  "kernelConfigList",
+  "kernelBuildingList",
+  "kernelMissionList",
   "kernelProgressConfigList",
+  "kernelPlanList",
   "kernelMissionForm",
   "publishKernelButton",
   "ptibugStatus",
@@ -633,13 +635,12 @@ function renderCraftConfig() {
       .map((item) => `${escapeHtml(item.amount)} ${escapeHtml(item.resource)}`).join(" + ");
     const section = recipe.craftSection === "atelier" ? "Atelier" : "Cuisine";
     const stackLimit = craftNumber(recipe.stackLimit || 1, 1);
-    const requirement = `Kernel ${craftNumber(recipe.kernelTrustLevel, 1)} · Éleveur ${craftNumber(recipe.breederLevel, 1)} · Bâtisseur ${craftNumber(recipe.builderLevel, 1)} · Restaurateur ${craftNumber(recipe.restorerLevel, 1)} · Cuisine ${craftNumber(recipe.cuisineLevel)} · Atelier ${craftNumber(recipe.atelierLevel)}`;
     const ingredientFields = [0, 1, 2].map((slot) => {
       const ingredient = craftIngredients(recipe)[slot] || { resource: "", amount: 0 };
       return `<div class="stat-field"><label>Ingrédient ${slot + 1}</label><input type="text" data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="resource" value="${escapeHtml(ingredient.resource)}"></div><div class="stat-field"><label>Quantité ${slot + 1}</label><input type="number" min="0" data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="amount" value="${escapeHtml(ingredient.amount)}"></div>`;
     }).join("");
     return `<details class="config-card craft-card">
-      <summary><span><strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong><small>${section} · ${ingredients || "sans ingrédient"} → ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${requirement}</small></span><span class="pill">pile ${stackLimit}</span></summary>
+      <summary><span><strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong><small>${section} · ${ingredients || "sans ingrédient"} → ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${recipe.patternRequired === false ? "sans Pattern" : "Pattern requis"}</small></span><span class="pill">pile ${stackLimit}</span></summary>
       <div class="stat-form config-card-body">
         <div class="stat-field"><label>Nom</label><input type="text" data-craft-index="${index}" data-craft-field="displayName" value="${escapeHtml(recipe.displayName || "")}"></div>
         <div class="stat-field"><label>Section de fabrication</label><select data-craft-index="${index}" data-craft-field="craftSection"><option value="cuisine" ${recipe.craftSection !== "atelier" ? "selected" : ""}>Cuisine</option><option value="atelier" ${recipe.craftSection === "atelier" ? "selected" : ""}>Atelier</option></select></div>
@@ -648,10 +649,7 @@ function renderCraftConfig() {
         <div class="stat-field"><label>Durée (minutes)</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="durationMinutes" value="${escapeHtml(recipe.durationMinutes || 1)}"></div>
         <div class="stat-field"><label>Taille maximale d'une pile</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="stackLimit" value="${stackLimit}"></div>
         ${ingredientFields}
-        <div class="stat-field"><label>Confiance du Kernel</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="kernelTrustLevel" value="${craftNumber(recipe.kernelTrustLevel, 1)}"></div>
-        <div class="stat-field"><label>Niveau Éleveur</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="breederLevel" value="${craftNumber(recipe.breederLevel, 1)}"></div>
-        <div class="stat-field"><label>Niveau Bâtisseur</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="builderLevel" value="${craftNumber(recipe.builderLevel, 1)}"></div>
-        <div class="stat-field"><label>Niveau Restaurateur</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="restorerLevel" value="${craftNumber(recipe.restorerLevel, 1)}"></div>
+        <label class="toggle-field"><input type="checkbox" data-craft-index="${index}" data-craft-field="patternRequired" ${recipe.patternRequired === false ? "" : "checked"}>Pattern requis</label>
         <div class="stat-field"><label>Niveau Cuisine</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="cuisineLevel" value="${craftNumber(recipe.cuisineLevel)}"></div>
         <div class="stat-field"><label>Niveau Atelier</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="atelierLevel" value="${craftNumber(recipe.atelierLevel)}"></div>
         <div class="stat-field stat-field-wide"><button class="ghost" type="button" data-delete-craft="${index}" ${recipe.id === "simpleMeal" ? "disabled" : ""}>${recipe.id === "simpleMeal" ? "Recette de départ" : "Supprimer la recette"}</button></div>
@@ -700,11 +698,14 @@ function addCraftRecipe(event) {
   }
   zone0Settings.craft.recipes.push({
     id, displayName, craftSection: String(form.get("craftSection") || "cuisine"), ingredients, contextIngredients: {},
-    cuisineLevel: craftNumber(form.get("cuisineLevel")), atelierLevel: craftNumber(form.get("atelierLevel")), kernelTrustLevel: craftNumber(form.get("kernelTrustLevel"), 1),
-    breederLevel: craftNumber(form.get("breederLevel"), 1), builderLevel: craftNumber(form.get("builderLevel"), 1), restorerLevel: craftNumber(form.get("restorerLevel"), 1),
+    cuisineLevel: craftNumber(form.get("cuisineLevel")), atelierLevel: craftNumber(form.get("atelierLevel")), patternRequired: form.get("patternRequired") !== "false",
     resultItem, resultAmount: craftNumber(form.get("resultAmount"), 1), durationMinutes: 1, stackLimit: craftNumber(form.get("stackLimit"), 1),
     isConsumable: form.get("isConsumable") === "true", foodType: String(form.get("foodType") || "meal"), hungerRestore: craftNumber(form.get("hungerRestore")), vitalityRestore: craftNumber(form.get("vitalityRestore")), energyCost: 0,
   });
+  const recipePlanId = `craft-${id}`;
+  if (zone0Settings.craft.recipes.at(-1).patternRequired && !zone0Settings.kernelProgress.plans.some((plan) => plan.id === recipePlanId)) {
+    zone0Settings.kernelProgress.plans.push({ id: recipePlanId, title: `Pattern ${displayName}`, category: "workshop", workshopRecipeId: id, requiredTrustLevel: 1, requiredBreederLevel: 1, requiredBuilderLevel: 1, requiredRestorerLevel: 1, requiredBuildingLevels: {}, discoveryThreshold: 0, requiredAxisLevel: 0 });
+  }
   renderCraftConfig();
   el.craftStatus.textContent = "Recette ajoutée. Clique sur Publier dans l'app pour l'ajouter à l'application.";
 }
@@ -942,27 +943,32 @@ function renderCampHeartEditor() {
 }
 
 function renderKernelEditor() {
+  const recipes = zone0Settings.craft?.recipes || [];
+  zone0Settings.kernelProgress.plans ||= [];
+  recipes.filter((recipe) => recipe.patternRequired !== false).forEach((recipe) => {
+    if (!zone0Settings.kernelProgress.plans.some((plan) => plan.workshopRecipeId === recipe.id)) {
+      zone0Settings.kernelProgress.plans.push({ id: `craft-${recipe.id}`, title: `Pattern ${recipe.displayName}`, category: recipe.craftSection === "cuisine" ? "cuisine" : "workshop", workshopRecipeId: recipe.id, requiredTrustLevel: 1, requiredBreederLevel: 1, requiredBuilderLevel: 1, requiredRestorerLevel: 1, requiredBuildingLevels: {}, discoveryThreshold: 0, requiredAxisLevel: 0 });
+    }
+  });
   const kernel = zone0Settings.kernel || {};
   const { missions = [], plans = [] } = kernel;
   const progress = zone0Settings.kernelProgress || {};
   const { eventRewards = {}, plans: allPlans = [], ...progressGeneral } = progress;
   const normalPlans = allPlans.filter((plan) => plan.category !== "ptibug");
-  el.kernelConfigList.innerHTML = [
-    ...missions.map((mission, index) => `${configCard(
+  const buildingMissions = missions.filter((mission) => ["fablabBuilt", "securityTowerBuilt"].includes(mission.conditionType));
+  const otherMissions = missions.filter((mission) => !buildingMissions.includes(mission));
+  const missionCards = (items, offset = 0) => items.map((mission) => {
+    const index = missions.indexOf(mission);
+    return `${configCard(
       mission.title || `Mission ${index + 1}`,
       "kernel",
       mission,
       ["missions", index],
       { meta: `${mission.type || "mission"} · demande : ${mission.requestedAmount || 0} ${mission.requestedItem || "aucune"} · Pattern : ${mission.rewardPatternId || "aucun"}` },
-    )}<button class="ghost" type="button" data-delete-kernel-mission="${index}">Supprimer cette mission</button>`,),
-    ...plans.map((plan, index) => configCard(
-      plan.title || `Plan ${index + 1}`,
-      "kernel",
-      plan,
-      ["plans", index],
-      { meta: "Niveau du Cœur requis" },
-    )),
-  ].join("");
+    )}<button class="ghost" type="button" data-delete-kernel-mission="${index}">Supprimer cette mission</button>`;
+  });
+  el.kernelBuildingList.innerHTML = missionCards(buildingMissions).join("") || '<p class="panel-note">Aucune mission bâtiment.</p>';
+  el.kernelMissionList.innerHTML = missionCards(otherMissions).join("") || '<p class="panel-note">Aucune autre mission.</p>';
   el.kernelProgressConfigList.innerHTML = [
     configCard("Progression du Kernel", "kernelProgress", progressGeneral, [], { open: true, meta: "XP de confiance et des axes" }),
     ...Object.entries(eventRewards).map(([event, reward]) => configCard(
@@ -972,6 +978,15 @@ function renderKernelEditor() {
       ["eventRewards", event],
       { meta: "XP accordée par événement" },
     )),
+  ].join("");
+  el.kernelPlanList.innerHTML = [
+    ...plans.map((plan, index) => configCard(
+      plan.title || `Plan ${index + 1}`,
+      "kernel",
+      plan,
+      ["plans", index],
+      { meta: "Niveau du Cœur requis" },
+    )),
     ...normalPlans.map((plan, index) => configCard(
       plan.title || plan.id || `Plan ${index + 1}`,
       "kernelProgress",
@@ -980,15 +995,17 @@ function renderKernelEditor() {
       { meta: `${plan.category || "Plan"} · ${plan.discoveryEvent || "départ"}` },
     )),
   ].join("");
-  bindZone0Inputs(el.kernelConfigList);
+  bindZone0Inputs(el.kernelBuildingList);
+  bindZone0Inputs(el.kernelMissionList);
   bindZone0Inputs(el.kernelProgressConfigList);
-  el.kernelConfigList.querySelectorAll("[data-delete-kernel-mission]").forEach((button) => {
+  bindZone0Inputs(el.kernelPlanList);
+  [el.kernelBuildingList, el.kernelMissionList].forEach((target) => target.querySelectorAll("[data-delete-kernel-mission]").forEach((button) => {
     button.addEventListener("click", () => {
       zone0Settings.kernel.missions.splice(Number(button.dataset.deleteKernelMission), 1);
       renderKernelEditor();
       el.kernelStatus.textContent = "Mission supprimée. Clique sur Publier dans l'app pour appliquer ce retrait.";
     });
-  });
+  }));
 }
 
 function renderPTibugEditor() {
@@ -1241,6 +1258,10 @@ el.exportPtipoteStatsButton.addEventListener("click", () => {
 });
 
 el.craftRecipeForm.addEventListener("submit", addCraftRecipe);
+document.getElementById("goToCraftPlanButton")?.addEventListener("click", () => {
+  document.querySelector('[data-dashboard-tab="kernel"]')?.click();
+  document.getElementById("kernelPlanList")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 el.kernelMissionForm.addEventListener("submit", addKernelMission);
 
 async function loadKernelProgressConfig() {
