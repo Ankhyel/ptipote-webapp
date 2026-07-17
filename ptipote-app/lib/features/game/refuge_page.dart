@@ -1033,118 +1033,132 @@ class _MaisonPageState extends State<_MaisonPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Maison'),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Amelioration et logements',
-            icon: const Icon(Icons.construction_outlined),
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              showDragHandle: true,
-              isScrollControlled: true,
-              builder: (_) => _HouseManagementSheet(gameState: _gameState),
-            ),
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Maison'),
+          bottom: const TabBar(
+            tabs: <Widget>[
+              Tab(text: 'P’TIPOTES', icon: Icon(Icons.pets_outlined)),
+              Tab(text: 'Amélioration', icon: Icon(Icons.upgrade_outlined)),
+              Tab(text: 'Infos', icon: Icon(Icons.info_outline)),
+            ],
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: DecoratedBox(
-              decoration: const BoxDecoration(color: Color(0xFFE7D4B2)),
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  if (_maisonAsset != null)
-                    Image.asset(
-                      _maisonAsset!,
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
-                    ),
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: <Color>[
-                          Color(0x22000000),
-                          Color(0x33000000),
-                        ],
+        ),
+        body: TabBarView(children: <Widget>[
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(color: Color(0xFFE7D4B2)),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      if (_maisonAsset != null)
+                        Image.asset(
+                          _maisonAsset!,
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                        ),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: <Color>[
+                              Color(0x22000000),
+                              Color(0x33000000),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                      _AlcoveLayer(alcoveCount: _gameState.alcoveCapacity),
+                      const _FloorLayer(),
+                      StreamBuilder<List<PtipoteFigurine>>(
+                        stream: _figurineService.watchMyFigurines(),
+                        builder: (context, snapshot) {
+                          final figurines =
+                              snapshot.data ?? const <PtipoteFigurine>[];
+                          if (snapshot.connectionState ==
+                                  ConnectionState.waiting &&
+                              figurines.isEmpty) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+                          if (figurines.isEmpty) {
+                            return const _RefugeEmptyState();
+                          }
+                          return Stack(
+                            children: <Widget>[
+                              _PtipoteRefugeLayer(
+                                figurines: figurines,
+                                animation: _tickController,
+                                selectedFigurineId: _selectedFigurineId,
+                                vitalityFor: _vitalityFor,
+                                hungerFor: _gameState.hungerFor,
+                                restFor: _gameState.restFor,
+                                xpFor: _gameState.xpFor,
+                                levelFor: _gameState.levelFor,
+                                isOnMission: _gameState.isOnMission,
+                                isAssignedToTower: _gameState.isAssignedToTower,
+                                isAssignedToActiveBuilding: (figurineId) =>
+                                    _gameState
+                                        .isAssignedToWorkshop(figurineId) ||
+                                    _gameState.isAssignedToMarket(figurineId),
+                                isResting: _gameState.isResting,
+                                isWaitingForBed: _gameState.isWaitingForBed,
+                                isHappy: _gameState.isHappy,
+                                hasIndigestion: _gameState.hasIndigestion,
+                                restStateLabelFor: _gameState.restStateLabelFor,
+                                moodLabelFor: _gameState.moodLabelFor,
+                                recoveryRemaining:
+                                    _gameState.vitalityRecoveryRemaining,
+                                restRecoveryRemaining:
+                                    _gameState.restRecoveryRemaining,
+                                isCuddleCareActive:
+                                    _gameState.isCuddleCareActive,
+                                canCuddle: _gameState.canCuddle,
+                                cuddleProgress:
+                                    _gameState.cuddleCooldownProgress,
+                                autoPreferenceFor: _autoPreferenceFor,
+                                availableSimpleMeals: _gameState.resourceAmount(
+                                  craftConfig.simpleMealRecipe.resultItem,
+                                ),
+                                alcoveCapacity: _gameState.alcoveCapacity,
+                                lastCuddleAt: (figurine) =>
+                                    _gameState.lastCuddleAt[figurine.id],
+                                onToggleFigurine: _toggleFigurine,
+                                onAutoPreferenceChanged: _setAutoPreference,
+                                onWake: _wakeFigurine,
+                                onSleep: _sendToSleep,
+                                onCuddle: _cuddleFigurine,
+                                onFeed: _feedFigurine,
+                              ),
+                              _MaisonUtilityButtons(
+                                unreadCount: _gameState.unreadReportCount,
+                                onInventory: _openInventory,
+                                onMessages: _openMessages,
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
                   ),
-                  _AlcoveLayer(alcoveCount: _gameState.alcoveCapacity),
-                  const _FloorLayer(),
-                  StreamBuilder<List<PtipoteFigurine>>(
-                    stream: _figurineService.watchMyFigurines(),
-                    builder: (context, snapshot) {
-                      final figurines =
-                          snapshot.data ?? const <PtipoteFigurine>[];
-                      if (snapshot.connectionState == ConnectionState.waiting &&
-                          figurines.isEmpty) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (figurines.isEmpty) return const _RefugeEmptyState();
-                      return Stack(
-                        children: <Widget>[
-                          _PtipoteRefugeLayer(
-                            figurines: figurines,
-                            animation: _tickController,
-                            selectedFigurineId: _selectedFigurineId,
-                            vitalityFor: _vitalityFor,
-                            hungerFor: _gameState.hungerFor,
-                            restFor: _gameState.restFor,
-                            xpFor: _gameState.xpFor,
-                            levelFor: _gameState.levelFor,
-                            isOnMission: _gameState.isOnMission,
-                            isAssignedToTower: _gameState.isAssignedToTower,
-                            isAssignedToActiveBuilding: (figurineId) =>
-                                _gameState.isAssignedToWorkshop(figurineId) ||
-                                _gameState.isAssignedToMarket(figurineId),
-                            isResting: _gameState.isResting,
-                            isHappy: _gameState.isHappy,
-                            hasIndigestion: _gameState.hasIndigestion,
-                            restStateLabelFor: _gameState.restStateLabelFor,
-                            moodLabelFor: _gameState.moodLabelFor,
-                            recoveryRemaining:
-                                _gameState.vitalityRecoveryRemaining,
-                            restRecoveryRemaining:
-                                _gameState.restRecoveryRemaining,
-                            isCuddleCareActive: _gameState.isCuddleCareActive,
-                            canCuddle: _gameState.canCuddle,
-                            cuddleProgress: _gameState.cuddleCooldownProgress,
-                            autoPreferenceFor: _autoPreferenceFor,
-                            availableSimpleMeals: _gameState.resourceAmount(
-                              craftConfig.simpleMealRecipe.resultItem,
-                            ),
-                            alcoveCapacity: _gameState.alcoveCapacity,
-                            lastCuddleAt: (figurine) =>
-                                _gameState.lastCuddleAt[figurine.id],
-                            onToggleFigurine: _toggleFigurine,
-                            onAutoPreferenceChanged: _setAutoPreference,
-                            onWake: _wakeFigurine,
-                            onSleep: _sendToSleep,
-                            onCuddle: _cuddleFigurine,
-                            onFeed: _feedFigurine,
-                          ),
-                          _MaisonUtilityButtons(
-                            unreadCount: _gameState.unreadReportCount,
-                            onInventory: _openInventory,
-                            onMessages: _openMessages,
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+          _HouseUpgradeTab(gameState: _gameState),
+          const _BuildingInformationTab(
+            title: 'Maison',
+            description:
+                'La Maison accueille les P’TIPOTES actifs, leurs alcôves de repos, les messages et l’inventaire du refuge. Son amélioration augmente les alcôves. Les logements des habitants sont agrégés et n’ajoutent pas directement de population.',
+          ),
+        ]),
       ),
     );
   }
@@ -1167,16 +1181,16 @@ class _MaisonPageState extends State<_MaisonPage>
   }
 }
 
-class _HouseManagementSheet extends StatefulWidget {
-  const _HouseManagementSheet({required this.gameState});
+class _HouseUpgradeTab extends StatefulWidget {
+  const _HouseUpgradeTab({required this.gameState});
 
   final Zone0GameState gameState;
 
   @override
-  State<_HouseManagementSheet> createState() => _HouseManagementSheetState();
+  State<_HouseUpgradeTab> createState() => _HouseUpgradeTabState();
 }
 
-class _HouseManagementSheetState extends State<_HouseManagementSheet> {
+class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
   @override
   void initState() {
     super.initState();
@@ -1218,93 +1232,89 @@ class _HouseManagementSheetState extends State<_HouseManagementSheet> {
     final state = widget.gameState;
     final finishedHousing = state.constructionProjects['housing'];
     return SafeArea(
-      child: Padding(
+      child: ListView(
         padding: EdgeInsets.fromLTRB(
           18,
-          12,
+          18,
           18,
           18 + MediaQuery.viewInsetsOf(context).bottom,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              'Maison',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Niveau ${state.houseLevel} · ${state.alcoveCapacity} alcoves actives',
-            ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: state.houseLevel >= 5
-                  ? null
-                  : () => _openProject(
-                        targetId: 'house',
-                        title: 'Ameliorer la Maison',
-                        description:
-                            'Une Maison plus stable ajoute des alcoves pour le repos des P’TIPOTES.',
-                        footer: 'Niveau suivant : alcoves supplementaires.',
-                      ),
-              icon: const Icon(Icons.bedroom_parent_outlined),
-              label: const Text('Amelioration'),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Logements',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            Text(
-              'Population ${state.currentPopulation} · capacite ${state.housingCapacity} · sans logement ${state.unhousedPopulation}',
-            ),
-            if (state.housingWellbeingPenalty > 0)
+        children: <Widget>[
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
               Text(
-                'Bien-etre : -${state.housingWellbeingPenalty} (logements)',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                'Maison',
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w900),
               ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: () => _openProject(
-                targetId: 'housing',
-                title: 'Construire un logement',
-                description:
-                    'Un logement accueille trois habitants. Les materiaux sont poses avant le chantier.',
-                footer: 'Capacite : +3 habitants a la fin des travaux.',
-              ),
-              icon: const Icon(Icons.home_work_outlined),
-              label: const Text('Construire un logement'),
-            ),
-            if (finishedHousing != null &&
-                finishedHousing.completedAt != null &&
-                state.communityConstructionThanks?.sourceProjectId !=
-                    finishedHousing.projectId) ...<Widget>[
               const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: () {
-                  final result = state.thankResidentsForHousing(
-                    finishedHousing.projectId,
-                  );
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(SnackBar(content: Text(result.message)));
-                },
-                child: const Text('Remercier les habitants'),
+              Text(
+                'Niveau ${state.houseLevel} · ${state.alcoveCapacity} alcoves actives',
               ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: state.houseLevel >= 5
+                    ? null
+                    : () => _openProject(
+                          targetId: 'house',
+                          title: 'Ameliorer la Maison',
+                          description:
+                              'Une Maison plus stable ajoute des alcoves pour le repos des P’TIPOTES.',
+                          footer: 'Niveau suivant : alcoves supplementaires.',
+                        ),
+                icon: const Icon(Icons.bedroom_parent_outlined),
+                label: const Text('Amelioration'),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Logements',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              Text(
+                'Population ${state.currentPopulation} · capacite ${state.housingCapacity} · sans logement ${state.unhousedPopulation}',
+              ),
+              if (state.housingWellbeingPenalty > 0)
+                Text(
+                  'Bien-etre : -${state.housingWellbeingPenalty} (logements)',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: () => _openProject(
+                  targetId: 'housing',
+                  title: 'Construire un logement',
+                  description:
+                      'Un logement accueille trois habitants. Les materiaux sont poses avant le chantier.',
+                  footer: 'Capacite : +3 habitants a la fin des travaux.',
+                ),
+                icon: const Icon(Icons.home_work_outlined),
+                label: const Text('Construire un logement'),
+              ),
+              if (finishedHousing != null &&
+                  finishedHousing.completedAt != null &&
+                  state.communityConstructionThanks?.sourceProjectId !=
+                      finishedHousing.projectId) ...<Widget>[
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () {
+                    final result = state.thankResidentsForHousing(
+                      finishedHousing.projectId,
+                    );
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(SnackBar(content: Text(result.message)));
+                  },
+                  child: const Text('Remercier les habitants'),
+                ),
+              ],
             ],
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Fermer'),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1753,6 +1763,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.isAssignedToTower,
     required this.isAssignedToActiveBuilding,
     required this.isResting,
+    required this.isWaitingForBed,
     required this.isHappy,
     required this.hasIndigestion,
     required this.restStateLabelFor,
@@ -1786,6 +1797,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final bool Function(String figurineId) isAssignedToTower;
   final bool Function(String figurineId) isAssignedToActiveBuilding;
   final bool Function(PtipoteFigurine figurine) isResting;
+  final bool Function(PtipoteFigurine figurine) isWaitingForBed;
   final bool Function(PtipoteFigurine figurine) isHappy;
   final bool Function(PtipoteFigurine figurine) hasIndigestion;
   final String Function(PtipoteFigurine figurine) restStateLabelFor;
@@ -1974,11 +1986,15 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
                         onTap: () => widget.onToggleFigurine(figurine),
                       ),
                     ),
-                    if (needIcon != null)
+                    if (needIcon != null || widget.isWaitingForBed(figurine))
                       Positioned(
                         left: left + spriteSize * 0.58,
                         top: top - 8,
-                        child: _NeedBubble(icon: needIcon),
+                        child: _NeedBubble(
+                          icon: widget.isWaitingForBed(figurine)
+                              ? Icons.bedtime_outlined
+                              : needIcon ?? Icons.bedtime_outlined,
+                        ),
                       ),
                   ],
                 );
@@ -2114,6 +2130,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
             availableSimpleMeals: widget.availableSimpleMeals,
             lastCuddleAt: widget.lastCuddleAt(selectedFigurine),
             isResting: placement.isResting,
+            isWaitingForBed: widget.isWaitingForBed(selectedFigurine),
             onWake: () => widget.onWake(selectedFigurine),
             onSleep: () => widget.onSleep(selectedFigurine),
             onCuddle: () => widget.onCuddle(selectedFigurine),
@@ -2418,6 +2435,7 @@ class _PtipoteInfoBubble extends StatelessWidget {
     required this.availableSimpleMeals,
     required this.lastCuddleAt,
     required this.isResting,
+    required this.isWaitingForBed,
     required this.onWake,
     required this.onSleep,
     required this.onCuddle,
@@ -2444,6 +2462,7 @@ class _PtipoteInfoBubble extends StatelessWidget {
   final int availableSimpleMeals;
   final DateTime? lastCuddleAt;
   final bool isResting;
+  final bool isWaitingForBed;
   final VoidCallback onWake;
   final VoidCallback onSleep;
   final VoidCallback onCuddle;
@@ -2491,6 +2510,13 @@ class _PtipoteInfoBubble extends StatelessWidget {
                   hasIndigestion: hasIndigestion,
                   recoveryRemaining: recoveryRemaining,
                 ),
+                if (isWaitingForBed) ...<Widget>[
+                  const SizedBox(height: 6),
+                  const Text(
+                    'En attente d’une alcôve libre.',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 Row(
                   children: <Widget>[

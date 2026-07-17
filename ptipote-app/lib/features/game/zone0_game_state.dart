@@ -37,6 +37,9 @@ class Zone0GameState extends ChangeNotifier {
   final Map<String, int> levelOverrides = <String, int>{};
   final Map<String, DateTime> lastCuddleAt = <String, DateTime>{};
   final Set<String> manualRestingIds = <String>{};
+  // A P'TIPOTE can need rest even when every alcove is occupied. Keeping this
+  // separately prevents an unavailable bed from granting alcove recovery.
+  final Set<String> waitingForBedIds = <String>{};
   final Map<String, PtipoteAutoAssignmentPreference> autoPreferenceOverrides =
       <String, PtipoteAutoAssignmentPreference>{};
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
@@ -612,14 +615,17 @@ class Zone0GameState extends ChangeNotifier {
 
   bool isResting(PtipoteFigurine figurine) {
     return !isOnMission(figurine.id) &&
-        (manualRestingIds.contains(figurine.id) ||
-            vitalityFor(figurine) <=
-                ptipoteStatsConfig.minVitalityBeforeAutoRest);
+        manualRestingIds.contains(figurine.id) &&
+        !waitingForBedIds.contains(figurine.id);
   }
+
+  bool isWaitingForBed(PtipoteFigurine figurine) =>
+      !isOnMission(figurine.id) && waitingForBedIds.contains(figurine.id);
 
   bool isBusy(PtipoteFigurine figurine) {
     return isOnMission(figurine.id) ||
         isResting(figurine) ||
+        isWaitingForBed(figurine) ||
         isAssignedToTower(figurine.id) ||
         isAssignedToWorkshop(figurine.id) ||
         isAssignedToMarket(figurine.id);
@@ -1276,6 +1282,9 @@ class Zone0GameState extends ChangeNotifier {
   void sendToSleep(PtipoteFigurine figurine) {
     if (isOnMission(figurine.id)) return;
     manualRestingIds.add(figurine.id);
+    if (manualRestingIds.length > alcoveCapacity) {
+      waitingForBedIds.add(figurine.id);
+    }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
   }
@@ -1291,6 +1300,7 @@ class Zone0GameState extends ChangeNotifier {
   void wakeFromRest(PtipoteFigurine figurine) {
     if (isOnMission(figurine.id)) return;
     manualRestingIds.remove(figurine.id);
+    waitingForBedIds.remove(figurine.id);
     final wakeVitality = math.min(
       ptipoteStatsConfig.maxVitality,
       ptipoteStatsConfig.minVitalityBeforeAutoRest + 1,
@@ -1306,6 +1316,9 @@ class Zone0GameState extends ChangeNotifier {
     required int tick,
   }) {
     var changed = false;
+    if (_syncBedAssignments(figurines)) {
+      changed = true;
+    }
     if (resolveDueTowerMissions()) {
       changed = true;
     }
@@ -1421,6 +1434,9 @@ class Zone0GameState extends ChangeNotifier {
         changed = true;
       }
     }
+    if (_syncBedAssignments(figurines)) {
+      changed = true;
+    }
     if (isSecurityTowerBuilt &&
         towerAssignedIds.isEmpty &&
         !hasActiveTowerMission &&
@@ -1449,6 +1465,9 @@ class Zone0GameState extends ChangeNotifier {
     if (elapsedMinutes <= 0) return false;
 
     var changed = false;
+    if (_syncBedAssignments(figurines)) {
+      changed = true;
+    }
     final figurinesById = <String, PtipoteFigurine>{
       for (final figurine in figurines) figurine.id: figurine,
     };
@@ -1566,6 +1585,39 @@ class Zone0GameState extends ChangeNotifier {
 
     lastSimulationAt = now;
     return changed;
+  }
+
+  bool _syncBedAssignments(List<PtipoteFigurine> figurines) {
+    final candidates = <String>[];
+    for (final figurine in figurines) {
+      if (isOnMission(figurine.id) ||
+          isAssignedToTower(figurine.id) ||
+          isAssignedToWorkshop(figurine.id) ||
+          isAssignedToMarket(figurine.id)) {
+        continue;
+      }
+      if (manualRestingIds.contains(figurine.id) ||
+          vitalityFor(figurine) <=
+              ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+        manualRestingIds.add(figurine.id);
+        candidates.add(figurine.id);
+      }
+    }
+
+    final alreadyInBed = manualRestingIds
+        .where(
+            (id) => candidates.contains(id) && !waitingForBedIds.contains(id))
+        .toList();
+    final preferred = <String>[
+      ...alreadyInBed,
+      ...candidates.where((id) => !alreadyInBed.contains(id)),
+    ];
+    final nextWaiting = preferred.skip(alcoveCapacity).toSet();
+    if (setEquals(waitingForBedIds, nextWaiting)) return false;
+    waitingForBedIds
+      ..clear()
+      ..addAll(nextWaiting);
+    return true;
   }
 
   int resourceAmount(String resource) {
@@ -2560,6 +2612,12 @@ class Zone0GameState extends ChangeNotifier {
         manualRestingIds
           ..clear()
           ..addAll(restingData.map((id) => '$id'));
+      }
+      final waitingForBedData = data['waitingForBedIds'];
+      if (waitingForBedData is List) {
+        waitingForBedIds
+          ..clear()
+          ..addAll(waitingForBedData.map((id) => '$id'));
       }
 
       final autoPreferenceData = data['autoPreferenceOverrides'];
@@ -3786,6 +3844,7 @@ class Zone0GameState extends ChangeNotifier {
           'hungerOverrides': hungerOverrides,
           'restOverrides': restOverrides,
           'manualRestingIds': manualRestingIds.toList(),
+          'waitingForBedIds': waitingForBedIds.toList(),
           'autoPreferenceOverrides': autoPreferenceOverrides.map(
             (key, value) => MapEntry(key, value.name),
           ),

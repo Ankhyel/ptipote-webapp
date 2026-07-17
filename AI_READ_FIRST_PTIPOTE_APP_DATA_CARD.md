@@ -1042,7 +1042,9 @@ Pour formater Dart:
 - Un logement ajoute trois places. `unhousedPopulation = max(0, currentPopulation - housingCapacity)` et applique `-3 Bien-etre` par habitant, plafonne a `-30`.
 - La capacite initiale de logement est migree a la Population actuelle: aucun joueur existant ne recoit un malus brutal a la premiere ouverture. Les logements n'ajoutent jamais d'habitants.
 - Apres un logement termine, le joueur peut depenser 2 Bio-batteries pour un bonus temporaire de Bien-etre de +3 pendant 48 h. Cet effet est sauvegarde avec ses timestamps et expire hors ligne.
-- Attentes: le Dashboard HTML doit encore exposer `housing_config.dart`; l'etat `waitingForBed` et une Pépiniere active restent prepares pour une prochaine iteration.
+- L'ecran Maison suit maintenant la structure commune : `P'TIPOTES` pour la scene active, les messages et l'inventaire; `Amelioration` pour Maison et Logements; `Infos` pour son role et ses limites.
+- Si toutes les alcoves sont occupees, `waitingForBedIds` est persiste dans Firebase. Le P'TIPOTE reste indisponible, affiche une bulle sommeil et ne reçoit pas la recuperation d'alcove tant qu'une place ne se libere pas. Il conserve sa recuperation naturelle normale. La synchronisation des lits est rejouee pendant les ticks et au retour hors ligne.
+- Attentes: le Dashboard HTML doit encore exposer `housing_config.dart`; une Pépiniere active reste preparee pour une prochaine iteration.
 
 ## Dechets Et Recycleur V1
 
