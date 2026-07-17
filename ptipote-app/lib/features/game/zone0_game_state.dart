@@ -153,6 +153,8 @@ class Zone0GameState extends ChangeNotifier {
   int get recyclerTankCapacity =>
       wasteRecyclerConfig.tankCapacity(recyclerLevel);
   int get recyclerOutputAmount => recyclerOutputOrganic + recyclerOutputMineral;
+  int get recyclerOutputCapacity =>
+      wasteRecyclerConfig.outputCapacity(recyclerLevel);
   int get securityTowerSlots =>
       securityTowerConfig.slotsForLevel(securityTowerLevel);
   bool get hasActiveTowerMission => towerMissions.any(
@@ -594,11 +596,13 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int unreadBuildingNotificationCount(String buildingName) {
-    if (buildingName == 'Maison') return unreadReportCount;
+    // A parent badge includes notifications emitted by its child units.
     final targets = switch (buildingName) {
       'FabLab' => const <String>{'fablab', 'cuisine', 'atelier', 'recycler'},
       'Tour' => const <String>{'securityTower'},
       'Market' => const <String>{'market'},
+      'Maison' => const <String>{'house', 'housing'},
+      'Cœur du Camp' => const <String>{'plaineNursery'},
       _ => const <String>{},
     };
     return reports
@@ -638,11 +642,24 @@ class Zone0GameState extends ChangeNotifier {
         isAssignedToMarket(figurine.id);
   }
 
-  double calculateWorkshopEfficiency(PtipoteFigurine figurine) {
-    final levelBonus =
+  double calculateWorkshopEfficiency(
+    PtipoteFigurine figurine, {
+    required int buildingLevel,
+  }) {
+    final figurineBonus =
         levelFor(figurine) * workshopConfig.levelSpeedBonusPercent;
-    return levelBonus.clamp(0, workshopConfig.maxLevelSpeedBonusPercent);
+    return (figurineBonus.clamp(0, workshopConfig.maxLevelSpeedBonusPercent) +
+            workshopConfig.buildingSpeedBonusForLevel(buildingLevel))
+        .clamp(0, 0.50);
   }
+
+  double craftSpeedBonus(PtipoteFigurine? figurine, int buildingLevel) =>
+      figurine == null
+          ? workshopConfig.buildingSpeedBonusForLevel(buildingLevel)
+          : calculateWorkshopEfficiency(
+              figurine,
+              buildingLevel: buildingLevel,
+            );
 
   Zone0ActionResult startWorkshopOrder({
     required WorkshopRecipe recipe,
@@ -689,8 +706,7 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Ressources indisponibles.');
     }
-    final speedBonus =
-        figurine == null ? 0.0 : calculateWorkshopEfficiency(figurine);
+    final speedBonus = craftSpeedBonus(figurine, atelierLevel);
     final unitSeconds = math.max(
         1,
         (Duration(minutes: recipe.durationMinutes).inSeconds * (1 - speedBonus))
@@ -758,8 +774,7 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Ressources indisponibles.');
     }
-    final speedBonus =
-        figurine == null ? 0.0 : calculateWorkshopEfficiency(figurine);
+    final speedBonus = craftSpeedBonus(figurine, cuisineLevel);
     final unitSeconds = math.max(
       1,
       (Duration(minutes: recipe.durationMinutes).inSeconds * (1 - speedBonus))
@@ -1037,6 +1052,7 @@ class Zone0GameState extends ChangeNotifier {
             1,
             (marketConfig.baseSaleIntervalMinutes *
                     60 *
+                    marketConfig.saleIntervalMultiplierForLevel(marketLevel) *
                     populationModifier *
                     wellbeingModifier *
                     ptipoteModifier)
@@ -1098,7 +1114,7 @@ class Zone0GameState extends ChangeNotifier {
           marketRequests
                   .where((item) => item.status != MarketRequestStatus.completed)
                   .length <
-              marketConfig.maxActiveRequests) {
+              marketConfig.maxRequestsForLevel(marketLevel)) {
         _createMarketRequest(current);
       }
       marketNextSaleAt = marketStock.isEmpty
@@ -1350,7 +1366,8 @@ class Zone0GameState extends ChangeNotifier {
           vitalityOverrides[figurine.id] = nextVitality;
           refugeSafety = math.min(
             securityTowerConfig.maxSecurity,
-            refugeSafety + securityTowerConfig.securityGainPerTick,
+            refugeSafety +
+                securityTowerConfig.securityGainForLevel(securityTowerLevel),
           );
           if (nextVitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
             towerAssignedIds.remove(figurine.id);
@@ -1571,7 +1588,10 @@ class Zone0GameState extends ChangeNotifier {
           vitalityOverrides[figurine.id] = nextVitality;
           refugeSafety = math.min(
             securityTowerConfig.maxSecurity,
-            refugeSafety + towerTicks * securityTowerConfig.securityGainPerTick,
+            refugeSafety +
+                towerTicks *
+                    securityTowerConfig
+                        .securityGainForLevel(securityTowerLevel),
           );
           if (nextVitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
             towerAssignedIds.remove(figurine.id);
@@ -1751,7 +1771,7 @@ class Zone0GameState extends ChangeNotifier {
       recyclerCycleStartedAt = finishedAt;
       changed = true;
       if (recyclerOutputAmount + wasteRecyclerConfig.outputResourcesPerCycle >
-          wasteRecyclerConfig.outputStorageCapacity) {
+          recyclerOutputCapacity) {
         recyclerCycleStartedAt = null;
       } else if (recyclerWasteTank < recyclerWasteRequired ||
           energyUnits < wasteRecyclerConfig.energyCostPerCycle) {
@@ -1763,7 +1783,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (recyclerCycleStartedAt == null &&
         recyclerOutputAmount + wasteRecyclerConfig.outputResourcesPerCycle <=
-            wasteRecyclerConfig.outputStorageCapacity &&
+            recyclerOutputCapacity &&
         recyclerWasteTank >= recyclerWasteRequired &&
         energyUnits >= wasteRecyclerConfig.energyCostPerCycle) {
       recyclerWasteTank -= recyclerWasteRequired;
@@ -2082,7 +2102,7 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
     }
     for (final project in constructionProjects.values) {
-      if (!project.isInProgress || project.endsAt!.isAfter(current)) continue;
+      if (!project.isReadyToCompleteAt(current)) continue;
       _completeConstructionProject(project, current);
       changed = true;
     }
@@ -2095,10 +2115,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   void _completeConstructionProject(ConstructionProject project, DateTime now) {
-    project.currentLevel = project.targetLevel;
-    project.completedAt = now;
-    project.depositedMaterials.clear();
-    project.state = ConstructionProjectState.built;
+    if (!project.completeAt(now)) return;
     switch (project.targetId) {
       case 'fablab':
         atelierLevel = project.currentLevel;
@@ -2364,15 +2381,17 @@ class Zone0GameState extends ChangeNotifier {
           success: false,
           message: 'Balises disponibles dans ${remaining.inMinutes + 1} min.');
     }
-    refugeSafety = math.min(securityTowerConfig.maxSecurity,
-        refugeSafety + securityTowerConfig.manualRechargeSecurityGain);
+    refugeSafety = math.min(
+        securityTowerConfig.maxSecurity,
+        refugeSafety +
+            securityTowerConfig.manualRechargeGainForLevel(securityTowerLevel));
     lastManualTowerRechargeAt = DateTime.now();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
         success: true,
         message:
-            '+${securityTowerConfig.manualRechargeSecurityGain} Sécurité.');
+            '+${securityTowerConfig.manualRechargeGainForLevel(securityTowerLevel)} Sécurité.');
   }
 
   Zone0ActionResult assignToTower(PtipoteFigurine figurine) {
@@ -2426,7 +2445,8 @@ class Zone0GameState extends ChangeNotifier {
         startTime: start,
         endTime: start.add(_towerDurationForTicks(ticks)),
         vitalityCost: ticks * securityTowerConfig.vitalityCostPerTick,
-        securityGain: ticks * securityTowerConfig.securityGainPerTick,
+        securityGain: ticks *
+            securityTowerConfig.securityGainForLevel(securityTowerLevel),
         sleepAfter: plan == TowerMissionPlan.until25Vitality,
         patrolBiome: patrolBiome,
       ),
@@ -2938,6 +2958,13 @@ class Zone0GameState extends ChangeNotifier {
       // Migration for saves created before the Fablab units were independent.
       if (atelierLevel == 0 && fablabLevel > 0) atelierLevel = fablabLevel;
       if (cuisineLevel == 0 && atelierLevel > 0) cuisineLevel = 1;
+      // Old saves predate independent Fablab units and construction projects.
+      // Keep every acquired level, then let a future project target the next
+      // level. No material is retroactively charged or discarded.
+      recyclerLevel =
+          recyclerLevel.clamp(0, wasteRecyclerConfig.recyclerMaxLevel);
+      securityTowerLevel = securityTowerLevel.clamp(0, 3);
+      marketLevel = marketLevel.clamp(0, 5);
       housingCapacity = math.max(housingCapacity, currentPopulation);
       alcoveCapacity = math.max(
         alcoveCapacity,
@@ -2958,6 +2985,7 @@ class Zone0GameState extends ChangeNotifier {
       lastManualTowerRechargeAt = _readDate(data['lastManualTowerRechargeAt']);
 
       _loadedFromFirebase = true;
+      resolveConstructionProjects();
     });
   }
 
@@ -3588,7 +3616,8 @@ class Zone0GameState extends ChangeNotifier {
               startTime: completedAt,
               endTime: completedAt.add(_towerDurationForTicks(ticks)),
               vitalityCost: ticks * securityTowerConfig.vitalityCostPerTick,
-              securityGain: ticks * securityTowerConfig.securityGainPerTick,
+              securityGain: ticks *
+                  securityTowerConfig.securityGainForLevel(securityTowerLevel),
               sleepAfter: false,
             ),
           );
@@ -4483,6 +4512,8 @@ class ConstructionProject {
   bool get isInProgress =>
       state == ConstructionProjectState.underConstruction ||
       state == ConstructionProjectState.upgrading;
+  bool isReadyToCompleteAt(DateTime now) =>
+      isInProgress && endsAt != null && !endsAt!.isAfter(now);
   bool get canEditMaterials =>
       !isInProgress &&
       state != ConstructionProjectState.built &&
@@ -4516,6 +4547,17 @@ class ConstructionProject {
     } else {
       state = ConstructionProjectState.collectingMaterials;
     }
+  }
+
+  /// Completes the time-only part of a project. The game state applies the
+  /// building-specific effect immediately afterwards.
+  bool completeAt(DateTime now) {
+    if (!isReadyToCompleteAt(now)) return false;
+    currentLevel = targetLevel;
+    completedAt = now;
+    depositedMaterials.clear();
+    state = ConstructionProjectState.built;
+    return true;
   }
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{

@@ -17,6 +17,7 @@ class WasteRecyclerConfig {
     required this.energyUnitsPerBioBattery,
     required this.energyCostPerCycle,
     required this.outputStorageCapacity,
+    required this.outputStorageCapacityPerLevel,
     required this.pendingWasteCapacity,
     required this.cycleMinutesByLevel,
     required this.outputSplits,
@@ -39,6 +40,7 @@ class WasteRecyclerConfig {
   final int energyUnitsPerBioBattery;
   final int energyCostPerCycle;
   final int outputStorageCapacity;
+  final int outputStorageCapacityPerLevel;
   final int pendingWasteCapacity;
   final Map<int, int> cycleMinutesByLevel;
   final List<RecyclerOutputSplit> outputSplits;
@@ -48,6 +50,9 @@ class WasteRecyclerConfig {
   int wasteRequired(int level) =>
       (baseWasteRequired - (level - 1)).clamp(minimumWasteRequired, 999);
   int cycleMinutes(int level) => cycleMinutesByLevel[level] ?? 20;
+  int outputCapacity(int level) =>
+      outputStorageCapacity +
+      (level.clamp(1, recyclerMaxLevel) - 1) * outputStorageCapacityPerLevel;
 }
 
 class RecyclerOutputSplit {
@@ -74,6 +79,7 @@ const wasteRecyclerConfig = WasteRecyclerConfig(
   energyUnitsPerBioBattery: 10,
   energyCostPerCycle: 1,
   outputStorageCapacity: 100,
+  outputStorageCapacityPerLevel: 20,
   pendingWasteCapacity: 100,
   cycleMinutesByLevel: <int, int>{1: 20, 2: 18, 3: 16, 4: 14, 5: 12},
   outputSplits: <RecyclerOutputSplit>[

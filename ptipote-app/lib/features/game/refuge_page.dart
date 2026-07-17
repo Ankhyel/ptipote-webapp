@@ -4766,7 +4766,7 @@ class SecurityTowerConstructionSheet extends StatelessWidget {
           ? null
           : 'Le Cœur du Camp doit atteindre le niveau ${securityTowerConfig.requiredCampHeartLevel}.',
       footer:
-          'Niveau 1 : ${securityTowerConfig.level1Slots} P’TIPOTE affecté · +${securityTowerConfig.securityGainPerTick} sécurité par tick.',
+          'Niveau 1 : ${securityTowerConfig.level1Slots} P’TIPOTE affecté · +${securityTowerConfig.securityGainForLevel(1)} sécurité par tick.',
     );
   }
 }
@@ -4888,7 +4888,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                             _InfoLine(
                               label: 'Contribution',
                               value:
-                                  '+${securityTowerConfig.securityGainPerTick} sécurité / ${securityTowerConfig.tickMinutes} min',
+                                  '+${securityTowerConfig.securityGainForLevel(widget.gameState.securityTowerLevel)} sécurité / ${securityTowerConfig.tickMinutes} min',
                             ),
                             _InfoLine(
                               label: 'Coût',
@@ -4913,7 +4913,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                               label: Text(widget.gameState
                                           .towerManualRechargeRemaining() ==
                                       Duration.zero
-                                  ? 'Recharger les balises (+${securityTowerConfig.manualRechargeSecurityGain})'
+                                  ? 'Recharger les balises (+${securityTowerConfig.manualRechargeGainForLevel(widget.gameState.securityTowerLevel)})'
                                   : 'Recharge dans ${widget.gameState.towerManualRechargeRemaining().inMinutes + 1} min'),
                             ),
                           ],
@@ -5013,10 +5013,11 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                 'La Tour reste active pendant les travaux. Le nouveau nombre de slots sera appliqué à la fin.',
             currentEffects: <String>[
               '${widget.gameState.securityTowerSlots} slot(s) de surveillance',
-              '+${securityTowerConfig.securityGainPerTick} sécurité par tick',
+              '+${securityTowerConfig.securityGainForLevel(widget.gameState.securityTowerLevel)} sécurité par tick',
             ],
             nextEffects: <String>[
               '${securityTowerConfig.slotsForLevel(widget.gameState.securityTowerLevel + 1)} slot(s) de surveillance',
+              '+${securityTowerConfig.securityGainForLevel(widget.gameState.securityTowerLevel + 1)} sécurité par tick',
               'Les rondes en cours ne sont pas interrompues.',
             ],
             campHeartLevel: widget.campHeartLevel,
@@ -6525,7 +6526,7 @@ class FablabRecyclerView extends StatelessWidget {
                   Text(running
                       ? 'Recyclage en cours · ${math.max(0, remaining!.inMinutes)} min restantes'
                       : gameState.recyclerOutputAmount >=
-                              wasteRecyclerConfig.outputStorageCapacity
+                              gameState.recyclerOutputCapacity
                           ? 'Stock de sortie plein'
                           : gameState.recyclerOutputAmount > 0
                               ? 'Production prête'
