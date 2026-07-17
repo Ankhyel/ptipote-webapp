@@ -1004,6 +1004,7 @@ Pour formater Dart:
 ### Fablab - Unites Independantes
 
 - `Cuisine`, `Atelier` et `Recycleur` possedent des niveaux independants dans `Zone0GameState`.
+- L'ecran parent `Fablab` suit maintenant la navigation commune : les onglets Cuisine, Atelier et Recycleur restent les fonctions; `Amelioration` centralise les projets des trois unites; `Infos` explique leur independance. Aucun niveau moyen de Fablab n'est calcule ni affiche.
 - Les projets `cuisine`, `atelier` et `recycler` reutilisent `ConstructionProject`: depots, retraits, timer et resolution hors ligne sont communs aux autres batiments.
 - La Cuisine lit `cuisineLevel` pour les recettes et ses emplacements P'TIPOTE. L'Atelier lit `atelierLevel` pour ses emplacements et la capacite du stock global. Le Recycleur conserve `recyclerLevel` pour ses cycles et rendements.
 - `fablabLevel` est conserve temporairement pour compatibilite de sauvegarde et est aligne sur `atelierLevel`; aucun niveau moyen n'est affiche dans l'interface.

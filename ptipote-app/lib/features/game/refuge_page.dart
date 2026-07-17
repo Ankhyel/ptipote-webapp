@@ -6189,7 +6189,7 @@ class FablabPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Fablab'),
@@ -6198,6 +6198,8 @@ class FablabPage extends StatelessWidget {
               Tab(text: 'Cuisine', icon: Icon(Icons.soup_kitchen_outlined)),
               Tab(text: 'Atelier', icon: Icon(Icons.construction_outlined)),
               Tab(text: 'Recycleur', icon: Icon(Icons.recycling_outlined)),
+              Tab(text: 'Amélioration', icon: Icon(Icons.upgrade_outlined)),
+              Tab(text: 'Infos', icon: Icon(Icons.info_outline)),
             ],
           ),
         ),
@@ -6224,8 +6226,148 @@ class FablabPage extends StatelessWidget {
                       description:
                           'Débloqué au Cœur du Camp niveau ${fablabConfig.recyclerUnlockCampHeartLevel}. Niveau actuel : $campHeartLevel.',
                     ),
+              _FablabUpgradeOverview(
+                gameState: gameState,
+                campHeartLevel: campHeartLevel,
+              ),
+              const _BuildingInformationTab(
+                title: 'Fablab',
+                description:
+                    'Le Fablab regroupe trois unités indépendantes : Cuisine, Atelier et Recycleur. Chaque unité possède sa propre fonction, son niveau et son projet d’amélioration. Le Fablab ne possède pas de niveau moyen.',
+              ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FablabUpgradeOverview extends StatelessWidget {
+  const _FablabUpgradeOverview({
+    required this.gameState,
+    required this.campHeartLevel,
+  });
+
+  final Zone0GameState gameState;
+  final int campHeartLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(18),
+        children: <Widget>[
+          Text(
+            'Amélioration du Fablab',
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Les unités progressent séparément. Les projets en cours ne bloquent pas leur fonctionnement au niveau actuel.',
+          ),
+          const SizedBox(height: 14),
+          _FablabUnitUpgradeCard(
+            gameState: gameState,
+            targetId: 'cuisine',
+            title: 'Cuisine',
+            level: gameState.cuisineLevel,
+            description:
+                'Augmente les emplacements de préparation et prépare les recettes futures.',
+            nextEffect:
+                'Prochain niveau : ${gameState.kitchenSlots + 1} emplacement(s) P’TIPOTE.',
+          ),
+          _FablabUnitUpgradeCard(
+            gameState: gameState,
+            targetId: 'atelier',
+            title: 'Atelier',
+            level: gameState.atelierLevel,
+            description:
+                'Augmente le stock global et les emplacements de craft P’TIPOTE.',
+            nextEffect:
+                'Prochain niveau : stock ${gameState.globalStockCapacity + fablabConfig.stockCapacityBonusPerFablabLevel}.',
+          ),
+          _FablabUnitUpgradeCard(
+            gameState: gameState,
+            targetId: 'recycler',
+            title: 'Recycleur',
+            level: gameState.recyclerLevel,
+            description: 'Réduit les déchets requis et raccourcit les cycles.',
+            nextEffect: campHeartLevel >=
+                    fablabConfig.recyclerUnlockCampHeartLevel
+                ? 'Prochain niveau : traitement plus efficace.'
+                : 'Débloqué au Cœur du Camp niveau ${fablabConfig.recyclerUnlockCampHeartLevel}.',
+            enabled:
+                campHeartLevel >= fablabConfig.recyclerUnlockCampHeartLevel,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FablabUnitUpgradeCard extends StatelessWidget {
+  const _FablabUnitUpgradeCard({
+    required this.gameState,
+    required this.targetId,
+    required this.title,
+    required this.level,
+    required this.description,
+    required this.nextEffect,
+    this.enabled = true,
+  });
+
+  final Zone0GameState gameState;
+  final String targetId;
+  final String title;
+  final int level;
+  final String description;
+  final String nextEffect;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final project = gameState.projectFor(targetId);
+    final isMaxLevel = project.state == ConstructionProjectState.maxLevel;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              '$title niveau $level',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            Text(description),
+            const SizedBox(height: 6),
+            Text(nextEffect),
+            if (project.isInProgress) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                'Travaux : ${_countdownLabel(project.endsAt!)}',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ],
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: !enabled || isMaxLevel
+                  ? null
+                  : () => _showFablabUnitProject(
+                        context,
+                        gameState: gameState,
+                        targetId: targetId,
+                        title: 'Améliorer $title',
+                        description: description,
+                      ),
+              icon: const Icon(Icons.upgrade_outlined),
+              label: Text(isMaxLevel ? 'Niveau maximum' : 'Préparer'),
+            ),
+          ],
         ),
       ),
     );
