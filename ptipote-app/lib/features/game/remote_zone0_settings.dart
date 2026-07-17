@@ -243,6 +243,7 @@ PTibugConfig _ptibug(Object? value) {
   final rawSpecies = _map(raw['species']);
   final rawPatterns = _map(raw['patterns']);
   final rawPrices = _map(raw['sourcierPatternPrices']);
+  final rawTraits = _map(raw['traitDefinitions']);
   return PTibugConfig(
     nurseryRequirements:
         _resourceMap(raw['nurseryRequirements'], base.nurseryRequirements),
@@ -295,6 +296,26 @@ PTibugConfig _ptibug(Object? value) {
     sourcierPatternPrices: <PTibugSpecies, int>{
       for (final entry in base.sourcierPatternPrices.entries)
         entry.key: _int(rawPrices?[entry.key.name], entry.value),
+    },
+    traitDefinitions: <String, PTibugTraitDefinition>{
+      for (final entry in base.traitDefinitions.entries)
+        entry.key: () {
+          final item = _map(rawTraits?[entry.key]);
+          final fallback = entry.value;
+          final rawEffects = _resourceMap(item?['effects'], fallback.effects);
+          final rawGrades = _map(item?['gradeMultipliers']);
+          return PTibugTraitDefinition(
+            id: _string(item?['id'], fallback.id),
+            displayName: _string(item?['displayName'], fallback.displayName),
+            description: _string(item?['description'], fallback.description),
+            effects: rawEffects,
+            gradeMultipliers: <PTibugTraitGrade, int>{
+              for (final grade in PTibugTraitGrade.values)
+                grade: _int(rawGrades?[grade.name],
+                    fallback.gradeMultipliers[grade] ?? 1),
+            },
+          );
+        }(),
     },
   );
 }

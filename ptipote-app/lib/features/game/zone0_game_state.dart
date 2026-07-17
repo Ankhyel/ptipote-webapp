@@ -40,6 +40,8 @@ class Zone0GameState extends ChangeNotifier {
   final Map<String, int> vitalityOverrides = <String, int>{};
   final Map<String, int> hungerOverrides = <String, int>{};
   final Map<String, int> restOverrides = <String, int>{};
+  // A P'TIPOTE earns the rest reward once per recovery cycle.
+  final Set<String> wellRestedRewardedIds = <String>{};
   final Map<String, int> xpOverrides = <String, int>{};
   final Map<String, int> levelOverrides = <String, int>{};
   final Map<String, DateTime> lastCuddleAt = <String, DateTime>{};
@@ -616,10 +618,14 @@ class Zone0GameState extends ChangeNotifier {
         .where((plan) => plan.workshopRecipeId == recipe.id)
         .toList();
     final plan = matchingPlans.isEmpty ? null : matchingPlans.first;
-    final requiredTrustLevel = plan?.requiredTrustLevel ?? recipe.kernelTrustLevel;
-    final requiredBreederLevel = plan?.requiredBreederLevel ?? recipe.breederLevel;
-    final requiredBuilderLevel = plan?.requiredBuilderLevel ?? recipe.builderLevel;
-    final requiredRestorerLevel = plan?.requiredRestorerLevel ?? recipe.restorerLevel;
+    final requiredTrustLevel =
+        plan?.requiredTrustLevel ?? recipe.kernelTrustLevel;
+    final requiredBreederLevel =
+        plan?.requiredBreederLevel ?? recipe.breederLevel;
+    final requiredBuilderLevel =
+        plan?.requiredBuilderLevel ?? recipe.builderLevel;
+    final requiredRestorerLevel =
+        plan?.requiredRestorerLevel ?? recipe.restorerLevel;
     if (kernelTrustLevel < requiredTrustLevel) {
       return 'Confiance du Kernel niveau $requiredTrustLevel requise.';
     }
@@ -1677,6 +1683,11 @@ class Zone0GameState extends ChangeNotifier {
             math.min(ptipoteStatsConfig.maxRest, currentRest + restGain);
         if (nextRest != currentRest) {
           restOverrides[figurine.id] = nextRest;
+          _trackWellRestedTransition(
+            figurineId: figurine.id,
+            previousRest: currentRest,
+            nextRest: nextRest,
+          );
           changed = true;
         }
         // A full rest frees the alcove so another tired P'TIPOTE can use it.
@@ -1686,7 +1697,13 @@ class Zone0GameState extends ChangeNotifier {
           changed = true;
         }
       } else if (tick % restLossTick == 0 && currentRest > 0) {
-        restOverrides[figurine.id] = math.max(0, currentRest - 1);
+        final nextRest = math.max(0, currentRest - 1);
+        restOverrides[figurine.id] = nextRest;
+        _trackWellRestedTransition(
+          figurineId: figurine.id,
+          previousRest: currentRest,
+          nextRest: nextRest,
+        );
         changed = true;
       }
     }
@@ -1754,9 +1771,15 @@ class Zone0GameState extends ChangeNotifier {
         final restGain =
             elapsedMinutes * ptipoteStatsConfig.sleepRestRecoveryPerMinute;
         if (restGain > 0 && currentRest < ptipoteStatsConfig.maxRest) {
+          final previousRest = currentRest;
           currentRest =
               math.min(ptipoteStatsConfig.maxRest, currentRest + restGain);
           restOverrides[figurine.id] = currentRest;
+          _trackWellRestedTransition(
+            figurineId: figurine.id,
+            previousRest: previousRest,
+            nextRest: currentRest,
+          );
           changed = true;
         }
         if (currentVitality < ptipoteStatsConfig.maxVitality) {
@@ -1772,8 +1795,14 @@ class Zone0GameState extends ChangeNotifier {
         final restLoss = elapsedMinutes ~/
             math.max(1, ptipoteStatsConfig.awakeRestLossMinutes);
         if (restLoss > 0 && currentRest > 0) {
+          final previousRest = currentRest;
           currentRest = math.max(0, currentRest - restLoss);
           restOverrides[figurine.id] = currentRest;
+          _trackWellRestedTransition(
+            figurineId: figurine.id,
+            previousRest: previousRest,
+            nextRest: currentRest,
+          );
           changed = true;
         }
 
@@ -1844,6 +1873,23 @@ class Zone0GameState extends ChangeNotifier {
 
     lastSimulationAt = now;
     return changed;
+  }
+
+  void _trackWellRestedTransition({
+    required String figurineId,
+    required int previousRest,
+    required int nextRest,
+  }) {
+    final wasWellRested =
+        previousRest >= ptipoteStatsConfig.wellRestedThreshold;
+    final isWellRested = nextRest >= ptipoteStatsConfig.wellRestedThreshold;
+    if (!isWellRested) {
+      wellRestedRewardedIds.remove(figurineId);
+      return;
+    }
+    if (!wasWellRested && wellRestedRewardedIds.add(figurineId)) {
+      emitKernelProgressEvent(KernelProgressEventType.ptipoteWellRested);
+    }
   }
 
   bool _syncBedAssignments(List<PtipoteFigurine> figurines) {
@@ -2579,17 +2625,12 @@ class Zone0GameState extends ChangeNotifier {
         : pTibugTraitData
             .where((item) => item.id == bug.traitDataId)
             .firstOrNull;
-    final multiplier =
-        trait == null ? 0 : pTibugConfig.traitMultiplier(trait.grade);
-    if (trait?.type == PTibugTraitType.pollinisateur ||
-        trait?.type == PTibugTraitType.decomposeur) {
-      add('Organique', multiplier);
-    }
-    if (trait?.type == PTibugTraitType.mineur) {
-      add('Minéral', multiplier);
-    }
-    if (trait?.type == PTibugTraitType.decomposeur) {
-      add('Mycélium', multiplier);
+    if (trait != null) {
+      final definitionId = trait.definitionId ?? trait.type.name;
+      final definition = pTibugConfig.traitDefinitionFor(definitionId);
+      final effects =
+          definition?.productionFor(trait.grade) ?? const <String, int>{};
+      effects.forEach(add);
     }
     if (bug.hasModule(PTibugModuleType.pinces)) {
       switch (bug.species) {
@@ -3094,6 +3135,12 @@ class Zone0GameState extends ChangeNotifier {
               (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
             ),
           );
+      }
+      final wellRestedData = data['wellRestedRewardedIds'];
+      if (wellRestedData is List) {
+        wellRestedRewardedIds
+          ..clear()
+          ..addAll(wellRestedData.map((id) => '$id'));
       }
 
       final restingData = data['manualRestingIds'];
@@ -4486,6 +4533,7 @@ class Zone0GameState extends ChangeNotifier {
           'vitalityOverrides': vitalityOverrides,
           'hungerOverrides': hungerOverrides,
           'restOverrides': restOverrides,
+          'wellRestedRewardedIds': wellRestedRewardedIds.toList(),
           'manualRestingIds': manualRestingIds.toList(),
           'waitingForBedIds': waitingForBedIds.toList(),
           'autoPreferenceOverrides': autoPreferenceOverrides.map(
@@ -5272,11 +5320,13 @@ class PTibugTraitData {
     required this.id,
     required this.type,
     required this.grade,
+    this.definitionId,
   });
 
   final String id;
   final PTibugTraitType type;
   final PTibugTraitGrade grade;
+  final String? definitionId;
 
   factory PTibugTraitData.fromFirebase(Map<dynamic, dynamic> data) =>
       PTibugTraitData(
@@ -5291,12 +5341,14 @@ class PTibugTraitData {
           '${data['grade'] ?? ''}',
           PTibugTraitGrade.commun,
         ),
+        definitionId: data['definitionId'] as String?,
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'id': id,
         'type': type.name,
         'grade': grade.name,
+        'definitionId': definitionId,
       };
 }
 

@@ -36,6 +36,29 @@ class PTibugPatternConfig {
   final String description;
 }
 
+class PTibugTraitDefinition {
+  const PTibugTraitDefinition({
+    required this.id,
+    required this.displayName,
+    required this.description,
+    required this.effects,
+    required this.gradeMultipliers,
+  });
+
+  final String id;
+  final String displayName;
+  final String description;
+  final Map<String, int> effects;
+  final Map<PTibugTraitGrade, int> gradeMultipliers;
+
+  Map<String, int> productionFor(PTibugTraitGrade grade) => effects.map(
+        (resource, amount) => MapEntry(
+          resource,
+          amount * (gradeMultipliers[grade] ?? 1),
+        ),
+      );
+}
+
 class PTibugConfig {
   const PTibugConfig({
     required this.nurseryRequirements,
@@ -51,6 +74,7 @@ class PTibugConfig {
     required this.species,
     required this.patterns,
     required this.sourcierPatternPrices,
+    required this.traitDefinitions,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -66,12 +90,15 @@ class PTibugConfig {
   final Map<PTibugSpecies, PTibugSpeciesConfig> species;
   final Map<PTibugSpecies, PTibugPatternConfig> patterns;
   final Map<PTibugSpecies, int> sourcierPatternPrices;
+  final Map<String, PTibugTraitDefinition> traitDefinitions;
 
   int slotsForLevel(int level) => slotsByLevel[level.clamp(1, 3)] ?? 1;
   int moduleSlotsForLevel(int level) =>
       moduleSlotsByLevel[level.clamp(1, 3)] ?? 1;
 
   int traitMultiplier(PTibugTraitGrade grade) => grade.index + 1;
+
+  PTibugTraitDefinition? traitDefinitionFor(String id) => traitDefinitions[id];
 
   PTibugPatternConfig? patternForKernelPlanId(String planId) {
     for (final pattern in patterns.values) {
@@ -135,6 +162,41 @@ const PTibugConfig defaultPTibugConfig = PTibugConfig(
   sourcierPatternPrices: <PTibugSpecies, int>{
     PTibugSpecies.hyme: 6,
     PTibugSpecies.arac: 8,
+  },
+  traitDefinitions: <String, PTibugTraitDefinition>{
+    'pollinisateur': PTibugTraitDefinition(
+      id: 'pollinisateur',
+      displayName: 'Pollinisateur',
+      description: 'Améliore la collecte organique.',
+      effects: <String, int>{'Organique': 1},
+      gradeMultipliers: <PTibugTraitGrade, int>{
+        PTibugTraitGrade.commun: 1,
+        PTibugTraitGrade.rare: 2,
+        PTibugTraitGrade.avance: 3
+      },
+    ),
+    'mineur': PTibugTraitDefinition(
+      id: 'mineur',
+      displayName: 'Mineur',
+      description: 'Améliore la collecte minérale.',
+      effects: <String, int>{'Minéral': 1},
+      gradeMultipliers: <PTibugTraitGrade, int>{
+        PTibugTraitGrade.commun: 1,
+        PTibugTraitGrade.rare: 2,
+        PTibugTraitGrade.avance: 3
+      },
+    ),
+    'decomposeur': PTibugTraitDefinition(
+      id: 'decomposeur',
+      displayName: 'Décomposeur',
+      description: 'Transforme les matières en organique et mycélium.',
+      effects: <String, int>{'Organique': 1, 'Mycélium': 1},
+      gradeMultipliers: <PTibugTraitGrade, int>{
+        PTibugTraitGrade.commun: 1,
+        PTibugTraitGrade.rare: 2,
+        PTibugTraitGrade.avance: 3
+      },
+    ),
   },
 );
 

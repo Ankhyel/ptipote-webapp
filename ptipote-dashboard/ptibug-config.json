@@ -46,5 +46,10 @@
       "description": "Un collecteur agile capable de s’adapter à sa collecte."
     }
   },
-  "sourcierPatternPrices": {"hyme": 6, "arac": 8}
+  "sourcierPatternPrices": {"hyme": 6, "arac": 8},
+  "traitDefinitions": {
+    "pollinisateur": {"id": "pollinisateur", "displayName": "Pollinisateur", "description": "Améliore la collecte organique.", "effects": {"Organique": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}},
+    "mineur": {"id": "mineur", "displayName": "Mineur", "description": "Améliore la collecte minérale.", "effects": {"Minéral": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}},
+    "decomposeur": {"id": "decomposeur", "displayName": "Décomposeur", "description": "Transforme les matières en organique et mycélium.", "effects": {"Organique": 1, "Mycélium": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}}
+  }
 }

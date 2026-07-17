@@ -1010,7 +1010,7 @@ function renderKernelEditor() {
 
 function renderPTibugEditor() {
   const ptibug = zone0Settings.ptibug || {};
-  const { species = {}, patterns = {}, ...general } = ptibug;
+  const { species = {}, patterns = {}, traitDefinitions = {}, ...general } = ptibug;
   el.ptibugConfigList.innerHTML = [
     configCard("Nurserie et production", "ptibug", general, [], { open: true, meta: "Coûts, capacité, cycles et Sourcier" }),
     ...Object.entries(species).map(([speciesId, config]) => configCard(
@@ -1026,6 +1026,13 @@ function renderPTibugEditor() {
       pattern,
       ["patterns", speciesId],
       { meta: "Identifiant Kernel et description" },
+    )),
+    ...Object.entries(traitDefinitions).map(([traitId, definition]) => configCard(
+      `Trait · ${definition.displayName || traitId}`,
+      "ptibug",
+      definition,
+      ["traitDefinitions", traitId],
+      { meta: "Effets par ressource et multiplicateurs par grade" },
     )),
   ].join("");
 

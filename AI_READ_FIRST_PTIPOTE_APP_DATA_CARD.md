@@ -1228,6 +1228,10 @@ Pour formater Dart:
 
 Les prérequis d'axes des recettes sont désormais lus depuis le Plan Kernel dont `workshopRecipeId` correspond à la recette. Les anciens champs de recette restent un fallback pour les sauvegardes et configurations antérieures. Les récompenses d'axes sont entièrement configurables dans `kernelProgress.eventRewards`; les événements distincts couvrent les missions Lisière, les missions Tour, les crafts réalisés par un Ptipote, l'alimentation et le passage à l'état Heureux.
 
+Le passage à l'état `Bien reposé` est dédupliqué par P'TIPOTE et par cycle de repos dans `wellRestedRewardedIds`, sauvegardé dans `users/{uid}/game/zone0`. Le marqueur est retiré lorsque le repos redescend sous le seuil configuré, ce qui autorise une nouvelle récompense au cycle suivant.
+
+Les définitions globales de traits P'TIBUG vivent dans `gameConfigs/zone0.ptibug.traitDefinitions`. Elles contiennent un identifiant stable, un nom, une description, des effets par ressource et des multiplicateurs par grade. Les instances joueur conservent `type` et `grade` historiques et peuvent porter `definitionId`; Flutter résout d'abord `definitionId`, puis le type historique. Les définitions Dart restent le fallback hors ligne.
+
 - L'onglet Dashboard est nommé `Kernel`. Il est rangé en accordéons : `Bâtiments` (missions de construction), `Missions`, `Éditeur de mission`, `Confiance, axes et récompenses`, puis `Plans & Patterns`.
 - Les prérequis d'un craft ne doivent plus être édités dans la carte Craft : `patternRequired` est activé par défaut. Lorsqu'une recette est créée avec ce réglage, le Dashboard ajoute son Plan Kernel `craft-{recipeId}` si nécessaire.
 - Les prérequis de Plan configurables sont : Confiance du Kernel, Éleveur, Bâtisseur, Restaurateur et niveaux de bâtiments. Les Plans générés portent `workshopRecipeId` afin de relier la recette au Plan.
