@@ -35,7 +35,7 @@ class FablabConfig {
   }
 }
 
-const fablabConfig = FablabConfig(
+const FablabConfig defaultFablabConfig = FablabConfig(
   constructionCostLevel1Organic: 8,
   constructionCostLevel1Mineral: 4,
   baseGlobalStockCapacity: 100,
@@ -49,3 +49,5 @@ const fablabConfig = FablabConfig(
   simpleMealOrganicCost: 2,
   simpleMealOutputAmount: 1,
 );
+
+FablabConfig fablabConfig = defaultFablabConfig;

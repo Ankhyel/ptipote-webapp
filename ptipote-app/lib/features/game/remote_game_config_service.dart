@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../figurines/ptipote_stats_config.dart';
+import 'remote_zone0_settings.dart';
 
 /// Shared entry point for values published by the internal Dashboard.
 ///
@@ -46,6 +47,12 @@ class RemoteGameConfigService extends ChangeNotifier {
     final rawStats = document?['ptipoteStats'];
     applyRemotePtipoteStatsConfig(
       rawStats is Map ? Map<String, dynamic>.from(rawStats) : null,
+    );
+    final rawZone0Settings = document?['zone0Settings'];
+    applyRemoteZone0Settings(
+      rawZone0Settings is Map
+          ? Map<String, dynamic>.from(rawZone0Settings)
+          : null,
     );
     notifyListeners();
   }

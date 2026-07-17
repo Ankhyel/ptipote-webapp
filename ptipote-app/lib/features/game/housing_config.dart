@@ -38,7 +38,7 @@ class HousingConfig {
   }
 }
 
-const housingConfig = HousingConfig(
+const HousingConfig defaultHousingConfig = HousingConfig(
   houseMaxLevel: 5,
   alcovesByHouseLevel: <int, int>{1: 2, 2: 3, 3: 4, 4: 6, 5: 8},
   residentsPerHousingUnit: 3,
@@ -51,3 +51,5 @@ const housingConfig = HousingConfig(
   thanksWellbeingBonus: 3,
   thanksDurationHours: 48,
 );
+
+HousingConfig housingConfig = defaultHousingConfig;

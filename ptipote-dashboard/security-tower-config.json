@@ -10,6 +10,8 @@
   "securityDecayPerTick": 1,
   "manualRechargeSecurityGain": 5,
   "manualRechargeCooldownMinutes": 10,
+  "securityGainBonusPerLevel": 2,
+  "manualRechargeBonusPerLevel": 2,
   "minimumMissionRisk": 5,
   "securityRiskReductionFactor": 0.4,
   "slotsByLevel": {

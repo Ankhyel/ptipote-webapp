@@ -670,6 +670,15 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 
 1. Un admin/dev modifie les champs dans **Stat Ptipote**.
 2. **Publier dans l'app** enregistre `gameConfigs/zone0.ptipoteStats`, avec la version et les metadonnees de publication.
+
+### Configuration distante Zone 0
+
+- Les reglages de gameplay globaux sont regroupes dans le document `gameConfigs/zone0`, champ `zone0Settings` (schemaVersion 2). Les sections publiees sont `campHeart`, `lisiere`, `tower`, `towerOperations`, `fablab`, `workshop`, `market` et `housing`.
+- Le Dashboard charge d'abord les JSON versionnes de `ptipote-dashboard/` puis les valeurs publiees. Il edite des champs structures (nombres, durees, couts, niveaux et recettes) et publie directement dans Firestore: aucun export ou upload JSON n'est necessaire.
+- Flutter applique la configuration initiale et les mises a jour temps reel dans `RemoteGameConfigService`, via `remote_zone0_settings.dart`. En cas de document absent, de champ invalide ou hors ligne, les constantes Dart `default*Config` restent actives.
+- La progression joueur n'est jamais migree dans `gameConfigs`: inventaire, chantiers, missions, niveaux et etat du refuge restent dans `users/{uid}/game/zone0`.
+- `firestore.rules` autorise la lecture authentifiee de `gameConfigs/*` et reserve create/update/delete aux roles `admin` et `dev` existants. Les roles ne reposent pas sur des custom claims.
+- Limite V1: les textes descriptifs et les anciens champs JSON qui ne correspondent a aucun calcul Flutter restent versionnes comme documentation et ne sont pas exposes a la publication distante.
 3. Flutter charge ces valeurs a l'ouverture puis ecoute les changements en direct.
 4. Sans reseau ou sans document publie, Flutter conserve les valeurs integrees au build.
 
@@ -1168,3 +1177,12 @@ Pour formater Dart:
 - Effets de confort, protections anti-Brume, qualite d'objet, bonus de traits/preferences/modules, lignées et batiments energetiques de biomes ne sont pas actifs.
 - Recycleur reste verrouille au Coeur niveau 2.
 - Les axes de confiance du joueur ne modifient pas les bonus des P'TIPOTES.
+# Finition refonte bâtiments - niveaux, notifications et hors ligne
+
+- `ptipote-app/lib/features/game/workshop_config.dart` : le niveau de Cuisine et d’Atelier ajoute jusqu’à 20 % de vitesse de fabrication et un slot P’TIPOTE par niveau. Le créneau manuel reste indépendant.
+- `ptipote-app/lib/features/game/waste_recycler_config.dart` : le Recycleur augmente sa capacité de sortie de 20 ressources par niveau, tout en conservant son rendement Déchets/cycle existant.
+- `ptipote-app/lib/features/game/security_tower_config.dart` : la Tour gagne +2 Sécurité par tick et +2 lors de la recharge manuelle à chaque niveau supplémentaire. Les slots restent 1/2/3.
+- `ptipote-app/lib/features/game/market_config.dart` : le Marché ajoute trois slots, une demande active et 10 % de cadence de vente par niveau, avec un plafond de cadence à 50 % de l’intervalle de base.
+- `ptipote-app/lib/features/game/zone0_game_state.dart` : les badges parent utilisent une table unique (Fablab, Tour, Marché, Maison, Cœur). Les chantiers possèdent `completeAt`, utilisé par le retour hors ligne afin d’empêcher une seconde finalisation et une seconde notification.
+- Migration : les niveaux indépendants sont bornés à leur configuration, l’ancien `fablabLevel` reste migré vers Atelier, la Cuisine reste au niveau 1 pour un ancien Fablab construit, et la capacité de logement ne descend jamais sous la population existante.
+- Tests : `ptipote-app/test/construction_project_test.dart` couvre le dépôt/lancement simulé, le retour après échéance et l’idempotence de fin de chantier, ainsi que les effets de niveau principaux. Le test Firebase réel reste manuel sur un compte existant, car il dépend de son état distant.

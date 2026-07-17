@@ -26,6 +26,33 @@ textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.config-section-list,
+.stage-list {
+  display: grid;
+  gap: 14px;
+}
+
+.config-section {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(255 253 248 / 76%);
+}
+
+.config-section h3 {
+  margin: 0 0 12px;
+  font-size: 0.98rem;
+}
+
+.toggle-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  color: var(--brown);
+  font-weight: 700;
+}
+
 * {
   box-sizing: border-box;
 }

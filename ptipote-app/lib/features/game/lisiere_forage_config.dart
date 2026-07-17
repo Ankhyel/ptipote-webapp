@@ -101,7 +101,7 @@ class ForageIntensityConfig {
   final String zoneFatigueLabel;
 }
 
-const lisiereForageConfig = LisiereForageConfig(
+const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
   forageTimeScale: 6,
   refugeSafetyFallback: 0,
   minimumMissionRisk: 5,
@@ -209,3 +209,5 @@ const lisiereForageConfig = LisiereForageConfig(
     ),
   },
 );
+
+LisiereForageConfig lisiereForageConfig = defaultLisiereForageConfig;

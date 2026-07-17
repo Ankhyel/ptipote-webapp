@@ -126,16 +126,16 @@ const ids = [
   "exportKernelProgressButton",
   "campHeartStatus",
   "campHeartStageList",
-  "exportCampHeartButton",
+  "publishCampHeartButton",
   "lisiereForageStatus",
   "lisiereForageList",
-  "exportLisiereForageButton",
+  "publishLisiereForageButton",
   "securityTowerStatus",
   "securityTowerConfigList",
-  "exportSecurityTowerButton",
+  "publishSecurityTowerButton",
   "fablabStatus",
   "fablabConfigList",
-  "exportFablabButton",
+  "publishFablabButton",
   "recyclerStatus",
   "recyclerConfigList",
   "exportRecyclerButton",
@@ -143,18 +143,9 @@ const ids = [
   "craftRecipeList",
   "craftRecipeForm",
   "exportCraftButton",
-  "campGeneratorEditor",
-  "workshopEditor",
-  "marketEditor",
-  "towerOperationsEditor",
-  "buildingArchitectureEditor",
-  "housingEditor",
-  "exportCampGeneratorButton",
-  "exportWorkshopButton",
-  "exportTowerOperationsButton",
-  "exportMarketButton",
-  "exportBuildingArchitectureButton",
-  "exportHousingButton",
+  "zone0SettingsForm",
+  "zone0SettingsStatus",
+  "publishZone0SettingsButton",
 ];
 
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -729,6 +720,160 @@ function exportCampHeartConfig() {
   URL.revokeObjectURL(url);
 }
 
+const ZONE0_SECTION_SOURCES = {
+  campHeart: "camp-heart-config.json",
+  lisiere: "lisiere-forage-config.json",
+  tower: "security-tower-config.json",
+  towerOperations: "tower-operations-config.json",
+  fablab: "fablab-config.json",
+  workshop: "workshop-config.json",
+  market: "market-config.json",
+  housing: "housing-config.json",
+};
+
+const ZONE0_SECTION_LABELS = {
+  campHeart: "Paliers du Cœur du Camp",
+  lisiere: "Lisière",
+  tower: "Tour de sécurité",
+  towerOperations: "Exploration, météo et marchand",
+  fablab: "Fablab",
+  workshop: "Atelier",
+  market: "Marché",
+  housing: "Maison et logements",
+};
+
+// These legacy JSON display fields are not gameplay inputs in Flutter. They
+// stay versioned as documentation, but cannot be published as active tuning.
+const ZONE0_NON_RUNTIME_PATHS = new Set([
+  "lisiere.durations.0.realMinutes", "lisiere.durations.1.realMinutes",
+  "lisiere.durations.2.realMinutes", "lisiere.durations.3.realMinutes",
+  "tower.minimumMissionRisk", "tower.securityRiskReductionFactor",
+  "tower.dangerLabels.0.min", "tower.dangerLabels.0.max",
+  "tower.dangerLabels.1.min", "tower.dangerLabels.1.max",
+  "tower.dangerLabels.2.min", "tower.dangerLabels.2.max",
+  "tower.dangerLabels.3.min", "tower.dangerLabels.3.max",
+  "tower.dangerLabels.4.min", "tower.dangerLabels.4.max",
+  "towerOperations.weather.forecastWarningMinutes", "towerOperations.weather.defaultDurationMinutes",
+  "fablab.recyclerMaxLevel", "fablab.cuisineUpgradeOrganic", "fablab.cuisineUpgradeMineral",
+  "fablab.atelierUpgradeOrganic", "fablab.atelierUpgradeMineral",
+  "fablab.recyclerUpgradeOrganic", "fablab.recyclerUpgradeMineral",
+  "fablab.unitUpgradeDurationMinutes",
+]);
+
+let zone0Settings = {};
+
+function cloneConfig(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function mergeConfig(base, override) {
+  if (Array.isArray(base)) {
+    return Array.isArray(override)
+      ? base.map((item, index) => mergeConfig(item, override[index]))
+      : cloneConfig(base);
+  }
+  if (base && typeof base === "object") {
+    const source = override && typeof override === "object" ? override : {};
+    return Object.fromEntries(Object.entries(base).map(([key, value]) => [key, mergeConfig(value, source[key])]));
+  }
+  return override === undefined || override === null ? base : override;
+}
+
+async function loadZone0Settings() {
+  try {
+    const entries = await Promise.all(Object.entries(ZONE0_SECTION_SOURCES).map(async ([key, file]) => {
+      const response = await fetch(`./${file}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`);
+      return [key, await response.json()];
+    }));
+    const base = Object.fromEntries(entries);
+    let published = null;
+    if (auth.currentUser && currentDashboardRole) {
+      const snapshot = await getDoc(doc(db, "gameConfigs", "zone0"));
+      const candidate = snapshot.data()?.zone0Settings;
+      if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) published = candidate;
+    }
+    zone0Settings = mergeConfig(base, published || {});
+    renderZone0Settings();
+    el.zone0SettingsStatus.textContent = published
+      ? "Configuration publiée chargée depuis Firestore."
+      : "Valeurs versionnées chargées. Publie-les pour les appliquer à l'application.";
+  } catch (error) {
+    el.zone0SettingsStatus.textContent = `Configuration Zone 0 illisible: ${error.message}`;
+  }
+}
+
+function readPath(source, path) {
+  return path.reduce((value, key) => value?.[key], source);
+}
+
+function writePath(source, path, value) {
+  let target = source;
+  path.slice(0, -1).forEach((key) => { target = target[key]; });
+  target[path[path.length - 1]] = value;
+}
+
+function prettyPath(path) {
+  return path.map((key) => String(key).replace(/([A-Z])/g, " $1")).join(" / ");
+}
+
+function configFields(value, path = []) {
+  if (typeof value === "number" || typeof value === "boolean") return [{ path, value }];
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([key, child]) => configFields(child, [...path, key]));
+}
+
+function renderConfigEditor(target, keys) {
+  target.innerHTML = keys.map((key) => {
+    const config = zone0Settings[key];
+    const fields = configFields(config).filter((field) => !ZONE0_NON_RUNTIME_PATHS.has(`${key}.${field.path.join(".")}`));
+    return `<section class="config-section"><h3>${escapeHtml(ZONE0_SECTION_LABELS[key])}</h3><div class="stat-form">${fields.map((field) => {
+      const path = field.path.join(".");
+      const label = `${ZONE0_SECTION_LABELS[key]} / ${prettyPath(field.path)}`;
+      if (typeof field.value === "boolean") {
+        return `<label class="toggle-field"><input type="checkbox" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" ${field.value ? "checked" : ""}>${escapeHtml(label)}</label>`;
+      }
+      return `<div class="stat-field"><label for="zone0-${escapeHtml(key)}-${escapeHtml(path)}">${escapeHtml(label)}</label><input id="zone0-${escapeHtml(key)}-${escapeHtml(path)}" type="number" step="0.01" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" value="${escapeHtml(field.value)}"></div>`;
+    }).join("")}</div></section>`;
+  }).join("");
+  target.querySelectorAll("[data-zone0-key]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const path = input.dataset.zone0Path.split(".").map((key) => /^\d+$/.test(key) ? Number(key) : key);
+      const value = input.type === "checkbox" ? input.checked : Number(input.value);
+      writePath(zone0Settings[input.dataset.zone0Key], path, value);
+      el.zone0SettingsStatus.textContent = "Modifications en attente. Clique sur Publier dans l'application.";
+    });
+  });
+}
+
+function renderZone0Settings() {
+  renderConfigEditor(el.campHeartStageList, ["campHeart"]);
+  renderConfigEditor(el.lisiereForageList, ["lisiere"]);
+  renderConfigEditor(el.securityTowerConfigList, ["tower", "towerOperations"]);
+  renderConfigEditor(el.fablabConfigList, ["fablab"]);
+  renderConfigEditor(el.zone0SettingsForm, ["workshop", "market", "housing"]);
+}
+
+function validateZone0Settings() {
+  const invalid = configFields(zone0Settings).find(({ path, value }) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return true;
+    return value < 0 && !path.includes("riskModifierPercent");
+  });
+  if (invalid) throw new Error(`Valeur invalide pour ${prettyPath(invalid.path)}.`);
+}
+
+async function publishZone0Settings() {
+  if (!auth.currentUser || !currentDashboardRole) throw new Error("Connexion admin ou dev requise.");
+  validateZone0Settings();
+  await setDoc(doc(db, "gameConfigs", "zone0"), {
+    schemaVersion: 2,
+    zone0Settings,
+    zone0SettingsUpdatedAt: serverTimestamp(),
+    zone0SettingsUpdatedBy: auth.currentUser.uid,
+  }, { merge: true });
+  el.zone0SettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
+}
+
 async function handleAuthClick() {
   if (auth.currentUser) {
     await signOut(auth);
@@ -756,6 +901,7 @@ onAuthStateChanged(auth, (user) => {
       el.authDetail.textContent = role ? `${user.email || user.uid} - ${role}` : user.email || user.uid;
       loadStats(role);
       loadPtipoteStatsConfig();
+      loadZone0Settings();
     })
     .catch((error) => {
       currentDashboardRole = "";
@@ -789,20 +935,18 @@ el.exportKernelButton.addEventListener("click", () => {
   exportKernelConfig();
 });
 
-el.exportCampHeartButton.addEventListener("click", () => {
-  exportCampHeartConfig();
-});
-
-el.exportLisiereForageButton.addEventListener("click", () => {
-  exportLisiereForageConfig();
-});
-
-el.exportSecurityTowerButton.addEventListener("click", () => {
-  exportSecurityTowerConfig();
-});
-
-el.exportFablabButton.addEventListener("click", () => {
-  exportFablabConfig();
+[
+  el.publishCampHeartButton,
+  el.publishLisiereForageButton,
+  el.publishSecurityTowerButton,
+  el.publishFablabButton,
+  el.publishZone0SettingsButton,
+].forEach((button) => {
+  button.addEventListener("click", () => {
+    publishZone0Settings().catch((error) => {
+      el.zone0SettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
+    });
+  });
 });
 
 el.exportCraftButton.addEventListener("click", () => {
@@ -810,21 +954,6 @@ el.exportCraftButton.addEventListener("click", () => {
 });
 
 el.craftRecipeForm.addEventListener("submit", addCraftRecipe);
-
-async function loadActiveBuildingConfigs() {
-  const entries = [
-    ["camp-generator-config.json", el.campGeneratorEditor],
-    ["workshop-config.json", el.workshopEditor],
-    ["market-config.json", el.marketEditor],
-    ["tower-operations-config.json", el.towerOperationsEditor],
-    ["building-architecture-config.json", el.buildingArchitectureEditor],
-    ["housing-config.json", el.housingEditor],
-  ];
-  for (const [file, target] of entries) {
-    const response = await fetch(`./${file}`, { cache: "no-store" });
-    target.value = JSON.stringify(await response.json(), null, 2);
-  }
-}
 
 async function loadKernelProgressConfig() {
   const response = await fetch("./kernel-progress-config.json", { cache: "no-store" });
@@ -847,12 +976,6 @@ function downloadJson(filename, value) {
   URL.revokeObjectURL(url);
 }
 
-el.exportCampGeneratorButton.addEventListener("click", () => exportEditor(el.campGeneratorEditor, "camp-generator-config.json"));
-el.exportWorkshopButton.addEventListener("click", () => exportEditor(el.workshopEditor, "workshop-config.json"));
-el.exportMarketButton.addEventListener("click", () => exportEditor(el.marketEditor, "market-config.json"));
-el.exportBuildingArchitectureButton.addEventListener("click", () => exportEditor(el.buildingArchitectureEditor, "building-architecture-config.json"));
-el.exportHousingButton.addEventListener("click", () => exportEditor(el.housingEditor, "housing-config.json"));
-el.exportTowerOperationsButton.addEventListener("click", () => exportEditor(el.towerOperationsEditor, "tower-operations-config.json"));
 el.exportRecyclerButton.addEventListener("click", () => exportRecyclerConfig());
 el.exportKernelProgressButton.addEventListener("click", () => exportEditor(el.kernelProgressEditor, "kernel-progress-config.json"));
 
@@ -865,7 +988,7 @@ loadSecurityTowerConfig();
 loadFablabConfig();
 loadRecyclerConfig();
 loadCraftConfig();
-loadActiveBuildingConfigs();
+loadZone0Settings();
 loadKernelProgressConfig().catch((error) => {
   el.kernelStatus.textContent = `Configuration progression Kernel illisible: ${error.message}`;
 });

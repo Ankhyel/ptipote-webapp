@@ -128,8 +128,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Global gameplay tuning is readable by the app but can only be changed
-    // from the internal Dashboard by an admin or developer.
+    // Global gameplay tuning (`gameConfigs/zone0.ptipoteStats` and
+    // `gameConfigs/zone0.zone0Settings`) is readable by the app but can only
+    // be changed from the internal Dashboard by an admin or developer.
+    // Never store player progress here: it remains under users/{uid}/game.
     match /gameConfigs/{configId} {
       allow read: if signedIn();
       allow create, update, delete: if canReadDashboard();

@@ -65,7 +65,8 @@ class TowerOperationsConfig {
           band.minimumSecurity > best.minimumSecurity ? band : best);
 }
 
-const towerOperationsConfig = TowerOperationsConfig(
+const TowerOperationsConfig defaultTowerOperationsConfig =
+    TowerOperationsConfig(
   biomeRevealSecurityThreshold: 60,
   explorationDurationMinutes: 20,
   localSecurityMaximum: 100,
@@ -118,3 +119,5 @@ const towerOperationsConfig = TowerOperationsConfig(
         preparationAmount: 1),
   ],
 );
+
+TowerOperationsConfig towerOperationsConfig = defaultTowerOperationsConfig;

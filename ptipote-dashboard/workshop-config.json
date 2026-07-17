@@ -2,6 +2,8 @@
   "vitalityCostPerUnit": 5,
   "levelSpeedBonusPercent": 0.01,
   "maxLevelSpeedBonusPercent": 0.15,
+  "buildingLevelSpeedBonusPercent": 0.05,
+  "maxBuildingSpeedBonusPercent": 0.20,
   "slotsPerLevel": 1,
   "recipes": [
     {"id":"filter","displayName":"Filtre","category":"Protection","ingredients":{"Organique":2,"Minéral":1},"resultItem":"Filtre","resultAmount":1,"durationMinutes":2,"stackLimit":10,"sellable":true,"baseSaleValue":3,"isEquipment":false},

@@ -46,7 +46,7 @@ class CampHeartStageConfig {
   final List<String> effects;
 }
 
-const campHeartConfig = CampHeartConfig(
+const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
   stages: <CampHeartStageConfig>[
     CampHeartStageConfig(
       level: 1,
@@ -172,3 +172,5 @@ const campHeartConfig = CampHeartConfig(
     ),
   ],
 );
+
+CampHeartConfig campHeartConfig = defaultCampHeartConfig;

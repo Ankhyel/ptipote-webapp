@@ -14,6 +14,8 @@ class MarketConfig {
     required this.requestMinReturnMinutes,
     required this.requestMaxReturnMinutes,
     required this.saleValues,
+    required this.saleIntervalReductionPerLevel,
+    required this.maxActiveRequestsBonusPerLevel,
   });
 
   final Map<String, int> constructionCost;
@@ -30,11 +32,21 @@ class MarketConfig {
   final int requestMinReturnMinutes;
   final int requestMaxReturnMinutes;
   final Map<String, int> saleValues;
+  final double saleIntervalReductionPerLevel;
+  final int maxActiveRequestsBonusPerLevel;
 
   int slotsForLevel(int level) => level.clamp(0, 99) * saleSlotsPerLevel;
+
+  double saleIntervalMultiplierForLevel(int level) =>
+      (1 - (level.clamp(1, 99) - 1) * saleIntervalReductionPerLevel)
+          .clamp(0.5, 1.0);
+
+  int maxRequestsForLevel(int level) =>
+      maxActiveRequests +
+      (level.clamp(1, 99) - 1) * maxActiveRequestsBonusPerLevel;
 }
 
-const marketConfig = MarketConfig(
+const MarketConfig defaultMarketConfig = MarketConfig(
   constructionCost: <String, int>{'Organique': 6, 'Minéral': 6},
   requiredCampHeartLevel: 1,
   requiredPopulation: 5,
@@ -59,4 +71,8 @@ const marketConfig = MarketConfig(
     'Ventilation Termite': 3,
     'Lumière solaire': 3,
   },
+  saleIntervalReductionPerLevel: 0.10,
+  maxActiveRequestsBonusPerLevel: 1,
 );
+
+MarketConfig marketConfig = defaultMarketConfig;

@@ -37,7 +37,7 @@
         <button class="tab-button" type="button" data-dashboard-tab="fablab">Fablab</button>
         <button class="tab-button" type="button" data-dashboard-tab="recycler">Déchets / Recycleur</button>
         <button class="tab-button" type="button" data-dashboard-tab="craft">Craft</button>
-        <button class="tab-button" type="button" data-dashboard-tab="active-buildings">Bâtiments actifs</button>
+        <button class="tab-button" type="button" data-dashboard-tab="active-buildings">Atelier, Marché, Maison</button>
       </nav>
 
       <section class="dashboard-panel active" data-dashboard-panel="overview">
@@ -77,14 +77,9 @@
 
       <section class="dashboard-panel" data-dashboard-panel="active-buildings">
         <section class="panel stat-ptipote-panel">
-          <div class="panel-head"><div><p class="eyebrow">Configuration V1</p><h2>Architecture et bâtiments actifs</h2></div></div>
-          <p class="panel-note">Modifie le JSON puis exporte le fichier correspondant pour le versionner avec l'application.</p>
-          <label>Générateur du Cœur</label><textarea id="campGeneratorEditor" rows="14"></textarea><button class="ghost" id="exportCampGeneratorButton" type="button">Exporter Générateur</button>
-          <label>Atelier</label><textarea id="workshopEditor" rows="14"></textarea><button class="ghost" id="exportWorkshopButton" type="button">Exporter Atelier</button>
-          <label>Marché</label><textarea id="marketEditor" rows="18"></textarea><button class="ghost" id="exportMarketButton" type="button">Exporter Marché</button>
-          <label>Tour, exploration, météo et Marchand</label><textarea id="towerOperationsEditor" rows="22"></textarea><button class="ghost" id="exportTowerOperationsButton" type="button">Exporter opérations Tour</button>
-          <label>Architecture commune des chantiers</label><textarea id="buildingArchitectureEditor" rows="22"></textarea><button class="ghost" id="exportBuildingArchitectureButton" type="button">Exporter architecture bâtiments</button>
-          <label>Maison et logements</label><textarea id="housingEditor" rows="20"></textarea><button class="ghost" id="exportHousingButton" type="button">Exporter Maison / logements</button>
+          <div class="panel-head"><div><p class="eyebrow">Configuration distante</p><h2>Atelier, Marché, Maison et Logements</h2></div><button class="ghost" id="publishZone0SettingsButton" type="button">Publier dans l'app</button></div>
+          <p class="panel-note" id="zone0SettingsStatus">Valeurs Dart/JSON de secours chargées tant qu'aucune configuration n'est publiée.</p>
+          <div class="config-section-list" id="zone0SettingsForm"></div>
         </section>
       </section>
 
@@ -123,9 +118,9 @@
         <section class="panel stat-ptipote-panel" aria-labelledby="campHeartTitle">
           <div class="panel-head">
             <div><p class="eyebrow">Configuration V1</p><h2 id="campHeartTitle">Cœur du Camp</h2></div>
-            <button class="ghost" id="exportCampHeartButton" type="button">Exporter JSON</button>
+            <button class="ghost" id="publishCampHeartButton" type="button">Publier dans l'app</button>
           </div>
-          <p class="panel-note" id="campHeartStatus">Charge les paliers depuis camp-heart-config.json. Edition dashboard complète à brancher plus tard.</p>
+          <p class="panel-note" id="campHeartStatus">Les paliers publiés sont appliqués aux applications connectées.</p>
           <div class="stage-list" id="campHeartStageList"></div>
         </section>
       </section>
@@ -134,7 +129,7 @@
         <section class="panel stat-ptipote-panel" aria-labelledby="lisiereForageTitle">
           <div class="panel-head">
             <div><p class="eyebrow">Configuration V1</p><h2 id="lisiereForageTitle">Lisière / Fourrage</h2></div>
-            <button class="ghost" id="exportLisiereForageButton" type="button">Exporter JSON</button>
+            <button class="ghost" id="publishLisiereForageButton" type="button">Publier dans l'app</button>
           </div>
           <p class="panel-note" id="lisiereForageStatus">Charge les temps, gains, coûts et risques depuis lisiere-forage-config.json.</p>
           <div class="stage-list" id="lisiereForageList"></div>
@@ -145,7 +140,7 @@
         <section class="panel stat-ptipote-panel" aria-labelledby="securityTowerTitle">
           <div class="panel-head">
             <div><p class="eyebrow">Configuration V1</p><h2 id="securityTowerTitle">Tour de sécurité</h2></div>
-            <button class="ghost" id="exportSecurityTowerButton" type="button">Exporter JSON</button>
+            <button class="ghost" id="publishSecurityTowerButton" type="button">Publier dans l'app</button>
           </div>
           <p class="panel-note" id="securityTowerStatus">Charge les coûts, ticks et seuils depuis security-tower-config.json.</p>
           <div class="stage-list" id="securityTowerConfigList"></div>
@@ -156,7 +151,7 @@
         <section class="panel stat-ptipote-panel" aria-labelledby="fablabTitle">
           <div class="panel-head">
             <div><p class="eyebrow">Configuration V1</p><h2 id="fablabTitle">Fablab</h2></div>
-            <button class="ghost" id="exportFablabButton" type="button">Exporter JSON</button>
+            <button class="ghost" id="publishFablabButton" type="button">Publier dans l'app</button>
           </div>
           <p class="panel-note" id="fablabStatus">Charge la construction, le stock et la Cuisine depuis fablab-config.json.</p>
           <div class="stage-list" id="fablabConfigList"></div>
