@@ -6,6 +6,7 @@ import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
+import 'ptibug_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'workshop_config.dart';
@@ -24,6 +25,7 @@ void applyRemoteZone0Settings(Map<String, dynamic>? raw) {
   kernelProgressConfig = _kernelProgress(raw?['kernelProgress']);
   marketConfig = _market(raw?['market']);
   housingConfig = _housing(raw?['housing']);
+  pTibugConfig = _ptibug(raw?['ptibug']);
 }
 
 Map<String, dynamic>? _map(Object? value) =>
@@ -202,6 +204,16 @@ KernelProgressConfig _kernelProgress(Object? value) {
         requiredAxis: _kernelAxis(item?['requiredAxis'], fallback.requiredAxis),
         requiredAxisLevel:
             _int(item?['requiredAxisLevel'], fallback.requiredAxisLevel),
+        requiredBreederLevel:
+            _int(item?['requiredBreederLevel'], fallback.requiredBreederLevel),
+        requiredBuilderLevel:
+            _int(item?['requiredBuilderLevel'], fallback.requiredBuilderLevel),
+        requiredRestorerLevel: _int(
+            item?['requiredRestorerLevel'], fallback.requiredRestorerLevel),
+        requiredBuildingLevels: _resourceMap(
+          item?['requiredBuildingLevels'],
+          fallback.requiredBuildingLevels,
+        ),
         workshopRecipeId:
             _string(item?['workshopRecipeId'], fallback.workshopRecipeId ?? '')
                     .isEmpty
@@ -212,6 +224,78 @@ KernelProgressConfig _kernelProgress(Object? value) {
             item?['initialState'] ?? item?['state'], fallback.initialState),
       );
     }).toList(),
+  );
+}
+
+Map<int, int> _levelMap(Object? value, Map<int, int> fallback) {
+  final raw = _map(value);
+  if (raw == null) return fallback;
+  return <int, int>{
+    for (final entry in fallback.entries)
+      entry.key: _int(raw['${entry.key}'], entry.value),
+  };
+}
+
+PTibugConfig _ptibug(Object? value) {
+  final raw = _map(value);
+  const base = defaultPTibugConfig;
+  if (raw == null) return base;
+  final rawSpecies = _map(raw['species']);
+  final rawPatterns = _map(raw['patterns']);
+  final rawPrices = _map(raw['sourcierPatternPrices']);
+  return PTibugConfig(
+    nurseryRequirements:
+        _resourceMap(raw['nurseryRequirements'], base.nurseryRequirements),
+    nurseryDurationMinutes:
+        _int(raw['nurseryDurationMinutes'], base.nurseryDurationMinutes),
+    slotsByLevel: _levelMap(raw['slotsByLevel'], base.slotsByLevel),
+    moduleSlotsByLevel:
+        _levelMap(raw['moduleSlotsByLevel'], base.moduleSlotsByLevel),
+    productionCycleMinutes:
+        _int(raw['productionCycleMinutes'], base.productionCycleMinutes),
+    carryingCapacity: _int(raw['carryingCapacity'], base.carryingCapacity),
+    xpPerCycle: _int(raw['xpPerCycle'], base.xpPerCycle),
+    wingsCycleReduction:
+        _double(raw['wingsCycleReduction'], base.wingsCycleReduction),
+    clawProductionBonus:
+        _int(raw['clawProductionBonus'], base.clawProductionBonus),
+    reservoirCapacityBonus:
+        _int(raw['reservoirCapacityBonus'], base.reservoirCapacityBonus),
+    species: <PTibugSpecies, PTibugSpeciesConfig>{
+      for (final entry in base.species.entries)
+        entry.key: () {
+          final item = _map(rawSpecies?[entry.key.name]);
+          final fallback = entry.value;
+          return PTibugSpeciesConfig(
+            displayName: _string(item?['displayName'], fallback.displayName),
+            styles: item?['styles'] is List
+                ? (item?['styles'] as List).whereType<String>().toList()
+                : fallback.styles,
+            creationCost:
+                _resourceMap(item?['creationCost'], fallback.creationCost),
+            creationEnergyCost:
+                _int(item?['creationEnergyCost'], fallback.creationEnergyCost),
+            creationMinutes:
+                _int(item?['creationMinutes'], fallback.creationMinutes),
+          );
+        }(),
+    },
+    patterns: <PTibugSpecies, PTibugPatternConfig>{
+      for (final entry in base.patterns.entries)
+        entry.key: () {
+          final item = _map(rawPatterns?[entry.key.name]);
+          final fallback = entry.value;
+          return PTibugPatternConfig(
+            species: entry.key,
+            kernelPlanId: _string(item?['kernelPlanId'], fallback.kernelPlanId),
+            description: _string(item?['description'], fallback.description),
+          );
+        }(),
+    },
+    sourcierPatternPrices: <PTibugSpecies, int>{
+      for (final entry in base.sourcierPatternPrices.entries)
+        entry.key: _int(rawPrices?[entry.key.name], entry.value),
+    },
   );
 }
 

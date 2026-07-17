@@ -17,9 +17,9 @@
     "firstMyceliumProduced": {"trustXp": 12, "breederXp": 16}
   },
   "plans": [
-    {"id":"ptibug-pattern-scarabe","title":"Pattern Scarabé","category":"ptibug","initialState":"discovered","discoveryThreshold":0,"requiredTrustLevel":1,"requiredAxisLevel":1},
-    {"id":"ptibug-pattern-hyme","title":"Pattern Hymé","category":"ptibug","discoveryEvent":"ptibugCreated","discoveryThreshold":1,"requiredTrustLevel":1,"requiredAxis":"breeder","requiredAxisLevel":1},
-    {"id":"ptibug-pattern-arac","title":"Pattern Arac","category":"ptibug","discoveryEvent":"ptibugProductionCollected","discoveryThreshold":3,"requiredTrustLevel":2,"requiredAxis":"breeder","requiredAxisLevel":2},
+    {"id":"ptibug-pattern-scarabe","title":"Pattern Scarabé","category":"ptibug","initialState":"discovered","discoveryThreshold":0,"requiredTrustLevel":1,"requiredAxisLevel":1,"requiredBreederLevel":0,"requiredBuilderLevel":0,"requiredRestorerLevel":0,"requiredBuildingLevels":{"plaineNursery":1,"house":0,"fablab":0,"cuisine":0,"atelier":0,"recycler":0,"securityTower":0,"market":0}},
+    {"id":"ptibug-pattern-hyme","title":"Pattern Hymé","category":"ptibug","discoveryEvent":"ptibugCreated","discoveryThreshold":1,"requiredTrustLevel":1,"requiredAxis":"breeder","requiredAxisLevel":1,"requiredBreederLevel":1,"requiredBuilderLevel":0,"requiredRestorerLevel":0,"requiredBuildingLevels":{"plaineNursery":1,"house":0,"fablab":0,"cuisine":0,"atelier":0,"recycler":0,"securityTower":0,"market":0}},
+    {"id":"ptibug-pattern-arac","title":"Pattern Arac","category":"ptibug","discoveryEvent":"ptibugProductionCollected","discoveryThreshold":3,"requiredTrustLevel":2,"requiredAxis":"breeder","requiredAxisLevel":2,"requiredBreederLevel":2,"requiredBuilderLevel":0,"requiredRestorerLevel":0,"requiredBuildingLevels":{"plaineNursery":1,"house":0,"fablab":0,"cuisine":0,"atelier":0,"recycler":0,"securityTower":0,"market":0}},
     {"id":"simple-furniture","state":"active","category":"workshop","workshopRecipeId":"simpleFurniture"},
     {"id":"filter","state":"unknown","discoveryEvent":"pollutionObserved","discoveryThreshold":3,"requiredTrustLevel":2,"requiredAxis":"restorer","requiredAxisLevel":1},
     {"id":"filter-cartridge","state":"unknown","discoveryEvent":"craftCompleted","discoveryThreshold":3,"requiredTrustLevel":2,"requiredAxis":"restorer","requiredAxisLevel":2},

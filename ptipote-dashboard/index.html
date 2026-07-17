@@ -31,6 +31,7 @@
         <button class="tab-button active" type="button" data-dashboard-tab="overview">Vue générale</button>
         <button class="tab-button" type="button" data-dashboard-tab="ptipote-stats">Stat Ptipote</button>
         <button class="tab-button" type="button" data-dashboard-tab="kernel">Camp / Kernel</button>
+        <button class="tab-button" type="button" data-dashboard-tab="ptibug">P’TIBUG</button>
         <button class="tab-button" type="button" data-dashboard-tab="camp-heart">Cœur du Camp</button>
         <button class="tab-button" type="button" data-dashboard-tab="lisiere-forage">Lisière / Fourrage</button>
         <button class="tab-button" type="button" data-dashboard-tab="security-tower">Tour</button>
@@ -128,6 +129,20 @@
             <div class="stat-field"><label>Produit récompense<input name="rewardItem" placeholder="ex. Bio-batterie"></label></div><div class="stat-field"><label>Quantité récompense<input name="rewardAmount" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Habitants récompense<input name="populationReward" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Bio-batteries<input name="bioBatteryReward" type="number" min="0" value="0"></label></div><div class="stat-field"><label>XP confiance<input name="xpReward" type="number" min="0" value="0"></label></div><div class="stat-field"><label>Pattern / Plan récompense<input name="rewardPatternId" placeholder="id du Pattern"></label></div>
             <div class="stat-field stat-field-wide"><button class="button" type="submit">Créer la mission</button></div>
           </form>
+        </section>
+      </section>
+
+      <section class="dashboard-panel" data-dashboard-panel="ptibug">
+        <section class="panel stat-ptipote-panel" aria-labelledby="ptibugTitle">
+          <div class="panel-head">
+            <div><p class="eyebrow">Configuration distante</p><h2 id="ptibugTitle">P’TIBUG et Patterns</h2></div>
+            <button class="ghost" id="publishPTibugButton" type="button">Publier dans l'app</button>
+          </div>
+          <p class="panel-note" id="ptibugStatus">Les coûts de Nurserie, les espèces et les prérequis de Pattern sont publiés dans Firestore.</p>
+          <div class="stage-list" id="ptibugConfigList"></div>
+          <div class="panel-head"><div><p class="eyebrow">Patterns</p><h3>Pré-requis d’activation</h3></div></div>
+          <p class="panel-note">Un Pattern est une connaissance Kernel : ce n’est ni une recette, ni un produit consommable. Les niveaux Éleveur, Bâtisseur, Régénérateur et les bâtiments requis sont contrôlés par Flutter.</p>
+          <div class="stage-list" id="ptibugPatternList"></div>
         </section>
       </section>
 

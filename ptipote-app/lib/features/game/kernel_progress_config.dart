@@ -54,6 +54,10 @@ class KernelTechnologyPlanConfig {
     required this.requiredAxis,
     required this.requiredAxisLevel,
     required this.workshopRecipeId,
+    this.requiredBreederLevel = 0,
+    this.requiredBuilderLevel = 0,
+    this.requiredRestorerLevel = 0,
+    this.requiredBuildingLevels = const <String, int>{},
     this.initialState = KernelPlanState.unknown,
   });
 
@@ -70,6 +74,10 @@ class KernelTechnologyPlanConfig {
   final KernelAxis? requiredAxis;
   final int requiredAxisLevel;
   final String? workshopRecipeId;
+  final int requiredBreederLevel;
+  final int requiredBuilderLevel;
+  final int requiredRestorerLevel;
+  final Map<String, int> requiredBuildingLevels;
   final KernelPlanState initialState;
 }
 
@@ -143,6 +151,16 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       requiredAxis: null,
       requiredAxisLevel: 1,
       workshopRecipeId: null,
+      requiredBuildingLevels: <String, int>{
+        'plaineNursery': 1,
+        'house': 0,
+        'fablab': 0,
+        'cuisine': 0,
+        'atelier': 0,
+        'recycler': 0,
+        'securityTower': 0,
+        'market': 0,
+      },
       initialState: KernelPlanState.discovered,
     ),
     KernelTechnologyPlanConfig(
@@ -160,6 +178,17 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       requiredAxis: KernelAxis.breeder,
       requiredAxisLevel: 1,
       workshopRecipeId: null,
+      requiredBreederLevel: 1,
+      requiredBuildingLevels: <String, int>{
+        'plaineNursery': 1,
+        'house': 0,
+        'fablab': 0,
+        'cuisine': 0,
+        'atelier': 0,
+        'recycler': 0,
+        'securityTower': 0,
+        'market': 0,
+      },
     ),
     KernelTechnologyPlanConfig(
       id: 'ptibug-pattern-arac',
@@ -176,6 +205,17 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       requiredAxis: KernelAxis.breeder,
       requiredAxisLevel: 2,
       workshopRecipeId: null,
+      requiredBreederLevel: 2,
+      requiredBuildingLevels: <String, int>{
+        'plaineNursery': 1,
+        'house': 0,
+        'fablab': 0,
+        'cuisine': 0,
+        'atelier': 0,
+        'recycler': 0,
+        'securityTower': 0,
+        'market': 0,
+      },
     ),
     KernelTechnologyPlanConfig(
       id: 'simple-furniture',

@@ -1,0 +1,50 @@
+{
+  "nurseryRequirements": {"Organique": 20, "Minéral": 35},
+  "nurseryDurationMinutes": 1,
+  "slotsByLevel": {"1": 1, "2": 2, "3": 3},
+  "moduleSlotsByLevel": {"1": 1, "2": 2, "3": 3},
+  "productionCycleMinutes": 60,
+  "carryingCapacity": 6,
+  "xpPerCycle": 1,
+  "wingsCycleReduction": 0.15,
+  "clawProductionBonus": 1,
+  "reservoirCapacityBonus": 4,
+  "species": {
+    "scarabe": {
+      "displayName": "Scarabé",
+      "styles": ["compact", "cornu", "cuirassé"],
+      "creationCost": {"Organique": 2, "Minéral": 4},
+      "creationEnergyCost": 5,
+      "creationMinutes": 20
+    },
+    "hyme": {
+      "displayName": "Hymé",
+      "styles": ["fourmi", "abeille", "guêpe"],
+      "creationCost": {"Organique": 4, "Minéral": 2},
+      "creationEnergyCost": 5,
+      "creationMinutes": 20
+    },
+    "arac": {
+      "displayName": "Arac",
+      "styles": ["toile", "chasseuse", "sauteuse"],
+      "creationCost": {"Organique": 3, "Minéral": 3},
+      "creationEnergyCost": 5,
+      "creationMinutes": 25
+    }
+  },
+  "patterns": {
+    "scarabe": {
+      "kernelPlanId": "ptibug-pattern-scarabe",
+      "description": "Un premier collecteur robuste pour les sols du refuge."
+    },
+    "hyme": {
+      "kernelPlanId": "ptibug-pattern-hyme",
+      "description": "Un P’TIBUG rapide, adapté aux ressources organiques."
+    },
+    "arac": {
+      "kernelPlanId": "ptibug-pattern-arac",
+      "description": "Un collecteur agile capable de s’adapter à sa collecte."
+    }
+  },
+  "sourcierPatternPrices": {"hyme": 6, "arac": 8}
+}

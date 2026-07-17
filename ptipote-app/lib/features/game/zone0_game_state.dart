@@ -434,6 +434,73 @@ class Zone0GameState extends ChangeNotifier {
 
   int kernelAxisCurrentXp(KernelAxis axis) => kernelAxisXp[axis] ?? 0;
 
+  /// Returns the current level for a building referenced by a Kernel Pattern.
+  /// Pattern prerequisites stay data-driven while unknown future buildings
+  /// simply remain unavailable instead of making an activation crash.
+  int kernelPlanBuildingLevel(String buildingId) => switch (buildingId) {
+        'fablab' => atelierLevel,
+        'cuisine' => cuisineLevel,
+        'atelier' => atelierLevel,
+        'recycler' => recyclerLevel,
+        'securityTower' => securityTowerLevel,
+        'market' => marketLevel,
+        'house' => houseLevel,
+        'plaineNursery' => plaineNurseryLevel,
+        _ => 0,
+      };
+
+  bool kernelPlanRequirementsMet(KernelTechnologyPlanConfig plan) {
+    if (kernelTrustLevel < plan.requiredTrustLevel) return false;
+    if (plan.requiredAxis != null &&
+        kernelAxisLevel(plan.requiredAxis!) < plan.requiredAxisLevel) {
+      return false;
+    }
+    if (kernelAxisLevel(KernelAxis.breeder) < plan.requiredBreederLevel ||
+        kernelAxisLevel(KernelAxis.builder) < plan.requiredBuilderLevel ||
+        kernelAxisLevel(KernelAxis.restorer) < plan.requiredRestorerLevel) {
+      return false;
+    }
+    return plan.requiredBuildingLevels.entries.every(
+      (entry) => kernelPlanBuildingLevel(entry.key) >= entry.value,
+    );
+  }
+
+  String kernelPlanRequirementsLabel(KernelTechnologyPlanConfig plan) {
+    final requirements = <String>[
+      'Confiance niv. ${plan.requiredTrustLevel}',
+      if (plan.requiredAxis != null)
+        '${_kernelAxisLabel(plan.requiredAxis!)} niv. ${plan.requiredAxisLevel}',
+      if (plan.requiredBreederLevel > 0)
+        'Éleveur niv. ${plan.requiredBreederLevel}',
+      if (plan.requiredBuilderLevel > 0)
+        'Bâtisseur niv. ${plan.requiredBuilderLevel}',
+      if (plan.requiredRestorerLevel > 0)
+        'Régénérateur niv. ${plan.requiredRestorerLevel}',
+      ...plan.requiredBuildingLevels.entries.map(
+        (entry) => '${_kernelBuildingLabel(entry.key)} niv. ${entry.value}',
+      ),
+    ];
+    return requirements.join(' · ');
+  }
+
+  String _kernelAxisLabel(KernelAxis axis) => switch (axis) {
+        KernelAxis.breeder => 'Éleveur',
+        KernelAxis.builder => 'Bâtisseur',
+        KernelAxis.restorer => 'Régénérateur',
+      };
+
+  String _kernelBuildingLabel(String buildingId) => switch (buildingId) {
+        'fablab' => 'Fablab',
+        'cuisine' => 'Cuisine',
+        'atelier' => 'Atelier',
+        'recycler' => 'Recycleur',
+        'securityTower' => 'Tour',
+        'market' => 'Marché',
+        'house' => 'Maison',
+        'plaineNursery' => 'Nurserie',
+        _ => buildingId,
+      };
+
   int get kernelTrustXpRequired => kernelProgressConfig.xpRequired(
         level: kernelTrustLevel,
         isTrust: true,
@@ -619,9 +686,7 @@ class Zone0GameState extends ChangeNotifier {
         ));
       }
       if (kernelPlanState(plan) != KernelPlanState.discovered) continue;
-      final axisReady = plan.requiredAxis == null ||
-          kernelAxisLevel(plan.requiredAxis!) >= plan.requiredAxisLevel;
-      if (kernelTrustLevel >= plan.requiredTrustLevel && axisReady) {
+      if (kernelPlanRequirementsMet(plan)) {
         readyKernelPlanIds.add(plan.id);
         reports.add(PtipoteMissionReport.system(
           message: 'Plan prêt : ${plan.title}. Le Kernel peut le partager.',

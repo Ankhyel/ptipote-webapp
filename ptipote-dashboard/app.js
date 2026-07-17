@@ -121,6 +121,10 @@ const ids = [
   "kernelProgressConfigList",
   "kernelMissionForm",
   "publishKernelButton",
+  "ptibugStatus",
+  "ptibugConfigList",
+  "ptibugPatternList",
+  "publishPTibugButton",
   "campHeartStatus",
   "campHeartStageList",
   "publishCampHeartButton",
@@ -739,6 +743,7 @@ const ZONE0_SECTION_SOURCES = {
   craft: "craft-config.json",
   market: "market-config.json",
   housing: "housing-config.json",
+  ptibug: "ptibug-config.json",
 };
 
 const ZONE0_SECTION_LABELS = {
@@ -753,6 +758,7 @@ const ZONE0_SECTION_LABELS = {
   craft: "Craft",
   market: "Marché",
   housing: "Maison et logements",
+  ptibug: "P'TIBUG et Nurserie",
 };
 
 // These legacy JSON display fields are not gameplay inputs in Flutter. They
@@ -857,6 +863,24 @@ function prettyPath(path) {
     maxRefugeRequests: "Demandes d'accueil maximum",
     wellbeingRedThreshold: "Seuil de bien-être rouge",
     wellbeingOrangeThreshold: "Seuil de bien-être orange",
+    requiredTrustLevel: "Confiance Kernel requise",
+    requiredBreederLevel: "Niveau Éleveur requis",
+    requiredBuilderLevel: "Niveau Bâtisseur requis",
+    requiredRestorerLevel: "Niveau Régénérateur requis",
+    requiredBuildingLevels: "Bâtiments requis",
+    plaineNursery: "Nurserie de Plaine requise",
+    house: "Maison requise",
+    fablab: "Fablab requis",
+    cuisine: "Cuisine requise",
+    atelier: "Atelier requis",
+    recycler: "Recycleur requis",
+    market: "Marché requis",
+    securityTower: "Tour de sécurité requise",
+    nurseryDurationMinutes: "Durée de création à la Nurserie",
+    productionCycleMinutes: "Durée de cycle de production",
+    creationEnergyCost: "Coût en énergie de création",
+    creationMinutes: "Durée de création",
+    sourcierPatternPrices: "Prix du Sourcier",
   };
   return path.map((key) => labels[key] || String(key).replace(/([A-Z])/g, " $1")).join(" / ");
 }
@@ -921,7 +945,8 @@ function renderKernelEditor() {
   const kernel = zone0Settings.kernel || {};
   const { missions = [], plans = [] } = kernel;
   const progress = zone0Settings.kernelProgress || {};
-  const { eventRewards = {}, plans: patternPlans = [], ...progressGeneral } = progress;
+  const { eventRewards = {}, plans: allPlans = [], ...progressGeneral } = progress;
+  const normalPlans = allPlans.filter((plan) => plan.category !== "ptibug");
   el.kernelConfigList.innerHTML = [
     ...missions.map((mission, index) => `${configCard(
       mission.title || `Mission ${index + 1}`,
@@ -947,11 +972,11 @@ function renderKernelEditor() {
       ["eventRewards", event],
       { meta: "XP accordée par événement" },
     )),
-    ...patternPlans.map((plan, index) => configCard(
-      plan.title || plan.id || `Pattern ${index + 1}`,
+    ...normalPlans.map((plan, index) => configCard(
+      plan.title || plan.id || `Plan ${index + 1}`,
       "kernelProgress",
       plan,
-      ["plans", index],
+      ["plans", allPlans.indexOf(plan)],
       { meta: `${plan.category || "Plan"} · ${plan.discoveryEvent || "départ"}` },
     )),
   ].join("");
@@ -964,6 +989,44 @@ function renderKernelEditor() {
       el.kernelStatus.textContent = "Mission supprimée. Clique sur Publier dans l'app pour appliquer ce retrait.";
     });
   });
+}
+
+function renderPTibugEditor() {
+  const ptibug = zone0Settings.ptibug || {};
+  const { species = {}, patterns = {}, ...general } = ptibug;
+  el.ptibugConfigList.innerHTML = [
+    configCard("Nurserie et production", "ptibug", general, [], { open: true, meta: "Coûts, capacité, cycles et Sourcier" }),
+    ...Object.entries(species).map(([speciesId, config]) => configCard(
+      config.displayName || speciesId,
+      "ptibug",
+      config,
+      ["species", speciesId],
+      { meta: "Coût et durée de création" },
+    )),
+    ...Object.entries(patterns).map(([speciesId, pattern]) => configCard(
+      `Lien Pattern · ${speciesId}`,
+      "ptibug",
+      pattern,
+      ["patterns", speciesId],
+      { meta: "Identifiant Kernel et description" },
+    )),
+  ].join("");
+
+  const allPlans = zone0Settings.kernelProgress?.plans || [];
+  const patternsByPlanId = new Map(Object.entries(patterns).map(([speciesId, pattern]) => [pattern.kernelPlanId, speciesId]));
+  const patternPlans = allPlans.filter((plan) => plan.category === "ptibug");
+  el.ptibugPatternList.innerHTML = patternPlans.map((plan) => {
+    const speciesId = patternsByPlanId.get(plan.id) || "Pattern";
+    return configCard(
+      plan.title || speciesId,
+      "kernelProgress",
+      plan,
+      ["plans", allPlans.indexOf(plan)],
+      { open: true, meta: `${speciesId} · prérequis de déblocage` },
+    );
+  }).join("");
+  bindZone0Inputs(el.ptibugConfigList);
+  bindZone0Inputs(el.ptibugPatternList);
 }
 
 function addKernelMission(event) {
@@ -1064,6 +1127,7 @@ function renderMarketEditor() {
 
 function renderZone0Settings() {
   renderKernelEditor();
+  renderPTibugEditor();
   renderCampHeartEditor();
   renderLisiereEditor();
   renderTowerEditor();
@@ -1092,6 +1156,7 @@ async function publishZone0Settings() {
   }, { merge: true });
   el.zone0SettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
   el.kernelStatus.textContent = "Missions, Patterns et récompenses publiés. Les applications connectées se mettent à jour.";
+  el.ptibugStatus.textContent = "Configuration P'TIBUG et prérequis de Patterns publiés. Les applications connectées se mettent à jour.";
   el.craftStatus.textContent = "Configuration Craft publiée. Les applications connectées se mettent à jour.";
   el.marketSettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
 }
@@ -1155,6 +1220,7 @@ el.exportPtipoteStatsButton.addEventListener("click", () => {
 
 [
   el.publishKernelButton,
+  el.publishPTibugButton,
   el.publishCampHeartButton,
   el.publishLisiereForageButton,
   el.publishSecurityTowerButton,
@@ -1167,6 +1233,7 @@ el.exportPtipoteStatsButton.addEventListener("click", () => {
     publishZone0Settings().catch((error) => {
       el.zone0SettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
       el.kernelStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
+      el.ptibugStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
       el.craftStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
       el.marketSettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
     });

@@ -81,7 +81,7 @@ class PTibugConfig {
   }
 }
 
-const pTibugConfig = PTibugConfig(
+const PTibugConfig defaultPTibugConfig = PTibugConfig(
   nurseryRequirements: <String, int>{'Organique': 20, 'Minéral': 35},
   nurseryDurationMinutes: 1,
   slotsByLevel: <int, int>{1: 1, 2: 2, 3: 3},
@@ -137,3 +137,7 @@ const pTibugConfig = PTibugConfig(
     PTibugSpecies.arac: 8,
   },
 );
+
+/// Active tuning published by the internal Dashboard. Player-owned P'TIBUG
+/// progress is intentionally kept out of this configuration.
+PTibugConfig pTibugConfig = defaultPTibugConfig;

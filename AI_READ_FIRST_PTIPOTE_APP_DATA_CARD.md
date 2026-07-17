@@ -1234,7 +1234,7 @@ Pour formater Dart:
 
 ### Sections Zone 0 publiees
 
-- `zone0Settings` : `kernel`, `kernelProgress`, `campHeart`, `lisiere`, `tower`, `towerOperations`, `fablab`, `workshop`, `craft`, `market`, `housing`.
+- `zone0Settings` : `kernel`, `kernelProgress`, `campHeart`, `lisiere`, `tower`, `towerOperations`, `fablab`, `workshop`, `craft`, `market`, `housing`, `ptibug`.
 - Les valeurs Dart `default...Config` restent le fallback hors ligne ou lors d'une configuration distante invalide/incomplète.
 - Le Dashboard publie depuis les onglets Cœur du Camp, Lisière, Tour, Fablab, Craft, Marché, Atelier/Maison et Camp/Kernel. Les règles Firestore n'exposent aucun droit admin côté client.
 
@@ -1259,6 +1259,16 @@ Pour formater Dart:
 - Une `KernelMissionConfig` peut définir : type `main`, `refugeRequest` ou `weather`; prérequis de bâtiments/niveaux; Confiance Kernel; niveaux Éleveur/Bâtisseur/Restaurateur; produit demandé; habitants, Bio-batteries, XP Confiance, ressources et Pattern/Plan comme récompenses.
 - Les missions avec produit demandé se valident par `Zone0GameState.fulfillKernelMission`. Les autres missions se valident automatiquement lorsque leurs conditions et prérequis sont remplis. Les IDs terminés et les récompenses Population restent persistés dans `users/{uid}/game/zone0`.
 - `RefugePage` affiche les demandes, un bouton de remise pour le produit requis, et un onglet Kernel `Météo` pour les missions de type météo. Un Pattern récompensé active le Plan correspondant dans `activeKernelPlanIds`.
+
+### P'TIBUG et Patterns publiés à distance
+
+- `ptipote-dashboard/ptibug-config.json` est la base versionnée des coûts de Nurserie, espèces, cycles, capacités, prix du Sourcier et liens Pattern/Plan. L'onglet Dashboard `P'TIBUG` l'édite puis le publie dans `gameConfigs/zone0.zone0Settings.ptibug`.
+- `ptipote-app/lib/features/game/remote_zone0_settings.dart` reconstruit `PTibugConfig` depuis Firestore et garde `defaultPTibugConfig` comme fallback hors ligne ou pour une valeur distante absente.
+- `ptipote-app/lib/features/game/ptibug_config.dart` distingue `defaultPTibugConfig` (versionné) de `pTibugConfig` (configuration active). Aucun P'TIBUG, Pattern actif, ordre de création ou production du joueur n'est écrit dans la configuration distante.
+- Les Patterns restent des Plans Kernel, jamais des recettes ou des objets consommables. `KernelTechnologyPlanConfig` accepte des prérequis distincts : Confiance, Éleveur, Bâtisseur, Régénérateur et `requiredBuildingLevels`.
+- `Zone0GameState.kernelPlanRequirementsMet` applique ces conditions réellement lors du passage Plan découvert -> prêt. Les bâtiments reconnus sont Fablab, Cuisine, Atelier, Recycleur, Tour, Marché, Maison et Nurserie ; un identifiant futur non reconnu reste bloquant sans crash.
+- L'onglet Kernel affiche désormais la liste complète des prérequis. Le choix gratuit du premier P'TIBUG reste volontairement une exception : il est accordé à la fin de la Nurserie et ne consomme aucun Pattern.
+- Les missions Kernel créées depuis le Dashboard sont déjà documentées ci-dessus : elles restent séparées de l'éditeur P'TIBUG afin de ne pas mélanger objectifs de jeu et connaissances/Patterns.
 
 ### Tour, intempéries et météo
 

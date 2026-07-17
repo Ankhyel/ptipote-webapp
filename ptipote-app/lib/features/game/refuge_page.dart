@@ -833,8 +833,8 @@ class _KernelPlansTabState extends State<_KernelPlansTab> {
                     if (state == KernelPlanState.discovered) ...<Widget>[
                       const SizedBox(height: 8),
                       Text(
-                          'Pré-requis : confiance niv. ${plan.requiredTrustLevel}'
-                          '${plan.requiredAxis == null ? '' : ' · ${_axisLabel(plan.requiredAxis!)} niv. ${plan.requiredAxisLevel}'}'),
+                        'Pré-requis : ${widget.gameState.kernelPlanRequirementsLabel(plan)}',
+                      ),
                     ],
                     if (state == KernelPlanState.ready) ...<Widget>[
                       const SizedBox(height: 10),
