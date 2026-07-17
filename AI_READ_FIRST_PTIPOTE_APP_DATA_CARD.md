@@ -1186,3 +1186,11 @@ Pour formater Dart:
 - `ptipote-app/lib/features/game/zone0_game_state.dart` : les badges parent utilisent une table unique (Fablab, Tour, Marché, Maison, Cœur). Les chantiers possèdent `completeAt`, utilisé par le retour hors ligne afin d’empêcher une seconde finalisation et une seconde notification.
 - Migration : les niveaux indépendants sont bornés à leur configuration, l’ancien `fablabLevel` reste migré vers Atelier, la Cuisine reste au niveau 1 pour un ancien Fablab construit, et la capacité de logement ne descend jamais sous la population existante.
 - Tests : `ptipote-app/test/construction_project_test.dart` couvre le dépôt/lancement simulé, le retour après échéance et l’idempotence de fin de chantier, ainsi que les effets de niveau principaux. Le test Firebase réel reste manuel sur un compte existant, car il dépend de son état distant.
+# P'TIBUG V1 - NURSERIE ET PRODUCTION
+
+- `ptipote-app/lib/features/game/ptibug_config.dart` centralise les espèces Scarabé, Hyme et Arac, leurs recettes de création, styles, slots de Nurserie, cycles, capacité et modules V1.
+- `ptipote-app/lib/features/game/zone0_game_state.dart` conserve les P'TIBUG dans le document Firebase `ptibug`, termine la création hors ligne et résout les cycles terminés sans les verser automatiquement dans l'inventaire. La collecte est explicite afin de respecter la capacité globale.
+- Production : Scarabé produit du Minéral, Hyme de l'Organique et Arac une combinaison aléatoire d'Organique, Minéral ou Déchets. La capacité individuelle bloque les cycles pleins. XP : +1 par cycle.
+- Mycélium : la ressource est produite exclusivement par une Donnée Décomposeur. Elle n'est ajoutée à aucune recette existante dans cette étape.
+- `ptipote-app/lib/features/game/refuge_page.dart` expose une Nurserie P'TIBUG dans la Plaine/refuge : construction commune, Aperçu, Création, Collection et Amélioration. Les P'TIBUG peuvent être installés ou retirés des slots actifs et leur production récupérée.
+- État préparé : les champs trait, modules, XP, style et prochaine production sont sauvegardés. L'UI détaillée des Données, de la fusion et de l'équipement de Modules reste à terminer avec les offres Sourcier/Dashboard correspondantes.

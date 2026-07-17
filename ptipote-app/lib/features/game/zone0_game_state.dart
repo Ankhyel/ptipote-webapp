@@ -2270,11 +2270,156 @@ class Zone0GameState extends ChangeNotifier {
       emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
       changed = true;
     }
+    for (final bug in pTibugs.where((item) => item.assignedSlotIndex != null)) {
+      final next = bug.nextProductionAt;
+      if (next == null || next.isAfter(current)) {
+        continue;
+      }
+      var cycleAt = next;
+      var producedCycles = 0;
+      while (!cycleAt.isAfter(current) &&
+          bug.storedAmount < _pTibugCapacity(bug)) {
+        final production = _pTibugProduction(bug);
+        if (bug.storedAmount +
+                production.values.fold(0, (total, value) => total + value) >
+            _pTibugCapacity(bug)) {
+          break;
+        }
+        production.forEach((resource, amount) {
+          bug.storedResources[resource] =
+              (bug.storedResources[resource] ?? 0) + amount;
+        });
+        bug.xp += pTibugConfig.xpPerCycle;
+        producedCycles += 1;
+        cycleAt = cycleAt.add(_pTibugCycleDuration(bug));
+      }
+      bug.nextProductionAt = cycleAt;
+      if (producedCycles > 0) changed = true;
+    }
     if (changed) {
       notifyListeners();
       unawaited(saveRuntimeToFirebase());
     }
     return changed;
+  }
+
+  int get pTibugActiveSlots => pTibugConfig.slotsForLevel(plaineNurseryLevel);
+
+  Duration _pTibugCycleDuration(PTibug bug) => Duration(
+        minutes: math.max(
+          1,
+          (pTibugConfig.productionCycleMinutes *
+                  (bug.hasModule(PTibugModuleType.ailes)
+                      ? 1 - pTibugConfig.wingsCycleReduction
+                      : 1))
+              .round(),
+        ),
+      );
+
+  int _pTibugCapacity(PTibug bug) =>
+      pTibugConfig.carryingCapacity +
+      (bug.hasModule(PTibugModuleType.reservoir)
+          ? pTibugConfig.reservoirCapacityBonus
+          : 0);
+
+  Map<String, int> _pTibugProduction(PTibug bug) {
+    final output = <String, int>{};
+    void add(String resource, int amount) =>
+        output[resource] = (output[resource] ?? 0) + amount;
+    switch (bug.species) {
+      case PTibugSpecies.scarabe:
+        add('Minéral', 2);
+      case PTibugSpecies.hyme:
+        add('Organique', 2);
+      case PTibugSpecies.arac:
+        final variants = <Map<String, int>>[
+          <String, int>{'Organique': 2},
+          <String, int>{'Minéral': 2},
+          <String, int>{'Déchets': 2},
+          <String, int>{'Organique': 1, 'Minéral': 1},
+          <String, int>{'Organique': 1, 'Déchets': 1},
+          <String, int>{'Minéral': 1, 'Déchets': 1},
+        ];
+        variants[_random.nextInt(variants.length)]
+            .forEach((resource, amount) => add(resource, amount));
+    }
+    final trait = bug.traitDataId == null
+        ? null
+        : pTibugTraitData
+            .where((item) => item.id == bug.traitDataId)
+            .firstOrNull;
+    final multiplier =
+        trait == null ? 0 : pTibugConfig.traitMultiplier(trait.grade);
+    if (trait?.type == PTibugTraitType.pollinisateur ||
+        trait?.type == PTibugTraitType.decomposeur) {
+      add('Organique', multiplier);
+    }
+    if (trait?.type == PTibugTraitType.mineur) {
+      add('Minéral', multiplier);
+    }
+    if (trait?.type == PTibugTraitType.decomposeur) {
+      add('Mycélium', multiplier);
+    }
+    if (bug.hasModule(PTibugModuleType.pinces)) {
+      switch (bug.species) {
+        case PTibugSpecies.scarabe:
+          add('Minéral', pTibugConfig.clawProductionBonus);
+        case PTibugSpecies.hyme:
+          add('Organique', pTibugConfig.clawProductionBonus);
+        case PTibugSpecies.arac:
+          add(<String>['Organique', 'Minéral', 'Déchets'][_random.nextInt(3)],
+              pTibugConfig.clawProductionBonus);
+      }
+    }
+    return output;
+  }
+
+  Zone0ActionResult assignPTibugSlot(PTibug bug, int slot) {
+    if (slot < 0 ||
+        slot >= pTibugActiveSlots ||
+        pTibugs.any(
+            (item) => item.id != bug.id && item.assignedSlotIndex == slot)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Slot indisponible.');
+    }
+    bug.assignedSlotIndex = slot;
+    bug.nextProductionAt ??= DateTime.now().add(_pTibugCycleDuration(bug));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(success: true, message: 'P’TIBUG installé.');
+  }
+
+  Zone0ActionResult removePTibugSlot(PTibug bug) {
+    bug.assignedSlotIndex = null;
+    bug.nextProductionAt = null;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'P’TIBUG rangé dans la Nurserie.');
+  }
+
+  Zone0ActionResult collectPTibugProduction() {
+    final output = <String, int>{};
+    for (final bug in pTibugs) {
+      bug.storedResources
+          .forEach((key, value) => output[key] = (output[key] ?? 0) + value);
+    }
+    if (output.isEmpty || !hasInventoryCapacityFor(output)) {
+      return Zone0ActionResult(
+          success: false,
+          message: output.isEmpty
+              ? 'Aucune production prête.'
+              : 'Inventaire insuffisant.');
+    }
+    addResources(output);
+    for (final bug in pTibugs) {
+      bug.storedResources.clear();
+    }
+    emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Production récupérée.');
   }
 
   Zone0ActionResult constructFablabLevel1() {
@@ -4586,16 +4731,29 @@ class PTibug {
     required this.styleVariant,
     required this.createdAt,
     this.assignedSlotIndex,
-    this.storedResources = const <String, int>{},
-  });
-
+    Map<String, int>? storedResources,
+    this.level = 1,
+    this.xp = 0,
+    this.traitDataId,
+    List<PTibugModuleType>? equippedModules,
+    this.nextProductionAt,
+  })  : storedResources = storedResources ?? <String, int>{},
+        equippedModules = equippedModules ?? <PTibugModuleType>[];
   final String id;
   final String displayName;
   final PTibugSpecies species;
   final String styleVariant;
   final DateTime createdAt;
-  final int? assignedSlotIndex;
+  int? assignedSlotIndex;
   final Map<String, int> storedResources;
+  int level;
+  int xp;
+  String? traitDataId;
+  final List<PTibugModuleType> equippedModules;
+  DateTime? nextProductionAt;
+  int get storedAmount =>
+      storedResources.values.fold(0, (total, value) => total + value);
+  bool hasModule(PTibugModuleType type) => equippedModules.contains(type);
 
   factory PTibug.fromFirebase(Map<dynamic, dynamic> data) => PTibug(
         id: '${data['id'] ?? ''}',
@@ -4609,6 +4767,15 @@ class PTibug {
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
             DateTime.now(),
         assignedSlotIndex: data['assignedSlotIndex'] as int?,
+        level: Zone0GameState.instance._readInt(data['level'], fallback: 1),
+        xp: Zone0GameState.instance._readInt(data['xp']),
+        traitDataId: data['traitDataId'] as String?,
+        equippedModules: (data['equippedModules'] as List? ?? const <dynamic>[])
+            .map((value) => ForageMission._enumByName(
+                PTibugModuleType.values, '$value', PTibugModuleType.ailes))
+            .toList(),
+        nextProductionAt:
+            Zone0GameState.instance._readDate(data['nextProductionAt']),
         storedResources: Map<String, int>.fromEntries(
           (data['storedResources'] as Map? ?? const <dynamic, dynamic>{})
               .entries
@@ -4625,6 +4792,13 @@ class PTibug {
         'createdAt': Timestamp.fromDate(createdAt),
         'assignedSlotIndex': assignedSlotIndex,
         'storedResources': storedResources,
+        'level': level,
+        'xp': xp,
+        'traitDataId': traitDataId,
+        'equippedModules': equippedModules.map((item) => item.name).toList(),
+        'nextProductionAt': nextProductionAt == null
+            ? null
+            : Timestamp.fromDate(nextProductionAt!),
       };
 }
 

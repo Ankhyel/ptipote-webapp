@@ -30,6 +30,10 @@ class PTibugConfig {
     required this.moduleSlotsByLevel,
     required this.productionCycleMinutes,
     required this.carryingCapacity,
+    required this.xpPerCycle,
+    required this.wingsCycleReduction,
+    required this.clawProductionBonus,
+    required this.reservoirCapacityBonus,
     required this.species,
   });
 
@@ -39,11 +43,17 @@ class PTibugConfig {
   final Map<int, int> moduleSlotsByLevel;
   final int productionCycleMinutes;
   final int carryingCapacity;
+  final int xpPerCycle;
+  final double wingsCycleReduction;
+  final int clawProductionBonus;
+  final int reservoirCapacityBonus;
   final Map<PTibugSpecies, PTibugSpeciesConfig> species;
 
   int slotsForLevel(int level) => slotsByLevel[level.clamp(1, 3)] ?? 1;
   int moduleSlotsForLevel(int level) =>
       moduleSlotsByLevel[level.clamp(1, 3)] ?? 1;
+
+  int traitMultiplier(PTibugTraitGrade grade) => grade.index + 1;
 }
 
 const pTibugConfig = PTibugConfig(
@@ -53,6 +63,10 @@ const pTibugConfig = PTibugConfig(
   moduleSlotsByLevel: <int, int>{1: 1, 2: 2, 3: 3},
   productionCycleMinutes: 60,
   carryingCapacity: 6,
+  xpPerCycle: 1,
+  wingsCycleReduction: 0.15,
+  clawProductionBonus: 1,
+  reservoirCapacityBonus: 4,
   species: <PTibugSpecies, PTibugSpeciesConfig>{
     PTibugSpecies.scarabe: PTibugSpeciesConfig(
       displayName: 'Scarabé',

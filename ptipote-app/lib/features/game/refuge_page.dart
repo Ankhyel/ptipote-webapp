@@ -15,6 +15,7 @@ import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
+import 'ptibug_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'waste_recycler_config.dart';
@@ -92,6 +93,14 @@ class _RefugePageState extends State<RefugePage> {
       left: 0.18,
       top: 0.56,
       width: 0.25,
+      height: 0.10,
+    ),
+    _RefugeBuilding(
+      name: 'Nursery',
+      title: 'Nurserie P’TIBUG',
+      left: 0.22,
+      top: 0.62,
+      width: 0.30,
       height: 0.10,
     ),
   ];
@@ -201,6 +210,12 @@ class _RefugePageState extends State<RefugePage> {
               campHeartLevel: _campHeartState.campHeartLevel,
             );
           }
+          if (building.name == 'Nursery') {
+            return PTibugNurseryPage(
+              gameState: _zone0State,
+              campHeartLevel: _campHeartState.campHeartLevel,
+            );
+          }
           return _GameBuildingPage(building: building);
         },
       ),
@@ -241,6 +256,25 @@ class _RefugePageState extends State<RefugePage> {
         builder: (_) => _MarketConstructionSheet(
           gameState: _zone0State,
           campHeartLevel: _campHeartState.campHeartLevel,
+        ),
+      );
+      return;
+    }
+    if (building.name == 'Nursery' && !_zone0State.isPlaineNurseryBuilt) {
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (_) => _ConstructionProjectSheet(
+          gameState: _zone0State,
+          targetId: 'plaineNursery',
+          title: 'Nurserie P’TIBUG',
+          description:
+              'Installe des P’TIBUG dans la Plaine pour produire lentement des ressources.',
+          campHeartLevel: _campHeartState.campHeartLevel,
+          blockedReason: _campHeartState.campHeartLevel < 2
+              ? 'Le Cœur du Camp doit atteindre le niveau 2.'
+              : null,
         ),
       );
       return;
@@ -6200,6 +6234,182 @@ class _MarketStockSlot extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class PTibugNurseryPage extends StatefulWidget {
+  const PTibugNurseryPage(
+      {super.key, required this.gameState, required this.campHeartLevel});
+  final Zone0GameState gameState;
+  final int campHeartLevel;
+
+  @override
+  State<PTibugNurseryPage> createState() => _PTibugNurseryPageState();
+}
+
+class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
+  Timer? _timer;
+  @override
+  void initState() {
+    super.initState();
+    widget.gameState.addListener(_changed);
+    _timer = Timer.periodic(const Duration(seconds: 10),
+        (_) => widget.gameState.resolvePTibugProduction());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    widget.gameState.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  void _message(String message) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(message)));
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 4,
+      child: Scaffold(
+        appBar: AppBar(
+            title: const Text('Nurserie P’TIBUG'),
+            bottom: const TabBar(isScrollable: true, tabs: <Widget>[
+              Tab(text: 'Aperçu'),
+              Tab(text: 'Créer'),
+              Tab(text: 'Collection'),
+              Tab(text: 'Amélioration')
+            ])),
+        body: TabBarView(children: <Widget>[
+          _overview(),
+          _creation(),
+          _collection(),
+          _BuildingUpgradeTab(
+              gameState: widget.gameState,
+              targetId: 'plaineNursery',
+              title: 'Améliorer la Nurserie',
+              description:
+                  'Ajoute des slots P’TIBUG et des emplacements de modules.',
+              currentEffects: <String>[
+                '${widget.gameState.pTibugActiveSlots} slot(s) actif(s)',
+                '${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel)} module(s) par P’TIBUG'
+              ],
+              nextEffects: <String>[
+                '${pTibugConfig.slotsForLevel(widget.gameState.plaineNurseryLevel + 1)} slot(s) actif(s)',
+                '${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel + 1)} module(s) par P’TIBUG'
+              ],
+              campHeartLevel: widget.campHeartLevel),
+        ]),
+      ),
+    );
+  }
+
+  Widget _overview() {
+    final total = widget.gameState.pTibugs
+        .fold<int>(0, (sum, bug) => sum + bug.storedAmount);
+    return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+      Card(
+          child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                        'Nurserie niveau ${widget.gameState.plaineNurseryLevel}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w900, fontSize: 20)),
+                    Text(
+                        '${widget.gameState.pTibugs.where((bug) => bug.assignedSlotIndex != null).length}/${widget.gameState.pTibugActiveSlots} P’TIBUG actifs'),
+                    Text('Production en réserve : $total ressources'),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                        onPressed: total == 0
+                            ? null
+                            : () => _message(widget.gameState
+                                .collectPTibugProduction()
+                                .message),
+                        child: const Text('Récupérer la production')),
+                  ]))),
+      if (widget.gameState.pTibugCreationOrder?.isActive == true)
+        Card(
+            child: ListTile(
+                title: const Text('Création en cours'),
+                subtitle: Text(
+                    'Fin dans ${_countdownLabel(widget.gameState.pTibugCreationOrder!.endsAt)}'))),
+    ]);
+  }
+
+  Widget _creation() =>
+      ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+        const Text('Patterns actifs',
+            style: TextStyle(fontWeight: FontWeight.w900)),
+        if (widget.gameState.activePTibugPatterns.isEmpty)
+          const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Text(
+                  'Le Kernel offrira le premier Pattern à la fin des travaux.')),
+        ...widget.gameState.activePTibugPatterns.map((species) {
+          final config = pTibugConfig.species[species]!;
+          return Card(
+              child: ListTile(
+                  title: Text('Pattern ${config.displayName}'),
+                  subtitle: Text(
+                      '${config.creationCost.entries.map((e) => '${e.value} ${e.key}').join(' · ')} · ${config.creationEnergyCost} Énergie · ${config.creationMinutes} min'),
+                  trailing: FilledButton(
+                      onPressed:
+                          widget.gameState.pTibugCreationOrder?.isActive == true
+                              ? null
+                              : () => _message(widget.gameState
+                                  .startPTibugCreation(species)
+                                  .message),
+                      child: const Text('Créer'))));
+        }),
+      ]);
+
+  Widget _collection() =>
+      ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+        if (widget.gameState.pTibugs.isEmpty)
+          const Text('Aucun P’TIBUG créé pour le moment.'),
+        ...widget.gameState.pTibugs.map((bug) => Card(
+            child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                          '${bug.displayName} · ${bug.styleVariant} · niv. ${bug.level}',
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Text(
+                          'XP ${bug.xp} · Réserve ${bug.storedAmount}/${pTibugConfig.carryingCapacity}'),
+                      Text(bug.assignedSlotIndex == null
+                          ? 'En réserve'
+                          : 'Production active · prochain cycle ${bug.nextProductionAt == null ? 'à lancer' : _countdownLabel(bug.nextProductionAt!)}'),
+                      const SizedBox(height: 8),
+                      bug.assignedSlotIndex == null
+                          ? FilledButton(
+                              onPressed: () => _message(widget.gameState
+                                  .assignPTibugSlot(bug, _firstFreeSlot())
+                                  .message),
+                              child: const Text('Installer'))
+                          : OutlinedButton(
+                              onPressed: () => _message(widget.gameState
+                                  .removePTibugSlot(bug)
+                                  .message),
+                              child: const Text('Retirer')),
+                    ])))),
+      ]);
+
+  int _firstFreeSlot() {
+    for (var i = 0; i < widget.gameState.pTibugActiveSlots; i += 1) {
+      if (!widget.gameState.pTibugs.any((bug) => bug.assignedSlotIndex == i)) {
+        return i;
+      }
+    }
+    return -1;
   }
 }
 
