@@ -98,7 +98,7 @@ class KernelProgressConfig {
   }
 }
 
-const kernelProgressConfig = KernelProgressConfig(
+const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
   trustXpRequiredBase: 100,
   axisXpRequiredBase: 80,
   xpRequiredMultiplier: 1.25,
@@ -275,3 +275,5 @@ const kernelProgressConfig = KernelProgressConfig(
     ),
   ],
 );
+
+KernelProgressConfig kernelProgressConfig = defaultKernelProgressConfig;

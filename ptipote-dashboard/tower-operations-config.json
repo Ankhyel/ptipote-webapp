@@ -19,5 +19,9 @@
     {"minimumSecurity": 60, "wellbeingModifier": 5, "label": "Protégé"},
     {"minimumSecurity": 80, "wellbeingModifier": 10, "label": "Serein"}
   ],
-  "weather": {"forecastWarningMinutes": 30, "defaultDurationMinutes": 90}
+  "weatherEvents": [
+    {"type":"toxicCloud","label":"Nuage toxique","description":"La pollution réduit les récoltes proches.","durationMinutes":90,"warningMinutes":30,"preparationItem":"Filtre","preparationAmount":1},
+    {"type":"heatWave","label":"Forte chaleur","description":"La chaleur fatigue les équipes dehors.","durationMinutes":90,"warningMinutes":30,"preparationItem":"Tenue ombragée","preparationAmount":1},
+    {"type":"heavyRain","label":"Pluie intense","description":"Les chemins deviennent difficiles.","durationMinutes":60,"warningMinutes":20,"preparationItem":"Ventilation Termite","preparationAmount":1}
+  ]
 }

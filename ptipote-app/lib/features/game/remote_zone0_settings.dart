@@ -2,6 +2,8 @@ import 'camp_heart_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'housing_config.dart';
+import 'kernel_config.dart';
+import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'security_tower_config.dart';
@@ -18,6 +20,8 @@ void applyRemoteZone0Settings(Map<String, dynamic>? raw) {
   fablabConfig = _fablab(raw?['fablab']);
   workshopConfig = _workshop(raw?['workshop']);
   craftConfig = _craft(raw?['craft']);
+  kernelConfig = _kernel(raw?['kernel']);
+  kernelProgressConfig = _kernelProgress(raw?['kernelProgress']);
   marketConfig = _market(raw?['market']);
   housingConfig = _housing(raw?['housing']);
 }
@@ -40,6 +44,146 @@ Map<String, int> _resourceMap(Object? value, Map<String, int> fallback) {
       entry.key: _int(raw[entry.key], entry.value),
   };
 }
+
+KernelConfig _kernel(Object? value) {
+  final raw = _map(value);
+  const base = defaultKernelConfig;
+  if (raw == null) return base;
+  final capacities = _map(raw['populationCapacityByCampHeartLevel']);
+  final missions = raw['missions'] is List ? raw['missions'] as List : const [];
+  final plans = raw['plans'] is List ? raw['plans'] as List : const [];
+  final missionById = <String, Map<String, dynamic>>{
+    for (final item in missions)
+      if (_map(item) case final map?) _string(map['id'], ''): map,
+  };
+  final planById = <String, Map<String, dynamic>>{
+    for (final item in plans)
+      if (_map(item) case final map?) _string(map['id'], ''): map,
+  };
+  return KernelConfig(
+    startingPopulation:
+        _int(raw['startingPopulation'], base.startingPopulation),
+    startingWellbeing: _int(raw['startingWellbeing'], base.startingWellbeing),
+    startingBioBatteries:
+        _int(raw['startingBioBatteries'], base.startingBioBatteries),
+    maxRefugeRequests: _int(raw['maxRefugeRequests'], base.maxRefugeRequests),
+    populationCapacityByCampHeartLevel: <int, int>{
+      for (final entry in base.populationCapacityByCampHeartLevel.entries)
+        entry.key: _int(capacities?['${entry.key}'], entry.value),
+    },
+    wellbeingRedThreshold:
+        _int(raw['wellbeingRedThreshold'], base.wellbeingRedThreshold),
+    wellbeingOrangeThreshold:
+        _int(raw['wellbeingOrangeThreshold'], base.wellbeingOrangeThreshold),
+    missions: base.missions.map((fallback) {
+      final item = missionById[fallback.id];
+      return KernelMissionConfig(
+        id: fallback.id,
+        type: fallback.type,
+        title: _string(item?['title'], fallback.title),
+        description: _string(item?['description'], fallback.description),
+        conditionType: fallback.conditionType,
+        requiredAmount: _int(item?['requiredAmount'], fallback.requiredAmount),
+        populationReward:
+            _int(item?['populationReward'], fallback.populationReward),
+        bioBatteryReward:
+            _int(item?['bioBatteryReward'], fallback.bioBatteryReward),
+        xpReward: _int(item?['xpReward'], fallback.xpReward),
+        mailMessage: _string(item?['mailMessage'], fallback.mailMessage),
+      );
+    }).toList(),
+    plans: base.plans.map((fallback) {
+      final item = planById[fallback.id];
+      return KernelPlanConfig(
+        id: fallback.id,
+        title: _string(item?['title'], fallback.title),
+        description: _string(item?['description'], fallback.description),
+        requiredCampHeartLevel: _int(
+            item?['requiredCampHeartLevel'], fallback.requiredCampHeartLevel),
+      );
+    }).toList(),
+  );
+}
+
+KernelProgressConfig _kernelProgress(Object? value) {
+  final raw = _map(value);
+  const base = defaultKernelProgressConfig;
+  if (raw == null) return base;
+  final rawRewards = _map(raw['eventRewards']);
+  final rawPlans = raw['plans'] is List ? raw['plans'] as List : const [];
+  final planById = <String, Map<String, dynamic>>{
+    for (final item in rawPlans)
+      if (_map(item) case final map?) _string(map['id'], ''): map,
+  };
+  return KernelProgressConfig(
+    trustXpRequiredBase:
+        _int(raw['trustXpRequiredBase'], base.trustXpRequiredBase),
+    axisXpRequiredBase:
+        _int(raw['axisXpRequiredBase'], base.axisXpRequiredBase),
+    xpRequiredMultiplier:
+        _double(raw['xpRequiredMultiplier'], base.xpRequiredMultiplier),
+    eventRewards: <KernelProgressEventType, KernelProgressReward>{
+      for (final event in KernelProgressEventType.values)
+        event: _kernelReward(
+            _map(rawRewards?[event.name]), base.eventRewards[event]!),
+    },
+    plans: base.plans.map((fallback) {
+      final item = planById[fallback.id];
+      return KernelTechnologyPlanConfig(
+        id: fallback.id,
+        title: _string(item?['title'], fallback.title),
+        description: _string(item?['description'], fallback.description),
+        category: fallback.category,
+        iconName: fallback.iconName,
+        origin: _string(item?['origin'], fallback.origin),
+        kernelText: _string(item?['kernelText'], fallback.kernelText),
+        discoveryEvent:
+            _kernelEvent(item?['discoveryEvent'], fallback.discoveryEvent),
+        discoveryThreshold:
+            _int(item?['discoveryThreshold'], fallback.discoveryThreshold),
+        requiredTrustLevel:
+            _int(item?['requiredTrustLevel'], fallback.requiredTrustLevel),
+        requiredAxis: _kernelAxis(item?['requiredAxis'], fallback.requiredAxis),
+        requiredAxisLevel:
+            _int(item?['requiredAxisLevel'], fallback.requiredAxisLevel),
+        workshopRecipeId:
+            _string(item?['workshopRecipeId'], fallback.workshopRecipeId ?? '')
+                    .isEmpty
+                ? null
+                : _string(
+                    item?['workshopRecipeId'], fallback.workshopRecipeId ?? ''),
+        initialState: _kernelPlanState(
+            item?['initialState'] ?? item?['state'], fallback.initialState),
+      );
+    }).toList(),
+  );
+}
+
+KernelProgressReward _kernelReward(
+  Map<String, dynamic>? raw,
+  KernelProgressReward fallback,
+) =>
+    KernelProgressReward(
+      trustXp: _int(raw?['trustXp'], fallback.trustXp),
+      breederXp: _int(raw?['breederXp'], fallback.breederXp),
+      builderXp: _int(raw?['builderXp'], fallback.builderXp),
+      restorerXp: _int(raw?['restorerXp'], fallback.restorerXp),
+    );
+
+KernelProgressEventType? _kernelEvent(
+        Object? value, KernelProgressEventType? fallback) =>
+    KernelProgressEventType.values
+        .where((event) => event.name == value)
+        .firstOrNull ??
+    fallback;
+
+KernelAxis? _kernelAxis(Object? value, KernelAxis? fallback) =>
+    KernelAxis.values.where((axis) => axis.name == value).firstOrNull ??
+    fallback;
+
+KernelPlanState _kernelPlanState(Object? value, KernelPlanState fallback) =>
+    KernelPlanState.values.where((state) => state.name == value).firstOrNull ??
+    fallback;
 
 CampHeartConfig _campHeart(Object? value) {
   final raw = _map(value);
@@ -220,6 +364,8 @@ TowerOperationsConfig _towerOperations(Object? value) {
   const base = defaultTowerOperationsConfig;
   final bands =
       raw['wellbeingBands'] is List ? raw['wellbeingBands'] as List : const [];
+  final weather =
+      raw['weatherEvents'] is List ? raw['weatherEvents'] as List : const [];
   return TowerOperationsConfig(
       biomeRevealSecurityThreshold: _int(raw['biomeRevealSecurityThreshold'],
           base.biomeRevealSecurityThreshold),
@@ -253,7 +399,24 @@ TowerOperationsConfig _towerOperations(Object? value) {
                 _int(item?['wellbeingModifier'], fallback.wellbeingModifier),
             label: fallback.label);
       }),
-      weatherEvents: base.weatherEvents);
+      weatherEvents:
+          List<TowerWeatherConfig>.generate(base.weatherEvents.length, (index) {
+        final item = index < weather.length ? _map(weather[index]) : null;
+        final fallback = base.weatherEvents[index];
+        return TowerWeatherConfig(
+          type: fallback.type,
+          label: _string(item?['label'], fallback.label),
+          description: _string(item?['description'], fallback.description),
+          durationMinutes:
+              _int(item?['durationMinutes'], fallback.durationMinutes),
+          warningMinutes:
+              _int(item?['warningMinutes'], fallback.warningMinutes),
+          preparationItem:
+              _string(item?['preparationItem'], fallback.preparationItem),
+          preparationAmount:
+              _int(item?['preparationAmount'], fallback.preparationAmount),
+        );
+      }));
 }
 
 FablabConfig _fablab(Object? value) {

@@ -93,7 +93,7 @@ class KernelPlanConfig {
   final int requiredCampHeartLevel;
 }
 
-const kernelConfig = KernelConfig(
+const KernelConfig defaultKernelConfig = KernelConfig(
   startingPopulation: 4,
   startingWellbeing: 70,
   startingBioBatteries: 0,
@@ -198,3 +198,5 @@ const kernelConfig = KernelConfig(
     ),
   ],
 );
+
+KernelConfig kernelConfig = defaultKernelConfig;

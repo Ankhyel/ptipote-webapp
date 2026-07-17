@@ -118,9 +118,8 @@ const ids = [
   "exportPtipoteStatsButton",
   "kernelStatus",
   "kernelConfigList",
-  "exportKernelButton",
-  "kernelProgressEditor",
-  "exportKernelProgressButton",
+  "kernelProgressConfigList",
+  "publishKernelButton",
   "campHeartStatus",
   "campHeartStageList",
   "publishCampHeartButton",
@@ -728,6 +727,8 @@ function exportCampHeartConfig() {
 }
 
 const ZONE0_SECTION_SOURCES = {
+  kernel: "kernel-config.json",
+  kernelProgress: "kernel-progress-config.json",
   campHeart: "camp-heart-config.json",
   lisiere: "lisiere-forage-config.json",
   tower: "security-tower-config.json",
@@ -740,6 +741,8 @@ const ZONE0_SECTION_SOURCES = {
 };
 
 const ZONE0_SECTION_LABELS = {
+  kernel: "Camp et missions Kernel",
+  kernelProgress: "Confiance, axes et Patterns",
   campHeart: "Paliers du Cœur du Camp",
   lisiere: "Lisière",
   tower: "Tour de sécurité",
@@ -884,6 +887,49 @@ function renderCampHeartEditor() {
   bindZone0Inputs(el.campHeartStageList);
 }
 
+function renderKernelEditor() {
+  const kernel = zone0Settings.kernel || {};
+  const { missions = [], plans = [], ...general } = kernel;
+  const progress = zone0Settings.kernelProgress || {};
+  const { eventRewards = {}, plans: patternPlans = [], ...progressGeneral } = progress;
+  el.kernelConfigList.innerHTML = [
+    configCard("Camp et capacité", "kernel", general, [], { open: true, meta: "Population, bien-être et demandes" }),
+    ...missions.map((mission, index) => configCard(
+      mission.title || `Mission ${index + 1}`,
+      "kernel",
+      mission,
+      ["missions", index],
+      { meta: `${mission.conditionType || "condition"} · récompenses de mission` },
+    )),
+    ...plans.map((plan, index) => configCard(
+      plan.title || `Plan ${index + 1}`,
+      "kernel",
+      plan,
+      ["plans", index],
+      { meta: "Niveau du Cœur requis" },
+    )),
+  ].join("");
+  el.kernelProgressConfigList.innerHTML = [
+    configCard("Progression du Kernel", "kernelProgress", progressGeneral, [], { open: true, meta: "XP de confiance et des axes" }),
+    ...Object.entries(eventRewards).map(([event, reward]) => configCard(
+      `Récompense · ${prettyPath([event])}`,
+      "kernelProgress",
+      reward,
+      ["eventRewards", event],
+      { meta: "XP accordée par événement" },
+    )),
+    ...patternPlans.map((plan, index) => configCard(
+      plan.title || plan.id || `Pattern ${index + 1}`,
+      "kernelProgress",
+      plan,
+      ["plans", index],
+      { meta: `${plan.category || "Plan"} · ${plan.discoveryEvent || "départ"}` },
+    )),
+  ].join("");
+  bindZone0Inputs(el.kernelConfigList);
+  bindZone0Inputs(el.kernelProgressConfigList);
+}
+
 function renderLisiereEditor() {
   const { biomes = [], durations = [], intensities = [], ...general } = zone0Settings.lisiere || {};
   el.lisiereForageList.innerHTML = [
@@ -893,6 +939,23 @@ function renderLisiereEditor() {
     ...biomes.map((biome, index) => configCard(biome.label || `Biome ${index + 1}`, "lisiere", biome, ["biomes", index], { meta: "Récompenses et risque" })),
   ].join("");
   bindZone0Inputs(el.lisiereForageList);
+}
+
+function renderTowerEditor() {
+  const operations = zone0Settings.towerOperations || {};
+  const { weatherEvents = [], ...operationsWithoutWeather } = operations;
+  el.securityTowerConfigList.innerHTML = [
+    configCard("Tour de sécurité", "tower", zone0Settings.tower, [], { open: true, meta: "Construction, emplacements et sécurité" }),
+    configCard("Rondes, exploration et marchand", "towerOperations", operationsWithoutWeather, [], { meta: "Sécurité locale et exploration" }),
+    ...weatherEvents.map((weather, index) => configCard(
+      weather.label || `Intempérie ${index + 1}`,
+      "towerOperations",
+      weather,
+      ["weatherEvents", index],
+      { meta: `${weather.description || "Alerte météo"} · préparation : ${weather.preparationAmount || 0} ${weather.preparationItem || "objet"}` },
+    )),
+  ].join("");
+  bindZone0Inputs(el.securityTowerConfigList);
 }
 
 function renderWorkshopEditor() {
@@ -917,9 +980,10 @@ function renderMarketEditor() {
 }
 
 function renderZone0Settings() {
+  renderKernelEditor();
   renderCampHeartEditor();
   renderLisiereEditor();
-  renderConfigEditor(el.securityTowerConfigList, ["tower", "towerOperations"]);
+  renderTowerEditor();
   renderConfigEditor(el.fablabConfigList, ["fablab"]);
   renderWorkshopEditor();
   renderCraftConfig();
@@ -944,6 +1008,7 @@ async function publishZone0Settings() {
     zone0SettingsUpdatedBy: auth.currentUser.uid,
   }, { merge: true });
   el.zone0SettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
+  el.kernelStatus.textContent = "Missions, Patterns et récompenses publiés. Les applications connectées se mettent à jour.";
   el.craftStatus.textContent = "Configuration Craft publiée. Les applications connectées se mettent à jour.";
   el.marketSettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
 }
@@ -1005,11 +1070,8 @@ el.exportPtipoteStatsButton.addEventListener("click", () => {
   });
 });
 
-el.exportKernelButton.addEventListener("click", () => {
-  exportKernelConfig();
-});
-
 [
+  el.publishKernelButton,
   el.publishCampHeartButton,
   el.publishLisiereForageButton,
   el.publishSecurityTowerButton,
@@ -1021,6 +1083,7 @@ el.exportKernelButton.addEventListener("click", () => {
   button.addEventListener("click", () => {
     publishZone0Settings().catch((error) => {
       el.zone0SettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
+      el.kernelStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
       el.craftStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
       el.marketSettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
     });
@@ -1051,17 +1114,11 @@ function downloadJson(filename, value) {
 }
 
 el.exportRecyclerButton.addEventListener("click", () => exportRecyclerConfig());
-el.exportKernelProgressButton.addEventListener("click", () => exportEditor(el.kernelProgressEditor, "kernel-progress-config.json"));
-
 setupDashboardTabs();
 loadPtipoteStatsConfig();
-loadKernelConfig();
 loadCampHeartConfig();
 loadLisiereForageConfig();
 loadSecurityTowerConfig();
 loadFablabConfig();
 loadRecyclerConfig();
 loadZone0Settings();
-loadKernelProgressConfig().catch((error) => {
-  el.kernelStatus.textContent = `Configuration progression Kernel illisible: ${error.message}`;
-});

@@ -109,17 +109,15 @@
       <section class="dashboard-panel" data-dashboard-panel="kernel">
         <section class="panel stat-ptipote-panel" aria-labelledby="kernelTitle">
           <div class="panel-head">
-            <div><p class="eyebrow">Configuration V1</p><h2 id="kernelTitle">Camp / Kernel</h2></div>
-            <button class="ghost" id="exportKernelButton" type="button">Exporter JSON</button>
+            <div><p class="eyebrow">Configuration distante</p><h2 id="kernelTitle">Camp / Kernel</h2></div>
+            <button class="ghost" id="publishKernelButton" type="button">Publier dans l'app</button>
           </div>
-          <p class="panel-note" id="kernelStatus">Charge population, HUD et missions depuis kernel-config.json.</p>
+          <p class="panel-note" id="kernelStatus">Missions, Plans, Patterns et récompenses sont publiés dans Firestore.</p>
           <div class="stage-list" id="kernelConfigList"></div>
           <div class="panel-head">
-            <div><p class="eyebrow">Progression V1</p><h3>Confiance, axes et Plans</h3></div>
-            <button class="ghost" id="exportKernelProgressButton" type="button">Exporter JSON</button>
+            <div><p class="eyebrow">Progression</p><h3>Confiance, axes et Patterns</h3></div>
           </div>
-          <p class="panel-note">Les valeurs sont éditables ici puis exportables vers <code>kernel-progress-config.json</code>.</p>
-          <textarea class="config-editor" id="kernelProgressEditor" spellcheck="false"></textarea>
+          <div class="stage-list" id="kernelProgressConfigList"></div>
         </section>
       </section>
 
