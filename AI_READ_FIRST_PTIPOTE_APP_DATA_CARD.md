@@ -1,6 +1,6 @@
 # AI READ FIRST - PTIPOTE App Data Card
 
-Derniere mise a jour: 2026-07-09
+Derniere mise a jour: 2026-07-17
 
 Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'application Flutter PTIPOTE. Lis ce fichier avant d'ouvrir le code: il indique ou vivent les fonctions, les flux importants, les collections Firestore et les fichiers a modifier selon la demande.
 
@@ -1221,3 +1221,48 @@ Pour formater Dart:
 - `ptipote-app/lib/features/game/refuge_page.dart` expose une Nurserie P'TIBUG dans la Plaine/refuge : construction commune, Aperçu, Création, Collection et Amélioration. Les P'TIBUG peuvent être installés ou retirés des slots actifs et leur production récupérée.
 - État préparé : les champs trait, modules, XP, style et prochaine production sont sauvegardés. L'UI détaillée des Données, de la fusion et de l'équipement de Modules reste à terminer avec les offres Sourcier/Dashboard correspondantes.
 - Complément : les Données peuvent désormais être attribuées à un P'TIBUG et deux Données non équipées de même trait et grade se fusionnent de façon garantie. Les Modules déverrouillés respectent le nombre de slots de la Nurserie; Réservoir est offert à la première création. Les événements Kernel dédiés alimentent Confiance et axe Éleveur lors de création, équipement, fusion et collecte.
+
+## Dashboard Interne Et Configuration Distante Zone 0 (2026-07-17)
+
+### Source, droits et publication
+
+- Dashboard déployé : `https://ptipote-13508.web.app` ; sources : `ptipote-dashboard/index.html`, `ptipote-dashboard/app.js`, `ptipote-dashboard/styles.css`.
+- Document de configuration : `gameConfigs/zone0`. Les valeurs de jeu sont sous `zone0Settings`; les statistiques P'TIPOTE restent sous `ptipoteStats`.
+- Seuls les rôles existants `admin` et `dev` peuvent écrire `gameConfigs/{configId}`. Les rôles viennent de `users/{uid}.role`; pas de custom claims. Voir `firestore.rules`.
+- Le Dashboard charge d'abord les JSON versionnés de `ptipote-dashboard/*.json`, fusionne la publication Firestore puis écrit l'ensemble de `zone0Settings` avec `setDoc(..., { merge: true })` après validation.
+- Flutter lit et écoute `gameConfigs/zone0` via `ptipote-app/lib/features/game/remote_game_config_service.dart`. Le mapping/fallback se trouve dans `remote_zone0_settings.dart`. Aucune progression joueur n'est écrite dans `gameConfigs` : elle reste dans `users/{uid}/game/zone0`.
+
+### Sections Zone 0 publiees
+
+- `zone0Settings` : `kernel`, `kernelProgress`, `campHeart`, `lisiere`, `tower`, `towerOperations`, `fablab`, `workshop`, `craft`, `market`, `housing`.
+- Les valeurs Dart `default...Config` restent le fallback hors ligne ou lors d'une configuration distante invalide/incomplète.
+- Le Dashboard publie depuis les onglets Cœur du Camp, Lisière, Tour, Fablab, Craft, Marché, Atelier/Maison et Camp/Kernel. Les règles Firestore n'exposent aucun droit admin côté client.
+
+### Cœur du Camp et Camp
+
+- `CampHeartStageConfig.organicRequiredForNextLevel` est le coût d'Organique à investir pour le niveau suivant, et non une XP. Les anciennes données `xpRequiredForNextLevel` sont encore lues en compatibilité, mais les nouvelles publications utilisent `organicRequiredForNextLevel`.
+- `CampHeartState` dans `refuge_page.dart` conserve `vegetalizationXp` comme compteur de progression sauvegardé, alimenté uniquement par les dépôts d'Organique.
+- Les réglages Camp/capacité (population de départ, capacité par niveau de Cœur, bien-être et demandes d'accueil) sont stockés dans `zone0Settings.kernel`, mais édités dans l'onglet Dashboard `Cœur du Camp` pour refléter leur rôle produit.
+
+### Craft unifie Cuisine et Atelier
+
+- Source Flutter : `craft_config.dart`; réglages généraux Atelier : `workshop_config.dart`.
+- Toutes les recettes sont dans `zone0Settings.craft.recipes`, y compris Filtre, Cartouche de filtration, Tenue ombragée, Meuble simple, Ventilation Termite et Lumière solaire. Elles ne doivent pas réapparaître dans l'éditeur Atelier/Maison/Logements.
+- `CraftRecipe` porte `craftSection` (`cuisine` ou `atelier`), coûts, durée, résultat, pile, consommable, prérequis Cuisine/Atelier et prérequis Kernel (Confiance, Éleveur, Bâtisseur, Restaurateur).
+- Le Dashboard permet ajout, édition, suppression et publication des recettes. `simpleMeal` est protégé comme recette de départ afin de conserver un fallback de jeu valide.
+- Les ordres Cuisine et Atelier partagent `WorkshopCraftOrder`; les recettes sont filtrées par section dans `RefugePage` et les prérequis sont validés dans `Zone0GameState`.
+
+### Kernel, Patterns et missions configurables
+
+- Configurations : `kernel_config.dart` (missions/refuge) et `kernel_progress_config.dart` (Confiance, axes, Plans/Patterns). Les deux sont appliquées depuis `zone0Settings.kernel` et `zone0Settings.kernelProgress`.
+- Le Dashboard Camp/Kernel édite les récompenses d'événements, Plans et Patterns, et peut créer/supprimer une mission.
+- Une `KernelMissionConfig` peut définir : type `main`, `refugeRequest` ou `weather`; prérequis de bâtiments/niveaux; Confiance Kernel; niveaux Éleveur/Bâtisseur/Restaurateur; produit demandé; habitants, Bio-batteries, XP Confiance, ressources et Pattern/Plan comme récompenses.
+- Les missions avec produit demandé se valident par `Zone0GameState.fulfillKernelMission`. Les autres missions se valident automatiquement lorsque leurs conditions et prérequis sont remplis. Les IDs terminés et les récompenses Population restent persistés dans `users/{uid}/game/zone0`.
+- `RefugePage` affiche les demandes, un bouton de remise pour le produit requis, et un onglet Kernel `Météo` pour les missions de type météo. Un Pattern récompensé active le Plan correspondant dans `activeKernelPlanIds`.
+
+### Tour, intempéries et météo
+
+- `towerOperations_config.dart` définit les alertes et `zone0Settings.towerOperations.weatherEvents` les publie à distance : durée, préavis, produit/quantité de préparation.
+- Le Dashboard Tour sépare `Tour de sécurité`, `Rondes, exploration et marchand` et les cartes d'`Intempéries`.
+- Une mission Kernel `weather` reste verrouillée jusqu'à l'alerte correspondante de la Tour. Sa remise consomme le produit demandé, marque l'alerte comme préparée et attribue la récompense de mission.
+- Le flux historique `fulfillWeatherPreparation` reste disponible dans l'onglet Météo de la Tour; ne pas le supprimer lors d'une évolution des missions météo.
