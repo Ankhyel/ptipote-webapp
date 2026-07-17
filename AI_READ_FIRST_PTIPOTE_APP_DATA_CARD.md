@@ -1314,3 +1314,10 @@ Le Dashboard P'TIBUG permet de créer une définition avec un identifiant stable
 - Le seuil de sécurité moyen pour explorer un biome est maintenant `40` dans `tower-operations-config.json` et `tower_operations_config.dart`. La carte affiche les neuf cases, dont les zones futures grisées et verrouillées.
 - Les missions Kernel terminées peuvent être supprimées par un glissement vers la gauche. Les identifiants supprimés sont persistés dans `kernel.dismissedMissionIds`; une mission active ou verrouillée ne peut pas être retirée.
 - Le Pattern Scarabé démarre `unknown` et ne devient actif qu'après la construction de la Nurserie et le choix initial du joueur.
+
+### Cohérence des dépôts et crafts
+
+- `refuge_page.dart` partage `_FablabQuantitySelector` entre Cuisine et Atelier : les deux utilisent désormais les mêmes choix `x1`, `x5` et `x10`.
+- `_FablabEnergyCard` présente l'énergie en jauge : bleu au niveau normal, orange sous 30 %. La capacité visuelle s'ajuste par paliers de Bio-batterie sans limiter l'énergie déjà sauvegardée.
+- `_ConstructionMaterialProgress` remplace les lignes de texte des chantiers. Chaque ressource affiche une vraie jauge avec `déposé / requis` centré, les actions `+1`, `+5`, `Max` et la récupération complète avant démarrage.
+- Le dépôt de végétalisation du Cœur ouvre `_CampHeartOrganicDepositSheet`, une fiche à slot unique Organique : sélection cumulable `+1`, `+5`, `+10`, `Max`, annulation de la sélection et confirmation. L'Organique reste non consommé tant que `Investir dans le Cœur` n'a pas été confirmé.

@@ -4939,7 +4939,7 @@ class _CampHeartDepositCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Text(
-              'Ajouter de l’Organique',
+              'Végétaliser le Cœur',
               style: Theme.of(context)
                   .textTheme
                   .titleMedium
@@ -4950,28 +4950,35 @@ class _CampHeartDepositCard extends StatelessWidget {
               'Stock Organique Maison : $maxAmount',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Le Cœur consomme maintenant le stock global rangé dans la Maison.',
-            ),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                _DepositButton(
-                    amount: 1, stock: maxAmount, onDeposit: onDeposit),
-                _DepositButton(
-                    amount: 5, stock: maxAmount, onDeposit: onDeposit),
-                _DepositButton(
-                    amount: 10, stock: maxAmount, onDeposit: onDeposit),
-                FilledButton.tonal(
-                  onPressed: state.canDepositOrganic(gameState)
-                      ? () => onDeposit(maxAmount)
-                      : null,
-                  child: const Text('Max'),
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: maxAmount <= 0
+                  ? null
+                  : () => showModalBottomSheet<void>(
+                        context: context,
+                        showDragHandle: true,
+                        builder: (_) => _CampHeartOrganicDepositSheet(
+                          stock: maxAmount,
+                          onConfirm: onDeposit,
+                        ),
+                      ),
+              child: Container(
+                height: 112,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Theme.of(context).dividerColor),
                 ),
-              ],
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add, size: 36),
+                    Text('Ajouter de l’Organique')
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -4980,24 +4987,72 @@ class _CampHeartDepositCard extends StatelessWidget {
   }
 }
 
-class _DepositButton extends StatelessWidget {
-  const _DepositButton({
-    required this.amount,
+class _CampHeartOrganicDepositSheet extends StatefulWidget {
+  const _CampHeartOrganicDepositSheet({
     required this.stock,
-    required this.onDeposit,
+    required this.onConfirm,
   });
 
-  final int amount;
   final int stock;
-  final ValueChanged<int> onDeposit;
+  final ValueChanged<int> onConfirm;
 
   @override
-  Widget build(BuildContext context) {
-    return FilledButton.tonal(
-      onPressed: stock >= amount ? () => onDeposit(amount) : null,
-      child: Text('+$amount'),
-    );
-  }
+  State<_CampHeartOrganicDepositSheet> createState() =>
+      _CampHeartOrganicDepositSheetState();
+}
+
+class _CampHeartOrganicDepositSheetState
+    extends State<_CampHeartOrganicDepositSheet> {
+  int _selected = 0;
+
+  void _add(int amount) => setState(() {
+        _selected = math.min(widget.stock, _selected + amount);
+      });
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Ajouter au Cœur',
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.eco_outlined),
+              title: const Text('Organique'),
+              subtitle: Text('Maison : ${widget.stock}'),
+              trailing: Text('$_selected / ${widget.stock}'),
+            ),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+              TextButton(onPressed: () => _add(1), child: const Text('+1')),
+              TextButton(onPressed: () => _add(5), child: const Text('+5')),
+              TextButton(onPressed: () => _add(10), child: const Text('+10')),
+              TextButton(
+                  onPressed: () => setState(() => _selected = widget.stock),
+                  child: const Text('Max')),
+              IconButton(
+                  tooltip: 'Retirer la sélection',
+                  onPressed: _selected == 0
+                      ? null
+                      : () => setState(() => _selected = 0),
+                  icon: const Icon(Icons.undo)),
+            ]),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: _selected == 0
+                  ? null
+                  : () {
+                      widget.onConfirm(_selected);
+                      Navigator.of(context).pop();
+                    },
+              child: const Text('Investir dans le Cœur'),
+            ),
+          ]),
+        ),
+      );
 }
 
 class _CampHeartStageCard extends StatelessWidget {
@@ -6183,50 +6238,17 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                 style: const TextStyle(fontWeight: FontWeight.w900))
           else
             ...project.requirements.entries
-                .map((entry) => Row(children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          '${entry.key} : ${project.depositedMaterials[entry.key] ?? 0} / ${entry.value}',
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: widget.blockedReason == null &&
-                                project.missingFor(entry.key) > 0
-                            ? () => widget.gameState.depositProjectMaterial(
-                                widget.targetId, entry.key, 1)
-                            : null,
-                        child: const Text('+1'),
-                      ),
-                      TextButton(
-                        onPressed: widget.blockedReason == null &&
-                                project.missingFor(entry.key) > 0
-                            ? () => widget.gameState.depositProjectMaterial(
-                                widget.targetId, entry.key, 5)
-                            : null,
-                        child: const Text('+5'),
-                      ),
-                      TextButton(
-                        onPressed: widget.blockedReason == null &&
-                                project.missingFor(entry.key) > 0
-                            ? () => widget.gameState.depositProjectMaterial(
-                                  widget.targetId,
-                                  entry.key,
-                                  project.missingFor(entry.key),
-                                )
-                            : null,
-                        child: const Text('Max'),
-                      ),
-                      IconButton(
-                        tooltip: 'Récupérer',
-                        onPressed:
-                            (project.depositedMaterials[entry.key] ?? 0) > 0
-                                ? () => widget.gameState
-                                    .withdrawProjectMaterial(
-                                        widget.targetId, entry.key)
-                                : null,
-                        icon: const Icon(Icons.undo),
-                      ),
-                    ])),
+                .map((entry) => _ConstructionMaterialProgress(
+                      resource: entry.key,
+                      deposited: project.depositedMaterials[entry.key] ?? 0,
+                      required: entry.value,
+                      enabled: widget.blockedReason == null,
+                      onDeposit: (amount) => widget.gameState
+                          .depositProjectMaterial(
+                              widget.targetId, entry.key, amount),
+                      onWithdraw: () => widget.gameState
+                          .withdrawProjectMaterial(widget.targetId, entry.key),
+                    )),
           if (widget.footer != null) ...<Widget>[
             const SizedBox(height: 8),
             Text(widget.footer!,
@@ -6260,6 +6282,71 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
           ),
         ]),
       ),
+    );
+  }
+}
+
+class _ConstructionMaterialProgress extends StatelessWidget {
+  const _ConstructionMaterialProgress({
+    required this.resource,
+    required this.deposited,
+    required this.required,
+    required this.enabled,
+    required this.onDeposit,
+    required this.onWithdraw,
+  });
+
+  final String resource;
+  final int deposited;
+  final int required;
+  final bool enabled;
+  final ValueChanged<int> onDeposit;
+  final VoidCallback onWithdraw;
+
+  @override
+  Widget build(BuildContext context) {
+    final missing = math.max(0, required - deposited);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(resource, style: const TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 30,
+          child: Stack(alignment: Alignment.center, children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: required == 0 ? 1 : (deposited / required).clamp(0, 1),
+                minHeight: 30,
+                backgroundColor:
+                    Theme.of(context).colorScheme.surfaceContainerHighest,
+              ),
+            ),
+            Text('$deposited / $required',
+                style: const TextStyle(fontWeight: FontWeight.w900)),
+          ]),
+        ),
+        const SizedBox(height: 2),
+        Row(children: [
+          TextButton(
+              onPressed: enabled && missing > 0 ? () => onDeposit(1) : null,
+              child: const Text('+1')),
+          TextButton(
+              onPressed: enabled && missing > 0 ? () => onDeposit(5) : null,
+              child: const Text('+5')),
+          TextButton(
+              onPressed:
+                  enabled && missing > 0 ? () => onDeposit(missing) : null,
+              child: const Text('Max')),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Récupérer les matériaux',
+            onPressed: deposited > 0 ? onWithdraw : null,
+            icon: const Icon(Icons.undo),
+          ),
+        ]),
+      ]),
     );
   }
 }
@@ -7455,6 +7542,27 @@ class _FablabEnergyCard extends StatelessWidget {
   }
 }
 
+class _FablabQuantitySelector extends StatelessWidget {
+  const _FablabQuantitySelector({
+    required this.quantity,
+    required this.onChanged,
+  });
+
+  final int quantity;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) => SegmentedButton<int>(
+        segments: const <ButtonSegment<int>>[
+          ButtonSegment(value: 1, label: Text('x1')),
+          ButtonSegment(value: 5, label: Text('x5')),
+          ButtonSegment(value: 10, label: Text('x10')),
+        ],
+        selected: <int>{quantity},
+        onSelectionChanged: (selected) => onChanged(selected.first),
+      );
+}
+
 class FablabRecyclerView extends StatelessWidget {
   const FablabRecyclerView({
     super.key,
@@ -7683,17 +7791,10 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
             if (widget.gameState.activeManualWorkshopOrders < 1 ||
                 widget.gameState.activePtipoteWorkshopOrders <
                     widget.gameState.workshopSlots) ...<Widget>[
-              SegmentedButton<int>(
-                  segments: const <ButtonSegment<int>>[
-                    ButtonSegment(value: 1, label: Text('1')),
-                    ButtonSegment(value: 5, label: Text('5')),
-                    ButtonSegment(value: 10, label: Text('10')),
-                  ],
-                  selected: <int>{
-                    _quantity
-                  },
-                  onSelectionChanged: (value) =>
-                      setState(() => _quantity = value.first)),
+              _FablabQuantitySelector(
+                quantity: _quantity,
+                onChanged: (value) => setState(() => _quantity = value),
+              ),
               const SizedBox(height: 10),
               ...craftConfig.recipes
                   .where(
@@ -7824,15 +7925,9 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
             'Eau disponible gratuitement. ${widget.gameState.activePtipoteKitchenOrders}/${widget.gameState.kitchenSlots} emplacement(s) P’TIPOTE · ${widget.gameState.activeManualKitchenOrders}/1 créneau manuel.',
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            children: <int>[1, 5, 10]
-                .map((quantity) => ChoiceChip(
-                      label: Text('x$quantity'),
-                      selected: _quantity == quantity,
-                      onSelected: (_) => setState(() => _quantity = quantity),
-                    ))
-                .toList(),
+          _FablabQuantitySelector(
+            quantity: _quantity,
+            onChanged: (value) => setState(() => _quantity = value),
           ),
           const SizedBox(height: 12),
           ...orders.map((order) => Card(
