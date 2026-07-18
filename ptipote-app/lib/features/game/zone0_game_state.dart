@@ -24,6 +24,10 @@ import 'tower_operations_config.dart';
 import 'waste_recycler_config.dart';
 import 'workshop_config.dart';
 
+/// Keeps player-facing messages in the building that owns the activity.
+/// Older saved reports fall back to the P'TIPOTE/PTIBUG mailbox.
+enum Zone0MessageMailbox { companions, kernel, fablab }
+
 class Zone0GameState extends ChangeNotifier {
   Zone0GameState._() {
     RemoteGameConfigService.instance.addListener(_onRemoteConfigChanged);
@@ -638,7 +642,12 @@ class Zone0GameState extends ChangeNotifier {
     reports.add(PtipoteMissionReport.system(
       message:
           'Le Kernel transmet le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut lancer sa première création.',
-      sourceBuildingId: 'plaineNursery',
+      sourceBuildingId: 'kernel',
+      mailbox: Zone0MessageMailbox.kernel,
+      subject: 'Plan Kernel',
+      concerned: 'Joueur',
+      summary:
+          'Pattern ${pTibugConfig.species[species]!.displayName} sélectionné.',
     ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -735,6 +744,11 @@ class Zone0GameState extends ChangeNotifier {
     }
     reports.add(PtipoteMissionReport.system(
       message: 'Plan activé : ${plan.title}. ${plan.kernelText}',
+      sourceBuildingId: 'kernel',
+      mailbox: Zone0MessageMailbox.kernel,
+      subject: 'Plan Kernel',
+      concerned: 'Joueur',
+      summary: '${plan.title} est maintenant actif.',
     ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -774,6 +788,11 @@ class Zone0GameState extends ChangeNotifier {
         discoveredKernelPlanIds.add(plan.id);
         reports.add(PtipoteMissionReport.system(
           message: 'Observation Kernel : ${plan.kernelText}',
+          sourceBuildingId: 'kernel',
+          mailbox: Zone0MessageMailbox.kernel,
+          subject: 'Message Kernel',
+          concerned: 'Joueur',
+          summary: plan.kernelText,
         ));
       }
       if (kernelPlanState(plan) != KernelPlanState.discovered) continue;
@@ -781,6 +800,11 @@ class Zone0GameState extends ChangeNotifier {
         readyKernelPlanIds.add(plan.id);
         reports.add(PtipoteMissionReport.system(
           message: 'Plan prêt : ${plan.title}. Le Kernel peut le partager.',
+          sourceBuildingId: 'kernel',
+          mailbox: Zone0MessageMailbox.kernel,
+          subject: 'Plan Kernel',
+          concerned: 'Joueur',
+          summary: '${plan.title} est prêt à être activé.',
         ));
       }
     }
@@ -826,6 +850,12 @@ class Zone0GameState extends ChangeNotifier {
     return reports.where((report) => !report.read).length;
   }
 
+  int unreadReportCountForMailbox(Zone0MessageMailbox mailbox) {
+    return reports
+        .where((report) => !report.read && report.mailbox == mailbox)
+        .length;
+  }
+
   int unreadBuildingNotificationCount(String buildingName) {
     // A parent badge includes notifications emitted by its child units.
     final targets = switch (buildingName) {
@@ -834,6 +864,7 @@ class Zone0GameState extends ChangeNotifier {
       'Market' => const <String>{'market'},
       'Maison' => const <String>{'house', 'housing'},
       'Cœur du Camp' => const <String>{'plaineNursery'},
+      'Kernel' => const <String>{'kernel'},
       _ => const <String>{},
     };
     return reports
@@ -1165,7 +1196,15 @@ class Zone0GameState extends ChangeNotifier {
       reports.add(PtipoteMissionReport.system(
           message: tired
               ? '${order.assignedPtipoteName} rentre fatigué de ${order.area == WorkshopOrderArea.kitchen ? 'la Cuisine' : 'l’Atelier'}.'
-              : 'Commande ${order.area == WorkshopOrderArea.kitchen ? 'Cuisine' : 'Atelier'} terminée : $displayName.'));
+              : 'Commande ${order.area == WorkshopOrderArea.kitchen ? 'Cuisine' : 'Atelier'} terminée : $displayName.',
+          sourceBuildingId:
+              order.area == WorkshopOrderArea.kitchen ? 'cuisine' : 'atelier',
+          mailbox: Zone0MessageMailbox.fablab,
+          subject: 'Fin de craft',
+          concerned: order.assignedPtipoteName ?? 'Joueur',
+          summary: tired
+              ? '$displayName arrêté : P’TIPOTE fatigué.'
+              : '$displayName × ${order.completedQuantity} terminé.'));
       if (order.area == WorkshopOrderArea.kitchen &&
           resultItem == craftConfig.simpleMealRecipe.resultItem) {
         mealsPrepared += resultAmount * order.completedQuantity;
@@ -2144,6 +2183,12 @@ class Zone0GameState extends ChangeNotifier {
             'Déchets traités : ${completedCycles * recyclerWasteRequired}. '
             'Énergie consommée : ${completedCycles * wasteRecyclerConfig.energyCostPerCycle}. '
             '+$producedOrganic Organique, +$producedMineral Minéral.',
+        sourceBuildingId: 'recycler',
+        mailbox: Zone0MessageMailbox.fablab,
+        subject: 'Fin de craft',
+        concerned: 'Joueur',
+        summary:
+            'Recycleur : +$producedOrganic Organique, +$producedMineral Minéral.',
       ));
     }
     if (changed) {
@@ -2499,10 +2544,19 @@ class Zone0GameState extends ChangeNotifier {
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
     }
     if (!project.notificationCreated) {
+      final isFablabUnit = const <String>{'cuisine', 'atelier', 'recycler'}
+          .contains(project.targetId);
       reports.add(PtipoteMissionReport.system(
         message:
             'Les travaux de ${buildingConstructionConfig.project(project.targetId).label} sont terminés. Niveau ${project.currentLevel}.',
         sourceBuildingId: project.targetId,
+        mailbox: isFablabUnit
+            ? Zone0MessageMailbox.fablab
+            : Zone0MessageMailbox.companions,
+        subject: 'Fin de chantier',
+        concerned: 'Joueur',
+        summary:
+            '${buildingConstructionConfig.project(project.targetId).label} niveau ${project.currentLevel} est prêt.',
       ));
       project.notificationCreated = true;
     }
@@ -2618,7 +2672,12 @@ class Zone0GameState extends ChangeNotifier {
       }
       reports.add(PtipoteMissionReport.system(
           message:
-              '${config.displayName} est né dans la Nurserie. Une Donnée de trait commune a été reçue.'));
+              '${config.displayName} est né dans la Nurserie. Une Donnée de trait commune a été reçue.',
+          sourceBuildingId: 'plaineNursery',
+          mailbox: Zone0MessageMailbox.companions,
+          subject: 'Création P’TIBUG',
+          concerned: config.displayName,
+          summary: 'Création terminée.'));
       emitKernelProgressEvent(KernelProgressEventType.ptibugCreated);
       changed = true;
     }
@@ -3071,6 +3130,16 @@ class Zone0GameState extends ChangeNotifier {
     }
     addResources(output);
     emitKernelProgressEvent(KernelProgressEventType.craftCompleted);
+    reports.add(
+      PtipoteMissionReport.system(
+        message: '${recipe.displayName} préparé.',
+        sourceBuildingId: 'cuisine',
+        mailbox: Zone0MessageMailbox.fablab,
+        subject: 'Fin de craft',
+        concerned: 'Joueur',
+        summary: '${recipe.resultAmount} ${recipe.resultItem} préparé.',
+      ),
+    );
     if (recipe.resultItem == craftConfig.simpleMealRecipe.resultItem) {
       mealsPrepared += recipe.resultAmount;
     }
@@ -3083,8 +3152,24 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
-  Zone0ActionResult consumeSimpleMeal(PtipoteFigurine figurine) {
-    final recipe = craftConfig.simpleMealRecipe;
+  List<CraftRecipe> get availableConsumableRecipes => craftConfig.recipes
+      .where(
+        (recipe) =>
+            recipe.isConsumable && resourceAmount(recipe.resultItem) > 0,
+      )
+      .toList();
+
+  CraftRecipe? consumableRecipeForItem(String item) {
+    for (final recipe in craftConfig.recipes) {
+      if (recipe.isConsumable && recipe.resultItem == item) return recipe;
+    }
+    return null;
+  }
+
+  Zone0ActionResult consumeConsumable(
+    PtipoteFigurine figurine,
+    CraftRecipe recipe,
+  ) {
     if (!recipe.isConsumable) {
       return const Zone0ActionResult(
         success: false,
@@ -3099,9 +3184,9 @@ class Zone0GameState extends ChangeNotifier {
     }
     final removed = removeResource(recipe.resultItem, 1);
     if (removed <= 0) {
-      return const Zone0ActionResult(
+      return Zone0ActionResult(
         success: false,
-        message: 'Repas indisponible.',
+        message: '${recipe.resultItem} indisponible.',
       );
     }
     final previousMood = _moodLabelForValues(
@@ -3131,9 +3216,12 @@ class Zone0GameState extends ChangeNotifier {
     return Zone0ActionResult(
       success: true,
       message:
-          '${figurine.displayName} mange ${recipe.resultItem} (+${recipe.hungerRestore} faim, +${recipe.vitalityRestore} vitalité).',
+          '${figurine.displayName} reçoit ${recipe.resultItem} (+${recipe.hungerRestore} faim, +${recipe.vitalityRestore} vitalité).',
     );
   }
+
+  Zone0ActionResult consumeSimpleMeal(PtipoteFigurine figurine) =>
+      consumeConsumable(figurine, craftConfig.simpleMealRecipe);
 
   String missingResourcesLabel(Map<String, int> costs) {
     final missing = costs.entries
@@ -4037,9 +4125,10 @@ class Zone0GameState extends ChangeNotifier {
     return InventoryAddResult(addedAny: addedAny, pending: pending);
   }
 
-  void markReportsRead() {
+  void markReportsRead({Zone0MessageMailbox? mailbox}) {
     var changed = false;
     for (final report in reports) {
+      if (mailbox != null && report.mailbox != mailbox) continue;
       if (!report.read) changed = true;
       report.read = true;
     }
@@ -4163,7 +4252,14 @@ class Zone0GameState extends ChangeNotifier {
       activeKernelPlanIds.add(patternId);
     }
     if (mission.xpReward > 0) _addKernelTrustXp(mission.xpReward);
-    reports.add(PtipoteMissionReport.system(message: mission.mailMessage));
+    reports.add(PtipoteMissionReport.system(
+      message: mission.mailMessage,
+      sourceBuildingId: 'kernel',
+      mailbox: Zone0MessageMailbox.kernel,
+      subject: 'Mission Kernel terminée',
+      concerned: 'Joueur',
+      summary: mission.mailMessage,
+    ));
   }
 
   bool refreshKernelMissions({int? campHeartLevel}) {
@@ -4451,6 +4547,12 @@ class Zone0GameState extends ChangeNotifier {
         realRiskPercent: realRisk,
         completedAt: completedAt,
         inventoryFull: inventoryResult.hasPending,
+        mailbox: Zone0MessageMailbox.companions,
+        subject: 'Retour de mission Lisière',
+        concerned: mission.figurineName,
+        summary: incident == 'aucun'
+            ? 'Mission terminée.'
+            : 'Événement : $incident.',
       ),
     );
     mission.status = ForageMissionStatus.completed;
@@ -4531,6 +4633,13 @@ class Zone0GameState extends ChangeNotifier {
             : mission.patrolBiome == null
                 ? '${mission.figurineName} termine sa surveillance : +$securityGain sécurité camp, -$vitalityCost Vitalité.'
                 : '${mission.figurineName} termine sa ronde : +$localGain sécurité locale, -$vitalityCost Vitalité.',
+        sourceBuildingId: 'securityTower',
+        mailbox: Zone0MessageMailbox.companions,
+        subject: 'Retour de ronde',
+        concerned: mission.figurineName,
+        summary: mission.patrolBiome == null
+            ? '+$securityGain sécurité camp, -$vitalityCost vitalité.'
+            : '+$localGain sécurité locale, -$vitalityCost vitalité.',
       ),
     );
   }
@@ -5945,6 +6054,10 @@ class PtipoteMissionReport {
     required this.completedAt,
     required this.inventoryFull,
     this.sourceBuildingId,
+    this.mailbox = Zone0MessageMailbox.companions,
+    this.subject,
+    this.concerned,
+    this.summary,
     this.read = false,
   });
 
@@ -5974,6 +6087,13 @@ class PtipoteMissionReport {
           ForageMission._readDate(data['completedAt']) ?? DateTime.now(),
       inventoryFull: data['inventoryFull'] == true,
       sourceBuildingId: data['sourceBuildingId']?.toString(),
+      mailbox: _mailboxFromValue(
+        data['mailbox']?.toString(),
+        data['sourceBuildingId']?.toString(),
+      ),
+      subject: data['subject']?.toString(),
+      concerned: data['concerned']?.toString(),
+      summary: data['summary']?.toString(),
       read: data['read'] == true,
     );
   }
@@ -5981,6 +6101,10 @@ class PtipoteMissionReport {
   factory PtipoteMissionReport.system({
     required String message,
     String? sourceBuildingId,
+    Zone0MessageMailbox mailbox = Zone0MessageMailbox.companions,
+    String? subject,
+    String? concerned,
+    String? summary,
   }) {
     final now = DateTime.now();
     return PtipoteMissionReport(
@@ -6005,7 +6129,27 @@ class PtipoteMissionReport {
       completedAt: now,
       inventoryFull: false,
       sourceBuildingId: sourceBuildingId,
+      mailbox: mailbox,
+      subject: subject,
+      concerned: concerned,
+      summary: summary ?? message,
     );
+  }
+
+  static Zone0MessageMailbox _mailboxFromValue(
+    String? value,
+    String? sourceBuildingId,
+  ) {
+    final stored = Zone0MessageMailbox.values.where(
+      (mailbox) => mailbox.name == value,
+    );
+    if (stored.isNotEmpty) return stored.first;
+    if (sourceBuildingId == 'kernel') return Zone0MessageMailbox.kernel;
+    if (const <String>{'fablab', 'cuisine', 'atelier', 'recycler'}
+        .contains(sourceBuildingId)) {
+      return Zone0MessageMailbox.fablab;
+    }
+    return Zone0MessageMailbox.companions;
   }
 
   final String id;
@@ -6029,6 +6173,10 @@ class PtipoteMissionReport {
   final DateTime completedAt;
   final bool inventoryFull;
   final String? sourceBuildingId;
+  final Zone0MessageMailbox mailbox;
+  final String? subject;
+  final String? concerned;
+  final String? summary;
   bool read;
 
   Map<String, dynamic> toFirebase() {
@@ -6054,6 +6202,10 @@ class PtipoteMissionReport {
       'completedAt': Timestamp.fromDate(completedAt),
       'inventoryFull': inventoryFull,
       'sourceBuildingId': sourceBuildingId,
+      'mailbox': mailbox.name,
+      'subject': subject,
+      'concerned': concerned,
+      'summary': summary,
       'read': read,
     };
   }

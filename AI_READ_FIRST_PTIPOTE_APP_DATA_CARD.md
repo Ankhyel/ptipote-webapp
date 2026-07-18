@@ -1374,3 +1374,11 @@ Les coûts d'habitation sont progressifs mais entièrement configurables dans `h
 - La Couveuse contient aussi un `Œuf de démonstration` permanent. Son éclosion reproduit les trois rythmes et la présentation finale, mais n'appelle jamais `hatchFromNursery`, ne prend pas d'alcôve et n'écrit aucune progression joueur.
 - L'éclosion ajoute uniquement le P'TIPOTE à la Maison : elle ne valide pas automatiquement de câlin afin que la bulle de besoin affectif puisse apparaître ensuite. Le bouton final sert de confirmation narrative et conserve le bouton Câlin existant sur la fiche du P'TIPOTE.
 - L'onglet `Amélioration` de la Maison expose maintenant le prochain niveau, le gain d'alcôves, les jauges de matériaux et le lancement de chantier directement dans la page. Il ne passe plus par une modale, car il n'existe qu'une amélioration de Maison à la fois.
+
+### Boîtes aux lettres et consommables V1
+
+- `ptipote-app/lib/features/game/zone0_game_state.dart` ajoute `Zone0MessageMailbox` à `PtipoteMissionReport` : `companions` pour les messages P'TIPOTE/P'TIBUG, `kernel` pour les conséquences des missions et Plans Kernel, `fablab` pour les fins de craft et les chantiers des unités Cuisine, Atelier ou Recycleur.
+- Chaque rapport possède maintenant un `subject`, un `concerned` et un `summary`. Les rapports historiques sans ces champs restent lisibles et sont rangés dans la boîte Compagnons pour préserver les sauvegardes existantes.
+- La Maison ouvre uniquement la boîte `P'TIPOTE & P'TIBUG`; Kernel et Fablab ont chacun leur icône de courrier, leur compteur non lu et leur propre liste. La lecture marque uniquement les messages de la boîte concernée comme lus.
+- Les rapports sont volontairement synthétiques : sujet, personne ou unité concernée, puis conséquence. Un glissement vers la gauche conserve la suppression manuelle déjà existante.
+- `Zone0GameState.availableConsumableRecipes` et `consumeConsumable` généralisent l'ancien flux `Repas simple`. Dans la fiche P'TIPOTE, `Manger` ouvre la liste des consommables disponibles. Dans l'inventaire global, toucher un aliment ou une boisson ouvre la liste des P'TIPOTES compatibles, puis applique les restaurations configurées de faim et vitalité.

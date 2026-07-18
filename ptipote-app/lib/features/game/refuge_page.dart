@@ -531,6 +531,25 @@ class KernelPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Kernel'),
+          actions: <Widget>[
+            _MailboxButton(
+              tooltip: 'Messages Kernel',
+              unreadCount: gameState.unreadReportCountForMailbox(
+                Zone0MessageMailbox.kernel,
+              ),
+              onPressed: () {
+                gameState.markReportsRead(mailbox: Zone0MessageMailbox.kernel);
+                showModalBottomSheet<void>(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (_) => MissionReportsSheet(
+                    gameState: gameState,
+                    mailbox: Zone0MessageMailbox.kernel,
+                  ),
+                );
+              },
+            ),
+          ],
           bottom: TabBar(
             isScrollable: true,
             tabs: <Widget>[
@@ -609,6 +628,53 @@ class _KernelTabLabel extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      );
+}
+
+class _MailboxButton extends StatelessWidget {
+  const _MailboxButton({
+    required this.tooltip,
+    required this.unreadCount,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final int unreadCount;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          IconButton(
+            tooltip: tooltip,
+            icon: const Icon(Icons.mail_outline),
+            onPressed: onPressed,
+          ),
+          if (unreadCount > 0)
+            Positioned(
+              top: 7,
+              right: 6,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.error,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  child: Text(
+                    '$unreadCount',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onError,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       );
 }
@@ -1238,7 +1304,53 @@ class _MaisonPageState extends State<_MaisonPage>
   }
 
   void _feedFigurine(PtipoteFigurine figurine) {
-    final result = _gameState.consumeSimpleMeal(figurine);
+    unawaited(_selectFoodForFigurine(figurine));
+  }
+
+  Future<void> _selectFoodForFigurine(PtipoteFigurine figurine) async {
+    final recipes = _gameState.availableConsumableRecipes;
+    if (recipes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucun repas ou boisson disponible.')),
+      );
+      return;
+    }
+    final recipe = await showModalBottomSheet<CraftRecipe>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          children: <Widget>[
+            Text(
+              'Donner à ${figurine.displayName}',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            ...recipes.map(
+              (item) => ListTile(
+                leading: Icon(
+                  item.foodType == FoodType.drink
+                      ? Icons.local_drink_outlined
+                      : Icons.restaurant_outlined,
+                ),
+                title: Text(item.resultItem),
+                subtitle: Text(
+                  'Stock ${_gameState.resourceAmount(item.resultItem)} · faim +${item.hungerRestore} · vitalité +${item.vitalityRestore}',
+                ),
+                onTap: () => Navigator.of(context).pop(item),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || recipe == null) return;
+    final result = _gameState.consumeConsumable(figurine, recipe);
     setState(() => _selectedFigurineId = figurine.id);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.message)),
@@ -1340,9 +1452,8 @@ class _MaisonPageState extends State<_MaisonPage>
                               canCuddle: _gameState.canCuddle,
                               cuddleProgress: _gameState.cuddleCooldownProgress,
                               autoPreferenceFor: _autoPreferenceFor,
-                              availableSimpleMeals: _gameState.resourceAmount(
-                                craftConfig.simpleMealRecipe.resultItem,
-                              ),
+                              availableSimpleMeals:
+                                  _gameState.availableConsumableRecipes.length,
                               alcoveCapacity: _gameState.alcoveCapacity,
                               lastCuddleAt: (figurine) =>
                                   _gameState.lastCuddleAt[figurine.id],
@@ -1354,7 +1465,10 @@ class _MaisonPageState extends State<_MaisonPage>
                               onFeed: _feedFigurine,
                             ),
                             _MaisonUtilityButtons(
-                              unreadCount: _gameState.unreadReportCount,
+                              unreadCount:
+                                  _gameState.unreadReportCountForMailbox(
+                                Zone0MessageMailbox.companions,
+                              ),
                               onInventory: _openInventory,
                               onMessages: _openMessages,
                               onDashboard: _openPtipoteDashboard,
@@ -1392,11 +1506,14 @@ class _MaisonPageState extends State<_MaisonPage>
   }
 
   void _openMessages() {
-    _gameState.markReportsRead();
+    _gameState.markReportsRead(mailbox: Zone0MessageMailbox.companions);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (_) => MissionReportsSheet(gameState: _gameState),
+      builder: (_) => MissionReportsSheet(
+        gameState: _gameState,
+        mailbox: Zone0MessageMailbox.companions,
+      ),
     );
   }
 
@@ -3619,47 +3736,121 @@ class _AlcovePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class Zone0InventorySheet extends StatelessWidget {
+class Zone0InventorySheet extends StatefulWidget {
   const Zone0InventorySheet({super.key, required this.gameState});
 
   final Zone0GameState gameState;
 
   @override
-  Widget build(BuildContext context) {
-    final stacks = gameState.inventory;
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        shrinkWrap: true,
-        children: <Widget>[
-          Text(
-            'Inventaire global',
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Stock ${gameState.inventoryUsedAmount}/${gameState.globalStockCapacity} · ${stacks.length}/${gameState.inventorySlotLimit} slots',
-          ),
-          const SizedBox(height: 12),
-          _FirebaseSyncStatus(gameState: gameState),
-          const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 3,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children:
-                List<Widget>.generate(gameState.inventorySlotLimit, (index) {
-              final stack = index < stacks.length ? stacks[index] : null;
-              return _InventorySlot(stack: stack);
-            }),
-          ),
-        ],
+  State<Zone0InventorySheet> createState() => _Zone0InventorySheetState();
+}
+
+class _Zone0InventorySheetState extends State<Zone0InventorySheet> {
+  final FigurineService _figurineService = FigurineService();
+
+  Future<void> _selectConsumableTarget(CraftRecipe recipe) async {
+    final figurines = await _figurineService.watchMyFigurines().first;
+    final available = figurines
+        .where((figurine) => !widget.gameState.isOnMission(figurine.id))
+        .toList();
+    if (!mounted) return;
+    if (available.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucun P’TIPOTE disponible.')),
+      );
+      return;
+    }
+    final target = await showModalBottomSheet<PtipoteFigurine>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            Text(
+              'Donner ${recipe.resultItem}',
+              style: Theme.of(sheetContext)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            const Text('Choisis un P’TIPOTE compatible.'),
+            const SizedBox(height: 12),
+            ...available.map(
+              (figurine) => ListTile(
+                leading: const Icon(Icons.pets_outlined),
+                title: Text(figurine.displayName),
+                subtitle: Text(
+                  'Vitalité ${widget.gameState.vitalityFor(figurine)}/${ptipoteStatsConfig.maxVitality} · faim ${widget.gameState.hungerFor(figurine)}',
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(figurine),
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+    if (target == null || !mounted) return;
+    final result = widget.gameState.consumeConsumable(target, recipe);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.gameState,
+      builder: (context, _) {
+        final stacks = widget.gameState.inventory;
+        return SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            shrinkWrap: true,
+            children: <Widget>[
+              Text(
+                'Inventaire global',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Stock ${widget.gameState.inventoryUsedAmount}/${widget.gameState.globalStockCapacity} · ${stacks.length}/${widget.gameState.inventorySlotLimit} slots',
+              ),
+              const SizedBox(height: 12),
+              _FirebaseSyncStatus(gameState: widget.gameState),
+              const SizedBox(height: 12),
+              GridView.count(
+                crossAxisCount: 3,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: List<Widget>.generate(
+                  widget.gameState.inventorySlotLimit,
+                  (index) {
+                    final stack = index < stacks.length ? stacks[index] : null;
+                    final recipe = stack == null
+                        ? null
+                        : widget.gameState
+                            .consumableRecipeForItem(stack.resource);
+                    return _InventorySlot(
+                      stack: stack,
+                      onTap: recipe == null
+                          ? null
+                          : () => unawaited(_selectConsumableTarget(recipe)),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -3721,92 +3912,102 @@ class _FirebaseSyncStatus extends StatelessWidget {
 }
 
 class _InventorySlot extends StatelessWidget {
-  const _InventorySlot({required this.stack});
+  const _InventorySlot({required this.stack, this.onTap});
 
   final Zone0InventoryStack? stack;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final filled = stack != null;
     return AspectRatio(
       aspectRatio: 1,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: filled
-              ? Theme.of(context).colorScheme.surface
-              : Theme.of(context)
-                  .colorScheme
-                  .surfaceContainerHighest
-                  .withValues(alpha: 0.46),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color:
-                Theme.of(context).colorScheme.outline.withValues(alpha: 0.32),
-          ),
-          boxShadow: filled
-              ? <BoxShadow>[
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : null,
-        ),
-        child: Stack(
-          children: <Widget>[
-            Center(
-              child: Icon(
-                _resourceIcon(stack?.resource),
-                size: 36,
-                color: filled
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.28),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: filled
+                  ? Theme.of(context).colorScheme.surface
+                  : Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHighest
+                      .withValues(alpha: 0.46),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outline
+                    .withValues(alpha: 0.32),
               ),
+              boxShadow: filled
+                  ? <BoxShadow>[
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ]
+                  : null,
             ),
-            if (filled)
-              Positioned(
-                right: 8,
-                top: 8,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(999),
+            child: Stack(
+              children: <Widget>[
+                Center(
+                  child: Icon(
+                    _resourceIcon(stack?.resource),
+                    size: 36,
+                    color: filled
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.28),
                   ),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    child: Text(
-                      '${stack!.amount}',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onPrimary,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
+                ),
+                if (filled)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        child: Text(
+                          '${stack!.amount}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            if (filled)
-              Positioned(
-                left: 8,
-                right: 8,
-                bottom: 8,
-                child: Text(
-                  stack!.resource,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
+                if (filled)
+                  Positioned(
+                    left: 8,
+                    right: 8,
+                    bottom: 8,
+                    child: Text(
+                      stack!.resource,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -3821,6 +4022,7 @@ IconData _resourceIcon(String? resource) {
     'Minéral' || 'Mineral' => Icons.diamond_outlined,
     'Énergie' || 'Energie' => Icons.bolt_outlined,
     'Repas' || 'Repas simple' => Icons.restaurant_outlined,
+    'Boisson tonique' => Icons.local_drink_outlined,
     'Filtre' || 'Cartouche de filtration' => Icons.filter_alt_outlined,
     'Tenue ombragée' => Icons.checkroom_outlined,
     'Meuble simple' => Icons.chair_outlined,
@@ -3898,20 +4100,29 @@ Future<PtipoteFigurine?> _pickPtipoteForActivity({
 }
 
 class MissionReportsSheet extends StatelessWidget {
-  const MissionReportsSheet({super.key, required this.gameState});
+  const MissionReportsSheet({
+    super.key,
+    required this.gameState,
+    required this.mailbox,
+  });
 
   final Zone0GameState gameState;
+  final Zone0MessageMailbox mailbox;
 
   @override
   Widget build(BuildContext context) {
-    final reports = gameState.reports.reversed.toList();
+    final reports = gameState.reports
+        .where((report) => report.mailbox == mailbox)
+        .toList()
+        .reversed
+        .toList();
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
         shrinkWrap: true,
         children: <Widget>[
           Text(
-            'Messages P’TIPOTE',
+            _title,
             style: Theme.of(context)
                 .textTheme
                 .titleLarge
@@ -3919,7 +4130,7 @@ class MissionReportsSheet extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (reports.isEmpty)
-            const _SheetEmptyState(text: 'Aucun rapport de mission.')
+            _SheetEmptyState(text: _emptyLabel)
           else
             ...reports.map(
               (report) => Dismissible(
@@ -3945,47 +4156,13 @@ class MissionReportsSheet extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(
-                          '${report.figurineName} revient de ${report.biomeLabel}',
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
+                        Text(_subjectFor(report),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w900)),
                         const SizedBox(height: 6),
-                        Text(
-                          'Durée ${report.durationLabel} · ${report.intensityLabel}',
-                        ),
-                        Text('Récolte : ${_formatRewards(report.rewards)}'),
-                        Text(
-                          'XP : +${report.xpGain}${report.leveledUp ? ' · niveau ${report.levelAfter}' : ''}',
-                        ),
-                        if (report.baseRiskPercent > 0 ||
-                            report.realRiskPercent > 0) ...<Widget>[
-                          Text(
-                            'Sécurité au lancement : ${report.securityAtLaunch}',
-                          ),
-                          Text('Danger initial : ${report.baseRiskPercent}%'),
-                          Text(
-                              'Réduction Tour : -${report.securityReduction}%'),
-                          Text('Danger réel : ${report.realRiskPercent}%'),
-                        ],
-                        Text('Incident : ${report.incidentLabel}'),
-                        Text('Vitalité restante : ${report.vitalityRemaining}'),
-                        Text('Faim restante : ${report.hungerRemaining}'),
-                        Text('Bonheur au retour : ${report.moodLabel}'),
-                        if (report.finalStateLabel.isNotEmpty)
-                          Text(report.finalStateLabel),
-                        if (report.inventoryFull)
-                          const Text(
-                            'Inventaire plein : le surplus est perdu.',
-                          ),
-                        const SizedBox(height: 4),
-                        Text(
-                          report.completedAt
-                              .toLocal()
-                              .toString()
-                              .split('.')
-                              .first,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                        Text('Concerné : ${_concernedFor(report)}'),
+                        const SizedBox(height: 2),
+                        Text(_summaryFor(report)),
                       ],
                     ),
                   ),
@@ -3995,6 +4172,38 @@ class MissionReportsSheet extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String get _title => switch (mailbox) {
+        Zone0MessageMailbox.companions => 'Messages P’TIPOTE & P’TIBUG',
+        Zone0MessageMailbox.kernel => 'Messages Kernel',
+        Zone0MessageMailbox.fablab => 'Messages Fablab',
+      };
+
+  String get _emptyLabel => switch (mailbox) {
+        Zone0MessageMailbox.companions => 'Aucun message P’TIPOTE ou P’TIBUG.',
+        Zone0MessageMailbox.kernel => 'Aucun message du Kernel.',
+        Zone0MessageMailbox.fablab => 'Aucune fin de craft.',
+      };
+
+  String _subjectFor(PtipoteMissionReport report) {
+    if (report.subject?.trim().isNotEmpty ?? false) return report.subject!;
+    if (report.sourceBuildingId == 'securityTower') return 'Retour de ronde';
+    if (report.biomeLabel != 'Zone 0') return 'Retour de mission Lisière';
+    return 'Message du refuge';
+  }
+
+  String _concernedFor(PtipoteMissionReport report) {
+    if (report.concerned?.trim().isNotEmpty ?? false) return report.concerned!;
+    return report.figurineName;
+  }
+
+  String _summaryFor(PtipoteMissionReport report) {
+    if (report.summary?.trim().isNotEmpty ?? false) return report.summary!;
+    if (report.finalStateLabel.isNotEmpty) return report.finalStateLabel;
+    return report.incidentLabel == 'aucun'
+        ? 'Activité terminée.'
+        : 'Événement : ${report.incidentLabel}.';
   }
 }
 
@@ -8069,6 +8278,23 @@ class FablabPage extends StatelessWidget {
         appBar: AppBar(
           title: const Text('Fablab'),
           actions: <Widget>[
+            _MailboxButton(
+              tooltip: 'Messages Fablab',
+              unreadCount: gameState.unreadReportCountForMailbox(
+                Zone0MessageMailbox.fablab,
+              ),
+              onPressed: () {
+                gameState.markReportsRead(mailbox: Zone0MessageMailbox.fablab);
+                showModalBottomSheet<void>(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (_) => MissionReportsSheet(
+                    gameState: gameState,
+                    mailbox: Zone0MessageMailbox.fablab,
+                  ),
+                );
+              },
+            ),
             IconButton(
               tooltip: 'Inventaire global',
               icon: const Icon(Icons.inventory_2_outlined),
