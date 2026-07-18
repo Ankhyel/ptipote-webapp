@@ -1208,6 +1208,7 @@ function renderZone0Settings() {
 
 function validateZone0Settings() {
   const invalid = configFields(zone0Settings).find(({ path, value }) => {
+    if (typeof value === "boolean") return false;
     if (typeof value !== "number" || !Number.isFinite(value)) return true;
     return value < 0 &&
       !path.includes("riskModifierPercent") &&
