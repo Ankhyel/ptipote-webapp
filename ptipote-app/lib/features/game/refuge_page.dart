@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/figurine_service.dart';
 import '../figurines/ptipote_figurine.dart';
+import '../nfc/nfc_page.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'camp_heart_config.dart';
 import 'camp_generator_config.dart';
@@ -1074,6 +1075,7 @@ class _MaisonPageState extends State<_MaisonPage>
   final _figurineService = FigurineService();
   final _gameState = Zone0GameState.instance;
   late final AnimationController _tickController;
+  late final TabController _tabs;
   Timer? _vitalityRecoveryTimer;
   int _recoveryTick = 0;
   String? _selectedFigurineId;
@@ -1087,6 +1089,7 @@ class _MaisonPageState extends State<_MaisonPage>
       vsync: this,
       duration: const Duration(seconds: 1),
     )..repeat();
+    _tabs = TabController(length: 4, vsync: this);
     _vitalityRecoveryTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _recoverVitalityStep(),
@@ -1099,6 +1102,7 @@ class _MaisonPageState extends State<_MaisonPage>
     _vitalityRecoveryTimer?.cancel();
     _gameState.removeListener(_onGameStateChanged);
     _tickController.dispose();
+    _tabs.dispose();
     super.dispose();
   }
 
@@ -1181,133 +1185,138 @@ class _MaisonPageState extends State<_MaisonPage>
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Maison'),
-          bottom: const TabBar(
-            tabs: <Widget>[
-              Tab(text: 'P’TIPOTES', icon: Icon(Icons.pets_outlined)),
-              Tab(text: 'Amélioration', icon: Icon(Icons.upgrade_outlined)),
-              Tab(text: 'Infos', icon: Icon(Icons.info_outline)),
-            ],
-          ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Maison'),
+        bottom: TabBar(
+          controller: _tabs,
+          tabs: const <Widget>[
+            Tab(text: 'P’TIPOTES', icon: Icon(Icons.pets_outlined)),
+            Tab(text: 'Pépinière', icon: Icon(Icons.egg_alt_outlined)),
+            Tab(text: 'Amélioration', icon: Icon(Icons.upgrade_outlined)),
+            Tab(text: 'Infos', icon: Icon(Icons.info_outline)),
+          ],
         ),
-        body: TabBarView(children: <Widget>[
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: DecoratedBox(
-                  decoration: const BoxDecoration(color: Color(0xFFE7D4B2)),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      if (_maisonAsset != null)
-                        Image.asset(
-                          _maisonAsset!,
-                          fit: BoxFit.cover,
-                          alignment: Alignment.center,
-                        ),
-                      const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: <Color>[
-                              Color(0x22000000),
-                              Color(0x33000000),
-                            ],
-                          ),
+      ),
+      body: TabBarView(controller: _tabs, children: <Widget>[
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: DecoratedBox(
+                decoration: const BoxDecoration(color: Color(0xFFE7D4B2)),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    if (_maisonAsset != null)
+                      Image.asset(
+                        _maisonAsset!,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                      ),
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: <Color>[
+                            Color(0x22000000),
+                            Color(0x33000000),
+                          ],
                         ),
                       ),
-                      _AlcoveLayer(alcoveCount: _gameState.alcoveCapacity),
-                      const _FloorLayer(),
-                      StreamBuilder<List<PtipoteFigurine>>(
-                        stream: _figurineService.watchMyFigurines(),
-                        builder: (context, snapshot) {
-                          final figurines =
-                              snapshot.data ?? const <PtipoteFigurine>[];
-                          if (snapshot.connectionState ==
-                                  ConnectionState.waiting &&
-                              figurines.isEmpty) {
-                            return const Center(
-                                child: CircularProgressIndicator());
-                          }
-                          if (figurines.isEmpty) {
-                            return const _RefugeEmptyState();
-                          }
-                          return Stack(
-                            children: <Widget>[
-                              _PtipoteRefugeLayer(
-                                figurines: figurines,
-                                animation: _tickController,
-                                selectedFigurineId: _selectedFigurineId,
-                                vitalityFor: _vitalityFor,
-                                hungerFor: _gameState.hungerFor,
-                                restFor: _gameState.restFor,
-                                xpFor: _gameState.xpFor,
-                                levelFor: _gameState.levelFor,
-                                isOnMission: _gameState.isOnMission,
-                                isAssignedToTower: _gameState.isAssignedToTower,
-                                isAssignedToActiveBuilding: (figurineId) =>
-                                    _gameState
-                                        .isAssignedToWorkshop(figurineId) ||
-                                    _gameState.isAssignedToMarket(figurineId),
-                                isResting: _gameState.isResting,
-                                isWaitingForBed: _gameState.isWaitingForBed,
-                                isHappy: _gameState.isHappy,
-                                hasIndigestion: _gameState.hasIndigestion,
-                                restStateLabelFor: _gameState.restStateLabelFor,
-                                moodLabelFor: _gameState.moodLabelFor,
-                                recoveryRemaining:
-                                    _gameState.vitalityRecoveryRemaining,
-                                restRecoveryRemaining:
-                                    _gameState.restRecoveryRemaining,
-                                isCuddleCareActive:
-                                    _gameState.isCuddleCareActive,
-                                canCuddle: _gameState.canCuddle,
-                                cuddleProgress:
-                                    _gameState.cuddleCooldownProgress,
-                                autoPreferenceFor: _autoPreferenceFor,
-                                availableSimpleMeals: _gameState.resourceAmount(
-                                  craftConfig.simpleMealRecipe.resultItem,
-                                ),
-                                alcoveCapacity: _gameState.alcoveCapacity,
-                                lastCuddleAt: (figurine) =>
-                                    _gameState.lastCuddleAt[figurine.id],
-                                onToggleFigurine: _toggleFigurine,
-                                onAutoPreferenceChanged: _setAutoPreference,
-                                onWake: _wakeFigurine,
-                                onSleep: _sendToSleep,
-                                onCuddle: _cuddleFigurine,
-                                onFeed: _feedFigurine,
+                    ),
+                    _AlcoveLayer(alcoveCount: _gameState.alcoveCapacity),
+                    const _FloorLayer(),
+                    StreamBuilder<List<PtipoteFigurine>>(
+                      stream: _figurineService.watchMyFigurines(),
+                      builder: (context, snapshot) {
+                        final figurines =
+                            snapshot.data ?? const <PtipoteFigurine>[];
+                        _gameState.ensureNurseryAdmissions(figurines);
+                        final admitted = figurines
+                            .where(
+                                (figurine) => !_gameState.isInNursery(figurine))
+                            .toList();
+                        if (snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            figurines.isEmpty) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+                        if (admitted.isEmpty) {
+                          return const _RefugeEmptyState();
+                        }
+                        return Stack(
+                          children: <Widget>[
+                            _PtipoteRefugeLayer(
+                              figurines: admitted,
+                              animation: _tickController,
+                              selectedFigurineId: _selectedFigurineId,
+                              vitalityFor: _vitalityFor,
+                              hungerFor: _gameState.hungerFor,
+                              restFor: _gameState.restFor,
+                              xpFor: _gameState.xpFor,
+                              levelFor: _gameState.levelFor,
+                              isOnMission: _gameState.isOnMission,
+                              isAssignedToTower: _gameState.isAssignedToTower,
+                              isAssignedToActiveBuilding: (figurineId) =>
+                                  _gameState.isAssignedToWorkshop(figurineId) ||
+                                  _gameState.isAssignedToMarket(figurineId),
+                              isResting: _gameState.isResting,
+                              isWaitingForBed: _gameState.isWaitingForBed,
+                              isHappy: _gameState.isHappy,
+                              hasIndigestion: _gameState.hasIndigestion,
+                              restStateLabelFor: _gameState.restStateLabelFor,
+                              moodLabelFor: _gameState.moodLabelFor,
+                              recoveryRemaining:
+                                  _gameState.vitalityRecoveryRemaining,
+                              restRecoveryRemaining:
+                                  _gameState.restRecoveryRemaining,
+                              isCuddleCareActive: _gameState.isCuddleCareActive,
+                              canCuddle: _gameState.canCuddle,
+                              cuddleProgress: _gameState.cuddleCooldownProgress,
+                              autoPreferenceFor: _autoPreferenceFor,
+                              availableSimpleMeals: _gameState.resourceAmount(
+                                craftConfig.simpleMealRecipe.resultItem,
                               ),
-                              _MaisonUtilityButtons(
-                                unreadCount: _gameState.unreadReportCount,
-                                onInventory: _openInventory,
-                                onMessages: _openMessages,
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ],
-                  ),
+                              alcoveCapacity: _gameState.alcoveCapacity,
+                              lastCuddleAt: (figurine) =>
+                                  _gameState.lastCuddleAt[figurine.id],
+                              onToggleFigurine: _toggleFigurine,
+                              onAutoPreferenceChanged: _setAutoPreference,
+                              onWake: _wakeFigurine,
+                              onSleep: _sendToSleep,
+                              onCuddle: _cuddleFigurine,
+                              onFeed: _feedFigurine,
+                            ),
+                            _MaisonUtilityButtons(
+                              unreadCount: _gameState.unreadReportCount,
+                              onInventory: _openInventory,
+                              onMessages: _openMessages,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          _HouseUpgradeTab(gameState: _gameState),
-          const _BuildingInformationTab(
-            title: 'Maison',
-            description:
-                'La Maison accueille les P’TIPOTES actifs, leurs alcôves de repos, les messages et l’inventaire du refuge. Son amélioration augmente les alcôves. Les logements des habitants sont agrégés et n’ajoutent pas directement de population.',
-          ),
-        ]),
-      ),
+        ),
+        _MaisonNurseryTab(
+          gameState: _gameState,
+          onHatched: () => _tabs.animateTo(0),
+        ),
+        _HouseUpgradeTab(gameState: _gameState),
+        const _BuildingInformationTab(
+          title: 'Maison',
+          description:
+              'La Maison accueille les P’TIPOTES actifs, leurs alcôves de repos, les messages et l’inventaire du refuge. Son amélioration augmente les alcôves. Les logements des habitants sont agrégés et n’ajoutent pas directement de population.',
+        ),
+      ]),
     );
   }
 
@@ -1327,6 +1336,182 @@ class _MaisonPageState extends State<_MaisonPage>
       builder: (_) => MissionReportsSheet(gameState: _gameState),
     );
   }
+}
+
+class _MaisonNurseryTab extends StatelessWidget {
+  const _MaisonNurseryTab({required this.gameState, required this.onHatched});
+
+  final Zone0GameState gameState;
+  final VoidCallback onHatched;
+
+  @override
+  Widget build(BuildContext context) {
+    final figurineService = FigurineService();
+    return SafeArea(
+      child: StreamBuilder<List<PtipoteFigurine>>(
+        stream: figurineService.watchMyFigurines(),
+        builder: (context, snapshot) {
+          final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+          gameState.ensureNurseryAdmissions(figurines);
+          final eggs = figurines
+              .where((figurine) => gameState.isInNursery(figurine))
+              .toList();
+          return ListView(
+            padding: const EdgeInsets.all(18),
+            children: [
+              Text('Pépinière',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              const Text(
+                'Les P’TIPOTES en attente d’une alcôve reposent ici sous forme d’œuf.',
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const NfcPage()),
+                ),
+                icon: const Icon(Icons.nfc),
+                label: const Text('Scanner un P’TIPOTE'),
+              ),
+              const SizedBox(height: 18),
+              if (eggs.isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Text(
+                        'Aucun œuf en attente. Les prochains scans apparaîtront ici si la Maison est pleine.'),
+                  ),
+                )
+              else
+                ...eggs.map((figurine) => Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Icon(Icons.egg_alt_outlined, size: 54),
+                            const SizedBox(height: 8),
+                            Text(figurine.displayName,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900)),
+                            Text(figurine.type, textAlign: TextAlign.center),
+                            const SizedBox(height: 8),
+                            if (gameState.canHatchFromNursery(figurine))
+                              FilledButton(
+                                onPressed: () => showDialog<void>(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (_) => _EggHatchDialog(
+                                    figurine: figurine,
+                                    gameState: gameState,
+                                    onFinished: onHatched,
+                                  ),
+                                ),
+                                child: const Text('Faire éclore'),
+                              )
+                            else
+                              Text(
+                                'Une alcôve libre est nécessaire (${gameState.hatchedPtipoteIds.length}/${gameState.alcoveCapacity}).',
+                                textAlign: TextAlign.center,
+                              ),
+                          ],
+                        ),
+                      ),
+                    )),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _EggHatchDialog extends StatefulWidget {
+  const _EggHatchDialog({
+    required this.figurine,
+    required this.gameState,
+    required this.onFinished,
+  });
+
+  final PtipoteFigurine figurine;
+  final Zone0GameState gameState;
+  final VoidCallback onFinished;
+
+  @override
+  State<_EggHatchDialog> createState() => _EggHatchDialogState();
+}
+
+class _EggHatchDialogState extends State<_EggHatchDialog> {
+  static const _rhythms = <String>[
+    'Pa · Ta · Patapa',
+    'Pon · Pon · Pata · Pon',
+    'Pa · Ta · Pon · Pata · Pon',
+  ];
+  static const _tapCounts = <int>[4, 5, 6];
+  int _stage = 0;
+  int _taps = 0;
+  bool _hatched = false;
+
+  void _tap() {
+    if (_hatched) return;
+    setState(() => _taps += 1);
+    if (_taps < _tapCounts[_stage]) return;
+    if (_stage == _rhythms.length - 1) {
+      widget.gameState.hatchFromNursery(widget.figurine);
+      setState(() => _hatched = true);
+      return;
+    }
+    setState(() {
+      _stage += 1;
+      _taps = 0;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(_hatched
+            ? 'Bienvenue ${widget.figurine.displayName}'
+            : 'L’œuf réagit'),
+        content: GestureDetector(
+          onTap: _tap,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(_hatched ? Icons.auto_awesome : Icons.egg_alt_outlined,
+                size: 84, color: _hatched ? Colors.amber : null),
+            const SizedBox(height: 12),
+            if (_hatched) ...[
+              Text(widget.figurine.displayName,
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              Text(widget.figurine.type),
+            ] else ...[
+              const Text('Reproduis le rythme en tapotant l’œuf.'),
+              const SizedBox(height: 8),
+              Text(_rhythms[_stage],
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              Text('$_taps / ${_tapCounts[_stage]} tapotements'),
+            ],
+          ]),
+        ),
+        actions: _hatched
+            ? [
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onFinished();
+                  },
+                  child:
+                      Text('Faire un câlin à ${widget.figurine.displayName}'),
+                ),
+              ]
+            : [
+                TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Plus tard'))
+              ],
+      );
 }
 
 class _HouseUpgradeTab extends StatefulWidget {
@@ -1355,29 +1540,10 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
     if (mounted) setState(() {});
   }
 
-  void _openProject({
-    required String targetId,
-    required String title,
-    required String description,
-    String? footer,
-  }) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => _ConstructionProjectSheet(
-        gameState: widget.gameState,
-        targetId: targetId,
-        title: title,
-        description: description,
-        footer: footer,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = widget.gameState;
+    final project = state.projectFor('house');
     return SafeArea(
       child: ListView(
         padding: EdgeInsets.fromLTRB(
@@ -1401,19 +1567,51 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
               Text(
                 'Niveau ${state.houseLevel} · ${state.alcoveCapacity} alcoves actives',
               ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                onPressed: state.houseLevel >= 5
-                    ? null
-                    : () => _openProject(
-                          targetId: 'house',
-                          title: 'Ameliorer la Maison',
-                          description:
-                              'Une Maison plus stable ajoute des alcoves pour le repos des P’TIPOTES.',
-                          footer: 'Niveau suivant : alcoves supplementaires.',
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('Niveau suivant : ${project.currentLevel}',
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 6),
+                      Text(
+                          'Ajoute des alcôves : ${state.alcoveCapacity} → ${housingConfig.alcovesForHouseLevel(project.currentLevel)}.'),
+                      const SizedBox(height: 12),
+                      if (project.isInProgress)
+                        Text('Travaux : ${_countdownLabel(project.endsAt!)}')
+                      else if (project.state ==
+                          ConstructionProjectState.maxLevel)
+                        const Text('Niveau maximum atteint.')
+                      else ...[
+                        ...project.requirements.entries
+                            .map((entry) => _ConstructionMaterialProgress(
+                                  resource: entry.key,
+                                  deposited:
+                                      project.depositedMaterials[entry.key] ??
+                                          0,
+                                  required: entry.value,
+                                  enabled: true,
+                                  onDeposit: (amount) =>
+                                      state.depositProjectMaterial(
+                                          'house', entry.key, amount),
+                                  onWithdraw: () =>
+                                      state.withdrawProjectMaterial(
+                                          'house', entry.key),
+                                )),
+                        FilledButton.icon(
+                          onPressed: project.isReady
+                              ? () => state.startConstructionProject('house')
+                              : null,
+                          icon: const Icon(Icons.construction_outlined),
+                          label: const Text('Commencer les travaux'),
                         ),
-                icon: const Icon(Icons.bedroom_parent_outlined),
-                label: const Text('Amelioration'),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ],
           ),

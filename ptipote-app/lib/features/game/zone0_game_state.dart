@@ -49,6 +49,9 @@ class Zone0GameState extends ChangeNotifier {
   // A P'TIPOTE can need rest even when every alcove is occupied. Keeping this
   // separately prevents an unavailable bed from granting alcove recovery.
   final Set<String> waitingForBedIds = <String>{};
+  // P'TIPOTES admitted into the Maison. New scans remain eggs in the
+  // Pépinière when the active alcove capacity is full.
+  final Set<String> hatchedPtipoteIds = <String>{};
   final Map<String, PtipoteAutoAssignmentPreference> autoPreferenceOverrides =
       <String, PtipoteAutoAssignmentPreference>{};
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
@@ -828,6 +831,30 @@ class Zone0GameState extends ChangeNotifier {
 
   bool isWaitingForBed(PtipoteFigurine figurine) =>
       !isOnMission(figurine.id) && waitingForBedIds.contains(figurine.id);
+
+  void ensureNurseryAdmissions(List<PtipoteFigurine> figurines) {
+    var changed = false;
+    for (final figurine in figurines) {
+      if (hatchedPtipoteIds.length >= alcoveCapacity) break;
+      if (hatchedPtipoteIds.add(figurine.id)) changed = true;
+    }
+    if (changed) {
+      unawaited(saveRuntimeToFirebase());
+    }
+  }
+
+  bool isInNursery(PtipoteFigurine figurine) =>
+      !hatchedPtipoteIds.contains(figurine.id);
+
+  bool canHatchFromNursery(PtipoteFigurine figurine) =>
+      isInNursery(figurine) && hatchedPtipoteIds.length < alcoveCapacity;
+
+  void hatchFromNursery(PtipoteFigurine figurine) {
+    if (!canHatchFromNursery(figurine)) return;
+    hatchedPtipoteIds.add(figurine.id);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
 
   bool isBusy(PtipoteFigurine figurine) {
     return isOnMission(figurine.id) ||
@@ -3167,6 +3194,12 @@ class Zone0GameState extends ChangeNotifier {
           ..clear()
           ..addAll(waitingForBedData.map((id) => '$id'));
       }
+      final hatchedData = data['hatchedPtipoteIds'];
+      if (hatchedData is List) {
+        hatchedPtipoteIds
+          ..clear()
+          ..addAll(hatchedData.map((id) => '$id'));
+      }
 
       final autoPreferenceData = data['autoPreferenceOverrides'];
       if (autoPreferenceData is Map) {
@@ -4554,6 +4587,7 @@ class Zone0GameState extends ChangeNotifier {
           'wellRestedRewardedIds': wellRestedRewardedIds.toList(),
           'manualRestingIds': manualRestingIds.toList(),
           'waitingForBedIds': waitingForBedIds.toList(),
+          'hatchedPtipoteIds': hatchedPtipoteIds.toList(),
           'autoPreferenceOverrides': autoPreferenceOverrides.map(
             (key, value) => MapEntry(key, value.name),
           ),

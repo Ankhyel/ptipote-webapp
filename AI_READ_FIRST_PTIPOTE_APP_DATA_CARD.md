@@ -1321,3 +1321,11 @@ Le Dashboard P'TIBUG permet de créer une définition avec un identifiant stable
 - `_FablabEnergyCard` présente l'énergie en jauge : bleu au niveau normal, orange sous 30 %. La capacité visuelle s'ajuste par paliers de Bio-batterie sans limiter l'énergie déjà sauvegardée.
 - `_ConstructionMaterialProgress` remplace les lignes de texte des chantiers. Chaque ressource affiche une vraie jauge avec `déposé / requis` centré, les actions `+1`, `+5`, `Max` et la récupération complète avant démarrage.
 - Le dépôt de végétalisation du Cœur ouvre `_CampHeartOrganicDepositSheet`, une fiche à slot unique Organique : sélection cumulable `+1`, `+5`, `+10`, `Max`, annulation de la sélection et confirmation. L'Organique reste non consommé tant que `Investir dans le Cœur` n'a pas été confirmé.
+
+### Pépinière Maison V1
+
+- `ptipote-app/lib/features/game/refuge_page.dart` : la Maison possède désormais quatre onglets, dans l'ordre `P'TIPOTES`, `Pépinière`, `Amélioration`, `Infos`. La Pépinière ouvre le même `NfcPage` que le bouton de scan historique, qui reste volontairement présent avant l'entrée dans le jeu.
+- `ptipote-app/lib/features/game/zone0_game_state.dart` : `hatchedPtipoteIds` est sauvegardé dans `users/{uid}/game/zone0`. Les premiers P'TIPOTES admis occupent les places actives de la Maison ; les suivants restent des œufs dans la Pépinière jusqu'à ce qu'une alcôve soit disponible.
+- Chaque œuf affiche son surnom et son type. Lorsqu'une place est libre, l'action `Faire éclore` lance trois séquences de tapotements de prototype. Les succès fissurent l'œuf, puis font apparaître le P'TIPOTE et renvoient vers l'onglet principal de la Maison.
+- L'éclosion ajoute uniquement le P'TIPOTE à la Maison : elle ne valide pas automatiquement de câlin afin que la bulle de besoin affectif puisse apparaître ensuite. Le bouton final sert de confirmation narrative et conserve le bouton Câlin existant sur la fiche du P'TIPOTE.
+- L'onglet `Amélioration` de la Maison expose maintenant le prochain niveau, le gain d'alcôves, les jauges de matériaux et le lancement de chantier directement dans la page. Il ne passe plus par une modale, car il n'existe qu'une amélioration de Maison à la fois.
