@@ -4,6 +4,8 @@
   "residentsPerHousingUnit": 3,
   "initialHousingOrganicCost": 10,
   "initialHousingMineralCost": 20,
+  "housingOrganicCostIncreasePerUnit": 2,
+  "housingMineralCostIncreasePerUnit": 4,
   "housingDurationMinutes": 60,
   "wellbeingPenaltyPerUnhousedResident": 3,
   "maximumHousingWellbeingPenalty": 30,

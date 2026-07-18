@@ -6,6 +6,8 @@ class HousingConfig {
     required this.residentsPerHousingUnit,
     required this.initialHousingOrganicCost,
     required this.initialHousingMineralCost,
+    required this.housingOrganicCostIncreasePerUnit,
+    required this.housingMineralCostIncreasePerUnit,
     required this.housingDurationMinutes,
     required this.wellbeingPenaltyPerUnhousedResident,
     required this.maximumHousingWellbeingPenalty,
@@ -19,6 +21,8 @@ class HousingConfig {
   final int residentsPerHousingUnit;
   final int initialHousingOrganicCost;
   final int initialHousingMineralCost;
+  final int housingOrganicCostIncreasePerUnit;
+  final int housingMineralCostIncreasePerUnit;
   final int housingDurationMinutes;
   final int wellbeingPenaltyPerUnhousedResident;
   final int maximumHousingWellbeingPenalty;
@@ -32,8 +36,10 @@ class HousingConfig {
   Map<String, int> housingRequirementsForUnit(int unitNumber) {
     final offset = (unitNumber - 1).clamp(0, 99);
     return <String, int>{
-      'Organique': initialHousingOrganicCost + offset * 2,
-      'Minéral': initialHousingMineralCost + offset * 4,
+      'Organique': initialHousingOrganicCost +
+          offset * housingOrganicCostIncreasePerUnit,
+      'Minéral': initialHousingMineralCost +
+          offset * housingMineralCostIncreasePerUnit,
     };
   }
 }
@@ -44,6 +50,8 @@ const HousingConfig defaultHousingConfig = HousingConfig(
   residentsPerHousingUnit: 3,
   initialHousingOrganicCost: 10,
   initialHousingMineralCost: 20,
+  housingOrganicCostIncreasePerUnit: 2,
+  housingMineralCostIncreasePerUnit: 4,
   housingDurationMinutes: 60,
   wellbeingPenaltyPerUnhousedResident: 3,
   maximumHousingWellbeingPenalty: 30,

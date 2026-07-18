@@ -20,9 +20,15 @@
 - Recycleur : cuve initiale de 50 Déchets et réserve de sortie initiale de 50 unités, transférable vers le stock global.
 - Le Fablab affiche un accès inventaire sur tous les onglets, une jauge d'énergie bleue/orange, et le Recycleur utilise une jauge verticale de déchets avec les sélecteurs `+1`, `+5`, `+10` et `Max`.
 
+### Composant commun de production
+
+- `ptipote-app/lib/features/game/refuge_page.dart` centralise l'affichage des recettes dans `_ProductionRecipeCard`. Cuisine, Atelier et Nurserie P'TIBUG partagent maintenant les mêmes éléments : coûts, stocks Maison, prérequis, durée, nombre maximal de productions disponibles et actions.
+- Les besoins sont affichés sous la forme `requis / stock Maison`. Le résumé `Créations possibles avec le stock` est calculé à partir de la ressource limitante.
+- Le résultat reste volontairement spécifique au domaine : Cuisine et Atelier créent des objets d'inventaire via leurs ordres de craft; la Nurserie appelle toujours `Zone0GameState.startPTibugCreation`, qui crée une entité P'TIBUG après son timer. Aucun P'TIBUG n'est converti en item de stock.
+
 ### Préparé / limites V1
 
-- La création P'TIBUG emploie le moteur de production sauvegardé (`startPTibugCreation`) et des coûts configurables Organique / Minéral / Bio-batterie. Sa carte reprend les tuiles `_RecipeSlot` de Cuisine/Atelier afin d'afficher les matériaux requis, les stocks, les Bio-batteries, le Pattern requis et la durée. `futureMyceliumCost` reste éditable dans le Dashboard pour les futures espèces, mais n'est pas consommé par les créations V1.
+- La création P'TIBUG emploie le moteur de production sauvegardé (`startPTibugCreation`) et des coûts configurables Organique / Minéral / Bio-batterie. `futureMyceliumCost` reste éditable dans le Dashboard pour les futures espèces, mais n'est pas consommé par les créations V1.
 - Les pulsations d'éclosion sont une aide visuelle de prototype, sans piste audio native.
 - Les notifications Kernel sont in-app. Les notifications système iOS/Android restent hors périmètre Zone 0 V1.
 - `HomePage(enableFirebaseServices: false)` est le mode de test isolé : les flux de profil et notification renvoient des valeurs vides sans initialiser Firebase. Le widget test couvre ce fallback.
@@ -1271,6 +1277,8 @@ Le Dashboard P'TIBUG permet de créer une définition avec un identifiant stable
 Dans l'onglet `Atelier & Maison`, la configuration `housing` est présentée en deux cartes sans changer le format Firestore: `Maison · alcôves Ptipotes` contient `houseMaxLevel` et `alcovesByHouseLevel`; `Habitations · habitants` contient la capacité résidentielle, les coûts, durées et modificateurs de bien-être. Les valeurs négatives de `towerOperations.wellbeingBands.*.wellbeingModifier` sont valides: elles représentent les pénalités de sécurité basse et sont explicitement acceptées par la validation avant publication.
 
 La validation accepte aussi les booléens tels que `lisiere.upcomingBiomes.*.availableSoon`, affichés comme cases à cocher dans le Dashboard. Seules les valeurs numériques non finies ou négatives hors champs de pénalité autorisés bloquent une publication.
+
+Les coûts d'habitation sont progressifs mais entièrement configurables dans `housing`: `initialHousingOrganicCost` et `initialHousingMineralCost` définissent le premier logement; `housingOrganicCostIncreasePerUnit` et `housingMineralCostIncreasePerUnit` définissent l'augmentation par logement déjà construit. Mettre les deux augmentations à `0` conserve un coût fixe. Le multiplicateur minéral global de construction reste appliqué ensuite par `buildingConstructionConfig.mineralCostMultiplier`.
 
 - L'onglet Dashboard est nommé `Kernel`. Il est rangé en accordéons : `Bâtiments` (missions de construction), `Missions`, `Éditeur de mission`, `Confiance, axes et récompenses`, puis `Plans & Patterns`.
 - Les prérequis d'un craft ne doivent plus être édités dans la carte Craft : `patternRequired` est activé par défaut. Lorsqu'une recette est créée avec ce réglage, le Dashboard ajoute son Plan Kernel `craft-{recipeId}` si nécessaire.

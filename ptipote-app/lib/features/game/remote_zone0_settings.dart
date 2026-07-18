@@ -775,6 +775,12 @@ HousingConfig _housing(Object? value) {
           _int(raw['initialHousingOrganicCost'], b.initialHousingOrganicCost),
       initialHousingMineralCost:
           _int(raw['initialHousingMineralCost'], b.initialHousingMineralCost),
+      housingOrganicCostIncreasePerUnit: _int(
+          raw['housingOrganicCostIncreasePerUnit'],
+          b.housingOrganicCostIncreasePerUnit),
+      housingMineralCostIncreasePerUnit: _int(
+          raw['housingMineralCostIncreasePerUnit'],
+          b.housingMineralCostIncreasePerUnit),
       housingDurationMinutes:
           _int(raw['housingDurationMinutes'], b.housingDurationMinutes),
       wellbeingPenaltyPerUnhousedResident: _int(
