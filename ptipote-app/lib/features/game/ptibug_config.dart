@@ -10,6 +10,7 @@ class PTibugSpeciesConfig {
     required this.styles,
     required this.creationCost,
     required this.creationEnergyCost,
+    this.creationBioBatteryCost = 0,
     required this.creationMinutes,
   });
 
@@ -17,6 +18,7 @@ class PTibugSpeciesConfig {
   final List<String> styles;
   final Map<String, int> creationCost;
   final int creationEnergyCost;
+  final int creationBioBatteryCost;
   final int creationMinutes;
 }
 
@@ -130,22 +132,25 @@ const PTibugConfig defaultPTibugConfig = PTibugConfig(
     PTibugSpecies.scarabe: PTibugSpeciesConfig(
       displayName: 'Scarabé',
       styles: <String>['compact', 'cornu', 'cuirassé'],
-      creationCost: <String, int>{'Organique': 2, 'Minéral': 4},
-      creationEnergyCost: 5,
+      creationCost: <String, int>{'Organique': 30, 'Minéral': 15},
+      creationEnergyCost: 0,
+      creationBioBatteryCost: 10,
       creationMinutes: 20,
     ),
     PTibugSpecies.hyme: PTibugSpeciesConfig(
       displayName: 'Hyme',
       styles: <String>['fourmi', 'abeille', 'guêpe'],
-      creationCost: <String, int>{'Organique': 4, 'Minéral': 2},
-      creationEnergyCost: 5,
+      creationCost: <String, int>{'Organique': 30, 'Minéral': 15},
+      creationEnergyCost: 0,
+      creationBioBatteryCost: 10,
       creationMinutes: 20,
     ),
     PTibugSpecies.arac: PTibugSpeciesConfig(
       displayName: 'Arac',
       styles: <String>['toile', 'chasseuse', 'sauteuse'],
-      creationCost: <String, int>{'Organique': 3, 'Minéral': 3},
-      creationEnergyCost: 5,
+      creationCost: <String, int>{'Organique': 30, 'Minéral': 15},
+      creationEnergyCost: 0,
+      creationBioBatteryCost: 10,
       creationMinutes: 25,
     ),
   },

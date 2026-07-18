@@ -477,6 +477,11 @@ class Zone0GameState extends ChangeNotifier {
         .toList();
   }
 
+  int activeKernelMissionCount(int campHeartLevel) =>
+      kernelMissionsForCampHeartLevel(campHeartLevel)
+          .where((mission) => mission.status == KernelMissionStatus.active)
+          .length;
+
   int kernelAxisLevel(KernelAxis axis) => kernelAxisLevels[axis] ?? 1;
 
   int kernelAxisCurrentXp(KernelAxis axis) => kernelAxisXp[axis] ?? 0;
@@ -2535,12 +2540,15 @@ class Zone0GameState extends ChangeNotifier {
     }
     final config = pTibugConfig.species[species]!;
     if (!hasResources(config.creationCost) ||
-        energyUnits < config.creationEnergyCost) {
+        energyUnits < config.creationEnergyCost ||
+        bioBatteries < config.creationBioBatteryCost) {
       return const Zone0ActionResult(
-          success: false, message: 'Ressources ou énergie insuffisantes.');
+          success: false,
+          message: 'Ressources, bio-batteries ou énergie insuffisantes.');
     }
     removeResources(config.creationCost);
     energyUnits -= config.creationEnergyCost;
+    bioBatteries -= config.creationBioBatteryCost;
     final now = DateTime.now();
     pTibugCreationOrder = PTibugCreationOrder(
       species: species,

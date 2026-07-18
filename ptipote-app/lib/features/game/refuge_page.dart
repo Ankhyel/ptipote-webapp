@@ -328,8 +328,13 @@ class _RefugePageState extends State<RefugePage> {
                             campHeartState: _campHeartState,
                             notificationCount:
                                 _zone0State.unreadBuildingNotificationCount(
-                              building.name,
-                            ),
+                                      building.name,
+                                    ) +
+                                    (building.name == 'Kernel'
+                                        ? _zone0State.activeKernelMissionCount(
+                                            _campHeartState.campHeartLevel,
+                                          )
+                                        : 0),
                             gameState: _zone0State,
                             onTap: () => _handleBuildingTap(building),
                           ),
@@ -509,9 +514,9 @@ class KernelPage extends StatelessWidget {
             isScrollable: true,
             tabs: <Widget>[
               Tab(text: 'Progression'),
-              Tab(text: 'Plans'),
               Tab(text: 'Mission principale'),
               Tab(text: 'Demandes'),
+              Tab(text: 'Plans'),
               Tab(text: 'Météo'),
             ],
           ),
@@ -523,7 +528,6 @@ class KernelPage extends StatelessWidget {
                 gameState: gameState,
                 campHeartState: campHeartState,
               ),
-              _KernelPlansTab(gameState: gameState),
               _KernelMainMissionTab(
                 mission: gameState.mainKernelMission(
                   campHeartState.campHeartLevel,
@@ -536,6 +540,7 @@ class KernelPage extends StatelessWidget {
                 ),
                 gameState: gameState,
               ),
+              _KernelPlansTab(gameState: gameState),
               _KernelRequestsTab(
                 missions: gameState.weatherKernelMissions(
                   campHeartState.campHeartLevel,
@@ -7117,7 +7122,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
             title: const Text('Nurserie P’TIBUG'),
@@ -7156,6 +7161,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   Widget _overview() {
     final total = widget.gameState.pTibugs
         .fold<int>(0, (sum, bug) => sum + bug.storedAmount);
+    final producing = widget.gameState.pTibugs
+        .where((bug) => bug.assignedSlotIndex != null)
+        .toList();
     return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
       Card(
           child: Padding(
@@ -7180,13 +7188,89 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                         child: const Text('Récupérer la production')),
                   ]))),
       if (widget.gameState.pTibugCreationOrder?.isActive == true)
-        Card(
-            child: ListTile(
-                title: const Text('Création en cours'),
-                subtitle: Text(
-                    'Fin dans ${_countdownLabel(widget.gameState.pTibugCreationOrder!.endsAt)}'))),
+        _creationInProgressCard(),
+      if (producing.isNotEmpty) ...<Widget>[
+        const Padding(
+          padding: EdgeInsets.only(top: 14, bottom: 6),
+          child: Text(
+            'P’TIBUG en production',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+        ...producing.map(_productionOverviewCard),
+      ],
     ]);
   }
+
+  Widget _creationInProgressCard() {
+    final order = widget.gameState.pTibugCreationOrder!;
+    final config = pTibugConfig.species[order.species]!;
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(child: Icon(_speciesIcon(order.species))),
+        title: Text('${config.displayName} en création'),
+        subtitle: Text('Fin dans ${_countdownLabel(order.endsAt)}'),
+      ),
+    );
+  }
+
+  Widget _productionOverviewCard(PTibug bug) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: <Widget>[
+              Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  CircleAvatar(
+                    radius: 28,
+                    child: Icon(_speciesIcon(bug.species)),
+                  ),
+                  Positioned(
+                    right: -12,
+                    top: -10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${bug.storedAmount}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onPrimary,
+                              fontWeight: FontWeight.w900,
+                            ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      bug.displayName,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    Text('Réserve : ${bug.storedAmount} ressource(s)'),
+                    Text(
+                      bug.nextProductionAt == null
+                          ? 'Cycle en attente'
+                          : _countdownLabel(bug.nextProductionAt!),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 
   Widget _creation() =>
       ListView(padding: const EdgeInsets.all(16), children: <Widget>[
@@ -7203,23 +7287,49 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           final state = widget.gameState.pTibugPatternState(species);
           final isActive = state == KernelPlanState.active;
           return Card(
-              child: ListTile(
-                  title: Text('Pattern ${config.displayName}'),
-                  subtitle: Text(isActive
-                      ? '${config.creationCost.entries.map((e) => '${e.value} ${e.key}').join(' · ')} · ${config.creationEnergyCost} Énergie · ${config.creationMinutes} min'
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      CircleAvatar(child: Icon(_speciesIcon(species))),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Pattern ${config.displayName}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      Icon(isActive
+                          ? Icons.check_circle_outline
+                          : Icons.lock_outline),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(isActive
+                      ? '${config.creationCost.entries.map((e) => '${e.value} ${e.key}').join(' · ')} · ${config.creationBioBatteryCost} bio-batteries · ${config.creationMinutes} min'
                       : '${pattern.description}\nKernel : ${_patternStateLabel(state)}'),
-                  isThreeLine: !isActive,
-                  trailing: isActive
-                      ? FilledButton(
-                          onPressed:
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: !isActive ||
                               widget.gameState.pTibugCreationOrder?.isActive ==
-                                      true
-                                  ? null
-                                  : () => _message(widget.gameState
-                                      .startPTibugCreation(species)
-                                      .message),
-                          child: const Text('Créer'))
-                      : const Icon(Icons.lock_outline)));
+                                  true
+                          ? null
+                          : () => _message(widget.gameState
+                              .startPTibugCreation(species)
+                              .message),
+                      icon: const Icon(Icons.auto_awesome_outlined),
+                      label: const Text('Créer'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
         }),
       ]);
 

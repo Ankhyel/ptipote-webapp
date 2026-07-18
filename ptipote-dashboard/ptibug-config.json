@@ -13,22 +13,25 @@
     "scarabe": {
       "displayName": "Scarabé",
       "styles": ["compact", "cornu", "cuirassé"],
-      "creationCost": {"Organique": 2, "Minéral": 4},
-      "creationEnergyCost": 5,
+      "creationCost": {"Organique": 30, "Minéral": 15},
+      "creationEnergyCost": 0,
+      "creationBioBatteryCost": 10,
       "creationMinutes": 20
     },
     "hyme": {
       "displayName": "Hymé",
       "styles": ["fourmi", "abeille", "guêpe"],
-      "creationCost": {"Organique": 4, "Minéral": 2},
-      "creationEnergyCost": 5,
+      "creationCost": {"Organique": 30, "Minéral": 15},
+      "creationEnergyCost": 0,
+      "creationBioBatteryCost": 10,
       "creationMinutes": 20
     },
     "arac": {
       "displayName": "Arac",
       "styles": ["toile", "chasseuse", "sauteuse"],
-      "creationCost": {"Organique": 3, "Minéral": 3},
-      "creationEnergyCost": 5,
+      "creationCost": {"Organique": 30, "Minéral": 15},
+      "creationEnergyCost": 0,
+      "creationBioBatteryCost": 10,
       "creationMinutes": 25
     }
   },

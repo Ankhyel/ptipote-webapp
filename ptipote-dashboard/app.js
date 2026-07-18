@@ -881,6 +881,7 @@ function prettyPath(path) {
     nurseryDurationMinutes: "Durée de création à la Nurserie",
     productionCycleMinutes: "Durée de cycle de production",
     creationEnergyCost: "Coût en énergie de création",
+    creationBioBatteryCost: "Coût en bio-batteries de création",
     creationMinutes: "Durée de création",
     sourcierPatternPrices: "Prix du Sourcier",
   };

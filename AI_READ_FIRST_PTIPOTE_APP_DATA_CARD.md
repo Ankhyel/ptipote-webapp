@@ -1211,6 +1211,7 @@ Pour formater Dart:
 ### Nurserie P'TIBUG - UI Données et Modules
 
 - `ptipote-app/lib/features/game/refuge_page.dart` : la Nurserie possède désormais les onglets `Aperçu`, `Créer`, `Collection`, `Données` et `Amélioration`.
+- L'Aperçu affiche chaque P'TIBUG affecté à la production avec son icône, sa réserve actuelle sous forme de pastille et le compte à rebours avant le prochain cycle. Un ordre de création conserve également l'icône de l'espèce et son délai restant.
 - La `Collection` affiche chaque P'TIBUG comme une carte : espèce, niveau, XP, réserve, état de production, Donnée équipée et emplacements de Modules. Un tap ouvre sa fiche d'équipement.
 - La fiche d'équipement permet d'attribuer une Donnée non utilisée par un autre P'TIBUG et d'équiper un Module déverrouillé, dans la limite des emplacements de la Nurserie. Les règles métier existantes restent appliquées par `Zone0GameState`.
 - L'onglet `Données` présente le type, la rareté, le bonus de production et le propriétaire éventuel de chaque Donnée. Il propose une fusion lorsqu'une paire identique non équipée est disponible.
@@ -1283,6 +1284,7 @@ Le Dashboard P'TIBUG permet de créer une définition avec un identifiant stable
 ### P'TIBUG et Patterns publiés à distance
 
 - `ptipote-dashboard/ptibug-config.json` est la base versionnée des coûts de Nurserie, espèces, cycles, capacités, prix du Sourcier et liens Pattern/Plan. L'onglet Dashboard `P'TIBUG` l'édite puis le publie dans `gameConfigs/zone0.zone0Settings.ptibug`.
+- Chaque espèce accepte `creationCost` (dont `Mycélium` peut être ajouté ultérieurement), `creationEnergyCost`, `creationBioBatteryCost` et `creationMinutes`. Les valeurs V1 de départ sont 30 Organique, 15 Minéral et 10 Bio-batteries ; aucun coût de Mycélium n'est imposé tant qu'il n'est pas configuré.
 - `ptipote-app/lib/features/game/remote_zone0_settings.dart` reconstruit `PTibugConfig` depuis Firestore et garde `defaultPTibugConfig` comme fallback hors ligne ou pour une valeur distante absente.
 - `ptipote-app/lib/features/game/ptibug_config.dart` distingue `defaultPTibugConfig` (versionné) de `pTibugConfig` (configuration active). Aucun P'TIBUG, Pattern actif, ordre de création ou production du joueur n'est écrit dans la configuration distante.
 - Les Patterns restent des Plans Kernel, jamais des recettes ou des objets consommables. `KernelTechnologyPlanConfig` accepte des prérequis distincts : Confiance, Éleveur, Bâtisseur, Régénérateur et `requiredBuildingLevels`.
@@ -1313,6 +1315,7 @@ Le Dashboard P'TIBUG permet de créer une définition avec un identifiant stable
 - `zone0Settings.lisiere.upcomingBiomes` prépare Montagne, Savane, Mangrove et Littoral dans le Dashboard. Ces entrées exposent risque, gains et dangers mais restent verrouillées dans Flutter jusqu'à leur implémentation de gameplay; elles ne sont pas ajoutées artificiellement à l'enum des missions.
 - Le seuil de sécurité moyen pour explorer un biome est maintenant `40` dans `tower-operations-config.json` et `tower_operations_config.dart`. La carte affiche les neuf cases, dont les zones futures grisées et verrouillées.
 - Les missions Kernel terminées peuvent être supprimées par un glissement vers la gauche. Les identifiants supprimés sont persistés dans `kernel.dismissedMissionIds`; une mission active ou verrouillée ne peut pas être retirée.
+- L'îlot affiche une pastille sur le Kernel tant qu'au moins une mission Kernel active attend le joueur. Les onglets Kernel suivent l'ordre `Progression`, `Mission principale`, `Demandes`, `Plans`, puis `Météo`.
 - Le Pattern Scarabé démarre `unknown` et ne devient actif qu'après la construction de la Nurserie et le choix initial du joueur.
 
 ### Cohérence des dépôts et crafts

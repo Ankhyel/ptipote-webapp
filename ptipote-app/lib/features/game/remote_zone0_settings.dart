@@ -276,6 +276,10 @@ PTibugConfig _ptibug(Object? value) {
                 _resourceMap(item?['creationCost'], fallback.creationCost),
             creationEnergyCost:
                 _int(item?['creationEnergyCost'], fallback.creationEnergyCost),
+            creationBioBatteryCost: _int(
+              item?['creationBioBatteryCost'],
+              fallback.creationBioBatteryCost,
+            ),
             creationMinutes:
                 _int(item?['creationMinutes'], fallback.creationMinutes),
           );
