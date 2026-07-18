@@ -7613,80 +7613,52 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           final organicStock = widget.gameState.resourceAmount('Organique');
           final mineralStock = widget.gameState.resourceAmount('Minéral');
           final batteryStock = widget.gameState.bioBatteries;
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      CircleAvatar(child: Icon(_speciesIcon(species))),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Pattern ${config.displayName}',
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                      Icon(isActive
-                          ? Icons.check_circle_outline
-                          : Icons.lock_outline),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(pattern.description),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: _RecipeSlot(
-                          icon: Icons.eco_outlined,
-                          label: 'Matériaux',
-                          value:
-                              '$organicCost Organique\n$mineralCost Minéral\nStock : $organicStock / $mineralStock',
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _RecipeSlot(
-                          icon: Icons.battery_charging_full_outlined,
-                          label: 'Bio-batteries',
-                          value:
-                              '${config.creationBioBatteryCost} requises\nStock : $batteryStock',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text('Temps de création : ${config.creationMinutes} min'),
-                  Text(
-                    isActive
-                        ? 'Pré-requis : Pattern actif dans le Kernel'
-                        : 'Pré-requis : ${_patternStateLabel(state)}',
-                    style: TextStyle(
-                      color: isActive
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: !isActive ||
-                              widget.gameState.pTibugCreationOrder?.isActive ==
-                                  true
-                          ? null
-                          : () => _message(widget.gameState
-                              .startPTibugCreation(species)
-                              .message),
-                      icon: const Icon(Icons.auto_awesome_outlined),
-                      label: const Text('Créer le P’TIBUG'),
-                    ),
-                  ),
-                ],
+          final creationRequirements = <String, int>{
+            ...config.creationCost,
+            'Bio-batteries': config.creationBioBatteryCost,
+          };
+          final maxCreatable = _maxProductionCount(
+            creationRequirements,
+            (resourceId) => resourceId == 'Bio-batteries'
+                ? batteryStock
+                : widget.gameState.resourceAmount(resourceId),
+          );
+          final canCreate = isActive &&
+              maxCreatable > 0 &&
+              widget.gameState.pTibugCreationOrder?.isActive != true;
+          return _ProductionRecipeCard(
+            title: 'Pattern ${config.displayName}',
+            leadingIcon: _speciesIcon(species),
+            trailingIcon:
+                isActive ? Icons.check_circle_outline : Icons.lock_outline,
+            description: pattern.description,
+            slots: <_ProductionSlotData>[
+              _ProductionSlotData(
+                icon: Icons.eco_outlined,
+                label: 'Matériaux',
+                value:
+                    'Organique : $organicCost / $organicStock\nMinéral : $mineralCost / $mineralStock',
               ),
+              _ProductionSlotData(
+                icon: Icons.battery_charging_full_outlined,
+                label: 'Bio-batteries',
+                value: '${config.creationBioBatteryCost} / $batteryStock',
+              ),
+            ],
+            details: <String>[
+              'Résultat : 1 P’TIBUG ${config.displayName}',
+              'Temps de création : ${config.creationMinutes} min',
+              'Créations possibles avec le stock : $maxCreatable',
+            ],
+            prerequisiteLabel: isActive
+                ? 'Pré-requis : Pattern actif dans le Kernel'
+                : 'Pré-requis : ${_patternStateLabel(state)}',
+            prerequisiteMet: isActive,
+            primaryActionLabel: 'Créer le P’TIBUG',
+            primaryActionIcon: Icons.auto_awesome_outlined,
+            primaryActionEnabled: canCreate,
+            onPrimaryAction: () => _message(
+              widget.gameState.startPTibugCreation(species).message,
             ),
           );
         }),
@@ -8672,60 +8644,27 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                   .where(
                       (recipe) => recipe.craftSection == CraftSection.atelier)
                   .where(widget.gameState.isWorkshopRecipeActive)
-                  .map((recipe) => Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                Text(recipe.displayName,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w900)),
-                                Text(
-                                    'Pattern Kernel · ${recipe.durationMinutes} min/unité'),
-                                Text(recipe.ingredients.entries
-                                    .map((e) =>
-                                        '${e.value * _quantity} ${e.key}')
-                                    .join(' + ')),
-                                FilledButton(
-                                    onPressed: widget.gameState
-                                                    .activeManualWorkshopOrders <
-                                                1 &&
-                                            widget.gameState.energyUnits >= 1
-                                        ? () => _start(recipe, null)
-                                        : null,
-                                    child: const Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: <Widget>[
-                                        Text('Lancer manuellement'),
-                                        Text('utilise 1 unité d’énergie',
-                                            style: TextStyle(fontSize: 11)),
-                                      ],
-                                    )),
-                                OutlinedButton.icon(
-                                  onPressed: widget.gameState
-                                              .activePtipoteWorkshopOrders <
-                                          widget.gameState.workshopSlots
-                                      ? () async {
-                                          final figurine =
-                                              await _pickPtipoteForActivity(
-                                            context: context,
-                                            gameState: widget.gameState,
-                                            figurines: figurines,
-                                            title:
-                                                'Confier ${recipe.displayName}',
-                                          );
-                                          if (figurine != null &&
-                                              context.mounted) {
-                                            _start(recipe, figurine);
-                                          }
-                                        }
-                                      : null,
-                                  icon: const Icon(Icons.person_add_alt_1),
-                                  label: const Text('Confier à un P’TIPOTE'),
-                                ),
-                              ]),
-                        ),
+                  .map((recipe) => _WorkshopRecipeCard(
+                        recipe: recipe,
+                        gameState: widget.gameState,
+                        quantity: _quantity,
+                        manualAvailable:
+                            widget.gameState.activeManualWorkshopOrders < 1,
+                        ptipoteAvailable:
+                            widget.gameState.activePtipoteWorkshopOrders <
+                                widget.gameState.workshopSlots,
+                        onPrepare: () => _start(recipe, null),
+                        onAssign: () async {
+                          final figurine = await _pickPtipoteForActivity(
+                            context: context,
+                            gameState: widget.gameState,
+                            figurines: figurines,
+                            title: 'Confier ${recipe.displayName}',
+                          );
+                          if (figurine != null && context.mounted) {
+                            _start(recipe, figurine);
+                          }
+                        },
                       )),
             ] else
               const Padding(
@@ -8871,6 +8810,40 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
   }
 }
 
+class _WorkshopRecipeCard extends StatelessWidget {
+  const _WorkshopRecipeCard({
+    required this.recipe,
+    required this.gameState,
+    required this.quantity,
+    required this.manualAvailable,
+    required this.ptipoteAvailable,
+    required this.onPrepare,
+    required this.onAssign,
+  });
+
+  final CraftRecipe recipe;
+  final Zone0GameState gameState;
+  final int quantity;
+  final bool manualAvailable;
+  final bool ptipoteAvailable;
+  final VoidCallback onPrepare;
+  final Future<void> Function() onAssign;
+
+  @override
+  Widget build(BuildContext context) => _CraftProductionRecipeCard(
+        recipe: recipe,
+        gameState: gameState,
+        quantity: quantity,
+        sectionLabel: 'Atelier',
+        sectionLevel: gameState.atelierLevel,
+        showConsumableEffects: false,
+        manualAvailable: manualAvailable,
+        ptipoteAvailable: ptipoteAvailable,
+        onPrepare: onPrepare,
+        onAssign: onAssign,
+      );
+}
+
 class _CuisineRecipeCard extends StatelessWidget {
   const _CuisineRecipeCard({
     required this.recipe,
@@ -8893,99 +8866,282 @@ class _CuisineRecipeCard extends StatelessWidget {
   final Future<void> Function() onAssign;
 
   @override
+  Widget build(BuildContext context) => _CraftProductionRecipeCard(
+        recipe: recipe,
+        gameState: gameState,
+        quantity: quantity,
+        sectionLabel: 'Cuisine',
+        sectionLevel: gameState.cuisineLevel,
+        showConsumableEffects: true,
+        manualAvailable: manualAvailable,
+        ptipoteAvailable: ptipoteAvailable,
+        onPrepare: onPrepare,
+        onAssign: onAssign,
+      );
+}
+
+class _CraftProductionRecipeCard extends StatelessWidget {
+  const _CraftProductionRecipeCard({
+    required this.recipe,
+    required this.gameState,
+    required this.quantity,
+    required this.sectionLabel,
+    required this.sectionLevel,
+    required this.showConsumableEffects,
+    required this.manualAvailable,
+    required this.ptipoteAvailable,
+    required this.onPrepare,
+    required this.onAssign,
+  });
+
+  final CraftRecipe recipe;
+  final Zone0GameState gameState;
+  final int quantity;
+  final String sectionLabel;
+  final int sectionLevel;
+  final bool showConsumableEffects;
+  final bool manualAvailable;
+  final bool ptipoteAvailable;
+  final VoidCallback onPrepare;
+  final Future<void> Function() onAssign;
+
+  @override
   Widget build(BuildContext context) {
     final costs =
         recipe.ingredients.map((key, value) => MapEntry(key, value * quantity));
     final output = <String, int>{
       recipe.resultItem: recipe.resultAmount * quantity
     };
-    final missingLabel = !gameState.hasResources(costs)
-        ? gameState.missingResourcesLabel(costs)
-        : 'Inventaire plein : impossible de ranger ${recipe.resultItem}.';
-    final ingredientText =
-        costs.entries.map((entry) => '${entry.value} ${entry.key}').join(' + ');
+    final hasResources = gameState.hasResources(costs);
+    final hasCapacity = gameState.hasInventoryCapacityFor(output);
+    final canPrepare = hasResources && hasCapacity;
+    final maxCreatable =
+        _maxProductionCount(recipe.ingredients, gameState.resourceAmount);
+    final ingredientText = costs.entries
+        .map((entry) =>
+            '${entry.key} : ${entry.value} / ${gameState.resourceAmount(entry.key)}')
+        .join('\n');
     final contextText = recipe.contextIngredients.entries
         .map((entry) => '${entry.value} ${entry.key}')
         .join(' + ');
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              '${recipe.displayName} · Cuisine niv. ${recipe.cuisineLevel}',
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: _RecipeSlot(
-                    label: 'Ingrédients',
-                    value: ingredientText,
-                    icon: Icons.eco_outlined,
-                  ),
-                ),
+    final outputDetails = <String>[
+      'Résultat : ${recipe.resultAmount * quantity} ${recipe.resultItem}',
+      'Créations possibles avec le stock : $maxCreatable',
+      'Temps : ${recipe.durationMinutes} min/unité',
+    ];
+    if (showConsumableEffects) {
+      outputDetails.add(
+        'Type : ${recipe.foodType.name} · faim +${recipe.hungerRestore} · vitalité +${recipe.vitalityRestore}',
+      );
+    }
+    return _ProductionRecipeCard(
+      title: '${recipe.displayName} · $sectionLabel niv. $sectionLevel',
+      leadingIcon: recipe.foodType == FoodType.drink
+          ? Icons.local_drink_outlined
+          : sectionLabel == 'Atelier'
+              ? Icons.handyman_outlined
+              : Icons.restaurant_outlined,
+      description: 'Pattern Kernel requis pour cette fabrication.',
+      slots: <_ProductionSlotData>[
+        _ProductionSlotData(
+          label: 'Ingrédients',
+          value: ingredientText,
+          icon: Icons.eco_outlined,
+        ),
+        _ProductionSlotData(
+          label: sectionLabel,
+          value: contextText.isEmpty ? 'Aucun élément contextuel' : contextText,
+          icon: sectionLabel == 'Cuisine'
+              ? Icons.water_drop_outlined
+              : Icons.precision_manufacturing_outlined,
+        ),
+      ],
+      details: outputDetails,
+      prerequisiteLabel: 'Pré-requis : Pattern Kernel actif',
+      prerequisiteMet: true,
+      unavailableLabel: !canPrepare
+          ? hasCapacity
+              ? gameState.missingResourcesLabel(costs)
+              : 'Inventaire plein : impossible de ranger ${recipe.resultItem}.'
+          : null,
+      primaryActionLabel: 'Lancer manuellement',
+      primaryActionHint: 'utilise 1 unité d’énergie',
+      primaryActionIcon: sectionLabel == 'Cuisine'
+          ? Icons.restaurant_outlined
+          : Icons.handyman_outlined,
+      primaryActionEnabled:
+          canPrepare && manualAvailable && gameState.energyUnits >= 1,
+      onPrimaryAction: onPrepare,
+      secondaryActionLabel: 'Confier à un P’TIPOTE',
+      secondaryActionIcon: Icons.person_add_alt_1,
+      secondaryActionEnabled: canPrepare && ptipoteAvailable,
+      onSecondaryAction: onAssign,
+    );
+  }
+}
+
+class _ProductionRecipeCard extends StatelessWidget {
+  const _ProductionRecipeCard({
+    required this.title,
+    required this.leadingIcon,
+    required this.slots,
+    required this.details,
+    required this.primaryActionLabel,
+    required this.primaryActionIcon,
+    required this.primaryActionEnabled,
+    required this.onPrimaryAction,
+    this.trailingIcon,
+    this.description,
+    this.prerequisiteLabel,
+    this.prerequisiteMet = true,
+    this.unavailableLabel,
+    this.primaryActionHint,
+    this.secondaryActionLabel,
+    this.secondaryActionIcon,
+    this.secondaryActionEnabled = false,
+    this.onSecondaryAction,
+  });
+
+  final String title;
+  final IconData leadingIcon;
+  final IconData? trailingIcon;
+  final String? description;
+  final List<_ProductionSlotData> slots;
+  final List<String> details;
+  final String? prerequisiteLabel;
+  final bool prerequisiteMet;
+  final String? unavailableLabel;
+  final String primaryActionLabel;
+  final String? primaryActionHint;
+  final IconData primaryActionIcon;
+  final bool primaryActionEnabled;
+  final VoidCallback onPrimaryAction;
+  final String? secondaryActionLabel;
+  final IconData? secondaryActionIcon;
+  final bool secondaryActionEnabled;
+  final Future<void> Function()? onSecondaryAction;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(children: <Widget>[
+                Icon(leadingIcon),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: _RecipeSlot(
-                    label: 'Cuisine',
-                    value: contextText.isEmpty ? 'Aucun' : contextText,
-                    icon: Icons.water_drop_outlined,
+                  child: Text(title,
+                      style: const TextStyle(fontWeight: FontWeight.w900)),
+                ),
+                if (trailingIcon != null) Icon(trailingIcon),
+              ]),
+              if (description != null) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(description!),
+              ],
+              if (slots.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 12),
+                LayoutBuilder(
+                  builder: (context, constraints) => Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: slots
+                        .map(
+                          (slot) => SizedBox(
+                            width: (constraints.maxWidth - 10) / 2,
+                            child: _RecipeSlot(
+                              label: slot.label,
+                              value: slot.value,
+                              icon: slot.icon,
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-                'Résultat : ${recipe.resultAmount * quantity} ${recipe.resultItem}'),
-            Text(
-              'Type : ${recipe.foodType.name} · faim +${recipe.hungerRestore} · vitalité +${recipe.vitalityRestore}',
-            ),
-            Text('Stock Organique : ${gameState.resourceAmount('Organique')}'),
-            if (!canPrepare) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                gameState.hasInventoryCapacityFor(output)
-                    ? missingLabel
-                    : 'Inventaire plein : impossible de ranger ${recipe.resultItem}.',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontWeight: FontWeight.w900,
+              if (details.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 12),
+                ...details.map(Text.new),
+              ],
+              if (prerequisiteLabel != null) ...<Widget>[
+                const SizedBox(height: 6),
+                Text(
+                  prerequisiteLabel!,
+                  style: TextStyle(
+                    color: prerequisiteMet
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
+              ],
+              if (unavailableLabel != null) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  unavailableLabel!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: primaryActionEnabled ? onPrimaryAction : null,
+                icon: Icon(primaryActionIcon),
+                label: primaryActionHint == null
+                    ? Text(primaryActionLabel)
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(primaryActionLabel),
+                          Text(primaryActionHint!,
+                              style: const TextStyle(fontSize: 11)),
+                        ],
+                      ),
               ),
-            ],
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed:
-                  canPrepare && manualAvailable && gameState.energyUnits >= 1
-                      ? onPrepare
+              if (secondaryActionLabel != null) ...<Widget>[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: secondaryActionEnabled && onSecondaryAction != null
+                      ? onSecondaryAction
                       : null,
-              icon: Icon(
-                recipe.foodType == FoodType.drink
-                    ? Icons.local_drink_outlined
-                    : Icons.restaurant_outlined,
-              ),
-              label: const Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text('Lancer manuellement'),
-                  Text('utilise 1 unité d’énergie',
-                      style: TextStyle(fontSize: 11)),
-                ],
-              ),
-            ),
-            OutlinedButton.icon(
-              onPressed: canPrepare && ptipoteAvailable ? onAssign : null,
-              icon: const Icon(Icons.person_add_alt_1),
-              label: const Text('Confier à un P’TIPOTE'),
-            ),
-          ],
+                  icon: Icon(secondaryActionIcon),
+                  label: Text(secondaryActionLabel!),
+                ),
+              ],
+            ],
+          ),
         ),
-      ),
-    );
+      );
+}
+
+class _ProductionSlotData {
+  const _ProductionSlotData({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+}
+
+int _maxProductionCount(
+  Map<String, int> requirements,
+  int Function(String resourceId) stockFor,
+) {
+  int? possible;
+  for (final entry in requirements.entries) {
+    if (entry.value <= 0) continue;
+    final value = stockFor(entry.key) ~/ entry.value;
+    possible = possible == null ? value : math.min(possible, value);
   }
+  return possible ?? 0;
 }
 
 class _RecipeSlot extends StatelessWidget {
