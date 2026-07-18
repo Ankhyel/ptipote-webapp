@@ -1422,6 +1422,41 @@ class _MaisonNurseryTab extends StatelessWidget {
                         ),
                       ),
                     )),
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Icon(Icons.egg_alt_outlined, size: 54),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Œuf de démonstration',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const Text(
+                        'Teste les trois rythmes sans faire éclore un P’TIPOTE réel.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => showDialog<void>(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (_) => _EggHatchDialog(
+                            gameState: gameState,
+                            isPractice: true,
+                          ),
+                        ),
+                        icon: const Icon(Icons.play_circle_outline),
+                        label: const Text('Tester l’éclosion'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           );
         },
@@ -1432,36 +1467,91 @@ class _MaisonNurseryTab extends StatelessWidget {
 
 class _EggHatchDialog extends StatefulWidget {
   const _EggHatchDialog({
-    required this.figurine,
+    this.figurine,
     required this.gameState,
-    required this.onFinished,
+    this.onFinished,
+    this.isPractice = false,
   });
 
-  final PtipoteFigurine figurine;
+  final PtipoteFigurine? figurine;
   final Zone0GameState gameState;
-  final VoidCallback onFinished;
+  final VoidCallback? onFinished;
+  final bool isPractice;
 
   @override
   State<_EggHatchDialog> createState() => _EggHatchDialogState();
 }
 
 class _EggHatchDialogState extends State<_EggHatchDialog> {
-  static const _rhythms = <String>[
-    'Pa · Ta · Patapa',
-    'Pon · Pon · Pata · Pon',
-    'Pa · Ta · Pon · Pata · Pon',
+  static const _rhythmBeats = <List<String>>[
+    <String>['Pa', 'Ta', 'Pa', 'Ta'],
+    <String>['Pon', 'Pon', 'Pata', 'Pon', 'Ta'],
+    <String>['Pa', 'Ta', 'Pon', 'Pata', 'Pon', 'Ta'],
   ];
-  static const _tapCounts = <int>[4, 5, 6];
+  Timer? _previewTimer;
   int _stage = 0;
   int _taps = 0;
+  int _previewBeat = -1;
+  bool _isPulsing = false;
   bool _hatched = false;
+
+  String get _displayName => widget.figurine?.displayName ?? 'Œuf de test';
+  String get _type => widget.figurine?.type ?? 'Démonstration';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _playPreview());
+  }
+
+  @override
+  void dispose() {
+    _previewTimer?.cancel();
+    super.dispose();
+  }
+
+  void _playPreview() {
+    if (_hatched) return;
+    _previewTimer?.cancel();
+    setState(() {
+      _previewBeat = -1;
+      _isPulsing = false;
+    });
+    final beats = _rhythmBeats[_stage];
+    _showPreviewBeat(0);
+    var nextBeat = 1;
+    _previewTimer = Timer.periodic(const Duration(milliseconds: 550), (timer) {
+      if (nextBeat >= beats.length) {
+        timer.cancel();
+        return;
+      }
+      _showPreviewBeat(nextBeat);
+      nextBeat += 1;
+    });
+  }
+
+  void _showPreviewBeat(int beat) {
+    if (!mounted) return;
+    setState(() {
+      _previewBeat = beat;
+      _isPulsing = true;
+    });
+    Timer(const Duration(milliseconds: 240), () {
+      if (mounted && _previewBeat == beat) {
+        setState(() => _isPulsing = false);
+      }
+    });
+  }
 
   void _tap() {
     if (_hatched) return;
     setState(() => _taps += 1);
-    if (_taps < _tapCounts[_stage]) return;
-    if (_stage == _rhythms.length - 1) {
-      widget.gameState.hatchFromNursery(widget.figurine);
+    if (_taps < _rhythmBeats[_stage].length) return;
+    if (_stage == _rhythmBeats.length - 1) {
+      _previewTimer?.cancel();
+      if (!widget.isPractice && widget.figurine != null) {
+        widget.gameState.hatchFromNursery(widget.figurine!);
+      }
       setState(() => _hatched = true);
       return;
     }
@@ -1469,29 +1559,60 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
       _stage += 1;
       _taps = 0;
     });
+    _playPreview();
   }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: Text(_hatched
-            ? 'Bienvenue ${widget.figurine.displayName}'
+            ? widget.isPractice
+                ? 'Test terminé'
+                : 'Bienvenue $_displayName'
             : 'L’œuf réagit'),
         content: GestureDetector(
           onTap: _tap,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(_hatched ? Icons.auto_awesome : Icons.egg_alt_outlined,
-                size: 84, color: _hatched ? Colors.amber : null),
+            AnimatedScale(
+              duration: const Duration(milliseconds: 180),
+              scale: _isPulsing ? 1.22 : 1,
+              child: Icon(
+                  _hatched ? Icons.auto_awesome : Icons.egg_alt_outlined,
+                  size: 84,
+                  color: _hatched ? Colors.amber : null),
+            ),
             const SizedBox(height: 12),
             if (_hatched) ...[
-              Text(widget.figurine.displayName,
+              Text(_displayName,
                   style: const TextStyle(fontWeight: FontWeight.w900)),
-              Text(widget.figurine.type),
+              Text(_type),
             ] else ...[
-              const Text('Reproduis le rythme en tapotant l’œuf.'),
+              const Text('Observe les pulsations, puis tapote l’œuf.'),
               const SizedBox(height: 8),
-              Text(_rhythms[_stage],
-                  style: const TextStyle(fontWeight: FontWeight.w900)),
-              Text('$_taps / ${_tapCounts[_stage]} tapotements'),
+              Wrap(
+                spacing: 6,
+                children: List<Widget>.generate(
+                  _rhythmBeats[_stage].length,
+                  (index) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color: index == _previewBeat
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Theme.of(context).colorScheme.surfaceContainerHigh,
+                    ),
+                    child: Text(_rhythmBeats[_stage][index]),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('$_taps / ${_rhythmBeats[_stage].length} tapotements'),
+              TextButton.icon(
+                onPressed: _playPreview,
+                icon: const Icon(Icons.replay),
+                label: const Text('Revoir le rythme'),
+              ),
             ],
           ]),
         ),
@@ -1500,10 +1621,11 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
                 FilledButton(
                   onPressed: () {
                     Navigator.of(context).pop();
-                    widget.onFinished();
+                    widget.onFinished?.call();
                   },
-                  child:
-                      Text('Faire un câlin à ${widget.figurine.displayName}'),
+                  child: Text(widget.isPractice
+                      ? 'Fermer le test'
+                      : 'Faire un câlin à $_displayName'),
                 ),
               ]
             : [
