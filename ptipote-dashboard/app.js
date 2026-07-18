@@ -1168,9 +1168,16 @@ function renderTowerEditor() {
 
 function renderWorkshopEditor() {
   const { recipes: _legacyRecipes, ...general } = zone0Settings.workshop || {};
+  const housing = zone0Settings.housing || {};
+  const house = {
+    houseMaxLevel: housing.houseMaxLevel,
+    alcovesByHouseLevel: housing.alcovesByHouseLevel,
+  };
+  const { houseMaxLevel: _houseMaxLevel, alcovesByHouseLevel: _alcoves, ...residentHousing } = housing;
   el.zone0SettingsForm.innerHTML = [
     configCard("Atelier · réglages généraux", "workshop", general, [], { open: true, meta: "Emplacements, vitalité et vitesse" }),
-    configCard("Maison et logements", "housing", zone0Settings.housing, [], { meta: "Capacité, coûts et bien-être" }),
+    configCard("Maison · alcôves Ptipotes", "housing", house, [], { meta: "Niveau maximal et nombre d'alcôves pour le repos des Ptipotes" }),
+    configCard("Habitations · habitants", "housing", residentHousing, [], { meta: "Capacité des habitants, coûts, durée et bien-être" }),
   ].join("");
   bindZone0Inputs(el.zone0SettingsForm);
 }
@@ -1202,7 +1209,9 @@ function renderZone0Settings() {
 function validateZone0Settings() {
   const invalid = configFields(zone0Settings).find(({ path, value }) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return true;
-    return value < 0 && !path.includes("riskModifierPercent");
+    return value < 0 &&
+      !path.includes("riskModifierPercent") &&
+      !path.includes("wellbeingModifier");
   });
   if (invalid) throw new Error(`Valeur invalide pour ${prettyPath(invalid.path)}.`);
 }

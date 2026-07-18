@@ -1239,6 +1239,10 @@ Les définitions globales de traits P'TIBUG vivent dans `gameConfigs/zone0.ptibu
 
 Le Dashboard P'TIBUG permet de créer une définition avec un identifiant stable, un nom, une description, un effet de ressource, les multiplicateurs de grade et une couleur. L'identifiant n'est pas modifiable après création. Pour retirer un trait du tirage sans casser les traits acquis, régler `isActive` sur `false`; ne pas supprimer une définition déjà publiée.
 
+### Dashboard Maison Et Habitations
+
+Dans l'onglet `Atelier & Maison`, la configuration `housing` est présentée en deux cartes sans changer le format Firestore: `Maison · alcôves Ptipotes` contient `houseMaxLevel` et `alcovesByHouseLevel`; `Habitations · habitants` contient la capacité résidentielle, les coûts, durées et modificateurs de bien-être. Les valeurs négatives de `towerOperations.wellbeingBands.*.wellbeingModifier` sont valides: elles représentent les pénalités de sécurité basse et sont explicitement acceptées par la validation avant publication.
+
 - L'onglet Dashboard est nommé `Kernel`. Il est rangé en accordéons : `Bâtiments` (missions de construction), `Missions`, `Éditeur de mission`, `Confiance, axes et récompenses`, puis `Plans & Patterns`.
 - Les prérequis d'un craft ne doivent plus être édités dans la carte Craft : `patternRequired` est activé par défaut. Lorsqu'une recette est créée avec ce réglage, le Dashboard ajoute son Plan Kernel `craft-{recipeId}` si nécessaire.
 - Les prérequis de Plan configurables sont : Confiance du Kernel, Éleveur, Bâtisseur, Restaurateur et niveaux de bâtiments. Les Plans générés portent `workshopRecipeId` afin de relier la recette au Plan.
