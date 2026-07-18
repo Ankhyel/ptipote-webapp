@@ -16,6 +16,7 @@
       "creationCost": {"Organique": 30, "Minéral": 15},
       "creationEnergyCost": 0,
       "creationBioBatteryCost": 10,
+      "futureMyceliumCost": 0,
       "creationMinutes": 20
     },
     "hyme": {
@@ -24,6 +25,7 @@
       "creationCost": {"Organique": 30, "Minéral": 15},
       "creationEnergyCost": 0,
       "creationBioBatteryCost": 10,
+      "futureMyceliumCost": 0,
       "creationMinutes": 20
     },
     "arac": {
@@ -32,6 +34,7 @@
       "creationCost": {"Organique": 30, "Minéral": 15},
       "creationEnergyCost": 0,
       "creationBioBatteryCost": 10,
+      "futureMyceliumCost": 0,
       "creationMinutes": 25
     }
   },

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../services/notification_service.dart';
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'building_construction_config.dart';
@@ -82,6 +83,10 @@ class Zone0GameState extends ChangeNotifier {
   // A Kernel mission can remain active after its notification was consulted.
   // Keeping this separate prevents the building badge from staying permanent.
   final Set<String> viewedKernelMissionIds = <String>{};
+  // Prevents the same available mission from creating several remote
+  // notifications across application restarts.
+  final Set<String> notifiedKernelMissionIds = <String>{};
+  final Set<String> _kernelNotificationInFlightIds = <String>{};
   // Kept separately from completion: a completed mission can wait for room
   // in the refuge before all of its population reward is credited.
   final Map<String, int> kernelPopulationRewardsGranted = <String, int>{};
@@ -3439,6 +3444,10 @@ class Zone0GameState extends ChangeNotifier {
           ..clear()
           ..addAll((kernelData['viewedMissionIds'] as List? ?? const [])
               .map((id) => '$id'));
+        notifiedKernelMissionIds
+          ..clear()
+          ..addAll((kernelData['notifiedMissionIds'] as List? ?? const [])
+              .map((id) => '$id'));
         kernelPopulationRewardsGranted.clear();
         final grantedData = kernelData['populationRewardsGranted'];
         if (grantedData is Map) {
@@ -4221,7 +4230,48 @@ class Zone0GameState extends ChangeNotifier {
     if (changed) {
       unawaited(saveRuntimeToFirebase());
     }
+    _notifyAvailableKernelMissions();
     return changed;
+  }
+
+  void _notifyAvailableKernelMissions() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    for (final progress
+        in kernelMissionsForCampHeartLevel(_lastKnownCampHeartLevel)) {
+      final mission = progress.config;
+      if (progress.status != KernelMissionStatus.active ||
+          notifiedKernelMissionIds.contains(mission.id) ||
+          !_kernelNotificationInFlightIds.add(mission.id)) {
+        continue;
+      }
+      unawaited(_sendKernelMissionNotification(user.uid, mission));
+    }
+  }
+
+  Future<void> _sendKernelMissionNotification(
+    String userId,
+    KernelMissionConfig mission,
+  ) async {
+    try {
+      await NotificationService(auth: _auth, firestore: _firestore).sendToUser(
+        recipientUid: userId,
+        type: 'kernel_mission',
+        title: 'Kernel : nouvelle mission',
+        body: mission.title,
+        data: <String, dynamic>{
+          'missionId': mission.id,
+          'missionType': mission.type.name,
+        },
+      );
+      notifiedKernelMissionIds.add(mission.id);
+      unawaited(saveRuntimeToFirebase());
+    } catch (_) {
+      // The mission stays eligible so a later online refresh can notify it.
+    } finally {
+      _kernelNotificationInFlightIds.remove(mission.id);
+    }
   }
 
   void _resolveMission(
@@ -4698,6 +4748,7 @@ class Zone0GameState extends ChangeNotifier {
             'completedMissionIds': completedKernelMissionIds.toList(),
             'dismissedMissionIds': dismissedKernelMissionIds.toList(),
             'viewedMissionIds': viewedKernelMissionIds.toList(),
+            'notifiedMissionIds': notifiedKernelMissionIds.toList(),
             'populationRewardsGranted': kernelPopulationRewardsGranted,
           },
           'campGenerator': <String, dynamic>{

@@ -11,6 +11,7 @@ class PTibugSpeciesConfig {
     required this.creationCost,
     required this.creationEnergyCost,
     this.creationBioBatteryCost = 0,
+    this.futureMyceliumCost = 0,
     required this.creationMinutes,
   });
 
@@ -19,6 +20,10 @@ class PTibugSpeciesConfig {
   final Map<String, int> creationCost;
   final int creationEnergyCost;
   final int creationBioBatteryCost;
+
+  /// Reserved for future P'TIBUG recipes. It is editable remotely but is not
+  /// consumed by the V1 creation flow yet.
+  final int futureMyceliumCost;
   final int creationMinutes;
 }
 
@@ -135,6 +140,7 @@ const PTibugConfig defaultPTibugConfig = PTibugConfig(
       creationCost: <String, int>{'Organique': 30, 'Minéral': 15},
       creationEnergyCost: 0,
       creationBioBatteryCost: 10,
+      futureMyceliumCost: 0,
       creationMinutes: 20,
     ),
     PTibugSpecies.hyme: PTibugSpeciesConfig(
@@ -143,6 +149,7 @@ const PTibugConfig defaultPTibugConfig = PTibugConfig(
       creationCost: <String, int>{'Organique': 30, 'Minéral': 15},
       creationEnergyCost: 0,
       creationBioBatteryCost: 10,
+      futureMyceliumCost: 0,
       creationMinutes: 20,
     ),
     PTibugSpecies.arac: PTibugSpeciesConfig(
@@ -151,6 +158,7 @@ const PTibugConfig defaultPTibugConfig = PTibugConfig(
       creationCost: <String, int>{'Organique': 30, 'Minéral': 15},
       creationEnergyCost: 0,
       creationBioBatteryCost: 10,
+      futureMyceliumCost: 0,
       creationMinutes: 25,
     ),
   },

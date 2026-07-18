@@ -5,7 +5,9 @@ import 'package:ptipote_app/features/home/home_page.dart';
 void main() {
   testWidgets('Home page exposes public actions only',
       (WidgetTester tester) async {
-    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpWidget(
+      const MaterialApp(home: HomePage(enableFirebaseServices: false)),
+    );
 
     expect(find.text('PTIPOTE App'), findsOneWidget);
     expect(find.text('Mes ptipotes'), findsOneWidget);

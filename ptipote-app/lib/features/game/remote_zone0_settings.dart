@@ -280,6 +280,10 @@ PTibugConfig _ptibug(Object? value) {
               item?['creationBioBatteryCost'],
               fallback.creationBioBatteryCost,
             ),
+            futureMyceliumCost: _int(
+              item?['futureMyceliumCost'],
+              fallback.futureMyceliumCost,
+            ),
             creationMinutes:
                 _int(item?['creationMinutes'], fallback.creationMinutes),
           );

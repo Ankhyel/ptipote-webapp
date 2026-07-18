@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/figurine_service.dart';
+import '../../services/notification_service.dart';
 import '../figurines/ptipote_figurine.dart';
 import '../nfc/nfc_page.dart';
 import '../figurines/ptipote_stats_config.dart';
@@ -508,6 +510,9 @@ class KernelPage extends StatelessWidget {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       gameState.markKernelMissionsViewed(campHeartState.campHeartLevel);
+      unawaited(
+        NotificationService().markTypesAsRead(<String>{'kernel_mission'}),
+      );
     });
     final mainMission =
         gameState.mainKernelMission(campHeartState.campHeartLevel);
@@ -1726,6 +1731,7 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
       if (!widget.isPractice && widget.figurine != null) {
         widget.gameState.hatchFromNursery(widget.figurine!);
       }
+      unawaited(HapticFeedback.mediumImpact());
       setState(() => _hatched = true);
       return;
     }
@@ -7602,6 +7608,11 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           final pattern = pTibugConfig.patterns[species]!;
           final state = widget.gameState.pTibugPatternState(species);
           final isActive = state == KernelPlanState.active;
+          final organicCost = config.creationCost['Organique'] ?? 0;
+          final mineralCost = config.creationCost['Minéral'] ?? 0;
+          final organicStock = widget.gameState.resourceAmount('Organique');
+          final mineralStock = widget.gameState.resourceAmount('Minéral');
+          final batteryStock = widget.gameState.bioBatteries;
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -7624,9 +7635,41 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Text(isActive
-                      ? '${config.creationCost.entries.map((e) => '${e.value} ${e.key}').join(' · ')} · ${config.creationBioBatteryCost} bio-batteries · ${config.creationMinutes} min'
-                      : '${pattern.description}\nKernel : ${_patternStateLabel(state)}'),
+                  Text(pattern.description),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: _RecipeSlot(
+                          icon: Icons.eco_outlined,
+                          label: 'Matériaux',
+                          value:
+                              '$organicCost Organique\n$mineralCost Minéral\nStock : $organicStock / $mineralStock',
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _RecipeSlot(
+                          icon: Icons.battery_charging_full_outlined,
+                          label: 'Bio-batteries',
+                          value:
+                              '${config.creationBioBatteryCost} requises\nStock : $batteryStock',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Temps de création : ${config.creationMinutes} min'),
+                  Text(
+                    isActive
+                        ? 'Pré-requis : Pattern actif dans le Kernel'
+                        : 'Pré-requis : ${_patternStateLabel(state)}',
+                    style: TextStyle(
+                      color: isActive
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
@@ -7639,7 +7682,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                               .startPTibugCreation(species)
                               .message),
                       icon: const Icon(Icons.auto_awesome_outlined),
-                      label: const Text('Créer'),
+                      label: const Text('Créer le P’TIBUG'),
                     ),
                   ),
                 ],

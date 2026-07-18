@@ -15,18 +15,34 @@ import '../nfc/nfc_page.dart';
 import '../profile/profile_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.enableFirebaseServices = true});
 
   static const route = '/';
+  final bool enableFirebaseServices;
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  final _notificationService = NotificationService();
-  final _userProfileService = UserProfileService();
+  late final NotificationService? _notificationService;
+  late final UserProfileService? _userProfileService;
   bool _scanning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _notificationService =
+        widget.enableFirebaseServices ? NotificationService() : null;
+    _userProfileService =
+        widget.enableFirebaseServices ? UserProfileService() : null;
+  }
+
+  Stream<int> _unreadCountFor(Set<String> types) =>
+      _notificationService?.watchUnreadCountFor(types) ?? Stream<int>.value(0);
+
+  Stream<UserProfile?> _profileStream() =>
+      _userProfileService?.watchMyProfile() ?? Stream<UserProfile?>.value(null);
 
   Future<void> _scanFigurine() async {
     if (_scanning) return;
@@ -92,8 +108,7 @@ class _HomePageState extends State<HomePage> {
             tooltip: 'Messages',
             onPressed: () => Navigator.of(context).pushNamed(ChatsPage.route),
             icon: StreamBuilder<int>(
-              stream: _notificationService
-                  .watchUnreadCountFor(<String>{'chat_message'}),
+              stream: _unreadCountFor(<String>{'chat_message'}),
               builder: (context, snapshot) => _BadgedIcon(
                 icon: Icons.chat_bubble_outline,
                 count: snapshot.data ?? 0,
@@ -104,8 +119,7 @@ class _HomePageState extends State<HomePage> {
             position: PopupMenuPosition.under,
             tooltip: 'Profil',
             icon: StreamBuilder<int>(
-              stream: _notificationService
-                  .watchUnreadCountFor(<String>{'friend_invite'}),
+              stream: _unreadCountFor(<String>{'friend_invite'}),
               builder: (context, snapshot) {
                 final count = snapshot.data ?? 0;
                 return _BadgedIcon(
@@ -137,8 +151,7 @@ class _HomePageState extends State<HomePage> {
               PopupMenuItem(
                 value: 'friends',
                 child: StreamBuilder<int>(
-                  stream: _notificationService
-                      .watchUnreadCountFor(<String>{'friend_invite'}),
+                  stream: _unreadCountFor(<String>{'friend_invite'}),
                   builder: (context, snapshot) => ListTile(
                     leading: _BadgedIcon(
                       icon: Icons.group_outlined,
@@ -171,7 +184,7 @@ class _HomePageState extends State<HomePage> {
                   child: _CollectionButton(
                     onTap: () =>
                         Navigator.of(context).pushNamed(FigurinesPage.route),
-                    countStream: _notificationService.watchUnreadCountFor(
+                    countStream: _unreadCountFor(
                       <String>{
                         'transfer_request',
                         'transfer_confirmed',
@@ -184,7 +197,7 @@ class _HomePageState extends State<HomePage> {
                   left: (constraints.maxWidth - 154) / 2,
                   top: unit * 1.18,
                   child: StreamBuilder<UserProfile?>(
-                    stream: _userProfileService.watchMyProfile(),
+                    stream: _profileStream(),
                     builder: (context, snapshot) {
                       final canSeeDiagnostics =
                           snapshot.data?.canSeeDiagnostics ?? false;

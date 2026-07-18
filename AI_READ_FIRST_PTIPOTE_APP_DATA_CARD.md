@@ -5,12 +5,13 @@
 ### Notifications Kernel
 
 - `ptipote-app/lib/features/game/zone0_game_state.dart` ajoute `viewedKernelMissionIds`, persisté dans `zone0Runtime.kernel.viewedMissionIds`. `unreadKernelMissionNotificationCount()` compte les missions actives encore non consultées et `markKernelMissionsViewed()` est appelé à l'ouverture du Kernel.
-- `ptipote-app/lib/features/game/refuge_page.dart` : la pastille du bâtiment Kernel disparaît après consultation ; les onglets Mission principale, Demandes et Météo gardent une pastille tant que leurs missions sont actives.
+- Une mission Kernel qui devient active envoie une notification Firestore unique de type `kernel_mission`. Les IDs notifiés sont sauvegardés dans `zone0Runtime.kernel.notifiedMissionIds`, ce qui évite les doublons au redémarrage.
+- `ptipote-app/lib/features/game/refuge_page.dart` : la pastille du bâtiment Kernel disparaît après consultation ; les notifications `kernel_mission` sont alors marquées comme lues. Les onglets Mission principale, Demandes et Météo gardent une pastille tant que leurs missions sont actives.
 
 ### Maison, Couveuse et Tour
 
 - La Maison possède un bouton tableau de bord indiquant l'activité, le bâtiment ou la mission associée et le temps restant de chaque P'TIPOTE.
-- La Couveuse utilise trois séquences de pulsations visuelles. Les syllabes `Pa` / `Ta` sont supprimées : le joueur observe puis tape en rythme. Les intervalles acceptent une tolérance de 1,25 s autour du battement attendu.
+- La Couveuse utilise trois séquences de pulsations visuelles de 90 ms. Les syllabes `Pa` / `Ta` sont supprimées : le joueur observe puis tape en rythme. Les intervalles acceptent une tolérance de 1,25 s autour du battement attendu; un retour haptique moyen confirme l'éclosion réussie.
 - La Tour sépare les opérations actives en trois lignes : ronde dans le camp, ronde dans les biomes et exploration.
 
 ### Fablab, Générateur et Recycleur
@@ -21,9 +22,10 @@
 
 ### Préparé / limites V1
 
-- La création P'TIBUG emploie le moteur de production sauvegardé (`startPTibugCreation`) et des coûts configurables Organique / Minéral / Bio-batterie ; son habillage ne réutilise pas encore littéralement le widget de recette Cuisine/Atelier.
+- La création P'TIBUG emploie le moteur de production sauvegardé (`startPTibugCreation`) et des coûts configurables Organique / Minéral / Bio-batterie. Sa carte reprend les tuiles `_RecipeSlot` de Cuisine/Atelier afin d'afficher les matériaux requis, les stocks, les Bio-batteries, le Pattern requis et la durée. `futureMyceliumCost` reste éditable dans le Dashboard pour les futures espèces, mais n'est pas consommé par les créations V1.
 - Les pulsations d'éclosion sont une aide visuelle de prototype, sans piste audio native.
 - Les notifications Kernel sont in-app. Les notifications système iOS/Android restent hors périmètre Zone 0 V1.
+- `HomePage(enableFirebaseServices: false)` est le mode de test isolé : les flux de profil et notification renvoient des valeurs vides sans initialiser Firebase. Le widget test couvre ce fallback.
 
 Derniere mise a jour: 2026-07-18
 
