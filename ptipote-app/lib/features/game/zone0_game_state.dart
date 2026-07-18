@@ -50,7 +50,7 @@ class Zone0GameState extends ChangeNotifier {
   // separately prevents an unavailable bed from granting alcove recovery.
   final Set<String> waitingForBedIds = <String>{};
   // P'TIPOTES admitted into the Maison. New scans remain eggs in the
-  // Pépinière when the active alcove capacity is full.
+  // Couveuse when the active alcove capacity is full.
   final Set<String> hatchedPtipoteIds = <String>{};
   final Map<String, PtipoteAutoAssignmentPreference> autoPreferenceOverrides =
       <String, PtipoteAutoAssignmentPreference>{};

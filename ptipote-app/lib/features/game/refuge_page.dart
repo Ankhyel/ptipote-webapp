@@ -1192,7 +1192,7 @@ class _MaisonPageState extends State<_MaisonPage>
           controller: _tabs,
           tabs: const <Widget>[
             Tab(text: 'P’TIPOTES', icon: Icon(Icons.pets_outlined)),
-            Tab(text: 'Pépinière', icon: Icon(Icons.egg_alt_outlined)),
+            Tab(text: 'Couveuse', icon: Icon(Icons.egg_alt_outlined)),
             Tab(text: 'Amélioration', icon: Icon(Icons.upgrade_outlined)),
             Tab(text: 'Infos', icon: Icon(Icons.info_outline)),
           ],
@@ -1359,7 +1359,7 @@ class _MaisonNurseryTab extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(18),
             children: [
-              Text('Pépinière',
+              Text('Couveuse',
                   style: Theme.of(context)
                       .textTheme
                       .headlineSmall
