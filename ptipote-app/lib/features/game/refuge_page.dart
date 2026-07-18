@@ -326,15 +326,16 @@ class _RefugePageState extends State<RefugePage> {
                           (building) => _BuildingHotspot(
                             building: building,
                             campHeartState: _campHeartState,
-                            notificationCount:
-                                _zone0State.unreadBuildingNotificationCount(
-                                      building.name,
-                                    ) +
-                                    (building.name == 'Kernel'
-                                        ? _zone0State.activeKernelMissionCount(
-                                            _campHeartState.campHeartLevel,
-                                          )
-                                        : 0),
+                            notificationCount: _zone0State
+                                    .unreadBuildingNotificationCount(
+                                  building.name,
+                                ) +
+                                (building.name == 'Kernel'
+                                    ? _zone0State
+                                        .unreadKernelMissionNotificationCount(
+                                        _campHeartState.campHeartLevel,
+                                      )
+                                    : 0),
                             gameState: _zone0State,
                             onTap: () => _handleBuildingTap(building),
                           ),
@@ -505,19 +506,41 @@ class KernelPage extends StatelessWidget {
     gameState.refreshKernelMissions(
       campHeartLevel: campHeartState.campHeartLevel,
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      gameState.markKernelMissionsViewed(campHeartState.campHeartLevel);
+    });
+    final mainMission =
+        gameState.mainKernelMission(campHeartState.campHeartLevel);
+    final requests = gameState.refugeRequests(campHeartState.campHeartLevel);
+    final weatherMissions =
+        gameState.weatherKernelMissions(campHeartState.campHeartLevel);
+    final mainCount = mainMission?.status == KernelMissionStatus.active ? 1 : 0;
+    final requestCount = requests
+        .where((mission) => mission.status == KernelMissionStatus.active)
+        .length;
+    final weatherCount = weatherMissions
+        .where((mission) => mission.status == KernelMissionStatus.active)
+        .length;
     return DefaultTabController(
       length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Kernel'),
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabs: <Widget>[
-              Tab(text: 'Progression'),
-              Tab(text: 'Mission principale'),
-              Tab(text: 'Demandes'),
-              Tab(text: 'Plans'),
-              Tab(text: 'Météo'),
+              const Tab(text: 'Progression'),
+              Tab(
+                child: _KernelTabLabel(
+                  label: 'Mission principale',
+                  count: mainCount,
+                ),
+              ),
+              Tab(
+                  child:
+                      _KernelTabLabel(label: 'Demandes', count: requestCount)),
+              const Tab(text: 'Plans'),
+              Tab(child: _KernelTabLabel(label: 'Météo', count: weatherCount)),
             ],
           ),
         ),
@@ -529,22 +552,16 @@ class KernelPage extends StatelessWidget {
                 campHeartState: campHeartState,
               ),
               _KernelMainMissionTab(
-                mission: gameState.mainKernelMission(
-                  campHeartState.campHeartLevel,
-                ),
+                mission: mainMission,
                 gameState: gameState,
               ),
               _KernelRequestsTab(
-                missions: gameState.refugeRequests(
-                  campHeartState.campHeartLevel,
-                ),
+                missions: requests,
                 gameState: gameState,
               ),
               _KernelPlansTab(gameState: gameState),
               _KernelRequestsTab(
-                missions: gameState.weatherKernelMissions(
-                  campHeartState.campHeartLevel,
-                ),
+                missions: weatherMissions,
                 gameState: gameState,
                 emptyMessage: 'Aucune mission météo annoncée par la Tour.',
               ),
@@ -554,6 +571,41 @@ class KernelPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _KernelTabLabel extends StatelessWidget {
+  const _KernelTabLabel({required this.label, required this.count});
+
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(label),
+          if (count > 0) ...<Widget>[
+            const SizedBox(width: 6),
+            Container(
+              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.error,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onError,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ],
+      );
 }
 
 class _KernelMainMissionTab extends StatelessWidget {
@@ -1300,6 +1352,7 @@ class _MaisonPageState extends State<_MaisonPage>
                               unreadCount: _gameState.unreadReportCount,
                               onInventory: _openInventory,
                               onMessages: _openMessages,
+                              onDashboard: _openPtipoteDashboard,
                             ),
                           ],
                         );
@@ -1340,6 +1393,94 @@ class _MaisonPageState extends State<_MaisonPage>
       showDragHandle: true,
       builder: (_) => MissionReportsSheet(gameState: _gameState),
     );
+  }
+
+  void _openPtipoteDashboard() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => StreamBuilder<List<PtipoteFigurine>>(
+        stream: _figurineService.watchMyFigurines(),
+        builder: (context, snapshot) {
+          final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
+              children: <Widget>[
+                Text(
+                  'Tableau des P\'TIPOTES',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+                const SizedBox(height: 10),
+                ...figurines.map((figurine) => ListTile(
+                      leading: const Icon(Icons.pets_outlined),
+                      title: Text(figurine.displayName),
+                      subtitle: Text(_ptipoteActivityLabel(figurine)),
+                      trailing: Text(
+                        _ptipoteActivityCountdown(figurine),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    )),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  String _ptipoteActivityLabel(PtipoteFigurine figurine) {
+    final tower = _gameState.towerMissions
+        .where((mission) =>
+            mission.figurineId == figurine.id &&
+            mission.status == TowerMissionStatus.active)
+        .firstOrNull;
+    if (tower != null) {
+      return tower.patrolBiome == null
+          ? 'Ronde dans le camp'
+          : 'Ronde : ${lisiereForageConfig.biomes[tower.patrolBiome]!.label}';
+    }
+    final forage = _gameState.missions
+        .where((mission) =>
+            mission.memberIds.contains(figurine.id) &&
+            mission.status == ForageMissionStatus.active)
+        .firstOrNull;
+    if (forage != null) {
+      return 'Lisière : ${lisiereForageConfig.biomes[forage.biome]!.label}';
+    }
+    final order = _gameState.activeWorkshopOrders
+        .where((item) => item.assignedPtipoteId == figurine.id)
+        .firstOrNull;
+    if (order != null) return 'Craft en cours';
+    if (_gameState.isAssignedToMarket(figurine.id)) return 'Affecté au Marché';
+    if (_gameState.isResting(figurine)) return 'Repos en alcôve';
+    if (_gameState.isInNursery(figurine)) return 'En attente dans la Couveuse';
+    return 'Disponible à la Maison';
+  }
+
+  String _ptipoteActivityCountdown(PtipoteFigurine figurine) {
+    final endsAt = <DateTime?>[
+      _gameState.towerMissions
+          .where((mission) =>
+              mission.figurineId == figurine.id &&
+              mission.status == TowerMissionStatus.active)
+          .firstOrNull
+          ?.endTime,
+      _gameState.missions
+          .where((mission) =>
+              mission.memberIds.contains(figurine.id) &&
+              mission.status == ForageMissionStatus.active)
+          .firstOrNull
+          ?.endTime,
+      _gameState.activeWorkshopOrders
+          .where((item) => item.assignedPtipoteId == figurine.id)
+          .firstOrNull
+          ?.nextCompletionTime,
+    ].whereType<DateTime>().firstOrNull;
+    return endsAt == null ? '' : _countdownLabel(endsAt);
   }
 }
 
@@ -1488,17 +1629,20 @@ class _EggHatchDialog extends StatefulWidget {
 }
 
 class _EggHatchDialogState extends State<_EggHatchDialog> {
-  static const _rhythmBeats = <List<String>>[
-    <String>['Pa', 'Ta', 'Pa', 'Ta'],
-    <String>['Pon', 'Pon', 'Pata', 'Pon', 'Ta'],
-    <String>['Pa', 'Ta', 'Pon', 'Pata', 'Pon', 'Ta'],
+  static const _rhythmOffsets = <List<int>>[
+    <int>[0, 550, 1100, 1650],
+    <int>[0, 450, 900, 1500, 2050],
+    <int>[0, 600, 1100, 1700, 2200, 2750],
   ];
-  Timer? _previewTimer;
+  static const _tapTolerance = Duration(milliseconds: 1250);
+  final List<Timer> _previewTimers = <Timer>[];
+  final List<DateTime> _tapTimes = <DateTime>[];
   int _stage = 0;
   int _taps = 0;
   int _previewBeat = -1;
   bool _isPulsing = false;
   bool _hatched = false;
+  String? _feedback;
 
   String get _displayName => widget.figurine?.displayName ?? 'Œuf de test';
   String get _type => widget.figurine?.type ?? 'Démonstration';
@@ -1511,28 +1655,30 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
 
   @override
   void dispose() {
-    _previewTimer?.cancel();
+    for (final timer in _previewTimers) {
+      timer.cancel();
+    }
     super.dispose();
   }
 
   void _playPreview() {
     if (_hatched) return;
-    _previewTimer?.cancel();
+    for (final timer in _previewTimers) {
+      timer.cancel();
+    }
+    _previewTimers.clear();
     setState(() {
       _previewBeat = -1;
       _isPulsing = false;
+      _feedback = null;
     });
-    final beats = _rhythmBeats[_stage];
-    _showPreviewBeat(0);
-    var nextBeat = 1;
-    _previewTimer = Timer.periodic(const Duration(milliseconds: 550), (timer) {
-      if (nextBeat >= beats.length) {
-        timer.cancel();
-        return;
-      }
-      _showPreviewBeat(nextBeat);
-      nextBeat += 1;
-    });
+    for (var beat = 0; beat < _rhythmOffsets[_stage].length; beat += 1) {
+      _previewTimers.add(
+        Timer(Duration(milliseconds: _rhythmOffsets[_stage][beat]), () {
+          _showPreviewBeat(beat);
+        }),
+      );
+    }
   }
 
   void _showPreviewBeat(int beat) {
@@ -1541,7 +1687,7 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
       _previewBeat = beat;
       _isPulsing = true;
     });
-    Timer(const Duration(milliseconds: 240), () {
+    Timer(const Duration(milliseconds: 90), () {
       if (mounted && _previewBeat == beat) {
         setState(() => _isPulsing = false);
       }
@@ -1550,10 +1696,33 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
 
   void _tap() {
     if (_hatched) return;
-    setState(() => _taps += 1);
-    if (_taps < _rhythmBeats[_stage].length) return;
-    if (_stage == _rhythmBeats.length - 1) {
-      _previewTimer?.cancel();
+    final now = DateTime.now();
+    if (_tapTimes.isNotEmpty) {
+      final beatIndex = _tapTimes.length;
+      final expectedGap = Duration(
+        milliseconds: _rhythmOffsets[_stage][beatIndex] -
+            _rhythmOffsets[_stage][beatIndex - 1],
+      );
+      final actualGap = now.difference(_tapTimes.last);
+      final drift = (actualGap - expectedGap).abs();
+      if (drift > _tapTolerance) {
+        setState(() {
+          _tapTimes.clear();
+          _taps = 0;
+          _feedback =
+              'Le rythme ne correspond pas encore. Observe puis réessaie.';
+        });
+        _playPreview();
+        return;
+      }
+    }
+    _tapTimes.add(now);
+    setState(() => _taps = _tapTimes.length);
+    if (_taps < _rhythmOffsets[_stage].length) return;
+    if (_stage == _rhythmOffsets.length - 1) {
+      for (final timer in _previewTimers) {
+        timer.cancel();
+      }
       if (!widget.isPractice && widget.figurine != null) {
         widget.gameState.hatchFromNursery(widget.figurine!);
       }
@@ -1563,6 +1732,7 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
     setState(() {
       _stage += 1;
       _taps = 0;
+      _tapTimes.clear();
     });
     _playPreview();
   }
@@ -1591,28 +1761,13 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
                   style: const TextStyle(fontWeight: FontWeight.w900)),
               Text(_type),
             ] else ...[
-              const Text('Observe les pulsations, puis tapote l’œuf.'),
+              const Text('Observe les pulsations, puis tape en rythme.'),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                children: List<Widget>.generate(
-                  _rhythmBeats[_stage].length,
-                  (index) => AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      color: index == _previewBeat
-                          ? Theme.of(context).colorScheme.primaryContainer
-                          : Theme.of(context).colorScheme.surfaceContainerHigh,
-                    ),
-                    child: Text(_rhythmBeats[_stage][index]),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text('$_taps / ${_rhythmBeats[_stage].length} tapotements'),
+              Text('$_taps / ${_rhythmOffsets[_stage].length} tapotements'),
+              if (_feedback != null) ...<Widget>[
+                const SizedBox(height: 6),
+                Text(_feedback!, textAlign: TextAlign.center),
+              ],
               TextButton.icon(
                 onPressed: _playPreview,
                 icon: const Icon(Icons.replay),
@@ -2039,29 +2194,37 @@ class _MaisonUtilityButtons extends StatelessWidget {
     required this.unreadCount,
     required this.onInventory,
     required this.onMessages,
+    required this.onDashboard,
   });
 
   final int unreadCount;
   final VoidCallback onInventory;
   final VoidCallback onMessages;
+  final VoidCallback onDashboard;
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
+      left: 12,
       right: 12,
       bottom: 12,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
           _RoundUtilityButton(
-            icon: Icons.inventory_2_outlined,
-            tooltip: 'Inventaire',
-            onTap: onInventory,
+            icon: Icons.dashboard_outlined,
+            tooltip: 'Tableau des P’TIPOTES',
+            onTap: onDashboard,
           ),
-          const SizedBox(height: 10),
-          Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
+          Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            _RoundUtilityButton(
+              icon: Icons.inventory_2_outlined,
+              tooltip: 'Inventaire',
+              onTap: onInventory,
+            ),
+            const SizedBox(height: 10),
+            Stack(clipBehavior: Clip.none, children: <Widget>[
               _RoundUtilityButton(
                 icon: Icons.mark_email_unread_outlined,
                 tooltip: 'Messages P’TIPOTE',
@@ -2073,8 +2236,8 @@ class _MaisonUtilityButtons extends StatelessWidget {
                   top: -5,
                   child: _NotificationBadge(count: unreadCount),
                 ),
-            ],
-          ),
+            ]),
+          ]),
         ],
       ),
     );
@@ -5074,39 +5237,84 @@ class _CampGeneratorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget resourceCard(String resource, int stored, int capacity) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text('$resource : $stored / $capacity',
-                  style: const TextStyle(fontWeight: FontWeight.w900)),
-              Text('Maison : ${gameState.resourceAmount(resource)}'),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                children: <int>[1, 5, 10, 9999].map((amount) {
-                  return OutlinedButton(
-                    onPressed: () {
-                      final result = gameState.transferToGenerator(
-                        resource: resource,
-                        amount: amount,
-                        heartLevel: heartLevel,
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(result.message)));
-                    },
-                    child: Text(amount == 9999 ? 'Max' : '+$amount'),
-                  );
-                }).toList(),
+    Widget resourceGauge({
+      required String resource,
+      required int stored,
+      required int capacity,
+      required Color color,
+    }) {
+      final ratio = capacity == 0 ? 0.0 : (stored / capacity).clamp(0.0, 1.0);
+      return Expanded(
+        child: Column(
+          children: <Widget>[
+            Text(resource,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 168,
+              width: 56,
+              child: Stack(
+                alignment: Alignment.bottomCenter,
+                children: <Widget>[
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      color: color.withValues(alpha: .14),
+                      border: Border.all(color: color.withValues(alpha: .55)),
+                    ),
+                  ),
+                  FractionallySizedBox(
+                    heightFactor: ratio,
+                    widthFactor: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: Text('$stored/$capacity',
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 6),
+            Text('Maison : ${gameState.resourceAmount(resource)}',
+                textAlign: TextAlign.center),
+            const SizedBox(height: 6),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 2,
+              children: <int>[1, 5, 10, 9999]
+                  .map((amount) => TextButton(
+                        onPressed: () {
+                          final result = gameState.transferToGenerator(
+                            resource: resource,
+                            amount: amount,
+                            heartLevel: heartLevel,
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(result.message)));
+                        },
+                        child: Text(amount == 9999 ? 'Max' : '+$amount'),
+                      ))
+                  .toList(),
+            ),
+          ],
         ),
       );
     }
+
+    final active = gameState.generatorCycleStartedAt != null;
+    final organicCapacity = gameState.generatorOrganicCapacity(heartLevel);
+    final mineralCapacity = gameState.generatorMineralCapacity(heartLevel);
+    final paliers = math.min(
+      gameState.generatorOrganic ~/ campGeneratorConfig.organicCostPerCycle,
+      gameState.generatorMineral ~/ campGeneratorConfig.mineralCostPerCycle,
+    );
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -5120,10 +5328,59 @@ class _CampGeneratorView extends StatelessWidget {
         Text(
             '5 Organique + 1 Minéral → 1 Bio-batterie toutes les ${campGeneratorConfig.cycleMinutes(heartLevel)} min.'),
         const SizedBox(height: 12),
-        resourceCard('Organique', gameState.generatorOrganic,
-            gameState.generatorOrganicCapacity(heartLevel)),
-        resourceCard('Minéral', gameState.generatorMineral,
-            gameState.generatorMineralCapacity(heartLevel)),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                resourceGauge(
+                  resource: 'Organique',
+                  stored: gameState.generatorOrganic,
+                  capacity: organicCapacity,
+                  color: Colors.green,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 34),
+                  child: Column(
+                    children: <Widget>[
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        width: 94,
+                        height: 94,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: active ? Colors.green : Colors.grey,
+                          boxShadow: active
+                              ? <BoxShadow>[
+                                  BoxShadow(
+                                    color: Colors.green.withValues(alpha: .45),
+                                    blurRadius: 18,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: const Icon(Icons.battery_charging_full_outlined,
+                            color: Colors.white, size: 48),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(active ? 'Production' : 'En attente',
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Text('$paliers palier(s) prêt(s)',
+                          textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+                resourceGauge(
+                  resource: 'Minéral',
+                  stored: gameState.generatorMineral,
+                  capacity: mineralCapacity,
+                  color: Colors.blueGrey,
+                ),
+              ],
+            ),
+          ),
+        ),
         Card(
           child: ListTile(
             leading: const Icon(Icons.timer_outlined),
@@ -5589,6 +5846,15 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                     .where((mission) =>
                         mission.status == TowerMissionStatus.active)
                     .toList();
+                final campPatrols = activeTowerMissions
+                    .where((mission) => mission.patrolBiome == null)
+                    .toList();
+                final biomePatrols = activeTowerMissions
+                    .where((mission) => mission.patrolBiome != null)
+                    .toList();
+                final explorations = widget.gameState.explorationMissions
+                    .where((mission) => mission.isActive)
+                    .toList();
                 final available = figurines
                     .where(
                       (figurine) =>
@@ -5670,25 +5936,36 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             const Text(
-                              'P’TIPOTES affectés',
+                              'Opérations en cours',
                               style: TextStyle(fontWeight: FontWeight.w900),
                             ),
                             const SizedBox(height: 10),
-                            if (activeTowerMissions.isEmpty)
-                              const Text('Aucun P’TIPOTE ne surveille la Tour.')
+                            _TowerOperationGroup(
+                              title: 'Ronde dans le camp',
+                              emptyLabel: 'Aucune ronde dans le camp.',
+                              missions: campPatrols,
+                              onReturn: widget.gameState.removeFromTower,
+                            ),
+                            const Divider(height: 22),
+                            _TowerOperationGroup(
+                              title: 'Ronde dans les biomes',
+                              emptyLabel: 'Aucune ronde locale.',
+                              missions: biomePatrols,
+                              onReturn: widget.gameState.removeFromTower,
+                            ),
+                            const Divider(height: 22),
+                            Text(
+                              'Exploration (${explorations.length})',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 6),
+                            if (explorations.isEmpty)
+                              const Text('Aucune exploration en cours.')
                             else
-                              ...activeTowerMissions.map(
-                                (mission) => _TowerFigurineRow(
-                                  name: mission.figurineName,
-                                  subtitle:
-                                      '${_towerPlanLabel(mission.plan)} · ${_countdownLabel(mission.endTime)} · +${mission.securityGain} sécurité',
-                                  action: TextButton(
-                                    onPressed: () {
-                                      widget.gameState
-                                          .removeFromTower(mission.figurineId);
-                                    },
-                                    child: const Text('Retour'),
-                                  ),
+                              ...explorations.map(
+                                (mission) => Text(
+                                  '${lisiereForageConfig.biomes[mission.biome]!.label} · ${_countdownLabel(mission.endTime)}',
                                 ),
                               ),
                           ],
@@ -6307,6 +6584,45 @@ class _TowerFigurineRow extends StatelessWidget {
           action,
         ],
       ),
+    );
+  }
+}
+
+class _TowerOperationGroup extends StatelessWidget {
+  const _TowerOperationGroup({
+    required this.title,
+    required this.emptyLabel,
+    required this.missions,
+    required this.onReturn,
+  });
+
+  final String title;
+  final String emptyLabel;
+  final List<TowerMission> missions;
+  final ValueChanged<String> onReturn;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 6),
+        if (missions.isEmpty)
+          Text(emptyLabel)
+        else
+          ...missions.map(
+            (mission) => _TowerFigurineRow(
+              name: mission.figurineName,
+              subtitle:
+                  '${mission.patrolBiome == null ? 'Camp' : lisiereForageConfig.biomes[mission.patrolBiome]!.label} · ${_countdownLabel(mission.endTime)} · +${mission.securityGain} sécurité',
+              action: TextButton(
+                onPressed: () => onReturn(mission.figurineId),
+                child: const Text('Retour'),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -7737,6 +8053,17 @@ class FablabPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Fablab'),
+          actions: <Widget>[
+            IconButton(
+              tooltip: 'Inventaire global',
+              icon: const Icon(Icons.inventory_2_outlined),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                showDragHandle: true,
+                builder: (_) => Zone0InventorySheet(gameState: gameState),
+              ),
+            ),
+          ],
           bottom: const TabBar(
             tabs: <Widget>[
               Tab(text: 'Cuisine', icon: Icon(Icons.soup_kitchen_outlined)),
@@ -8043,40 +8370,112 @@ class FablabRecyclerView extends StatelessWidget {
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Text('Cuve d’entrée',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
-                  Text(
-                      'Déchets : ${gameState.recyclerWasteTank}/${gameState.recyclerTankCapacity} · $cycles cycle(s) possible(s)'),
-                  Text('Inventaire : $transferable Déchet(s)'),
-                  const SizedBox(height: 8),
-                  Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
-                    ...<int>[1, 5, 10].map((amount) => OutlinedButton(
-                        onPressed: transferable == 0
-                            ? null
-                            : () {
-                                final result =
-                                    gameState.transferWasteToRecycler(
-                                        amount, campHeartLevel);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(result.message)));
-                              },
-                        child: Text('+$amount'))),
-                    FilledButton(
-                        onPressed: transferable == 0
-                            ? null
-                            : () {
-                                final result =
-                                    gameState.transferWasteToRecycler(
-                                        transferable, campHeartLevel);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(result.message)));
-                              },
-                        child: const Text('Max')),
-                  ]),
-                ]),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: 94,
+                  height: 220,
+                  child: Column(
+                    children: <Widget>[
+                      const Text('Cuve',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: <Widget>[
+                            Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                color: const Color(0xFF7A4A2D)
+                                    .withValues(alpha: .15),
+                                border: Border.all(
+                                  color: const Color(0xFF7A4A2D),
+                                ),
+                              ),
+                            ),
+                            FractionallySizedBox(
+                              heightFactor: (gameState.recyclerWasteTank /
+                                      gameState.recyclerTankCapacity)
+                                  .clamp(0.0, 1.0),
+                              widthFactor: 1,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF7A4A2D),
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                              ),
+                            ),
+                            Center(
+                              child: Text(
+                                '${gameState.recyclerWasteTank}/${gameState.recyclerTankCapacity}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text('$cycles × $needed',
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text('Déchets',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
+                      Text('Inventaire : $transferable'),
+                      const SizedBox(height: 8),
+                      Wrap(spacing: 4, runSpacing: 4, children: <Widget>[
+                        ...<int>[1, 5, 10].map((amount) => OutlinedButton(
+                              onPressed: transferable == 0
+                                  ? null
+                                  : () {
+                                      final result =
+                                          gameState.transferWasteToRecycler(
+                                        amount,
+                                        campHeartLevel,
+                                      );
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(content: Text(result.message)),
+                                      );
+                                    },
+                              child: Text('+$amount'),
+                            )),
+                        FilledButton(
+                          onPressed: transferable == 0
+                              ? null
+                              : () {
+                                  final result =
+                                      gameState.transferWasteToRecycler(
+                                    transferable,
+                                    campHeartLevel,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(result.message)),
+                                  );
+                                },
+                          child: const Text('Max'),
+                        ),
+                      ]),
+                      const SizedBox(height: 12),
+                      Text(
+                        '$needed Déchets = ${wasteRecyclerConfig.outputResourcesPerCycle} ressources',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         Card(

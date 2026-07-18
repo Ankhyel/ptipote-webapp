@@ -79,6 +79,9 @@ class Zone0GameState extends ChangeNotifier {
   final List<MerchantOffer> merchantOffers = <MerchantOffer>[];
   final Set<String> completedKernelMissionIds = <String>{};
   final Set<String> dismissedKernelMissionIds = <String>{};
+  // A Kernel mission can remain active after its notification was consulted.
+  // Keeping this separate prevents the building badge from staying permanent.
+  final Set<String> viewedKernelMissionIds = <String>{};
   // Kept separately from completion: a completed mission can wait for room
   // in the refuge before all of its population reward is credited.
   final Map<String, int> kernelPopulationRewardsGranted = <String, int>{};
@@ -481,6 +484,25 @@ class Zone0GameState extends ChangeNotifier {
       kernelMissionsForCampHeartLevel(campHeartLevel)
           .where((mission) => mission.status == KernelMissionStatus.active)
           .length;
+
+  int unreadKernelMissionNotificationCount(int campHeartLevel) =>
+      kernelMissionsForCampHeartLevel(campHeartLevel)
+          .where((mission) =>
+              mission.status == KernelMissionStatus.active &&
+              !viewedKernelMissionIds.contains(mission.config.id))
+          .length;
+
+  void markKernelMissionsViewed(int campHeartLevel) {
+    final activeIds = kernelMissionsForCampHeartLevel(campHeartLevel)
+        .where((mission) => mission.status == KernelMissionStatus.active)
+        .map((mission) => mission.config.id);
+    final before = viewedKernelMissionIds.length;
+    viewedKernelMissionIds.addAll(activeIds);
+    if (viewedKernelMissionIds.length != before) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+  }
 
   int kernelAxisLevel(KernelAxis axis) => kernelAxisLevels[axis] ?? 1;
 
@@ -3413,6 +3435,10 @@ class Zone0GameState extends ChangeNotifier {
           ..clear()
           ..addAll((kernelData['dismissedMissionIds'] as List? ?? const [])
               .map((id) => '$id'));
+        viewedKernelMissionIds
+          ..clear()
+          ..addAll((kernelData['viewedMissionIds'] as List? ?? const [])
+              .map((id) => '$id'));
         kernelPopulationRewardsGranted.clear();
         final grantedData = kernelData['populationRewardsGranted'];
         if (grantedData is Map) {
@@ -4671,6 +4697,7 @@ class Zone0GameState extends ChangeNotifier {
                 .toList(),
             'completedMissionIds': completedKernelMissionIds.toList(),
             'dismissedMissionIds': dismissedKernelMissionIds.toList(),
+            'viewedMissionIds': viewedKernelMissionIds.toList(),
             'populationRewardsGranted': kernelPopulationRewardsGranted,
           },
           'campGenerator': <String, dynamic>{

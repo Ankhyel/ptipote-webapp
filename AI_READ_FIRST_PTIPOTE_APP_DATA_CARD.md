@@ -1,6 +1,31 @@
 # AI READ FIRST - PTIPOTE App Data Card
 
-Derniere mise a jour: 2026-07-17
+## Correctifs Kernel, opérations et production - 2026-07-18
+
+### Notifications Kernel
+
+- `ptipote-app/lib/features/game/zone0_game_state.dart` ajoute `viewedKernelMissionIds`, persisté dans `zone0Runtime.kernel.viewedMissionIds`. `unreadKernelMissionNotificationCount()` compte les missions actives encore non consultées et `markKernelMissionsViewed()` est appelé à l'ouverture du Kernel.
+- `ptipote-app/lib/features/game/refuge_page.dart` : la pastille du bâtiment Kernel disparaît après consultation ; les onglets Mission principale, Demandes et Météo gardent une pastille tant que leurs missions sont actives.
+
+### Maison, Couveuse et Tour
+
+- La Maison possède un bouton tableau de bord indiquant l'activité, le bâtiment ou la mission associée et le temps restant de chaque P'TIPOTE.
+- La Couveuse utilise trois séquences de pulsations visuelles. Les syllabes `Pa` / `Ta` sont supprimées : le joueur observe puis tape en rythme. Les intervalles acceptent une tolérance de 1,25 s autour du battement attendu.
+- La Tour sépare les opérations actives en trois lignes : ronde dans le camp, ronde dans les biomes et exploration.
+
+### Fablab, Générateur et Recycleur
+
+- Générateur niveau 1 : quatre paliers (20 Organique et 4 Minéral), soit 5 Organique + 1 Minéral par bio-batterie.
+- Recycleur : cuve initiale de 50 Déchets et réserve de sortie initiale de 50 unités, transférable vers le stock global.
+- Le Fablab affiche un accès inventaire sur tous les onglets, une jauge d'énergie bleue/orange, et le Recycleur utilise une jauge verticale de déchets avec les sélecteurs `+1`, `+5`, `+10` et `Max`.
+
+### Préparé / limites V1
+
+- La création P'TIBUG emploie le moteur de production sauvegardé (`startPTibugCreation`) et des coûts configurables Organique / Minéral / Bio-batterie ; son habillage ne réutilise pas encore littéralement le widget de recette Cuisine/Atelier.
+- Les pulsations d'éclosion sont une aide visuelle de prototype, sans piste audio native.
+- Les notifications Kernel sont in-app. Les notifications système iOS/Android restent hors périmètre Zone 0 V1.
+
+Derniere mise a jour: 2026-07-18
 
 Ce document est la carte de navigation rapide pour les IA qui travaillent sur l'application Flutter PTIPOTE. Lis ce fichier avant d'ouvrir le code: il indique ou vivent les fonctions, les flux importants, les collections Firestore et les fichiers a modifier selon la demande.
 
