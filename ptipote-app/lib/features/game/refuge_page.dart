@@ -104,29 +104,22 @@ class _RefugePageState extends State<RefugePage> {
   void initState() {
     super.initState();
     _zone0State.addListener(_onZone0StateChanged);
-    _missionResolutionTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) {
-        _zone0State.resolveDueForageMissions();
-        _zone0State.resolveDueTowerMissions();
-        _zone0State.resolveGenerator(
-          heartLevel: _campHeartState.campHeartLevel,
-        );
-        _zone0State.resolveWorkshopOrder();
-        _zone0State.resolveConstructionProjects();
-        _zone0State.resolvePTibugProduction();
-        _zone0State.resolveMarket();
-        _zone0State.resolveWasteAndRecycler(
-          campHeartLevel: _campHeartState.campHeartLevel,
-        );
-        if (mounted) setState(() {});
-      },
-    );
+    _missionResolutionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _zone0State.resolveDueForageMissions();
+      _zone0State.resolveDueTowerMissions();
+      _zone0State.resolveGenerator(heartLevel: _campHeartState.campHeartLevel);
+      _zone0State.resolveWorkshopOrder();
+      _zone0State.resolveConstructionProjects();
+      _zone0State.resolvePTibugProduction();
+      _zone0State.resolveMarket();
+      _zone0State.resolveWasteAndRecycler(
+        campHeartLevel: _campHeartState.campHeartLevel,
+      );
+      if (mounted) setState(() {});
+    });
     _warmAssets();
     _zone0State.resolveDueForageMissions();
-    _zone0State.resolveGenerator(
-      heartLevel: _campHeartState.campHeartLevel,
-    );
+    _zone0State.resolveGenerator(heartLevel: _campHeartState.campHeartLevel);
   }
 
   @override
@@ -147,9 +140,7 @@ class _RefugePageState extends State<RefugePage> {
     if (campHeartData != null) {
       _campHeartState.applyFirebaseData(campHeartData);
     }
-    _zone0State.resolveGenerator(
-      heartLevel: _campHeartState.campHeartLevel,
-    );
+    _zone0State.resolveGenerator(heartLevel: _campHeartState.campHeartLevel);
     _zone0State.resolveWorkshopOrder();
     _zone0State.resolveConstructionProjects();
     _zone0State.resolvePTibugProduction();
@@ -364,10 +355,7 @@ class _RefugePageState extends State<RefugePage> {
 }
 
 class _CampHud extends StatelessWidget {
-  const _CampHud({
-    required this.gameState,
-    required this.campHeartLevel,
-  });
+  const _CampHud({required this.gameState, required this.campHeartLevel});
 
   final Zone0GameState gameState;
   final int campHeartLevel;
@@ -384,8 +372,11 @@ class _CampHud extends StatelessWidget {
           child: _HudChip(
             icon: Icons.groups_2_outlined,
             label: '${gameState.currentPopulation} / $capacity',
-            onTap: () => _showHudInfo(context, 'Population',
-                'La communauté installée au refuge. Elle arrive par les missions du Kernel et ne dépasse jamais la capacité du Cœur du Camp.'),
+            onTap: () => _showHudInfo(
+              context,
+              'Population',
+              'La communauté installée au refuge. Elle arrive par les missions du Kernel et ne dépasse jamais la capacité du Cœur du Camp.',
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -393,8 +384,11 @@ class _CampHud extends StatelessWidget {
           child: _HudChip(
             icon: Icons.battery_charging_full_outlined,
             label: '${gameState.bioBatteries}',
-            onTap: () => _showHudInfo(context, 'Bio-batteries',
-                'La ressource énergétique du refuge. Le Générateur, le Marché et certaines récompenses peuvent en produire.'),
+            onTap: () => _showHudInfo(
+              context,
+              'Bio-batteries',
+              'La ressource énergétique du refuge. Le Générateur, le Marché et certaines récompenses peuvent en produire.',
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -403,8 +397,11 @@ class _CampHud extends StatelessWidget {
             icon: Icons.sentiment_satisfied_alt_outlined,
             label: '${gameState.displayedCampWellbeing}%',
             color: wellbeingColor,
-            onTap: () => _showHudInfo(context, 'Bien-être',
-                'Le bien-être du refuge reflète sa stabilité. La Sécurité actuelle apporte ${gameState.securityWellbeingModifier >= 0 ? '+' : ''}${gameState.securityWellbeingModifier}% (${towerOperationsConfig.wellbeingBandFor(gameState.refugeSafety).label}).'),
+            onTap: () => _showHudInfo(
+              context,
+              'Bien-être',
+              'Le bien-être du refuge reflète sa stabilité. La Sécurité actuelle apporte ${gameState.securityWellbeingModifier >= 0 ? '+' : ''}${gameState.securityWellbeingModifier}% (${towerOperationsConfig.wellbeingBandFor(gameState.refugeSafety).label}).',
+            ),
           ),
         ),
       ],
@@ -423,23 +420,28 @@ class _CampHud extends StatelessWidget {
 
   void _showHudInfo(BuildContext context, String title, String body) {
     showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-            child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-                child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(title,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 10),
-                      Text(body)
-                    ]))));
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 10),
+              Text(body),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -479,10 +481,7 @@ class _HudChip extends StatelessWidget {
                 child: Text(
                   label,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w900,
-                  ),
+                  style: TextStyle(color: color, fontWeight: FontWeight.w900),
                 ),
               ),
             ],
@@ -498,10 +497,12 @@ class KernelPage extends StatelessWidget {
     super.key,
     required this.gameState,
     required this.campHeartState,
+    this.initialTabIndex = 0,
   });
 
   final Zone0GameState gameState;
   final CampHeartState campHeartState;
+  final int initialTabIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -514,11 +515,13 @@ class KernelPage extends StatelessWidget {
         NotificationService().markTypesAsRead(<String>{'kernel_mission'}),
       );
     });
-    final mainMission =
-        gameState.mainKernelMission(campHeartState.campHeartLevel);
+    final mainMission = gameState.mainKernelMission(
+      campHeartState.campHeartLevel,
+    );
     final requests = gameState.refugeRequests(campHeartState.campHeartLevel);
-    final weatherMissions =
-        gameState.weatherKernelMissions(campHeartState.campHeartLevel);
+    final weatherMissions = gameState.weatherKernelMissions(
+      campHeartState.campHeartLevel,
+    );
     final mainCount = mainMission?.status == KernelMissionStatus.active ? 1 : 0;
     final requestCount = requests
         .where((mission) => mission.status == KernelMissionStatus.active)
@@ -528,6 +531,7 @@ class KernelPage extends StatelessWidget {
         .length;
     return DefaultTabController(
       length: 5,
+      initialIndex: initialTabIndex,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Kernel'),
@@ -561,10 +565,12 @@ class KernelPage extends StatelessWidget {
                 ),
               ),
               Tab(
-                  child:
-                      _KernelTabLabel(label: 'Demandes', count: requestCount)),
+                child: _KernelTabLabel(label: 'Demandes', count: requestCount),
+              ),
               const Tab(text: 'Plans'),
-              Tab(child: _KernelTabLabel(label: 'Météo', count: weatherCount)),
+              Tab(
+                child: _KernelTabLabel(label: 'Météo', count: weatherCount),
+              ),
             ],
           ),
         ),
@@ -575,14 +581,8 @@ class KernelPage extends StatelessWidget {
                 gameState: gameState,
                 campHeartState: campHeartState,
               ),
-              _KernelMainMissionTab(
-                mission: mainMission,
-                gameState: gameState,
-              ),
-              _KernelRequestsTab(
-                missions: requests,
-                gameState: gameState,
-              ),
+              _KernelMainMissionTab(mission: mainMission, gameState: gameState),
+              _KernelRequestsTab(missions: requests, gameState: gameState),
               _KernelPlansTab(gameState: gameState),
               _KernelRequestsTab(
                 missions: weatherMissions,
@@ -680,10 +680,7 @@ class _MailboxButton extends StatelessWidget {
 }
 
 class _KernelMainMissionTab extends StatelessWidget {
-  const _KernelMainMissionTab({
-    required this.mission,
-    required this.gameState,
-  });
+  const _KernelMainMissionTab({required this.mission, required this.gameState});
 
   final KernelMissionProgress? mission;
   final Zone0GameState gameState;
@@ -722,14 +719,16 @@ class _StarterPTibugChoiceCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('Choisir le premier P’TIBUG',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w900)),
+              Text(
+                'Choisir le premier P’TIBUG',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+              ),
               const SizedBox(height: 8),
               const Text(
-                  'Le Kernel peut stabiliser un seul Pattern de départ. Les autres se découvriront ensuite grâce aux missions ou au Sourcier.'),
+                'Le Kernel peut stabiliser un seul Pattern de départ. Les autres se découvriront ensuite grâce aux missions ou au Sourcier.',
+              ),
               const SizedBox(height: 12),
               ...PTibugSpecies.values.map((species) {
                 final config = pTibugConfig.species[species]!;
@@ -740,18 +739,19 @@ class _StarterPTibugChoiceCard extends StatelessWidget {
                     onPressed: () {
                       final result =
                           gameState.chooseStarterPTibugPattern(species);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(result.message)),
-                      );
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(result.message)));
                     },
                     child: SizedBox(
                       width: double.infinity,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(config.displayName,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w900)),
+                          Text(
+                            config.displayName,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
                           Text(pattern.description),
                         ],
                       ),
@@ -784,8 +784,10 @@ class _KernelRequestsTab extends StatelessWidget {
         if (missions.isEmpty)
           _KernelEmptyState(message: emptyMessage)
         else
-          ...missions.map((mission) =>
-              _KernelMissionCard(mission: mission, gameState: gameState)),
+          ...missions.map(
+            (mission) =>
+                _KernelMissionCard(mission: mission, gameState: gameState),
+          ),
       ],
     );
   }
@@ -813,10 +815,9 @@ class _KernelMissionCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     config.title,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w900),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
                   ),
                 ),
                 _KernelStatusPill(completed: mission.isCompleted),
@@ -851,11 +852,13 @@ class _KernelMissionCard extends StatelessWidget {
               FilledButton(
                 onPressed: () {
                   final result = gameState.fulfillKernelMission(config.id);
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(SnackBar(content: Text(result.message)));
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(result.message)));
                 },
                 child: Text(
-                    'Remettre ${config.requestedAmount} ${config.requestedItem}'),
+                  'Remettre ${config.requestedAmount} ${config.requestedItem}',
+                ),
               ),
             ],
           ],
@@ -870,8 +873,10 @@ class _KernelMissionCard extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 24),
         color: Theme.of(context).colorScheme.error,
-        child: Icon(Icons.delete_outline,
-            color: Theme.of(context).colorScheme.onError),
+        child: Icon(
+          Icons.delete_outline,
+          color: Theme.of(context).colorScheme.onError,
+        ),
       ),
       onDismissed: (_) => gameState.dismissCompletedKernelMission(config.id),
       child: card,
@@ -961,9 +966,11 @@ class _KernelPlansTabState extends State<_KernelPlansTab> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    Text(visible
-                        ? plan.description
-                        : 'Le Kernel n’a encore rien identifié.'),
+                    Text(
+                      visible
+                          ? plan.description
+                          : 'Le Kernel n’a encore rien identifié.',
+                    ),
                     if (visible) ...<Widget>[
                       const SizedBox(height: 8),
                       Text('Origine : ${plan.origin}'),
@@ -979,8 +986,9 @@ class _KernelPlansTabState extends State<_KernelPlansTab> {
                       const SizedBox(height: 10),
                       FilledButton(
                         onPressed: () {
-                          final result =
-                              widget.gameState.activateKernelPlan(plan.id);
+                          final result = widget.gameState.activateKernelPlan(
+                            plan.id,
+                          );
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text(result.message)),
                           );
@@ -1043,10 +1051,9 @@ class _KernelProgressTab extends StatelessWidget {
               children: <Widget>[
                 Text(
                   stage.label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 12),
                 _InfoLine(
@@ -1123,8 +1130,10 @@ class _KernelXpCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('$title · niv. $level',
-                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              Text(
+                '$title · niv. $level',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
               const SizedBox(height: 8),
               LinearProgressIndicator(value: (xp / requiredXp).clamp(0, 1)),
               Text('$xp / $requiredXp XP'),
@@ -1247,9 +1256,7 @@ class _MaisonPageState extends State<_MaisonPage>
     return _gameState.vitalityFor(figurine);
   }
 
-  PtipoteAutoAssignmentPreference _autoPreferenceFor(
-    PtipoteFigurine figurine,
-  ) {
+  PtipoteAutoAssignmentPreference _autoPreferenceFor(PtipoteFigurine figurine) {
     return _gameState.autoPreferenceFor(figurine);
   }
 
@@ -1325,19 +1332,14 @@ class _MaisonPageState extends State<_MaisonPage>
           children: <Widget>[
             Text(
               'Donner à ${figurine.displayName}',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
             ...recipes.map(
               (item) => ListTile(
-                leading: Icon(
-                  item.foodType == FoodType.drink
-                      ? Icons.local_drink_outlined
-                      : Icons.restaurant_outlined,
-                ),
+                leading: const Icon(Icons.restaurant_outlined),
                 title: Text(item.resultItem),
                 subtitle: Text(
                   'Stock ${_gameState.resourceAmount(item.resultItem)} · faim +${item.hungerRestore} · vitalité +${item.vitalityRestore}',
@@ -1352,9 +1354,9 @@ class _MaisonPageState extends State<_MaisonPage>
     if (!mounted || recipe == null) return;
     final result = _gameState.consumeConsumable(figurine, recipe);
     setState(() => _selectedFigurineId = figurine.id);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   @override
@@ -1372,128 +1374,137 @@ class _MaisonPageState extends State<_MaisonPage>
           ],
         ),
       ),
-      body: TabBarView(controller: _tabs, children: <Widget>[
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: DecoratedBox(
-                decoration: const BoxDecoration(color: Color(0xFFE7D4B2)),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    if (_maisonAsset != null)
-                      Image.asset(
-                        _maisonAsset!,
-                        fit: BoxFit.cover,
-                        alignment: Alignment.center,
-                      ),
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: <Color>[
-                            Color(0x22000000),
-                            Color(0x33000000),
-                          ],
+      body: TabBarView(
+        controller: _tabs,
+        children: <Widget>[
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: DecoratedBox(
+                  decoration: const BoxDecoration(color: Color(0xFFE7D4B2)),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      if (_maisonAsset != null)
+                        Image.asset(
+                          _maisonAsset!,
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                        ),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: <Color>[
+                              Color(0x22000000),
+                              Color(0x33000000),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    _AlcoveLayer(alcoveCount: _gameState.alcoveCapacity),
-                    const _FloorLayer(),
-                    StreamBuilder<List<PtipoteFigurine>>(
-                      stream: _figurineService.watchMyFigurines(),
-                      builder: (context, snapshot) {
-                        final figurines =
-                            snapshot.data ?? const <PtipoteFigurine>[];
-                        _gameState.ensureNurseryAdmissions(figurines);
-                        final admitted = figurines
-                            .where(
-                                (figurine) => !_gameState.isInNursery(figurine))
-                            .toList();
-                        if (snapshot.connectionState ==
-                                ConnectionState.waiting &&
-                            figurines.isEmpty) {
-                          return const Center(
-                              child: CircularProgressIndicator());
-                        }
-                        if (admitted.isEmpty) {
-                          return const _RefugeEmptyState();
-                        }
-                        return Stack(
-                          children: <Widget>[
-                            _PtipoteRefugeLayer(
-                              figurines: admitted,
-                              animation: _tickController,
-                              selectedFigurineId: _selectedFigurineId,
-                              vitalityFor: _vitalityFor,
-                              hungerFor: _gameState.hungerFor,
-                              restFor: _gameState.restFor,
-                              xpFor: _gameState.xpFor,
-                              levelFor: _gameState.levelFor,
-                              isOnMission: _gameState.isOnMission,
-                              isAssignedToTower: _gameState.isAssignedToTower,
-                              isAssignedToActiveBuilding: (figurineId) =>
-                                  _gameState.isAssignedToWorkshop(figurineId) ||
-                                  _gameState.isAssignedToMarket(figurineId),
-                              isResting: _gameState.isResting,
-                              isWaitingForBed: _gameState.isWaitingForBed,
-                              isHappy: _gameState.isHappy,
-                              hasIndigestion: _gameState.hasIndigestion,
-                              restStateLabelFor: _gameState.restStateLabelFor,
-                              moodLabelFor: _gameState.moodLabelFor,
-                              recoveryRemaining:
-                                  _gameState.vitalityRecoveryRemaining,
-                              restRecoveryRemaining:
-                                  _gameState.restRecoveryRemaining,
-                              isCuddleCareActive: _gameState.isCuddleCareActive,
-                              canCuddle: _gameState.canCuddle,
-                              cuddleProgress: _gameState.cuddleCooldownProgress,
-                              autoPreferenceFor: _autoPreferenceFor,
-                              availableSimpleMeals:
-                                  _gameState.availableConsumableRecipes.length,
-                              alcoveCapacity: _gameState.alcoveCapacity,
-                              lastCuddleAt: (figurine) =>
-                                  _gameState.lastCuddleAt[figurine.id],
-                              onToggleFigurine: _toggleFigurine,
-                              onAutoPreferenceChanged: _setAutoPreference,
-                              onWake: _wakeFigurine,
-                              onSleep: _sendToSleep,
-                              onCuddle: _cuddleFigurine,
-                              onFeed: _feedFigurine,
-                            ),
-                            _MaisonUtilityButtons(
-                              unreadCount:
-                                  _gameState.unreadReportCountForMailbox(
-                                Zone0MessageMailbox.companions,
+                      _AlcoveLayer(alcoveCount: _gameState.alcoveCapacity),
+                      const _FloorLayer(),
+                      StreamBuilder<List<PtipoteFigurine>>(
+                        stream: _figurineService.watchMyFigurines(),
+                        builder: (context, snapshot) {
+                          final figurines =
+                              snapshot.data ?? const <PtipoteFigurine>[];
+                          _gameState.ensureNurseryAdmissions(figurines);
+                          final admitted = figurines
+                              .where(
+                                (figurine) => !_gameState.isInNursery(figurine),
+                              )
+                              .toList();
+                          if (snapshot.connectionState ==
+                                  ConnectionState.waiting &&
+                              figurines.isEmpty) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+                          if (admitted.isEmpty) {
+                            return const _RefugeEmptyState();
+                          }
+                          return Stack(
+                            children: <Widget>[
+                              _PtipoteRefugeLayer(
+                                figurines: admitted,
+                                animation: _tickController,
+                                selectedFigurineId: _selectedFigurineId,
+                                vitalityFor: _vitalityFor,
+                                hungerFor: _gameState.hungerFor,
+                                restFor: _gameState.restFor,
+                                xpFor: _gameState.xpFor,
+                                levelFor: _gameState.levelFor,
+                                isOnMission: _gameState.isOnMission,
+                                isAssignedToTower: _gameState.isAssignedToTower,
+                                isAssignedToActiveBuilding: (figurineId) =>
+                                    _gameState.isAssignedToWorkshop(
+                                      figurineId,
+                                    ) ||
+                                    _gameState.isAssignedToMarket(figurineId),
+                                isResting: _gameState.isResting,
+                                isWaitingForBed: _gameState.isWaitingForBed,
+                                isHappy: _gameState.isHappy,
+                                hasIndigestion: _gameState.hasIndigestion,
+                                restStateLabelFor: _gameState.restStateLabelFor,
+                                moodLabelFor: _gameState.moodLabelFor,
+                                recoveryRemaining:
+                                    _gameState.vitalityRecoveryRemaining,
+                                restRecoveryRemaining:
+                                    _gameState.restRecoveryRemaining,
+                                isCuddleCareActive:
+                                    _gameState.isCuddleCareActive,
+                                canCuddle: _gameState.canCuddle,
+                                cuddleProgress:
+                                    _gameState.cuddleCooldownProgress,
+                                autoPreferenceFor: _autoPreferenceFor,
+                                availableSimpleMeals: _gameState
+                                    .availableConsumableRecipes.length,
+                                alcoveCapacity: _gameState.alcoveCapacity,
+                                lastCuddleAt: (figurine) =>
+                                    _gameState.lastCuddleAt[figurine.id],
+                                onToggleFigurine: _toggleFigurine,
+                                onAutoPreferenceChanged: _setAutoPreference,
+                                onWake: _wakeFigurine,
+                                onSleep: _sendToSleep,
+                                onCuddle: _cuddleFigurine,
+                                onFeed: _feedFigurine,
                               ),
-                              onInventory: _openInventory,
-                              onMessages: _openMessages,
-                              onDashboard: _openPtipoteDashboard,
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
+                              _MaisonUtilityButtons(
+                                unreadCount:
+                                    _gameState.unreadReportCountForMailbox(
+                                  Zone0MessageMailbox.companions,
+                                ),
+                                onInventory: _openInventory,
+                                onMessages: _openMessages,
+                                onDashboard: _openPtipoteDashboard,
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        _MaisonNurseryTab(
-          gameState: _gameState,
-          onHatched: () => _tabs.animateTo(0),
-        ),
-        _HouseUpgradeTab(gameState: _gameState),
-        const _BuildingInformationTab(
-          title: 'Maison',
-          description:
-              'La Maison accueille les P’TIPOTES actifs, leurs alcôves de repos, les messages et l’inventaire du refuge. Son amélioration augmente les alcôves. Les logements des habitants sont agrégés et n’ajoutent pas directement de population.',
-        ),
-      ]),
+          _MaisonNurseryTab(
+            gameState: _gameState,
+            onHatched: () => _tabs.animateTo(0),
+          ),
+          _HouseUpgradeTab(gameState: _gameState),
+          const _BuildingInformationTab(
+            title: 'Maison',
+            description:
+                'La Maison accueille les P’TIPOTES actifs, leurs alcôves de repos, les messages et l’inventaire du refuge. Son amélioration augmente les alcôves. Les logements des habitants sont agrégés et n’ajoutent pas directement de population.',
+          ),
+        ],
+      ),
     );
   }
 
@@ -1532,20 +1543,22 @@ class _MaisonPageState extends State<_MaisonPage>
               children: <Widget>[
                 Text(
                   'Tableau des P\'TIPOTES',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 10),
-                ...figurines.map((figurine) => ListTile(
-                      leading: const Icon(Icons.pets_outlined),
-                      title: Text(figurine.displayName),
-                      subtitle: Text(_ptipoteActivityLabel(figurine)),
-                      trailing: Text(
-                        _ptipoteActivityCountdown(figurine),
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    )),
+                ...figurines.map(
+                  (figurine) => ListTile(
+                    leading: const Icon(Icons.pets_outlined),
+                    title: Text(figurine.displayName),
+                    subtitle: Text(_ptipoteActivityLabel(figurine)),
+                    trailing: Text(
+                      _ptipoteActivityCountdown(figurine),
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
               ],
             ),
           );
@@ -1556,9 +1569,11 @@ class _MaisonPageState extends State<_MaisonPage>
 
   String _ptipoteActivityLabel(PtipoteFigurine figurine) {
     final tower = _gameState.towerMissions
-        .where((mission) =>
-            mission.figurineId == figurine.id &&
-            mission.status == TowerMissionStatus.active)
+        .where(
+          (mission) =>
+              mission.figurineId == figurine.id &&
+              mission.status == TowerMissionStatus.active,
+        )
         .firstOrNull;
     if (tower != null) {
       return tower.patrolBiome == null
@@ -1566,9 +1581,11 @@ class _MaisonPageState extends State<_MaisonPage>
           : 'Ronde : ${lisiereForageConfig.biomes[tower.patrolBiome]!.label}';
     }
     final forage = _gameState.missions
-        .where((mission) =>
-            mission.memberIds.contains(figurine.id) &&
-            mission.status == ForageMissionStatus.active)
+        .where(
+          (mission) =>
+              mission.memberIds.contains(figurine.id) &&
+              mission.status == ForageMissionStatus.active,
+        )
         .firstOrNull;
     if (forage != null) {
       return 'Lisière : ${lisiereForageConfig.biomes[forage.biome]!.label}';
@@ -1586,15 +1603,19 @@ class _MaisonPageState extends State<_MaisonPage>
   String _ptipoteActivityCountdown(PtipoteFigurine figurine) {
     final endsAt = <DateTime?>[
       _gameState.towerMissions
-          .where((mission) =>
-              mission.figurineId == figurine.id &&
-              mission.status == TowerMissionStatus.active)
+          .where(
+            (mission) =>
+                mission.figurineId == figurine.id &&
+                mission.status == TowerMissionStatus.active,
+          )
           .firstOrNull
           ?.endTime,
       _gameState.missions
-          .where((mission) =>
-              mission.memberIds.contains(figurine.id) &&
-              mission.status == ForageMissionStatus.active)
+          .where(
+            (mission) =>
+                mission.memberIds.contains(figurine.id) &&
+                mission.status == ForageMissionStatus.active,
+          )
           .firstOrNull
           ?.endTime,
       _gameState.activeWorkshopOrders
@@ -1627,11 +1648,12 @@ class _MaisonNurseryTab extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(18),
             children: [
-              Text('Couveuse',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w900)),
+              Text(
+                'Couveuse',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
               const SizedBox(height: 8),
               const Text(
                 'Les P’TIPOTES en attente d’une alcôve reposent ici sous forme d’œuf.',
@@ -1650,46 +1672,50 @@ class _MaisonNurseryTab extends StatelessWidget {
                   child: Padding(
                     padding: EdgeInsets.all(18),
                     child: Text(
-                        'Aucun œuf en attente. Les prochains scans apparaîtront ici si la Maison est pleine.'),
+                      'Aucun œuf en attente. Les prochains scans apparaîtront ici si la Maison est pleine.',
+                    ),
                   ),
                 )
               else
-                ...eggs.map((figurine) => Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const Icon(Icons.egg_alt_outlined, size: 54),
-                            const SizedBox(height: 8),
-                            Text(figurine.displayName,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w900)),
-                            Text(figurine.type, textAlign: TextAlign.center),
-                            const SizedBox(height: 8),
-                            if (gameState.canHatchFromNursery(figurine))
-                              FilledButton(
-                                onPressed: () => showDialog<void>(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (_) => _EggHatchDialog(
-                                    figurine: figurine,
-                                    gameState: gameState,
-                                    onFinished: onHatched,
-                                  ),
+                ...eggs.map(
+                  (figurine) => Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Icon(Icons.egg_alt_outlined, size: 54),
+                          const SizedBox(height: 8),
+                          Text(
+                            figurine.displayName,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          Text(figurine.type, textAlign: TextAlign.center),
+                          const SizedBox(height: 8),
+                          if (gameState.canHatchFromNursery(figurine))
+                            FilledButton(
+                              onPressed: () => showDialog<void>(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (_) => _EggHatchDialog(
+                                  figurine: figurine,
+                                  gameState: gameState,
+                                  onFinished: onHatched,
                                 ),
-                                child: const Text('Faire éclore'),
-                              )
-                            else
-                              Text(
-                                'Une alcôve libre est nécessaire (${gameState.hatchedPtipoteIds.length}/${gameState.alcoveCapacity}).',
-                                textAlign: TextAlign.center,
                               ),
-                          ],
-                        ),
+                              child: const Text('Faire éclore'),
+                            )
+                          else
+                            Text(
+                              'Une alcôve libre est nécessaire (${gameState.hatchedPtipoteIds.length}/${gameState.alcoveCapacity}).',
+                              textAlign: TextAlign.center,
+                            ),
+                        ],
                       ),
-                    )),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 12),
               Card(
                 child: Padding(
@@ -1862,42 +1888,50 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text(_hatched
-            ? widget.isPractice
-                ? 'Test terminé'
-                : 'Bienvenue $_displayName'
-            : 'L’œuf réagit'),
+        title: Text(
+          _hatched
+              ? widget.isPractice
+                  ? 'Test terminé'
+                  : 'Bienvenue $_displayName'
+              : 'L’œuf réagit',
+        ),
         content: GestureDetector(
           onTap: _tap,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            AnimatedScale(
-              duration: const Duration(milliseconds: 180),
-              scale: _isPulsing ? 1.22 : 1,
-              child: Icon(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedScale(
+                duration: const Duration(milliseconds: 180),
+                scale: _isPulsing ? 1.22 : 1,
+                child: Icon(
                   _hatched ? Icons.auto_awesome : Icons.egg_alt_outlined,
                   size: 84,
-                  color: _hatched ? Colors.amber : null),
-            ),
-            const SizedBox(height: 12),
-            if (_hatched) ...[
-              Text(_displayName,
-                  style: const TextStyle(fontWeight: FontWeight.w900)),
-              Text(_type),
-            ] else ...[
-              const Text('Observe les pulsations, puis tape en rythme.'),
-              const SizedBox(height: 8),
-              Text('$_taps / ${_rhythmOffsets[_stage].length} tapotements'),
-              if (_feedback != null) ...<Widget>[
-                const SizedBox(height: 6),
-                Text(_feedback!, textAlign: TextAlign.center),
-              ],
-              TextButton.icon(
-                onPressed: _playPreview,
-                icon: const Icon(Icons.replay),
-                label: const Text('Revoir le rythme'),
+                  color: _hatched ? Colors.amber : null,
+                ),
               ),
+              const SizedBox(height: 12),
+              if (_hatched) ...[
+                Text(
+                  _displayName,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Text(_type),
+              ] else ...[
+                const Text('Observe les pulsations, puis tape en rythme.'),
+                const SizedBox(height: 8),
+                Text('$_taps / ${_rhythmOffsets[_stage].length} tapotements'),
+                if (_feedback != null) ...<Widget>[
+                  const SizedBox(height: 6),
+                  Text(_feedback!, textAlign: TextAlign.center),
+                ],
+                TextButton.icon(
+                  onPressed: _playPreview,
+                  icon: const Icon(Icons.replay),
+                  label: const Text('Revoir le rythme'),
+                ),
+              ],
             ],
-          ]),
+          ),
         ),
         actions: _hatched
             ? [
@@ -1906,15 +1940,18 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
                     Navigator.of(context).pop();
                     widget.onFinished?.call();
                   },
-                  child: Text(widget.isPractice
-                      ? 'Fermer le test'
-                      : 'Faire un câlin à $_displayName'),
+                  child: Text(
+                    widget.isPractice
+                        ? 'Fermer le test'
+                        : 'Faire un câlin à $_displayName',
+                  ),
                 ),
               ]
             : [
                 TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Plus tard'))
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Plus tard'),
+                ),
               ],
       );
 }
@@ -1963,10 +2000,9 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
             children: <Widget>[
               Text(
                 'Maison',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -1979,11 +2015,14 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('Niveau suivant : ${project.currentLevel}',
-                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Text(
+                        'Niveau suivant : ${project.currentLevel}',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
                       const SizedBox(height: 6),
                       Text(
-                          'Ajoute des alcôves : ${state.alcoveCapacity} → ${housingConfig.alcovesForHouseLevel(project.currentLevel)}.'),
+                        'Ajoute des alcôves : ${state.alcoveCapacity} → ${housingConfig.alcovesForHouseLevel(project.currentLevel)}.',
+                      ),
                       const SizedBox(height: 12),
                       if (project.isInProgress)
                         Text('Travaux : ${_countdownLabel(project.endsAt!)}')
@@ -1991,21 +2030,24 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
                           ConstructionProjectState.maxLevel)
                         const Text('Niveau maximum atteint.')
                       else ...[
-                        ...project.requirements.entries
-                            .map((entry) => _ConstructionMaterialProgress(
-                                  resource: entry.key,
-                                  deposited:
-                                      project.depositedMaterials[entry.key] ??
-                                          0,
-                                  required: entry.value,
-                                  enabled: true,
-                                  onDeposit: (amount) =>
-                                      state.depositProjectMaterial(
-                                          'house', entry.key, amount),
-                                  onWithdraw: () =>
-                                      state.withdrawProjectMaterial(
-                                          'house', entry.key),
-                                )),
+                        ...project.requirements.entries.map(
+                          (entry) => _ConstructionMaterialProgress(
+                            resource: entry.key,
+                            deposited:
+                                project.depositedMaterials[entry.key] ?? 0,
+                            required: entry.value,
+                            enabled: true,
+                            onDeposit: (amount) => state.depositProjectMaterial(
+                              'house',
+                              entry.key,
+                              amount,
+                            ),
+                            onWithdraw: () => state.withdrawProjectMaterial(
+                              'house',
+                              entry.key,
+                            ),
+                          ),
+                        ),
                         FilledButton.icon(
                           onPressed: project.isReady
                               ? () => state.startConstructionProject('house')
@@ -2097,9 +2139,7 @@ class _BuildingHotspot extends StatelessWidget {
           color: Color(0xFF2B2116),
           fontSize: 15,
           fontWeight: FontWeight.w900,
-          shadows: <Shadow>[
-            Shadow(color: Colors.white, blurRadius: 10),
-          ],
+          shadows: <Shadow>[Shadow(color: Colors.white, blurRadius: 10)],
         ),
       ),
     );
@@ -2340,27 +2380,33 @@ class _MaisonUtilityButtons extends StatelessWidget {
             tooltip: 'Tableau des P’TIPOTES',
             onTap: onDashboard,
           ),
-          Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-            _RoundUtilityButton(
-              icon: Icons.inventory_2_outlined,
-              tooltip: 'Inventaire',
-              onTap: onInventory,
-            ),
-            const SizedBox(height: 10),
-            Stack(clipBehavior: Clip.none, children: <Widget>[
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
               _RoundUtilityButton(
-                icon: Icons.mark_email_unread_outlined,
-                tooltip: 'Messages P’TIPOTE',
-                onTap: onMessages,
+                icon: Icons.inventory_2_outlined,
+                tooltip: 'Inventaire',
+                onTap: onInventory,
               ),
-              if (unreadCount > 0)
-                Positioned(
-                  right: -5,
-                  top: -5,
-                  child: _NotificationBadge(count: unreadCount),
-                ),
-            ]),
-          ]),
+              const SizedBox(height: 10),
+              Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  _RoundUtilityButton(
+                    icon: Icons.mark_email_unread_outlined,
+                    tooltip: 'Messages P’TIPOTE',
+                    onTap: onMessages,
+                  ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      right: -5,
+                      top: -5,
+                      child: _NotificationBadge(count: unreadCount),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2389,11 +2435,7 @@ class _RoundUtilityButton extends StatelessWidget {
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
-          child: SizedBox(
-            width: 48,
-            height: 48,
-            child: Icon(icon),
-          ),
+          child: SizedBox(width: 48, height: 48, child: Icon(icon)),
         ),
       ),
     );
@@ -2416,10 +2458,7 @@ class _FloorLayer extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: <Color>[
-                  Color(0x33765A2C),
-                  Color(0x66563D1E),
-                ],
+                colors: <Color>[Color(0x33765A2C), Color(0x66563D1E)],
               ),
             ),
           ),
@@ -2791,18 +2830,12 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
         ? placement.top + 88 + offset.dy
         : placement.top - bubbleHeight - 8 + offset.dy;
     final bubbleTop = preferredTop
-        .clamp(
-          8.0,
-          math.max(8.0, constraints.maxHeight - bubbleHeight - 8),
-        )
+        .clamp(8.0, math.max(8.0, constraints.maxHeight - bubbleHeight - 8))
         .toDouble();
     final preferredLeft =
         placement.left + spriteSize / 2 - bubbleWidth / 2 + offset.dx;
     final bubbleLeft = preferredLeft
-        .clamp(
-          8.0,
-          math.max(8.0, constraints.maxWidth - bubbleWidth - 8),
-        )
+        .clamp(8.0, math.max(8.0, constraints.maxWidth - bubbleWidth - 8))
         .toDouble();
     var dragOrigin = Offset.zero;
     var bubbleOrigin = offset;
@@ -3002,8 +3035,10 @@ class _PtipoteSpriteButtonState extends State<_PtipoteSpriteButton> {
                   ],
                 ),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   child: Text(
                     widget.restRemainingLabel,
                     style: const TextStyle(
@@ -3090,10 +3125,12 @@ class _PtipoteSpriteState extends State<_PtipoteSprite> {
     if (_savedResolvedPath || url.contains('bplaceholder')) return;
     _savedResolvedPath = true;
     _resolvedImageCache[widget.figurine.id] = url;
-    unawaited(_figurineService.cacheMyFigurineImagePath(
-      figurine: widget.figurine,
-      imagePath: url,
-    ));
+    unawaited(
+      _figurineService.cacheMyFigurineImagePath(
+        figurine: widget.figurine,
+        imagePath: url,
+      ),
+    );
   }
 
   @override
@@ -3264,9 +3301,9 @@ class _PtipoteInfoBubble extends StatelessWidget {
                   ],
                 ),
                 Theme(
-                  data: Theme.of(context).copyWith(
-                    dividerColor: Colors.transparent,
-                  ),
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
                   child: ExpansionTile(
                     tilePadding: EdgeInsets.zero,
                     childrenPadding: EdgeInsets.zero,
@@ -3279,7 +3316,9 @@ class _PtipoteInfoBubble extends StatelessWidget {
                       _InfoLine(label: 'Espèce', value: figurine.species),
                       _InfoLine(label: 'Type', value: figurine.type),
                       _InfoLine(
-                          label: 'Enveloppe', value: figurine.envelopeLabel),
+                        label: 'Enveloppe',
+                        value: figurine.envelopeLabel,
+                      ),
                       _InfoLine(
                         label: 'XP',
                         value:
@@ -3299,10 +3338,7 @@ class _PtipoteInfoBubble extends StatelessWidget {
                         value:
                             '$rest/${ptipoteStatsConfig.maxRest} · $restStateLabel',
                       ),
-                      _InfoLine(
-                        label: 'Bonheur',
-                        value: moodLabel,
-                      ),
+                      _InfoLine(label: 'Bonheur', value: moodLabel),
                       _InfoLine(
                         label: 'Câlin',
                         value: lastCuddleAt == null
@@ -3327,8 +3363,9 @@ class _PtipoteInfoBubble extends StatelessWidget {
                       Wrap(
                         spacing: 6,
                         runSpacing: 4,
-                        children: PtipoteAutoAssignmentPreference.values
-                            .map((preference) {
+                        children: PtipoteAutoAssignmentPreference.values.map((
+                          preference,
+                        ) {
                           return ChoiceChip(
                             label: Text(_shortPreferenceLabel(preference)),
                             selected: autoPreference == preference,
@@ -3414,10 +3451,9 @@ class _PtipoteQuickStats extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .surfaceContainerHighest
-            .withValues(alpha: 0.55),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
@@ -3770,10 +3806,9 @@ class _Zone0InventorySheetState extends State<Zone0InventorySheet> {
           children: <Widget>[
             Text(
               'Donner ${recipe.resultItem}',
-              style: Theme.of(sheetContext)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                sheetContext,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
             const Text('Choisis un P’TIPOTE compatible.'),
@@ -3795,8 +3830,9 @@ class _Zone0InventorySheetState extends State<Zone0InventorySheet> {
     if (target == null || !mounted) return;
     final result = widget.gameState.consumeConsumable(target, recipe);
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(result.message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   @override
@@ -3812,10 +3848,9 @@ class _Zone0InventorySheetState extends State<Zone0InventorySheet> {
             children: <Widget>[
               Text(
                 'Inventaire global',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
               Text(
@@ -3836,8 +3871,9 @@ class _Zone0InventorySheetState extends State<Zone0InventorySheet> {
                     final stack = index < stacks.length ? stacks[index] : null;
                     final recipe = stack == null
                         ? null
-                        : widget.gameState
-                            .consumableRecipeForItem(stack.resource);
+                        : widget.gameState.consumableRecipeForItem(
+                            stack.resource,
+                          );
                     return _InventorySlot(
                       stack: stack,
                       onTap: recipe == null
@@ -3892,10 +3928,7 @@ class _FirebaseSyncStatus extends StatelessWidget {
                 error == null
                     ? '${gameState.firebaseSyncLabel}${lastSync == null ? '' : ' · ${_formatTime(lastSync)}'}'
                     : '${gameState.firebaseSyncLabel} · $error',
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: TextStyle(color: color, fontWeight: FontWeight.w800),
               ),
             ),
           ],
@@ -3937,10 +3970,9 @@ class _InventorySlot extends StatelessWidget {
                       .withValues(alpha: 0.46),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: Theme.of(context)
-                    .colorScheme
-                    .outline
-                    .withValues(alpha: 0.32),
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.32),
               ),
               boxShadow: filled
                   ? <BoxShadow>[
@@ -3960,10 +3992,9 @@ class _InventorySlot extends StatelessWidget {
                     size: 36,
                     color: filled
                         ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.28),
+                        : Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.28),
                   ),
                 ),
                 if (filled)
@@ -3977,7 +4008,9 @@ class _InventorySlot extends StatelessWidget {
                       ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 3),
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
                         child: Text(
                           '${stack!.amount}',
                           style: TextStyle(
@@ -4064,11 +4097,12 @@ Future<PtipoteFigurine?> _pickPtipoteForActivity({
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(title,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w900)),
+            Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 12),
             if (figurines.isEmpty)
               const Text('Aucun P’TIPOTE trouvé.')
@@ -4123,10 +4157,9 @@ class MissionReportsSheet extends StatelessWidget {
         children: <Widget>[
           Text(
             _title,
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.w900),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 12),
           if (reports.isEmpty)
@@ -4156,9 +4189,10 @@ class MissionReportsSheet extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(_subjectFor(report),
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w900)),
+                        Text(
+                          _subjectFor(report),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
                         const SizedBox(height: 6),
                         Text('Concerné : ${_concernedFor(report)}'),
                         const SizedBox(height: 2),
@@ -4222,8 +4256,11 @@ class _SheetEmptyState extends StatelessWidget {
 }
 
 class LisierePage extends StatefulWidget {
-  const LisierePage(
-      {super.key, required this.gameState, required this.campHeartLevel});
+  const LisierePage({
+    super.key,
+    required this.gameState,
+    required this.campHeartLevel,
+  });
 
   final Zone0GameState gameState;
   final int campHeartLevel;
@@ -4270,209 +4307,230 @@ class _LisierePageState extends State<LisierePage> {
             isScrollable: true,
             tabs: <Widget>[
               const Tab(text: 'Récolte'),
-              ...unlockedBiomes.map((biome) =>
-                  Tab(text: lisiereForageConfig.biomes[biome]!.label)),
+              ...unlockedBiomes.map(
+                (biome) => Tab(text: lisiereForageConfig.biomes[biome]!.label),
+              ),
             ],
           ),
         ),
-        body: TabBarView(children: <Widget>[
-          SafeArea(
+        body: TabBarView(
+          children: <Widget>[
+            SafeArea(
               child: StreamBuilder<List<PtipoteFigurine>>(
-            stream: _figurineService.watchMyFigurines(),
-            builder: (context, snapshot) {
-              final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-              _selectedFigurineIds.removeWhere((id) {
-                return figurines.any(
-                  (figurine) =>
-                      figurine.id == id &&
-                      (widget.gameState.isBusy(figurine) ||
-                          widget.gameState.vitalityFor(figurine) <
-                              ptipoteStatsConfig.minimumMissionVitality),
-                );
-              });
-              final selectedFigurines = figurines
-                  .where(
-                      (figurine) => _selectedFigurineIds.contains(figurine.id))
-                  .toList();
-              final estimates = <PtipoteFigurine, ForageEstimate>{
-                for (final figurine in selectedFigurines)
-                  figurine: _estimate(figurine),
-              };
-              final groupEstimate = estimates.isEmpty
-                  ? null
-                  : ForageGroupEstimate.fromEstimates(estimates.values);
-              final inventoryOverflow = groupEstimate == null
-                  ? 0
-                  : math.max(
-                      0,
-                      groupEstimate.totalRewards -
-                          widget.gameState
-                              .inventoryFreeCapacityFor(groupEstimate.rewards),
+                stream: _figurineService.watchMyFigurines(),
+                builder: (context, snapshot) {
+                  final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+                  _selectedFigurineIds.removeWhere((id) {
+                    return figurines.any(
+                      (figurine) =>
+                          figurine.id == id &&
+                          (widget.gameState.isBusy(figurine) ||
+                              widget.gameState.vitalityFor(figurine) <
+                                  ptipoteStatsConfig.minimumMissionVitality),
                     );
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: <Widget>[
-                  _ForageChoiceCard(
-                    title: 'Biome',
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: ForageBiome.values
-                          .where(widget.gameState.isBiomeUnlocked)
-                          .map((biome) {
-                        final config = lisiereForageConfig.biomes[biome]!;
-                        return ChoiceChip(
-                          label: Text(config.label),
-                          selected: _biome == biome,
-                          onSelected: (_) => setState(() => _biome = biome),
+                  });
+                  final selectedFigurines = figurines
+                      .where(
+                        (figurine) =>
+                            _selectedFigurineIds.contains(figurine.id),
+                      )
+                      .toList();
+                  final estimates = <PtipoteFigurine, ForageEstimate>{
+                    for (final figurine in selectedFigurines)
+                      figurine: _estimate(figurine),
+                  };
+                  final groupEstimate = estimates.isEmpty
+                      ? null
+                      : ForageGroupEstimate.fromEstimates(estimates.values);
+                  final inventoryOverflow = groupEstimate == null
+                      ? 0
+                      : math.max(
+                          0,
+                          groupEstimate.totalRewards -
+                              widget.gameState.inventoryFreeCapacityFor(
+                                groupEstimate.rewards,
+                              ),
                         );
-                      }).toList(),
-                    ),
-                  ),
-                  _ForageChoiceCard(
-                    title: 'P’TIPOTE',
-                    child: figurines.isEmpty
-                        ? const Text('Aucun P’TIPOTE disponible.')
-                        : Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: figurines.map((figurine) {
-                              final vitality =
-                                  widget.gameState.vitalityFor(figurine);
-                              final onMission =
-                                  widget.gameState.isOnMission(figurine.id);
-                              final resting =
-                                  widget.gameState.isResting(figurine);
-                              final busy = widget.gameState.isBusy(figurine);
-                              final tooTired = vitality <
-                                  ptipoteStatsConfig.minimumMissionVitality;
-                              final suffix = onMission
-                                  ? ' · mission'
-                                  : resting
-                                      ? ' · repos'
-                                      : tooTired
-                                          ? ' · trop fatigué'
-                                          : '';
-                              return ChoiceChip(
-                                label: Text(
-                                  '${figurine.displayName} · V$vitality$suffix',
-                                ),
-                                selected:
-                                    _selectedFigurineIds.contains(figurine.id),
-                                onSelected: busy || tooTired
-                                    ? null
-                                    : (_) => setState(() {
-                                          if (_selectedFigurineIds
-                                              .contains(figurine.id)) {
-                                            _selectedFigurineIds
-                                                .remove(figurine.id);
-                                          } else {
-                                            _selectedFigurineIds
-                                                .add(figurine.id);
-                                          }
-                                        }),
-                              );
-                            }).toList(),
+                  return ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: <Widget>[
+                      _ForageChoiceCard(
+                        title: 'Biome',
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: ForageBiome.values
+                              .where(widget.gameState.isBiomeUnlocked)
+                              .map((biome) {
+                            final config = lisiereForageConfig.biomes[biome]!;
+                            return ChoiceChip(
+                              label: Text(config.label),
+                              selected: _biome == biome,
+                              onSelected: (_) => setState(() => _biome = biome),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      _ForageChoiceCard(
+                        title: 'P’TIPOTE',
+                        child: figurines.isEmpty
+                            ? const Text('Aucun P’TIPOTE disponible.')
+                            : Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: figurines.map((figurine) {
+                                  final vitality = widget.gameState.vitalityFor(
+                                    figurine,
+                                  );
+                                  final onMission =
+                                      widget.gameState.isOnMission(figurine.id);
+                                  final resting = widget.gameState.isResting(
+                                    figurine,
+                                  );
+                                  final busy = widget.gameState.isBusy(
+                                    figurine,
+                                  );
+                                  final tooTired = vitality <
+                                      ptipoteStatsConfig.minimumMissionVitality;
+                                  final suffix = onMission
+                                      ? ' · mission'
+                                      : resting
+                                          ? ' · repos'
+                                          : tooTired
+                                              ? ' · trop fatigué'
+                                              : '';
+                                  return ChoiceChip(
+                                    label: Text(
+                                      '${figurine.displayName} · V$vitality$suffix',
+                                    ),
+                                    selected: _selectedFigurineIds.contains(
+                                      figurine.id,
+                                    ),
+                                    onSelected: busy || tooTired
+                                        ? null
+                                        : (_) => setState(() {
+                                              if (_selectedFigurineIds.contains(
+                                                figurine.id,
+                                              )) {
+                                                _selectedFigurineIds.remove(
+                                                  figurine.id,
+                                                );
+                                              } else {
+                                                _selectedFigurineIds.add(
+                                                  figurine.id,
+                                                );
+                                              }
+                                            }),
+                                  );
+                                }).toList(),
+                              ),
+                      ),
+                      _ForageChoiceCard(
+                        title: 'Durée',
+                        child: Wrap(
+                          spacing: 8,
+                          children: ForageDuration.values.map((duration) {
+                            final config =
+                                lisiereForageConfig.durations[duration]!;
+                            final real = config.realDuration(
+                              lisiereForageConfig.forageTimeScale,
+                            );
+                            return ChoiceChip(
+                              label: Text(
+                                '${config.label} (${real.inMinutes} min test)',
+                              ),
+                              selected: _duration == duration,
+                              onSelected: (_) =>
+                                  setState(() => _duration = duration),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      _ForageChoiceCard(
+                        title: 'Intensité',
+                        child: Wrap(
+                          spacing: 8,
+                          children: ForageIntensity.values.map((intensity) {
+                            return ChoiceChip(
+                              label: Text(
+                                lisiereForageConfig
+                                    .intensities[intensity]!.label,
+                              ),
+                              selected: _intensity == intensity,
+                              onSelected: (_) =>
+                                  setState(() => _intensity = intensity),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      if (groupEstimate != null)
+                        _ForageEstimateCard(
+                          estimate: groupEstimate,
+                          selectedCount: selectedFigurines.length,
+                        ),
+                      const SizedBox(height: 12),
+                      if (inventoryOverflow > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            'Attention : les gains potentiels dépassent le stock disponible. Environ $inventoryOverflow ressource(s) seront perdues si rien n’est rangé.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
-                  ),
-                  _ForageChoiceCard(
-                    title: 'Durée',
-                    child: Wrap(
-                      spacing: 8,
-                      children: ForageDuration.values.map((duration) {
-                        final config = lisiereForageConfig.durations[duration]!;
-                        final real = config.realDuration(
-                          lisiereForageConfig.forageTimeScale,
-                        );
-                        return ChoiceChip(
-                          label: Text(
-                              '${config.label} (${real.inMinutes} min test)'),
-                          selected: _duration == duration,
-                          onSelected: (_) =>
-                              setState(() => _duration = duration),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  _ForageChoiceCard(
-                    title: 'Intensité',
-                    child: Wrap(
-                      spacing: 8,
-                      children: ForageIntensity.values.map((intensity) {
-                        return ChoiceChip(
-                          label: Text(lisiereForageConfig
-                              .intensities[intensity]!.label),
-                          selected: _intensity == intensity,
-                          onSelected: (_) =>
-                              setState(() => _intensity = intensity),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  if (groupEstimate != null)
-                    _ForageEstimateCard(
-                      estimate: groupEstimate,
-                      selectedCount: selectedFigurines.length,
-                    ),
-                  const SizedBox(height: 12),
-                  if (inventoryOverflow > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Text(
-                        'Attention : les gains potentiels dépassent le stock disponible. Environ $inventoryOverflow ressource(s) seront perdues si rien n’est rangé.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontWeight: FontWeight.w900,
+                        ),
+                      if (groupEstimate != null &&
+                          groupEstimate.restWarningLabels.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            groupEstimate.restWarningLabels.length == 1
+                                ? '${groupEstimate.restWarningLabels.first} risque de revenir très fatigué et ira directement se coucher.'
+                                : '${groupEstimate.restWarningLabels.join(', ')} risquent de revenir très fatigués et iront directement se coucher.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      FilledButton.icon(
+                        onPressed: groupEstimate?.canLaunch == true
+                            ? () => _launchMissions(estimates)
+                            : null,
+                        icon: const Icon(Icons.forest_outlined),
+                        label: Text(
+                          selectedFigurines.length <= 1
+                              ? 'Envoyer récolter'
+                              : 'Envoyer ${selectedFigurines.length} P’TIPOTES',
                         ),
                       ),
-                    ),
-                  if (groupEstimate != null &&
-                      groupEstimate.restWarningLabels.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Text(
-                        groupEstimate.restWarningLabels.length == 1
-                            ? '${groupEstimate.restWarningLabels.first} risque de revenir très fatigué et ira directement se coucher.'
-                            : '${groupEstimate.restWarningLabels.join(', ')} risquent de revenir très fatigués et iront directement se coucher.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontWeight: FontWeight.w900,
+                      if (groupEstimate != null && !groupEstimate.canLaunch)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Un ou plusieurs P’TIPOTES sont trop fatigués pour partir.',
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                      ),
-                    ),
-                  FilledButton.icon(
-                    onPressed: groupEstimate?.canLaunch == true
-                        ? () => _launchMissions(estimates)
-                        : null,
-                    icon: const Icon(Icons.forest_outlined),
-                    label: Text(
-                      selectedFigurines.length <= 1
-                          ? 'Envoyer récolter'
-                          : 'Envoyer ${selectedFigurines.length} P’TIPOTES',
-                    ),
-                  ),
-                  if (groupEstimate != null && !groupEstimate.canLaunch)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Un ou plusieurs P’TIPOTES sont trop fatigués pour partir.',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  _ActiveMissionsCard(gameState: widget.gameState),
-                ],
-              );
-            },
-          )),
-          ...unlockedBiomes.map((biome) => _BiomeBuildingsTab(
+                      const SizedBox(height: 16),
+                      _ActiveMissionsCard(gameState: widget.gameState),
+                    ],
+                  );
+                },
+              ),
+            ),
+            ...unlockedBiomes.map(
+              (biome) => _BiomeBuildingsTab(
                 gameState: widget.gameState,
                 biome: biome,
                 campHeartLevel: widget.campHeartLevel,
-              )),
-        ]),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4796,10 +4854,11 @@ class ForageGroupEstimate {
 }
 
 class _BiomeBuildingsTab extends StatelessWidget {
-  const _BiomeBuildingsTab(
-      {required this.gameState,
-      required this.biome,
-      required this.campHeartLevel});
+  const _BiomeBuildingsTab({
+    required this.gameState,
+    required this.biome,
+    required this.campHeartLevel,
+  });
   final Zone0GameState gameState;
   final ForageBiome biome;
   final int campHeartLevel;
@@ -4809,66 +4868,81 @@ class _BiomeBuildingsTab extends StatelessWidget {
     final label = lisiereForageConfig.biomes[biome]!.label;
     if (biome != ForageBiome.plaineRiche) {
       return Center(
-          child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
             'Les bâtiments de $label seront révélés avec les prochains Plans du Kernel.',
-            textAlign: TextAlign.center),
-      ));
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
     }
     final built = gameState.plaineNurseryLevel > 0;
     return SafeArea(
-      child: ListView(padding: const EdgeInsets.all(18), children: <Widget>[
-        Text(label,
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.w900)),
-        const SizedBox(height: 10),
-        Card(
+      child: ListView(
+        padding: const EdgeInsets.all(18),
+        children: <Widget>[
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          Card(
             child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const Text('Nurserie P’TIBUG',
-                    style: TextStyle(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 6),
-                Text(built
-                    ? 'Construite · niveau ${gameState.plaineNurseryLevel}'
-                    : 'Prérequis : Cœur du Camp niveau 2 (niveau actuel : $campHeartLevel).'),
-                const SizedBox(height: 10),
-                if (!built)
-                  FilledButton.icon(
-                    onPressed: () => showModalBottomSheet<void>(
-                      context: context,
-                      showDragHandle: true,
-                      isScrollControlled: true,
-                      builder: (_) => _ConstructionProjectSheet(
-                        gameState: gameState,
-                        targetId: 'plaineNursery',
-                        title: 'Construire la Nurserie P’TIBUG',
-                        description:
-                            'La Nurserie a besoin d’une Plaine végétalisée et de matériaux réservés.',
-                        footer:
-                            'Les prérequis et ressources du chantier sont affichés ici.',
-                      ),
-                    ),
-                    icon: const Icon(Icons.pets_outlined),
-                    label: const Text('Préparer la construction'),
-                  )
-                else
-                  OutlinedButton(
-                    onPressed: () =>
-                        Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => PTibugNurseryPage(
-                          gameState: gameState, campHeartLevel: campHeartLevel),
-                    )),
-                    child: const Text('Ouvrir la Nurserie'),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const Text(
+                    'Nurserie P’TIBUG',
+                    style: TextStyle(fontWeight: FontWeight.w900),
                   ),
-              ]),
-        )),
-      ]),
+                  const SizedBox(height: 6),
+                  Text(
+                    built
+                        ? 'Construite · niveau ${gameState.plaineNurseryLevel}'
+                        : 'Prérequis : Cœur du Camp niveau 2 (niveau actuel : $campHeartLevel).',
+                  ),
+                  const SizedBox(height: 10),
+                  if (!built)
+                    FilledButton.icon(
+                      onPressed: () => showModalBottomSheet<void>(
+                        context: context,
+                        showDragHandle: true,
+                        isScrollControlled: true,
+                        builder: (_) => _ConstructionProjectSheet(
+                          gameState: gameState,
+                          targetId: 'plaineNursery',
+                          title: 'Construire la Nurserie P’TIBUG',
+                          description:
+                              'La Nurserie a besoin d’une Plaine végétalisée et de matériaux réservés.',
+                          footer:
+                              'Les prérequis et ressources du chantier sont affichés ici.',
+                        ),
+                      ),
+                      icon: const Icon(Icons.pets_outlined),
+                      label: const Text('Préparer la construction'),
+                    )
+                  else
+                    OutlinedButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => PTibugNurseryPage(
+                            gameState: gameState,
+                            campHeartLevel: campHeartLevel,
+                          ),
+                        ),
+                      ),
+                      child: const Text('Ouvrir la Nurserie'),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -4914,8 +4988,10 @@ class _ForageEstimateCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text('Estimation',
-                style: TextStyle(fontWeight: FontWeight.w900)),
+            const Text(
+              'Estimation',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 6),
             Text('Groupe : $selectedCount P’TIPOTE(s)'),
             Text('Gain : ${_formatRewards(estimate.rewards)}'),
@@ -4954,8 +5030,10 @@ class _ActiveMissionsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text('Missions en cours',
-                style: TextStyle(fontWeight: FontWeight.w900)),
+            const Text(
+              'Missions en cours',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 8),
             if (active.isEmpty)
               const Text('Aucune mission en cours.')
@@ -4975,10 +5053,8 @@ class _ActiveMissionsCard extends StatelessWidget {
                       ),
                       Text(_countdownLabel(mission.endTime)),
                       TextButton.icon(
-                        onPressed: () => _confirmEmergencyReturn(
-                          context,
-                          mission,
-                        ),
+                        onPressed: () =>
+                            _confirmEmergencyReturn(context, mission),
                         icon: const Icon(Icons.keyboard_return_outlined),
                         label: const Text('Retour'),
                       ),
@@ -5017,9 +5093,9 @@ class _ActiveMissionsCard extends StatelessWidget {
     );
     if (confirm != true || !context.mounted) return;
     final result = gameState.emergencyReturnForageMission(mission.id);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 }
 
@@ -5102,8 +5178,10 @@ class CampHeartState extends ChangeNotifier {
       final required = organicRequiredForNextLevel!;
       if (vegetalizationXp < required) break;
       vegetalizationXp -= required;
-      campHeartLevel =
-          math.min(campHeartLevel + 1, campHeartConfig.stages.length);
+      campHeartLevel = math.min(
+        campHeartLevel + 1,
+        campHeartConfig.stages.length,
+      );
       levelUpMessage =
           'Le Cœur du Camp grandit. Le camp devient ${currentStage.label}.';
     }
@@ -5114,10 +5192,14 @@ class CampHeartState extends ChangeNotifier {
   }
 
   void applyFirebaseData(Map<String, dynamic> data) {
-    campHeartLevel = _readInt(data['campHeartLevel'], fallback: campHeartLevel)
-        .clamp(1, campHeartConfig.stages.length);
-    vegetalizationXp =
-        _readInt(data['vegetalizationXp'], fallback: vegetalizationXp);
+    campHeartLevel = _readInt(
+      data['campHeartLevel'],
+      fallback: campHeartLevel,
+    ).clamp(1, campHeartConfig.stages.length);
+    vegetalizationXp = _readInt(
+      data['vegetalizationXp'],
+      fallback: vegetalizationXp,
+    );
     totalVegetalizationInvested = _readInt(
       data['totalVegetalizationInvested'],
       fallback: totalVegetalizationInvested,
@@ -5193,22 +5275,27 @@ class _CampHousingTab extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(18),
         children: <Widget>[
-          Text('Habitation',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w900)),
+          Text(
+            'Habitation',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
           const SizedBox(height: 8),
           const Text(
-              'Le Cœur organise la communauté. Touchez une statistique pour comprendre son rôle.'),
+            'Le Cœur organise la communauté. Touchez une statistique pour comprendre son rôle.',
+          ),
           const SizedBox(height: 14),
           _HabitationStatCard(
             icon: Icons.groups_outlined,
             title: 'Population',
             value:
                 '${gameState.currentPopulation} / ${gameState.populationCapacityForCampHeartLevel(campHeartLevel)}',
-            onTap: () => _showStatInfo(context, 'Population',
-                'Les habitants arrivent grâce aux missions du Kernel. Le Cœur fixe la capacité générale du refuge.'),
+            onTap: () => _showStatInfo(
+              context,
+              'Population',
+              'Les habitants arrivent grâce aux missions du Kernel. Le Cœur fixe la capacité générale du refuge.',
+            ),
           ),
           _HabitationStatCard(
             icon: Icons.home_work_outlined,
@@ -5216,8 +5303,11 @@ class _CampHousingTab extends StatelessWidget {
             value: '${gameState.housingUnits}',
             subtitle:
                 '${housingConfig.residentsPerHousingUnit} habitants par logement',
-            onTap: () => _showStatInfo(context, 'Logements',
-                'Chaque logement ajoute ${housingConfig.residentsPerHousingUnit} places habitables.'),
+            onTap: () => _showStatInfo(
+              context,
+              'Logements',
+              'Chaque logement ajoute ${housingConfig.residentsPerHousingUnit} places habitables.',
+            ),
           ),
           _HabitationStatCard(
             icon: Icons.meeting_room_outlined,
@@ -5225,8 +5315,11 @@ class _CampHousingTab extends StatelessWidget {
             value: '${gameState.housingCapacity}',
             subtitle:
                 '${gameState.unhousedPopulation} habitant(s) sans logement',
-            onTap: () => _showStatInfo(context, 'Places de logement',
-                'Les habitants sans logement correspondent à la population moins les places disponibles.'),
+            onTap: () => _showStatInfo(
+              context,
+              'Places de logement',
+              'Les habitants sans logement correspondent à la population moins les places disponibles.',
+            ),
           ),
           _HabitationStatCard(
             icon: Icons.sentiment_satisfied_alt_outlined,
@@ -5235,16 +5328,22 @@ class _CampHousingTab extends StatelessWidget {
             subtitle: gameState.housingWellbeingPenalty > 0
                 ? 'Logements : -${gameState.housingWellbeingPenalty}'
                 : 'Aucun malus de logement',
-            onTap: () => _showStatInfo(context, 'Bien-être',
-                'Le bien-être reflète la stabilité du refuge. Les habitants sans logement appliquent un malus jusqu’à la fin d’un chantier de logement.'),
+            onTap: () => _showStatInfo(
+              context,
+              'Bien-être',
+              'Le bien-être reflète la stabilité du refuge. Les habitants sans logement appliquent un malus jusqu’à la fin d’un chantier de logement.',
+            ),
           ),
           _HabitationStatCard(
             icon: Icons.hub_outlined,
             title: 'Activité locale',
             value: '$activity%',
             subtitle: 'Préparée pour le Marché',
-            onTap: () => _showStatInfo(context, 'Activité locale',
-                'Cette valeur agrégée représentera plus tard la vitalité du refuge et les opportunités du Marché.'),
+            onTap: () => _showStatInfo(
+              context,
+              'Activité locale',
+              'Cette valeur agrégée représentera plus tard la vitalité du refuge et les opportunités du Marché.',
+            ),
           ),
           const SizedBox(height: 12),
           Card(
@@ -5253,14 +5352,16 @@ class _CampHousingTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Text('Logements',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w900)),
+                  Text(
+                    'Logements',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                  ),
                   const SizedBox(height: 6),
                   Text(
-                      '${gameState.housingUnits} unité(s) · ${gameState.unhousedPopulation} habitant(s) sans logement'),
+                    '${gameState.housingUnits} unité(s) · ${gameState.unhousedPopulation} habitant(s) sans logement',
+                  ),
                   const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: () => showModalBottomSheet<void>(
@@ -5286,10 +5387,12 @@ class _CampHousingTab extends StatelessWidget {
                     const SizedBox(height: 8),
                     OutlinedButton(
                       onPressed: () {
-                        final result = gameState
-                            .thankResidentsForHousing(project.projectId);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(result.message)));
+                        final result = gameState.thankResidentsForHousing(
+                          project.projectId,
+                        );
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text(result.message)));
                       },
                       child: const Text('Remercier les habitants'),
                     ),
@@ -5305,12 +5408,13 @@ class _CampHousingTab extends StatelessWidget {
 }
 
 class _HabitationStatCard extends StatelessWidget {
-  const _HabitationStatCard(
-      {required this.icon,
-      required this.title,
-      required this.value,
-      required this.onTap,
-      this.subtitle});
+  const _HabitationStatCard({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.onTap,
+    this.subtitle,
+  });
   final IconData icon;
   final String title;
   final String value;
@@ -5323,19 +5427,26 @@ class _HabitationStatCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(children: <Widget>[
-              Icon(icon),
-              const SizedBox(width: 12),
-              Expanded(
+            child: Row(
+              children: <Widget>[
+                Icon(icon),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                    Text(title,
-                        style: const TextStyle(fontWeight: FontWeight.w900)),
-                    if (subtitle != null) Text(subtitle!),
-                  ])),
-              Text(value, style: const TextStyle(fontWeight: FontWeight.w900)),
-            ]),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      if (subtitle != null) Text(subtitle!),
+                    ],
+                  ),
+                ),
+                Text(value,
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+              ],
+            ),
           ),
         ),
       );
@@ -5361,9 +5472,9 @@ class _CampHeartPageState extends State<CampHeartPage> {
   void _deposit(int amount) {
     final message = widget.state.depositOrganic(amount, widget.gameState);
     setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -5462,9 +5573,11 @@ class _CampGeneratorView extends StatelessWidget {
       return Expanded(
         child: Column(
           children: <Widget>[
-            Text(resource,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.w900)),
+            Text(
+              resource,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 8),
             SizedBox(
               height: 168,
@@ -5490,32 +5603,39 @@ class _CampGeneratorView extends StatelessWidget {
                     ),
                   ),
                   Center(
-                    child: Text('$stored/$capacity',
-                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                    child: Text(
+                      '$stored/$capacity',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 6),
-            Text('Maison : ${gameState.resourceAmount(resource)}',
-                textAlign: TextAlign.center),
+            Text(
+              'Maison : ${gameState.resourceAmount(resource)}',
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 6),
             Wrap(
               alignment: WrapAlignment.center,
               spacing: 2,
               children: <int>[1, 5, 10, 9999]
-                  .map((amount) => TextButton(
-                        onPressed: () {
-                          final result = gameState.transferToGenerator(
-                            resource: resource,
-                            amount: amount,
-                            heartLevel: heartLevel,
-                          );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(result.message)));
-                        },
-                        child: Text(amount == 9999 ? 'Max' : '+$amount'),
-                      ))
+                  .map(
+                    (amount) => TextButton(
+                      onPressed: () {
+                        final result = gameState.transferToGenerator(
+                          resource: resource,
+                          amount: amount,
+                          heartLevel: heartLevel,
+                        );
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text(result.message)));
+                      },
+                      child: Text(amount == 9999 ? 'Max' : '+$amount'),
+                    ),
+                  )
                   .toList(),
             ),
           ],
@@ -5534,14 +5654,16 @@ class _CampGeneratorView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
-        Text('Bio-réacteur niveau $heartLevel',
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.w900)),
+        Text(
+          'Bio-réacteur niveau $heartLevel',
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+        ),
         const SizedBox(height: 6),
         Text(
-            '5 Organique + 1 Minéral → 1 Bio-batterie toutes les ${campGeneratorConfig.cycleMinutes(heartLevel)} min.'),
+          '5 Organique + 1 Minéral → 1 Bio-batterie toutes les ${campGeneratorConfig.cycleMinutes(heartLevel)} min.',
+        ),
         const SizedBox(height: 12),
         Card(
           child: Padding(
@@ -5575,14 +5697,21 @@ class _CampGeneratorView extends StatelessWidget {
                                 ]
                               : null,
                         ),
-                        child: const Icon(Icons.battery_charging_full_outlined,
-                            color: Colors.white, size: 48),
+                        child: const Icon(
+                          Icons.battery_charging_full_outlined,
+                          color: Colors.white,
+                          size: 48,
+                        ),
                       ),
                       const SizedBox(height: 10),
-                      Text(active ? 'Production' : 'En attente',
-                          style: const TextStyle(fontWeight: FontWeight.w900)),
-                      Text('$paliers palier(s) prêt(s)',
-                          textAlign: TextAlign.center),
+                      Text(
+                        active ? 'Production' : 'En attente',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      Text(
+                        '$paliers palier(s) prêt(s)',
+                        textAlign: TextAlign.center,
+                      ),
                     ],
                   ),
                 ),
@@ -5601,7 +5730,8 @@ class _CampGeneratorView extends StatelessWidget {
             leading: const Icon(Icons.timer_outlined),
             title: Text(_remainingLabel()),
             subtitle: Text(
-                'Production totale : ${gameState.generatorTotalProduced} · Bio-batteries : ${gameState.bioBatteries}'),
+              'Production totale : ${gameState.generatorTotalProduced} · Bio-batteries : ${gameState.bioBatteries}',
+            ),
           ),
         ),
       ],
@@ -5649,10 +5779,9 @@ class _CampHeartHero extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               'Cœur du Camp',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -5682,10 +5811,9 @@ class _CampHeartProgressCard extends StatelessWidget {
           children: <Widget>[
             Text(
               'Stade : ${state.currentStage.label}',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 4),
             Text('Cœur niveau ${state.campHeartLevel}'),
@@ -5737,10 +5865,9 @@ class _CampHeartDepositCard extends StatelessWidget {
           children: <Widget>[
             Text(
               'Végétaliser le Cœur',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
             Text(
@@ -5772,7 +5899,7 @@ class _CampHeartDepositCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.add, size: 36),
-                    Text('Ajouter de l’Organique')
+                    Text('Ajouter de l’Organique'),
                   ],
                 ),
               ),
@@ -5810,44 +5937,57 @@ class _CampHeartOrganicDepositSheetState
   Widget build(BuildContext context) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('Ajouter au Cœur',
-                style: Theme.of(context)
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Ajouter au Cœur',
+                style: Theme.of(
+                  context,
+                )
                     .textTheme
                     .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.eco_outlined),
-              title: const Text('Organique'),
-              subtitle: Text('Maison : ${widget.stock}'),
-              trailing: Text('$_selected / ${widget.stock}'),
-            ),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-              TextButton(onPressed: () => _add(1), child: const Text('+1')),
-              TextButton(onPressed: () => _add(5), child: const Text('+5')),
-              TextButton(onPressed: () => _add(10), child: const Text('+10')),
-              TextButton(
-                  onPressed: () => setState(() => _selected = widget.stock),
-                  child: const Text('Max')),
-              IconButton(
-                  tooltip: 'Retirer la sélection',
-                  onPressed: _selected == 0
-                      ? null
-                      : () => setState(() => _selected = 0),
-                  icon: const Icon(Icons.undo)),
-            ]),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: _selected == 0
-                  ? null
-                  : () {
-                      widget.onConfirm(_selected);
-                      Navigator.of(context).pop();
-                    },
-              child: const Text('Investir dans le Cœur'),
-            ),
-          ]),
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.eco_outlined),
+                title: const Text('Organique'),
+                subtitle: Text('Maison : ${widget.stock}'),
+                trailing: Text('$_selected / ${widget.stock}'),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton(onPressed: () => _add(1), child: const Text('+1')),
+                  TextButton(onPressed: () => _add(5), child: const Text('+5')),
+                  TextButton(
+                      onPressed: () => _add(10), child: const Text('+10')),
+                  TextButton(
+                    onPressed: () => setState(() => _selected = widget.stock),
+                    child: const Text('Max'),
+                  ),
+                  IconButton(
+                    tooltip: 'Retirer la sélection',
+                    onPressed: _selected == 0
+                        ? null
+                        : () => setState(() => _selected = 0),
+                    icon: const Icon(Icons.undo),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: _selected == 0
+                    ? null
+                    : () {
+                        widget.onConfirm(_selected);
+                        Navigator.of(context).pop();
+                      },
+                child: const Text('Investir dans le Cœur'),
+              ),
+            ],
+          ),
         ),
       );
 }
@@ -5873,10 +6013,9 @@ class _CampHeartStageCard extends StatelessWidget {
           children: <Widget>[
             Text(
               title,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
             ...items.take(7).map(
@@ -5892,10 +6031,7 @@ class _CampHeartStageCard extends StatelessWidget {
                   ),
                 ),
             const SizedBox(height: 10),
-            Text(
-              footer,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            Text(footer, style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
       ),
@@ -6043,225 +6179,244 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
       length: 5,
       child: Scaffold(
         appBar: AppBar(
-            title: const Text('Tour de sécurité'),
-            bottom: const TabBar(tabs: <Widget>[
+          title: const Text('Tour de sécurité'),
+          bottom: const TabBar(
+            tabs: <Widget>[
               Tab(text: 'Surveillance'),
               Tab(text: 'Exploration'),
               Tab(text: 'Météo'),
               Tab(text: 'Amélioration'),
               Tab(text: 'Infos'),
-            ])),
-        body: TabBarView(children: <Widget>[
-          SafeArea(
-            child: StreamBuilder<List<PtipoteFigurine>>(
-              stream: widget.figurineService.watchMyFigurines(),
-              builder: (context, snapshot) {
-                final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-                final activeTowerMissions = widget.gameState.towerMissions
-                    .where((mission) =>
-                        mission.status == TowerMissionStatus.active)
-                    .toList();
-                final campPatrols = activeTowerMissions
-                    .where((mission) => mission.patrolBiome == null)
-                    .toList();
-                final biomePatrols = activeTowerMissions
-                    .where((mission) => mission.patrolBiome != null)
-                    .toList();
-                final explorations = widget.gameState.explorationMissions
-                    .where((mission) => mission.isActive)
-                    .toList();
-                final available = figurines
-                    .where(
-                      (figurine) =>
-                          !widget.gameState.isUnavailableForTower(figurine) &&
-                          widget.gameState.vitalityFor(figurine) >=
-                              ptipoteStatsConfig.minimumMissionVitality,
-                    )
-                    .toList();
-                final unavailable = figurines
-                    .where((figurine) => !available.contains(figurine))
-                    .toList();
-                return ListView(
-                  padding: const EdgeInsets.all(18),
-                  children: <Widget>[
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              'Tour niveau ${widget.gameState.securityTowerLevel}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w900),
-                            ),
-                            const SizedBox(height: 8),
-                            _InfoLine(
-                              label: 'Sécurité',
-                              value:
-                                  '${widget.gameState.refugeSafety}/${securityTowerConfig.maxSecurity}',
-                            ),
-                            _InfoLine(
-                              label: 'Slots',
-                              value:
-                                  '${activeTowerMissions.length}/${widget.gameState.securityTowerSlots}',
-                            ),
-                            _InfoLine(
-                              label: 'Contribution',
-                              value:
-                                  '+${securityTowerConfig.securityGainForLevel(widget.gameState.securityTowerLevel)} sécurité / ${securityTowerConfig.tickMinutes} min',
-                            ),
-                            _InfoLine(
-                              label: 'Coût',
-                              value:
-                                  '-${securityTowerConfig.vitalityCostPerTick} Vitalité / tick',
-                            ),
-                            const SizedBox(height: 10),
-                            FilledButton.icon(
-                              onPressed: widget.gameState
-                                          .towerManualRechargeRemaining() ==
-                                      Duration.zero
-                                  ? () {
-                                      final result = widget.gameState
-                                          .manuallyRechargeTower();
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(SnackBar(
-                                              content: Text(result.message)));
-                                    }
-                                  : null,
-                              icon: const Icon(
-                                  Icons.electrical_services_outlined),
-                              label: Text(widget.gameState
-                                          .towerManualRechargeRemaining() ==
-                                      Duration.zero
-                                  ? 'Recharger les balises (+${securityTowerConfig.manualRechargeGainForLevel(widget.gameState.securityTowerLevel)})'
-                                  : 'Recharge dans ${widget.gameState.towerManualRechargeRemaining().inMinutes + 1} min'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            const Text(
-                              'Opérations en cours',
-                              style: TextStyle(fontWeight: FontWeight.w900),
-                            ),
-                            const SizedBox(height: 10),
-                            _TowerOperationGroup(
-                              title: 'Ronde dans le camp',
-                              emptyLabel: 'Aucune ronde dans le camp.',
-                              missions: campPatrols,
-                              onReturn: widget.gameState.removeFromTower,
-                            ),
-                            const Divider(height: 22),
-                            _TowerOperationGroup(
-                              title: 'Ronde dans les biomes',
-                              emptyLabel: 'Aucune ronde locale.',
-                              missions: biomePatrols,
-                              onReturn: widget.gameState.removeFromTower,
-                            ),
-                            const Divider(height: 22),
-                            Text(
-                              'Exploration (${explorations.length})',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                            const SizedBox(height: 6),
-                            if (explorations.isEmpty)
-                              const Text('Aucune exploration en cours.')
-                            else
-                              ...explorations.map(
-                                (mission) => Text(
-                                  '${lisiereForageConfig.biomes[mission.biome]!.label} · ${_countdownLabel(mission.endTime)}',
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: <Widget>[
+            SafeArea(
+              child: StreamBuilder<List<PtipoteFigurine>>(
+                stream: widget.figurineService.watchMyFigurines(),
+                builder: (context, snapshot) {
+                  final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+                  final activeTowerMissions = widget.gameState.towerMissions
+                      .where(
+                        (mission) =>
+                            mission.status == TowerMissionStatus.active,
+                      )
+                      .toList();
+                  final campPatrols = activeTowerMissions
+                      .where((mission) => mission.patrolBiome == null)
+                      .toList();
+                  final biomePatrols = activeTowerMissions
+                      .where((mission) => mission.patrolBiome != null)
+                      .toList();
+                  final explorations = widget.gameState.explorationMissions
+                      .where((mission) => mission.isActive)
+                      .toList();
+                  final available = figurines
+                      .where(
+                        (figurine) =>
+                            !widget.gameState.isUnavailableForTower(figurine) &&
+                            widget.gameState.vitalityFor(figurine) >=
+                                ptipoteStatsConfig.minimumMissionVitality,
+                      )
+                      .toList();
+                  final unavailable = figurines
+                      .where((figurine) => !available.contains(figurine))
+                      .toList();
+                  return ListView(
+                    padding: const EdgeInsets.all(18),
+                    children: <Widget>[
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                'Tour niveau ${widget.gameState.securityTowerLevel}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w900),
+                              ),
+                              const SizedBox(height: 8),
+                              _InfoLine(
+                                label: 'Sécurité',
+                                value:
+                                    '${widget.gameState.refugeSafety}/${securityTowerConfig.maxSecurity}',
+                              ),
+                              _InfoLine(
+                                label: 'Slots',
+                                value:
+                                    '${activeTowerMissions.length}/${widget.gameState.securityTowerSlots}',
+                              ),
+                              _InfoLine(
+                                label: 'Contribution',
+                                value:
+                                    '+${securityTowerConfig.securityGainForLevel(widget.gameState.securityTowerLevel)} sécurité / ${securityTowerConfig.tickMinutes} min',
+                              ),
+                              _InfoLine(
+                                label: 'Coût',
+                                value:
+                                    '-${securityTowerConfig.vitalityCostPerTick} Vitalité / tick',
+                              ),
+                              const SizedBox(height: 10),
+                              FilledButton.icon(
+                                onPressed: widget.gameState
+                                            .towerManualRechargeRemaining() ==
+                                        Duration.zero
+                                    ? () {
+                                        final result = widget.gameState
+                                            .manuallyRechargeTower();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(result.message),
+                                          ),
+                                        );
+                                      }
+                                    : null,
+                                icon: const Icon(
+                                  Icons.electrical_services_outlined,
+                                ),
+                                label: Text(
+                                  widget.gameState
+                                              .towerManualRechargeRemaining() ==
+                                          Duration.zero
+                                      ? 'Recharger les balises (+${securityTowerConfig.manualRechargeGainForLevel(widget.gameState.securityTowerLevel)})'
+                                      : 'Recharge dans ${widget.gameState.towerManualRechargeRemaining().inMinutes + 1} min',
                                 ),
                               ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            const Text(
-                              'Affecter',
-                              style: TextStyle(fontWeight: FontWeight.w900),
-                            ),
-                            const SizedBox(height: 10),
-                            if (activeTowerMissions.length >=
-                                widget.gameState.securityTowerSlots)
-                              const Text('Slot de Tour occupé.')
-                            else if (available.isEmpty) ...<Widget>[
-                              const Text('Aucun P’TIPOTE disponible.'),
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting)
-                                const Padding(
-                                  padding: EdgeInsets.only(top: 8),
-                                  child: LinearProgressIndicator(),
+                      const SizedBox(height: 10),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              const Text(
+                                'Opérations en cours',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                              const SizedBox(height: 10),
+                              _TowerOperationGroup(
+                                title: 'Ronde dans le camp',
+                                emptyLabel: 'Aucune ronde dans le camp.',
+                                missions: campPatrols,
+                                onReturn: widget.gameState.removeFromTower,
+                              ),
+                              const Divider(height: 22),
+                              _TowerOperationGroup(
+                                title: 'Ronde dans les biomes',
+                                emptyLabel: 'Aucune ronde locale.',
+                                missions: biomePatrols,
+                                onReturn: widget.gameState.removeFromTower,
+                              ),
+                              const Divider(height: 22),
+                              Text(
+                                'Exploration (${explorations.length})',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
                                 ),
-                              if (unavailable.isNotEmpty) ...<Widget>[
-                                const SizedBox(height: 10),
-                                ...unavailable.map(
-                                  (figurine) => _TowerFigurineRow(
-                                    name: figurine.displayName,
-                                    subtitle: _towerUnavailableReason(figurine),
-                                    action: const SizedBox.shrink(),
+                              ),
+                              const SizedBox(height: 6),
+                              if (explorations.isEmpty)
+                                const Text('Aucune exploration en cours.')
+                              else
+                                ...explorations.map(
+                                  (mission) => Text(
+                                    '${lisiereForageConfig.biomes[mission.biome]!.label} · ${_countdownLabel(mission.endTime)}',
                                   ),
                                 ),
-                              ],
-                            ] else
-                              FilledButton.icon(
-                                onPressed: () => _chooseTowerMission(figurines),
-                                icon: const Icon(Icons.person_add_alt_1),
-                                label: const Text('Choisir un P’TIPOTE'),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                );
-              },
+                      const SizedBox(height: 10),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              const Text(
+                                'Affecter',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                              const SizedBox(height: 10),
+                              if (activeTowerMissions.length >=
+                                  widget.gameState.securityTowerSlots)
+                                const Text('Slot de Tour occupé.')
+                              else if (available.isEmpty) ...<Widget>[
+                                const Text('Aucun P’TIPOTE disponible.'),
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting)
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 8),
+                                    child: LinearProgressIndicator(),
+                                  ),
+                                if (unavailable.isNotEmpty) ...<Widget>[
+                                  const SizedBox(height: 10),
+                                  ...unavailable.map(
+                                    (figurine) => _TowerFigurineRow(
+                                      name: figurine.displayName,
+                                      subtitle: _towerUnavailableReason(
+                                        figurine,
+                                      ),
+                                      action: const SizedBox.shrink(),
+                                    ),
+                                  ),
+                                ],
+                              ] else
+                                FilledButton.icon(
+                                  onPressed: () =>
+                                      _chooseTowerMission(figurines),
+                                  icon: const Icon(Icons.person_add_alt_1),
+                                  label: const Text('Choisir un P’TIPOTE'),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
-          ),
-          _TowerExplorationTab(
+            _TowerExplorationTab(
               gameState: widget.gameState,
-              figurineService: widget.figurineService),
-          _TowerWeatherTab(gameState: widget.gameState),
-          _BuildingUpgradeTab(
-            gameState: widget.gameState,
-            targetId: 'securityTower',
-            title: 'Améliorer la Tour',
-            description:
-                'La Tour reste active pendant les travaux. Le nouveau nombre de slots sera appliqué à la fin.',
-            currentEffects: <String>[
-              '${widget.gameState.securityTowerSlots} slot(s) de surveillance',
-              '+${securityTowerConfig.securityGainForLevel(widget.gameState.securityTowerLevel)} sécurité par tick',
-            ],
-            nextEffects: <String>[
-              '${securityTowerConfig.slotsForLevel(widget.gameState.securityTowerLevel + 1)} slot(s) de surveillance',
-              '+${securityTowerConfig.securityGainForLevel(widget.gameState.securityTowerLevel + 1)} sécurité par tick',
-              'Les rondes en cours ne sont pas interrompues.',
-            ],
-            campHeartLevel: widget.campHeartLevel,
-          ),
-          const _BuildingInformationTab(
-            title: 'Tour de sécurité',
-            description:
-                'La Tour organise les rondes, sécurise les biomes et prépare la météo. Les P’TIPOTES affectés restent indisponibles pendant leur ronde.',
-          ),
-        ]),
+              figurineService: widget.figurineService,
+            ),
+            _TowerWeatherTab(gameState: widget.gameState),
+            _BuildingUpgradeTab(
+              gameState: widget.gameState,
+              targetId: 'securityTower',
+              title: 'Améliorer la Tour',
+              description:
+                  'La Tour reste active pendant les travaux. Le nouveau nombre de slots sera appliqué à la fin.',
+              currentEffects: <String>[
+                '${widget.gameState.securityTowerSlots} slot(s) de surveillance',
+                '+${securityTowerConfig.securityGainForLevel(widget.gameState.securityTowerLevel)} sécurité par tick',
+              ],
+              nextEffects: <String>[
+                '${securityTowerConfig.slotsForLevel(widget.gameState.securityTowerLevel + 1)} slot(s) de surveillance',
+                '+${securityTowerConfig.securityGainForLevel(widget.gameState.securityTowerLevel + 1)} sécurité par tick',
+                'Les rondes en cours ne sont pas interrompues.',
+              ],
+              campHeartLevel: widget.campHeartLevel,
+            ),
+            const _BuildingInformationTab(
+              title: 'Tour de sécurité',
+              description:
+                  'La Tour organise les rondes, sécurise les biomes et prépare la météo. Les P’TIPOTES affectés restent indisponibles pendant leur ronde.',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -6305,9 +6460,11 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
               .map(
                 (plan) => ListTile(
                   title: Text(_towerPlanLabel(plan)),
-                  subtitle: Text(plan == TowerMissionPlan.until25Vitality
-                      ? '${figurine.displayName} rentrera puis ira dormir.'
-                      : '${figurine.displayName} surveillera les abords.'),
+                  subtitle: Text(
+                    plan == TowerMissionPlan.until25Vitality
+                        ? '${figurine.displayName} rentrera puis ira dormir.'
+                        : '${figurine.displayName} surveillera les abords.',
+                  ),
                   onTap: () => Navigator.of(context).pop(plan),
                 ),
               )
@@ -6320,8 +6477,9 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
       figurine: figurine,
       plan: plan,
     );
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(result.message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   String _towerPlanLabel(TowerMissionPlan plan) {
@@ -6339,175 +6497,201 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
 }
 
 class _TowerExplorationTab extends StatelessWidget {
-  const _TowerExplorationTab(
-      {required this.gameState, required this.figurineService});
+  const _TowerExplorationTab({
+    required this.gameState,
+    required this.figurineService,
+  });
   final Zone0GameState gameState;
   final FigurineService figurineService;
 
   @override
   Widget build(BuildContext context) => SafeArea(
-          child: StreamBuilder<List<PtipoteFigurine>>(
-        stream: figurineService.watchMyFigurines(),
-        builder: (context, snapshot) {
-          final available = (snapshot.data ?? const <PtipoteFigurine>[])
-              .where((item) =>
-                  !gameState.isBusy(item) &&
-                  gameState.vitalityFor(item) >=
-                      ptipoteStatsConfig.minimumMissionVitality)
-              .toList();
-          return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-            Card(
-                child: Padding(
+        child: StreamBuilder<List<PtipoteFigurine>>(
+          stream: figurineService.watchMyFigurines(),
+          builder: (context, snapshot) {
+            final available = (snapshot.data ?? const <PtipoteFigurine>[])
+                .where(
+                  (item) =>
+                      !gameState.isBusy(item) &&
+                      gameState.vitalityFor(item) >=
+                          ptipoteStatsConfig.minimumMissionVitality,
+                )
+                .toList();
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: <Widget>[
+                Card(
+                  child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                        'Carte des abords. Chaque exploration demande ${towerOperationsConfig.biomeRevealSecurityThreshold}% de sécurité moyenne sur les biomes adjacents.'))),
-            const SizedBox(height: 10),
-            _ExplorationMap3x3(gameState: gameState),
-            const SizedBox(height: 12),
-            Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: ForageBiome.values.map((biome) {
-                  final state = gameState.biomeSecurity[biome]!;
-                  final label = lisiereForageConfig.biomes[biome]!.label;
-                  final unlocked = gameState.isBiomeUnlocked(biome);
-                  final exploring = gameState.isBiomeExploring(biome);
-                  final adjacentSecurity =
-                      gameState.adjacentBiomeSecurityFor(biome);
-                  final enabled = adjacentSecurity >=
-                          towerOperationsConfig.biomeRevealSecurityThreshold &&
-                      !unlocked &&
-                      !exploring &&
-                      available.isNotEmpty;
-                  return SizedBox(
-                    width: 160,
-                    child: Card(
+                      'Carte des abords. Chaque exploration demande ${towerOperationsConfig.biomeRevealSecurityThreshold}% de sécurité moyenne sur les biomes adjacents.',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _ExplorationMap3x3(gameState: gameState),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: ForageBiome.values.map((biome) {
+                    final state = gameState.biomeSecurity[biome]!;
+                    final label = lisiereForageConfig.biomes[biome]!.label;
+                    final unlocked = gameState.isBiomeUnlocked(biome);
+                    final exploring = gameState.isBiomeExploring(biome);
+                    final adjacentSecurity = gameState.adjacentBiomeSecurityFor(
+                      biome,
+                    );
+                    final enabled = adjacentSecurity >=
+                            towerOperationsConfig
+                                .biomeRevealSecurityThreshold &&
+                        !unlocked &&
+                        !exploring &&
+                        available.isNotEmpty;
+                    return SizedBox(
+                      width: 160,
+                      child: Card(
                         child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Icon(unlocked
-                                      ? Icons.travel_explore
-                                      : Icons.lock_outline),
-                                  const SizedBox(height: 6),
-                                  Text(label,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w900)),
-                                  Text(unlocked
-                                      ? 'Disponible en Lisière'
-                                      : exploring
-                                          ? 'Exploration en cours'
-                                          : adjacentSecurity >=
-                                                  towerOperationsConfig
-                                                      .biomeRevealSecurityThreshold
-                                              ? 'À explorer'
-                                              : 'Sécurité voisine insuffisante'),
-                                  if (!unlocked)
-                                    Text(
-                                        'Sécurité voisine : $adjacentSecurity% / ${towerOperationsConfig.biomeRevealSecurityThreshold}%'),
-                                  Text(
-                                      'Danger potentiel : ${lisiereForageConfig.biomes[biome]!.baseRiskPercent}%'),
-                                  if (!unlocked) ...<Widget>[
-                                    Text(
-                                        'Exploration : ${state.explorationProgress}% / 100%'),
-                                    LinearProgressIndicator(
-                                      value: state.explorationProgress / 100,
-                                    ),
-                                  ],
-                                  if (state.explorationProgress >= 30)
-                                    Text(_biomeResourceHints(
-                                      biome,
-                                      detailLevel:
-                                          state.explorationProgress >= 70
-                                              ? 2
-                                              : state.explorationProgress >= 50
-                                                  ? 1
-                                                  : 0,
-                                    )),
-                                  if (unlocked) ...<Widget>[
-                                    Text(
-                                        'Réduction de danger : -${_localRiskReduction(state.localSecurity)}%'),
-                                    Text(
-                                        'Sécurisation : ${state.localSecurity}% / 100%'),
-                                    LinearProgressIndicator(
-                                      value: state.localSecurity / 100,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
-                                  ],
-                                  if (enabled)
-                                    FilledButton(
-                                        onPressed: () async {
-                                          final figurine =
-                                              await _pickPtipoteForActivity(
-                                                  context: context,
-                                                  gameState: gameState,
-                                                  figurines: available,
-                                                  title: 'Explorer $label');
-                                          if (figurine != null &&
-                                              context.mounted) {
-                                            final hours =
-                                                await _pickExplorationDuration(
-                                                    context);
-                                            if (hours == null ||
-                                                !context.mounted) {
-                                              return;
-                                            }
-                                            final result =
-                                                gameState.startBiomeExploration(
-                                                    biome: biome,
-                                                    figurines: <PtipoteFigurine>[
-                                                      figurine
-                                                    ],
-                                                    durationHours: hours);
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(SnackBar(
-                                                    content:
-                                                        Text(result.message)));
-                                          }
-                                        },
-                                        child: const Text('Explorer')),
-                                  if (exploring)
-                                    Text(_explorationReturn(gameState, biome)),
-                                  if (unlocked && available.isNotEmpty)
-                                    OutlinedButton.icon(
-                                      onPressed: () async {
-                                        final figurine =
-                                            await _pickPtipoteForActivity(
-                                                context: context,
-                                                gameState: gameState,
-                                                figurines: available,
-                                                title: 'Sécuriser $label');
-                                        if (figurine != null &&
-                                            context.mounted) {
-                                          final plan =
-                                              await _pickPatrolPlan(context);
-                                          if (plan == null ||
-                                              !context.mounted) {
-                                            return;
-                                          }
-                                          final result =
-                                              gameState.startBiomePatrol(
-                                            biome: biome,
-                                            figurine: figurine,
-                                            plan: plan,
-                                          );
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(SnackBar(
-                                                  content:
-                                                      Text(result.message)));
-                                        }
-                                      },
-                                      icon: const Icon(Icons.shield_outlined),
-                                      label: const Text('Sécuriser'),
-                                    ),
-                                ]))),
-                  );
-                }).toList()),
-          ]);
-        },
-      ));
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Icon(
+                                unlocked
+                                    ? Icons.travel_explore
+                                    : Icons.lock_outline,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                label,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900),
+                              ),
+                              Text(
+                                unlocked
+                                    ? 'Disponible en Lisière'
+                                    : exploring
+                                        ? 'Exploration en cours'
+                                        : adjacentSecurity >=
+                                                towerOperationsConfig
+                                                    .biomeRevealSecurityThreshold
+                                            ? 'À explorer'
+                                            : 'Sécurité voisine insuffisante',
+                              ),
+                              if (!unlocked)
+                                Text(
+                                  'Sécurité voisine : $adjacentSecurity% / ${towerOperationsConfig.biomeRevealSecurityThreshold}%',
+                                ),
+                              Text(
+                                'Danger potentiel : ${lisiereForageConfig.biomes[biome]!.baseRiskPercent}%',
+                              ),
+                              if (!unlocked) ...<Widget>[
+                                Text(
+                                  'Exploration : ${state.explorationProgress}% / 100%',
+                                ),
+                                LinearProgressIndicator(
+                                  value: state.explorationProgress / 100,
+                                ),
+                              ],
+                              if (state.explorationProgress >= 30)
+                                Text(
+                                  _biomeResourceHints(
+                                    biome,
+                                    detailLevel: state.explorationProgress >= 70
+                                        ? 2
+                                        : state.explorationProgress >= 50
+                                            ? 1
+                                            : 0,
+                                  ),
+                                ),
+                              if (unlocked) ...<Widget>[
+                                Text(
+                                  'Réduction de danger : -${_localRiskReduction(state.localSecurity)}%',
+                                ),
+                                Text(
+                                  'Sécurisation : ${state.localSecurity}% / 100%',
+                                ),
+                                LinearProgressIndicator(
+                                  value: state.localSecurity / 100,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ],
+                              if (enabled)
+                                FilledButton(
+                                  onPressed: () async {
+                                    final figurine =
+                                        await _pickPtipoteForActivity(
+                                      context: context,
+                                      gameState: gameState,
+                                      figurines: available,
+                                      title: 'Explorer $label',
+                                    );
+                                    if (figurine != null && context.mounted) {
+                                      final hours =
+                                          await _pickExplorationDuration(
+                                        context,
+                                      );
+                                      if (hours == null || !context.mounted) {
+                                        return;
+                                      }
+                                      final result =
+                                          gameState.startBiomeExploration(
+                                        biome: biome,
+                                        figurines: <PtipoteFigurine>[figurine],
+                                        durationHours: hours,
+                                      );
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(content: Text(result.message)),
+                                      );
+                                    }
+                                  },
+                                  child: const Text('Explorer'),
+                                ),
+                              if (exploring)
+                                Text(_explorationReturn(gameState, biome)),
+                              if (unlocked && available.isNotEmpty)
+                                OutlinedButton.icon(
+                                  onPressed: () async {
+                                    final figurine =
+                                        await _pickPtipoteForActivity(
+                                      context: context,
+                                      gameState: gameState,
+                                      figurines: available,
+                                      title: 'Sécuriser $label',
+                                    );
+                                    if (figurine != null && context.mounted) {
+                                      final plan =
+                                          await _pickPatrolPlan(context);
+                                      if (plan == null || !context.mounted) {
+                                        return;
+                                      }
+                                      final result = gameState.startBiomePatrol(
+                                        biome: biome,
+                                        figurine: figurine,
+                                        plan: plan,
+                                      );
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(content: Text(result.message)),
+                                      );
+                                    }
+                                  },
+                                  icon: const Icon(Icons.shield_outlined),
+                                  label: const Text('Sécuriser'),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            );
+          },
+        ),
+      );
 }
 
 class _ExplorationMap3x3 extends StatelessWidget {
@@ -6547,7 +6731,10 @@ class _ExplorationMap3x3 extends StatelessWidget {
       itemBuilder: (context, index) {
         if (index == 7) {
           return const _ExplorationMapCell(
-              label: 'Camp', icon: Icons.home_outlined, active: true);
+            label: 'Camp',
+            icon: Icons.home_outlined,
+            active: true,
+          );
         }
         final biome = cells[index];
         if (biome == null) {
@@ -6573,11 +6760,12 @@ class _ExplorationMap3x3 extends StatelessWidget {
 }
 
 class _ExplorationMapCell extends StatelessWidget {
-  const _ExplorationMapCell(
-      {required this.label,
-      required this.icon,
-      required this.active,
-      this.progress});
+  const _ExplorationMapCell({
+    required this.label,
+    required this.icon,
+    required this.active,
+    this.progress,
+  });
   final String label;
   final IconData icon;
   final bool active;
@@ -6593,19 +6781,22 @@ class _ExplorationMapCell extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(6),
           child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Icon(icon, size: 18),
-                const SizedBox(height: 3),
-                Text(label,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w800)),
-                if (progress != null && progress! > 0)
-                  Text('$progress%', style: const TextStyle(fontSize: 10)),
-              ]),
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(icon, size: 18),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+              ),
+              if (progress != null && progress! > 0)
+                Text('$progress%', style: const TextStyle(fontSize: 10)),
+            ],
+          ),
         ),
       );
 }
@@ -6617,35 +6808,45 @@ class _TowerWeatherTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final alerts = gameState.weatherAlerts;
     return SafeArea(
-        child: ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-      Card(
-          child: Padding(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          Card(
+            child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(alerts.isEmpty
-                  ? 'Aucun événement météo annoncé. La Tour préviendra le refuge avant les prochaines perturbations.'
-                  : 'Événements annoncés'))),
-      ...alerts.map((alert) {
-        final config = towerOperationsConfig.weatherEvents
-            .firstWhere((item) => item.type == alert.type);
-        return Card(
-            child: ListTile(
+              child: Text(
+                alerts.isEmpty
+                    ? 'Aucun événement météo annoncé. La Tour préviendra le refuge avant les prochaines perturbations.'
+                    : 'Événements annoncés',
+              ),
+            ),
+          ),
+          ...alerts.map((alert) {
+            final config = towerOperationsConfig.weatherEvents.firstWhere(
+              (item) => item.type == alert.type,
+            );
+            return Card(
+              child: ListTile(
                 title: Text(config.label),
-                subtitle: Text(
-                    '${config.description}\nPréparation : ${config.preparationAmount} ${config.preparationItem}'),
-                trailing: alert.preparationCompleted
-                    ? const Text('Préparé')
-                    : FilledButton(
-                        onPressed: () {
-                          final result =
-                              gameState.fulfillWeatherPreparation(alert);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(result.message)),
-                          );
-                        },
-                        child: const Text('Fournir'),
-                      )));
-      }),
-    ]));
+                subtitle: Text(config.announcement),
+                trailing: FilledButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => KernelPage(
+                        gameState: gameState,
+                        campHeartState: _RefugePageState._campHeartState,
+                        initialTabIndex: 4,
+                      ),
+                    ),
+                  ),
+                  child: const Text('Voir le Kernel'),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
   }
 }
 
@@ -6666,8 +6867,9 @@ String _biomeResourceHints(ForageBiome biome, {required int detailLevel}) {
 }
 
 String _explorationReturn(Zone0GameState state, ForageBiome biome) {
-  final mission = state.explorationMissions
-      .firstWhere((item) => item.biome == biome && item.isActive);
+  final mission = state.explorationMissions.firstWhere(
+    (item) => item.biome == biome && item.isActive,
+  );
   return _countdownLabel(mission.endTime);
 }
 
@@ -6684,24 +6886,59 @@ String _countdownLabel(DateTime endTime) {
   return 'Temps restant : ${seconds}s';
 }
 
-Future<int?> _pickExplorationDuration(BuildContext context) =>
+String _merchantRemainingLabel(Zone0GameState state) {
+  final endTime = state.merchantAvailableUntil;
+  if (endTime == null) return 'Retour imminent';
+  final remaining = endTime.difference(DateTime.now());
+  if (remaining <= Duration.zero) return 'Retour imminent';
+  final hours = remaining.inHours;
+  final minutes = remaining.inMinutes.remainder(60);
+  if (hours > 0) return '$hours h ${minutes.toString().padLeft(2, '0')} min';
+  return '${math.max(1, minutes)} min';
+}
+
+String _merchantArrivalLabel(Zone0GameState state) {
+  final next = state.merchantNextArrivalAt;
+  if (next == null) return 'Le Sourcier organise sa prochaine visite.';
+  final remaining = next.difference(DateTime.now());
+  if (remaining <= Duration.zero) return 'Le Sourcier arrive.';
+  final hours = remaining.inHours;
+  final minutes = remaining.inMinutes.remainder(60);
+  final countdown = hours > 0
+      ? '$hours h ${minutes.toString().padLeft(2, '0')} min'
+      : '${math.max(1, minutes)} min';
+  return 'Prochaine visite dans $countdown. '
+      '${state.merchantVisitsRemaining} passage(s) restant(s) aujourd’hui.';
+}
+
+Future<int?> _pickExplorationDuration(
+  BuildContext context,
+) =>
     showModalBottomSheet<int>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
-          child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-              children: <Widget>[
-            const Text('Durée de reconnaissance',
-                style: TextStyle(fontWeight: FontWeight.w900)),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          children: <Widget>[
             const Text(
-                '10 h d’exploration au total. Chaque heure apporte 10% de progression.'),
-            ...<int>[1, 2, 4, 8].map((hours) => ListTile(
+              'Durée de reconnaissance',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const Text(
+              '10 h d’exploration au total. Chaque heure apporte 10% de progression.',
+            ),
+            ...<int>[1, 2, 4, 8].map(
+              (hours) => ListTile(
                 title: Text('${hours}h de mission'),
                 subtitle: Text('+${hours * 10}% exploration'),
-                onTap: () => Navigator.of(context).pop(hours))),
-          ])),
+                onTap: () => Navigator.of(context).pop(hours),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
 
 Future<TowerMissionPlan?> _pickPatrolPlan(BuildContext context) =>
@@ -6713,20 +6950,25 @@ Future<TowerMissionPlan?> _pickPatrolPlan(BuildContext context) =>
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
           children: <Widget>[
-            const Text('Durée de sécurisation',
-                style: TextStyle(fontWeight: FontWeight.w900)),
             const Text(
-                '8 h au total permettent de sécuriser entièrement un biome.'),
+              'Durée de sécurisation',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const Text(
+              '8 h au total permettent de sécuriser entièrement un biome.',
+            ),
             ...<TowerMissionPlan>[
               TowerMissionPlan.oneHour,
               TowerMissionPlan.twoHours,
               TowerMissionPlan.fourHours,
               TowerMissionPlan.eightHours,
-            ].map((plan) => ListTile(
-                  title: Text(_towerPlanLabelForPicker(plan)),
-                  subtitle: Text('+${_patrolSecurityGain(plan)}% au retour'),
-                  onTap: () => Navigator.of(context).pop(plan),
-                )),
+            ].map(
+              (plan) => ListTile(
+                title: Text(_towerPlanLabelForPicker(plan)),
+                subtitle: Text('+${_patrolSecurityGain(plan)}% au retour'),
+                onTap: () => Navigator.of(context).pop(plan),
+              ),
+            ),
           ],
         ),
       ),
@@ -6930,25 +7172,32 @@ class _BuildingUpgradeTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text(title,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w900)),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                  ),
                   const SizedBox(height: 8),
                   Text(description),
                   const SizedBox(height: 14),
-                  const Text('Effets actuels',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const Text(
+                    'Effets actuels',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                   ...currentEffects.map(Text.new),
                   const SizedBox(height: 10),
-                  const Text('Niveau suivant',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const Text(
+                    'Niveau suivant',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                   ...nextEffects.map(Text.new),
                   if (project.isInProgress) ...<Widget>[
                     const SizedBox(height: 12),
-                    Text('Travaux : ${_countdownLabel(project.endsAt!)}',
-                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                    Text(
+                      'Travaux : ${_countdownLabel(project.endsAt!)}',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ],
                   const SizedBox(height: 14),
                   FilledButton.icon(
@@ -6965,9 +7214,10 @@ class _BuildingUpgradeTab extends StatelessWidget {
                                 ),
                     icon: const Icon(Icons.upgrade_outlined),
                     label: Text(
-                        project.state == ConstructionProjectState.maxLevel
-                            ? 'Niveau maximum'
-                            : 'Préparer l’amélioration'),
+                      project.state == ConstructionProjectState.maxLevel
+                          ? 'Niveau maximum'
+                          : 'Préparer l’amélioration',
+                    ),
                   ),
                 ],
               ),
@@ -7000,11 +7250,15 @@ class _BuildingInformationTab extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(title,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.w900)),
+                    Text(
+                      title,
+                      style: Theme.of(
+                        context,
+                      )
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
                     const SizedBox(height: 8),
                     Text(description),
                   ],
@@ -7068,75 +7322,95 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
           18,
           18 + MediaQuery.viewInsetsOf(context).bottom,
         ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-          Text(widget.title,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 8),
-          Text(widget.description),
-          if (widget.blockedReason != null) ...<Widget>[
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              widget.title,
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 8),
-            Text(widget.blockedReason!,
+            Text(widget.description),
+            if (widget.blockedReason != null) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                widget.blockedReason!,
                 style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontWeight: FontWeight.w800)),
+                  color: Theme.of(context).colorScheme.error,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            if (project.state == ConstructionProjectState.maxLevel)
+              const Text(
+                'Niveau maximum atteint.',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              )
+            else if (project.isInProgress)
+              Text(
+                _countdownLabel(project.endsAt!),
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              )
+            else
+              ...project.requirements.entries.map(
+                (entry) => _ConstructionMaterialProgress(
+                  resource: entry.key,
+                  deposited: project.depositedMaterials[entry.key] ?? 0,
+                  required: entry.value,
+                  enabled: widget.blockedReason == null,
+                  onDeposit: (amount) =>
+                      widget.gameState.depositProjectMaterial(
+                    widget.targetId,
+                    entry.key,
+                    amount,
+                  ),
+                  onWithdraw: () => widget.gameState.withdrawProjectMaterial(
+                    widget.targetId,
+                    entry.key,
+                  ),
+                ),
+              ),
+            if (widget.footer != null) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                widget.footer!,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: widget.blockedReason == null &&
+                      project.isReady &&
+                      !project.isInProgress &&
+                      project.state != ConstructionProjectState.maxLevel
+                  ? () {
+                      final result = widget.gameState.startConstructionProject(
+                        widget.targetId,
+                        campHeartLevel: widget.campHeartLevel,
+                      );
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(result.message)));
+                    }
+                  : null,
+              icon: const Icon(Icons.construction_outlined),
+              label: Text(
+                project.isInProgress
+                    ? 'Travaux en cours'
+                    : project.state == ConstructionProjectState.maxLevel
+                        ? 'Niveau maximum'
+                        : 'Commencer les travaux',
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Fermer'),
+            ),
           ],
-          const SizedBox(height: 14),
-          if (project.state == ConstructionProjectState.maxLevel)
-            const Text(
-              'Niveau maximum atteint.',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            )
-          else if (project.isInProgress)
-            Text(_countdownLabel(project.endsAt!),
-                style: const TextStyle(fontWeight: FontWeight.w900))
-          else
-            ...project.requirements.entries
-                .map((entry) => _ConstructionMaterialProgress(
-                      resource: entry.key,
-                      deposited: project.depositedMaterials[entry.key] ?? 0,
-                      required: entry.value,
-                      enabled: widget.blockedReason == null,
-                      onDeposit: (amount) => widget.gameState
-                          .depositProjectMaterial(
-                              widget.targetId, entry.key, amount),
-                      onWithdraw: () => widget.gameState
-                          .withdrawProjectMaterial(widget.targetId, entry.key),
-                    )),
-          if (widget.footer != null) ...<Widget>[
-            const SizedBox(height: 8),
-            Text(widget.footer!,
-                style: const TextStyle(fontWeight: FontWeight.w800)),
-          ],
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: widget.blockedReason == null &&
-                    project.isReady &&
-                    !project.isInProgress &&
-                    project.state != ConstructionProjectState.maxLevel
-                ? () {
-                    final result = widget.gameState.startConstructionProject(
-                      widget.targetId,
-                      campHeartLevel: widget.campHeartLevel,
-                    );
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(SnackBar(content: Text(result.message)));
-                  }
-                : null,
-            icon: const Icon(Icons.construction_outlined),
-            label: Text(project.isInProgress
-                ? 'Travaux en cours'
-                : project.state == ConstructionProjectState.maxLevel
-                    ? 'Niveau maximum'
-                    : 'Commencer les travaux'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Fermer'),
-          ),
-        ]),
+        ),
       ),
     );
   }
@@ -7164,52 +7438,69 @@ class _ConstructionMaterialProgress extends StatelessWidget {
     final missing = math.max(0, required - deposited);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(resource, style: const TextStyle(fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
-        SizedBox(
-          height: 30,
-          child: Stack(alignment: Alignment.center, children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(99),
-              child: LinearProgressIndicator(
-                value: required == 0 ? 1 : (deposited / required).clamp(0, 1),
-                minHeight: 30,
-                backgroundColor:
-                    Theme.of(context).colorScheme.surfaceContainerHighest,
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(resource, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 30,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: LinearProgressIndicator(
+                    value:
+                        required == 0 ? 1 : (deposited / required).clamp(0, 1),
+                    minHeight: 30,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                  ),
+                ),
+                Text(
+                  '$deposited / $required',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ],
             ),
-            Text('$deposited / $required',
-                style: const TextStyle(fontWeight: FontWeight.w900)),
-          ]),
-        ),
-        const SizedBox(height: 2),
-        Row(children: [
-          TextButton(
-              onPressed: enabled && missing > 0 ? () => onDeposit(1) : null,
-              child: const Text('+1')),
-          TextButton(
-              onPressed: enabled && missing > 0 ? () => onDeposit(5) : null,
-              child: const Text('+5')),
-          TextButton(
-              onPressed:
-                  enabled && missing > 0 ? () => onDeposit(missing) : null,
-              child: const Text('Max')),
-          const Spacer(),
-          IconButton(
-            tooltip: 'Récupérer les matériaux',
-            onPressed: deposited > 0 ? onWithdraw : null,
-            icon: const Icon(Icons.undo),
           ),
-        ]),
-      ]),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              TextButton(
+                onPressed: enabled && missing > 0 ? () => onDeposit(1) : null,
+                child: const Text('+1'),
+              ),
+              TextButton(
+                onPressed: enabled && missing > 0 ? () => onDeposit(5) : null,
+                child: const Text('+5'),
+              ),
+              TextButton(
+                onPressed:
+                    enabled && missing > 0 ? () => onDeposit(missing) : null,
+                child: const Text('Max'),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Récupérer les matériaux',
+                onPressed: deposited > 0 ? onWithdraw : null,
+                icon: const Icon(Icons.undo),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _MarketConstructionSheet extends StatelessWidget {
-  const _MarketConstructionSheet(
-      {required this.gameState, required this.campHeartLevel});
+  const _MarketConstructionSheet({
+    required this.gameState,
+    required this.campHeartLevel,
+  });
   final Zone0GameState gameState;
   final int campHeartLevel;
 
@@ -7257,7 +7548,12 @@ class _MarketPageState extends State<MarketPage> {
     super.initState();
     widget.gameState.addListener(_changed);
     _timer = Timer.periodic(
-        const Duration(seconds: 5), (_) => widget.gameState.resolveMarket());
+      const Duration(seconds: 5),
+      (_) {
+        widget.gameState.resolveMarket();
+        if (mounted) setState(() {});
+      },
+    );
     widget.gameState.resolveMarket();
   }
 
@@ -7282,219 +7578,246 @@ class _MarketPageState extends State<MarketPage> {
           builder: (context, snapshot) {
             final figurines = snapshot.data ?? const <PtipoteFigurine>[];
             return ListView(
-                padding: const EdgeInsets.all(16),
-                children: <Widget>[
-                  Card(
-                      child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(
-                                    'Marché niveau ${widget.gameState.marketLevel}',
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w900)),
-                                Text(
-                                    'Population ${widget.gameState.currentPopulation} · Bien-être ${widget.gameState.campWellbeing}%'),
-                                Text(
-                                    'Bio-batteries gagnées : ${widget.gameState.marketBioBatteriesEarned}'),
-                                Text(widget.gameState
-                                            .marketAssignedPtipoteName ==
-                                        null
-                                    ? 'Mode automatique'
-                                    : 'Aidé par ${widget.gameState.marketAssignedPtipoteName}'),
-                                Text(widget.gameState.marketSaleRemaining() ==
-                                        null
-                                    ? 'Prochaine vente : stock vide'
-                                    : 'Prochaine vente : ${widget.gameState.marketSaleRemaining()!.inMinutes}m ${widget.gameState.marketSaleRemaining()!.inSeconds.remainder(60).toString().padLeft(2, '0')}s'),
-                                Wrap(
-                                  spacing: 8,
-                                  children: <Widget>[
-                                    OutlinedButton.icon(
-                                      onPressed: () => _showBuildingProject(
-                                        context,
-                                        gameState: widget.gameState,
-                                        targetId: 'market',
-                                        title: 'Améliorer le Marché',
-                                        description:
-                                            'Le Marché reste ouvert pendant les travaux. Les nouveaux emplacements seront ajoutés à la fin.',
-                                        campHeartLevel: widget.campHeartLevel,
-                                      ),
-                                      icon: const Icon(Icons.upgrade_outlined),
-                                      label: const Text('Amélioration'),
-                                    ),
-                                    TextButton.icon(
-                                      onPressed: () =>
-                                          showModalBottomSheet<void>(
-                                        context: context,
-                                        builder: (_) =>
-                                            const _BuildingInformationTab(
-                                          title: 'Marché',
-                                          description:
-                                              'Le Marché vend automatiquement le stock confié. Un P’TIPOTE accélère les ventes et peut traiter les demandes des habitants.',
+              padding: const EdgeInsets.all(16),
+              children: <Widget>[
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Marché niveau ${widget.gameState.marketLevel}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          'Population ${widget.gameState.currentPopulation} · Bien-être ${widget.gameState.campWellbeing}%',
+                        ),
+                        Text(
+                          'Bio-batteries gagnées : ${widget.gameState.marketBioBatteriesEarned}',
+                        ),
+                        Text(
+                          widget.gameState.marketAssignedPtipoteName == null
+                              ? 'Mode automatique'
+                              : 'Aidé par ${widget.gameState.marketAssignedPtipoteName}',
+                        ),
+                        Text(
+                          widget.gameState.marketSaleRemaining() == null
+                              ? 'Prochaine vente : stock vide'
+                              : 'Prochaine vente : ${widget.gameState.marketSaleRemaining()!.inMinutes}m ${widget.gameState.marketSaleRemaining()!.inSeconds.remainder(60).toString().padLeft(2, '0')}s',
+                        ),
+                        Wrap(
+                          spacing: 8,
+                          children: <Widget>[
+                            OutlinedButton.icon(
+                              onPressed: () => _showBuildingProject(
+                                context,
+                                gameState: widget.gameState,
+                                targetId: 'market',
+                                title: 'Améliorer le Marché',
+                                description:
+                                    'Le Marché reste ouvert pendant les travaux. Les nouveaux emplacements seront ajoutés à la fin.',
+                                campHeartLevel: widget.campHeartLevel,
+                              ),
+                              icon: const Icon(Icons.upgrade_outlined),
+                              label: const Text('Amélioration'),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => showModalBottomSheet<void>(
+                                context: context,
+                                builder: (_) => const _BuildingInformationTab(
+                                  title: 'Marché',
+                                  description:
+                                      'Le Marché vend automatiquement le stock confié. Un P’TIPOTE accélère les ventes et peut traiter les demandes des habitants.',
+                                ),
+                              ),
+                              icon: const Icon(Icons.info_outline),
+                              label: const Text('Infos'),
+                            ),
+                          ],
+                        ),
+                        if (widget.gameState.marketAssignedPtipoteId != null)
+                          OutlinedButton(
+                            onPressed: () =>
+                                widget.gameState.removeFromMarket(),
+                            child: const Text('Faire rentrer'),
+                          )
+                        else
+                          FilledButton.icon(
+                            onPressed: () async {
+                              final figurine = await _pickPtipoteForActivity(
+                                context: context,
+                                gameState: widget.gameState,
+                                figurines: figurines,
+                                title: 'Affecter au Marché',
+                              );
+                              if (figurine == null || !context.mounted) {
+                                return;
+                              }
+                              _message(
+                                widget.gameState
+                                    .assignToMarket(figurine)
+                                    .message,
+                              );
+                            },
+                            icon: const Icon(Icons.person_add_alt_1),
+                            label: const Text('Affecter un P’TIPOTE'),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text(
+                          'Sourcier du savoir',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 6),
+                        if (!widget.gameState.isMerchantAvailable)
+                          Text(
+                            _merchantArrivalLabel(widget.gameState),
+                          )
+                        else ...<Widget>[
+                          Text(
+                            'Présent encore ${_merchantRemainingLabel(widget.gameState)}',
+                          ),
+                          ...widget.gameState.merchantOffers.map(
+                            (offer) => Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outline
+                                        .withValues(alpha: 0.25),
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(
+                                        offer.planName,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
                                         ),
                                       ),
-                                      icon: const Icon(Icons.info_outline),
-                                      label: const Text('Infos'),
-                                    ),
-                                  ],
-                                ),
-                                if (widget.gameState.marketAssignedPtipoteId !=
-                                    null)
-                                  OutlinedButton(
-                                      onPressed: () =>
-                                          widget.gameState.removeFromMarket(),
-                                      child: const Text('Faire rentrer'))
-                                else
-                                  FilledButton.icon(
-                                    onPressed: () async {
-                                      final figurine =
-                                          await _pickPtipoteForActivity(
-                                        context: context,
-                                        gameState: widget.gameState,
-                                        figurines: figurines,
-                                        title: 'Affecter au Marché',
-                                      );
-                                      if (figurine == null ||
-                                          !context.mounted) {
-                                        return;
-                                      }
-                                      _message(widget.gameState
-                                          .assignToMarket(figurine)
-                                          .message);
-                                    },
-                                    icon: const Icon(Icons.person_add_alt_1),
-                                    label: const Text('Affecter un P’TIPOTE'),
-                                  ),
-                              ]))),
-                  const SizedBox(height: 10),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          const Text('Sourcier du savoir',
-                              style: TextStyle(fontWeight: FontWeight.w900)),
-                          const SizedBox(height: 6),
-                          if (!widget.gameState.isMerchantAvailable)
-                            FilledButton(
-                              onPressed: widget.gameState.openMerchant,
-                              child: const Text('Appeler le Sourcier'),
-                            )
-                          else ...<Widget>[
-                            Text(
-                                'Présent encore ${widget.gameState.merchantAvailableUntil!.difference(DateTime.now()).inHours + 1}h'),
-                            ...widget.gameState.merchantOffers.map(
-                              (offer) => Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .outline
-                                            .withValues(alpha: 0.25)),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(10),
-                                    child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: <Widget>[
-                                          Text(offer.planName,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight.w800)),
-                                          const SizedBox(height: 4),
-                                          Text('${offer.price} Bio-batteries'),
-                                          const SizedBox(height: 8),
-                                          SizedBox(
-                                              width: double.infinity,
-                                              child: offer.purchased
-                                                  ? const OutlinedButton(
-                                                      onPressed: null,
-                                                      child: Text('Acheté'))
-                                                  : FilledButton(
-                                                      onPressed: () => _message(
-                                                          widget.gameState
-                                                              .buyMerchantOffer(
-                                                                  offer)
-                                                              .message),
-                                                      child: const Text(
-                                                          'Acheter'))),
-                                        ]),
+                                      const SizedBox(height: 4),
+                                      Text('${offer.price} Bio-batteries'),
+                                      const SizedBox(height: 8),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: offer.purchased
+                                            ? const OutlinedButton(
+                                                onPressed: null,
+                                                child: Text('Acheté'),
+                                              )
+                                            : FilledButton(
+                                                onPressed: () => _message(
+                                                  widget.gameState
+                                                      .buyMerchantOffer(offer)
+                                                      .message,
+                                                ),
+                                                child: const Text('Acheter'),
+                                              ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
                             ),
-                            TextButton(
-                                onPressed: () => _message(
-                                    'Le Sourcier reviendra plus tard.'),
-                                child: const Text('Plus tard')),
-                          ],
+                          ),
+                          TextButton(
+                            onPressed: () => _message(
+                              widget.gameState
+                                  .finishMerchantTransaction()
+                                  .message,
+                            ),
+                            child: const Text('Terminer la transaction'),
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                GridView.count(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: List<Widget>.generate(
+                    widget.gameState.marketSlotLimit,
+                    (index) {
+                      final stack = index < widget.gameState.marketStock.length
+                          ? widget.gameState.marketStock[index]
+                          : null;
+                      return _MarketStockSlot(
+                        stack: stack,
+                        onTap: () => _editMarketSlot(stack?.resource),
+                      );
+                    },
                   ),
-                  const SizedBox(height: 8),
-                  GridView.count(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: List<Widget>.generate(
-                      widget.gameState.marketSlotLimit,
-                      (index) {
-                        final stack =
-                            index < widget.gameState.marketStock.length
-                                ? widget.gameState.marketStock[index]
-                                : null;
-                        return _MarketStockSlot(
-                          stack: stack,
-                          onTap: () => _editMarketSlot(stack?.resource),
-                        );
-                      },
+                ),
+                const Divider(),
+                const Text(
+                  'Demandes des habitants',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                if (widget.gameState.marketAssignedPtipoteId == null)
+                  const Text(
+                    'Un P’TIPOTE doit être présent pour noter et livrer les demandes.',
+                  ),
+                ...widget.gameState.marketRequests.map(
+                  (request) => ListTile(
+                    title: Text(
+                      '${request.requestedQuantity} ${request.requestedItemId}',
                     ),
+                    subtitle: Text(
+                      request.status == MarketRequestStatus.completed
+                          ? 'Livrée'
+                          : 'Retour client : ${request.customerReturnTime.hour.toString().padLeft(2, '0')}:${request.customerReturnTime.minute.toString().padLeft(2, '0')}',
+                    ),
+                    trailing: Text('+${request.rewardBioBattery} 🔋'),
                   ),
-                  const Divider(),
-                  const Text('Demandes des habitants',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
-                  if (widget.gameState.marketAssignedPtipoteId == null)
-                    const Text(
-                        'Un P’TIPOTE doit être présent pour noter et livrer les demandes.'),
-                  ...widget.gameState.marketRequests.map((request) => ListTile(
-                        title: Text(
-                            '${request.requestedQuantity} ${request.requestedItemId}'),
-                        subtitle: Text(request.status ==
-                                MarketRequestStatus.completed
-                            ? 'Livrée'
-                            : 'Retour client : ${request.customerReturnTime.hour.toString().padLeft(2, '0')}:${request.customerReturnTime.minute.toString().padLeft(2, '0')}'),
-                        trailing: Text('+${request.rewardBioBattery} 🔋'),
-                      )),
-                ]);
+                ),
+              ],
+            );
           },
         ),
       ),
     );
   }
 
-  void _message(String value) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(value)));
+  void _message(String value) => ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(value)));
 
   Future<void> _editMarketSlot(String? initialResource) async {
     final resources = marketConfig.saleValues.keys
-        .where((resource) =>
-            widget.gameState.resourceAmount(resource) > 0 ||
-            resource == initialResource)
+        .where(
+          (resource) =>
+              widget.gameState.resourceAmount(resource) > 0 ||
+              resource == initialResource,
+        )
         .toList();
     if (resources.isEmpty) {
       _message('Aucun objet vendable dans le stock Maison.');
@@ -7508,43 +7831,50 @@ class _MarketPageState extends State<MarketPage> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
           children: <Widget>[
-            Text(initialResource ?? 'Ajouter au Marché',
-                style: Theme.of(sheetContext)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w900)),
+            Text(
+              initialResource ?? 'Ajouter au Marché',
+              style: Theme.of(
+                sheetContext,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 8),
-            ...resources.map((resource) => ListTile(
-                  leading: Icon(_resourceIcon(resource)),
-                  title: Text(resource),
-                  subtitle: Text(
-                    'Maison : ${widget.gameState.resourceAmount(resource)} · '
-                    '${widget.gameState.isEquipmentResource(resource) ? 'équipement : 1 par case' : '10 par case'}',
-                  ),
-                  trailing: Wrap(
-                    spacing: 2,
-                    children: <int>[1, 5, 10]
-                        .map((amount) => TextButton(
-                              onPressed: () {
-                                final result = widget.gameState
-                                    .transferToMarket(resource, amount);
-                                _message(result.message);
-                                if (result.success) {
-                                  Navigator.of(sheetContext).pop();
-                                }
-                              },
-                              child: Text('+$amount'),
-                            ))
-                        .toList(),
-                  ),
-                )),
+            ...resources.map(
+              (resource) => ListTile(
+                leading: Icon(_resourceIcon(resource)),
+                title: Text(resource),
+                subtitle: Text(
+                  'Maison : ${widget.gameState.resourceAmount(resource)} · '
+                  '${widget.gameState.isEquipmentResource(resource) ? 'équipement : 1 par case' : '10 par case'}',
+                ),
+                trailing: Wrap(
+                  spacing: 2,
+                  children: <int>[1, 5, 10]
+                      .map(
+                        (amount) => TextButton(
+                          onPressed: () {
+                            final result = widget.gameState.transferToMarket(
+                              resource,
+                              amount,
+                            );
+                            _message(result.message);
+                            if (result.success) {
+                              Navigator.of(sheetContext).pop();
+                            }
+                          },
+                          child: Text('+$amount'),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ),
             if (initialResource != null) ...<Widget>[
               const Divider(),
               OutlinedButton.icon(
                 onPressed: () {
-                  _message(widget.gameState
-                      .returnMarketStock(initialResource)
-                      .message);
+                  _message(
+                    widget.gameState.returnMarketStock(initialResource).message,
+                  );
                   Navigator.of(sheetContext).pop();
                 },
                 icon: const Icon(Icons.undo_outlined),
@@ -7577,8 +7907,9 @@ class _MarketStockSlot extends StatelessWidget {
               : Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color:
-                Theme.of(context).colorScheme.outline.withValues(alpha: 0.32),
+            color: Theme.of(
+              context,
+            ).colorScheme.outline.withValues(alpha: 0.32),
           ),
         ),
         child: Stack(
@@ -7594,20 +7925,26 @@ class _MarketStockSlot extends StatelessWidget {
               Positioned(
                 top: 8,
                 right: 8,
-                child: Text('${stack!.amount}',
-                    style: const TextStyle(fontWeight: FontWeight.w900)),
+                child: Text(
+                  '${stack!.amount}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
               ),
             if (filled)
               Positioned(
                 left: 6,
                 right: 6,
                 bottom: 7,
-                child: Text(stack!.resource,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w800)),
+                child: Text(
+                  stack!.resource,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
           ],
         ),
@@ -7617,8 +7954,11 @@ class _MarketStockSlot extends StatelessWidget {
 }
 
 class PTibugNurseryPage extends StatefulWidget {
-  const PTibugNurseryPage(
-      {super.key, required this.gameState, required this.campHeartLevel});
+  const PTibugNurseryPage({
+    super.key,
+    required this.gameState,
+    required this.campHeartLevel,
+  });
   final Zone0GameState gameState;
   final int campHeartLevel;
 
@@ -7632,8 +7972,10 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   void initState() {
     super.initState();
     widget.gameState.addListener(_changed);
-    _timer = Timer.periodic(const Duration(seconds: 10),
-        (_) => widget.gameState.resolvePTibugProduction());
+    _timer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => widget.gameState.resolvePTibugProduction(),
+    );
   }
 
   @override
@@ -7647,8 +7989,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     if (mounted) setState(() {});
   }
 
-  void _message(String message) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(message)));
+  void _message(String message) => ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
@@ -7656,20 +7999,25 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       length: 5,
       child: Scaffold(
         appBar: AppBar(
-            title: const Text('Nurserie P’TIBUG'),
-            bottom: const TabBar(isScrollable: true, tabs: <Widget>[
+          title: const Text('Nurserie P’TIBUG'),
+          bottom: const TabBar(
+            isScrollable: true,
+            tabs: <Widget>[
               Tab(text: 'Aperçu'),
               Tab(text: 'Créer'),
               Tab(text: 'Collection'),
               Tab(text: 'Données'),
-              Tab(text: 'Amélioration')
-            ])),
-        body: TabBarView(children: <Widget>[
-          _overview(),
-          _creation(),
-          _collection(),
-          _dataAndModules(),
-          _BuildingUpgradeTab(
+              Tab(text: 'Amélioration'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: <Widget>[
+            _overview(),
+            _creation(),
+            _collection(),
+            _dataAndModules(),
+            _BuildingUpgradeTab(
               gameState: widget.gameState,
               targetId: 'plaineNursery',
               title: 'Améliorer la Nurserie',
@@ -7677,60 +8025,63 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   'Ajoute des slots P’TIBUG et des emplacements de modules.',
               currentEffects: <String>[
                 '${widget.gameState.pTibugActiveSlots} slot(s) actif(s)',
-                '${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel)} module(s) par P’TIBUG'
+                '${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel)} module(s) par P’TIBUG',
               ],
               nextEffects: <String>[
                 '${pTibugConfig.slotsForLevel(widget.gameState.plaineNurseryLevel + 1)} slot(s) actif(s)',
-                '${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel + 1)} module(s) par P’TIBUG'
+                '${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel + 1)} module(s) par P’TIBUG',
               ],
-              campHeartLevel: widget.campHeartLevel),
-        ]),
+              campHeartLevel: widget.campHeartLevel,
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _overview() {
-    final total = widget.gameState.pTibugs
-        .fold<int>(0, (sum, bug) => sum + bug.storedAmount);
     final producing = widget.gameState.pTibugs
         .where((bug) => bug.assignedSlotIndex != null)
         .toList();
-    return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-      Card(
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: <Widget>[
+        Card(
           child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                        'Nurserie niveau ${widget.gameState.plaineNurseryLevel}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w900, fontSize: 20)),
-                    Text(
-                        '${widget.gameState.pTibugs.where((bug) => bug.assignedSlotIndex != null).length}/${widget.gameState.pTibugActiveSlots} P’TIBUG actifs'),
-                    Text('Production en réserve : $total ressources'),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                        onPressed: total == 0
-                            ? null
-                            : () => _message(widget.gameState
-                                .collectPTibugProduction()
-                                .message),
-                        child: const Text('Récupérer la production')),
-                  ]))),
-      if (widget.gameState.pTibugCreationOrder?.isActive == true)
-        _creationInProgressCard(),
-      if (producing.isNotEmpty) ...<Widget>[
-        const Padding(
-          padding: EdgeInsets.only(top: 14, bottom: 6),
-          child: Text(
-            'P’TIBUG en production',
-            style: TextStyle(fontWeight: FontWeight.w900),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Nurserie niveau ${widget.gameState.plaineNurseryLevel}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 20,
+                  ),
+                ),
+                Text(
+                  '${widget.gameState.pTibugs.where((bug) => bug.assignedSlotIndex != null).length}/${widget.gameState.pTibugActiveSlots} P’TIBUG actifs',
+                ),
+                const Text(
+                    'Chaque P’TIBUG conserve sa production jusqu’à sa récolte.'),
+              ],
+            ),
           ),
         ),
-        ...producing.map(_productionOverviewCard),
+        if (widget.gameState.pTibugCreationOrder?.isActive == true)
+          _creationInProgressCard(),
+        if (producing.isNotEmpty) ...<Widget>[
+          const Padding(
+            padding: EdgeInsets.only(top: 14, bottom: 6),
+            child: Text(
+              'P’TIBUG en production',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+          ...producing.map(_productionOverviewCard),
+        ],
       ],
-    ]);
+    );
   }
 
   Widget _creationInProgressCard() {
@@ -7754,9 +8105,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                 clipBehavior: Clip.none,
                 children: <Widget>[
                   CircleAvatar(
-                    radius: 28,
-                    child: Icon(_speciesIcon(bug.species)),
-                  ),
+                      radius: 28, child: Icon(_speciesIcon(bug.species))),
                   Positioned(
                     right: -12,
                     top: -10,
@@ -7786,14 +8135,27 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      bug.displayName,
+                      widget.gameState.pTibugBiologicalNameFor(bug),
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
-                    Text('Réserve : ${bug.storedAmount} ressource(s)'),
+                    Text(
+                        'Réserve : ${bug.storedAmount}/${widget.gameState.pTibugCapacityFor(bug)}'),
                     Text(
                       bug.nextProductionAt == null
                           ? 'Cycle en attente'
                           : _countdownLabel(bug.nextProductionAt!),
+                    ),
+                    const SizedBox(height: 6),
+                    OutlinedButton.icon(
+                      onPressed: bug.storedAmount == 0
+                          ? null
+                          : () => _message(
+                                widget.gameState
+                                    .collectPTibugProductionFor(bug)
+                                    .message,
+                              ),
+                      icon: const Icon(Icons.inventory_2_outlined),
+                      label: const Text('Récolter'),
                     ),
                   ],
                 ),
@@ -7803,75 +8165,83 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         ),
       );
 
-  Widget _creation() =>
-      ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-        const Text('Patterns P’TIBUG',
-            style: TextStyle(fontWeight: FontWeight.w900)),
-        const Padding(
-          padding: EdgeInsets.only(top: 6, bottom: 8),
-          child: Text(
-              'Les Patterns se découvrent et s’activent depuis le Kernel.'),
-        ),
-        ...PTibugSpecies.values.map((species) {
-          final config = pTibugConfig.species[species]!;
-          final pattern = pTibugConfig.patterns[species]!;
-          final state = widget.gameState.pTibugPatternState(species);
-          final isActive = state == KernelPlanState.active;
-          final organicCost = config.creationCost['Organique'] ?? 0;
-          final mineralCost = config.creationCost['Minéral'] ?? 0;
-          final organicStock = widget.gameState.resourceAmount('Organique');
-          final mineralStock = widget.gameState.resourceAmount('Minéral');
-          final batteryStock = widget.gameState.bioBatteries;
-          final creationRequirements = <String, int>{
-            ...config.creationCost,
-            'Bio-batteries': config.creationBioBatteryCost,
-          };
-          final maxCreatable = _maxProductionCount(
-            creationRequirements,
-            (resourceId) => resourceId == 'Bio-batteries'
-                ? batteryStock
-                : widget.gameState.resourceAmount(resourceId),
-          );
-          final canCreate = isActive &&
-              maxCreatable > 0 &&
-              widget.gameState.pTibugCreationOrder?.isActive != true;
-          return _ProductionRecipeCard(
-            title: 'Pattern ${config.displayName}',
-            leadingIcon: _speciesIcon(species),
-            trailingIcon:
-                isActive ? Icons.check_circle_outline : Icons.lock_outline,
-            description: pattern.description,
-            slots: <_ProductionSlotData>[
-              _ProductionSlotData(
-                icon: Icons.eco_outlined,
-                label: 'Matériaux',
-                value:
-                    'Organique : $organicCost / $organicStock\nMinéral : $mineralCost / $mineralStock',
-              ),
-              _ProductionSlotData(
-                icon: Icons.battery_charging_full_outlined,
-                label: 'Bio-batteries',
-                value: '${config.creationBioBatteryCost} / $batteryStock',
-              ),
-            ],
-            details: <String>[
-              'Résultat : 1 P’TIBUG ${config.displayName}',
-              'Temps de création : ${config.creationMinutes} min',
-              'Créations possibles avec le stock : $maxCreatable',
-            ],
-            prerequisiteLabel: isActive
-                ? 'Pré-requis : Pattern actif dans le Kernel'
-                : 'Pré-requis : ${_patternStateLabel(state)}',
-            prerequisiteMet: isActive,
-            primaryActionLabel: 'Créer le P’TIBUG',
-            primaryActionIcon: Icons.auto_awesome_outlined,
-            primaryActionEnabled: canCreate,
-            onPrimaryAction: () => _message(
-              widget.gameState.startPTibugCreation(species).message,
+  Widget _creation() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          const Text(
+            'Patterns P’TIBUG',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 6, bottom: 8),
+            child: Text(
+              'Les Patterns se découvrent et s’activent depuis le Kernel.',
             ),
-          );
-        }),
-      ]);
+          ),
+          ...PTibugSpecies.values.map((species) {
+            final config = pTibugConfig.species[species]!;
+            final pattern = pTibugConfig.patterns[species]!;
+            final state = widget.gameState.pTibugPatternState(species);
+            final researchPatternId = 'ptibug-species-${species.name}';
+            final researchActive = widget.gameState.isPTibugPatternActive(
+              researchPatternId,
+            );
+            final isActive = state == KernelPlanState.active || researchActive;
+            final organicCost = config.creationCost['Organique'] ?? 0;
+            final mineralCost = config.creationCost['Minéral'] ?? 0;
+            final organicStock = widget.gameState.resourceAmount('Organique');
+            final mineralStock = widget.gameState.resourceAmount('Minéral');
+            final batteryStock = widget.gameState.bioBatteries;
+            final creationRequirements = <String, int>{
+              ...config.creationCost,
+              'Bio-batteries': config.creationBioBatteryCost,
+            };
+            final maxCreatable = _maxProductionCount(
+              creationRequirements,
+              (resourceId) => resourceId == 'Bio-batteries'
+                  ? batteryStock
+                  : widget.gameState.resourceAmount(resourceId),
+            );
+            final canCreate = isActive &&
+                maxCreatable > 0 &&
+                widget.gameState.pTibugCreationOrder?.isActive != true;
+            return _ProductionRecipeCard(
+              title: 'Pattern ${config.displayName}',
+              leadingIcon: _speciesIcon(species),
+              trailingIcon:
+                  isActive ? Icons.check_circle_outline : Icons.lock_outline,
+              description: pattern.description,
+              slots: <_ProductionSlotData>[
+                _ProductionSlotData(
+                  icon: Icons.eco_outlined,
+                  label: 'Matériaux',
+                  value:
+                      'Organique : $organicCost / $organicStock\nMinéral : $mineralCost / $mineralStock',
+                ),
+                _ProductionSlotData(
+                  icon: Icons.battery_charging_full_outlined,
+                  label: 'Bio-batteries',
+                  value: '${config.creationBioBatteryCost} / $batteryStock',
+                ),
+              ],
+              details: <String>[
+                'Résultat : 1 P’TIBUG ${config.displayName}',
+                'Temps de création : ${config.creationMinutes} min',
+                'Créations possibles avec le stock : $maxCreatable',
+              ],
+              prerequisiteLabel: isActive
+                  ? 'Pré-requis : Pattern actif dans le Kernel'
+                  : 'Pré-requis : ${researchActive ? 'Pattern scientifique actif' : _patternStateLabel(state)}',
+              prerequisiteMet: isActive,
+              primaryActionLabel: 'Créer le P’TIBUG',
+              primaryActionIcon: Icons.auto_awesome_outlined,
+              primaryActionEnabled: canCreate,
+              onPrimaryAction: () => _message(
+                  widget.gameState.startPTibugCreation(species).message),
+            );
+          }),
+        ],
+      );
 
   String _patternStateLabel(KernelPlanState state) => switch (state) {
         KernelPlanState.unknown => 'Pattern inconnu',
@@ -7880,18 +8250,22 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         KernelPlanState.active => 'Actif',
       };
 
-  Widget _collection() =>
-      ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-        const Text('Collection', style: TextStyle(fontWeight: FontWeight.w900)),
-        const SizedBox(height: 4),
-        const Text('Tape un P’TIBUG pour consulter et ajuster son équipement.'),
-        const SizedBox(height: 10),
-        if (widget.gameState.pTibugs.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 16),
-            child: Text('Aucun P’TIBUG créé pour le moment.'),
-          ),
-        ...widget.gameState.pTibugs.map((bug) => Card(
+  Widget _collection() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          const Text('Collection',
+              style: TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          const Text(
+              'Tape un P’TIBUG pour consulter et ajuster son équipement.'),
+          const SizedBox(height: 10),
+          if (widget.gameState.pTibugs.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 16),
+              child: Text('Aucun P’TIBUG créé pour le moment.'),
+            ),
+          ...widget.gameState.pTibugs.map(
+            (bug) => Card(
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () => _showPTibugLoadout(bug),
@@ -7900,248 +8274,818 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Row(children: <Widget>[
-                        CircleAvatar(
-                          child: Icon(_speciesIcon(bug.species)),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(bug.displayName,
+                      Row(
+                        children: <Widget>[
+                          CircleAvatar(child: Icon(_speciesIcon(bug.species))),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              widget.gameState.pTibugBiologicalNameFor(bug),
                               style: const TextStyle(
-                                  fontWeight: FontWeight.w900, fontSize: 17)),
-                        ),
-                        Text('Niv. ${bug.level}',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w900)),
-                      ]),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 17,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            'Niv. ${bug.level}',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 10),
                       Text(
-                          '${pTibugConfig.species[bug.species]!.displayName} · ${bug.styleVariant}'),
+                        '${pTibugConfig.species[bug.species]!.displayName} · ${bug.styleVariant}',
+                      ),
                       Text(
-                          'XP ${bug.xp} · Réserve ${bug.storedAmount}/${pTibugConfig.carryingCapacity}'),
+                        'XP ${bug.xp} · Réserve ${bug.storedAmount}/${widget.gameState.pTibugCapacityFor(bug)}',
+                      ),
                       const SizedBox(height: 8),
-                      Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                      if (bug.biologicalTraitId != null)
                         _LoadoutPill(
-                          icon: Icons.auto_awesome_outlined,
-                          label: _traitLabel(bug.traitDataId),
-                          color: _traitColor(
-                              _traitFor(bug)?.grade, _traitFor(bug)),
+                          icon: Icons.biotech_outlined,
+                          label:
+                              '${pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!)?.displayName ?? bug.biologicalTraitId} ${bug.biologicalTraitLevel}',
+                          color: Theme.of(context).colorScheme.primary,
                         ),
-                        ...List<Widget>.generate(
-                          pTibugConfig.moduleSlotsForLevel(
-                              widget.gameState.plaineNurseryLevel),
-                          (index) {
-                            final module = index < bug.equippedModules.length
-                                ? bug.equippedModules[index]
-                                : null;
-                            return _LoadoutPill(
-                              icon: module == null
-                                  ? Icons.add_circle_outline
-                                  : _moduleIcon(module),
-                              label: module == null
-                                  ? 'Module libre'
-                                  : _moduleTitle(module),
-                              color: module == null
-                                  ? Theme.of(context).colorScheme.outline
-                                  : Theme.of(context).colorScheme.secondary,
-                            );
-                          },
-                        ),
-                      ]),
+                      if (bug.biologicalTraitId != null)
+                        const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: <Widget>[
+                          _LoadoutPill(
+                            icon: Icons.auto_awesome_outlined,
+                            label: _traitLabel(bug.traitDataId),
+                            color: _traitColor(
+                              _traitFor(bug)?.grade,
+                              _traitFor(bug),
+                            ),
+                          ),
+                          ...List<Widget>.generate(
+                            pTibugConfig.moduleSlotsForLevel(
+                              widget.gameState.plaineNurseryLevel,
+                            ),
+                            (index) {
+                              final equippedInstances =
+                                  widget.gameState.pTibugModuleInstances
+                                      .where(
+                                        (instance) =>
+                                            instance.equippedPTibugId == bug.id,
+                                      )
+                                      .toList();
+                              final moduleInstance =
+                                  index < equippedInstances.length
+                                      ? equippedInstances[index]
+                                      : null;
+                              final module = index < bug.equippedModules.length
+                                  ? bug.equippedModules[index]
+                                  : null;
+                              return _LoadoutPill(
+                                icon: moduleInstance == null && module == null
+                                    ? Icons.add_circle_outline
+                                    : _moduleIcon(
+                                        moduleInstance?.type ?? module!),
+                                label: moduleInstance != null
+                                    ? '${_moduleTitle(moduleInstance.type)} ${moduleInstance.qualityLevel}'
+                                    : module == null
+                                        ? 'Module libre'
+                                        : _moduleTitle(module),
+                                color: moduleInstance == null && module == null
+                                    ? Theme.of(context).colorScheme.outline
+                                    : Theme.of(context).colorScheme.secondary,
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 10),
-                      Text(bug.assignedSlotIndex == null
-                          ? 'En réserve'
-                          : 'Production active · prochain cycle ${bug.nextProductionAt == null ? 'à lancer' : _countdownLabel(bug.nextProductionAt!)}'),
+                      Text(
+                        bug.assignedSlotIndex == null
+                            ? 'En réserve'
+                            : 'Production active · prochain cycle ${bug.nextProductionAt == null ? 'à lancer' : _countdownLabel(bug.nextProductionAt!)}',
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: bug.storedAmount == 0
+                            ? null
+                            : () => _message(
+                                  widget.gameState
+                                      .collectPTibugProductionFor(bug)
+                                      .message,
+                                ),
+                        icon: const Icon(Icons.inventory_2_outlined),
+                        label: const Text('Récolter'),
+                      ),
                       const SizedBox(height: 8),
                       bug.assignedSlotIndex == null
                           ? FilledButton.icon(
-                              onPressed: () => _message(widget.gameState
-                                  .assignPTibugSlot(bug, _firstFreeSlot())
-                                  .message),
+                              onPressed: () => _message(
+                                widget.gameState
+                                    .assignPTibugSlot(bug, _firstFreeSlot())
+                                    .message,
+                              ),
                               icon: const Icon(Icons.play_arrow_outlined),
-                              label: const Text('Installer en production'))
+                              label: const Text('Installer en production'),
+                            )
                           : OutlinedButton.icon(
-                              onPressed: () => _message(widget.gameState
-                                  .removePTibugSlot(bug)
-                                  .message),
+                              onPressed: () => _message(
+                                widget.gameState.removePTibugSlot(bug).message,
+                              ),
                               icon: const Icon(Icons.inventory_2_outlined),
-                              label: const Text('Retirer de la production')),
+                              label: const Text('Retirer de la production'),
+                            ),
                     ],
                   ),
                 ),
               ),
-            )),
-      ]);
+            ),
+          ),
+        ],
+      );
 
   Widget _dataAndModules() {
     final traits = widget.gameState.pTibugTraitData;
     final unlockedModules = widget.gameState.unlockedPTibugModules;
-    return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-      const Text('Données de traits',
-          style: TextStyle(fontWeight: FontWeight.w900)),
-      const SizedBox(height: 4),
-      const Text(
-          'Les Données attribuées restent visibles ici. Deux Données identiques non équipées peuvent être fusionnées.'),
-      const SizedBox(height: 10),
-      if (traits.isEmpty)
-        const Card(child: ListTile(title: Text('Aucune Donnée disponible.'))),
-      ...traits.map((trait) {
-        final owner = widget.gameState.pTibugs
-            .where((bug) => bug.traitDataId == trait.id)
-            .firstOrNull;
-        return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor:
-                  _traitColor(trait.grade, trait).withValues(alpha: 0.16),
-              child: Icon(Icons.auto_awesome,
-                  color: _traitColor(trait.grade, trait)),
-            ),
-            title: Text(
-                '${_traitTitle(trait)} · ${_traitGradeTitle(trait.grade)}'),
-            subtitle: Text(owner == null
-                ? _traitDescription(trait)
-                : '${_traitDescription(trait)}\nÉquipée par ${owner.displayName}'),
-            isThreeLine: owner != null,
-          ),
-        );
-      }),
-      const SizedBox(height: 8),
-      ..._fusionActions(),
-      const SizedBox(height: 18),
-      const Text('Modules', style: TextStyle(fontWeight: FontWeight.w900)),
-      const SizedBox(height: 4),
-      Text(
-          '${unlockedModules.length}/${PTibugModuleType.values.length} Modules déverrouillés'),
-      const SizedBox(height: 10),
-      ...PTibugModuleType.values.map((module) {
-        final unlocked = unlockedModules.contains(module);
-        return Opacity(
-          opacity: unlocked ? 1 : 0.48,
-          child: Card(
+    final activeCraft = widget.gameState.activePTibugModuleCraftOrder;
+    final moduleInstances = widget.gameState.pTibugModuleInstances;
+    final capsules = widget.gameState.pTibugCapsules;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: <Widget>[
+        const Text(
+          'Fabrication de Modules',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Les Modules sont fabriqués à l’Atelier, puis équipés ou fusionnés ici.',
+        ),
+        const SizedBox(height: 10),
+        if (activeCraft != null)
+          Card(
             child: ListTile(
-              leading: CircleAvatar(child: Icon(_moduleIcon(module))),
-              title: Text(_moduleTitle(module)),
-              subtitle: Text(unlocked
-                  ? _moduleDescription(module)
-                  : 'Module verrouillé · à obtenir plus tard.'),
-              trailing: Icon(
-                  unlocked ? Icons.check_circle_outline : Icons.lock_outline),
+              leading: const Icon(Icons.precision_manufacturing_outlined),
+              title: Text(
+                  '${_moduleTitle(activeCraft.moduleType)} en fabrication'),
+              subtitle: Text(
+                  'Temps restant : ${_countdownLabel(activeCraft.endsAt)}'),
             ),
           ),
-        );
-      }),
-    ]);
+        ...PTibugModuleType.values.map((module) {
+          final patternId = 'ptibug-module-${module.name}';
+          final patternActive =
+              widget.gameState.isPTibugPatternActive(patternId);
+          final legacyUnlocked = unlockedModules.contains(module);
+          final cost = pTibugConfig.moduleCraftCostFor(module);
+          final energyCost = pTibugConfig.moduleCraftEnergyFor(module);
+          final hasMaterials = widget.gameState.hasResources(cost);
+          final hasEnergy = widget.gameState.energyUnits >= energyCost;
+          final possible = _maxProductionCount(
+            cost,
+            widget.gameState.resourceAmount,
+          );
+          return _ProductionRecipeCard(
+            title: '${_moduleTitle(module)} · Atelier',
+            leadingIcon: _moduleIcon(module),
+            description: _moduleDescription(module),
+            slots: <_ProductionSlotData>[
+              _ProductionSlotData(
+                label: 'Matériaux',
+                value: cost.entries
+                    .map((entry) =>
+                        '${entry.key} : ${entry.value} / ${widget.gameState.resourceAmount(entry.key)}')
+                    .join('\n'),
+                icon: Icons.inventory_2_outlined,
+              ),
+              _ProductionSlotData(
+                label: 'Atelier',
+                value:
+                    'Énergie : $energyCost / ${widget.gameState.energyUnits}\nTemps : ${pTibugConfig.moduleCraftMinutesFor(module)} min',
+                icon: Icons.bolt_outlined,
+              ),
+            ],
+            details: <String>[
+              'Modules possibles avec le stock : $possible',
+              'Le Module pourra être retiré ou fusionné plus tard.',
+            ],
+            prerequisiteLabel: patternActive
+                ? 'Pattern Kernel actif'
+                : legacyUnlocked
+                    ? 'Module historique disponible. Pattern à rechercher pour les nouvelles fabrications.'
+                    : 'Pré-requis : Pattern Kernel actif',
+            prerequisiteMet: patternActive,
+            unavailableLabel: patternActive && (!hasMaterials || !hasEnergy)
+                ? !hasMaterials
+                    ? widget.gameState.missingResourcesLabel(cost)
+                    : 'Énergie insuffisante.'
+                : null,
+            primaryActionLabel: 'Fabriquer',
+            primaryActionHint: 'utilise $energyCost unité(s) d’énergie',
+            primaryActionIcon: Icons.precision_manufacturing_outlined,
+            primaryActionEnabled: patternActive &&
+                activeCraft == null &&
+                hasMaterials &&
+                hasEnergy,
+            onPrimaryAction: () => _message(
+              widget.gameState.startPTibugModuleCraft(module).message,
+            ),
+          );
+        }),
+        const SizedBox(height: 18),
+        const Text(
+          'Traits biologiques permanents',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Un seul Trait peut transformer durablement chaque P’TIBUG.',
+        ),
+        const SizedBox(height: 10),
+        ...pTibugConfig.activeTraitDefinitions.map((definition) {
+          final patternId = 'ptibug-trait-${definition.id}';
+          final active = widget.gameState.isPTibugPatternActive(patternId);
+          final progress = widget.gameState.pTibugPatternProgress[patternId];
+          final level = (progress?.masteryLevel ?? 1).clamp(
+            1,
+            definition.maxLevel,
+          );
+          final dataCost = definition.dataCostForLevel(level);
+          final materialCost = definition.materialCostForLevel(level);
+          final energyCost = definition.energyCostForLevel(level);
+          final costConfigured = dataCost.isNotEmpty && materialCost.isNotEmpty;
+          final candidates = widget.gameState.pTibugs
+              .where((bug) => bug.biologicalTraitId == null)
+              .toList();
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      const Icon(Icons.auto_awesome),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${definition.displayName} · maîtrise $level',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(definition.description),
+                  const SizedBox(height: 8),
+                  Text(
+                    active
+                        ? costConfigured
+                            ? 'Données : ${_dataCostLabel(dataCost)}\nMatériaux : ${_resourceCostLabel(materialCost)}\nÉnergie : $energyCost'
+                            : 'Coût de création à configurer dans le Dashboard.'
+                        : 'Pattern à découvrir et maîtriser dans le Kernel.',
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: active && costConfigured && candidates.isNotEmpty
+                        ? () => _pickPTibugForPermanentTrait(definition.id)
+                        : null,
+                    icon: const Icon(Icons.biotech_outlined),
+                    label: Text(
+                      candidates.isEmpty
+                          ? 'Aucun P’TIBUG compatible'
+                          : 'Appliquer à un P’TIBUG',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 18),
+        const Text(
+          'Modules fabriqués',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        if (moduleInstances.isEmpty)
+          const Card(child: ListTile(title: Text('Aucun Module fabriqué.'))),
+        ...moduleInstances.map((instance) {
+          final owner = widget.gameState.pTibugs
+              .where((bug) => bug.id == instance.equippedPTibugId)
+              .firstOrNull;
+          return Card(
+            child: ListTile(
+              leading: Icon(_moduleIcon(instance.type)),
+              title: Text(
+                  '${_moduleTitle(instance.type)} niveau ${instance.qualityLevel}'),
+              subtitle: Text(
+                owner == null
+                    ? 'Disponible'
+                    : 'Équipé par ${widget.gameState.pTibugBiologicalNameFor(owner)}',
+              ),
+              trailing: owner == null
+                  ? TextButton(
+                      onPressed: () => _pickPTibugForModule(instance.id),
+                      child: const Text('Équiper'),
+                    )
+                  : TextButton(
+                      onPressed: () => _message(
+                        widget.gameState
+                            .unequipPTibugModuleInstance(
+                              bug: owner,
+                              moduleInstanceId: instance.id,
+                            )
+                            .message,
+                      ),
+                      child: const Text('Retirer'),
+                    ),
+            ),
+          );
+        }),
+        if (_firstFusionPair() case final pair?)
+          OutlinedButton.icon(
+            onPressed: () => _message(
+              widget.gameState
+                  .fusePTibugModuleInstances(
+                      firstId: pair.$1.id, secondId: pair.$2.id)
+                  .message,
+            ),
+            icon: const Icon(Icons.merge_type_outlined),
+            label: Text(
+              'Fusionner 2 ${_moduleTitle(pair.$1.type)} niveau ${pair.$1.qualityLevel}',
+            ),
+          ),
+        const SizedBox(height: 18),
+        const Text('Capsules P’TIBUG',
+            style: TextStyle(fontWeight: FontWeight.w900)),
+        if (capsules.isEmpty)
+          const Card(
+              child: ListTile(title: Text('Aucune Capsule disponible.'))),
+        ...capsules.map(
+          (capsule) => Card(
+            child: ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: Text(capsule.displayName),
+              subtitle: Text('Niveau ${capsule.level} · origine conservée'),
+              trailing: TextButton(
+                onPressed: () => _message(
+                  widget.gameState.decapsulatePTibug(capsule.id).message,
+                ),
+                child: const Text('Décapsuler'),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        const Text(
+          'Données de traits',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Les Données attribuées restent visibles ici. Deux Données identiques non équipées peuvent être fusionnées.',
+        ),
+        const SizedBox(height: 10),
+        if (traits.isEmpty)
+          const Card(child: ListTile(title: Text('Aucune Donnée disponible.'))),
+        ...traits.map((trait) {
+          final owner = widget.gameState.pTibugs
+              .where((bug) => bug.traitDataId == trait.id)
+              .firstOrNull;
+          return Card(
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: _traitColor(
+                  trait.grade,
+                  trait,
+                ).withValues(alpha: 0.16),
+                child: Icon(
+                  Icons.auto_awesome,
+                  color: _traitColor(trait.grade, trait),
+                ),
+              ),
+              title: Text(
+                '${_traitTitle(trait)} · ${_traitGradeTitle(trait.grade)}',
+              ),
+              subtitle: Text(
+                owner == null
+                    ? _traitDescription(trait)
+                    : '${_traitDescription(trait)}\nÉquipée par ${owner.displayName}',
+              ),
+              isThreeLine: owner != null,
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+        ..._fusionActions(),
+        const SizedBox(height: 18),
+        const Text('Modules', style: TextStyle(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 4),
+        Text(
+          '${unlockedModules.length}/${PTibugModuleType.values.length} Modules déverrouillés',
+        ),
+        const SizedBox(height: 10),
+        ...PTibugModuleType.values.map((module) {
+          final unlocked = unlockedModules.contains(module);
+          return Opacity(
+            opacity: unlocked ? 1 : 0.48,
+            child: Card(
+              child: ListTile(
+                leading: CircleAvatar(child: Icon(_moduleIcon(module))),
+                title: Text(_moduleTitle(module)),
+                subtitle: Text(
+                  unlocked
+                      ? _moduleDescription(module)
+                      : 'Module verrouillé · à obtenir plus tard.',
+                ),
+                trailing: Icon(
+                  unlocked ? Icons.check_circle_outline : Icons.lock_outline,
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
+    );
   }
+
+  Future<void> _pickPTibugForPermanentTrait(String traitId) async {
+    final candidates = widget.gameState.pTibugs
+        .where((bug) => bug.biologicalTraitId == null)
+        .toList();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          children: <Widget>[
+            const Text(
+              'Choisir un P’TIBUG',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            ...candidates.map(
+              (bug) => ListTile(
+                leading: Icon(_speciesIcon(bug.species)),
+                title: Text(widget.gameState.pTibugBiologicalNameFor(bug)),
+                subtitle: Text('Niveau ${bug.level}'),
+                onTap: () {
+                  final result = widget.gameState.applyPTibugPermanentTrait(
+                    bug: bug,
+                    traitId: traitId,
+                  );
+                  Navigator.of(sheetContext).pop();
+                  _message(result.message);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickPTibugForModule(String moduleInstanceId) async {
+    final candidates = widget.gameState.pTibugs.where((bug) {
+      final equippedModules = widget.gameState.pTibugModuleInstances
+          .where((item) => item.equippedPTibugId == bug.id)
+          .length;
+      return equippedModules <
+          pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel);
+    }).toList();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          children: <Widget>[
+            const Text(
+              'Équiper un P’TIBUG',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            ...candidates.map(
+              (bug) {
+                final equippedModules = widget.gameState.pTibugModuleInstances
+                    .where((item) => item.equippedPTibugId == bug.id)
+                    .length;
+                return ListTile(
+                  leading: Icon(_speciesIcon(bug.species)),
+                  title: Text(widget.gameState.pTibugBiologicalNameFor(bug)),
+                  subtitle: Text(
+                    '$equippedModules/${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel)} slots occupés',
+                  ),
+                  onTap: () {
+                    final result = widget.gameState.equipPTibugModuleInstance(
+                      bug: bug,
+                      moduleInstanceId: moduleInstanceId,
+                    );
+                    Navigator.of(sheetContext).pop();
+                    _message(result.message);
+                  },
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  (PTibugModuleInstance, PTibugModuleInstance)? _firstFusionPair() {
+    final available = widget.gameState.pTibugModuleInstances
+        .where((item) =>
+            !item.isEquipped && item.qualityLevel < pTibugConfig.moduleMaxLevel)
+        .toList();
+    for (final first in available) {
+      final second = available
+          .where(
+            (item) =>
+                item.id != first.id &&
+                item.type == first.type &&
+                item.qualityLevel == first.qualityLevel,
+          )
+          .firstOrNull;
+      if (second != null) return (first, second);
+    }
+    return null;
+  }
+
+  String _dataCostLabel(Map<PTibugDataFamily, int> cost) => cost.entries
+      .map((entry) =>
+          '${_dataFamilyTitle(entry.key)} : ${entry.value} / ${widget.gameState.pTibugDataReserve[entry.key] ?? 0}')
+      .join(' · ');
+
+  String _resourceCostLabel(Map<String, int> cost) => cost.entries
+      .map((entry) =>
+          '${entry.key} : ${entry.value} / ${widget.gameState.resourceAmount(entry.key)}')
+      .join(' · ');
+
+  String _dataFamilyTitle(PTibugDataFamily family) => switch (family) {
+        PTibugDataFamily.organique => 'Organique',
+        PTibugDataFamily.minerale => 'Minérale',
+        PTibugDataFamily.mycelienne => 'Mycélienne',
+        PTibugDataFamily.toxine => 'Toxine',
+        PTibugDataFamily.biomimetisme => 'Biomimétisme',
+        PTibugDataFamily.energie => 'Énergie',
+        PTibugDataFamily.comportementInsectoide => 'Comportement insectoïde',
+      };
 
   List<Widget> _fusionActions() {
     final available = widget.gameState.pTibugTraitData
-        .where((data) =>
-            !widget.gameState.pTibugs.any((bug) => bug.traitDataId == data.id))
+        .where(
+          (data) => !widget.gameState.pTibugs.any(
+            (bug) => bug.traitDataId == data.id,
+          ),
+        )
         .toList();
     final widgets = <Widget>[];
     for (final trait in available) {
       final partner = available
-          .where((item) =>
-              item.id != trait.id &&
-              item.definitionId == trait.definitionId &&
-              item.grade == trait.grade)
+          .where(
+            (item) =>
+                item.id != trait.id &&
+                item.definitionId == trait.definitionId &&
+                item.grade == trait.grade,
+          )
           .firstOrNull;
       if (partner == null ||
           trait.grade == PTibugTraitGrade.avance ||
           widgets.isNotEmpty) {
         continue;
       }
-      widgets.add(OutlinedButton.icon(
-        onPressed: () => _message(
-            widget.gameState.fusePTibugTraitData(trait, partner).message),
-        icon: const Icon(Icons.merge_type_outlined),
-        label: Text(
-            'Fusionner 2 ${_traitTitle(trait)} ${_traitGradeTitle(trait.grade)}'),
-      ));
+      widgets.add(
+        OutlinedButton.icon(
+          onPressed: () => _message(
+            widget.gameState.fusePTibugTraitData(trait, partner).message,
+          ),
+          icon: const Icon(Icons.merge_type_outlined),
+          label: Text(
+            'Fusionner 2 ${_traitTitle(trait)} ${_traitGradeTitle(trait.grade)}',
+          ),
+        ),
+      );
     }
     return widgets;
   }
 
-  Future<void> _showPTibugLoadout(PTibug bug) => showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        isScrollControlled: true,
-        builder: (sheetContext) {
-          final availableTraits = widget.gameState.pTibugTraitData.where(
-              (data) => !widget.gameState.pTibugs.any(
-                  (item) => item.id != bug.id && item.traitDataId == data.id));
-          return SafeArea(
-            child: DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.72,
-              minChildSize: 0.45,
-              maxChildSize: 0.92,
-              builder: (_, controller) => ListView(
-                controller: controller,
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
-                children: <Widget>[
-                  Text(bug.displayName,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w900)),
-                  Text(
-                      '${pTibugConfig.species[bug.species]!.displayName} · niveau ${bug.level}'),
-                  const SizedBox(height: 18),
-                  const Text('Donnée équipée',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 8),
-                  ...availableTraits.map((trait) => ListTile(
-                        leading: Icon(Icons.auto_awesome,
-                            color: _traitColor(trait.grade, trait)),
-                        title: Text(
-                            '${_traitTitle(trait)} · ${_traitGradeTitle(trait.grade)}'),
-                        subtitle: Text(_traitDescription(trait)),
-                        trailing: trait.id == bug.traitDataId
-                            ? const Icon(Icons.check_circle)
-                            : TextButton(
+  Future<void> _showPTibugLoadout(PTibug bug) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final availableTraits = widget.gameState.pTibugTraitData.where(
+          (data) => !widget.gameState.pTibugs.any(
+            (item) => item.id != bug.id && item.traitDataId == data.id,
+          ),
+        );
+        final equippedInstances = widget.gameState.pTibugModuleInstances
+            .where((instance) => instance.equippedPTibugId == bug.id)
+            .toList();
+        final availableInstances = widget.gameState.pTibugModuleInstances
+            .where((instance) => !instance.isEquipped)
+            .toList();
+        final slots = pTibugConfig.moduleSlotsForLevel(
+          widget.gameState.plaineNurseryLevel,
+        );
+        final trait = bug.biologicalTraitId == null
+            ? null
+            : pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!);
+        return SafeArea(
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.76,
+            minChildSize: 0.45,
+            maxChildSize: 0.92,
+            builder: (_, controller) => ListView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
+              children: <Widget>[
+                Text(
+                  widget.gameState.pTibugBiologicalNameFor(bug),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+                Text(
+                  '${pTibugConfig.species[bug.species]!.displayName} · niveau ${bug.level}',
+                ),
+                const SizedBox(height: 14),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text(
+                          'Trait biologique',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          trait == null
+                              ? 'Aucun Trait permanent.'
+                              : '${trait.displayName} niveau ${bug.biologicalTraitLevel}\n${trait.description}',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Modules (${equippedInstances.length}/$slots)',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 6),
+                if (equippedInstances.isEmpty)
+                  const Text('Aucun Module récent équipé.'),
+                ...equippedInstances.map(
+                  (instance) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(_moduleIcon(instance.type)),
+                    title: Text(
+                      '${_moduleTitle(instance.type)} niveau ${instance.qualityLevel}',
+                    ),
+                    subtitle: Text(_moduleDescription(instance.type)),
+                    trailing: TextButton(
+                      onPressed: () => _message(
+                        widget.gameState
+                            .unequipPTibugModuleInstance(
+                              bug: bug,
+                              moduleInstanceId: instance.id,
+                            )
+                            .message,
+                      ),
+                      child: const Text('Retirer'),
+                    ),
+                  ),
+                ),
+                if (availableInstances.isNotEmpty &&
+                    equippedInstances.length < slots)
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      _pickPTibugForModule(availableInstances.first.id);
+                    },
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text('Équiper un Module disponible'),
+                  ),
+                const Divider(height: 30),
+                const Text(
+                  'Équipement historique',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Les Données et Modules des anciennes sauvegardes restent utilisables.',
+                ),
+                const SizedBox(height: 8),
+                ...availableTraits.map(
+                  (traitData) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.auto_awesome,
+                      color: _traitColor(traitData.grade, traitData),
+                    ),
+                    title: Text(
+                      '${_traitTitle(traitData)} · ${_traitGradeTitle(traitData.grade)}',
+                    ),
+                    subtitle: Text(_traitDescription(traitData)),
+                    trailing: traitData.id == bug.traitDataId
+                        ? const Icon(Icons.check_circle)
+                        : TextButton(
+                            onPressed: () {
+                              _message(
+                                widget.gameState
+                                    .equipPTibugTrait(bug, traitData)
+                                    .message,
+                              );
+                              Navigator.of(sheetContext).pop();
+                            },
+                            child: const Text('Équiper'),
+                          ),
+                  ),
+                ),
+                ...PTibugModuleType.values.map((module) {
+                  final unlocked =
+                      widget.gameState.unlockedPTibugModules.contains(module);
+                  final equipped = bug.hasModule(module);
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(_moduleIcon(module)),
+                    title: Text(_moduleTitle(module)),
+                    subtitle: Text(
+                      unlocked ? _moduleDescription(module) : 'Verrouillé',
+                    ),
+                    trailing: equipped
+                        ? const Icon(Icons.check_circle)
+                        : unlocked
+                            ? TextButton(
                                 onPressed: () {
-                                  _message(widget.gameState
-                                      .equipPTibugTrait(bug, trait)
-                                      .message);
+                                  _message(
+                                    widget.gameState
+                                        .equipPTibugModule(bug, module)
+                                        .message,
+                                  );
                                   Navigator.of(sheetContext).pop();
                                 },
-                                child: const Text('Équiper')),
-                      )),
-                  const Divider(height: 28),
-                  Text(
-                      'Modules (${bug.equippedModules.length}/${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel)})',
-                      style: const TextStyle(fontWeight: FontWeight.w900)),
-                  ...PTibugModuleType.values.map((module) {
-                    final unlocked =
-                        widget.gameState.unlockedPTibugModules.contains(module);
-                    final equipped = bug.hasModule(module);
-                    return ListTile(
-                      leading: Icon(_moduleIcon(module)),
-                      title: Text(_moduleTitle(module)),
-                      subtitle: Text(
-                          unlocked ? _moduleDescription(module) : 'Verrouillé'),
-                      trailing: equipped
-                          ? const Icon(Icons.check_circle)
-                          : unlocked
-                              ? TextButton(
-                                  onPressed: () {
-                                    _message(widget.gameState
-                                        .equipPTibugModule(bug, module)
-                                        .message);
-                                    Navigator.of(sheetContext).pop();
-                                  },
-                                  child: const Text('Équiper'))
-                              : const Icon(Icons.lock_outline),
-                    );
-                  }),
-                ],
-              ),
+                                child: const Text('Équiper'),
+                              )
+                            : const Icon(Icons.lock_outline),
+                  );
+                }),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () => _confirmPTibugEncapsulation(
+                    bug,
+                    sheetContext,
+                  ),
+                  icon: const Icon(Icons.inventory_2_outlined),
+                  label: const Text('Encapsuler ce P’TIBUG'),
+                ),
+              ],
             ),
-          );
-        },
-      );
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmPTibugEncapsulation(
+    PTibug bug,
+    BuildContext sheetContext,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Encapsuler ce P’TIBUG ?'),
+        content: const Text(
+          'Il doit être hors production, récolté et sans Module équipé. La Capsule conserve son espèce, son Trait et son niveau.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Encapsuler'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final result = widget.gameState.encapsulatePTibug(bug);
+    if (result.success && sheetContext.mounted) {
+      Navigator.of(sheetContext).pop();
+    }
+    _message(result.message);
+  }
 
   PTibugTraitData? _traitFor(PTibug bug) => widget.gameState.pTibugTraitData
       .where((trait) => trait.id == bug.traitDataId)
@@ -8249,13 +9193,21 @@ class _LoadoutPill extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          child: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
-            Icon(icon, size: 15, color: color),
-            const SizedBox(width: 4),
-            Text(label,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 4),
+              Text(
+                label,
                 style: TextStyle(
-                    color: color, fontSize: 12, fontWeight: FontWeight.w800)),
-          ]),
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
         ),
       );
 }
@@ -8372,10 +9324,9 @@ class _FablabUpgradeOverview extends StatelessWidget {
         children: <Widget>[
           Text(
             'Amélioration du Fablab',
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.w900),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -8505,11 +9456,14 @@ class _FablabEnergyCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Text('Alimenter le Fablab',
-                style: TextStyle(fontWeight: FontWeight.w900)),
+            const Text(
+              'Alimenter le Fablab',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 6),
             Text(
-                '⚡ ${gameState.energyUnits} énergie · ${gameState.bioBatteries} bio-batterie(s)'),
+              '⚡ ${gameState.energyUnits} énergie · ${gameState.bioBatteries} bio-batterie(s)',
+            ),
             const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
@@ -8526,12 +9480,14 @@ class _FablabEnergyCard extends StatelessWidget {
                   ? null
                   : () {
                       final result = gameState.openBioBattery();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(result.message)));
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(result.message)));
                     },
               icon: const Icon(Icons.bolt_outlined),
               label: Text(
-                  'Ouvrir 1 bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)'),
+                'Ouvrir 1 bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)',
+              ),
             ),
           ],
         ),
@@ -8577,9 +9533,13 @@ class FablabRecyclerView extends StatelessWidget {
     final running = gameState.recyclerCycleStartedAt != null;
     final remaining = running
         ? gameState.recyclerCycleStartedAt!
-            .add(Duration(
-                minutes:
-                    wasteRecyclerConfig.cycleMinutes(gameState.recyclerLevel)))
+            .add(
+              Duration(
+                minutes: wasteRecyclerConfig.cycleMinutes(
+                  gameState.recyclerLevel,
+                ),
+              ),
+            )
             .difference(DateTime.now())
         : null;
     final transferable = gameState.resourceAmount('Déchets');
@@ -8593,19 +9553,23 @@ class FablabRecyclerView extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text('Recycleur niveau ${gameState.recyclerLevel}',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 8),
-                  Text(
-                      '$needed Déchets → ${wasteRecyclerConfig.outputResourcesPerCycle} ressources'),
-                  Text(
-                      '${wasteRecyclerConfig.cycleMinutes(gameState.recyclerLevel)} min par cycle · ${wasteRecyclerConfig.energyCostPerCycle} Énergie'),
-                ]),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Recycleur niveau ${gameState.recyclerLevel}',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '$needed Déchets → ${wasteRecyclerConfig.outputResourcesPerCycle} ressources',
+                ),
+                Text(
+                  '${wasteRecyclerConfig.cycleMinutes(gameState.recyclerLevel)} min par cycle · ${wasteRecyclerConfig.energyCostPerCycle} Énergie',
+                ),
+              ],
+            ),
           ),
         ),
         Card(
@@ -8619,8 +9583,10 @@ class FablabRecyclerView extends StatelessWidget {
                   height: 220,
                   child: Column(
                     children: <Widget>[
-                      const Text('Cuve',
-                          style: TextStyle(fontWeight: FontWeight.w900)),
+                      const Text(
+                        'Cuve',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
                       const SizedBox(height: 8),
                       Expanded(
                         child: Stack(
@@ -8629,8 +9595,9 @@ class FablabRecyclerView extends StatelessWidget {
                             Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
-                                color: const Color(0xFF7A4A2D)
-                                    .withValues(alpha: .15),
+                                color: const Color(
+                                  0xFF7A4A2D,
+                                ).withValues(alpha: .15),
                                 border: Border.all(
                                   color: const Color(0xFF7A4A2D),
                                 ),
@@ -8661,8 +9628,10 @@ class FablabRecyclerView extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Text('$cycles × $needed',
-                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Text(
+                        '$cycles × $needed',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
                     ],
                   ),
                 ),
@@ -8671,12 +9640,18 @@ class FablabRecyclerView extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      const Text('Déchets',
-                          style: TextStyle(fontWeight: FontWeight.w900)),
+                      const Text(
+                        'Déchets',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
                       Text('Inventaire : $transferable'),
                       const SizedBox(height: 8),
-                      Wrap(spacing: 4, runSpacing: 4, children: <Widget>[
-                        ...<int>[1, 5, 10].map((amount) => OutlinedButton(
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: <Widget>[
+                          ...<int>[1, 5, 10].map(
+                            (amount) => OutlinedButton(
                               onPressed: transferable == 0
                                   ? null
                                   : () {
@@ -8685,29 +9660,32 @@ class FablabRecyclerView extends StatelessWidget {
                                         amount,
                                         campHeartLevel,
                                       );
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(content: Text(result.message)),
                                       );
                                     },
                               child: Text('+$amount'),
-                            )),
-                        FilledButton(
-                          onPressed: transferable == 0
-                              ? null
-                              : () {
-                                  final result =
-                                      gameState.transferWasteToRecycler(
-                                    transferable,
-                                    campHeartLevel,
-                                  );
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(result.message)),
-                                  );
-                                },
-                          child: const Text('Max'),
-                        ),
-                      ]),
+                            ),
+                          ),
+                          FilledButton(
+                            onPressed: transferable == 0
+                                ? null
+                                : () {
+                                    final result =
+                                        gameState.transferWasteToRecycler(
+                                      transferable,
+                                      campHeartLevel,
+                                    );
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(result.message)),
+                                    );
+                                  },
+                            child: const Text('Max'),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         '$needed Déchets = ${wasteRecyclerConfig.outputResourcesPerCycle} ressources',
@@ -8723,11 +9701,14 @@ class FablabRecyclerView extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Text('Production',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
-                  Text(running
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text(
+                  'Production',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  running
                       ? 'Recyclage en cours · ${math.max(0, remaining!.inMinutes)} min restantes'
                       : gameState.recyclerOutputAmount >=
                               gameState.recyclerOutputCapacity
@@ -8739,31 +9720,36 @@ class FablabRecyclerView extends StatelessWidget {
                                   : gameState.energyUnits <
                                           wasteRecyclerConfig.energyCostPerCycle
                                       ? 'En attente d’Énergie'
-                                      : 'En attente'),
-                  if (running)
-                    LinearProgressIndicator(
-                        value: (1 -
-                                remaining!.inSeconds /
-                                    Duration(
-                                            minutes: wasteRecyclerConfig
-                                                .cycleMinutes(
-                                                    gameState.recyclerLevel))
-                                        .inSeconds)
-                            .clamp(0, 1)),
-                  const SizedBox(height: 8),
-                  Text(
-                      'Sortie : ${gameState.recyclerOutputOrganic} Organique · ${gameState.recyclerOutputMineral} Minéral'),
-                  FilledButton(
-                    onPressed: gameState.recyclerOutputAmount == 0
-                        ? null
-                        : () {
-                            final result = gameState.retrieveRecyclerOutput();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(result.message)));
-                          },
-                    child: const Text('Récupérer la production'),
+                                      : 'En attente',
+                ),
+                if (running)
+                  LinearProgressIndicator(
+                    value: (1 -
+                            remaining!.inSeconds /
+                                Duration(
+                                  minutes: wasteRecyclerConfig.cycleMinutes(
+                                    gameState.recyclerLevel,
+                                  ),
+                                ).inSeconds)
+                        .clamp(0, 1),
                   ),
-                ]),
+                const SizedBox(height: 8),
+                Text(
+                  'Sortie : ${gameState.recyclerOutputOrganic} Organique · ${gameState.recyclerOutputMineral} Minéral',
+                ),
+                FilledButton(
+                  onPressed: gameState.recyclerOutputAmount == 0
+                      ? null
+                      : () {
+                          final result = gameState.retrieveRecyclerOutput();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)),
+                          );
+                        },
+                  child: const Text('Récupérer la production'),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -8803,7 +9789,9 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
 
   String _remaining(WorkshopCraftOrder order) {
     final seconds = math.max(
-        0, order.nextCompletionTime.difference(DateTime.now()).inSeconds);
+      0,
+      order.nextCompletionTime.difference(DateTime.now()).inSeconds,
+    );
     return '${seconds ~/ 60}m ${seconds.remainder(60).toString().padLeft(2, '0')}s';
   }
 
@@ -8819,45 +9807,52 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
           children: <Widget>[
             _FablabEnergyCard(gameState: widget.gameState),
             const SizedBox(height: 12),
-            Text('Atelier',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w900)),
+            Text(
+              'Atelier',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
             Text(
               'Atelier niv. ${widget.gameState.atelierLevel} · '
               '${widget.gameState.activePtipoteWorkshopOrders}/${widget.gameState.workshopSlots} emplacement(s) P’TIPOTE · '
               '${widget.gameState.activeManualWorkshopOrders}/1 créneau manuel. Chaque niveau ajoute un emplacement P’TIPOTE.',
             ),
             const SizedBox(height: 12),
-            ...orders.map((order) => Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          Text(
-                              craftConfig.recipes
-                                  .firstWhere(
-                                    (recipe) => recipe.id == order.recipeId,
-                                    orElse: () =>
-                                        defaultCraftConfig.simpleMealRecipe,
-                                  )
-                                  .displayName,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w900)),
-                          Text(
-                              '${order.completedQuantity} / ${order.requestedQuantity} · prochaine unité ${_remaining(order)}'),
-                          Text(order.assignedPtipoteName == null
-                              ? 'Mode manuel'
-                              : 'Avec ${order.assignedPtipoteName}'),
-                          OutlinedButton(
-                              onPressed: () => widget.gameState
-                                  .cancelWorkshopOrder(order.id),
-                              child: const Text('Annuler')),
-                        ]),
+            ...orders.map(
+              (order) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text(
+                        craftConfig.recipes
+                            .firstWhere(
+                              (recipe) => recipe.id == order.recipeId,
+                              orElse: () => defaultCraftConfig.simpleMealRecipe,
+                            )
+                            .displayName,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      Text(
+                        '${order.completedQuantity} / ${order.requestedQuantity} · prochaine unité ${_remaining(order)}',
+                      ),
+                      Text(
+                        order.assignedPtipoteName == null
+                            ? 'Mode manuel'
+                            : 'Avec ${order.assignedPtipoteName}',
+                      ),
+                      OutlinedButton(
+                        onPressed: () =>
+                            widget.gameState.cancelWorkshopOrder(order.id),
+                        child: const Text('Annuler'),
+                      ),
+                    ],
                   ),
-                )),
+                ),
+              ),
+            ),
             if (widget.gameState.activeManualWorkshopOrders < 1 ||
                 widget.gameState.activePtipoteWorkshopOrders <
                     widget.gameState.workshopSlots) ...<Widget>[
@@ -8868,30 +9863,33 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
               const SizedBox(height: 10),
               ...craftConfig.recipes
                   .where(
-                      (recipe) => recipe.craftSection == CraftSection.atelier)
+                    (recipe) => recipe.craftSection == CraftSection.atelier,
+                  )
                   .where(widget.gameState.isWorkshopRecipeActive)
-                  .map((recipe) => _WorkshopRecipeCard(
-                        recipe: recipe,
-                        gameState: widget.gameState,
-                        quantity: _quantity,
-                        manualAvailable:
-                            widget.gameState.activeManualWorkshopOrders < 1,
-                        ptipoteAvailable:
-                            widget.gameState.activePtipoteWorkshopOrders <
-                                widget.gameState.workshopSlots,
-                        onPrepare: () => _start(recipe, null),
-                        onAssign: () async {
-                          final figurine = await _pickPtipoteForActivity(
-                            context: context,
-                            gameState: widget.gameState,
-                            figurines: figurines,
-                            title: 'Confier ${recipe.displayName}',
-                          );
-                          if (figurine != null && context.mounted) {
-                            _start(recipe, figurine);
-                          }
-                        },
-                      )),
+                  .map(
+                    (recipe) => _WorkshopRecipeCard(
+                      recipe: recipe,
+                      gameState: widget.gameState,
+                      quantity: _quantity,
+                      manualAvailable:
+                          widget.gameState.activeManualWorkshopOrders < 1,
+                      ptipoteAvailable:
+                          widget.gameState.activePtipoteWorkshopOrders <
+                              widget.gameState.workshopSlots,
+                      onPrepare: () => _start(recipe, null),
+                      onAssign: () async {
+                        final figurine = await _pickPtipoteForActivity(
+                          context: context,
+                          gameState: widget.gameState,
+                          figurines: figurines,
+                          title: 'Confier ${recipe.displayName}',
+                        );
+                        if (figurine != null && context.mounted) {
+                          _start(recipe, figurine);
+                        }
+                      },
+                    ),
+                  ),
             ] else
               const Padding(
                 padding: EdgeInsets.only(top: 10),
@@ -8905,9 +9903,13 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
 
   void _start(CraftRecipe recipe, PtipoteFigurine? figurine) {
     final result = widget.gameState.startWorkshopOrder(
-        recipe: recipe, quantity: _quantity, figurine: figurine);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(result.message)));
+      recipe: recipe,
+      quantity: _quantity,
+      figurine: figurine,
+    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 }
 
@@ -8949,29 +9951,35 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
       builder: (context, snapshot) {
         final figurines = snapshot.data ?? const <PtipoteFigurine>[];
         final orders = widget.gameState.activeKitchenOrders;
-        return ListView(padding: const EdgeInsets.all(18), children: <Widget>[
-          _FablabEnergyCard(gameState: widget.gameState),
-          const SizedBox(height: 12),
-          Text('Cuisine niveau ${widget.gameState.cuisineLevel}',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 6),
-          Text(
-            'Eau disponible gratuitement. ${widget.gameState.activePtipoteKitchenOrders}/${widget.gameState.kitchenSlots} emplacement(s) P’TIPOTE · ${widget.gameState.activeManualKitchenOrders}/1 créneau manuel.',
-          ),
-          const SizedBox(height: 12),
-          _FablabQuantitySelector(
-            quantity: _quantity,
-            onChanged: (value) => setState(() => _quantity = value),
-          ),
-          const SizedBox(height: 12),
-          ...orders.map((order) => Card(
+        return ListView(
+          padding: const EdgeInsets.all(18),
+          children: <Widget>[
+            _FablabEnergyCard(gameState: widget.gameState),
+            const SizedBox(height: 12),
+            Text(
+              'Cuisine niveau ${widget.gameState.cuisineLevel}',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Eau disponible gratuitement. ${widget.gameState.activePtipoteKitchenOrders}/${widget.gameState.kitchenSlots} emplacement(s) P’TIPOTE · ${widget.gameState.activeManualKitchenOrders}/1 créneau manuel.',
+            ),
+            const SizedBox(height: 12),
+            _FablabQuantitySelector(
+              quantity: _quantity,
+              onChanged: (value) => setState(() => _quantity = value),
+            ),
+            const SizedBox(height: 12),
+            ...orders.map(
+              (order) => Card(
                 child: ListTile(
-                  title: Text(craftConfig.recipes
-                      .firstWhere((recipe) => recipe.id == order.recipeId)
-                      .displayName),
+                  title: Text(
+                    craftConfig.recipes
+                        .firstWhere((recipe) => recipe.id == order.recipeId)
+                        .displayName,
+                  ),
                   subtitle: Text(
                     '${order.completedQuantity}/${order.requestedQuantity} · ${_countdownLabel(order.nextCompletionTime)}\n${order.assignedPtipoteName == null ? 'Mode manuel' : 'Avec ${order.assignedPtipoteName}'}',
                   ),
@@ -8982,21 +9990,23 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
                     icon: const Icon(Icons.close),
                   ),
                 ),
-              )),
-          ...craftConfig.recipes
-              .where((recipe) => recipe.craftSection == CraftSection.cuisine)
-              .map((recipe) => _CuisineRecipeCard(
+              ),
+            ),
+            ...craftConfig.recipes
+                .where((recipe) => recipe.craftSection == CraftSection.cuisine)
+                .map(
+                  (recipe) => _CuisineRecipeCard(
                     recipe: recipe,
                     gameState: widget.gameState,
                     quantity: _quantity,
-                    canPrepare: widget.gameState.hasResources(recipe.ingredients
-                            .map((key, value) =>
-                                MapEntry(key, value * _quantity))) &&
-                        widget.gameState.hasInventoryCapacityFor(
-                          <String, int>{
-                            recipe.resultItem: recipe.resultAmount * _quantity
-                          },
-                        ),
+                    canPrepare: widget.gameState.hasResources(
+                          recipe.ingredients.map(
+                            (key, value) => MapEntry(key, value * _quantity),
+                          ),
+                        ) &&
+                        widget.gameState.hasInventoryCapacityFor(<String, int>{
+                          recipe.resultItem: recipe.resultAmount * _quantity,
+                        }),
                     manualAvailable:
                         widget.gameState.activeManualKitchenOrders < 1,
                     ptipoteAvailable:
@@ -9014,14 +10024,18 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
                         _start(recipe, figurine);
                       }
                     },
-                  )),
-          if (_lastResult != null) ...<Widget>[
-            const SizedBox(height: 10),
-            Text(_lastResult!,
+                  ),
+                ),
+            if (_lastResult != null) ...<Widget>[
+              const SizedBox(height: 10),
+              Text(
+                _lastResult!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.w800)),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
           ],
-        ]);
+        );
       },
     );
   }
@@ -9133,19 +10147,24 @@ class _CraftProductionRecipeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final costs =
-        recipe.ingredients.map((key, value) => MapEntry(key, value * quantity));
+    final costs = recipe.ingredients.map(
+      (key, value) => MapEntry(key, value * quantity),
+    );
     final output = <String, int>{
-      recipe.resultItem: recipe.resultAmount * quantity
+      recipe.resultItem: recipe.resultAmount * quantity,
     };
     final hasResources = gameState.hasResources(costs);
     final hasCapacity = gameState.hasInventoryCapacityFor(output);
     final canPrepare = hasResources && hasCapacity;
-    final maxCreatable =
-        _maxProductionCount(recipe.ingredients, gameState.resourceAmount);
+    final maxCreatable = _maxProductionCount(
+      recipe.ingredients,
+      gameState.resourceAmount,
+    );
     final ingredientText = costs.entries
-        .map((entry) =>
-            '${entry.key} : ${entry.value} / ${gameState.resourceAmount(entry.key)}')
+        .map(
+          (entry) =>
+              '${entry.key} : ${entry.value} / ${gameState.resourceAmount(entry.key)}',
+        )
         .join('\n');
     final contextText = recipe.contextIngredients.entries
         .map((entry) => '${entry.value} ${entry.key}')
@@ -9157,16 +10176,14 @@ class _CraftProductionRecipeCard extends StatelessWidget {
     ];
     if (showConsumableEffects) {
       outputDetails.add(
-        'Type : ${recipe.foodType.name} · faim +${recipe.hungerRestore} · vitalité +${recipe.vitalityRestore}',
+        'Consommable · faim +${recipe.hungerRestore} · vitalité +${recipe.vitalityRestore}',
       );
     }
     return _ProductionRecipeCard(
       title: '${recipe.displayName} · $sectionLabel niv. $sectionLevel',
-      leadingIcon: recipe.foodType == FoodType.drink
-          ? Icons.local_drink_outlined
-          : sectionLabel == 'Atelier'
-              ? Icons.handyman_outlined
-              : Icons.restaurant_outlined,
+      leadingIcon: sectionLabel == 'Atelier'
+          ? Icons.handyman_outlined
+          : Icons.restaurant_outlined,
       description: 'Pattern Kernel requis pour cette fabrication.',
       slots: <_ProductionSlotData>[
         _ProductionSlotData(
@@ -9254,15 +10271,19 @@ class _ProductionRecipeCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Row(children: <Widget>[
-                Icon(leadingIcon),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(title,
-                      style: const TextStyle(fontWeight: FontWeight.w900)),
-                ),
-                if (trailingIcon != null) Icon(trailingIcon),
-              ]),
+              Row(
+                children: <Widget>[
+                  Icon(leadingIcon),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  if (trailingIcon != null) Icon(trailingIcon),
+                ],
+              ),
               if (description != null) ...<Widget>[
                 const SizedBox(height: 8),
                 Text(description!),
@@ -9324,8 +10345,10 @@ class _ProductionRecipeCard extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
                           Text(primaryActionLabel),
-                          Text(primaryActionHint!,
-                              style: const TextStyle(fontSize: 11)),
+                          Text(
+                            primaryActionHint!,
+                            style: const TextStyle(fontSize: 11),
+                          ),
                         ],
                       ),
               ),
@@ -9434,16 +10457,12 @@ class _BuildingPlaceholder extends StatelessWidget {
                 Text(
                   title,
                   textAlign: TextAlign.center,
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  description,
-                  textAlign: TextAlign.center,
-                ),
+                Text(description, textAlign: TextAlign.center),
                 if (actions.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 18),
                   ...actions,

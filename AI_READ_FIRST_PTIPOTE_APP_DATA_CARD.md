@@ -1,5 +1,18 @@
 # AI READ FIRST - PTIPOTE App Data Card
 
+## Recettes Craft - 2026-07-19
+
+- Les recettes sont publiées dans `gameConfigs/zone0.zone0Settings.craft.recipes`. `ingredients` est une liste de un à trois éléments : ressources (`Organique`, `Minéral`, `Débris`, `Eau`) ou objets déjà fabriqués, par exemple `Filtre` ou `Repas simple`.
+- Le Dashboard Craft affiche toutes les recettes dans des menus déroulants homogènes. Les choix d'ingrédients incluent les résultats des recettes actuelles, afin de composer des objets plus avancés sans modifier de JSON.
+- `FoodType` est supprimé du modèle Flutter et du Dashboard. Le seul état métier de consommation est `isConsumable`; faim et vitalité restent configurables pour les objets consommables.
+
+## Météo et Marché - 2026-07-19
+
+- Les annonces météo sont publiées dans `gameConfigs/zone0.zone0Settings.towerOperations.weatherEvents`. Chaque entrée contient `label`, `description`, `announcement`, durée, préavis et poids de tirage. La Tour est un panneau d'information : elle ne consomme plus aucun objet et son bouton ouvre directement l'onglet **Météo** du Kernel.
+- Les modèles de missions météo se règlent dans `gameConfigs/zone0.zone0Settings.kernel.missions` (`type: weather`). Les récompenses, y compris `bioBatteryReward`, sont éditables comme les autres missions. `weatherDemandOptions` est une liste d'objets alternatifs : l'un d'eux est tiré à chaque alerte, puis sauvegardé dans `users/{uid}/game/zone0.weather.alerts` avec sa quantité exacte.
+- La quantité demandée est calculée au début de l'alerte : quantité de base + palier de population + niveau du Cœur du Camp + un supplément aléatoire de 0 ou 1. Elle ne varie donc pas pendant l'événement.
+- `market.saleIntervalPopulationImpactPercent` est le coefficient de population appliqué à la fréquence d'achat. `100` conserve le comportement normal ; `0` désactive l'effet population. Le niveau du Marché continue de réduire le délai selon `saleIntervalReductionPerLevel`.
+
 ## Correctifs Kernel, opérations et production - 2026-07-18
 
 ### Notifications Kernel
@@ -1239,7 +1252,9 @@ Pour formater Dart:
 - Chaque proposition présente le rôle du P'TIBUG. Le Pattern choisi devient actif et permet sa création dans la Nurserie.
 - Le Marché héberge le `Sourcier du savoir`. Lors de sa présence, il propose les Patterns Hymé et Arac encore inactifs contre des Bio-batteries configurées dans `ptibug_config.dart`. L'achat active directement le Pattern et le Plan Kernel correspondant.
 - Les découvertes par événements Kernel restent actives en parallèle : premier P'TIBUG pour Hymé, trois collectes P'TIBUG pour Arac. Les Plans déjà acquis ne sont pas proposés une seconde fois par le Sourcier.
-- Attente : les prix et la fréquence du Sourcier seront migrés vers les réglages Dashboard/Firestore pendant l'étape Dashboard. Les Données et Modules gardent leur UI actuelle jusqu'à la refonte visuelle dédiée.
+- Le cycle du Sourcier est configuré dans `tower_operations_config.dart`, publié dans `gameConfigs/zone0.zone0Settings.towerOperations` et utilisé hors ligne par `Zone0GameState`: une visite dure deux heures, avec au plus trois passages par jour et quatre a huit heures entre deux arrivées.
+- Les horaires `merchantAvailableUntil` et `merchantNextArrivalAt`, ainsi que le compteur journalier, sont sauvegardés dans `users/{uid}/game/zone0.market`. Une ancienne visite de vingt-quatre heures est ramenée a une fenetre de deux heures a sa prochaine resolution.
+- Le Sourcier part automatiquement lorsque toutes les offres ont ete achetees. Le joueur peut aussi utiliser `Terminer la transaction` pour fermer le passage avant son terme; les offres restantes sont alors abandonnees et la prochaine arrivee est planifiee.
 
 ### Nurserie P'TIBUG - UI Données et Modules
 
@@ -1388,3 +1403,16 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - La Maison ouvre uniquement la boîte `P'TIPOTE & P'TIBUG`; Kernel et Fablab ont chacun leur icône de courrier, leur compteur non lu et leur propre liste. La lecture marque uniquement les messages de la boîte concernée comme lus.
 - Les rapports sont volontairement synthétiques : sujet, personne ou unité concernée, puis conséquence. Un glissement vers la gauche conserve la suppression manuelle déjà existante.
 - `Zone0GameState.availableConsumableRecipes` et `consumeConsumable` généralisent l'ancien flux `Repas simple`. Dans la fiche P'TIPOTE, `Manger` ouvre la liste des consommables disponibles. Dans l'inventaire global, toucher un aliment ou une boisson ouvre la liste des P'TIPOTES compatibles, puis applique les restaurations configurées de faim et vitalité.
+
+### P'TIBUG V2 : recherche, Traits, Modules et Capsules
+
+- `ptipote-app/lib/features/game/ptibug_config.dart` centralise les sept familles de données V1 (`Organique`, `Minérale`, `Mycélienne`, `Toxine`, `Biomimétisme`, `Énergie`, `Comportement insectoïde`), leurs qualités Commune/Recherchée/Rare et les valeurs 1/2/4. Il contient également les configurations de Patterns, Traits, Modules et des huit biomes P'TIBUG préparés.
+- `ptipote-app/lib/features/game/zone0_game_state.dart` sauvegarde dans la progression Zone 0 la réserve de données, les Cellules, les progressions de Pattern, les instances de Modules, les ordres de fabrication, les Capsules et les P'TIBUG. Les données restent dans le Kernel et ne prennent pas de case d'inventaire matériel.
+- Une `PTibugDataCell` contient exactement cinq entrées. Son ouverture crédite la réserve du Kernel; les données sont ensuite investies manuellement dans une recherche. Les Patterns sont des connaissances à maîtrise progressive, pas des objets consommables.
+- Les Traits biologiques sont permanents : un P'TIBUG n'en reçoit qu'un. Son nom affiché devient par exemple `Hyme Pollinisateur II`. Les coûts de création actuellement configurés sont Pollinisateur, Mineur et Décomposeur; les autres Traits restent visibles mais demandent une configuration Dashboard avant de pouvoir être appliqués.
+- Les Modules (`Ailes`, `Pinces`, `Réservoir`) sont des instances amovibles fabriquées dans l'Atelier, équipables, retirables et fusionnables par paires identiques. Le Réservoir ajoute +15, +18 ou +20 de capacité selon son niveau. La source de vérité de l'équipement est l'instance `equippedPTibugId`; la liste du P'TIBUG est maintenue pour la compatibilité des anciennes sauvegardes.
+- Les cartes de Création P'TIBUG et de Modules réutilisent `_ProductionRecipeCard`, le composant partagé par Cuisine et Atelier. Elles affichent les ressources maison, les besoins, l'énergie, le temps de fabrication et le maximum fabriquable. Le coût V1 d'un P'TIBUG de base est 30 Organique, 15 Minéral et 10 Bio-batteries; le Mycélium reste un champ de configuration futur sans coût imposé par défaut.
+- La production de base est configurée à 3 ressources par cycle et la capacité minimale est de 10. Le calcul applique successivement espèce, biome, Trait, Modules, durée du cycle, puis limite de stockage. Chaque P'TIBUG garde son stock jusqu'à la récolte individuelle.
+- Une Capsule préserve l'espèce, le Trait, le niveau, l'XP, l'origine et le nom biologique. L'encapsulation exige un P'TIBUG inactif, au stock récolté et sans Module équipé. Les Modules restent séparés. Décapsuler restaure le P'TIBUG sans débloquer son Pattern ni la maîtrise scientifique du destinataire.
+- Migration : les anciens champs `traitDataId` et `equippedModules` sont conservés. Les anciens biomes de Lisière sont mappés vers les identifiants P'TIBUG; aucun P'TIBUG existant, Module ou stock produit n'est supprimé. Les sauvegardes où seul `equippedPTibugId` était renseigné sont désormais reconnues par l'UI et l'encapsulation.
+- `ptipote-app/lib/features/game/refuge_page.dart` expose la recherche dans le Kernel et les opérations P'TIBUG dans la Nurserie : fabrication, Trait, équipement, fusion, récolte et Capsules. Le Sourcier et les éditeurs Dashboard complets pour les nouvelles tables restent à raccorder dans une étape dédiée.

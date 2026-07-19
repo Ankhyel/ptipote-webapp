@@ -16,6 +16,7 @@ class MarketConfig {
     required this.saleValues,
     required this.saleIntervalReductionPerLevel,
     required this.maxActiveRequestsBonusPerLevel,
+    required this.saleIntervalPopulationImpactPercent,
   });
 
   final Map<String, int> constructionCost;
@@ -34,12 +35,15 @@ class MarketConfig {
   final Map<String, int> saleValues;
   final double saleIntervalReductionPerLevel;
   final int maxActiveRequestsBonusPerLevel;
+  final int saleIntervalPopulationImpactPercent;
 
   int slotsForLevel(int level) => level.clamp(0, 99) * saleSlotsPerLevel;
 
   double saleIntervalMultiplierForLevel(int level) =>
-      (1 - (level.clamp(1, 99) - 1) * saleIntervalReductionPerLevel)
-          .clamp(0.5, 1.0);
+      (1 - (level.clamp(1, 99) - 1) * saleIntervalReductionPerLevel).clamp(
+        0.5,
+        1.0,
+      );
 
   int maxRequestsForLevel(int level) =>
       maxActiveRequests +
@@ -73,6 +77,7 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   },
   saleIntervalReductionPerLevel: 0.10,
   maxActiveRequestsBonusPerLevel: 1,
+  saleIntervalPopulationImpactPercent: 100,
 );
 
 MarketConfig marketConfig = defaultMarketConfig;

@@ -1,7 +1,5 @@
 enum CraftSection { cuisine, atelier }
 
-enum FoodType { meal, drink }
-
 class CraftConfig {
   const CraftConfig({required this.recipes});
 
@@ -34,7 +32,6 @@ class CraftRecipe {
     required this.resultItem,
     required this.resultAmount,
     required this.isConsumable,
-    required this.foodType,
     required this.hungerRestore,
     required this.vitalityRestore,
     this.durationMinutes = 1,
@@ -57,7 +54,6 @@ class CraftRecipe {
   final String resultItem;
   final int resultAmount;
   final bool isConsumable;
-  final FoodType foodType;
   final int hungerRestore;
   final int vitalityRestore;
   final int durationMinutes;
@@ -83,7 +79,6 @@ const defaultCraftConfig = CraftConfig(
       resultItem: 'Repas simple',
       resultAmount: 1,
       isConsumable: true,
-      foodType: FoodType.meal,
       hungerRestore: 35,
       vitalityRestore: 5,
       durationMinutes: 2,
@@ -104,7 +99,6 @@ const defaultCraftConfig = CraftConfig(
       resultItem: 'Boisson tonique',
       resultAmount: 2,
       isConsumable: true,
-      foodType: FoodType.drink,
       hungerRestore: 5,
       vitalityRestore: 15,
       durationMinutes: 3,
@@ -125,7 +119,6 @@ const defaultCraftConfig = CraftConfig(
       resultItem: 'Filtre',
       resultAmount: 1,
       isConsumable: false,
-      foodType: FoodType.meal,
       hungerRestore: 0,
       vitalityRestore: 0,
       durationMinutes: 2,
@@ -146,7 +139,6 @@ const defaultCraftConfig = CraftConfig(
       resultItem: 'Cartouche de filtration',
       resultAmount: 1,
       isConsumable: false,
-      foodType: FoodType.meal,
       hungerRestore: 0,
       vitalityRestore: 0,
       durationMinutes: 1,
@@ -167,7 +159,6 @@ const defaultCraftConfig = CraftConfig(
       resultItem: 'Tenue ombragée',
       resultAmount: 1,
       isConsumable: false,
-      foodType: FoodType.meal,
       hungerRestore: 0,
       vitalityRestore: 0,
       durationMinutes: 5,
@@ -189,7 +180,6 @@ const defaultCraftConfig = CraftConfig(
       resultItem: 'Meuble simple',
       resultAmount: 1,
       isConsumable: false,
-      foodType: FoodType.meal,
       hungerRestore: 0,
       vitalityRestore: 0,
       durationMinutes: 3,
@@ -211,7 +201,6 @@ const defaultCraftConfig = CraftConfig(
       resultItem: 'Ventilation Termite',
       resultAmount: 1,
       isConsumable: false,
-      foodType: FoodType.meal,
       hungerRestore: 0,
       vitalityRestore: 0,
       durationMinutes: 8,
@@ -233,7 +222,6 @@ const defaultCraftConfig = CraftConfig(
       resultItem: 'Lumière solaire',
       resultAmount: 1,
       isConsumable: false,
-      foodType: FoodType.meal,
       hungerRestore: 0,
       vitalityRestore: 0,
       durationMinutes: 8,

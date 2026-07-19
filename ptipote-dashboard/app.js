@@ -629,6 +629,16 @@ function craftIngredients(recipe) {
   return Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
 }
 
+function craftMaterialOptions(selected = "") {
+  const recipeOutputs = (zone0Settings.craft?.recipes || [])
+    .map((recipe) => recipe.resultItem)
+    .filter(Boolean);
+  const materials = [...new Set(["Organique", "Minéral", "Débris", "Eau", ...recipeOutputs, selected])];
+  return [`<option value="">Aucun</option>`, ...materials.map((material) =>
+    `<option value="${escapeHtml(material)}" ${material === selected ? "selected" : ""}>${escapeHtml(material)}</option>`
+  )].join("");
+}
+
 function renderCraftConfig() {
   const recipes = Array.isArray(zone0Settings.craft?.recipes) ? zone0Settings.craft.recipes : [];
   el.craftRecipeList.innerHTML = recipes.map((recipe, index) => {
@@ -638,7 +648,7 @@ function renderCraftConfig() {
     const stackLimit = craftNumber(recipe.stackLimit || 1, 1);
     const ingredientFields = [0, 1, 2].map((slot) => {
       const ingredient = craftIngredients(recipe)[slot] || { resource: "", amount: 0 };
-      return `<div class="stat-field"><label>Ingrédient ${slot + 1}</label><input type="text" data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="resource" value="${escapeHtml(ingredient.resource)}"></div><div class="stat-field"><label>Quantité ${slot + 1}</label><input type="number" min="0" data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="amount" value="${escapeHtml(ingredient.amount)}"></div>`;
+      return `<div class="stat-field"><label>Ingrédient ${slot + 1}</label><select data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="resource">${craftMaterialOptions(ingredient.resource)}</select></div><div class="stat-field"><label>Quantité ${slot + 1}</label><input type="number" min="0" data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="amount" value="${escapeHtml(ingredient.amount)}"></div>`;
     }).join("");
     return `<details class="config-card craft-card">
       <summary><span><strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong><small>${section} · ${ingredients || "sans ingrédient"} → ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${recipe.patternRequired === false ? "sans Pattern" : "Pattern requis"}</small></span><span class="pill">pile ${stackLimit}</span></summary>
@@ -690,8 +700,10 @@ function addCraftRecipe(event) {
   const displayName = String(form.get("displayName") || "Nouvelle recette").trim();
   const resultItem = String(form.get("resultItem") || displayName).trim();
   const resource2 = String(form.get("ingredientResource2") || "");
+  const resource3 = String(form.get("ingredientResource3") || "");
   const ingredients = [{ resource: String(form.get("ingredientResource") || "Organique"), amount: craftNumber(form.get("ingredientAmount"), 1) }];
   if (resource2 && craftNumber(form.get("ingredientAmount2")) > 0) ingredients.push({ resource: resource2, amount: craftNumber(form.get("ingredientAmount2")) });
+  if (resource3 && craftNumber(form.get("ingredientAmount3")) > 0) ingredients.push({ resource: resource3, amount: craftNumber(form.get("ingredientAmount3")) });
   const id = displayName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `recipe-${Date.now()}`;
   if (zone0Settings.craft.recipes.some((recipe) => recipe.id === id)) {
     el.craftStatus.textContent = "Une recette utilise déjà cet identifiant. Change son nom avant de l'ajouter.";
@@ -701,7 +713,7 @@ function addCraftRecipe(event) {
     id, displayName, craftSection: String(form.get("craftSection") || "cuisine"), ingredients, contextIngredients: {},
     cuisineLevel: craftNumber(form.get("cuisineLevel")), atelierLevel: craftNumber(form.get("atelierLevel")), patternRequired: form.get("patternRequired") !== "false",
     resultItem, resultAmount: craftNumber(form.get("resultAmount"), 1), durationMinutes: 1, stackLimit: craftNumber(form.get("stackLimit"), 1),
-    isConsumable: form.get("isConsumable") === "true", foodType: String(form.get("foodType") || "meal"), hungerRestore: craftNumber(form.get("hungerRestore")), vitalityRestore: craftNumber(form.get("vitalityRestore")), energyCost: 0,
+    isConsumable: form.get("isConsumable") === "true", hungerRestore: craftNumber(form.get("hungerRestore")), vitalityRestore: craftNumber(form.get("vitalityRestore")), energyCost: 0,
   });
   const recipePlanId = `craft-${id}`;
   if (zone0Settings.craft.recipes.at(-1).patternRequired && !zone0Settings.kernelProgress.plans.some((plan) => plan.id === recipePlanId)) {
@@ -887,12 +899,30 @@ function prettyPath(path) {
     maxWeatherEventsPerDay: "Événements météo maximum par jour",
     minimumWeatherIntervalMinutes: "Temps minimum entre deux événements (min)",
     occurrenceWeight: "Poids de tirage météo",
+    announcement: "Annonce affichée dans la Tour",
+    description: "Description de l'intempérie",
+    title: "Titre de la mission",
+    type: "Type de mission",
+    conditionType: "Condition de validation",
+    requestedItem: "Objet demandé",
+    requestedAmount: "Quantité de base demandée",
+    weatherDemandOptions: "Autres objets possibles (tirage aléatoire)",
+    weatherType: "Intempérie associée",
+    bioBatteryReward: "Récompense : bio-batteries",
+    populationReward: "Récompense : habitants",
+    xpReward: "Récompense : XP de confiance",
+    baseSaleIntervalMinutes: "Délai de base entre deux achats (min)",
+    saleIntervalReductionPerLevel: "Réduction du délai par niveau de Marché",
+    saleIntervalPopulationImpactPercent: "Influence de la population sur la fréquence (%)",
+    requestChance: "Chance de créer une demande client",
+    maxActiveRequests: "Demandes clients maximum",
+    maxActiveRequestsBonusPerLevel: "Demandes supplémentaires par niveau de Marché",
   };
   return path.map((key) => labels[key] || String(key).replace(/([A-Z])/g, " $1")).join(" / ");
 }
 
 function configFields(value, path = []) {
-  if (typeof value === "number" || typeof value === "boolean") return [{ path, value }];
+  if (["number", "boolean", "string"].includes(typeof value)) return [{ path, value }];
   if (!value || typeof value !== "object") return [];
   return Object.entries(value).flatMap(([key, child]) => configFields(child, [...path, key]));
 }
@@ -906,6 +936,9 @@ function configFieldControls(key, value, prefix = []) {
       if (typeof field.value === "boolean") {
         return `<label class="toggle-field"><input type="checkbox" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" ${field.value ? "checked" : ""}>${escapeHtml(label)}</label>`;
       }
+      if (typeof field.value === "string") {
+        return `<div class="stat-field"><label for="zone0-${escapeHtml(key)}-${escapeHtml(path)}">${escapeHtml(label)}</label><input id="zone0-${escapeHtml(key)}-${escapeHtml(path)}" type="text" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" value="${escapeHtml(field.value)}"></div>`;
+      }
       return `<div class="stat-field"><label for="zone0-${escapeHtml(key)}-${escapeHtml(path)}">${escapeHtml(label)}</label><input id="zone0-${escapeHtml(key)}-${escapeHtml(path)}" type="number" step="0.01" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" value="${escapeHtml(field.value)}"></div>`;
     }).join("");
 }
@@ -918,7 +951,7 @@ function bindZone0Inputs(target) {
   target.querySelectorAll("[data-zone0-key]").forEach((input) => {
     input.addEventListener("input", () => {
       const path = input.dataset.zone0Path.split(".").map((key) => /^\d+$/.test(key) ? Number(key) : key);
-      const value = input.type === "checkbox" ? input.checked : Number(input.value);
+      const value = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
       writePath(zone0Settings[input.dataset.zone0Key], path, value);
       el.zone0SettingsStatus.textContent = "Modifications en attente. Clique sur Publier dans l'application.";
     });
@@ -969,7 +1002,7 @@ function renderKernelEditor() {
       "kernel",
       mission,
       ["missions", index],
-      { meta: `${mission.type || "mission"} · demande : ${mission.requestedAmount || 0} ${mission.requestedItem || "aucune"} · Pattern : ${mission.rewardPatternId || "aucun"}` },
+      { meta: `${mission.type === "weather" ? "mission météo de la Tour" : mission.type || "mission"} · demande : ${mission.requestedAmount || 0} ${mission.requestedItem || "aucune"} · récompense : ${mission.bioBatteryReward || 0} bio-batterie(s)` },
     )}<button class="ghost" type="button" data-delete-kernel-mission="${index}">Supprimer cette mission</button>`;
   });
   el.kernelBuildingList.innerHTML = missionCards(buildingMissions).join("") || '<p class="panel-note">Aucune mission bâtiment.</p>';
@@ -1212,7 +1245,7 @@ function renderMarketEditor() {
   const { constructionCost, requiredCampHeartLevel, requiredPopulation, saleSlotsPerLevel, saleValues, ...activity } = market;
   el.marketSettingsForm.innerHTML = [
     configCard("Construction et prérequis", "market", construction, [], { open: true, meta: "Accès au bâtiment et emplacements" }),
-    configCard("Activité du marché", "market", activity, [], { meta: "Vitalité, fréquence et demandes" }),
+    configCard("Activité du marché", "market", activity, [], { meta: "La population et le niveau du Marché accélèrent les achats ; les demandes restent réglables." }),
     configCard("Tarifs des ressources et objets", "market", saleValues || {}, ["saleValues"], { meta: "Prix par matériau et objet fabriqué" }),
   ].join("");
   bindZone0Inputs(el.marketSettingsForm);
@@ -1232,7 +1265,7 @@ function renderZone0Settings() {
 
 function validateZone0Settings() {
   const invalid = configFields(zone0Settings).find(({ path, value }) => {
-    if (typeof value === "boolean") return false;
+    if (typeof value === "boolean" || typeof value === "string") return false;
     if (typeof value !== "number" || !Number.isFinite(value)) return true;
     return value < 0 &&
       !path.includes("riskModifierPercent") &&

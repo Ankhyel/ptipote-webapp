@@ -61,6 +61,7 @@
       "xpReward": 2,
       "requestedItem": "Filtre",
       "requestedAmount": 1,
+      "weatherDemandOptions": ["Cartouche de filtration"],
       "weatherType": "toxicCloud"
     },
     {
@@ -75,6 +76,7 @@
       "xpReward": 2,
       "requestedItem": "Tenue ombragée",
       "requestedAmount": 1,
+      "weatherDemandOptions": ["Lumière solaire"],
       "weatherType": "heatWave"
     },
     {
@@ -89,6 +91,7 @@
       "xpReward": 2,
       "requestedItem": "Ventilation Termite",
       "requestedAmount": 1,
+      "weatherDemandOptions": ["Filtre"],
       "weatherType": "heavyRain"
     }
   ],

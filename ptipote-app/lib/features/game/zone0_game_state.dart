@@ -68,6 +68,19 @@ class Zone0GameState extends ChangeNotifier {
   final List<PTibugTraitData> pTibugTraitData = <PTibugTraitData>[];
   final Set<PTibugModuleType> unlockedPTibugModules = <PTibugModuleType>{};
   final Set<PTibugSpecies> activePTibugPatterns = <PTibugSpecies>{};
+  // The legacy P'TIBUG fields above remain loaded for existing accounts. The
+  // collections below are the V1 scientific progression data.
+  final Map<PTibugDataFamily, int> pTibugDataReserve = <PTibugDataFamily, int>{
+    for (final family in PTibugDataFamily.values) family: 0,
+  };
+  final List<PTibugDataCell> pTibugDataCells = <PTibugDataCell>[];
+  final Map<String, PTibugPatternProgress> pTibugPatternProgress =
+      <String, PTibugPatternProgress>{};
+  final List<PTibugModuleInstance> pTibugModuleInstances =
+      <PTibugModuleInstance>[];
+  final List<PTibugModuleCraftOrder> pTibugModuleCraftOrders =
+      <PTibugModuleCraftOrder>[];
+  final List<PTibugCapsule> pTibugCapsules = <PTibugCapsule>[];
   bool starterPTibugChoiceMade = false;
   final Map<String, ConstructionProject> constructionProjects =
       <String, ConstructionProject>{};
@@ -155,6 +168,9 @@ class Zone0GameState extends ChangeNotifier {
   DateTime? marketLastWorkTickAt;
   DateTime? lastManualTowerRechargeAt;
   DateTime? merchantAvailableUntil;
+  DateTime? merchantNextArrivalAt;
+  String merchantVisitsDayKey = '';
+  int merchantVisitsToday = 0;
   String? marketAssignedPtipoteId;
   String? marketAssignedPtipoteName;
   int marketValueRemainder = 0;
@@ -217,11 +233,21 @@ class Zone0GameState extends ChangeNotifier {
       merchantAvailableUntil != null &&
       DateTime.now().isBefore(merchantAvailableUntil!);
 
+  int get merchantVisitsRemaining => math.max(
+        0,
+        towerOperationsConfig.merchantMaxVisitsPerDay - merchantVisitsToday,
+      );
+
+  Duration? get merchantNextArrivalIn => merchantNextArrivalAt == null
+      ? null
+      : merchantNextArrivalAt!.difference(DateTime.now());
+
   bool isBiomeUnlocked(ForageBiome biome) =>
       biomeSecurity[biome]?.status == BiomeDiscoveryStatus.unlocked;
 
-  bool isBiomeExploring(ForageBiome biome) => explorationMissions
-      .any((mission) => mission.biome == biome && mission.isActive);
+  bool isBiomeExploring(ForageBiome biome) => explorationMissions.any(
+        (mission) => mission.biome == biome && mission.isActive,
+      );
 
   /// The exploration map expands from already discovered neighbouring biomes.
   /// Locked biomes never dilute the average before the player can reach them.
@@ -269,15 +295,19 @@ class Zone0GameState extends ChangeNotifier {
       .toList();
 
   int get activeManualWorkshopOrders => activeWorkshopOrders
-      .where((order) =>
-          order.area == WorkshopOrderArea.workshop &&
-          order.assignedPtipoteId == null)
+      .where(
+        (order) =>
+            order.area == WorkshopOrderArea.workshop &&
+            order.assignedPtipoteId == null,
+      )
       .length;
 
   int get activePtipoteWorkshopOrders => activeWorkshopOrders
-      .where((order) =>
-          order.area == WorkshopOrderArea.workshop &&
-          order.assignedPtipoteId != null)
+      .where(
+        (order) =>
+            order.area == WorkshopOrderArea.workshop &&
+            order.assignedPtipoteId != null,
+      )
       .length;
 
   List<WorkshopCraftOrder> get activeKitchenOrders => activeWorkshopOrders
@@ -301,8 +331,10 @@ class Zone0GameState extends ChangeNotifier {
       );
 
   CraftRecipe _orderRecipe(WorkshopCraftOrder order) =>
-      craftConfig.recipes.firstWhere((recipe) => recipe.id == order.recipeId,
-          orElse: () => defaultCraftConfig.simpleMealRecipe);
+      craftConfig.recipes.firstWhere(
+        (recipe) => recipe.id == order.recipeId,
+        orElse: () => defaultCraftConfig.simpleMealRecipe,
+      );
 
   Map<String, int> _orderIngredients(WorkshopCraftOrder order) =>
       _orderRecipe(order).ingredients;
@@ -373,17 +405,23 @@ class Zone0GameState extends ChangeNotifier {
     final isOrganic = resource == 'Organique';
     if (!isOrganic && resource != 'Minéral') {
       return const Zone0ActionResult(
-          success: false, message: 'Ressource incompatible.');
+        success: false,
+        message: 'Ressource incompatible.',
+      );
     }
     final current = isOrganic ? generatorOrganic : generatorMineral;
     final capacity = isOrganic
         ? generatorOrganicCapacity(heartLevel)
         : generatorMineralCapacity(heartLevel);
     final moved = math.min(
-        math.min(amount, resourceAmount(resource)), capacity - current);
+      math.min(amount, resourceAmount(resource)),
+      capacity - current,
+    );
     if (moved <= 0) {
       return const Zone0ActionResult(
-          success: false, message: 'Aucune ressource transférée.');
+        success: false,
+        message: 'Aucune ressource transférée.',
+      );
     }
     final removed = removeResource(resource, moved);
     if (isOrganic) {
@@ -395,7 +433,9 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '$removed $resource ajouté au Générateur.');
+      success: true,
+      message: '$removed $resource ajouté au Générateur.',
+    );
   }
 
   bool resolveGenerator({required int heartLevel, DateTime? now}) {
@@ -405,8 +445,9 @@ class Zone0GameState extends ChangeNotifier {
       return false;
     }
     generatorCycleStartedAt ??= current;
-    final cycle =
-        Duration(minutes: campGeneratorConfig.cycleMinutes(heartLevel));
+    final cycle = Duration(
+      minutes: campGeneratorConfig.cycleMinutes(heartLevel),
+    );
     final elapsed = current.difference(generatorCycleStartedAt!);
     final elapsedCycles = elapsed.inSeconds ~/ math.max(1, cycle.inSeconds);
     if (elapsedCycles <= 0) return false;
@@ -426,8 +467,9 @@ class Zone0GameState extends ChangeNotifier {
     bioBatteries += produced;
     generatorTotalProduced += produced;
     generatorCycleStartedAt = _generatorCanRun
-        ? generatorCycleStartedAt!
-            .add(Duration(seconds: cycle.inSeconds * possibleCycles))
+        ? generatorCycleStartedAt!.add(
+            Duration(seconds: cycle.inSeconds * possibleCycles),
+          )
         : null;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -493,7 +535,8 @@ class Zone0GameState extends ChangeNotifier {
   List<KernelMissionProgress> refugeRequests(int campHeartLevel) {
     return kernelMissionsForCampHeartLevel(campHeartLevel)
         .where(
-            (mission) => mission.config.type == KernelMissionType.refugeRequest)
+          (mission) => mission.config.type == KernelMissionType.refugeRequest,
+        )
         .take(kernelConfig.maxRefugeRequests)
         .toList();
   }
@@ -513,9 +556,11 @@ class Zone0GameState extends ChangeNotifier {
 
   KernelMissionConfig? _weatherMissionForAlert(WeatherAlert alert) {
     final template = kernelConfig.missions
-        .where((mission) =>
-            mission.type == KernelMissionType.weather &&
-            mission.weatherType == alert.type.name)
+        .where(
+          (mission) =>
+              mission.type == KernelMissionType.weather &&
+              mission.weatherType == alert.type.name,
+        )
         .firstOrNull;
     if (template == null) return null;
     return KernelMissionConfig(
@@ -534,11 +579,14 @@ class Zone0GameState extends ChangeNotifier {
       requiredBreederLevel: template.requiredBreederLevel,
       requiredBuilderLevel: template.requiredBuilderLevel,
       requiredRestorerLevel: template.requiredRestorerLevel,
-      requestedItem: template.requestedItem,
-      requestedAmount: template.requestedAmount,
+      requestedItem: alert.requestedItem ?? template.requestedItem,
+      requestedAmount: alert.requestedAmount > 0
+          ? alert.requestedAmount
+          : template.requestedAmount,
       resourceRewards: template.resourceRewards,
       rewardPatternId: template.rewardPatternId,
       weatherType: template.weatherType,
+      weatherDemandOptions: template.weatherDemandOptions,
     );
   }
 
@@ -556,15 +604,17 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int activeKernelMissionCount(int campHeartLevel) =>
-      kernelMissionsForCampHeartLevel(campHeartLevel)
-          .where((mission) => mission.status == KernelMissionStatus.active)
-          .length;
+      kernelMissionsForCampHeartLevel(
+        campHeartLevel,
+      ).where((mission) => mission.status == KernelMissionStatus.active).length;
 
   int unreadKernelMissionNotificationCount(int campHeartLevel) =>
       kernelMissionsForCampHeartLevel(campHeartLevel)
-          .where((mission) =>
-              mission.status == KernelMissionStatus.active &&
-              !viewedKernelMissionIds.contains(mission.config.id))
+          .where(
+            (mission) =>
+                mission.status == KernelMissionStatus.active &&
+                !viewedKernelMissionIds.contains(mission.config.id),
+          )
           .length;
 
   void markKernelMissionsViewed(int campHeartLevel) {
@@ -650,10 +700,8 @@ class Zone0GameState extends ChangeNotifier {
         _ => buildingId,
       };
 
-  int get kernelTrustXpRequired => kernelProgressConfig.xpRequired(
-        level: kernelTrustLevel,
-        isTrust: true,
-      );
+  int get kernelTrustXpRequired =>
+      kernelProgressConfig.xpRequired(level: kernelTrustLevel, isTrust: true);
 
   int kernelAxisXpRequired(KernelAxis axis) => kernelProgressConfig.xpRequired(
         level: kernelAxisLevel(axis),
@@ -701,25 +749,265 @@ class Zone0GameState extends ChangeNotifier {
     }
     starterPTibugChoiceMade = true;
     activePTibugPatterns.add(species);
+    final researchPattern = pTibugConfig.researchPatterns.values
+        .where((item) => item.linkedSpecies == species)
+        .firstOrNull;
+    if (researchPattern != null) {
+      final progress = _patternProgressFor(researchPattern.id);
+      progress
+        ..state = PTibugPatternState.active
+        ..masteryLevel = math.max(progress.masteryLevel, 1)
+        ..discoveredAt ??= DateTime.now()
+        ..activatedAt ??= DateTime.now();
+    }
     final planId = pTibugConfig.patterns[species]!.kernelPlanId;
     discoveredKernelPlanIds.remove(planId);
     readyKernelPlanIds.remove(planId);
     activeKernelPlanIds.add(planId);
-    reports.add(PtipoteMissionReport.system(
-      message:
-          'Le Kernel transmet le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut lancer sa première création.',
-      sourceBuildingId: 'kernel',
-      mailbox: Zone0MessageMailbox.kernel,
-      subject: 'Plan Kernel',
-      concerned: 'Joueur',
-      summary:
-          'Pattern ${pTibugConfig.species[species]!.displayName} sélectionné.',
-    ));
+    reports.add(
+      PtipoteMissionReport.system(
+        message:
+            'Le Kernel transmet le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut lancer sa première création.',
+        sourceBuildingId: 'kernel',
+        mailbox: Zone0MessageMailbox.kernel,
+        subject: 'Plan Kernel',
+        concerned: 'Joueur',
+        summary:
+            'Pattern ${pTibugConfig.species[species]!.displayName} sélectionné.',
+      ),
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
       message: 'Pattern ${pTibugConfig.species[species]!.displayName} choisi.',
+    );
+  }
+
+  PTibugPatternProgress _patternProgressFor(String patternId) =>
+      pTibugPatternProgress.putIfAbsent(
+        patternId,
+        () => PTibugPatternProgress(patternId: patternId),
+      );
+
+  PTibugResearchPatternConfig? pTibugResearchPattern(String patternId) =>
+      pTibugConfig.researchPatterns[patternId];
+
+  bool isPTibugPatternActive(String patternId) {
+    final progress = pTibugPatternProgress[patternId];
+    return progress != null &&
+        (progress.state == PTibugPatternState.active ||
+            progress.state == PTibugPatternState.masteredCurrentLevel) &&
+        progress.masteryLevel > 0;
+  }
+
+  Zone0ActionResult discoverPTibugPattern(String patternId) {
+    final pattern = pTibugResearchPattern(patternId);
+    if (pattern == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Pattern inconnu.',
+      );
+    }
+    final progress = _patternProgressFor(patternId);
+    if (progress.state != PTibugPatternState.unknown) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Pattern déjà identifié.',
+      );
+    }
+    progress
+      ..state = PTibugPatternState.discovered
+      ..discoveredAt = DateTime.now();
+    reports.add(
+      PtipoteMissionReport.system(
+        message: 'Le Kernel a identifié ${pattern.displayName}.',
+        sourceBuildingId: 'kernel',
+        mailbox: Zone0MessageMailbox.kernel,
+        subject: 'Recherche Kernel',
+        concerned: 'Joueur',
+        summary: 'Nouveau Pattern disponible.',
+      ),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '${pattern.displayName} identifié.',
+    );
+  }
+
+  Zone0ActionResult openPTibugDataCell(String cellId) {
+    final cell = pTibugDataCells.where((item) => item.id == cellId).firstOrNull;
+    if (cell == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cellule introuvable.',
+      );
+    }
+    if (cell.isOpened) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cellule déjà analysée.',
+      );
+    }
+    for (final entry in cell.entries) {
+      pTibugDataReserve[entry.family] =
+          (pTibugDataReserve[entry.family] ?? 0) + entry.value(pTibugConfig);
+    }
+    cell.openedAt = DateTime.now();
+    reports.add(
+      PtipoteMissionReport.system(
+        message:
+            '${cell.displayName} analysée : les données rejoignent le Kernel.',
+        sourceBuildingId: 'kernel',
+        mailbox: Zone0MessageMailbox.kernel,
+        subject: 'Analyse de cellule',
+        concerned: 'Joueur',
+        summary: '5 données révélées.',
+      ),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Données ajoutées au Kernel.',
+    );
+  }
+
+  Map<PTibugDataFamily, int> pTibugPatternMissingData(String patternId) {
+    final pattern = pTibugResearchPattern(patternId);
+    final progress = pTibugPatternProgress[patternId];
+    if (pattern == null || progress == null) {
+      return const <PTibugDataFamily, int>{};
+    }
+    final nextLevel = progress.masteryLevel + 1;
+    final requirements = pattern.masteryCosts[nextLevel];
+    if (requirements == null) return const <PTibugDataFamily, int>{};
+    return <PTibugDataFamily, int>{
+      for (final entry in requirements.entries)
+        entry.key: math.max(
+          0,
+          entry.value - (progress.investedDataByFamily[entry.key] ?? 0),
+        ),
+    };
+  }
+
+  Zone0ActionResult investPTibugPatternData({
+    required String patternId,
+    required PTibugDataFamily family,
+    required int amount,
+  }) {
+    final pattern = pTibugResearchPattern(patternId);
+    if (pattern == null || amount <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Investissement invalide.',
+      );
+    }
+    final progress = _patternProgressFor(patternId);
+    if (progress.state == PTibugPatternState.unknown) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Découvre ce Pattern avant de le rechercher.',
+      );
+    }
+    final missing = pTibugPatternMissingData(patternId)[family] ?? 0;
+    final available = pTibugDataReserve[family] ?? 0;
+    final invested = math.min(amount, math.min(missing, available));
+    if (invested <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucune donnée compatible disponible.',
+      );
+    }
+    pTibugDataReserve[family] = available - invested;
+    progress.investedDataByFamily[family] =
+        (progress.investedDataByFamily[family] ?? 0) + invested;
+    progress.state = PTibugPatternState.researching;
+    _completePTibugPatternLevelIfReady(pattern, progress);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '$invested donnée(s) investie(s).',
+    );
+  }
+
+  Zone0ActionResult completePTibugPatternAutomatically(String patternId) {
+    final pattern = pTibugResearchPattern(patternId);
+    if (pattern == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Pattern introuvable.',
+      );
+    }
+    final progress = _patternProgressFor(patternId);
+    if (progress.state == PTibugPatternState.unknown) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Découvre ce Pattern avant de le rechercher.',
+      );
+    }
+    final missing = pTibugPatternMissingData(patternId);
+    var investedAny = false;
+    for (final entry in missing.entries) {
+      final available = pTibugDataReserve[entry.key] ?? 0;
+      final invested = math.min(entry.value, available);
+      if (invested == 0) continue;
+      pTibugDataReserve[entry.key] = available - invested;
+      progress.investedDataByFamily[entry.key] =
+          (progress.investedDataByFamily[entry.key] ?? 0) + invested;
+      investedAny = true;
+    }
+    if (!investedAny) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Réserve de données insuffisante.',
+      );
+    }
+    progress.state = PTibugPatternState.researching;
+    _completePTibugPatternLevelIfReady(pattern, progress);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Données disponibles investies.',
+    );
+  }
+
+  void _completePTibugPatternLevelIfReady(
+    PTibugResearchPatternConfig pattern,
+    PTibugPatternProgress progress,
+  ) {
+    final nextLevel = progress.masteryLevel + 1;
+    final requirements = pattern.masteryCosts[nextLevel];
+    if (requirements == null ||
+        requirements.entries.any(
+          (entry) =>
+              (progress.investedDataByFamily[entry.key] ?? 0) < entry.value,
+        )) {
+      return;
+    }
+    progress
+      ..masteryLevel = nextLevel
+      ..investedDataByFamily.clear()
+      ..activatedAt = DateTime.now()
+      ..state = pattern.masteryCosts.containsKey(nextLevel + 1)
+          ? PTibugPatternState.masteredCurrentLevel
+          : PTibugPatternState.active;
+    if (pattern.linkedSpecies != null) {
+      activePTibugPatterns.add(pattern.linkedSpecies!);
+    }
+    reports.add(
+      PtipoteMissionReport.system(
+        message: '${pattern.displayName} atteint la maîtrise $nextLevel.',
+        sourceBuildingId: 'kernel',
+        mailbox: Zone0MessageMailbox.kernel,
+        subject: 'Maîtrise de Pattern',
+        concerned: 'Joueur',
+        summary: 'Nouveau niveau de recherche.',
+      ),
     );
   }
 
@@ -808,14 +1096,16 @@ class Zone0GameState extends ChangeNotifier {
     if (pTibugPattern != null) {
       activePTibugPatterns.add(pTibugPattern.species);
     }
-    reports.add(PtipoteMissionReport.system(
-      message: 'Plan activé : ${plan.title}. ${plan.kernelText}',
-      sourceBuildingId: 'kernel',
-      mailbox: Zone0MessageMailbox.kernel,
-      subject: 'Plan Kernel',
-      concerned: 'Joueur',
-      summary: '${plan.title} est maintenant actif.',
-    ));
+    reports.add(
+      PtipoteMissionReport.system(
+        message: 'Plan activé : ${plan.title}. ${plan.kernelText}',
+        sourceBuildingId: 'kernel',
+        mailbox: Zone0MessageMailbox.kernel,
+        subject: 'Plan Kernel',
+        concerned: 'Joueur',
+        summary: '${plan.title} est maintenant actif.',
+      ),
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -852,26 +1142,30 @@ class Zone0GameState extends ChangeNotifier {
           (kernelEventCounts[plan.discoveryEvent] ?? 0) >=
               plan.discoveryThreshold) {
         discoveredKernelPlanIds.add(plan.id);
-        reports.add(PtipoteMissionReport.system(
-          message: 'Observation Kernel : ${plan.kernelText}',
-          sourceBuildingId: 'kernel',
-          mailbox: Zone0MessageMailbox.kernel,
-          subject: 'Message Kernel',
-          concerned: 'Joueur',
-          summary: plan.kernelText,
-        ));
+        reports.add(
+          PtipoteMissionReport.system(
+            message: 'Observation Kernel : ${plan.kernelText}',
+            sourceBuildingId: 'kernel',
+            mailbox: Zone0MessageMailbox.kernel,
+            subject: 'Message Kernel',
+            concerned: 'Joueur',
+            summary: plan.kernelText,
+          ),
+        );
       }
       if (kernelPlanState(plan) != KernelPlanState.discovered) continue;
       if (kernelPlanRequirementsMet(plan)) {
         readyKernelPlanIds.add(plan.id);
-        reports.add(PtipoteMissionReport.system(
-          message: 'Plan prêt : ${plan.title}. Le Kernel peut le partager.',
-          sourceBuildingId: 'kernel',
-          mailbox: Zone0MessageMailbox.kernel,
-          subject: 'Plan Kernel',
-          concerned: 'Joueur',
-          summary: '${plan.title} est prêt à être activé.',
-        ));
+        reports.add(
+          PtipoteMissionReport.system(
+            message: 'Plan prêt : ${plan.title}. Le Kernel peut le partager.',
+            sourceBuildingId: 'kernel',
+            mailbox: Zone0MessageMailbox.kernel,
+            subject: 'Plan Kernel',
+            concerned: 'Joueur',
+            summary: '${plan.title} est prêt à être activé.',
+          ),
+        );
       }
     }
   }
@@ -1008,10 +1302,7 @@ class Zone0GameState extends ChangeNotifier {
   double craftSpeedBonus(PtipoteFigurine? figurine, int buildingLevel) =>
       figurine == null
           ? workshopConfig.buildingSpeedBonusForLevel(buildingLevel)
-          : calculateWorkshopEfficiency(
-              figurine,
-              buildingLevel: buildingLevel,
-            );
+          : calculateWorkshopEfficiency(figurine, buildingLevel: buildingLevel);
 
   Zone0ActionResult startWorkshopOrder({
     required CraftRecipe recipe,
@@ -1037,8 +1328,9 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (figurine == null && activeManualWorkshopOrders >= 1) {
       return const Zone0ActionResult(
-          success: false,
-          message: 'Le créneau manuel de l’Atelier est occupé.');
+        success: false,
+        message: 'Le créneau manuel de l’Atelier est occupé.',
+      );
     }
     if (figurine == null && energyUnits < 1) {
       return const Zone0ActionResult(
@@ -1048,59 +1340,76 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (figurine != null && activePtipoteWorkshopOrders >= workshopSlots) {
       return const Zone0ActionResult(
-          success: false,
-          message: 'Tous les emplacements P’TIPOTE sont occupés.');
+        success: false,
+        message: 'Tous les emplacements P’TIPOTE sont occupés.',
+      );
     }
     if (quantity <= 0) {
       return const Zone0ActionResult(
-          success: false, message: 'Quantité invalide.');
+        success: false,
+        message: 'Quantité invalide.',
+      );
     }
     if (figurine != null && isBusy(figurine)) {
       return const Zone0ActionResult(
-          success: false, message: 'P’TIPOTE occupé.');
+        success: false,
+        message: 'P’TIPOTE occupé.',
+      );
     }
-    final totalCosts =
-        recipe.ingredients.map((key, value) => MapEntry(key, value * quantity));
+    final totalCosts = recipe.ingredients.map(
+      (key, value) => MapEntry(key, value * quantity),
+    );
     if (!hasResources(totalCosts)) {
       return Zone0ActionResult(
-          success: false, message: missingResourcesLabel(totalCosts));
+        success: false,
+        message: missingResourcesLabel(totalCosts),
+      );
     }
-    if (!hasInventoryCapacityFor(
-        <String, int>{recipe.resultItem: recipe.resultAmount * quantity})) {
+    if (!hasInventoryCapacityFor(<String, int>{
+      recipe.resultItem: recipe.resultAmount * quantity,
+    })) {
       return const Zone0ActionResult(
-          success: false, message: 'Inventaire insuffisant pour la commande.');
+        success: false,
+        message: 'Inventaire insuffisant pour la commande.',
+      );
     }
     if (!removeResources(totalCosts)) {
       return const Zone0ActionResult(
-          success: false, message: 'Ressources indisponibles.');
+        success: false,
+        message: 'Ressources indisponibles.',
+      );
     }
     if (figurine == null) {
       energyUnits -= 1;
     }
     final speedBonus = craftSpeedBonus(figurine, atelierLevel);
     final unitSeconds = math.max(
-        1,
-        (Duration(minutes: recipe.durationMinutes).inSeconds * (1 - speedBonus))
-            .round());
+      1,
+      (Duration(minutes: recipe.durationMinutes).inSeconds * (1 - speedBonus))
+          .round(),
+    );
     final now = DateTime.now();
-    workshopOrders.add(WorkshopCraftOrder(
-      id: 'workshop-${now.microsecondsSinceEpoch}',
-      recipeId: recipe.id,
-      requestedQuantity: quantity,
-      completedQuantity: 0,
-      assignedPtipoteId: figurine?.id,
-      assignedPtipoteName: figurine?.displayName,
-      startTime: now,
-      nextCompletionTime: now.add(Duration(seconds: unitSeconds)),
-      unitDurationSeconds: unitSeconds,
-      reservedResources: totalCosts,
-    ));
+    workshopOrders.add(
+      WorkshopCraftOrder(
+        id: 'workshop-${now.microsecondsSinceEpoch}',
+        recipeId: recipe.id,
+        requestedQuantity: quantity,
+        completedQuantity: 0,
+        assignedPtipoteId: figurine?.id,
+        assignedPtipoteName: figurine?.displayName,
+        startTime: now,
+        nextCompletionTime: now.add(Duration(seconds: unitSeconds)),
+        unitDurationSeconds: unitSeconds,
+        reservedResources: totalCosts,
+      ),
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true,
-        message:
-            '${recipe.displayName} lancé${figurine == null ? '' : ' avec ${figurine.displayName}'}.');
+      success: true,
+      message:
+          '${recipe.displayName} lancé${figurine == null ? '' : ' avec ${figurine.displayName}'}.',
+    );
   }
 
   Zone0ActionResult startKitchenOrder({
@@ -1117,8 +1426,9 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (!isFablabBuilt) {
       return const Zone0ActionResult(
-          success: false,
-          message: 'Construis le Fablab pour utiliser la Cuisine.');
+        success: false,
+        message: 'Construis le Fablab pour utiliser la Cuisine.',
+      );
     }
     final requirements = _recipeRequirementsMessage(recipe);
     if (requirements != null) {
@@ -1126,8 +1436,9 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (figurine == null && activeManualKitchenOrders >= 1) {
       return const Zone0ActionResult(
-          success: false,
-          message: 'Le créneau manuel de la Cuisine est occupé.');
+        success: false,
+        message: 'Le créneau manuel de la Cuisine est occupé.',
+      );
     }
     if (figurine == null && energyUnits < 1) {
       return const Zone0ActionResult(
@@ -1138,33 +1449,45 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (figurine != null && activePtipoteKitchenOrders >= kitchenSlots) {
       return const Zone0ActionResult(
-          success: false,
-          message: 'Tous les emplacements P’TIPOTE sont occupés.');
+        success: false,
+        message: 'Tous les emplacements P’TIPOTE sont occupés.',
+      );
     }
     if (figurine != null && isBusy(figurine)) {
       return const Zone0ActionResult(
-          success: false, message: 'P’TIPOTE occupé.');
+        success: false,
+        message: 'P’TIPOTE occupé.',
+      );
     }
     if (quantity <= 0) {
       return const Zone0ActionResult(
-          success: false, message: 'Quantité invalide.');
+        success: false,
+        message: 'Quantité invalide.',
+      );
     }
-    final totalCosts =
-        recipe.ingredients.map((key, value) => MapEntry(key, value * quantity));
+    final totalCosts = recipe.ingredients.map(
+      (key, value) => MapEntry(key, value * quantity),
+    );
     final output = <String, int>{
-      recipe.resultItem: recipe.resultAmount * quantity
+      recipe.resultItem: recipe.resultAmount * quantity,
     };
     if (!hasResources(totalCosts)) {
       return Zone0ActionResult(
-          success: false, message: missingResourcesLabel(totalCosts));
+        success: false,
+        message: missingResourcesLabel(totalCosts),
+      );
     }
     if (!hasInventoryCapacityFor(output)) {
       return const Zone0ActionResult(
-          success: false, message: 'Inventaire insuffisant pour la commande.');
+        success: false,
+        message: 'Inventaire insuffisant pour la commande.',
+      );
     }
     if (!removeResources(totalCosts)) {
       return const Zone0ActionResult(
-          success: false, message: 'Ressources indisponibles.');
+        success: false,
+        message: 'Ressources indisponibles.',
+      );
     }
     if (figurine == null) {
       energyUnits -= 1;
@@ -1176,19 +1499,21 @@ class Zone0GameState extends ChangeNotifier {
           .round(),
     );
     final now = DateTime.now();
-    workshopOrders.add(WorkshopCraftOrder(
-      id: 'kitchen-${now.microsecondsSinceEpoch}',
-      area: WorkshopOrderArea.kitchen,
-      recipeId: recipe.id,
-      requestedQuantity: quantity,
-      completedQuantity: 0,
-      assignedPtipoteId: figurine?.id,
-      assignedPtipoteName: figurine?.displayName,
-      startTime: now,
-      nextCompletionTime: now.add(Duration(seconds: unitSeconds)),
-      unitDurationSeconds: unitSeconds,
-      reservedResources: totalCosts,
-    ));
+    workshopOrders.add(
+      WorkshopCraftOrder(
+        id: 'kitchen-${now.microsecondsSinceEpoch}',
+        area: WorkshopOrderArea.kitchen,
+        recipeId: recipe.id,
+        requestedQuantity: quantity,
+        completedQuantity: 0,
+        assignedPtipoteId: figurine?.id,
+        assignedPtipoteName: figurine?.displayName,
+        startTime: now,
+        nextCompletionTime: now.add(Duration(seconds: unitSeconds)),
+        unitDurationSeconds: unitSeconds,
+        reservedResources: totalCosts,
+      ),
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -1218,27 +1543,32 @@ class Zone0GameState extends ChangeNotifier {
         current.difference(order.nextCompletionTime).inSeconds ~/
             order.unitDurationSeconds;
     var units = math.min(
-        elapsedUnits, order.requestedQuantity - order.completedQuantity);
+      elapsedUnits,
+      order.requestedQuantity - order.completedQuantity,
+    );
     if (order.assignedPtipoteId != null) {
       final vitality = vitalityOverrides[order.assignedPtipoteId!] ??
           ptipoteStatsConfig.maxVitality;
       final possible = math.max(
-          0,
-          (vitality - ptipoteStatsConfig.minVitalityBeforeAutoRest) ~/
-              workshopConfig.vitalityCostPerUnit);
+        0,
+        (vitality - ptipoteStatsConfig.minVitalityBeforeAutoRest) ~/
+            workshopConfig.vitalityCostPerUnit,
+      );
       units = math.min(units, possible);
     }
     if (units > 0) {
       addResources(<String, int>{resultItem: resultAmount * units});
       order.completedQuantity += units;
-      order.nextCompletionTime = order.nextCompletionTime
-          .add(Duration(seconds: order.unitDurationSeconds * units));
+      order.nextCompletionTime = order.nextCompletionTime.add(
+        Duration(seconds: order.unitDurationSeconds * units),
+      );
       if (order.assignedPtipoteId != null) {
         final id = order.assignedPtipoteId!;
         vitalityOverrides[id] = math.max(
-            0,
-            (vitalityOverrides[id] ?? ptipoteStatsConfig.maxVitality) -
-                units * workshopConfig.vitalityCostPerUnit);
+          0,
+          (vitalityOverrides[id] ?? ptipoteStatsConfig.maxVitality) -
+              units * workshopConfig.vitalityCostPerUnit,
+        );
       }
     }
     final assignedVitality = order.assignedPtipoteId == null
@@ -1255,11 +1585,13 @@ class Zone0GameState extends ChangeNotifier {
         manualRestingIds.add(order.assignedPtipoteId!);
         final remaining = order.requestedQuantity - order.completedQuantity;
         if (remaining > 0) {
-          addResources(ingredients
-              .map((key, value) => MapEntry(key, value * remaining)));
+          addResources(
+            ingredients.map((key, value) => MapEntry(key, value * remaining)),
+          );
         }
       }
-      reports.add(PtipoteMissionReport.system(
+      reports.add(
+        PtipoteMissionReport.system(
           message: tired
               ? '${order.assignedPtipoteName} rentre fatigué de ${order.area == WorkshopOrderArea.kitchen ? 'la Cuisine' : 'l’Atelier'}.'
               : 'Commande ${order.area == WorkshopOrderArea.kitchen ? 'Cuisine' : 'Atelier'} terminée : $displayName.',
@@ -1270,7 +1602,9 @@ class Zone0GameState extends ChangeNotifier {
           concerned: order.assignedPtipoteName ?? 'Joueur',
           summary: tired
               ? '$displayName arrêté : P’TIPOTE fatigué.'
-              : '$displayName × ${order.completedQuantity} terminé.'));
+              : '$displayName × ${order.completedQuantity} terminé.',
+        ),
+      );
       if (order.area == WorkshopOrderArea.kitchen &&
           resultItem == craftConfig.simpleMealRecipe.resultItem) {
         mealsPrepared += resultAmount * order.completedQuantity;
@@ -1292,45 +1626,57 @@ class Zone0GameState extends ChangeNotifier {
         workshopOrders.where((item) => item.id == orderId).firstOrNull;
     if (order == null || order.status != WorkshopOrderStatus.active) {
       return const Zone0ActionResult(
-          success: false, message: 'Aucune commande active.');
+        success: false,
+        message: 'Aucune commande active.',
+      );
     }
     resolveWorkshopOrder();
     final remaining = order.requestedQuantity - order.completedQuantity;
     final ingredients = _orderIngredients(order);
     if (remaining > 0) {
       addResources(
-          ingredients.map((key, value) => MapEntry(key, value * remaining)));
+        ingredients.map((key, value) => MapEntry(key, value * remaining)),
+      );
     }
     order.status = WorkshopOrderStatus.cancelled;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-        success: true,
-        message: 'Commande annulée, ressources restantes rendues.');
+      success: true,
+      message: 'Commande annulée, ressources restantes rendues.',
+    );
   }
 
   Zone0ActionResult constructMarket(int heartLevel) {
     if (isMarketBuilt) {
       return const Zone0ActionResult(
-          success: false, message: 'Le Marché est déjà construit.');
+        success: false,
+        message: 'Le Marché est déjà construit.',
+      );
     }
     if (heartLevel < marketConfig.requiredCampHeartLevel) {
       return const Zone0ActionResult(
-          success: false, message: 'Niveau du Cœur insuffisant.');
+        success: false,
+        message: 'Niveau du Cœur insuffisant.',
+      );
     }
     if (currentPopulation < marketConfig.requiredPopulation) {
       return Zone0ActionResult(
-          success: false,
-          message: 'Population requise : ${marketConfig.requiredPopulation}.');
+        success: false,
+        message: 'Population requise : ${marketConfig.requiredPopulation}.',
+      );
     }
     if (!hasResources(marketConfig.constructionCost)) {
       return Zone0ActionResult(
-          success: false,
-          message: missingResourcesLabel(marketConfig.constructionCost));
+        success: false,
+        message: missingResourcesLabel(marketConfig.constructionCost),
+      );
     }
     if (!removeResources(marketConfig.constructionCost)) {
       return const Zone0ActionResult(
-          success: false, message: 'Ressources indisponibles.');
+        success: false,
+        message: 'Ressources indisponibles.',
+      );
     }
     marketLevel = 1;
     emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
@@ -1339,23 +1685,31 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveBuildingsToFirebase());
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-        success: true, message: 'Le Marché est prêt.');
+      success: true,
+      message: 'Le Marché est prêt.',
+    );
   }
 
   Zone0ActionResult transferToMarket(String resource, int amount) {
     if (!isMarketBuilt) {
       return const Zone0ActionResult(
-          success: false, message: 'Marché non construit.');
+        success: false,
+        message: 'Marché non construit.',
+      );
     }
     if (!marketConfig.saleValues.containsKey(resource)) {
       return const Zone0ActionResult(
-          success: false, message: 'Objet non vendable.');
+        success: false,
+        message: 'Objet non vendable.',
+      );
     }
     final existing =
         marketStock.where((item) => item.resource == resource).firstOrNull;
     if (existing == null && marketStock.length >= marketSlotLimit) {
       return const Zone0ActionResult(
-          success: false, message: 'Les trois emplacements sont occupés.');
+        success: false,
+        message: 'Les trois emplacements sont occupés.',
+      );
     }
     final freeInStack = marketStackLimitFor(resource) - (existing?.amount ?? 0);
     if (freeInStack <= 0) {
@@ -1371,7 +1725,9 @@ class Zone0GameState extends ChangeNotifier {
     );
     if (moved <= 0) {
       return const Zone0ActionResult(
-          success: false, message: 'Stock insuffisant.');
+        success: false,
+        message: 'Stock insuffisant.',
+      );
     }
     if (existing == null) {
       marketStock.add(Zone0InventoryStack(resource: resource, amount: moved));
@@ -1382,7 +1738,9 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '$moved $resource placé au Marché.');
+      success: true,
+      message: '$moved $resource placé au Marché.',
+    );
   }
 
   Zone0ActionResult returnMarketStock(String resource) {
@@ -1398,26 +1756,35 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: returned > 0,
-        message: '$returned $resource rendu à la Maison.');
+      success: returned > 0,
+      message: '$returned $resource rendu à la Maison.',
+    );
   }
 
   Zone0ActionResult assignToMarket(PtipoteFigurine figurine) {
     if (!isMarketBuilt) {
       return const Zone0ActionResult(
-          success: false, message: 'Marché non construit.');
+        success: false,
+        message: 'Marché non construit.',
+      );
     }
     if (marketAssignedPtipoteId != null) {
       return const Zone0ActionResult(
-          success: false, message: 'Un P’TIPOTE travaille déjà au Marché.');
+        success: false,
+        message: 'Un P’TIPOTE travaille déjà au Marché.',
+      );
     }
     if (isBusy(figurine)) {
       return const Zone0ActionResult(
-          success: false, message: 'P’TIPOTE occupé.');
+        success: false,
+        message: 'P’TIPOTE occupé.',
+      );
     }
     if (vitalityFor(figurine) <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
       return const Zone0ActionResult(
-          success: false, message: 'P’TIPOTE trop fatigué.');
+        success: false,
+        message: 'P’TIPOTE trop fatigué.',
+      );
     }
     marketAssignedPtipoteId = figurine.id;
     marketAssignedPtipoteName = figurine.displayName;
@@ -1426,14 +1793,18 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '${figurine.displayName} aide au Marché.');
+      success: true,
+      message: '${figurine.displayName} aide au Marché.',
+    );
   }
 
   Zone0ActionResult removeFromMarket({bool tired = false}) {
     final id = marketAssignedPtipoteId;
     if (id == null) {
       return const Zone0ActionResult(
-          success: false, message: 'Aucun P’TIPOTE affecté.');
+        success: false,
+        message: 'Aucun P’TIPOTE affecté.',
+      );
     }
     if (tired) manualRestingIds.add(id);
     final name = marketAssignedPtipoteName ?? 'Le P’TIPOTE';
@@ -1443,26 +1814,34 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '$name rentre à la Maison.');
+      success: true,
+      message: '$name rentre à la Maison.',
+    );
   }
 
   Duration _marketSaleInterval() {
     final populationModifier =
-        (10 / math.max(5, currentPopulation)).clamp(0.5, 2.0);
+        (10 / math.max(5, currentPopulation)).clamp(0.5, 2.0) *
+            (marketConfig.saleIntervalPopulationImpactPercent / 100).clamp(
+              0.0,
+              2.0,
+            );
     final wellbeingModifier = (1.3 - campWellbeing / 250).clamp(0.8, 1.3);
     final ptipoteModifier = marketAssignedPtipoteId == null
         ? 1.0
         : marketConfig.ptipoteIntervalMultiplier;
     return Duration(
-        seconds: math.max(
-            1,
-            (marketConfig.baseSaleIntervalMinutes *
-                    60 *
-                    marketConfig.saleIntervalMultiplierForLevel(marketLevel) *
-                    populationModifier *
-                    wellbeingModifier *
-                    ptipoteModifier)
-                .round()));
+      seconds: math.max(
+        1,
+        (marketConfig.baseSaleIntervalMinutes *
+                60 *
+                marketConfig.saleIntervalMultiplierForLevel(marketLevel) *
+                populationModifier *
+                wellbeingModifier *
+                ptipoteModifier)
+            .round(),
+      ),
+    );
   }
 
   Duration? marketSaleRemaining({DateTime? now}) {
@@ -1475,7 +1854,7 @@ class Zone0GameState extends ChangeNotifier {
   bool resolveMarket({DateTime? now}) {
     if (!isMarketBuilt) return false;
     final current = now ?? DateTime.now();
-    var changed = false;
+    var changed = _resolveMerchantSchedule(current);
     if (marketAssignedPtipoteId != null) {
       marketLastWorkTickAt ??= current;
       final ticks = current.difference(marketLastWorkTickAt!).inMinutes ~/
@@ -1532,9 +1911,11 @@ class Zone0GameState extends ChangeNotifier {
       removeFromMarket();
       changed = true;
     }
-    for (final request in marketRequests.where((item) =>
-        item.status != MarketRequestStatus.completed &&
-        !current.isBefore(item.customerReturnTime))) {
+    for (final request in marketRequests.where(
+      (item) =>
+          item.status != MarketRequestStatus.completed &&
+          !current.isBefore(item.customerReturnTime),
+    )) {
       final stock = marketStock
           .where((item) => item.resource == request.requestedItemId)
           .firstOrNull;
@@ -1546,9 +1927,12 @@ class Zone0GameState extends ChangeNotifier {
         bioBatteries += request.rewardBioBattery;
         campWellbeing = math.min(100, campWellbeing + request.rewardWellbeing);
         request.status = MarketRequestStatus.completed;
-        reports.add(PtipoteMissionReport.system(
+        reports.add(
+          PtipoteMissionReport.system(
             message:
-                'Demande livrée : ${request.requestedQuantity} ${request.requestedItemId}.'));
+                'Demande livrée : ${request.requestedQuantity} ${request.requestedItemId}.',
+          ),
+        );
       } else {
         request.status = MarketRequestStatus.waitingCustomer;
         request.customerReturnTime = current.add(_randomMarketReturnDelay());
@@ -1566,30 +1950,41 @@ class Zone0GameState extends ChangeNotifier {
     final entries = marketConfig.saleValues.keys.toList();
     final item = entries[_random.nextInt(entries.length)];
     final isResource = item == 'Organique' || item == 'Minéral';
-    marketRequests.add(MarketCustomerRequest(
+    marketRequests.add(
+      MarketCustomerRequest(
         id: 'request-${now.microsecondsSinceEpoch}-${marketRequests.length}',
         requestedItemId: item,
         requestedQuantity:
             isResource ? lisiereForageConfig.inventoryStackLimit : 1,
         rewardBioBattery: math.max(
-            1,
-            (marketConfig.saleValues[item] ?? 1) ~/
-                marketConfig.valuePerBioBattery),
+          1,
+          (marketConfig.saleValues[item] ?? 1) ~/
+              marketConfig.valuePerBioBattery,
+        ),
         rewardWellbeing: 1,
         createdAt: now,
         customerReturnTime: now.add(_randomMarketReturnDelay()),
-        status: MarketRequestStatus.noted));
-    reports.add(PtipoteMissionReport.system(
-        message: 'Demande du Marché : $item recherché.'));
+        status: MarketRequestStatus.noted,
+      ),
+    );
+    reports.add(
+      PtipoteMissionReport.system(
+        message: 'Demande du Marché : $item recherché.',
+      ),
+    );
   }
 
   Duration _randomMarketReturnDelay() => Duration(
-      minutes: marketConfig.requestMinReturnMinutes +
-          _random.nextInt(math.max(
-              1,
-              marketConfig.requestMaxReturnMinutes -
-                  marketConfig.requestMinReturnMinutes +
-                  1)));
+        minutes: marketConfig.requestMinReturnMinutes +
+            _random.nextInt(
+              math.max(
+                1,
+                marketConfig.requestMaxReturnMinutes -
+                    marketConfig.requestMinReturnMinutes +
+                    1,
+              ),
+            ),
+      );
 
   bool isUnavailableForTower(PtipoteFigurine figurine) {
     return isOnMission(figurine.id) ||
@@ -1673,15 +2068,18 @@ class Zone0GameState extends ChangeNotifier {
   double cuddleCooldownProgress(PtipoteFigurine figurine) {
     final cuddleAt = lastCuddleAt[figurine.id];
     if (cuddleAt == null) return 1;
-    final cooldown =
-        Duration(minutes: ptipoteStatsConfig.cuddleCooldownMinutes);
+    final cooldown = Duration(
+      minutes: ptipoteStatsConfig.cuddleCooldownMinutes,
+    );
     final elapsed = DateTime.now().difference(cuddleAt);
     return (elapsed.inSeconds / cooldown.inSeconds).clamp(0.0, 1.0);
   }
 
   Duration vitalityRecoveryRemaining(PtipoteFigurine figurine) {
-    final missing =
-        math.max(0, ptipoteStatsConfig.maxVitality - vitalityFor(figurine));
+    final missing = math.max(
+      0,
+      ptipoteStatsConfig.maxVitality - vitalityFor(figurine),
+    );
     if (missing == 0) return Duration.zero;
     if (isResting(figurine)) {
       return Duration(
@@ -1734,8 +2132,10 @@ class Zone0GameState extends ChangeNotifier {
       ptipoteStatsConfig.maxVitality,
       ptipoteStatsConfig.minVitalityBeforeAutoRest + 1,
     );
-    vitalityOverrides[figurine.id] =
-        math.max(vitalityFor(figurine), wakeVitality);
+    vitalityOverrides[figurine.id] = math.max(
+      vitalityFor(figurine),
+      wakeVitality,
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
   }
@@ -1757,12 +2157,18 @@ class Zone0GameState extends ChangeNotifier {
     if (_applyElapsedSimulation(figurines)) {
       changed = true;
     }
-    final hungerDecayTick =
-        math.max(1, ptipoteStatsConfig.hungerDecayMinutes * 2);
-    final restLossTick =
-        math.max(1, ptipoteStatsConfig.awakeRestLossMinutes * 2);
-    final naturalVitalityTick =
-        math.max(1, ptipoteStatsConfig.naturalVitalityRecoveryMinutes * 2);
+    final hungerDecayTick = math.max(
+      1,
+      ptipoteStatsConfig.hungerDecayMinutes * 2,
+    );
+    final restLossTick = math.max(
+      1,
+      ptipoteStatsConfig.awakeRestLossMinutes * 2,
+    );
+    final naturalVitalityTick = math.max(
+      1,
+      ptipoteStatsConfig.naturalVitalityRecoveryMinutes * 2,
+    );
     for (final figurine in figurines) {
       if (isOnMission(figurine.id)) continue;
       if (towerAssignedIds.contains(figurine.id)) {
@@ -1854,10 +2260,14 @@ class Zone0GameState extends ChangeNotifier {
 
       final currentRest = restFor(figurine);
       if (resting) {
-        final restGain =
-            math.max(1, ptipoteStatsConfig.sleepRestRecoveryPerMinute ~/ 2);
-        final nextRest =
-            math.min(ptipoteStatsConfig.maxRest, currentRest + restGain);
+        final restGain = math.max(
+          1,
+          ptipoteStatsConfig.sleepRestRecoveryPerMinute ~/ 2,
+        );
+        final nextRest = math.min(
+          ptipoteStatsConfig.maxRest,
+          currentRest + restGain,
+        );
         if (nextRest != currentRest) {
           restOverrides[figurine.id] = nextRest;
           _trackWellRestedTransition(
@@ -1949,8 +2359,10 @@ class Zone0GameState extends ChangeNotifier {
             elapsedMinutes * ptipoteStatsConfig.sleepRestRecoveryPerMinute;
         if (restGain > 0 && currentRest < ptipoteStatsConfig.maxRest) {
           final previousRest = currentRest;
-          currentRest =
-              math.min(ptipoteStatsConfig.maxRest, currentRest + restGain);
+          currentRest = math.min(
+            ptipoteStatsConfig.maxRest,
+            currentRest + restGain,
+          );
           restOverrides[figurine.id] = currentRest;
           _trackWellRestedTransition(
             figurineId: figurine.id,
@@ -1984,8 +2396,10 @@ class Zone0GameState extends ChangeNotifier {
         }
 
         final recoveryInterval = isHappy(figurine)
-            ? math.max(1,
-                (1 / ptipoteStatsConfig.happyVitalityRecoveryPerMinute).ceil())
+            ? math.max(
+                1,
+                (1 / ptipoteStatsConfig.happyVitalityRecoveryPerMinute).ceil(),
+              )
             : ptipoteStatsConfig.naturalVitalityRecoveryMinutes;
         var vitalityGain = elapsedMinutes ~/ math.max(1, recoveryInterval);
         if (currentHunger >= ptipoteStatsConfig.wellFedHungerThreshold &&
@@ -2028,8 +2442,9 @@ class Zone0GameState extends ChangeNotifier {
             securityTowerConfig.maxSecurity,
             refugeSafety +
                 towerTicks *
-                    securityTowerConfig
-                        .securityGainForLevel(securityTowerLevel),
+                    securityTowerConfig.securityGainForLevel(
+                      securityTowerLevel,
+                    ),
           );
           if (nextVitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
             towerAssignedIds.remove(figurine.id);
@@ -2088,7 +2503,8 @@ class Zone0GameState extends ChangeNotifier {
 
     final alreadyInBed = manualRestingIds
         .where(
-            (id) => candidates.contains(id) && !waitingForBedIds.contains(id))
+          (id) => candidates.contains(id) && !waitingForBedIds.contains(id),
+        )
         .toList();
     final preferred = <String>[
       ...alreadyInBed,
@@ -2111,7 +2527,9 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult openBioBattery() {
     if (bioBatteries <= 0) {
       return const Zone0ActionResult(
-          success: false, message: 'Aucune Bio-batterie disponible.');
+        success: false,
+        message: 'Aucune Bio-batterie disponible.',
+      );
     }
     bioBatteries -= 1;
     energyUnits += wasteRecyclerConfig.energyUnitsPerBioBattery;
@@ -2126,9 +2544,10 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult transferWasteToRecycler(int amount, int campHeartLevel) {
     if (!isRecyclerUnlocked(campHeartLevel)) {
       return Zone0ActionResult(
-          success: false,
-          message:
-              'Débloqué au Cœur du Camp niveau ${wasteRecyclerConfig.recyclerUnlockCampHeartLevel}.');
+        success: false,
+        message:
+            'Débloqué au Cœur du Camp niveau ${wasteRecyclerConfig.recyclerUnlockCampHeartLevel}.',
+      );
     }
     if (recyclerLevel == 0) {
       recyclerLevel = wasteRecyclerConfig.initialRecyclerLevel;
@@ -2139,7 +2558,9 @@ class Zone0GameState extends ChangeNotifier {
     );
     if (moved <= 0) {
       return const Zone0ActionResult(
-          success: false, message: 'Aucun Déchet transféré.');
+        success: false,
+        message: 'Aucun Déchet transféré.',
+      );
     }
     removeResource('Déchets', moved);
     recyclerWasteTank += moved;
@@ -2147,7 +2568,9 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '$moved Déchet(s) vers la cuve.');
+      success: true,
+      message: '$moved Déchet(s) vers la cuve.',
+    );
   }
 
   Zone0ActionResult retrieveRecyclerOutput() {
@@ -2181,7 +2604,7 @@ class Zone0GameState extends ChangeNotifier {
     final builtBuildings = <bool>[
           isFablabBuilt,
           isSecurityTowerBuilt,
-          isMarketBuilt
+          isMarketBuilt,
         ].where((item) => item).length +
         1;
     final lastWaste = lastWasteGenerationAt ?? current;
@@ -2199,9 +2622,12 @@ class Zone0GameState extends ChangeNotifier {
           pendingWaste + (result.pending['Déchets'] ?? 0),
         );
       }
-      lastWasteGenerationAt = lastWaste.add(Duration(
+      lastWasteGenerationAt = lastWaste.add(
+        Duration(
           minutes:
-              wasteCycles * wasteRecyclerConfig.wasteGenerationCycleMinutes));
+              wasteCycles * wasteRecyclerConfig.wasteGenerationCycleMinutes,
+        ),
+      );
       changed = true;
     }
     if (!isRecyclerUnlocked(campHeartLevel)) return changed;
@@ -2214,10 +2640,12 @@ class Zone0GameState extends ChangeNotifier {
     var producedMineral = 0;
     while (recyclerCycleStartedAt != null) {
       final finishedAt = recyclerCycleStartedAt!.add(
-          Duration(minutes: wasteRecyclerConfig.cycleMinutes(recyclerLevel)));
+        Duration(minutes: wasteRecyclerConfig.cycleMinutes(recyclerLevel)),
+      );
       if (finishedAt.isAfter(current)) break;
-      final split = wasteRecyclerConfig.outputSplits[
-          _random.nextInt(wasteRecyclerConfig.outputSplits.length)];
+      final split = wasteRecyclerConfig.outputSplits[_random.nextInt(
+        wasteRecyclerConfig.outputSplits.length,
+      )];
       recyclerOutputOrganic += split.organic;
       recyclerOutputMineral += split.mineral;
       completedCycles += 1;
@@ -2247,18 +2675,20 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
     }
     if (completedCycles > 0) {
-      reports.add(PtipoteMissionReport.system(
-        message: 'Recycleur : $completedCycles cycle(s) terminé(s). '
-            'Déchets traités : ${completedCycles * recyclerWasteRequired}. '
-            'Énergie consommée : ${completedCycles * wasteRecyclerConfig.energyCostPerCycle}. '
-            '+$producedOrganic Organique, +$producedMineral Minéral.',
-        sourceBuildingId: 'recycler',
-        mailbox: Zone0MessageMailbox.fablab,
-        subject: 'Fin de craft',
-        concerned: 'Joueur',
-        summary:
-            'Recycleur : +$producedOrganic Organique, +$producedMineral Minéral.',
-      ));
+      reports.add(
+        PtipoteMissionReport.system(
+          message: 'Recycleur : $completedCycles cycle(s) terminé(s). '
+              'Déchets traités : ${completedCycles * recyclerWasteRequired}. '
+              'Énergie consommée : ${completedCycles * wasteRecyclerConfig.energyCostPerCycle}. '
+              '+$producedOrganic Organique, +$producedMineral Minéral.',
+          sourceBuildingId: 'recycler',
+          mailbox: Zone0MessageMailbox.fablab,
+          subject: 'Fin de craft',
+          concerned: 'Joueur',
+          summary:
+              'Recycleur : +$producedOrganic Organique, +$producedMineral Minéral.',
+        ),
+      );
     }
     if (changed) {
       notifyListeners();
@@ -2281,8 +2711,9 @@ class Zone0GameState extends ChangeNotifier {
 
     for (final entry in rewards.entries) {
       var remaining = math.max(0, entry.value);
-      for (final stack
-          in simulated.where((stack) => stack.resource == entry.key)) {
+      for (final stack in simulated.where(
+        (stack) => stack.resource == entry.key,
+      )) {
         if (remaining <= 0) break;
         final room = lisiereForageConfig.inventoryStackLimit - stack.amount;
         if (room <= 0) continue;
@@ -2293,8 +2724,10 @@ class Zone0GameState extends ChangeNotifier {
       }
 
       while (remaining > 0 && freeSlots > 0) {
-        final add =
-            math.min(remaining, lisiereForageConfig.inventoryStackLimit);
+        final add = math.min(
+          remaining,
+          lisiereForageConfig.inventoryStackLimit,
+        );
         simulated.add(Zone0InventoryStack(resource: entry.key, amount: add));
         freeSlots -= 1;
         remaining -= add;
@@ -2355,17 +2788,18 @@ class Zone0GameState extends ChangeNotifier {
     final maxLevel = _projectMaxLevel(targetId);
     if (existing == null && currentLevel >= maxLevel) {
       return constructionProjects.putIfAbsent(
-          targetId,
-          () => ConstructionProject(
-                projectId: 'project-$targetId',
-                targetId: targetId,
-                targetType: targetId,
-                currentLevel: currentLevel,
-                targetLevel: currentLevel,
-                requirements: const <String, int>{},
-                constructionDuration: Duration.zero,
-                state: ConstructionProjectState.maxLevel,
-              ));
+        targetId,
+        () => ConstructionProject(
+          projectId: 'project-$targetId',
+          targetId: targetId,
+          targetType: targetId,
+          currentLevel: currentLevel,
+          targetLevel: currentLevel,
+          requirements: const <String, int>{},
+          constructionDuration: Duration.zero,
+          state: ConstructionProjectState.maxLevel,
+        ),
+      );
     }
     if (existing != null) {
       if (!existing.isInProgress && currentLevel >= maxLevel) {
@@ -2457,14 +2891,20 @@ class Zone0GameState extends ChangeNotifier {
     final project = projectFor(targetId);
     if (!project.canEditMaterials) {
       return const Zone0ActionResult(
-          success: false, message: 'Les matériaux ne sont plus modifiables.');
+        success: false,
+        message: 'Les matériaux ne sont plus modifiables.',
+      );
     }
     final missing = project.missingFor(resource);
-    final deposit =
-        math.min(amount, math.min(missing, resourceAmount(resource)));
+    final deposit = math.min(
+      amount,
+      math.min(missing, resourceAmount(resource)),
+    );
     if (deposit <= 0) {
       return Zone0ActionResult(
-          success: false, message: 'Aucun $resource à déposer.');
+        success: false,
+        message: 'Aucun $resource à déposer.',
+      );
     }
     removeResource(resource, deposit);
     project.depositedMaterials[resource] =
@@ -2474,23 +2914,31 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveBuildingsToFirebase());
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '$deposit $resource déposé.');
+      success: true,
+      message: '$deposit $resource déposé.',
+    );
   }
 
   Zone0ActionResult withdrawProjectMaterial(String targetId, String resource) {
     final project = projectFor(targetId);
     if (!project.canEditMaterials) {
       return const Zone0ActionResult(
-          success: false, message: 'Les travaux ont déjà commencé.');
+        success: false,
+        message: 'Les travaux ont déjà commencé.',
+      );
     }
     final amount = project.depositedMaterials[resource] ?? 0;
     if (amount <= 0) {
       return const Zone0ActionResult(
-          success: false, message: 'Aucun matériau à récupérer.');
+        success: false,
+        message: 'Aucun matériau à récupérer.',
+      );
     }
     if (!hasInventoryCapacityFor(<String, int>{resource: amount})) {
       return const Zone0ActionResult(
-          success: false, message: 'Inventaire insuffisant.');
+        success: false,
+        message: 'Inventaire insuffisant.',
+      );
     }
     addResources(<String, int>{resource: amount});
     project.depositedMaterials.remove(resource);
@@ -2498,7 +2946,9 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveBuildingsToFirebase());
     return Zone0ActionResult(
-        success: true, message: '$amount $resource rendu à la Maison.');
+      success: true,
+      message: '$amount $resource rendu à la Maison.',
+    );
   }
 
   Zone0ActionResult startConstructionProject(
@@ -2537,7 +2987,9 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (!project.isReady) {
       return const Zone0ActionResult(
-          success: false, message: 'Tous les matériaux sont requis.');
+        success: false,
+        message: 'Tous les matériaux sont requis.',
+      );
     }
     final now = DateTime.now();
     project.startedAt = now;
@@ -2549,9 +3001,10 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveBuildingsToFirebase());
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true,
-        message:
-            'Travaux lancés. Fin dans ${project.constructionDuration.inMinutes} min.');
+      success: true,
+      message:
+          'Travaux lancés. Fin dans ${project.constructionDuration.inMinutes} min.',
+    );
   }
 
   bool resolveConstructionProjects({DateTime? now}) {
@@ -2593,8 +3046,10 @@ class Zone0GameState extends ChangeNotifier {
         recyclerLevel = project.currentLevel;
       case 'securityTower':
         securityTowerLevel = project.currentLevel;
-        refugeSafety =
-            math.max(refugeSafety, securityTowerConfig.initialSecurity);
+        refugeSafety = math.max(
+          refugeSafety,
+          securityTowerConfig.initialSecurity,
+        );
         ensureWeatherForecast();
       case 'market':
         marketLevel = project.currentLevel;
@@ -2613,20 +3068,25 @@ class Zone0GameState extends ChangeNotifier {
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
     }
     if (!project.notificationCreated) {
-      final isFablabUnit = const <String>{'cuisine', 'atelier', 'recycler'}
-          .contains(project.targetId);
-      reports.add(PtipoteMissionReport.system(
-        message:
-            'Les travaux de ${buildingConstructionConfig.project(project.targetId).label} sont terminés. Niveau ${project.currentLevel}.',
-        sourceBuildingId: project.targetId,
-        mailbox: isFablabUnit
-            ? Zone0MessageMailbox.fablab
-            : Zone0MessageMailbox.companions,
-        subject: 'Fin de chantier',
-        concerned: 'Joueur',
-        summary:
-            '${buildingConstructionConfig.project(project.targetId).label} niveau ${project.currentLevel} est prêt.',
-      ));
+      final isFablabUnit = const <String>{
+        'cuisine',
+        'atelier',
+        'recycler',
+      }.contains(project.targetId);
+      reports.add(
+        PtipoteMissionReport.system(
+          message:
+              'Les travaux de ${buildingConstructionConfig.project(project.targetId).label} sont terminés. Niveau ${project.currentLevel}.',
+          sourceBuildingId: project.targetId,
+          mailbox: isFablabUnit
+              ? Zone0MessageMailbox.fablab
+              : Zone0MessageMailbox.companions,
+          subject: 'Fin de chantier',
+          concerned: 'Joueur',
+          summary:
+              '${buildingConstructionConfig.project(project.targetId).label} niveau ${project.currentLevel} est prêt.',
+        ),
+      );
       project.notificationCreated = true;
     }
   }
@@ -2662,10 +3122,12 @@ class Zone0GameState extends ChangeNotifier {
       endsAt: now.add(Duration(hours: housingConfig.thanksDurationHours)),
       sourceProjectId: projectId,
     );
-    reports.add(PtipoteMissionReport.system(
-      message:
-          'Les habitants remercient le refuge : +${housingConfig.thanksWellbeingBonus} Bien-etre temporaire.',
-    ));
+    reports.add(
+      PtipoteMissionReport.system(
+        message:
+            'Les habitants remercient le refuge : +${housingConfig.thanksWellbeingBonus} Bien-etre temporaire.',
+      ),
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     unawaited(saveBuildingsToFirebase());
@@ -2678,23 +3140,32 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult startPTibugCreation(PTibugSpecies species) {
     if (!isPlaineNurseryBuilt) {
       return const Zone0ActionResult(
-          success: false, message: 'Construis la Nurserie P’TIBUG.');
+        success: false,
+        message: 'Construis la Nurserie P’TIBUG.',
+      );
     }
-    if (!activePTibugPatterns.contains(species)) {
+    final researchPatternId = 'ptibug-species-${species.name}';
+    if (!activePTibugPatterns.contains(species) &&
+        !isPTibugPatternActive(researchPatternId)) {
       return const Zone0ActionResult(
-          success: false, message: 'Pattern P’TIBUG non actif.');
+        success: false,
+        message: 'Pattern P’TIBUG non actif.',
+      );
     }
     if (pTibugCreationOrder?.isActive == true) {
       return const Zone0ActionResult(
-          success: false, message: 'La Nurserie crée déjà un P’TIBUG.');
+        success: false,
+        message: 'La Nurserie crée déjà un P’TIBUG.',
+      );
     }
     final config = pTibugConfig.species[species]!;
     if (!hasResources(config.creationCost) ||
         energyUnits < config.creationEnergyCost ||
         bioBatteries < config.creationBioBatteryCost) {
       return const Zone0ActionResult(
-          success: false,
-          message: 'Ressources, bio-batteries ou énergie insuffisantes.');
+        success: false,
+        message: 'Ressources, bio-batteries ou énergie insuffisantes.',
+      );
     }
     removeResources(config.creationCost);
     energyUnits -= config.creationEnergyCost;
@@ -2708,45 +3179,384 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: 'Création ${config.displayName} lancée.');
+      success: true,
+      message: 'Création ${config.displayName} lancée.',
+    );
+  }
+
+  bool _hasPTibugData(Map<PTibugDataFamily, int> costs) {
+    return costs.entries.every(
+      (entry) =>
+          (pTibugDataReserve[entry.key] ?? 0) >= math.max(0, entry.value),
+    );
+  }
+
+  void _consumePTibugData(Map<PTibugDataFamily, int> costs) {
+    for (final entry in costs.entries) {
+      pTibugDataReserve[entry.key] =
+          math.max(0, (pTibugDataReserve[entry.key] ?? 0) - entry.value);
+    }
+  }
+
+  bool _resolvePTibugModuleCrafts(DateTime current) {
+    var changed = false;
+    for (final order
+        in pTibugModuleCraftOrders.where((item) => item.isActive)) {
+      if (order.endsAt.isAfter(current)) continue;
+      order.completedAt = current;
+      final instance = PTibugModuleInstance(
+        id: 'ptibug-module-${order.id}',
+        type: order.moduleType,
+        createdAt: current,
+      );
+      pTibugModuleInstances.add(instance);
+      reports.add(
+        PtipoteMissionReport.system(
+          message: 'Le module ${order.moduleType.displayName} est prêt.',
+          sourceBuildingId: 'fablab',
+          mailbox: Zone0MessageMailbox.fablab,
+          subject: 'Fin de craft',
+          concerned: 'Le joueur',
+          summary: 'Module P’TIBUG ${order.moduleType.displayName} créé.',
+        ),
+      );
+      changed = true;
+    }
+    return changed;
+  }
+
+  Zone0ActionResult startPTibugModuleCraft(PTibugModuleType type) {
+    if (atelierLevel < 1) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Atelier niveau 1 requis.',
+      );
+    }
+    if (!isPTibugPatternActive('ptibug-module-${type.name}')) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Pattern de Module non actif.',
+      );
+    }
+    if (activePTibugModuleCraftOrder != null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Un Module P’TIBUG est déjà en fabrication.',
+      );
+    }
+    final cost = pTibugConfig.moduleCraftCostFor(type);
+    final energyCost = pTibugConfig.moduleCraftEnergyFor(type);
+    if (!hasResources(cost) || energyUnits < energyCost) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ressources ou énergie insuffisantes.',
+      );
+    }
+    if (!removeResources(cost)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ressources insuffisantes.',
+      );
+    }
+    energyUnits -= energyCost;
+    final current = DateTime.now();
+    pTibugModuleCraftOrders.add(
+      PTibugModuleCraftOrder(
+        id: current.microsecondsSinceEpoch.toString(),
+        moduleType: type,
+        startedAt: current,
+        endsAt: current.add(
+          Duration(minutes: pTibugConfig.moduleCraftMinutesFor(type)),
+        ),
+      ),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Fabrication de ${type.displayName} lancée.',
+    );
+  }
+
+  Zone0ActionResult applyPTibugPermanentTrait({
+    required PTibug bug,
+    required String traitId,
+  }) {
+    if (!pTibugs.contains(bug) || !isPlaineNurseryBuilt) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'P’TIBUG ou Nurserie indisponible.',
+      );
+    }
+    if (bug.biologicalTraitId != null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce P’TIBUG possède déjà un Trait permanent.',
+      );
+    }
+    final definition = pTibugConfig.traitDefinitionFor(traitId);
+    final patternId = 'ptibug-trait-$traitId';
+    final progress = pTibugPatternProgress[patternId];
+    if (definition == null ||
+        progress == null ||
+        !definition.isActive ||
+        !isPTibugPatternActive(patternId) ||
+        progress.masteryLevel <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Pattern de Trait non maîtrisé.',
+      );
+    }
+    final level = progress.masteryLevel.clamp(1, definition.maxLevel);
+    final dataCost = definition.dataCostForLevel(level);
+    final materialCost = definition.materialCostForLevel(level);
+    final energyCost = definition.energyCostForLevel(level);
+    if (dataCost.isEmpty || materialCost.isEmpty) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Coût de Trait à configurer dans le Dashboard.',
+      );
+    }
+    if (!_hasPTibugData(dataCost) ||
+        !hasResources(materialCost) ||
+        energyUnits < energyCost) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Données, matériaux ou énergie insuffisants.',
+      );
+    }
+    if (!removeResources(materialCost)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Matériaux insuffisants.',
+      );
+    }
+    _consumePTibugData(dataCost);
+    energyUnits -= energyCost;
+    bug.biologicalTraitId = traitId;
+    bug.biologicalTraitLevel = level;
+    emitKernelProgressEvent(KernelProgressEventType.ptibugTraitEquipped);
+    reports.add(
+      PtipoteMissionReport.system(
+        message: '${_pTibugBiologicalName(bug)} reçoit un Trait permanent.',
+        sourceBuildingId: 'plaineNursery',
+        mailbox: Zone0MessageMailbox.companions,
+        subject: 'Trait P’TIBUG',
+        concerned: bug.displayName,
+        summary: 'Trait ${definition.displayName} niveau $level appliqué.',
+      ),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Trait ${definition.displayName} appliqué.',
+    );
+  }
+
+  Zone0ActionResult equipPTibugModuleInstance({
+    required PTibug bug,
+    required String moduleInstanceId,
+  }) {
+    final instance = pTibugModuleInstances
+        .where((item) => item.id == moduleInstanceId)
+        .firstOrNull;
+    final equippedModules = pTibugModuleInstances
+        .where((item) => item.equippedPTibugId == bug.id)
+        .toList();
+    if (instance == null ||
+        instance.isEquipped ||
+        !pTibugs.contains(bug) ||
+        equippedModules.any((item) => item.type == instance.type) ||
+        equippedModules.length >=
+            pTibugConfig.moduleSlotsForLevel(plaineNurseryLevel)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Module indisponible ou aucun slot libre.',
+      );
+    }
+    instance.equippedPTibugId = bug.id;
+    if (!bug.equippedModuleInstanceIds.contains(instance.id)) {
+      bug.equippedModuleInstanceIds.add(instance.id);
+    }
+    emitKernelProgressEvent(KernelProgressEventType.ptibugModuleEquipped);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(success: true, message: 'Module équipé.');
+  }
+
+  Zone0ActionResult unequipPTibugModuleInstance({
+    required PTibug bug,
+    required String moduleInstanceId,
+  }) {
+    final instance = pTibugModuleInstances
+        .where((item) => item.id == moduleInstanceId)
+        .firstOrNull;
+    if (instance == null || instance.equippedPTibugId != bug.id) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Module non équipé sur ce P’TIBUG.',
+      );
+    }
+    instance.equippedPTibugId = null;
+    bug.equippedModuleInstanceIds.remove(instance.id);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(success: true, message: 'Module retiré.');
+  }
+
+  Zone0ActionResult fusePTibugModuleInstances({
+    required String firstId,
+    required String secondId,
+  }) {
+    final first =
+        pTibugModuleInstances.where((item) => item.id == firstId).firstOrNull;
+    final second =
+        pTibugModuleInstances.where((item) => item.id == secondId).firstOrNull;
+    if (first == null ||
+        second == null ||
+        first.id == second.id ||
+        first.isEquipped ||
+        second.isEquipped ||
+        first.type != second.type ||
+        first.qualityLevel != second.qualityLevel ||
+        first.qualityLevel >= pTibugConfig.moduleMaxLevel) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ces Modules ne peuvent pas être fusionnés.',
+      );
+    }
+    if (energyUnits < pTibugConfig.moduleFusionEnergyCost) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Énergie insuffisante pour la fusion.',
+      );
+    }
+    energyUnits -= pTibugConfig.moduleFusionEnergyCost;
+    pTibugModuleInstances.removeWhere(
+      (item) => item.id == first.id || item.id == second.id,
+    );
+    final nextLevel = first.qualityLevel + 1;
+    pTibugModuleInstances.add(
+      PTibugModuleInstance(
+        id: 'ptibug-module-${DateTime.now().microsecondsSinceEpoch}',
+        type: first.type,
+        qualityLevel: nextLevel,
+        createdAt: DateTime.now(),
+        source: 'fusion',
+      ),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '${first.type.displayName} niveau $nextLevel créé.',
+    );
+  }
+
+  Zone0ActionResult encapsulatePTibug(PTibug bug) {
+    final hasEquippedModuleInstances =
+        pTibugModuleInstances.any((item) => item.equippedPTibugId == bug.id);
+    if (!pTibugs.contains(bug) ||
+        bug.assignedSlotIndex != null ||
+        bug.storedResources.isNotEmpty ||
+        bug.equippedModules.isNotEmpty ||
+        bug.equippedModuleInstanceIds.isNotEmpty ||
+        hasEquippedModuleInstances) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Récolte le stock et retire les Modules avant encapsulation.',
+      );
+    }
+    if (energyUnits < pTibugConfig.capsuleEnergyCost) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Énergie insuffisante pour encapsuler ce P’TIBUG.',
+      );
+    }
+    energyUnits -= pTibugConfig.capsuleEnergyCost;
+    pTibugs.remove(bug);
+    pTibugCapsules.add(
+      PTibugCapsule(
+        id: 'ptibug-capsule-${DateTime.now().microsecondsSinceEpoch}',
+        species: bug.species,
+        styleVariant: bug.styleVariant,
+        displayName: _pTibugBiologicalName(bug),
+        biologicalTraitId: bug.biologicalTraitId,
+        biologicalTraitLevel: bug.biologicalTraitLevel,
+        level: bug.level,
+        xp: bug.xp,
+        createdAt: DateTime.now(),
+      ),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Capsule P’TIBUG créée.',
+    );
+  }
+
+  Zone0ActionResult decapsulatePTibug(String capsuleId) {
+    final capsule =
+        pTibugCapsules.where((item) => item.id == capsuleId).firstOrNull;
+    if (capsule == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Capsule introuvable.',
+      );
+    }
+    pTibugCapsules.remove(capsule);
+    pTibugs.add(
+      PTibug(
+        id: 'ptibug-${DateTime.now().microsecondsSinceEpoch}',
+        displayName: capsule.displayName,
+        species: capsule.species,
+        styleVariant: capsule.styleVariant,
+        createdAt: DateTime.now(),
+        level: capsule.level,
+        xp: capsule.xp,
+        biologicalTraitId: capsule.biologicalTraitId,
+        biologicalTraitLevel: capsule.biologicalTraitLevel,
+      ),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'P’TIBUG décapsulé.');
   }
 
   bool resolvePTibugProduction({DateTime? now}) {
     final current = now ?? DateTime.now();
     var changed = false;
+    if (_resolvePTibugModuleCrafts(current)) {
+      changed = true;
+    }
     final creation = pTibugCreationOrder;
     if (creation != null &&
         creation.isActive &&
         !creation.endsAt.isAfter(current)) {
       final config = pTibugConfig.species[creation.species]!;
-      pTibugs.add(PTibug(
-        id: 'ptibug-${current.microsecondsSinceEpoch}',
-        displayName: config.displayName,
-        species: creation.species,
-        styleVariant: config.styles[_random.nextInt(config.styles.length)],
-        createdAt: current,
-      ));
+      pTibugs.add(
+        PTibug(
+          id: 'ptibug-${current.microsecondsSinceEpoch}',
+          displayName: config.displayName,
+          species: creation.species,
+          styleVariant: config.styles[_random.nextInt(config.styles.length)],
+          createdAt: current,
+        ),
+      );
       pTibugCreationOrder!.completedAt = current;
-      unlockedPTibugModules.add(PTibugModuleType.reservoir);
-      if (pTibugTraitData.isEmpty) {
-        final traits = pTibugConfig.activeTraitDefinitions;
-        if (traits.isNotEmpty) {
-          final trait = traits[_random.nextInt(traits.length)];
-          pTibugTraitData.add(PTibugTraitData(
-            id: 'trait-${current.microsecondsSinceEpoch}',
-            definitionId: trait.id,
-            grade: PTibugTraitGrade.commun,
-          ));
-        }
-      }
-      reports.add(PtipoteMissionReport.system(
-          message:
-              '${config.displayName} est né dans la Nurserie. Une Donnée de trait commune a été reçue.',
+      reports.add(
+        PtipoteMissionReport.system(
+          message: '${config.displayName} est né dans la Nurserie.',
           sourceBuildingId: 'plaineNursery',
           mailbox: Zone0MessageMailbox.companions,
           subject: 'Création P’TIBUG',
           concerned: config.displayName,
-          summary: 'Création terminée.'));
+          summary: 'Création terminée.',
+        ),
+      );
       emitKernelProgressEvent(KernelProgressEventType.ptibugCreated);
       changed = true;
     }
@@ -2774,6 +3584,20 @@ class Zone0GameState extends ChangeNotifier {
         cycleAt = cycleAt.add(_pTibugCycleDuration(bug));
       }
       bug.nextProductionAt = cycleAt;
+      if (bug.storedAmount >= _pTibugCapacity(bug) && !bug.stockFullNotified) {
+        bug.stockFullNotified = true;
+        reports.add(
+          PtipoteMissionReport.system(
+            message: '${bug.displayName} a atteint sa capacité de stockage.',
+            sourceBuildingId: 'plaineNursery',
+            mailbox: Zone0MessageMailbox.companions,
+            subject: 'Stock P’TIBUG plein',
+            concerned: bug.displayName,
+            summary: 'Production prête à être récoltée.',
+          ),
+        );
+        changed = true;
+      }
       if (producedCycles > 0) changed = true;
     }
     if (changed) {
@@ -2785,22 +3609,66 @@ class Zone0GameState extends ChangeNotifier {
 
   int get pTibugActiveSlots => pTibugConfig.slotsForLevel(plaineNurseryLevel);
 
+  PTibugModuleCraftOrder? get activePTibugModuleCraftOrder =>
+      pTibugModuleCraftOrders.where((item) => item.isActive).firstOrNull;
+
+  String pTibugBiologicalNameFor(PTibug bug) => _pTibugBiologicalName(bug);
+
+  int pTibugCapacityFor(PTibug bug) => _pTibugCapacity(bug);
+
+  Duration pTibugCycleDurationFor(PTibug bug) => _pTibugCycleDuration(bug);
+
+  Map<String, int> pTibugProductionFor(PTibug bug) =>
+      Map<String, int>.unmodifiable(_pTibugProduction(bug));
+
   Duration _pTibugCycleDuration(PTibug bug) => Duration(
         minutes: math.max(
           1,
           (pTibugConfig.productionCycleMinutes *
-                  (bug.hasModule(PTibugModuleType.ailes)
-                      ? 1 - pTibugConfig.wingsCycleReduction
-                      : 1))
+                  (1 -
+                      _pTibugModuleEffect(
+                        bug,
+                        PTibugModuleType.ailes,
+                        pTibugConfig.wingsCycleReductionByLevel,
+                      )))
               .round(),
         ),
       );
 
   int _pTibugCapacity(PTibug bug) =>
       pTibugConfig.carryingCapacity +
-      (bug.hasModule(PTibugModuleType.reservoir)
-          ? pTibugConfig.reservoirCapacityBonus
-          : 0);
+      _pTibugModuleEffect(
+        bug,
+        PTibugModuleType.reservoir,
+        pTibugConfig.reservoirCapacityBonusByLevel,
+      ).round();
+
+  int _pTibugModuleLevel(PTibug bug, PTibugModuleType type) {
+    final levels = pTibugModuleInstances
+        .where((item) => item.equippedPTibugId == bug.id && item.type == type)
+        .map((item) => item.qualityLevel);
+    if (levels.isNotEmpty) return levels.reduce(math.max);
+    return bug.hasModule(type) ? 1 : 0;
+  }
+
+  double _pTibugModuleEffect(
+    PTibug bug,
+    PTibugModuleType type,
+    Map<int, num> effects,
+  ) {
+    final level = _pTibugModuleLevel(bug, type);
+    return (effects[level] ?? 0).toDouble();
+  }
+
+  String _pTibugBiologicalName(PTibug bug) {
+    final species = pTibugConfig.species[bug.species]!.displayName;
+    final trait = bug.biologicalTraitId == null
+        ? null
+        : pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!);
+    return trait == null || bug.biologicalTraitLevel <= 0
+        ? species
+        : '$species ${trait.displayName} ${bug.biologicalTraitLevel}';
+  }
 
   Map<String, int> _pTibugProduction(PTibug bug) {
     final output = <String, int>{};
@@ -2808,20 +3676,21 @@ class Zone0GameState extends ChangeNotifier {
         output[resource] = (output[resource] ?? 0) + amount;
     switch (bug.species) {
       case PTibugSpecies.scarabe:
-        add('Minéral', 2);
+        add('Minéral', 3);
       case PTibugSpecies.hyme:
-        add('Organique', 2);
+        add('Organique', 3);
       case PTibugSpecies.arac:
         final variants = <Map<String, int>>[
-          <String, int>{'Organique': 2},
-          <String, int>{'Minéral': 2},
-          <String, int>{'Déchets': 2},
-          <String, int>{'Organique': 1, 'Minéral': 1},
-          <String, int>{'Organique': 1, 'Déchets': 1},
-          <String, int>{'Minéral': 1, 'Déchets': 1},
+          <String, int>{'Organique': 3},
+          <String, int>{'Minéral': 3},
+          <String, int>{'Déchets': 3},
+          <String, int>{'Organique': 2, 'Minéral': 1},
+          <String, int>{'Organique': 2, 'Déchets': 1},
+          <String, int>{'Minéral': 2, 'Déchets': 1},
         ];
-        variants[_random.nextInt(variants.length)]
-            .forEach((resource, amount) => add(resource, amount));
+        variants[_random.nextInt(variants.length)].forEach(
+          (resource, amount) => add(resource, amount),
+        );
     }
     final trait = bug.traitDataId == null
         ? null
@@ -2834,17 +3703,32 @@ class Zone0GameState extends ChangeNotifier {
           definition?.productionFor(trait.grade) ?? const <String, int>{};
       effects.forEach(add);
     }
-    if (bug.hasModule(PTibugModuleType.pinces)) {
+    final permanentTrait = bug.biologicalTraitId == null
+        ? null
+        : pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!);
+    if (permanentTrait != null) {
+      permanentTrait.productionForLevel(bug.biologicalTraitLevel).forEach(add);
+    }
+    final claws = _pTibugModuleEffect(
+      bug,
+      PTibugModuleType.pinces,
+      pTibugConfig.clawProductionBonusByLevel,
+    ).round();
+    if (claws > 0) {
       switch (bug.species) {
         case PTibugSpecies.scarabe:
-          add('Minéral', pTibugConfig.clawProductionBonus);
+          add('Minéral', claws);
         case PTibugSpecies.hyme:
-          add('Organique', pTibugConfig.clawProductionBonus);
+          add('Organique', claws);
         case PTibugSpecies.arac:
-          add(<String>['Organique', 'Minéral', 'Déchets'][_random.nextInt(3)],
-              pTibugConfig.clawProductionBonus);
+          add(
+            <String>['Organique', 'Minéral', 'Déchets'][_random.nextInt(3)],
+            claws,
+          );
       }
     }
+    final biome = pTibugConfig.biomes[bug.biome];
+    biome?.localProductionBonus[bug.species]?.forEach(add);
     return output;
   }
 
@@ -2852,9 +3736,12 @@ class Zone0GameState extends ChangeNotifier {
     if (slot < 0 ||
         slot >= pTibugActiveSlots ||
         pTibugs.any(
-            (item) => item.id != bug.id && item.assignedSlotIndex == slot)) {
+          (item) => item.id != bug.id && item.assignedSlotIndex == slot,
+        )) {
       return const Zone0ActionResult(
-          success: false, message: 'Slot indisponible.');
+        success: false,
+        message: 'Slot indisponible.',
+      );
     }
     bug.assignedSlotIndex = slot;
     bug.nextProductionAt ??= DateTime.now().add(_pTibugCycleDuration(bug));
@@ -2869,25 +3756,30 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-        success: true, message: 'P’TIBUG rangé dans la Nurserie.');
+      success: true,
+      message: 'P’TIBUG rangé dans la Nurserie.',
+    );
   }
 
   Zone0ActionResult collectPTibugProduction() {
     final output = <String, int>{};
     for (final bug in pTibugs) {
-      bug.storedResources
-          .forEach((key, value) => output[key] = (output[key] ?? 0) + value);
+      bug.storedResources.forEach(
+        (key, value) => output[key] = (output[key] ?? 0) + value,
+      );
     }
     if (output.isEmpty || !hasInventoryCapacityFor(output)) {
       return Zone0ActionResult(
-          success: false,
-          message: output.isEmpty
-              ? 'Aucune production prête.'
-              : 'Inventaire insuffisant.');
+        success: false,
+        message: output.isEmpty
+            ? 'Aucune production prête.'
+            : 'Inventaire insuffisant.',
+      );
     }
     addResources(output);
     for (final bug in pTibugs) {
       bug.storedResources.clear();
+      bug.stockFullNotified = false;
     }
     emitKernelProgressEvent(KernelProgressEventType.ptibugProductionCollected);
     if (output.containsKey('Mycélium') &&
@@ -2899,7 +3791,36 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-        success: true, message: 'Production récupérée.');
+      success: true,
+      message: 'Production récupérée.',
+    );
+  }
+
+  Zone0ActionResult collectPTibugProductionFor(PTibug bug) {
+    if (bug.storedResources.isEmpty) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucune production prête.',
+      );
+    }
+    final output = Map<String, int>.from(bug.storedResources);
+    if (!hasInventoryCapacityFor(output)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Inventaire insuffisant.',
+      );
+    }
+    addResources(output);
+    bug.storedResources.clear();
+    bug.stockFullNotified = false;
+    bug.nextProductionAt ??= DateTime.now().add(_pTibugCycleDuration(bug));
+    emitKernelProgressEvent(KernelProgressEventType.ptibugProductionCollected);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Production de ${bug.displayName} récupérée.',
+    );
   }
 
   Zone0ActionResult equipPTibugTrait(PTibug bug, PTibugTraitData data) {
@@ -2908,7 +3829,9 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-        success: true, message: 'Donnée de trait attribuée.');
+      success: true,
+      message: 'Donnée de trait attribuée.',
+    );
   }
 
   Zone0ActionResult fusePTibugTraitData(
@@ -2919,19 +3842,24 @@ class Zone0GameState extends ChangeNotifier {
         first.definitionId != second.definitionId ||
         first.grade != second.grade ||
         first.grade == PTibugTraitGrade.avance ||
-        pTibugs.any((bug) =>
-            bug.traitDataId == first.id || bug.traitDataId == second.id)) {
+        pTibugs.any(
+          (bug) => bug.traitDataId == first.id || bug.traitDataId == second.id,
+        )) {
       return const Zone0ActionResult(
-          success: false,
-          message: 'Ces Données ne peuvent pas être fusionnées.');
+        success: false,
+        message: 'Ces Données ne peuvent pas être fusionnées.',
+      );
     }
-    pTibugTraitData
-        .removeWhere((item) => item.id == first.id || item.id == second.id);
-    pTibugTraitData.add(PTibugTraitData(
-      id: 'trait-${DateTime.now().microsecondsSinceEpoch}',
-      definitionId: first.definitionId,
-      grade: PTibugTraitGrade.values[first.grade.index + 1],
-    ));
+    pTibugTraitData.removeWhere(
+      (item) => item.id == first.id || item.id == second.id,
+    );
+    pTibugTraitData.add(
+      PTibugTraitData(
+        id: 'trait-${DateTime.now().microsecondsSinceEpoch}',
+        definitionId: first.definitionId,
+        grade: PTibugTraitGrade.values[first.grade.index + 1],
+      ),
+    );
     emitKernelProgressEvent(KernelProgressEventType.traitDataFused);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -2944,7 +3872,9 @@ class Zone0GameState extends ChangeNotifier {
         bug.equippedModules.length >=
             pTibugConfig.moduleSlotsForLevel(plaineNurseryLevel)) {
       return const Zone0ActionResult(
-          success: false, message: 'Module indisponible ou aucun slot libre.');
+        success: false,
+        message: 'Module indisponible ou aucun slot libre.',
+      );
     }
     bug.equippedModules.add(module);
     emitKernelProgressEvent(KernelProgressEventType.ptibugModuleEquipped);
@@ -3009,7 +3939,9 @@ class Zone0GameState extends ChangeNotifier {
     final cost = securityTowerConfig.constructionCost;
     if (!hasResources(cost)) {
       return Zone0ActionResult(
-          success: false, message: missingResourcesLabel(cost));
+        success: false,
+        message: missingResourcesLabel(cost),
+      );
     }
     if (!removeResources(cost)) {
       return const Zone0ActionResult(
@@ -3040,8 +3972,9 @@ class Zone0GameState extends ChangeNotifier {
     final last = lastManualTowerRechargeAt;
     if (last == null) return Duration.zero;
     final remaining = last
-        .add(Duration(
-            minutes: securityTowerConfig.manualRechargeCooldownMinutes))
+        .add(
+          Duration(minutes: securityTowerConfig.manualRechargeCooldownMinutes),
+        )
         .difference(now ?? DateTime.now());
     return remaining.isNegative ? Duration.zero : remaining;
   }
@@ -3049,25 +3982,30 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult manuallyRechargeTower() {
     if (!isSecurityTowerBuilt) {
       return const Zone0ActionResult(
-          success: false, message: 'Tour non construite.');
+        success: false,
+        message: 'Tour non construite.',
+      );
     }
     final remaining = towerManualRechargeRemaining();
     if (remaining > Duration.zero) {
       return Zone0ActionResult(
-          success: false,
-          message: 'Balises disponibles dans ${remaining.inMinutes + 1} min.');
+        success: false,
+        message: 'Balises disponibles dans ${remaining.inMinutes + 1} min.',
+      );
     }
     refugeSafety = math.min(
-        securityTowerConfig.maxSecurity,
-        refugeSafety +
-            securityTowerConfig.manualRechargeGainForLevel(securityTowerLevel));
+      securityTowerConfig.maxSecurity,
+      refugeSafety +
+          securityTowerConfig.manualRechargeGainForLevel(securityTowerLevel),
+    );
     lastManualTowerRechargeAt = DateTime.now();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true,
-        message:
-            '+${securityTowerConfig.manualRechargeGainForLevel(securityTowerLevel)} Sécurité.');
+      success: true,
+      message:
+          '+${securityTowerConfig.manualRechargeGainForLevel(securityTowerLevel)} Sécurité.',
+    );
   }
 
   Zone0ActionResult assignToTower(PtipoteFigurine figurine) {
@@ -3084,26 +4022,36 @@ class Zone0GameState extends ChangeNotifier {
   }) {
     if (!isSecurityTowerBuilt) {
       return const Zone0ActionResult(
-          success: false, message: 'Tour non construite.');
+        success: false,
+        message: 'Tour non construite.',
+      );
     }
     resolveDueTowerMissions();
     // Each secured biome, plus the camp, owns its own surveillance slot.
     final activeCount = towerMissions
-        .where((mission) =>
-            mission.status == TowerMissionStatus.active &&
-            mission.patrolBiome == patrolBiome)
+        .where(
+          (mission) =>
+              mission.status == TowerMissionStatus.active &&
+              mission.patrolBiome == patrolBiome,
+        )
         .length;
     if (activeCount >= securityTowerSlots) {
       return const Zone0ActionResult(
-          success: false, message: 'Aucun slot libre.');
+        success: false,
+        message: 'Aucun slot libre.',
+      );
     }
     if (isUnavailableForTower(figurine)) {
       return const Zone0ActionResult(
-          success: false, message: 'P’TIPOTE occupé.');
+        success: false,
+        message: 'P’TIPOTE occupé.',
+      );
     }
     if (vitalityFor(figurine) < ptipoteStatsConfig.minimumMissionVitality) {
       return const Zone0ActionResult(
-          success: false, message: 'P’TIPOTE trop fatigué.');
+        success: false,
+        message: 'P’TIPOTE trop fatigué.',
+      );
     }
     final vitality = vitalityFor(figurine);
     final ticks = _towerTicksForPlan(plan, vitality);
@@ -3294,10 +4242,12 @@ class Zone0GameState extends ChangeNotifier {
 
   String missingResourcesLabel(Map<String, int> costs) {
     final missing = costs.entries
-        .map((entry) => MapEntry(
-              entry.key,
-              math.max(0, entry.value - resourceAmount(entry.key)),
-            ))
+        .map(
+          (entry) => MapEntry(
+            entry.key,
+            math.max(0, entry.value - resourceAmount(entry.key)),
+          ),
+        )
         .where((entry) => entry.value > 0)
         .map((entry) => '${entry.value} ${entry.key}')
         .join(', ');
@@ -3331,7 +4281,8 @@ class Zone0GameState extends ChangeNotifier {
                   ),
                 )
                 .where(
-                    (stack) => stack.resource.isNotEmpty && stack.amount > 0),
+                  (stack) => stack.resource.isNotEmpty && stack.amount > 0,
+                ),
           );
       }
 
@@ -3451,9 +4402,9 @@ class Zone0GameState extends ChangeNotifier {
       final workshopOrdersData = data['workshopOrders'];
       if (workshopOrdersData is List) {
         workshopOrders.addAll(
-          workshopOrdersData
-              .whereType<Map>()
-              .map(WorkshopCraftOrder.fromFirebase),
+          workshopOrdersData.whereType<Map>().map(
+                WorkshopCraftOrder.fromFirebase,
+              ),
         );
       } else {
         // V1 stored one order only. Keep it when upgrading the save format.
@@ -3466,17 +4417,24 @@ class Zone0GameState extends ChangeNotifier {
       if (marketData is Map) {
         marketStock
           ..clear()
-          ..addAll((marketData['stock'] as List? ?? const <dynamic>[])
-              .whereType<Map>()
-              .map((item) => Zone0InventoryStack(
-                  resource: '${item['resource'] ?? ''}',
-                  amount: _readInt(item['amount'])))
-              .where((item) => item.resource.isNotEmpty && item.amount > 0));
+          ..addAll(
+            (marketData['stock'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(
+                  (item) => Zone0InventoryStack(
+                    resource: '${item['resource'] ?? ''}',
+                    amount: _readInt(item['amount']),
+                  ),
+                )
+                .where((item) => item.resource.isNotEmpty && item.amount > 0),
+          );
         marketRequests
           ..clear()
-          ..addAll((marketData['requests'] as List? ?? const <dynamic>[])
-              .whereType<Map>()
-              .map(MarketCustomerRequest.fromFirebase));
+          ..addAll(
+            (marketData['requests'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(MarketCustomerRequest.fromFirebase),
+          );
         marketNextSaleAt = _readDate(marketData['nextSaleAt']);
         marketLastWorkTickAt = _readDate(marketData['lastWorkTickAt']);
         marketAssignedPtipoteId = marketData['assignedPtipoteId'] as String?;
@@ -3484,13 +4442,19 @@ class Zone0GameState extends ChangeNotifier {
             marketData['assignedPtipoteName'] as String?;
         marketValueRemainder = _readInt(marketData['valueRemainder']);
         marketBioBatteriesEarned = _readInt(marketData['bioBatteriesEarned']);
-        merchantAvailableUntil =
-            _readDate(marketData['merchantAvailableUntil']);
+        merchantAvailableUntil = _readDate(
+          marketData['merchantAvailableUntil'],
+        );
+        merchantNextArrivalAt = _readDate(marketData['merchantNextArrivalAt']);
+        merchantVisitsDayKey = '${marketData['merchantVisitsDayKey'] ?? ''}';
+        merchantVisitsToday = _readInt(marketData['merchantVisitsToday']);
         merchantOffers
           ..clear()
-          ..addAll((marketData['merchantOffers'] as List? ?? const <dynamic>[])
-              .whereType<Map>()
-              .map((item) => MerchantOffer(
+          ..addAll(
+            (marketData['merchantOffers'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(
+                  (item) => MerchantOffer(
                     planName: '${item['planName'] ?? ''}',
                     price: _readInt(item['price']),
                     purchased: item['purchased'] == true,
@@ -3501,8 +4465,10 @@ class Zone0GameState extends ChangeNotifier {
                             '${item['ptibugSpecies']}',
                             PTibugSpecies.scarabe,
                           ),
-                  ))
-              .where((item) => item.planName.isNotEmpty));
+                  ),
+                )
+                .where((item) => item.planName.isNotEmpty),
+          );
       }
 
       final localSecurityData = data['biomeSecurity'];
@@ -3510,8 +4476,10 @@ class Zone0GameState extends ChangeNotifier {
         for (final biome in ForageBiome.values) {
           final value = localSecurityData[biome.name];
           if (value is Map) {
-            biomeSecurity[biome] =
-                BiomeSecurityState.fromFirebase(biome, value);
+            biomeSecurity[biome] = BiomeSecurityState.fromFirebase(
+              biome,
+              value,
+            );
           }
         }
       }
@@ -3519,9 +4487,11 @@ class Zone0GameState extends ChangeNotifier {
       if (explorationData is List) {
         explorationMissions
           ..clear()
-          ..addAll(explorationData
-              .whereType<Map>()
-              .map(BiomeExplorationMission.fromFirebase));
+          ..addAll(
+            explorationData.whereType<Map>().map(
+                  BiomeExplorationMission.fromFirebase,
+                ),
+          );
       }
 
       final reportData = data['reports'];
@@ -3544,13 +4514,17 @@ class Zone0GameState extends ChangeNotifier {
         processedManualWeatherTriggerIds
           ..clear()
           ..addAll(
-              (weatherData['processedManualTriggerIds'] as List? ?? const [])
-                  .map((id) => '$id'));
+            (weatherData['processedManualTriggerIds'] as List? ?? const []).map(
+              (id) => '$id',
+            ),
+          );
         weatherAlerts
           ..clear()
-          ..addAll((weatherData['alerts'] as List? ?? const [])
-              .whereType<Map>()
-              .map(WeatherAlert.fromFirebase));
+          ..addAll(
+            (weatherData['alerts'] as List? ?? const []).whereType<Map>().map(
+                  WeatherAlert.fromFirebase,
+                ),
+          );
       }
 
       final kernelData = data['kernel'];
@@ -3569,8 +4543,9 @@ class Zone0GameState extends ChangeNotifier {
           fallback: kernelConfig.startingWellbeing,
         ).clamp(0, 100);
         mealsPrepared = _readInt(kernelData['mealsPrepared']);
-        plaineMissionsCompleted =
-            _readInt(kernelData['plaineMissionsCompleted']);
+        plaineMissionsCompleted = _readInt(
+          kernelData['plaineMissionsCompleted'],
+        );
         kernelTrustLevel = _readInt(kernelData['trustLevel'], fallback: 1);
         kernelTrustXp = _readInt(kernelData['trustXp']);
         for (final axis in KernelAxis.values) {
@@ -3589,21 +4564,32 @@ class Zone0GameState extends ChangeNotifier {
         }
         discoveredKernelPlanIds
           ..clear()
-          ..addAll((kernelData['discoveredPlanIds'] as List? ?? const [])
-              .map((id) => '$id'));
+          ..addAll(
+            (kernelData['discoveredPlanIds'] as List? ?? const []).map(
+              (id) => '$id',
+            ),
+          );
         readyKernelPlanIds
           ..clear()
-          ..addAll((kernelData['readyPlanIds'] as List? ?? const [])
-              .map((id) => '$id'));
+          ..addAll(
+            (kernelData['readyPlanIds'] as List? ?? const []).map(
+              (id) => '$id',
+            ),
+          );
         activeKernelPlanIds
           ..clear()
-          ..addAll((kernelData['activePlanIds'] as List? ?? const [])
-              .map((id) => '$id'));
+          ..addAll(
+            (kernelData['activePlanIds'] as List? ?? const []).map(
+              (id) => '$id',
+            ),
+          );
         kernelProgressHistory
           ..clear()
-          ..addAll((kernelData['progressHistory'] as List? ?? const [])
-              .whereType<Map>()
-              .map(KernelProgressHistoryEntry.fromFirebase));
+          ..addAll(
+            (kernelData['progressHistory'] as List? ?? const [])
+                .whereType<Map>()
+                .map(KernelProgressHistoryEntry.fromFirebase),
+          );
         final completedData = kernelData['completedMissionIds'];
         if (completedData is List) {
           completedKernelMissionIds
@@ -3612,16 +4598,25 @@ class Zone0GameState extends ChangeNotifier {
         }
         dismissedKernelMissionIds
           ..clear()
-          ..addAll((kernelData['dismissedMissionIds'] as List? ?? const [])
-              .map((id) => '$id'));
+          ..addAll(
+            (kernelData['dismissedMissionIds'] as List? ?? const []).map(
+              (id) => '$id',
+            ),
+          );
         viewedKernelMissionIds
           ..clear()
-          ..addAll((kernelData['viewedMissionIds'] as List? ?? const [])
-              .map((id) => '$id'));
+          ..addAll(
+            (kernelData['viewedMissionIds'] as List? ?? const []).map(
+              (id) => '$id',
+            ),
+          );
         notifiedKernelMissionIds
           ..clear()
-          ..addAll((kernelData['notifiedMissionIds'] as List? ?? const [])
-              .map((id) => '$id'));
+          ..addAll(
+            (kernelData['notifiedMissionIds'] as List? ?? const []).map(
+              (id) => '$id',
+            ),
+          );
         kernelPopulationRewardsGranted.clear();
         final grantedData = kernelData['populationRewardsGranted'];
         if (grantedData is Map) {
@@ -3654,40 +4649,93 @@ class Zone0GameState extends ChangeNotifier {
         recyclerOutputMineral = _readInt(recyclerData['outputMineral']);
         pendingWaste = _readInt(recyclerData['pendingWaste']);
         recyclerCycleStartedAt = _readDate(recyclerData['cycleStartedAt']);
-        lastWasteGenerationAt =
-            _readDate(recyclerData['lastWasteGenerationAt']);
+        lastWasteGenerationAt = _readDate(
+          recyclerData['lastWasteGenerationAt'],
+        );
       }
       final ptibugData = data['ptibug'];
       if (ptibugData is Map) {
         plaineNurseryLevel = _readInt(ptibugData['nurseryLevel']).clamp(0, 3);
         activePTibugPatterns
           ..clear()
-          ..addAll((ptibugData['activePatterns'] as List? ?? const <dynamic>[])
-              .map((name) => ForageMission._enumByName(
-                    PTibugSpecies.values,
-                    '$name',
-                    PTibugSpecies.scarabe,
-                  )));
+          ..addAll(
+            (ptibugData['activePatterns'] as List? ?? const <dynamic>[]).map(
+              (name) => ForageMission._enumByName(
+                PTibugSpecies.values,
+                '$name',
+                PTibugSpecies.scarabe,
+              ),
+            ),
+          );
         starterPTibugChoiceMade = ptibugData['starterChoiceMade'] == true ||
             activePTibugPatterns.isNotEmpty;
         pTibugs
           ..clear()
-          ..addAll((ptibugData['items'] as List? ?? const <dynamic>[])
-              .whereType<Map>()
-              .map(PTibug.fromFirebase));
+          ..addAll(
+            (ptibugData['items'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(PTibug.fromFirebase),
+          );
         pTibugTraitData
           ..clear()
-          ..addAll((ptibugData['traitData'] as List? ?? const <dynamic>[])
-              .whereType<Map>()
-              .map(PTibugTraitData.fromFirebase));
+          ..addAll(
+            (ptibugData['traitData'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(PTibugTraitData.fromFirebase),
+          );
         unlockedPTibugModules
           ..clear()
-          ..addAll((ptibugData['unlockedModules'] as List? ?? const <dynamic>[])
-              .map((value) => ForageMission._enumByName(
-                    PTibugModuleType.values,
-                    '$value',
-                    PTibugModuleType.reservoir,
-                  )));
+          ..addAll(
+            (ptibugData['unlockedModules'] as List? ?? const <dynamic>[]).map(
+              (value) => ForageMission._enumByName(
+                PTibugModuleType.values,
+                '$value',
+                PTibugModuleType.reservoir,
+              ),
+            ),
+          );
+        final dataReserve =
+            ptibugData['dataReserve'] as Map? ?? const <dynamic, dynamic>{};
+        for (final family in PTibugDataFamily.values) {
+          pTibugDataReserve[family] = _readInt(dataReserve[family.name]);
+        }
+        pTibugDataCells
+          ..clear()
+          ..addAll(
+            (ptibugData['dataCells'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(PTibugDataCell.fromFirebase),
+          );
+        pTibugPatternProgress
+          ..clear()
+          ..addEntries(
+            (ptibugData['patternProgress'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(PTibugPatternProgress.fromFirebase)
+                .where((item) => item.patternId.isNotEmpty)
+                .map((item) => MapEntry(item.patternId, item)),
+          );
+        pTibugModuleInstances
+          ..clear()
+          ..addAll(
+            (ptibugData['moduleInstances'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(PTibugModuleInstance.fromFirebase),
+          );
+        pTibugModuleCraftOrders
+          ..clear()
+          ..addAll(
+            (ptibugData['moduleCraftOrders'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(PTibugModuleCraftOrder.fromFirebase),
+          );
+        pTibugCapsules
+          ..clear()
+          ..addAll(
+            (ptibugData['capsules'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(PTibugCapsule.fromFirebase),
+          );
         final creationData = ptibugData['creation'];
         pTibugCreationOrder = creationData is Map
             ? PTibugCreationOrder.fromFirebase(creationData)
@@ -3698,16 +4746,17 @@ class Zone0GameState extends ChangeNotifier {
       if (buildingsData is Map) {
         final fablabData = buildingsData['fablab'];
         if (fablabData is Map) {
-          fablabLevel = _readInt(fablabData['currentLevel']).clamp(
-            0,
-            fablabConfig.fablabMaxLevel,
-          );
-          atelierLevel =
-              _readInt(fablabData['atelierLevel'], fallback: fablabLevel)
-                  .clamp(0, fablabConfig.fablabMaxLevel);
-          cuisineLevel = _readInt(fablabData['cuisineLevel'],
-                  fallback: fablabLevel > 0 ? 1 : 0)
-              .clamp(0, fablabConfig.fablabMaxLevel);
+          fablabLevel = _readInt(
+            fablabData['currentLevel'],
+          ).clamp(0, fablabConfig.fablabMaxLevel);
+          atelierLevel = _readInt(
+            fablabData['atelierLevel'],
+            fallback: fablabLevel,
+          ).clamp(0, fablabConfig.fablabMaxLevel);
+          cuisineLevel = _readInt(
+            fablabData['cuisineLevel'],
+            fallback: fablabLevel > 0 ? 1 : 0,
+          ).clamp(0, fablabConfig.fablabMaxLevel);
         }
         final towerData = buildingsData['securityTower'];
         if (towerData is Map) {
@@ -3715,13 +4764,16 @@ class Zone0GameState extends ChangeNotifier {
         }
         final marketBuildingData = buildingsData['market'];
         if (marketBuildingData is Map) {
-          marketLevel =
-              _readInt(marketBuildingData['currentLevel']).clamp(0, 5);
+          marketLevel = _readInt(
+            marketBuildingData['currentLevel'],
+          ).clamp(0, 5);
         }
         final houseData = buildingsData['house'];
         if (houseData is Map) {
-          houseLevel = _readInt(houseData['currentLevel'], fallback: 1)
-              .clamp(1, housingConfig.houseMaxLevel);
+          houseLevel = _readInt(
+            houseData['currentLevel'],
+            fallback: 1,
+          ).clamp(1, housingConfig.houseMaxLevel);
           alcoveCapacity = _readInt(
             houseData['alcoveCapacity'],
             fallback: alcoveCapacity,
@@ -3741,9 +4793,14 @@ class Zone0GameState extends ChangeNotifier {
         if (projectData is Map) {
           constructionProjects
             ..clear()
-            ..addEntries(projectData.entries.whereType<MapEntry>().map(
-                (entry) => MapEntry('${entry.key}',
-                    ConstructionProject.fromFirebase(entry.value as Map))));
+            ..addEntries(
+              projectData.entries.whereType<MapEntry>().map(
+                    (entry) => MapEntry(
+                      '${entry.key}',
+                      ConstructionProject.fromFirebase(entry.value as Map),
+                    ),
+                  ),
+            );
         }
       }
       // Migration for saves created before the Fablab units were independent.
@@ -3752,8 +4809,10 @@ class Zone0GameState extends ChangeNotifier {
       // Old saves predate independent Fablab units and construction projects.
       // Keep every acquired level, then let a future project target the next
       // level. No material is retroactively charged or discarded.
-      recyclerLevel =
-          recyclerLevel.clamp(0, wasteRecyclerConfig.recyclerMaxLevel);
+      recyclerLevel = recyclerLevel.clamp(
+        0,
+        wasteRecyclerConfig.recyclerMaxLevel,
+      );
       securityTowerLevel = securityTowerLevel.clamp(0, 3);
       marketLevel = marketLevel.clamp(0, 5);
       // New saves always expose the real number of places built. Do not keep
@@ -3763,10 +4822,9 @@ class Zone0GameState extends ChangeNotifier {
         alcoveCapacity,
         housingConfig.alcovesForHouseLevel(houseLevel),
       );
-      refugeSafety = _readInt(data['campSecurity']).clamp(
-        0,
-        securityTowerConfig.maxSecurity,
-      );
+      refugeSafety = _readInt(
+        data['campSecurity'],
+      ).clamp(0, securityTowerConfig.maxSecurity);
       final towerAssignedData = data['towerAssignedIds'];
       if (towerAssignedData is List) {
         towerAssignedIds
@@ -3777,9 +4835,81 @@ class Zone0GameState extends ChangeNotifier {
           _readDate(data['lastSimulationAt']) ?? _readDate(data['updatedAt']);
       lastManualTowerRechargeAt = _readDate(data['lastManualTowerRechargeAt']);
 
+      final migratedPTibugState = _migratePTibugScientificState();
       _loadedFromFirebase = true;
       resolveConstructionProjects();
+      if (migratedPTibugState) {
+        unawaited(saveRuntimeToFirebase());
+      }
     });
+  }
+
+  /// Keeps saves made before data cells, permanent traits and module instances.
+  /// The migration only adds compatibility data; it never removes player items.
+  bool _migratePTibugScientificState() {
+    var changed = false;
+    final now = DateTime.now();
+    for (final pattern in pTibugConfig.researchPatterns.values) {
+      final legacySpeciesIsActive = pattern.linkedSpecies != null &&
+          activePTibugPatterns.contains(pattern.linkedSpecies);
+      final progress = pTibugPatternProgress.putIfAbsent(pattern.id, () {
+        changed = true;
+        return PTibugPatternProgress(
+          patternId: pattern.id,
+          state: legacySpeciesIsActive
+              ? PTibugPatternState.active
+              : PTibugPatternState.unknown,
+          masteryLevel: legacySpeciesIsActive ? 1 : 0,
+          discoveredAt: legacySpeciesIsActive ? now : null,
+          activatedAt: legacySpeciesIsActive ? now : null,
+        );
+      });
+      if (legacySpeciesIsActive && progress.masteryLevel == 0) {
+        progress
+          ..masteryLevel = 1
+          ..state = PTibugPatternState.active
+          ..discoveredAt ??= now
+          ..activatedAt ??= now;
+        changed = true;
+      }
+    }
+
+    for (final bug in pTibugs) {
+      if (bug.biologicalTraitId == null && bug.traitDataId != null) {
+        final legacyTrait = pTibugTraitData
+            .where((item) => item.id == bug.traitDataId)
+            .firstOrNull;
+        if (legacyTrait != null) {
+          final definition = pTibugConfig.traitDefinitionFor(
+            legacyTrait.definitionId,
+          );
+          bug
+            ..biologicalTraitId = legacyTrait.definitionId
+            ..biologicalTraitLevel = legacyTrait.grade.index + 1;
+          if (definition != null) {
+            bug.displayName = _pTibugBiologicalName(bug);
+          }
+          changed = true;
+        }
+      }
+      for (final type in bug.equippedModules) {
+        final existing = pTibugModuleInstances.where(
+          (item) => item.equippedPTibugId == bug.id && item.type == type,
+        );
+        if (existing.isNotEmpty) continue;
+        final instance = PTibugModuleInstance(
+          id: 'legacy-module-${bug.id}-${type.name}',
+          type: type,
+          equippedPTibugId: bug.id,
+          createdAt: now,
+          source: 'migration',
+        );
+        pTibugModuleInstances.add(instance);
+        bug.equippedModuleInstanceIds.add(instance.id);
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   ForageMission startForageMission({
@@ -3805,10 +4935,14 @@ class Zone0GameState extends ChangeNotifier {
     final memberIds = figurines.map((figurine) => figurine.id).toList();
     final memberNames =
         figurines.map((figurine) => figurine.displayName).toList();
-    final totalVitalityCost =
-        vitalityCostByMember.values.fold(0, (total, cost) => total + cost);
-    final totalXpGain =
-        xpGainByMember.values.fold(0, (total, xp) => total + xp);
+    final totalVitalityCost = vitalityCostByMember.values.fold(
+      0,
+      (total, cost) => total + cost,
+    );
+    final totalXpGain = xpGainByMember.values.fold(
+      0,
+      (total, xp) => total + xp,
+    );
     final mission = ForageMission(
       id: 'mission-${start.microsecondsSinceEpoch}',
       figurineId: memberIds.first,
@@ -3868,49 +5002,64 @@ class Zone0GameState extends ChangeNotifier {
   }) {
     if (!isSecurityTowerBuilt) {
       return const Zone0ActionResult(
-          success: false, message: 'La Tour est nécessaire pour explorer.');
+        success: false,
+        message: 'La Tour est nécessaire pour explorer.',
+      );
     }
     final adjacentSecurity = adjacentBiomeSecurityFor(biome);
     if (adjacentSecurity < towerOperationsConfig.biomeRevealSecurityThreshold) {
       return Zone0ActionResult(
-          success: false,
-          message:
-              'La sécurité moyenne des biomes adjacents doit atteindre ${towerOperationsConfig.biomeRevealSecurityThreshold}%.');
+        success: false,
+        message:
+            'La sécurité moyenne des biomes adjacents doit atteindre ${towerOperationsConfig.biomeRevealSecurityThreshold}%.',
+      );
     }
     final state = biomeSecurity[biome]!;
     if (state.status == BiomeDiscoveryStatus.unlocked) {
       return const Zone0ActionResult(
-          success: false, message: 'Ce biome est déjà disponible en Lisière.');
+        success: false,
+        message: 'Ce biome est déjà disponible en Lisière.',
+      );
     }
     if (isBiomeExploring(biome) || figurines.isEmpty) {
       return const Zone0ActionResult(
-          success: false, message: 'Exploration indisponible.');
+        success: false,
+        message: 'Exploration indisponible.',
+      );
     }
     if (figurines.any(isUnavailableForTower)) {
       return const Zone0ActionResult(
-          success: false, message: 'Un P’TIPOTE choisi est occupé.');
+        success: false,
+        message: 'Un P’TIPOTE choisi est occupé.',
+      );
     }
     final now = DateTime.now();
-    explorationMissions.add(BiomeExplorationMission(
-      id: 'exploration-${now.microsecondsSinceEpoch}',
-      biome: biome,
-      memberIds: figurines.map((item) => item.id).toList(),
-      memberNames: figurines.map((item) => item.displayName).toList(),
-      endTime: now.add(Duration(
-        minutes: math.max(
-          1,
-          (durationHours * 60 / lisiereForageConfig.forageTimeScale).round(),
+    explorationMissions.add(
+      BiomeExplorationMission(
+        id: 'exploration-${now.microsecondsSinceEpoch}',
+        biome: biome,
+        memberIds: figurines.map((item) => item.id).toList(),
+        memberNames: figurines.map((item) => item.displayName).toList(),
+        endTime: now.add(
+          Duration(
+            minutes: math.max(
+              1,
+              (durationHours * 60 / lisiereForageConfig.forageTimeScale)
+                  .round(),
+            ),
+          ),
         ),
-      )),
-      explorationProgressGain: durationHours * 10,
-    ));
+        explorationProgressGain: durationHours * 10,
+      ),
+    );
     state.status = BiomeDiscoveryStatus.exploring;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true,
-        message:
-            'Exploration de ${lisiereForageConfig.biomes[biome]!.label} lancée.');
+      success: true,
+      message:
+          'Exploration de ${lisiereForageConfig.biomes[biome]!.label} lancée.',
+    );
   }
 
   Zone0ActionResult startBiomePatrol({
@@ -3920,7 +5069,9 @@ class Zone0GameState extends ChangeNotifier {
   }) {
     if (!isBiomeUnlocked(biome)) {
       return const Zone0ActionResult(
-          success: false, message: 'Termine d’abord l’exploration.');
+        success: false,
+        message: 'Termine d’abord l’exploration.',
+      );
     }
     final result = startTowerMission(
       figurine: figurine,
@@ -3928,34 +5079,44 @@ class Zone0GameState extends ChangeNotifier {
       patrolBiome: biome,
     );
     if (!result.success) return result;
-    reports.add(PtipoteMissionReport.system(
+    reports.add(
+      PtipoteMissionReport.system(
         message:
-            '${figurine.displayName} sécurise les abords de ${lisiereForageConfig.biomes[biome]!.label}.'));
+            '${figurine.displayName} sécurise les abords de ${lisiereForageConfig.biomes[biome]!.label}.',
+      ),
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true,
-        message:
-            '${figurine.displayName} est en ronde locale. Le gain sera appliqué au retour.');
+      success: true,
+      message:
+          '${figurine.displayName} est en ronde locale. Le gain sera appliqué au retour.',
+    );
   }
 
   void resolveTowerOperations({DateTime? now}) {
     final current = now ?? DateTime.now();
     var changed = false;
-    for (final mission in explorationMissions
-        .where((item) => item.isActive && !item.endTime.isAfter(current))) {
+    for (final mission in explorationMissions.where(
+      (item) => item.isActive && !item.endTime.isAfter(current),
+    )) {
       mission.completedAt = current;
       final state = biomeSecurity[mission.biome]!;
       state.explorationProgress = math.min(
-          100, state.explorationProgress + mission.explorationProgressGain);
+        100,
+        state.explorationProgress + mission.explorationProgressGain,
+      );
       state.status = state.explorationProgress >= 100
           ? BiomeDiscoveryStatus.unlocked
           : BiomeDiscoveryStatus.discovered;
       state.lastMissionAt = current;
-      reports.add(PtipoteMissionReport.system(
+      reports.add(
+        PtipoteMissionReport.system(
           message: state.status == BiomeDiscoveryStatus.unlocked
               ? '${mission.memberNames.join(', ')} a découvert ${lisiereForageConfig.biomes[mission.biome]!.label}. Le biome est disponible en Lisière.'
-              : '${mission.memberNames.join(', ')} progresse dans l’exploration de ${lisiereForageConfig.biomes[mission.biome]!.label} : ${state.explorationProgress}%.'));
+              : '${mission.memberNames.join(', ')} progresse dans l’exploration de ${lisiereForageConfig.biomes[mission.biome]!.label} : ${state.explorationProgress}%.',
+        ),
+      );
       changed = true;
     }
     for (final state in biomeSecurity.values) {
@@ -3968,37 +5129,108 @@ class Zone0GameState extends ChangeNotifier {
             : current.difference(state.lastDecayAt!).inHours;
         if (elapsedHours > 0 && state.localSecurity > 0) {
           state.localSecurity = math.max(
-              0,
-              state.localSecurity -
-                  elapsedHours *
-                      towerOperationsConfig.localSecurityDecayPerHour);
+            0,
+            state.localSecurity -
+                elapsedHours * towerOperationsConfig.localSecurityDecayPerHour,
+          );
           state.lastDecayAt = current;
           changed = true;
         }
       }
     }
-    if (merchantAvailableUntil != null &&
-        !current.isBefore(merchantAvailableUntil!)) {
-      merchantAvailableUntil = null;
-      merchantOffers.clear();
-      reports.add(PtipoteMissionReport.system(
-          message: 'Le Marchand est reparti sans attente.'));
-      changed = true;
-    }
+    changed = _resolveMerchantSchedule(current) || changed;
     if (changed) {
       notifyListeners();
       unawaited(saveRuntimeToFirebase());
     }
   }
 
-  void openMerchant() {
-    if (isMerchantAvailable) return;
-    merchantAvailableUntil = DateTime.now()
-        .add(Duration(hours: towerOperationsConfig.merchantPresenceHours));
+  String _merchantDayKey(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+  void _resetMerchantVisitDay(DateTime current) {
+    final key = _merchantDayKey(current);
+    if (merchantVisitsDayKey == key) return;
+    merchantVisitsDayKey = key;
+    merchantVisitsToday = 0;
+  }
+
+  bool _resolveMerchantSchedule(DateTime current) {
+    var changed = false;
+    final previousDayKey = merchantVisitsDayKey;
+    _resetMerchantVisitDay(current);
+    if (merchantVisitsDayKey != previousDayKey) changed = true;
+
+    final activeUntil = merchantAvailableUntil;
+    if (activeUntil != null) {
+      final maximumVisitEnd = current.add(
+        Duration(hours: towerOperationsConfig.merchantPresenceHours),
+      );
+      if (activeUntil.isAfter(maximumVisitEnd)) {
+        merchantAvailableUntil = maximumVisitEnd;
+        changed = true;
+      }
+    }
+
+    if (merchantAvailableUntil != null &&
+        !current.isBefore(merchantAvailableUntil!)) {
+      _finishMerchantVisit(
+        current,
+        message: 'Le Sourcier est reparti. Il reviendra plus tard.',
+      );
+      return true;
+    }
+
+    if (merchantAvailableUntil == null && merchantNextArrivalAt == null) {
+      merchantNextArrivalAt = _nextMerchantArrivalAfter(current);
+      changed = true;
+    }
+    if (merchantAvailableUntil == null &&
+        merchantNextArrivalAt != null &&
+        !current.isBefore(merchantNextArrivalAt!)) {
+      _startMerchantVisit(current);
+      changed = true;
+    }
+    return changed;
+  }
+
+  DateTime _nextMerchantArrivalAfter(DateTime current) {
+    _resetMerchantVisitDay(current);
+    if (merchantVisitsToday >= towerOperationsConfig.merchantMaxVisitsPerDay) {
+      final tomorrow = DateTime(current.year, current.month, current.day + 1);
+      return tomorrow.add(
+        Duration(hours: towerOperationsConfig.merchantMinimumGapHours),
+      );
+    }
+    final spread = towerOperationsConfig.merchantRandomGapAdditionalHours;
+    final extraHours = spread <= 0
+        ? 0
+        : math.Random(current.microsecondsSinceEpoch).nextInt(spread + 1);
+    return current.add(
+      Duration(
+        hours: towerOperationsConfig.merchantMinimumGapHours + extraHours,
+      ),
+    );
+  }
+
+  void _startMerchantVisit(DateTime current) {
+    _resetMerchantVisitDay(current);
+    if (merchantVisitsToday >= towerOperationsConfig.merchantMaxVisitsPerDay) {
+      merchantNextArrivalAt = _nextMerchantArrivalAfter(current);
+      return;
+    }
+    merchantVisitsToday += 1;
+    merchantNextArrivalAt = null;
+    merchantAvailableUntil = current.add(
+      Duration(hours: towerOperationsConfig.merchantPresenceHours),
+    );
     merchantOffers
       ..clear()
-      ..addAll(towerOperationsConfig.merchantOfferPrices.entries.map(
-          (entry) => MerchantOffer(planName: entry.key, price: entry.value)));
+      ..addAll(
+        towerOperationsConfig.merchantOfferPrices.entries.map(
+          (entry) => MerchantOffer(planName: entry.key, price: entry.value),
+        ),
+      );
     merchantOffers.addAll(
       pTibugConfig.sourcierPatternPrices.entries
           .where((entry) => !activePTibugPatterns.contains(entry.key))
@@ -4011,21 +5243,74 @@ class Zone0GameState extends ChangeNotifier {
             ),
           ),
     );
-    reports.add(PtipoteMissionReport.system(
+    reports.add(
+      PtipoteMissionReport.system(
         message:
-            'Le Sourcier est arrivé au Marché avec des Plans et Patterns rares.'));
+            'Le Sourcier est arrivé au Marché avec des Plans et Patterns rares.',
+        sourceBuildingId: 'market',
+        subject: 'Sourcier arrivé',
+        concerned: 'Joueur',
+        summary: 'Nouvelles offres disponibles pendant deux heures.',
+      ),
+    );
+  }
+
+  /// Kept public for existing debug controls. Normal gameplay starts visits
+  /// from the persistent arrival scheduler in [resolveTowerOperations] and
+  /// [resolveMarket].
+  void openMerchant() {
+    if (isMerchantAvailable) return;
+    _startMerchantVisit(DateTime.now());
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
+  }
+
+  void _finishMerchantVisit(DateTime current, {required String message}) {
+    merchantAvailableUntil = null;
+    merchantOffers.clear();
+    merchantNextArrivalAt = _nextMerchantArrivalAfter(current);
+    reports.add(
+      PtipoteMissionReport.system(
+        message: message,
+        sourceBuildingId: 'market',
+        subject: 'Sourcier',
+        concerned: 'Joueur',
+        summary: 'Transaction terminée.',
+      ),
+    );
+  }
+
+  Zone0ActionResult finishMerchantTransaction() {
+    if (!isMerchantAvailable) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Sourcier n’est pas présent.',
+      );
+    }
+    _finishMerchantVisit(
+      DateTime.now(),
+      message: 'La transaction avec le Sourcier est terminée.',
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Le Sourcier est reparti.',
+    );
   }
 
   Zone0ActionResult buyMerchantOffer(MerchantOffer offer) {
     if (!isMerchantAvailable || offer.purchased) {
       return const Zone0ActionResult(
-          success: false, message: 'Offre indisponible.');
+        success: false,
+        message: 'Offre indisponible.',
+      );
     }
     if (bioBatteries < offer.price) {
       return const Zone0ActionResult(
-          success: false, message: 'Bio-batteries insuffisantes.');
+        success: false,
+        message: 'Bio-batteries insuffisantes.',
+      );
     }
     bioBatteries -= offer.price;
     offer.purchased = true;
@@ -4036,19 +5321,33 @@ class Zone0GameState extends ChangeNotifier {
       discoveredKernelPlanIds.remove(planId);
       readyKernelPlanIds.remove(planId);
       activeKernelPlanIds.add(planId);
-      reports.add(PtipoteMissionReport.system(
-        message:
-            'Le Sourcier partage le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut maintenant l’utiliser.',
-        sourceBuildingId: 'market',
-      ));
+      reports.add(
+        PtipoteMissionReport.system(
+          message:
+              'Le Sourcier partage le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut maintenant l’utiliser.',
+          sourceBuildingId: 'market',
+        ),
+      );
     } else {
-      reports.add(PtipoteMissionReport.system(
-          message: '${offer.planName} a été acquis auprès du Sourcier.'));
+      reports.add(
+        PtipoteMissionReport.system(
+          message: '${offer.planName} a été acquis auprès du Sourcier.',
+        ),
+      );
+    }
+    if (merchantOffers.isNotEmpty &&
+        merchantOffers.every((item) => item.purchased)) {
+      _finishMerchantVisit(
+        DateTime.now(),
+        message: 'Toutes les offres du Sourcier ont été acquises.',
+      );
     }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '${offer.planName} acheté.');
+      success: true,
+      message: '${offer.planName} acheté.',
+    );
   }
 
   void ensureWeatherForecast() {
@@ -4084,24 +5383,32 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult triggerManualWeatherAlert(TowerWeatherType type) {
     if (!isSecurityTowerBuilt) {
       return const Zone0ActionResult(
-          success: false, message: 'La Tour de sécurité doit être construite.');
+        success: false,
+        message: 'La Tour de sécurité doit être construite.',
+      );
     }
     if (weatherAlerts.any((alert) => alert.endsAt.isAfter(DateTime.now()))) {
       return const Zone0ActionResult(
-          success: false, message: 'Une alerte météo est déjà active.');
+        success: false,
+        message: 'Une alerte météo est déjà active.',
+      );
     }
     final config = towerOperationsConfig.weatherEvents
         .where((item) => item.type == type)
         .firstOrNull;
     if (config == null) {
       return const Zone0ActionResult(
-          success: false, message: 'Cette intempérie n’est pas configurée.');
+        success: false,
+        message: 'Cette intempérie n’est pas configurée.',
+      );
     }
     _createWeatherAlert(config, DateTime.now(), manual: true);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '${config.label} déclenchée pour le test.');
+      success: true,
+      message: '${config.label} déclenchée pour le test.',
+    );
   }
 
   void _consumeManualWeatherTrigger() {
@@ -4118,9 +5425,9 @@ class Zone0GameState extends ChangeNotifier {
   TowerWeatherConfig _weightedWeatherConfig() {
     final events = towerOperationsConfig.weatherEvents;
     final total = events.fold<int>(
-        0,
-        (accumulated, event) =>
-            accumulated + math.max(0, event.occurrenceWeight));
+      0,
+      (accumulated, event) => accumulated + math.max(0, event.occurrenceWeight),
+    );
     if (total <= 0) return events[_random.nextInt(events.length)];
     var roll = _random.nextInt(total);
     for (final event in events) {
@@ -4130,53 +5437,88 @@ class Zone0GameState extends ChangeNotifier {
     return events.last;
   }
 
-  void _createWeatherAlert(TowerWeatherConfig config, DateTime now,
-      {required bool manual}) {
+  void _createWeatherAlert(
+    TowerWeatherConfig config,
+    DateTime now, {
+    required bool manual,
+  }) {
+    final template = kernelConfig.missions
+        .where(
+          (mission) =>
+              mission.type == KernelMissionType.weather &&
+              mission.weatherType == config.type.name,
+        )
+        .firstOrNull;
+    final demandOptions = <String>{
+      if (template?.requestedItem?.isNotEmpty == true) template!.requestedItem!,
+      ...?template?.weatherDemandOptions,
+    }.toList();
+    final requestedItem = demandOptions.isEmpty
+        ? null
+        : demandOptions[_random.nextInt(demandOptions.length)];
+    final populationBonus = currentPopulation ~/ 8;
+    final heartBonus = math.max(0, _lastKnownCampHeartLevel - 1);
+    final requestedAmount = template == null || requestedItem == null
+        ? 0
+        : math.max(
+            1,
+            template.requestedAmount +
+                populationBonus +
+                heartBonus +
+                _random.nextInt(2),
+          );
     final alert = WeatherAlert(
       id: 'weather-${now.microsecondsSinceEpoch}',
       type: config.type,
       startsAt: now.add(Duration(minutes: config.warningMinutes)),
       endsAt: now.add(
-          Duration(minutes: config.warningMinutes + config.durationMinutes)),
+        Duration(minutes: config.warningMinutes + config.durationMinutes),
+      ),
       manual: manual,
+      requestedItem: requestedItem,
+      requestedAmount: requestedAmount,
     );
     weatherAlerts.add(alert);
     weatherEventsToday += 1;
     nextWeatherEligibleAt = alert.endsAt.add(
       Duration(minutes: towerOperationsConfig.minimumWeatherIntervalMinutes),
     );
-    reports.add(PtipoteMissionReport.system(
-      message:
-          'Alerte Tour : ${config.label} approche. Le Kernel demande ${config.preparationAmount} ${config.preparationItem}.',
-      sourceBuildingId: 'securityTower',
-      mailbox: Zone0MessageMailbox.companions,
-      subject: 'Alerte météo',
-      concerned: 'Maison',
-      summary:
-          '${config.label} · préparation ${config.preparationAmount} ${config.preparationItem}.',
-    ));
+    reports.add(
+      PtipoteMissionReport.system(
+        message:
+            'Alerte Tour : ${config.label} approche. Consulte le Kernel pour voir la demande de préparation.',
+        sourceBuildingId: 'securityTower',
+        mailbox: Zone0MessageMailbox.companions,
+        subject: 'Alerte météo',
+        concerned: 'Maison',
+        summary: config.announcement,
+      ),
+    );
   }
 
   bool _closeFinishedWeatherAlerts(DateTime now) {
     var changed = false;
-    for (final alert in weatherAlerts
-        .where((item) => !item.reportSent && !item.endsAt.isAfter(now))) {
+    for (final alert in weatherAlerts.where(
+      (item) => !item.reportSent && !item.endsAt.isAfter(now),
+    )) {
       final config = towerOperationsConfig.weatherEvents
           .where((item) => item.type == alert.type)
           .firstOrNull;
       final label = config?.label ?? alert.type.name;
-      reports.add(PtipoteMissionReport.system(
-        message: alert.preparationCompleted
-            ? '$label terminé : la préparation de la Maison a atténué l’intempérie.'
-            : '$label terminé : aucune préparation validée avant la fin de l’alerte.',
-        sourceBuildingId: 'house',
-        mailbox: Zone0MessageMailbox.companions,
-        subject: 'Rapport météo terminé',
-        concerned: 'Maison',
-        summary: alert.preparationCompleted
-            ? '$label atténué.'
-            : '$label non préparé.',
-      ));
+      reports.add(
+        PtipoteMissionReport.system(
+          message: alert.preparationCompleted
+              ? '$label terminé : la préparation de la Maison a atténué l’intempérie.'
+              : '$label terminé : aucune préparation validée avant la fin de l’alerte.',
+          sourceBuildingId: 'house',
+          mailbox: Zone0MessageMailbox.companions,
+          subject: 'Rapport météo terminé',
+          concerned: 'Maison',
+          summary: alert.preparationCompleted
+              ? '$label atténué.'
+              : '$label non préparé.',
+        ),
+      );
       alert.reportSent = true;
       changed = true;
     }
@@ -4187,30 +5529,41 @@ class Zone0GameState extends ChangeNotifier {
   String _weatherDayKey(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 
-  Zone0ActionResult fulfillWeatherPreparation(WeatherAlert alert,
-      {WeatherPreparationType type = WeatherPreparationType.provide}) {
-    final config = towerOperationsConfig.weatherEvents
-        .firstWhere((item) => item.type == alert.type);
+  Zone0ActionResult fulfillWeatherPreparation(
+    WeatherAlert alert, {
+    WeatherPreparationType type = WeatherPreparationType.provide,
+  }) {
+    final config = towerOperationsConfig.weatherEvents.firstWhere(
+      (item) => item.type == alert.type,
+    );
     if (alert.preparationCompleted) {
       return const Zone0ActionResult(
-          success: false, message: 'Préparation déjà terminée.');
+        success: false,
+        message: 'Préparation déjà terminée.',
+      );
     }
     if (resourceAmount(config.preparationItem) < config.preparationAmount) {
       return Zone0ActionResult(
-          success: false,
-          message:
-              'Il faut ${config.preparationAmount} ${config.preparationItem}.');
+        success: false,
+        message:
+            'Il faut ${config.preparationAmount} ${config.preparationItem}.',
+      );
     }
     if (type == WeatherPreparationType.provide) {
       removeResource(config.preparationItem, config.preparationAmount);
     }
     alert.preparationCompleted = true;
-    reports.add(PtipoteMissionReport.system(
-        message: 'Préparation météo validée : ${config.label} sera atténué.'));
+    reports.add(
+      PtipoteMissionReport.system(
+        message: 'Préparation météo validée : ${config.label} sera atténué.',
+      ),
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-        success: true, message: 'Préparation validée.');
+      success: true,
+      message: 'Préparation validée.',
+    );
   }
 
   bool resolveDueForageMissions({DateTime? now}) {
@@ -4265,10 +5618,8 @@ class Zone0GameState extends ChangeNotifier {
       1,
       mission.endTime.difference(mission.startTime).inSeconds,
     );
-    final elapsedSeconds = now.difference(mission.startTime).inSeconds.clamp(
-          0,
-          totalSeconds,
-        );
+    final elapsedSeconds =
+        now.difference(mission.startTime).inSeconds.clamp(0, totalSeconds);
     final ratio = (elapsedSeconds / totalSeconds).clamp(0.05, 1.0);
     _resolveMission(
       mission,
@@ -4297,8 +5648,9 @@ class Zone0GameState extends ChangeNotifier {
 
     for (final entry in pending.entries.toList()) {
       var remaining = entry.value;
-      for (final stack
-          in inventory.where((stack) => stack.resource == entry.key)) {
+      for (final stack in inventory.where(
+        (stack) => stack.resource == entry.key,
+      )) {
         if (remaining <= 0) break;
         final room = lisiereForageConfig.inventoryStackLimit - stack.amount;
         if (room <= 0) continue;
@@ -4309,8 +5661,10 @@ class Zone0GameState extends ChangeNotifier {
       }
 
       while (remaining > 0 && inventory.length < inventorySlotLimit) {
-        final add =
-            math.min(remaining, lisiereForageConfig.inventoryStackLimit);
+        final add = math.min(
+          remaining,
+          lisiereForageConfig.inventoryStackLimit,
+        );
         inventory.add(Zone0InventoryStack(resource: entry.key, amount: add));
         remaining -= add;
         addedAny = true;
@@ -4391,9 +5745,11 @@ class Zone0GameState extends ChangeNotifier {
       return 'Restaurateur niveau ${mission.requiredRestorerLevel} requis.';
     }
     if (mission.type == KernelMissionType.weather &&
-        !weatherAlerts.any((alert) =>
-            alert.type.name == mission.weatherType &&
-            alert.endsAt.isAfter(DateTime.now()))) {
+        !weatherAlerts.any(
+          (alert) =>
+              alert.type.name == mission.weatherType &&
+              alert.endsAt.isAfter(DateTime.now()),
+        )) {
       return 'En attente de l’intempérie annoncée par la Tour.';
     }
     return null;
@@ -4403,11 +5759,15 @@ class Zone0GameState extends ChangeNotifier {
     final mission = _kernelMissionById(missionId);
     if (mission == null) {
       return const Zone0ActionResult(
-          success: false, message: 'Mission inconnue.');
+        success: false,
+        message: 'Mission inconnue.',
+      );
     }
     if (completedKernelMissionIds.contains(mission.id)) {
       return const Zone0ActionResult(
-          success: false, message: 'Mission déjà terminée.');
+        success: false,
+        message: 'Mission déjà terminée.',
+      );
     }
     final prerequisite = _kernelMissionPrerequisiteMessage(mission);
     if (prerequisite != null) {
@@ -4429,10 +5789,12 @@ class Zone0GameState extends ChangeNotifier {
     removeResource(mission.requestedItem!, mission.requestedAmount);
     if (mission.type == KernelMissionType.weather) {
       final alert = weatherAlerts
-          .where((item) =>
-              item.type.name == mission.weatherType &&
-              _weatherMissionForAlert(item)?.id == mission.id &&
-              item.endsAt.isAfter(DateTime.now()))
+          .where(
+            (item) =>
+                item.type.name == mission.weatherType &&
+                _weatherMissionForAlert(item)?.id == mission.id &&
+                item.endsAt.isAfter(DateTime.now()),
+          )
           .firstOrNull;
       if (alert != null) alert.preparationCompleted = true;
     }
@@ -4441,7 +5803,9 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '${mission.title} terminée.');
+      success: true,
+      message: '${mission.title} terminée.',
+    );
   }
 
   void _completeKernelMission(KernelMissionConfig mission) {
@@ -4454,14 +5818,16 @@ class Zone0GameState extends ChangeNotifier {
       activeKernelPlanIds.add(patternId);
     }
     if (mission.xpReward > 0) _addKernelTrustXp(mission.xpReward);
-    reports.add(PtipoteMissionReport.system(
-      message: mission.mailMessage,
-      sourceBuildingId: 'kernel',
-      mailbox: Zone0MessageMailbox.kernel,
-      subject: 'Mission Kernel terminée',
-      concerned: 'Joueur',
-      summary: mission.mailMessage,
-    ));
+    reports.add(
+      PtipoteMissionReport.system(
+        message: mission.mailMessage,
+        sourceBuildingId: 'kernel',
+        mailbox: Zone0MessageMailbox.kernel,
+        subject: 'Mission Kernel terminée',
+        concerned: 'Joueur',
+        summary: mission.mailMessage,
+      ),
+    );
   }
 
   bool refreshKernelMissions({int? campHeartLevel}) {
@@ -4469,8 +5835,9 @@ class Zone0GameState extends ChangeNotifier {
     if (campHeartLevel != null) {
       _lastKnownCampHeartLevel = campHeartLevel.clamp(1, 5);
     }
-    final populationCapacity =
-        populationCapacityForCampHeartLevel(_lastKnownCampHeartLevel);
+    final populationCapacity = populationCapacityForCampHeartLevel(
+      _lastKnownCampHeartLevel,
+    );
 
     if (_needsKernelPopulationRewardMigration) {
       var alreadyCredited = math.max(
@@ -4505,8 +5872,10 @@ class Zone0GameState extends ChangeNotifier {
       final alreadyGranted = (kernelPopulationRewardsGranted[mission.id] ?? 0)
           .clamp(0, mission.populationReward);
       final remainingReward = mission.populationReward - alreadyGranted;
-      final availableCapacity =
-          math.max(0, populationCapacity - currentPopulation);
+      final availableCapacity = math.max(
+        0,
+        populationCapacity - currentPopulation,
+      );
       final populationGrantedNow = math.min(remainingReward, availableCapacity);
       if (populationGrantedNow <= 0) continue;
 
@@ -4536,8 +5905,9 @@ class Zone0GameState extends ChangeNotifier {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    for (final progress
-        in kernelMissionsForCampHeartLevel(_lastKnownCampHeartLevel)) {
+    for (final progress in kernelMissionsForCampHeartLevel(
+      _lastKnownCampHeartLevel,
+    )) {
       final mission = progress.config;
       if (progress.status != KernelMissionStatus.active ||
           notifiedKernelMissionIds.contains(mission.id) ||
@@ -4600,12 +5970,14 @@ class Zone0GameState extends ChangeNotifier {
           rewards['Organique'] = ((rewards['Organique'] ?? 0) * 0.8).round();
           incident = 'pollution légère, -20 % Organique';
         case ForageHazard.droneErrant:
-          rewards = rewards
-              .map((key, value) => MapEntry(key, (value * 0.75).round()));
+          rewards = rewards.map(
+            (key, value) => MapEntry(key, (value * 0.75).round()),
+          );
           incident = 'drone errant, -25 % gains totaux';
         case ForageHazard.climatDifficile:
-          rewards = rewards
-              .map((key, value) => MapEntry(key, (value * 0.85).round()));
+          rewards = rewards.map(
+            (key, value) => MapEntry(key, (value * 0.85).round()),
+          );
           incident = 'climat difficile, -15 % gains totaux';
         case ForageHazard.terrainInstable:
           rewards['Minéral'] = ((rewards['Minéral'] ?? 0) * 0.8).round();
@@ -4618,9 +5990,11 @@ class Zone0GameState extends ChangeNotifier {
     final mainRewards = (rewards['Organique'] ?? 0) + (rewards['Minéral'] ?? 0);
     if (mainRewards > 0) {
       final percent = wasteRecyclerConfig.wasteRewardMinimumPercent +
-          _random.nextInt(wasteRecyclerConfig.wasteRewardMaximumPercent -
-              wasteRecyclerConfig.wasteRewardMinimumPercent +
-              1);
+          _random.nextInt(
+            wasteRecyclerConfig.wasteRewardMaximumPercent -
+                wasteRecyclerConfig.wasteRewardMinimumPercent +
+                1,
+          );
       final waste = (mainRewards * percent / 100).floor();
       if (waste > 0) rewards['Déchets'] = waste;
     }
@@ -4633,11 +6007,13 @@ class Zone0GameState extends ChangeNotifier {
               : (mission.xpGain / mission.memberIds.length).round());
       final xpResult = addMissionXp(memberId, xpGain);
       xpResults[memberId] = xpResult;
-      unawaited(persistFigurineProgress(
-        figurineId: memberId,
-        xp: xpResult.xp,
-        level: xpResult.level,
-      ));
+      unawaited(
+        persistFigurineProgress(
+          figurineId: memberId,
+          xp: xpResult.xp,
+          level: xpResult.level,
+        ),
+      );
     }
     if (mission.biome == ForageBiome.plaineRiche) {
       plaineMissionsCompleted += 1;
@@ -4688,10 +6064,7 @@ class Zone0GameState extends ChangeNotifier {
                     )
                     .length <
                 securityTowerSlots) {
-          final ticks = _towerTicksForPlan(
-            TowerMissionPlan.oneHour,
-            vitality,
-          );
+          final ticks = _towerTicksForPlan(TowerMissionPlan.oneHour, vitality);
           towerMissions.add(
             TowerMission(
               id: 'tower-${DateTime.now().microsecondsSinceEpoch}-$memberId',
@@ -4782,7 +6155,9 @@ class Zone0GameState extends ChangeNotifier {
   Duration _towerDurationForTicks(int ticks) {
     final theoreticalMinutes = ticks * securityTowerConfig.tickMinutes;
     final realMinutes = math.max(
-        1, (theoreticalMinutes / lisiereForageConfig.forageTimeScale).round());
+      1,
+      (theoreticalMinutes / lisiereForageConfig.forageTimeScale).round(),
+    );
     return Duration(minutes: realMinutes);
   }
 
@@ -4790,7 +6165,9 @@ class Zone0GameState extends ChangeNotifier {
     final elapsedRatio = early
         ? (DateTime.now().difference(mission.startTime).inSeconds /
             math.max(
-                1, mission.endTime.difference(mission.startTime).inSeconds))
+              1,
+              mission.endTime.difference(mission.startTime).inSeconds,
+            ))
         : 1.0;
     final ratio = elapsedRatio.clamp(0.05, 1.0);
     final vitalityCost = math.max(1, (mission.vitalityCost * ratio).round());
@@ -4888,8 +6265,9 @@ class Zone0GameState extends ChangeNotifier {
   }) {
     final notes = <String>[];
     if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
-      notes
-          .add('$figurineName est revenu très fatigué et est allé se reposer.');
+      notes.add(
+        '$figurineName est revenu très fatigué et est allé se reposer.',
+      );
     } else if (vitality <= ptipoteStatsConfig.happyVitalityThreshold) {
       notes.add('$figurineName est revenu fatigué.');
     } else {
@@ -4917,11 +6295,7 @@ class Zone0GameState extends ChangeNotifier {
     levelOverrides[figurineId] = level;
     xpOverrides[figurineId] = xp;
     unawaited(saveRuntimeToFirebase());
-    return PtipoteXpGainResult(
-      xp: xp,
-      level: level,
-      leveledUp: leveledUp,
-    );
+    return PtipoteXpGainResult(xp: xp, level: level, leveledUp: leveledUp);
   }
 
   Future<Map<String, dynamic>?> loadCampHeartFromFirebase() async {
@@ -4939,13 +6313,10 @@ class Zone0GameState extends ChangeNotifier {
     final user = await _currentUser();
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde Cœur du Camp', () {
-      return _zone0Doc(user.uid).set(
-        <String, dynamic>{
-          'campHeart': campHeart,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      return _zone0Doc(user.uid).set(<String, dynamic>{
+        'campHeart': campHeart,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     });
   }
 
@@ -4953,20 +6324,17 @@ class Zone0GameState extends ChangeNotifier {
     final user = await _currentUser();
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde inventaire', () {
-      return _zone0Doc(user.uid).set(
-        <String, dynamic>{
-          'inventory': inventory
-              .map(
-                (stack) => <String, dynamic>{
-                  'resource': stack.resource,
-                  'amount': stack.amount,
-                },
-              )
-              .toList(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      return _zone0Doc(user.uid).set(<String, dynamic>{
+        'inventory': inventory
+            .map(
+              (stack) => <String, dynamic>{
+                'resource': stack.resource,
+                'amount': stack.amount,
+              },
+            )
+            .toList(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     });
   }
 
@@ -4974,149 +6342,167 @@ class Zone0GameState extends ChangeNotifier {
     final user = await _currentUser();
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde missions/vitalité', () {
-      return _zone0Doc(user.uid).set(
-        <String, dynamic>{
-          'vitalityOverrides': vitalityOverrides,
-          'hungerOverrides': hungerOverrides,
-          'restOverrides': restOverrides,
-          'wellRestedRewardedIds': wellRestedRewardedIds.toList(),
-          'manualRestingIds': manualRestingIds.toList(),
-          'waitingForBedIds': waitingForBedIds.toList(),
-          'hatchedPtipoteIds': hatchedPtipoteIds.toList(),
-          'autoPreferenceOverrides': autoPreferenceOverrides.map(
-            (key, value) => MapEntry(key, value.name),
-          ),
-          'towerAssignedIds': towerAssignedIds.toList(),
-          'towerMissions':
-              towerMissions.map((mission) => mission.toFirebase()).toList(),
-          'workshopOrder': null,
-          'workshopOrders':
-              workshopOrders.map((order) => order.toFirebase()).toList(),
-          'market': <String, dynamic>{
-            'stock': marketStock
-                .map((item) => <String, dynamic>{
-                      'resource': item.resource,
-                      'amount': item.amount
-                    })
-                .toList(),
-            'requests':
-                marketRequests.map((item) => item.toFirebase()).toList(),
-            'nextSaleAt': marketNextSaleAt == null
-                ? null
-                : Timestamp.fromDate(marketNextSaleAt!),
-            'lastWorkTickAt': marketLastWorkTickAt == null
-                ? null
-                : Timestamp.fromDate(marketLastWorkTickAt!),
-            'assignedPtipoteId': marketAssignedPtipoteId,
-            'assignedPtipoteName': marketAssignedPtipoteName,
-            'valueRemainder': marketValueRemainder,
-            'bioBatteriesEarned': marketBioBatteriesEarned,
-            'merchantAvailableUntil': merchantAvailableUntil == null
-                ? null
-                : Timestamp.fromDate(merchantAvailableUntil!),
-            'merchantOffers': merchantOffers
-                .map((item) => <String, dynamic>{
-                      'planName': item.planName,
-                      'price': item.price,
-                      'purchased': item.purchased,
-                      'ptibugSpecies': item.pTibugSpecies?.name,
-                    })
-                .toList(),
-          },
-          'biomeSecurity': biomeSecurity
-              .map((key, value) => MapEntry(key.name, value.toFirebase())),
-          'explorationMissions':
-              explorationMissions.map((item) => item.toFirebase()).toList(),
-          'campSecurity': refugeSafety,
-          'lastManualTowerRechargeAt': lastManualTowerRechargeAt == null
+      return _zone0Doc(user.uid).set(<String, dynamic>{
+        'vitalityOverrides': vitalityOverrides,
+        'hungerOverrides': hungerOverrides,
+        'restOverrides': restOverrides,
+        'wellRestedRewardedIds': wellRestedRewardedIds.toList(),
+        'manualRestingIds': manualRestingIds.toList(),
+        'waitingForBedIds': waitingForBedIds.toList(),
+        'hatchedPtipoteIds': hatchedPtipoteIds.toList(),
+        'autoPreferenceOverrides': autoPreferenceOverrides.map(
+          (key, value) => MapEntry(key, value.name),
+        ),
+        'towerAssignedIds': towerAssignedIds.toList(),
+        'towerMissions':
+            towerMissions.map((mission) => mission.toFirebase()).toList(),
+        'workshopOrder': null,
+        'workshopOrders':
+            workshopOrders.map((order) => order.toFirebase()).toList(),
+        'market': <String, dynamic>{
+          'stock': marketStock
+              .map(
+                (item) => <String, dynamic>{
+                  'resource': item.resource,
+                  'amount': item.amount,
+                },
+              )
+              .toList(),
+          'requests': marketRequests.map((item) => item.toFirebase()).toList(),
+          'nextSaleAt': marketNextSaleAt == null
               ? null
-              : Timestamp.fromDate(lastManualTowerRechargeAt!),
-          'kernel': <String, dynamic>{
-            'currentPopulation': currentPopulation,
-            'bioBatteries': bioBatteries,
-            'energyUnits': energyUnits,
-            'campWellbeing': campWellbeing,
-            'mealsPrepared': mealsPrepared,
-            'plaineMissionsCompleted': plaineMissionsCompleted,
-            'trustLevel': kernelTrustLevel,
-            'trustXp': kernelTrustXp,
-            'axisLevels': kernelAxisLevels.map(
-              (key, value) => MapEntry(key.name, value),
-            ),
-            'axisXp': kernelAxisXp.map(
-              (key, value) => MapEntry(key.name, value),
-            ),
-            'eventCounts': kernelEventCounts.map(
-              (key, value) => MapEntry(key.name, value),
-            ),
-            'discoveredPlanIds': discoveredKernelPlanIds.toList(),
-            'readyPlanIds': readyKernelPlanIds.toList(),
-            'activePlanIds': activeKernelPlanIds.toList(),
-            'progressHistory': kernelProgressHistory
-                .take(50)
-                .map((entry) => entry.toFirebase())
-                .toList(),
-            'completedMissionIds': completedKernelMissionIds.toList(),
-            'dismissedMissionIds': dismissedKernelMissionIds.toList(),
-            'viewedMissionIds': viewedKernelMissionIds.toList(),
-            'notifiedMissionIds': notifiedKernelMissionIds.toList(),
-            'populationRewardsGranted': kernelPopulationRewardsGranted,
-          },
-          'campGenerator': <String, dynamic>{
-            'organic': generatorOrganic,
-            'mineral': generatorMineral,
-            'totalProduced': generatorTotalProduced,
-            'cycleStartedAt': generatorCycleStartedAt == null
-                ? null
-                : Timestamp.fromDate(generatorCycleStartedAt!),
-          },
-          'recycler': <String, dynamic>{
-            'level': recyclerLevel,
-            'wasteTank': recyclerWasteTank,
-            'outputOrganic': recyclerOutputOrganic,
-            'outputMineral': recyclerOutputMineral,
-            'pendingWaste': pendingWaste,
-            'cycleStartedAt': recyclerCycleStartedAt == null
-                ? null
-                : Timestamp.fromDate(recyclerCycleStartedAt!),
-            'lastWasteGenerationAt': lastWasteGenerationAt == null
-                ? null
-                : Timestamp.fromDate(lastWasteGenerationAt!),
-          },
-          'ptibug': <String, dynamic>{
-            'nurseryLevel': plaineNurseryLevel,
-            'activePatterns':
-                activePTibugPatterns.map((item) => item.name).toList(),
-            'starterChoiceMade': starterPTibugChoiceMade,
-            'creation': pTibugCreationOrder?.toFirebase(),
-            'items': pTibugs.map((item) => item.toFirebase()).toList(),
-            'traitData':
-                pTibugTraitData.map((item) => item.toFirebase()).toList(),
-            'unlockedModules':
-                unlockedPTibugModules.map((item) => item.name).toList(),
-          },
-          'lastSimulationAt': lastSimulationAt == null
-              ? FieldValue.serverTimestamp()
-              : Timestamp.fromDate(lastSimulationAt!),
-          'lastCuddleAt': lastCuddleAt.map(
-            (key, value) => MapEntry(key, Timestamp.fromDate(value)),
-          ),
-          'weather': <String, dynamic>{
-            'dayKey': weatherScheduleDayKey,
-            'eventsToday': weatherEventsToday,
-            'nextEligibleAt': nextWeatherEligibleAt == null
-                ? null
-                : Timestamp.fromDate(nextWeatherEligibleAt!),
-            'processedManualTriggerIds':
-                processedManualWeatherTriggerIds.toList(),
-            'alerts': weatherAlerts.map((alert) => alert.toFirebase()).toList(),
-          },
-          'missions': missions.map((mission) => mission.toFirebase()).toList(),
-          'reports': reports.map((report) => report.toFirebase()).toList(),
-          'updatedAt': FieldValue.serverTimestamp(),
+              : Timestamp.fromDate(marketNextSaleAt!),
+          'lastWorkTickAt': marketLastWorkTickAt == null
+              ? null
+              : Timestamp.fromDate(marketLastWorkTickAt!),
+          'assignedPtipoteId': marketAssignedPtipoteId,
+          'assignedPtipoteName': marketAssignedPtipoteName,
+          'valueRemainder': marketValueRemainder,
+          'bioBatteriesEarned': marketBioBatteriesEarned,
+          'merchantAvailableUntil': merchantAvailableUntil == null
+              ? null
+              : Timestamp.fromDate(merchantAvailableUntil!),
+          'merchantNextArrivalAt': merchantNextArrivalAt == null
+              ? null
+              : Timestamp.fromDate(merchantNextArrivalAt!),
+          'merchantVisitsDayKey': merchantVisitsDayKey,
+          'merchantVisitsToday': merchantVisitsToday,
+          'merchantOffers': merchantOffers
+              .map(
+                (item) => <String, dynamic>{
+                  'planName': item.planName,
+                  'price': item.price,
+                  'purchased': item.purchased,
+                  'ptibugSpecies': item.pTibugSpecies?.name,
+                },
+              )
+              .toList(),
         },
-        SetOptions(merge: true),
-      );
+        'biomeSecurity': biomeSecurity.map(
+          (key, value) => MapEntry(key.name, value.toFirebase()),
+        ),
+        'explorationMissions':
+            explorationMissions.map((item) => item.toFirebase()).toList(),
+        'campSecurity': refugeSafety,
+        'lastManualTowerRechargeAt': lastManualTowerRechargeAt == null
+            ? null
+            : Timestamp.fromDate(lastManualTowerRechargeAt!),
+        'kernel': <String, dynamic>{
+          'currentPopulation': currentPopulation,
+          'bioBatteries': bioBatteries,
+          'energyUnits': energyUnits,
+          'campWellbeing': campWellbeing,
+          'mealsPrepared': mealsPrepared,
+          'plaineMissionsCompleted': plaineMissionsCompleted,
+          'trustLevel': kernelTrustLevel,
+          'trustXp': kernelTrustXp,
+          'axisLevels': kernelAxisLevels.map(
+            (key, value) => MapEntry(key.name, value),
+          ),
+          'axisXp': kernelAxisXp.map((key, value) => MapEntry(key.name, value)),
+          'eventCounts': kernelEventCounts.map(
+            (key, value) => MapEntry(key.name, value),
+          ),
+          'discoveredPlanIds': discoveredKernelPlanIds.toList(),
+          'readyPlanIds': readyKernelPlanIds.toList(),
+          'activePlanIds': activeKernelPlanIds.toList(),
+          'progressHistory': kernelProgressHistory
+              .take(50)
+              .map((entry) => entry.toFirebase())
+              .toList(),
+          'completedMissionIds': completedKernelMissionIds.toList(),
+          'dismissedMissionIds': dismissedKernelMissionIds.toList(),
+          'viewedMissionIds': viewedKernelMissionIds.toList(),
+          'notifiedMissionIds': notifiedKernelMissionIds.toList(),
+          'populationRewardsGranted': kernelPopulationRewardsGranted,
+        },
+        'campGenerator': <String, dynamic>{
+          'organic': generatorOrganic,
+          'mineral': generatorMineral,
+          'totalProduced': generatorTotalProduced,
+          'cycleStartedAt': generatorCycleStartedAt == null
+              ? null
+              : Timestamp.fromDate(generatorCycleStartedAt!),
+        },
+        'recycler': <String, dynamic>{
+          'level': recyclerLevel,
+          'wasteTank': recyclerWasteTank,
+          'outputOrganic': recyclerOutputOrganic,
+          'outputMineral': recyclerOutputMineral,
+          'pendingWaste': pendingWaste,
+          'cycleStartedAt': recyclerCycleStartedAt == null
+              ? null
+              : Timestamp.fromDate(recyclerCycleStartedAt!),
+          'lastWasteGenerationAt': lastWasteGenerationAt == null
+              ? null
+              : Timestamp.fromDate(lastWasteGenerationAt!),
+        },
+        'ptibug': <String, dynamic>{
+          'nurseryLevel': plaineNurseryLevel,
+          'activePatterns':
+              activePTibugPatterns.map((item) => item.name).toList(),
+          'starterChoiceMade': starterPTibugChoiceMade,
+          'creation': pTibugCreationOrder?.toFirebase(),
+          'items': pTibugs.map((item) => item.toFirebase()).toList(),
+          'traitData':
+              pTibugTraitData.map((item) => item.toFirebase()).toList(),
+          'unlockedModules':
+              unlockedPTibugModules.map((item) => item.name).toList(),
+          'dataReserve': <String, int>{
+            for (final entry in pTibugDataReserve.entries)
+              entry.key.name: entry.value,
+          },
+          'dataCells':
+              pTibugDataCells.map((item) => item.toFirebase()).toList(),
+          'patternProgress': pTibugPatternProgress.values
+              .map((item) => item.toFirebase())
+              .toList(),
+          'moduleInstances':
+              pTibugModuleInstances.map((item) => item.toFirebase()).toList(),
+          'moduleCraftOrders':
+              pTibugModuleCraftOrders.map((item) => item.toFirebase()).toList(),
+          'capsules': pTibugCapsules.map((item) => item.toFirebase()).toList(),
+        },
+        'lastSimulationAt': lastSimulationAt == null
+            ? FieldValue.serverTimestamp()
+            : Timestamp.fromDate(lastSimulationAt!),
+        'lastCuddleAt': lastCuddleAt.map(
+          (key, value) => MapEntry(key, Timestamp.fromDate(value)),
+        ),
+        'weather': <String, dynamic>{
+          'dayKey': weatherScheduleDayKey,
+          'eventsToday': weatherEventsToday,
+          'nextEligibleAt': nextWeatherEligibleAt == null
+              ? null
+              : Timestamp.fromDate(nextWeatherEligibleAt!),
+          'processedManualTriggerIds':
+              processedManualWeatherTriggerIds.toList(),
+          'alerts': weatherAlerts.map((alert) => alert.toFirebase()).toList(),
+        },
+        'missions': missions.map((mission) => mission.toFirebase()).toList(),
+        'reports': reports.map((report) => report.toFirebase()).toList(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     });
   }
 
@@ -5124,67 +6510,64 @@ class Zone0GameState extends ChangeNotifier {
     final user = await _currentUser();
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde bâtiments', () {
-      return _zone0Doc(user.uid).set(
-        <String, dynamic>{
-          'buildings': <String, dynamic>{
-            'fablab': <String, dynamic>{
-              'buildingId': 'fablab',
-              'buildingType': 'production',
-              'displayName': 'Fablab',
-              'state': isFablabBuilt ? 'built' : 'constructible',
-              'currentLevel': fablabLevel,
-              'atelierLevel': atelierLevel,
-              'cuisineLevel': cuisineLevel,
-              'maxLevel': fablabConfig.fablabMaxLevel,
-              'requiredCampHeartLevel': 0,
-              'stockCapacityBonusPerLevel':
-                  fablabConfig.stockCapacityBonusPerFablabLevel,
-              'isVisible': true,
-            },
-            'securityTower': <String, dynamic>{
-              'buildingId': 'securityTower',
-              'buildingType': 'security',
-              'displayName': 'Tour de sécurité',
-              'state': isSecurityTowerBuilt ? 'built' : 'constructible',
-              'currentLevel': securityTowerLevel,
-              'maxLevel': 3,
-              'requiredCampHeartLevel':
-                  securityTowerConfig.requiredCampHeartLevel,
-              'isVisible': true,
-            },
-            'market': <String, dynamic>{
-              'buildingId': 'market',
-              'buildingType': 'commerce',
-              'displayName': 'Marché',
-              'state': isMarketBuilt ? 'built' : 'constructible',
-              'currentLevel': marketLevel,
-              'maxLevel': 5,
-              'requiredCampHeartLevel': marketConfig.requiredCampHeartLevel,
-              'isVisible': true,
-            },
-            'house': <String, dynamic>{
-              'buildingId': 'house',
-              'buildingType': 'home',
-              'displayName': 'Maison',
-              'state': 'built',
-              'currentLevel': houseLevel,
-              'maxLevel': housingConfig.houseMaxLevel,
-              'alcoveCapacity': alcoveCapacity,
-              'isVisible': true,
-            },
-            'housing': <String, dynamic>{
-              'units': housingUnits,
-              'capacity': housingCapacity,
-              'thanks': communityConstructionThanks?.toFirebase(),
-            },
-            'projects': constructionProjects.map(
-              (key, value) => MapEntry(key, value.toFirebase()),
-            ),
+      return _zone0Doc(user.uid).set(<String, dynamic>{
+        'buildings': <String, dynamic>{
+          'fablab': <String, dynamic>{
+            'buildingId': 'fablab',
+            'buildingType': 'production',
+            'displayName': 'Fablab',
+            'state': isFablabBuilt ? 'built' : 'constructible',
+            'currentLevel': fablabLevel,
+            'atelierLevel': atelierLevel,
+            'cuisineLevel': cuisineLevel,
+            'maxLevel': fablabConfig.fablabMaxLevel,
+            'requiredCampHeartLevel': 0,
+            'stockCapacityBonusPerLevel':
+                fablabConfig.stockCapacityBonusPerFablabLevel,
+            'isVisible': true,
           },
-          'updatedAt': FieldValue.serverTimestamp(),
+          'securityTower': <String, dynamic>{
+            'buildingId': 'securityTower',
+            'buildingType': 'security',
+            'displayName': 'Tour de sécurité',
+            'state': isSecurityTowerBuilt ? 'built' : 'constructible',
+            'currentLevel': securityTowerLevel,
+            'maxLevel': 3,
+            'requiredCampHeartLevel':
+                securityTowerConfig.requiredCampHeartLevel,
+            'isVisible': true,
+          },
+          'market': <String, dynamic>{
+            'buildingId': 'market',
+            'buildingType': 'commerce',
+            'displayName': 'Marché',
+            'state': isMarketBuilt ? 'built' : 'constructible',
+            'currentLevel': marketLevel,
+            'maxLevel': 5,
+            'requiredCampHeartLevel': marketConfig.requiredCampHeartLevel,
+            'isVisible': true,
+          },
+          'house': <String, dynamic>{
+            'buildingId': 'house',
+            'buildingType': 'home',
+            'displayName': 'Maison',
+            'state': 'built',
+            'currentLevel': houseLevel,
+            'maxLevel': housingConfig.houseMaxLevel,
+            'alcoveCapacity': alcoveCapacity,
+            'isVisible': true,
+          },
+          'housing': <String, dynamic>{
+            'units': housingUnits,
+            'capacity': housingCapacity,
+            'thanks': communityConstructionThanks?.toFirebase(),
+          },
+          'projects': constructionProjects.map(
+            (key, value) => MapEntry(key, value.toFirebase()),
+          ),
         },
-        SetOptions(merge: true),
-      );
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     });
   }
 
@@ -5211,13 +6594,10 @@ class Zone0GameState extends ChangeNotifier {
     fields['level'] = '$level';
 
     await _runFirebaseSync('Sauvegarde XP P’TIPOTE', () {
-      return ref.set(
-        <String, dynamic>{
-          'fields': fields,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      return ref.set(<String, dynamic>{
+        'fields': fields,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     });
   }
 
@@ -5374,24 +6754,29 @@ enum WorkshopOrderStatus { active, completed, cancelled }
 enum MarketRequestStatus { noted, ready, waitingCustomer, completed, cancelled }
 
 class MarketCustomerRequest {
-  MarketCustomerRequest(
-      {required this.id,
-      required this.requestedItemId,
-      required this.requestedQuantity,
-      required this.rewardBioBattery,
-      required this.rewardWellbeing,
-      required this.createdAt,
-      required this.customerReturnTime,
-      required this.status});
+  MarketCustomerRequest({
+    required this.id,
+    required this.requestedItemId,
+    required this.requestedQuantity,
+    required this.rewardBioBattery,
+    required this.rewardWellbeing,
+    required this.createdAt,
+    required this.customerReturnTime,
+    required this.status,
+  });
 
-  factory MarketCustomerRequest.fromFirebase(Map<dynamic, dynamic> data) =>
+  factory MarketCustomerRequest.fromFirebase(
+    Map<dynamic, dynamic> data,
+  ) =>
       MarketCustomerRequest(
         id: '${data['id'] ?? ''}',
         requestedItemId: '${data['requestedItemId'] ?? ''}',
-        requestedQuantity:
-            Zone0GameState.instance._readInt(data['requestedQuantity']),
-        rewardBioBattery:
-            Zone0GameState.instance._readInt(data['rewardBioBattery']),
+        requestedQuantity: Zone0GameState.instance._readInt(
+          data['requestedQuantity'],
+        ),
+        rewardBioBattery: Zone0GameState.instance._readInt(
+          data['rewardBioBattery'],
+        ),
         rewardWellbeing:
             Zone0GameState.instance._readInt(data['rewardWellbeing']),
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
@@ -5399,8 +6784,11 @@ class MarketCustomerRequest {
         customerReturnTime:
             Zone0GameState.instance._readDate(data['customerReturnTime']) ??
                 DateTime.now(),
-        status: ForageMission._enumByName(MarketRequestStatus.values,
-            '${data['status'] ?? ''}', MarketRequestStatus.noted),
+        status: ForageMission._enumByName(
+          MarketRequestStatus.values,
+          '${data['status'] ?? ''}',
+          MarketRequestStatus.noted,
+        ),
       );
 
   final String id;
@@ -5449,10 +6837,12 @@ class WorkshopCraftOrder {
         '${data['area'] ?? ''}',
         WorkshopOrderArea.workshop,
       ),
-      requestedQuantity:
-          Zone0GameState.instance._readInt(data['requestedQuantity']),
-      completedQuantity:
-          Zone0GameState.instance._readInt(data['completedQuantity']),
+      requestedQuantity: Zone0GameState.instance._readInt(
+        data['requestedQuantity'],
+      ),
+      completedQuantity: Zone0GameState.instance._readInt(
+        data['completedQuantity'],
+      ),
       assignedPtipoteId: data['assignedPtipoteId'] as String?,
       assignedPtipoteName: data['assignedPtipoteName'] as String?,
       startTime: Zone0GameState.instance._readDate(data['startTime']) ??
@@ -5461,15 +6851,20 @@ class WorkshopCraftOrder {
           Zone0GameState.instance._readDate(data['nextCompletionTime']) ??
               DateTime.now(),
       unitDurationSeconds: math.max(
-          1,
-          Zone0GameState.instance
-              ._readInt(data['unitDurationSeconds'], fallback: 60)),
+        1,
+        Zone0GameState.instance._readInt(
+          data['unitDurationSeconds'],
+          fallback: 60,
+        ),
+      ),
       reservedResources: Map<String, int>.fromEntries(
         (data['reservedResources'] as Map? ?? const <String, dynamic>{})
             .entries
             .map(
-              (entry) => MapEntry('${entry.key}',
-                  Zone0GameState.instance._readInt(entry.value)),
+              (entry) => MapEntry(
+                '${entry.key}',
+                Zone0GameState.instance._readInt(entry.value),
+              ),
             ),
       ),
       status: ForageMission._enumByName(
@@ -5584,12 +6979,16 @@ class ConstructionProject {
   }) : depositedMaterials = depositedMaterials ?? <String, int>{};
 
   factory ConstructionProject.fromFirebase(Map<dynamic, dynamic> data) {
-    final durationSeconds = Zone0GameState.instance
-        ._readInt(data['constructionDurationSeconds'], fallback: 60);
+    final durationSeconds = Zone0GameState.instance._readInt(
+      data['constructionDurationSeconds'],
+      fallback: 60,
+    );
     Map<String, int> mapValue(Object? value) => Map<String, int>.fromEntries(
           (value as Map? ?? const <dynamic, dynamic>{}).entries.map(
-                (entry) => MapEntry('${entry.key}',
-                    Zone0GameState.instance._readInt(entry.value)),
+                (entry) => MapEntry(
+                  '${entry.key}',
+                  Zone0GameState.instance._readInt(entry.value),
+                ),
               ),
         );
     return ConstructionProject(
@@ -5636,10 +7035,13 @@ class ConstructionProject {
       !isInProgress &&
       state != ConstructionProjectState.built &&
       state != ConstructionProjectState.maxLevel;
-  bool get isReady => requirements.entries
-      .every((entry) => (depositedMaterials[entry.key] ?? 0) >= entry.value);
+  bool get isReady => requirements.entries.every(
+        (entry) => (depositedMaterials[entry.key] ?? 0) >= entry.value,
+      );
   int missingFor(String resource) => math.max(
-      0, (requirements[resource] ?? 0) - (depositedMaterials[resource] ?? 0));
+        0,
+        (requirements[resource] ?? 0) - (depositedMaterials[resource] ?? 0),
+      );
 
   void prepareNextLevel({
     required int targetLevel,
@@ -5708,12 +7110,18 @@ class PTibug {
     this.level = 1,
     this.xp = 0,
     this.traitDataId,
+    this.biologicalTraitId,
+    this.biologicalTraitLevel = 0,
     List<PTibugModuleType>? equippedModules,
+    List<String>? equippedModuleInstanceIds,
+    this.biome = PTibugBiome.savaneTropicale,
+    this.stockFullNotified = false,
     this.nextProductionAt,
   })  : storedResources = storedResources ?? <String, int>{},
-        equippedModules = equippedModules ?? <PTibugModuleType>[];
+        equippedModules = equippedModules ?? <PTibugModuleType>[],
+        equippedModuleInstanceIds = equippedModuleInstanceIds ?? <String>[];
   final String id;
-  final String displayName;
+  String displayName;
   final PTibugSpecies species;
   final String styleVariant;
   final DateTime createdAt;
@@ -5722,7 +7130,12 @@ class PTibug {
   int level;
   int xp;
   String? traitDataId;
+  String? biologicalTraitId;
+  int biologicalTraitLevel;
   final List<PTibugModuleType> equippedModules;
+  final List<String> equippedModuleInstanceIds;
+  PTibugBiome biome;
+  bool stockFullNotified;
   DateTime? nextProductionAt;
   int get storedAmount =>
       storedResources.values.fold(0, (total, value) => total + value);
@@ -5743,17 +7156,41 @@ class PTibug {
         level: Zone0GameState.instance._readInt(data['level'], fallback: 1),
         xp: Zone0GameState.instance._readInt(data['xp']),
         traitDataId: data['traitDataId'] as String?,
+        biologicalTraitId: data['biologicalTraitId'] as String?,
+        biologicalTraitLevel: Zone0GameState.instance._readInt(
+          data['biologicalTraitLevel'],
+        ),
         equippedModules: (data['equippedModules'] as List? ?? const <dynamic>[])
-            .map((value) => ForageMission._enumByName(
-                PTibugModuleType.values, '$value', PTibugModuleType.ailes))
+            .map(
+              (value) => ForageMission._enumByName(
+                PTibugModuleType.values,
+                '$value',
+                PTibugModuleType.ailes,
+              ),
+            )
             .toList(),
-        nextProductionAt:
-            Zone0GameState.instance._readDate(data['nextProductionAt']),
+        equippedModuleInstanceIds:
+            (data['equippedModuleInstanceIds'] as List? ?? const <dynamic>[])
+                .map((value) => '$value')
+                .toList(),
+        biome: ForageMission._enumByName(
+          PTibugBiome.values,
+          '${data['biome'] ?? ''}',
+          PTibugBiome.savaneTropicale,
+        ),
+        stockFullNotified: data['stockFullNotified'] == true,
+        nextProductionAt: Zone0GameState.instance._readDate(
+          data['nextProductionAt'],
+        ),
         storedResources: Map<String, int>.fromEntries(
           (data['storedResources'] as Map? ?? const <dynamic, dynamic>{})
               .entries
-              .map((entry) => MapEntry('${entry.key}',
-                  Zone0GameState.instance._readInt(entry.value))),
+              .map(
+                (entry) => MapEntry(
+                  '${entry.key}',
+                  Zone0GameState.instance._readInt(entry.value),
+                ),
+              ),
         ),
       );
 
@@ -5768,10 +7205,314 @@ class PTibug {
         'level': level,
         'xp': xp,
         'traitDataId': traitDataId,
+        'biologicalTraitId': biologicalTraitId,
+        'biologicalTraitLevel': biologicalTraitLevel,
         'equippedModules': equippedModules.map((item) => item.name).toList(),
+        'equippedModuleInstanceIds': equippedModuleInstanceIds,
+        'biome': biome.name,
+        'stockFullNotified': stockFullNotified,
         'nextProductionAt': nextProductionAt == null
             ? null
             : Timestamp.fromDate(nextProductionAt!),
+      };
+}
+
+class PTibugDataCellEntry {
+  const PTibugDataCellEntry({
+    required this.family,
+    required this.quality,
+    required this.slotIndex,
+  });
+
+  final PTibugDataFamily family;
+  final PTibugDataQuality quality;
+  final int slotIndex;
+
+  int value(PTibugConfig config) => config.dataValue(quality);
+
+  factory PTibugDataCellEntry.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugDataCellEntry(
+        family: ForageMission._enumByName(
+          PTibugDataFamily.values,
+          '${data['family'] ?? ''}',
+          PTibugDataFamily.organique,
+        ),
+        quality: ForageMission._enumByName(
+          PTibugDataQuality.values,
+          '${data['quality'] ?? ''}',
+          PTibugDataQuality.common,
+        ),
+        slotIndex: Zone0GameState.instance._readInt(data['slotIndex']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'family': family.name,
+        'quality': quality.name,
+        'slotIndex': slotIndex,
+      };
+}
+
+class PTibugDataCell {
+  PTibugDataCell({
+    required this.id,
+    required this.displayName,
+    required this.sourceBiomeId,
+    required this.entries,
+    required this.createdAt,
+    this.sourceMissionId,
+    this.dominantFamily,
+    this.isNeutralCell = false,
+    this.openedAt,
+  });
+
+  final String id;
+  final String displayName;
+  final String sourceBiomeId;
+  final String? sourceMissionId;
+  final PTibugDataFamily? dominantFamily;
+  final bool isNeutralCell;
+  final List<PTibugDataCellEntry> entries;
+  final DateTime createdAt;
+  DateTime? openedAt;
+  bool get isOpened => openedAt != null;
+
+  factory PTibugDataCell.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugDataCell(
+        id: '${data['id'] ?? ''}',
+        displayName: '${data['displayName'] ?? 'Cellule de données'}',
+        sourceBiomeId: '${data['sourceBiomeId'] ?? 'unknown'}',
+        sourceMissionId: data['sourceMissionId'] as String?,
+        dominantFamily: data['dominantFamily'] == null
+            ? null
+            : ForageMission._enumByName(
+                PTibugDataFamily.values,
+                '${data['dominantFamily']}',
+                PTibugDataFamily.organique,
+              ),
+        isNeutralCell: data['isNeutralCell'] == true,
+        entries: (data['entries'] as List? ?? const <dynamic>[])
+            .whereType<Map>()
+            .map(PTibugDataCellEntry.fromFirebase)
+            .take(5)
+            .toList(),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        openedAt: Zone0GameState.instance._readDate(data['openedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'displayName': displayName,
+        'sourceBiomeId': sourceBiomeId,
+        'sourceMissionId': sourceMissionId,
+        'dominantFamily': dominantFamily?.name,
+        'isNeutralCell': isNeutralCell,
+        'entries': entries.map((entry) => entry.toFirebase()).toList(),
+        'createdAt': Timestamp.fromDate(createdAt),
+        'openedAt': openedAt == null ? null : Timestamp.fromDate(openedAt!),
+      };
+}
+
+class PTibugPatternProgress {
+  PTibugPatternProgress({
+    required this.patternId,
+    this.state = PTibugPatternState.unknown,
+    this.masteryLevel = 0,
+    Map<PTibugDataFamily, int>? investedDataByFamily,
+    this.discoveredAt,
+    this.activatedAt,
+  }) : investedDataByFamily = investedDataByFamily ?? <PTibugDataFamily, int>{};
+
+  final String patternId;
+  PTibugPatternState state;
+  int masteryLevel;
+  final Map<PTibugDataFamily, int> investedDataByFamily;
+  DateTime? discoveredAt;
+  DateTime? activatedAt;
+
+  factory PTibugPatternProgress.fromFirebase(Map<dynamic, dynamic> data) {
+    final rawInvested =
+        data['investedDataByFamily'] as Map? ?? const <dynamic, dynamic>{};
+    return PTibugPatternProgress(
+      patternId: '${data['patternId'] ?? ''}',
+      state: ForageMission._enumByName(
+        PTibugPatternState.values,
+        '${data['state'] ?? ''}',
+        PTibugPatternState.unknown,
+      ),
+      masteryLevel: Zone0GameState.instance._readInt(data['masteryLevel']),
+      investedDataByFamily: <PTibugDataFamily, int>{
+        for (final family in PTibugDataFamily.values)
+          family: Zone0GameState.instance._readInt(rawInvested[family.name]),
+      },
+      discoveredAt: Zone0GameState.instance._readDate(data['discoveredAt']),
+      activatedAt: Zone0GameState.instance._readDate(data['activatedAt']),
+    );
+  }
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'patternId': patternId,
+        'state': state.name,
+        'masteryLevel': masteryLevel,
+        'investedDataByFamily': <String, int>{
+          for (final entry in investedDataByFamily.entries)
+            entry.key.name: entry.value,
+        },
+        'discoveredAt':
+            discoveredAt == null ? null : Timestamp.fromDate(discoveredAt!),
+        'activatedAt':
+            activatedAt == null ? null : Timestamp.fromDate(activatedAt!),
+      };
+}
+
+class PTibugModuleInstance {
+  PTibugModuleInstance({
+    required this.id,
+    required this.type,
+    this.qualityLevel = 1,
+    this.equippedPTibugId,
+    required this.createdAt,
+    this.source = 'atelier',
+  });
+
+  final String id;
+  final PTibugModuleType type;
+  int qualityLevel;
+  String? equippedPTibugId;
+  final DateTime createdAt;
+  final String source;
+  bool get isEquipped => equippedPTibugId != null;
+
+  factory PTibugModuleInstance.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugModuleInstance(
+        id: '${data['id'] ?? ''}',
+        type: ForageMission._enumByName(
+          PTibugModuleType.values,
+          '${data['type'] ?? ''}',
+          PTibugModuleType.ailes,
+        ),
+        qualityLevel: Zone0GameState.instance
+            ._readInt(data['qualityLevel'], fallback: 1)
+            .clamp(1, 99),
+        equippedPTibugId: data['equippedPTibugId'] as String?,
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        source: '${data['source'] ?? 'atelier'}',
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'type': type.name,
+        'qualityLevel': qualityLevel,
+        'equippedPTibugId': equippedPTibugId,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'source': source,
+      };
+}
+
+class PTibugModuleCraftOrder {
+  PTibugModuleCraftOrder({
+    required this.id,
+    required this.moduleType,
+    required this.startedAt,
+    required this.endsAt,
+    this.completedAt,
+  });
+
+  final String id;
+  final PTibugModuleType moduleType;
+  final DateTime startedAt;
+  final DateTime endsAt;
+  DateTime? completedAt;
+
+  bool get isActive => completedAt == null;
+
+  factory PTibugModuleCraftOrder.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugModuleCraftOrder(
+        id: '${data['id'] ?? ''}',
+        moduleType: ForageMission._enumByName(
+          PTibugModuleType.values,
+          '${data['moduleType'] ?? ''}',
+          PTibugModuleType.ailes,
+        ),
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']) ??
+            DateTime.now(),
+        endsAt:
+            Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
+        completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'moduleType': moduleType.name,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'endsAt': Timestamp.fromDate(endsAt),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
+      };
+}
+
+class PTibugCapsule {
+  const PTibugCapsule({
+    required this.id,
+    required this.species,
+    required this.styleVariant,
+    required this.displayName,
+    required this.createdAt,
+    this.biologicalTraitId,
+    this.biologicalTraitLevel = 0,
+    this.level = 1,
+    this.xp = 0,
+    this.originRefugeId,
+    this.creatorPlayerId,
+  });
+
+  final String id;
+  final PTibugSpecies species;
+  final String styleVariant;
+  final String displayName;
+  final String? biologicalTraitId;
+  final int biologicalTraitLevel;
+  final int level;
+  final int xp;
+  final String? originRefugeId;
+  final String? creatorPlayerId;
+  final DateTime createdAt;
+
+  factory PTibugCapsule.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugCapsule(
+        id: '${data['id'] ?? ''}',
+        species: ForageMission._enumByName(
+          PTibugSpecies.values,
+          '${data['species'] ?? ''}',
+          PTibugSpecies.scarabe,
+        ),
+        styleVariant: '${data['styleVariant'] ?? 'compact'}',
+        displayName: '${data['displayName'] ?? 'Capsule P’TIBUG'}',
+        biologicalTraitId: data['biologicalTraitId'] as String?,
+        biologicalTraitLevel: Zone0GameState.instance._readInt(
+          data['biologicalTraitLevel'],
+        ),
+        level: Zone0GameState.instance._readInt(data['level'], fallback: 1),
+        xp: Zone0GameState.instance._readInt(data['xp']),
+        originRefugeId: data['originRefugeId'] as String?,
+        creatorPlayerId: data['creatorPlayerId'] as String?,
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'species': species.name,
+        'styleVariant': styleVariant,
+        'displayName': displayName,
+        'biologicalTraitId': biologicalTraitId,
+        'biologicalTraitLevel': biologicalTraitLevel,
+        'level': level,
+        'xp': xp,
+        'originRefugeId': originRefugeId,
+        'creatorPlayerId': creatorPlayerId,
+        'createdAt': Timestamp.fromDate(createdAt),
       };
 }
 
@@ -5821,7 +7562,9 @@ class PTibugCreationOrder {
   DateTime? completedAt;
   bool get isActive => completedAt == null;
 
-  factory PTibugCreationOrder.fromFirebase(Map<dynamic, dynamic> data) =>
+  factory PTibugCreationOrder.fromFirebase(
+    Map<dynamic, dynamic> data,
+  ) =>
       PTibugCreationOrder(
         species: ForageMission._enumByName(
           PTibugSpecies.values,
@@ -5876,18 +7619,24 @@ class BiomeSecurityState {
       );
 
   factory BiomeSecurityState.fromFirebase(
-          ForageBiome biome, Map<dynamic, dynamic> data) =>
+    ForageBiome biome,
+    Map<dynamic, dynamic> data,
+  ) =>
       BiomeSecurityState(
         biome: biome,
-        status: ForageMission._enumByName(BiomeDiscoveryStatus.values,
-            '${data['status'] ?? ''}', BiomeDiscoveryStatus.discovered),
+        status: ForageMission._enumByName(
+          BiomeDiscoveryStatus.values,
+          '${data['status'] ?? ''}',
+          BiomeDiscoveryStatus.discovered,
+        ),
         // V1 stored local security for exploration and forage missions too.
         // Those values were not actual completed patrols, so reset them once.
         localSecurity: ForageMission._readStaticInt(data['securitySchema']) >= 2
             ? ForageMission._readStaticInt(data['localSecurity'])
             : 0,
-        explorationProgress:
-            ForageMission._readStaticInt(data['explorationProgress']),
+        explorationProgress: ForageMission._readStaticInt(
+          data['explorationProgress'],
+        ),
         lastPatrolAt: ForageMission._readDate(data['lastPatrolAt']),
         lastMissionAt: ForageMission._readDate(data['lastMissionAt']),
         lastDecayAt: ForageMission._readDate(data['lastDecayAt']),
@@ -5916,27 +7665,31 @@ class BiomeSecurityState {
 }
 
 class BiomeExplorationMission {
-  BiomeExplorationMission(
-      {required this.id,
-      required this.biome,
-      required this.memberIds,
-      required this.memberNames,
-      required this.endTime,
-      required this.explorationProgressGain,
-      DateTime? startTime})
-      : startTime = startTime ?? DateTime.now();
+  BiomeExplorationMission({
+    required this.id,
+    required this.biome,
+    required this.memberIds,
+    required this.memberNames,
+    required this.endTime,
+    required this.explorationProgressGain,
+    DateTime? startTime,
+  }) : startTime = startTime ?? DateTime.now();
 
   factory BiomeExplorationMission.fromFirebase(Map<dynamic, dynamic> data) =>
       BiomeExplorationMission(
         id: '${data['id'] ?? ''}',
-        biome: ForageMission._enumByName(ForageBiome.values,
-            '${data['biome'] ?? ''}', ForageBiome.plaineRiche),
+        biome: ForageMission._enumByName(
+          ForageBiome.values,
+          '${data['biome'] ?? ''}',
+          ForageBiome.plaineRiche,
+        ),
         memberIds: ForageMission._readStringList(data['memberIds']),
         memberNames: ForageMission._readStringList(data['memberNames']),
         startTime: ForageMission._readDate(data['startTime']) ?? DateTime.now(),
         endTime: ForageMission._readDate(data['endTime']) ?? DateTime.now(),
-        explorationProgressGain:
-            ForageMission._readStaticInt(data['explorationProgressGain']),
+        explorationProgressGain: ForageMission._readStaticInt(
+          data['explorationProgressGain'],
+        ),
       )..completedAt = ForageMission._readDate(data['completedAt']);
 
   final String id;
@@ -5964,14 +7717,17 @@ class BiomeExplorationMission {
 enum WeatherPreparationType { craft, own, provide }
 
 class WeatherAlert {
-  WeatherAlert(
-      {required this.id,
-      required this.type,
-      required this.startsAt,
-      required this.endsAt,
-      this.preparationCompleted = false,
-      this.reportSent = false,
-      this.manual = false});
+  WeatherAlert({
+    required this.id,
+    required this.type,
+    required this.startsAt,
+    required this.endsAt,
+    this.preparationCompleted = false,
+    this.reportSent = false,
+    this.manual = false,
+    this.requestedItem,
+    this.requestedAmount = 0,
+  });
   final String id;
   final TowerWeatherType type;
   final DateTime startsAt;
@@ -5979,6 +7735,8 @@ class WeatherAlert {
   bool preparationCompleted;
   bool reportSent;
   final bool manual;
+  final String? requestedItem;
+  final int requestedAmount;
 
   factory WeatherAlert.fromFirebase(Map<dynamic, dynamic> data) => WeatherAlert(
         id: '${data['id'] ?? 'weather-${DateTime.now().microsecondsSinceEpoch}'}',
@@ -5994,6 +7752,8 @@ class WeatherAlert {
         preparationCompleted: data['preparationCompleted'] == true,
         reportSent: data['reportSent'] == true,
         manual: data['manual'] == true,
+        requestedItem: data['requestedItem'] as String?,
+        requestedAmount: (data['requestedAmount'] as num?)?.round() ?? 0,
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -6004,15 +7764,18 @@ class WeatherAlert {
         'preparationCompleted': preparationCompleted,
         'reportSent': reportSent,
         'manual': manual,
+        'requestedItem': requestedItem,
+        'requestedAmount': requestedAmount,
       };
 }
 
 class MerchantOffer {
-  MerchantOffer(
-      {required this.planName,
-      required this.price,
-      this.purchased = false,
-      this.pTibugSpecies});
+  MerchantOffer({
+    required this.planName,
+    required this.price,
+    this.purchased = false,
+    this.pTibugSpecies,
+  });
   final String planName;
   final int price;
   bool purchased;
@@ -6050,8 +7813,11 @@ class TowerMission {
       sleepAfter: data['sleepAfter'] == true,
       patrolBiome: data['patrolBiome'] == null
           ? null
-          : ForageMission._enumByName(ForageBiome.values,
-              '${data['patrolBiome']}', ForageBiome.plaineRiche),
+          : ForageMission._enumByName(
+              ForageBiome.values,
+              '${data['patrolBiome']}',
+              ForageBiome.plaineRiche,
+            ),
     );
     mission.status = ForageMission._enumByName(
       TowerMissionStatus.values,
@@ -6156,8 +7922,9 @@ class ForageMission {
       securityReduction: _readStaticInt(data['securityReduction']),
       xpGain: _readStaticInt(data['xpGain']),
       xpGainByMember: _readIntMap(data['xpGainByMember']),
-      autoPreferenceByMember:
-          _readAutoPreferenceMap(data['autoPreferenceByMember']),
+      autoPreferenceByMember: _readAutoPreferenceMap(
+        data['autoPreferenceByMember'],
+      ),
     );
     mission.status = _enumByName(
       ForageMissionStatus.values,
@@ -6255,9 +8022,8 @@ class ForageMission {
 
   static Map<String, int> _readIntMap(Object? value) {
     if (value is! Map) return const <String, int>{};
-    return value.map(
-      (key, amount) => MapEntry('$key', _readStaticInt(amount)),
-    )..removeWhere((_, amount) => amount <= 0);
+    return value.map((key, amount) => MapEntry('$key', _readStaticInt(amount)))
+      ..removeWhere((_, amount) => amount <= 0);
   }
 
   static List<String> _readStringList(Object? value) {
@@ -6317,15 +8083,17 @@ class PtipoteMissionReport {
       xpGain: ForageMission._readStaticInt(data['xpGain']),
       leveledUp: data['leveledUp'] == true,
       levelAfter: ForageMission._readStaticInt(data['levelAfter']),
-      vitalityRemaining:
-          ForageMission._readStaticInt(data['vitalityRemaining']),
+      vitalityRemaining: ForageMission._readStaticInt(
+        data['vitalityRemaining'],
+      ),
       hungerRemaining: ForageMission._readStaticInt(data['hungerRemaining']),
       moodLabel: '${data['moodLabel'] ?? 'Bien'}',
       finalStateLabel: '${data['finalStateLabel'] ?? ''}',
       baseRiskPercent: ForageMission._readStaticInt(data['baseRiskPercent']),
       securityAtLaunch: ForageMission._readStaticInt(data['securityAtLaunch']),
-      securityReduction:
-          ForageMission._readStaticInt(data['securityReduction']),
+      securityReduction: ForageMission._readStaticInt(
+        data['securityReduction'],
+      ),
       realRiskPercent: ForageMission._readStaticInt(data['realRiskPercent']),
       completedAt:
           ForageMission._readDate(data['completedAt']) ?? DateTime.now(),
@@ -6389,8 +8157,12 @@ class PtipoteMissionReport {
     );
     if (stored.isNotEmpty) return stored.first;
     if (sourceBuildingId == 'kernel') return Zone0MessageMailbox.kernel;
-    if (const <String>{'fablab', 'cuisine', 'atelier', 'recycler'}
-        .contains(sourceBuildingId)) {
+    if (const <String>{
+      'fablab',
+      'cuisine',
+      'atelier',
+      'recycler',
+    }.contains(sourceBuildingId)) {
       return Zone0MessageMailbox.fablab;
     }
     return Zone0MessageMailbox.companions;

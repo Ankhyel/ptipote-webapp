@@ -62,6 +62,7 @@ class KernelMissionConfig {
     this.resourceRewards = const <String, int>{},
     this.rewardPatternId,
     this.weatherType,
+    this.weatherDemandOptions = const <String>[],
   });
 
   final String id;
@@ -84,6 +85,7 @@ class KernelMissionConfig {
   final Map<String, int> resourceRewards;
   final String? rewardPatternId;
   final String? weatherType;
+  final List<String> weatherDemandOptions;
 }
 
 class KernelMissionProgress {
