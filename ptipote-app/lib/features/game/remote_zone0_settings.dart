@@ -73,18 +73,24 @@ KernelConfig _kernel(Object? value) {
         _int(raw['wellbeingRedThreshold'], base.wellbeingRedThreshold),
     wellbeingOrangeThreshold:
         _int(raw['wellbeingOrangeThreshold'], base.wellbeingOrangeThreshold),
-    missions: missions.isEmpty
-        ? base.missions
-        : missions
-            .map(_map)
-            .whereType<Map<String, dynamic>>()
-            .map((item) => _kernelMission(
-                item,
-                base.missions
-                    .where((mission) => mission.id == item['id'])
-                    .firstOrNull))
-            .whereType<KernelMissionConfig>()
-            .toList(),
+    missions: () {
+      final parsed = missions
+          .map(_map)
+          .whereType<Map<String, dynamic>>()
+          .map((item) => _kernelMission(
+              item,
+              base.missions
+                  .where((mission) => mission.id == item['id'])
+                  .firstOrNull))
+          .whereType<KernelMissionConfig>()
+          .toList();
+      if (parsed.isEmpty) return base.missions;
+      return <KernelMissionConfig>[
+        ...parsed,
+        ...base.missions.where(
+            (fallback) => !parsed.any((mission) => mission.id == fallback.id)),
+      ];
+    }(),
     plans: base.plans.map((fallback) {
       final item = planById[fallback.id];
       return KernelPlanConfig(
@@ -570,6 +576,15 @@ TowerOperationsConfig _towerOperations(Object? value) {
           _int(raw['merchantPresenceHours'], base.merchantPresenceHours),
       merchantOfferPrices:
           _resourceMap(raw['merchantOfferPrices'], base.merchantOfferPrices),
+      maxWeatherEventsPerDay:
+          _int(raw['maxWeatherEventsPerDay'], base.maxWeatherEventsPerDay),
+      minimumWeatherIntervalMinutes: _int(raw['minimumWeatherIntervalMinutes'],
+          base.minimumWeatherIntervalMinutes),
+      manualWeatherTriggerId:
+          _string(raw['manualWeatherTriggerId'], base.manualWeatherTriggerId),
+      manualWeatherTriggerType: TowerWeatherType.values
+          .where((type) => type.name == raw['manualWeatherTriggerType'])
+          .firstOrNull,
       wellbeingBands: List<SecurityWellbeingBand>.generate(
           base.wellbeingBands.length, (index) {
         final item = index < bands.length ? _map(bands[index]) : null;
@@ -597,6 +612,8 @@ TowerOperationsConfig _towerOperations(Object? value) {
               _string(item?['preparationItem'], fallback.preparationItem),
           preparationAmount:
               _int(item?['preparationAmount'], fallback.preparationAmount),
+          occurrenceWeight:
+              _int(item?['occurrenceWeight'], fallback.occurrenceWeight),
         );
       }));
 }

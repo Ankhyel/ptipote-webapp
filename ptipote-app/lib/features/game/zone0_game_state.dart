@@ -39,6 +39,7 @@ class Zone0GameState extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   void _onRemoteConfigChanged() {
+    _consumeManualWeatherTrigger();
     notifyListeners();
   }
 
@@ -81,6 +82,10 @@ class Zone0GameState extends ChangeNotifier {
   final List<BiomeExplorationMission> explorationMissions =
       <BiomeExplorationMission>[];
   final List<WeatherAlert> weatherAlerts = <WeatherAlert>[];
+  String weatherScheduleDayKey = '';
+  int weatherEventsToday = 0;
+  DateTime? nextWeatherEligibleAt;
+  final Set<String> processedManualWeatherTriggerIds = <String>{};
   final List<MerchantOffer> merchantOffers = <MerchantOffer>[];
   final Set<String> completedKernelMissionIds = <String>{};
   final Set<String> dismissedKernelMissionIds = <String>{};
@@ -442,7 +447,8 @@ class Zone0GameState extends ChangeNotifier {
   List<KernelMissionProgress> kernelMissionsForCampHeartLevel(
     int campHeartLevel,
   ) {
-    return kernelConfig.missions
+    final persistentMissions = kernelConfig.missions
+        .where((mission) => mission.type != KernelMissionType.weather)
         .where((mission) => !dismissedKernelMissionIds.contains(mission.id))
         .map(
           (mission) => KernelMissionProgress(
@@ -454,8 +460,24 @@ class Zone0GameState extends ChangeNotifier {
                     ? KernelMissionStatus.active
                     : KernelMissionStatus.locked,
           ),
-        )
-        .toList();
+        );
+    final weatherMissions = weatherAlerts
+        .where((alert) => alert.endsAt.isAfter(DateTime.now()))
+        .map(_weatherMissionForAlert)
+        .whereType<KernelMissionConfig>()
+        .where((mission) => !dismissedKernelMissionIds.contains(mission.id))
+        .map(
+          (mission) => KernelMissionProgress(
+            config: mission,
+            progress: _kernelMissionProgress(mission),
+            status: completedKernelMissionIds.contains(mission.id)
+                ? KernelMissionStatus.completed
+                : _kernelMissionPrerequisiteMessage(mission) == null
+                    ? KernelMissionStatus.active
+                    : KernelMissionStatus.locked,
+          ),
+        );
+    return <KernelMissionProgress>[...persistentMissions, ...weatherMissions];
   }
 
   KernelMissionProgress? mainKernelMission(int campHeartLevel) {
@@ -487,6 +509,50 @@ class Zone0GameState extends ChangeNotifier {
     return kernelMissionsForCampHeartLevel(campHeartLevel)
         .where((mission) => mission.config.type == KernelMissionType.weather)
         .toList();
+  }
+
+  KernelMissionConfig? _weatherMissionForAlert(WeatherAlert alert) {
+    final template = kernelConfig.missions
+        .where((mission) =>
+            mission.type == KernelMissionType.weather &&
+            mission.weatherType == alert.type.name)
+        .firstOrNull;
+    if (template == null) return null;
+    return KernelMissionConfig(
+      id: '${template.id}-${alert.id}',
+      type: template.type,
+      title: template.title,
+      description: template.description,
+      conditionType: template.conditionType,
+      requiredAmount: template.requiredAmount,
+      populationReward: template.populationReward,
+      bioBatteryReward: template.bioBatteryReward,
+      xpReward: template.xpReward,
+      mailMessage: template.mailMessage,
+      requiredBuildingLevels: template.requiredBuildingLevels,
+      requiredKernelTrustLevel: template.requiredKernelTrustLevel,
+      requiredBreederLevel: template.requiredBreederLevel,
+      requiredBuilderLevel: template.requiredBuilderLevel,
+      requiredRestorerLevel: template.requiredRestorerLevel,
+      requestedItem: template.requestedItem,
+      requestedAmount: template.requestedAmount,
+      resourceRewards: template.resourceRewards,
+      rewardPatternId: template.rewardPatternId,
+      weatherType: template.weatherType,
+    );
+  }
+
+  KernelMissionConfig? _kernelMissionById(String missionId) {
+    final staticMission = kernelConfig.missions
+        .where((mission) => mission.id == missionId)
+        .firstOrNull;
+    if (staticMission != null) return staticMission;
+    return weatherAlerts
+        .where((alert) => alert.endsAt.isAfter(DateTime.now()))
+        .map(_weatherMissionForAlert)
+        .whereType<KernelMissionConfig>()
+        .where((mission) => mission.id == missionId)
+        .firstOrNull;
   }
 
   int activeKernelMissionCount(int campHeartLevel) =>
@@ -1683,6 +1749,9 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
     }
     if (resolveDueTowerMissions()) {
+      changed = true;
+    }
+    if (resolveWeatherCycle()) {
       changed = true;
     }
     if (_applyElapsedSimulation(figurines)) {
@@ -3467,6 +3536,23 @@ class Zone0GameState extends ChangeNotifier {
           );
       }
 
+      final weatherData = data['weather'];
+      if (weatherData is Map) {
+        weatherScheduleDayKey = '${weatherData['dayKey'] ?? ''}';
+        weatherEventsToday = _readInt(weatherData['eventsToday']);
+        nextWeatherEligibleAt = _readDate(weatherData['nextEligibleAt']);
+        processedManualWeatherTriggerIds
+          ..clear()
+          ..addAll(
+              (weatherData['processedManualTriggerIds'] as List? ?? const [])
+                  .map((id) => '$id'));
+        weatherAlerts
+          ..clear()
+          ..addAll((weatherData['alerts'] as List? ?? const [])
+              .whereType<Map>()
+              .map(WeatherAlert.fromFirebase));
+      }
+
       final kernelData = data['kernel'];
       if (kernelData is Map) {
         currentPopulation = _readInt(
@@ -3966,24 +4052,140 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   void ensureWeatherForecast() {
-    if (!isSecurityTowerBuilt ||
-        weatherAlerts.any((item) => item.endsAt.isAfter(DateTime.now()))) {
-      return;
+    resolveWeatherCycle(forceFirstAlert: true);
+  }
+
+  bool resolveWeatherCycle({DateTime? now, bool forceFirstAlert = false}) {
+    final current = now ?? DateTime.now();
+    var changed = _closeFinishedWeatherAlerts(current);
+    if (!isSecurityTowerBuilt) return changed;
+
+    final dayKey = _weatherDayKey(current);
+    if (weatherScheduleDayKey != dayKey) {
+      weatherScheduleDayKey = dayKey;
+      weatherEventsToday = 0;
+      changed = true;
     }
-    final now = DateTime.now();
-    final config = towerOperationsConfig.weatherEvents[
-        _random.nextInt(towerOperationsConfig.weatherEvents.length)];
-    weatherAlerts.add(WeatherAlert(
-        type: config.type,
-        startsAt: now.add(Duration(minutes: config.warningMinutes)),
-        endsAt: now.add(Duration(
-            minutes: config.warningMinutes + config.durationMinutes))));
-    reports.add(PtipoteMissionReport.system(
-        message:
-            'Alerte Tour : ${config.label} approche. Le Kernel demande ${config.preparationAmount} ${config.preparationItem}.'));
+    if (weatherAlerts.any((alert) => alert.endsAt.isAfter(current))) {
+      return changed;
+    }
+    if (weatherEventsToday >= towerOperationsConfig.maxWeatherEventsPerDay) {
+      return changed;
+    }
+    if (!forceFirstAlert &&
+        nextWeatherEligibleAt != null &&
+        nextWeatherEligibleAt!.isAfter(current)) {
+      return changed;
+    }
+    _createWeatherAlert(_weightedWeatherConfig(), current, manual: false);
+    return true;
+  }
+
+  Zone0ActionResult triggerManualWeatherAlert(TowerWeatherType type) {
+    if (!isSecurityTowerBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'La Tour de sécurité doit être construite.');
+    }
+    if (weatherAlerts.any((alert) => alert.endsAt.isAfter(DateTime.now()))) {
+      return const Zone0ActionResult(
+          success: false, message: 'Une alerte météo est déjà active.');
+    }
+    final config = towerOperationsConfig.weatherEvents
+        .where((item) => item.type == type)
+        .firstOrNull;
+    if (config == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cette intempérie n’est pas configurée.');
+    }
+    _createWeatherAlert(config, DateTime.now(), manual: true);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '${config.label} déclenchée pour le test.');
   }
+
+  void _consumeManualWeatherTrigger() {
+    final triggerId = towerOperationsConfig.manualWeatherTriggerId;
+    final type = towerOperationsConfig.manualWeatherTriggerType;
+    if (triggerId.isEmpty ||
+        type == null ||
+        !processedManualWeatherTriggerIds.add(triggerId)) {
+      return;
+    }
+    triggerManualWeatherAlert(type);
+  }
+
+  TowerWeatherConfig _weightedWeatherConfig() {
+    final events = towerOperationsConfig.weatherEvents;
+    final total = events.fold<int>(
+        0,
+        (accumulated, event) =>
+            accumulated + math.max(0, event.occurrenceWeight));
+    if (total <= 0) return events[_random.nextInt(events.length)];
+    var roll = _random.nextInt(total);
+    for (final event in events) {
+      roll -= math.max(0, event.occurrenceWeight);
+      if (roll < 0) return event;
+    }
+    return events.last;
+  }
+
+  void _createWeatherAlert(TowerWeatherConfig config, DateTime now,
+      {required bool manual}) {
+    final alert = WeatherAlert(
+      id: 'weather-${now.microsecondsSinceEpoch}',
+      type: config.type,
+      startsAt: now.add(Duration(minutes: config.warningMinutes)),
+      endsAt: now.add(
+          Duration(minutes: config.warningMinutes + config.durationMinutes)),
+      manual: manual,
+    );
+    weatherAlerts.add(alert);
+    weatherEventsToday += 1;
+    nextWeatherEligibleAt = alert.endsAt.add(
+      Duration(minutes: towerOperationsConfig.minimumWeatherIntervalMinutes),
+    );
+    reports.add(PtipoteMissionReport.system(
+      message:
+          'Alerte Tour : ${config.label} approche. Le Kernel demande ${config.preparationAmount} ${config.preparationItem}.',
+      sourceBuildingId: 'securityTower',
+      mailbox: Zone0MessageMailbox.companions,
+      subject: 'Alerte météo',
+      concerned: 'Maison',
+      summary:
+          '${config.label} · préparation ${config.preparationAmount} ${config.preparationItem}.',
+    ));
+  }
+
+  bool _closeFinishedWeatherAlerts(DateTime now) {
+    var changed = false;
+    for (final alert in weatherAlerts
+        .where((item) => !item.reportSent && !item.endsAt.isAfter(now))) {
+      final config = towerOperationsConfig.weatherEvents
+          .where((item) => item.type == alert.type)
+          .firstOrNull;
+      final label = config?.label ?? alert.type.name;
+      reports.add(PtipoteMissionReport.system(
+        message: alert.preparationCompleted
+            ? '$label terminé : la préparation de la Maison a atténué l’intempérie.'
+            : '$label terminé : aucune préparation validée avant la fin de l’alerte.',
+        sourceBuildingId: 'house',
+        mailbox: Zone0MessageMailbox.companions,
+        subject: 'Rapport météo terminé',
+        concerned: 'Maison',
+        summary: alert.preparationCompleted
+            ? '$label atténué.'
+            : '$label non préparé.',
+      ));
+      alert.reportSent = true;
+      changed = true;
+    }
+    if (changed) weatherAlerts.removeWhere((item) => item.reportSent);
+    return changed;
+  }
+
+  String _weatherDayKey(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 
   Zone0ActionResult fulfillWeatherPreparation(WeatherAlert alert,
       {WeatherPreparationType type = WeatherPreparationType.provide}) {
@@ -4198,8 +4400,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult fulfillKernelMission(String missionId) {
-    final mission =
-        kernelConfig.missions.where((item) => item.id == missionId).firstOrNull;
+    final mission = _kernelMissionById(missionId);
     if (mission == null) {
       return const Zone0ActionResult(
           success: false, message: 'Mission inconnue.');
@@ -4230,6 +4431,7 @@ class Zone0GameState extends ChangeNotifier {
       final alert = weatherAlerts
           .where((item) =>
               item.type.name == mission.weatherType &&
+              _weatherMissionForAlert(item)?.id == mission.id &&
               item.endsAt.isAfter(DateTime.now()))
           .firstOrNull;
       if (alert != null) alert.preparationCompleted = true;
@@ -4899,6 +5101,16 @@ class Zone0GameState extends ChangeNotifier {
           'lastCuddleAt': lastCuddleAt.map(
             (key, value) => MapEntry(key, Timestamp.fromDate(value)),
           ),
+          'weather': <String, dynamic>{
+            'dayKey': weatherScheduleDayKey,
+            'eventsToday': weatherEventsToday,
+            'nextEligibleAt': nextWeatherEligibleAt == null
+                ? null
+                : Timestamp.fromDate(nextWeatherEligibleAt!),
+            'processedManualTriggerIds':
+                processedManualWeatherTriggerIds.toList(),
+            'alerts': weatherAlerts.map((alert) => alert.toFirebase()).toList(),
+          },
           'missions': missions.map((mission) => mission.toFirebase()).toList(),
           'reports': reports.map((report) => report.toFirebase()).toList(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -5753,14 +5965,46 @@ enum WeatherPreparationType { craft, own, provide }
 
 class WeatherAlert {
   WeatherAlert(
-      {required this.type,
+      {required this.id,
+      required this.type,
       required this.startsAt,
       required this.endsAt,
-      this.preparationCompleted = false});
+      this.preparationCompleted = false,
+      this.reportSent = false,
+      this.manual = false});
+  final String id;
   final TowerWeatherType type;
   final DateTime startsAt;
   final DateTime endsAt;
   bool preparationCompleted;
+  bool reportSent;
+  final bool manual;
+
+  factory WeatherAlert.fromFirebase(Map<dynamic, dynamic> data) => WeatherAlert(
+        id: '${data['id'] ?? 'weather-${DateTime.now().microsecondsSinceEpoch}'}',
+        type: ForageMission._enumByName(
+          TowerWeatherType.values,
+          '${data['type'] ?? ''}',
+          TowerWeatherType.toxicCloud,
+        ),
+        startsAt: Zone0GameState.instance._readDate(data['startsAt']) ??
+            DateTime.now(),
+        endsAt:
+            Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
+        preparationCompleted: data['preparationCompleted'] == true,
+        reportSent: data['reportSent'] == true,
+        manual: data['manual'] == true,
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'type': type.name,
+        'startsAt': Timestamp.fromDate(startsAt),
+        'endsAt': Timestamp.fromDate(endsAt),
+        'preparationCompleted': preparationCompleted,
+        'reportSent': reportSent,
+        'manual': manual,
+      };
 }
 
 class MerchantOffer {

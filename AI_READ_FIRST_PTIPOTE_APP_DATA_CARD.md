@@ -1280,6 +1280,12 @@ La validation accepte aussi les booléens tels que `lisiere.upcomingBiomes.*.ava
 
 Les coûts d'habitation sont progressifs mais entièrement configurables dans `housing`: `initialHousingOrganicCost` et `initialHousingMineralCost` définissent le premier logement; `housingOrganicCostIncreasePerUnit` et `housingMineralCostIncreasePerUnit` définissent l'augmentation par logement déjà construit. Mettre les deux augmentations à `0` conserve un coût fixe. Le multiplicateur minéral global de construction reste appliqué ensuite par `buildingConstructionConfig.mineralCostMultiplier`.
 
+### Cycle Météo De La Tour
+
+`towerOperations` contient `maxWeatherEventsPerDay`, `minimumWeatherIntervalMinutes` et, pour chaque entrée de `weatherEvents`, un `occurrenceWeight`. Les poids sont relatifs: `2 / 3 / 1` signifie 2 chances sur 6 pour la première météo, 3 sur 6 pour la deuxième et 1 sur 6 pour la troisième. Le calendrier joueur est sauvegardé dans `users/{uid}/game/zone0.weather` avec le jour, le compteur quotidien, la prochaine date éligible, les alertes actives et les déclenchements manuels déjà consommés.
+
+Une alerte active instancie une mission Kernel à partir du template météo correspondant; son identifiant porte l'identifiant de l'alerte, ce qui la rend répétable à chaque événement. À la fin de l'intempérie, la Maison reçoit un rapport précisant si la préparation a été validée. Le Dashboard Tour propose un déclenchement manuel de test: il publie un identifiant de commande global dans `towerOperations`; chaque joueur connecté avec une Tour construite peut consommer cette commande une seule fois.
+
 - L'onglet Dashboard est nommé `Kernel`. Il est rangé en accordéons : `Bâtiments` (missions de construction), `Missions`, `Éditeur de mission`, `Confiance, axes et récompenses`, puis `Plans & Patterns`.
 - Les prérequis d'un craft ne doivent plus être édités dans la carte Craft : `patternRequired` est activé par défaut. Lorsqu'une recette est créée avec ce réglage, le Dashboard ajoute son Plan Kernel `craft-{recipeId}` si nécessaire.
 - Les prérequis de Plan configurables sont : Confiance du Kernel, Éleveur, Bâtisseur, Restaurateur et niveaux de bâtiments. Les Plans générés portent `workshopRecipeId` afin de relier la recette au Plan.

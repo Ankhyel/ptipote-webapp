@@ -48,6 +48,48 @@
       "requiredAmount": 3,
       "populationReward": 1,
       "bioBatteryReward": 0
+    },
+    {
+      "id": "weather-toxic-cloud",
+      "type": "weather",
+      "title": "Filtrer le nuage",
+      "description": "La Tour demande un Filtre pour atténuer le nuage toxique.",
+      "conditionType": "requirementsMet",
+      "requiredAmount": 1,
+      "populationReward": 0,
+      "bioBatteryReward": 1,
+      "xpReward": 2,
+      "requestedItem": "Filtre",
+      "requestedAmount": 1,
+      "weatherType": "toxicCloud"
+    },
+    {
+      "id": "weather-heat-wave",
+      "type": "weather",
+      "title": "Protéger du soleil",
+      "description": "La Tour demande une Tenue ombragée avant la forte chaleur.",
+      "conditionType": "requirementsMet",
+      "requiredAmount": 1,
+      "populationReward": 0,
+      "bioBatteryReward": 1,
+      "xpReward": 2,
+      "requestedItem": "Tenue ombragée",
+      "requestedAmount": 1,
+      "weatherType": "heatWave"
+    },
+    {
+      "id": "weather-heavy-rain",
+      "type": "weather",
+      "title": "Assécher les passages",
+      "description": "La Tour demande une Ventilation Termite avant la pluie intense.",
+      "conditionType": "requirementsMet",
+      "requiredAmount": 1,
+      "populationReward": 0,
+      "bioBatteryReward": 1,
+      "xpReward": 2,
+      "requestedItem": "Ventilation Termite",
+      "requestedAmount": 1,
+      "weatherType": "heavyRain"
     }
   ],
   "plans": [

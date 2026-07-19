@@ -20,8 +20,12 @@
     {"minimumSecurity": 80, "wellbeingModifier": 10, "label": "Serein"}
   ],
   "weatherEvents": [
-    {"type":"toxicCloud","label":"Nuage toxique","description":"La pollution réduit les récoltes proches.","durationMinutes":90,"warningMinutes":30,"preparationItem":"Filtre","preparationAmount":1},
-    {"type":"heatWave","label":"Forte chaleur","description":"La chaleur fatigue les équipes dehors.","durationMinutes":90,"warningMinutes":30,"preparationItem":"Tenue ombragée","preparationAmount":1},
-    {"type":"heavyRain","label":"Pluie intense","description":"Les chemins deviennent difficiles.","durationMinutes":60,"warningMinutes":20,"preparationItem":"Ventilation Termite","preparationAmount":1}
-  ]
+    {"type":"toxicCloud","label":"Nuage toxique","description":"La pollution réduit les récoltes proches.","durationMinutes":90,"warningMinutes":30,"preparationItem":"Filtre","preparationAmount":1,"occurrenceWeight":2},
+    {"type":"heatWave","label":"Forte chaleur","description":"La chaleur fatigue les équipes dehors.","durationMinutes":90,"warningMinutes":30,"preparationItem":"Tenue ombragée","preparationAmount":1,"occurrenceWeight":3},
+    {"type":"heavyRain","label":"Pluie intense","description":"Les chemins deviennent difficiles.","durationMinutes":60,"warningMinutes":20,"preparationItem":"Ventilation Termite","preparationAmount":1,"occurrenceWeight":1}
+  ],
+  "maxWeatherEventsPerDay": 3,
+  "minimumWeatherIntervalMinutes": 240,
+  "manualWeatherTriggerId": "",
+  "manualWeatherTriggerType": ""
 }

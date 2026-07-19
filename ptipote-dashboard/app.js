@@ -884,6 +884,9 @@ function prettyPath(path) {
     creationBioBatteryCost: "Coût en bio-batteries de création",
     creationMinutes: "Durée de création",
     sourcierPatternPrices: "Prix du Sourcier",
+    maxWeatherEventsPerDay: "Événements météo maximum par jour",
+    minimumWeatherIntervalMinutes: "Temps minimum entre deux événements (min)",
+    occurrenceWeight: "Poids de tirage météo",
   };
   return path.map((key) => labels[key] || String(key).replace(/([A-Z])/g, " $1")).join(" / ");
 }
@@ -1151,19 +1154,40 @@ function renderLisiereEditor() {
 
 function renderTowerEditor() {
   const operations = zone0Settings.towerOperations || {};
-  const { weatherEvents = [], ...operationsWithoutWeather } = operations;
+  const {
+    weatherEvents = [],
+    manualWeatherTriggerId: _manualWeatherTriggerId,
+    manualWeatherTriggerType: _manualWeatherTriggerType,
+    ...operationsWithoutWeather
+  } = operations;
+  const totalWeight = weatherEvents.reduce(
+    (total, weather) => total + Math.max(0, Number(weather.occurrenceWeight) || 0),
+    0,
+  );
   el.securityTowerConfigList.innerHTML = [
     configCard("Tour de sécurité", "tower", zone0Settings.tower, [], { open: true, meta: "Construction, emplacements et sécurité" }),
-    configCard("Rondes, exploration et marchand", "towerOperations", operationsWithoutWeather, [], { meta: "Sécurité locale et exploration" }),
+    configCard("Rondes, exploration et météo", "towerOperations", operationsWithoutWeather, [], { meta: "Sécurité locale, marchand et calendrier météo" }),
     ...weatherEvents.map((weather, index) => configCard(
       weather.label || `Intempérie ${index + 1}`,
       "towerOperations",
       weather,
       ["weatherEvents", index],
-      { meta: `${weather.description || "Alerte météo"} · préparation : ${weather.preparationAmount || 0} ${weather.preparationItem || "objet"}` },
+      { meta: `${weather.description || "Alerte météo"} · tirage ${weather.occurrenceWeight || 0}/${totalWeight || 0} · préparation : ${weather.preparationAmount || 0} ${weather.preparationItem || "objet"}` },
     )),
+    `<details class="config-card"><summary><span><strong>Déclenchement manuel</strong><small>Crée une alerte de test pour toutes les applications connectées.</small></span><span class="card-chevron">⌄</span></summary><div class="stat-form config-card-body"><div class="stat-field"><label for="manualWeatherType">Intempérie</label><select id="manualWeatherType">${weatherEvents.map((weather) => `<option value="${escapeHtml(weather.type)}">${escapeHtml(weather.label || weather.type)}</option>`).join("")}</select></div><div class="stat-field"><button class="button" id="triggerWeatherButton" type="button">Déclencher l'alerte</button></div></div></details>`,
   ].join("");
   bindZone0Inputs(el.securityTowerConfigList);
+  document.getElementById("triggerWeatherButton")?.addEventListener("click", () => {
+    const type = document.getElementById("manualWeatherType")?.value;
+    if (!type) return;
+    zone0Settings.towerOperations.manualWeatherTriggerId = `weather-${Date.now()}`;
+    zone0Settings.towerOperations.manualWeatherTriggerType = type;
+    publishZone0Settings().then(() => {
+      el.securityTowerStatus.textContent = "Alerte météo manuelle publiée. Ouvre l'application avec la Tour construite pour la recevoir.";
+    }).catch((error) => {
+      el.securityTowerStatus.textContent = `Déclenchement impossible: ${readableFirebaseError(error)}`;
+    });
+  });
 }
 
 function renderWorkshopEditor() {

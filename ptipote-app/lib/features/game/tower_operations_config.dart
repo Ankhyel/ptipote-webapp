@@ -21,6 +21,7 @@ class TowerWeatherConfig {
     required this.warningMinutes,
     required this.preparationItem,
     required this.preparationAmount,
+    required this.occurrenceWeight,
   });
 
   final TowerWeatherType type;
@@ -30,6 +31,7 @@ class TowerWeatherConfig {
   final int warningMinutes;
   final String preparationItem;
   final int preparationAmount;
+  final int occurrenceWeight;
 }
 
 class TowerOperationsConfig {
@@ -45,6 +47,10 @@ class TowerOperationsConfig {
     required this.merchantOfferPrices,
     required this.wellbeingBands,
     required this.weatherEvents,
+    required this.maxWeatherEventsPerDay,
+    required this.minimumWeatherIntervalMinutes,
+    required this.manualWeatherTriggerId,
+    required this.manualWeatherTriggerType,
   });
 
   final int biomeRevealSecurityThreshold;
@@ -58,6 +64,10 @@ class TowerOperationsConfig {
   final Map<String, int> merchantOfferPrices;
   final List<SecurityWellbeingBand> wellbeingBands;
   final List<TowerWeatherConfig> weatherEvents;
+  final int maxWeatherEventsPerDay;
+  final int minimumWeatherIntervalMinutes;
+  final String manualWeatherTriggerId;
+  final TowerWeatherType? manualWeatherTriggerType;
 
   SecurityWellbeingBand wellbeingBandFor(int security) => wellbeingBands
       .where((band) => security >= band.minimumSecurity)
@@ -80,6 +90,10 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
     'Plan Ventilation Termite': 6,
     'Plan Lumière solaire': 6,
   },
+  maxWeatherEventsPerDay: 3,
+  minimumWeatherIntervalMinutes: 240,
+  manualWeatherTriggerId: '',
+  manualWeatherTriggerType: null,
   wellbeingBands: <SecurityWellbeingBand>[
     SecurityWellbeingBand(
         minimumSecurity: 0, wellbeingModifier: -12, label: 'Vulnérable'),
@@ -100,7 +114,8 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
         durationMinutes: 90,
         warningMinutes: 30,
         preparationItem: 'Filtre',
-        preparationAmount: 1),
+        preparationAmount: 1,
+        occurrenceWeight: 2),
     TowerWeatherConfig(
         type: TowerWeatherType.heatWave,
         label: 'Forte chaleur',
@@ -108,7 +123,8 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
         durationMinutes: 90,
         warningMinutes: 30,
         preparationItem: 'Tenue ombragée',
-        preparationAmount: 1),
+        preparationAmount: 1,
+        occurrenceWeight: 3),
     TowerWeatherConfig(
         type: TowerWeatherType.heavyRain,
         label: 'Pluie intense',
@@ -116,7 +132,8 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
         durationMinutes: 60,
         warningMinutes: 20,
         preparationItem: 'Ventilation Termite',
-        preparationAmount: 1),
+        preparationAmount: 1,
+        occurrenceWeight: 1),
   ],
 );
 
