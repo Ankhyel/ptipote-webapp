@@ -10,6 +10,9 @@
   "merchantMaxVisitsPerDay": 3,
   "merchantMinimumGapHours": 4,
   "merchantRandomGapAdditionalHours": 4,
+  "merchantCallBatteryCost": 1,
+  "merchantCallMinimumWaitMinutes": 5,
+  "merchantCallRandomWaitAdditionalMinutes": 10,
   "merchantOfferPrices": {
     "Plan Filtre": 4,
     "Plan Ventilation Termite": 6,

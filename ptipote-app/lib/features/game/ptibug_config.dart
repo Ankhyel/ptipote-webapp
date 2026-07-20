@@ -224,6 +224,12 @@ class PTibugConfig {
     required this.moduleCraftCosts,
     required this.moduleCraftEnergyCosts,
     required this.moduleCraftMinutes,
+    required this.nurseryReserveCapacity,
+    required this.sourcierResearchPatternPrice,
+    required this.sourcierSpecializedCellPrice,
+    required this.sourcierNeutralCellPrice,
+    required this.sourcierModulePrice,
+    required this.sourcierCapsulePrice,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -256,6 +262,12 @@ class PTibugConfig {
   final Map<PTibugModuleType, Map<String, int>> moduleCraftCosts;
   final Map<PTibugModuleType, int> moduleCraftEnergyCosts;
   final Map<PTibugModuleType, int> moduleCraftMinutes;
+  final int nurseryReserveCapacity;
+  final int sourcierResearchPatternPrice;
+  final int sourcierSpecializedCellPrice;
+  final int sourcierNeutralCellPrice;
+  final int sourcierModulePrice;
+  final int sourcierCapsulePrice;
 
   int slotsForLevel(int level) => slotsByLevel[level.clamp(1, 3)] ?? 1;
   int moduleSlotsForLevel(int level) =>
@@ -777,6 +789,12 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     PTibugModuleType.pinces: 8,
     PTibugModuleType.reservoir: 10,
   },
+  nurseryReserveCapacity: 12,
+  sourcierResearchPatternPrice: 7,
+  sourcierSpecializedCellPrice: 4,
+  sourcierNeutralCellPrice: 5,
+  sourcierModulePrice: 6,
+  sourcierCapsulePrice: 10,
 );
 
 /// Active tuning published by the internal Dashboard. Player-owned P'TIBUG

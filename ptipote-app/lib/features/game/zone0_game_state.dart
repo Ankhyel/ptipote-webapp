@@ -28,6 +28,16 @@ import 'workshop_config.dart';
 /// Older saved reports fall back to the P'TIPOTE/PTIBUG mailbox.
 enum Zone0MessageMailbox { companions, kernel, fablab }
 
+String _ptibugDataFamilyLabel(PTibugDataFamily family) => switch (family) {
+      PTibugDataFamily.organique => 'Organique',
+      PTibugDataFamily.minerale => 'Minérale',
+      PTibugDataFamily.mycelienne => 'Mycélienne',
+      PTibugDataFamily.toxine => 'Toxine',
+      PTibugDataFamily.biomimetisme => 'Biomimétisme',
+      PTibugDataFamily.energie => 'Énergie',
+      PTibugDataFamily.comportementInsectoide => 'Comportement insectoïde',
+    };
+
 class Zone0GameState extends ChangeNotifier {
   Zone0GameState._() {
     RemoteGameConfigService.instance.addListener(_onRemoteConfigChanged);
@@ -169,6 +179,7 @@ class Zone0GameState extends ChangeNotifier {
   DateTime? lastManualTowerRechargeAt;
   DateTime? merchantAvailableUntil;
   DateTime? merchantNextArrivalAt;
+  DateTime? merchantCallRequestedAt;
   String merchantVisitsDayKey = '';
   int merchantVisitsToday = 0;
   String? marketAssignedPtipoteId;
@@ -241,6 +252,12 @@ class Zone0GameState extends ChangeNotifier {
   Duration? get merchantNextArrivalIn => merchantNextArrivalAt == null
       ? null
       : merchantNextArrivalAt!.difference(DateTime.now());
+
+  bool get hasPendingMerchantCall =>
+      merchantCallRequestedAt != null &&
+      merchantNextArrivalAt != null &&
+      !isMerchantAvailable &&
+      DateTime.now().isBefore(merchantNextArrivalAt!);
 
   bool isBiomeUnlocked(ForageBiome biome) =>
       biomeSecurity[biome]?.status == BiomeDiscoveryStatus.unlocked;
@@ -3486,6 +3503,10 @@ class Zone0GameState extends ChangeNotifier {
         biologicalTraitLevel: bug.biologicalTraitLevel,
         level: bug.level,
         xp: bug.xp,
+        originRefugeId: 'zone0-refuge',
+        creatorPlayerId: 'zone0-player',
+        certificationId:
+            'cert-${bug.id}-${DateTime.now().microsecondsSinceEpoch}',
         createdAt: DateTime.now(),
       ),
     );
@@ -3504,6 +3525,13 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
         success: false,
         message: 'Capsule introuvable.',
+      );
+    }
+    if (pTibugs.length >= pTibugConfig.nurseryReserveCapacity) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'La r\u00e9serve de la Nurserie est pleine (${pTibugConfig.nurseryReserveCapacity}).',
       );
     }
     pTibugCapsules.remove(capsule);
@@ -4446,6 +4474,9 @@ class Zone0GameState extends ChangeNotifier {
           marketData['merchantAvailableUntil'],
         );
         merchantNextArrivalAt = _readDate(marketData['merchantNextArrivalAt']);
+        merchantCallRequestedAt = _readDate(
+          marketData['merchantCallRequestedAt'],
+        );
         merchantVisitsDayKey = '${marketData['merchantVisitsDayKey'] ?? ''}';
         merchantVisitsToday = _readInt(marketData['merchantVisitsToday']);
         merchantOffers
@@ -4453,20 +4484,7 @@ class Zone0GameState extends ChangeNotifier {
           ..addAll(
             (marketData['merchantOffers'] as List? ?? const <dynamic>[])
                 .whereType<Map>()
-                .map(
-                  (item) => MerchantOffer(
-                    planName: '${item['planName'] ?? ''}',
-                    price: _readInt(item['price']),
-                    purchased: item['purchased'] == true,
-                    pTibugSpecies: item['ptibugSpecies'] == null
-                        ? null
-                        : ForageMission._enumByName(
-                            PTibugSpecies.values,
-                            '${item['ptibugSpecies']}',
-                            PTibugSpecies.scarabe,
-                          ),
-                  ),
-                )
+                .map(MerchantOffer.fromFirebase)
                 .where((item) => item.planName.isNotEmpty),
           );
       }
@@ -4909,6 +4927,41 @@ class Zone0GameState extends ChangeNotifier {
         changed = true;
       }
     }
+
+    // Older saves can contain cells created before the five-entry contract.
+    // Only unopened cells are completed, so no already-granted data is added.
+    for (final cell in pTibugDataCells.where((item) => !item.isOpened)) {
+      final fallbackFamily = cell.dominantFamily ?? PTibugDataFamily.organique;
+      while (cell.entries.length < 5) {
+        cell.entries.add(
+          PTibugDataCellEntry(
+            family: fallbackFamily,
+            quality: PTibugDataQuality.common,
+            slotIndex: cell.entries.length,
+          ),
+        );
+        changed = true;
+      }
+      if (cell.entries.length > 5) {
+        cell.entries.removeRange(5, cell.entries.length);
+        changed = true;
+      }
+    }
+
+    for (var index = 0; index < pTibugCapsules.length; index += 1) {
+      final capsule = pTibugCapsules[index];
+      if (capsule.originRefugeId != null &&
+          capsule.creatorPlayerId != null &&
+          capsule.certificationId != null) {
+        continue;
+      }
+      pTibugCapsules[index] = capsule.copyWith(
+        originRefugeId: capsule.originRefugeId ?? 'legacy-refuge',
+        creatorPlayerId: capsule.creatorPlayerId ?? 'legacy-player',
+        certificationId: capsule.certificationId ?? 'legacy-${capsule.id}',
+      );
+      changed = true;
+    }
     return changed;
   }
 
@@ -5221,6 +5274,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     merchantVisitsToday += 1;
     merchantNextArrivalAt = null;
+    merchantCallRequestedAt = null;
     merchantAvailableUntil = current.add(
       Duration(hours: towerOperationsConfig.merchantPresenceHours),
     );
@@ -5228,7 +5282,11 @@ class Zone0GameState extends ChangeNotifier {
       ..clear()
       ..addAll(
         towerOperationsConfig.merchantOfferPrices.entries.map(
-          (entry) => MerchantOffer(planName: entry.key, price: entry.value),
+          (entry) => MerchantOffer(
+            planName: entry.key,
+            price: entry.value,
+            kind: MerchantOfferKind.plan,
+          ),
         ),
       );
     merchantOffers.addAll(
@@ -5240,9 +5298,66 @@ class Zone0GameState extends ChangeNotifier {
                   'Pattern ${pTibugConfig.species[entry.key]!.displayName}',
               price: entry.value,
               pTibugSpecies: entry.key,
+              kind: MerchantOfferKind.speciesPattern,
             ),
           ),
     );
+    final unknownResearch = pTibugConfig.researchPatterns.values
+        .where(
+          (pattern) =>
+              (pTibugPatternProgress[pattern.id]?.state ??
+                  PTibugPatternState.unknown) ==
+              PTibugPatternState.unknown,
+        )
+        .toList(growable: false);
+    if (unknownResearch.isNotEmpty) {
+      final pattern = unknownResearch[_random.nextInt(unknownResearch.length)];
+      merchantOffers.add(
+        MerchantOffer(
+          planName: 'Recherche ${pattern.displayName}',
+          price: pTibugConfig.sourcierResearchPatternPrice,
+          kind: MerchantOfferKind.researchPattern,
+          patternId: pattern.id,
+        ),
+      );
+    }
+    final families = PTibugDataFamily.values;
+    final dominant = families[_random.nextInt(families.length)];
+    merchantOffers.addAll(<MerchantOffer>[
+      MerchantOffer(
+        planName: 'Cellule ${_ptibugDataFamilyLabel(dominant)}',
+        price: pTibugConfig.sourcierSpecializedCellPrice,
+        kind: MerchantOfferKind.specializedDataCell,
+        dominantDataFamily: dominant,
+      ),
+      MerchantOffer(
+        planName: 'Cellule neutre',
+        price: pTibugConfig.sourcierNeutralCellPrice,
+        kind: MerchantOfferKind.neutralDataCell,
+      ),
+      MerchantOffer(
+        planName: 'Module ${PTibugModuleType.values.first.displayName} I',
+        price: pTibugConfig.sourcierModulePrice,
+        kind: MerchantOfferKind.module,
+        moduleType: PTibugModuleType.values.first,
+      ),
+      MerchantOffer(
+        planName:
+            'Capsule ${pTibugConfig.species[PTibugSpecies.scarabe]!.displayName}',
+        price: pTibugConfig.sourcierCapsulePrice,
+        kind: MerchantOfferKind.capsule,
+        capsule: PTibugCapsule(
+          id: 'merchant-template-scarabe',
+          species: PTibugSpecies.scarabe,
+          styleVariant: 'compact',
+          displayName: 'Scarabé',
+          originRefugeId: 'sourcier',
+          creatorPlayerId: 'sourcier',
+          certificationId: 'sourcier-scarabe',
+          createdAt: current,
+        ),
+      ),
+    ]);
     reports.add(
       PtipoteMissionReport.system(
         message:
@@ -5265,8 +5380,60 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
   }
 
+  Zone0ActionResult requestMerchantVisit() {
+    final current = DateTime.now();
+    _resetMerchantVisitDay(current);
+    if (isMerchantAvailable) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Sourcier est déjà présent au Marché.',
+      );
+    }
+    if (merchantVisitsRemaining <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Sourcier a déjà effectué ses passages aujourd’hui.',
+      );
+    }
+    if (hasPendingMerchantCall) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Un appel au Sourcier est déjà en cours.',
+      );
+    }
+    final batteryCost =
+        math.max(0, towerOperationsConfig.merchantCallBatteryCost);
+    if (bioBatteries < batteryCost) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Il faut $batteryCost bio-batterie(s) pour appeler le Sourcier.',
+      );
+    }
+
+    final randomWait = math.max(
+      0,
+      towerOperationsConfig.merchantCallRandomWaitAdditionalMinutes,
+    );
+    final waitMinutes = math.max(
+          0,
+          towerOperationsConfig.merchantCallMinimumWaitMinutes,
+        ) +
+        (randomWait == 0 ? 0 : _random.nextInt(randomWait + 1));
+    bioBatteries -= batteryCost;
+    merchantCallRequestedAt = current;
+    merchantNextArrivalAt = current.add(Duration(minutes: waitMinutes));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Le Sourcier arrivera dans $waitMinutes min.',
+    );
+  }
+
   void _finishMerchantVisit(DateTime current, {required String message}) {
     merchantAvailableUntil = null;
+    merchantCallRequestedAt = null;
     merchantOffers.clear();
     merchantNextArrivalAt = _nextMerchantArrivalAfter(current);
     reports.add(
@@ -5314,7 +5481,8 @@ class Zone0GameState extends ChangeNotifier {
     }
     bioBatteries -= offer.price;
     offer.purchased = true;
-    if (offer.pTibugSpecies != null) {
+    if (offer.kind == MerchantOfferKind.speciesPattern &&
+        offer.pTibugSpecies != null) {
       final species = offer.pTibugSpecies!;
       activePTibugPatterns.add(species);
       final planId = pTibugConfig.patterns[species]!.kernelPlanId;
@@ -5326,6 +5494,47 @@ class Zone0GameState extends ChangeNotifier {
           message:
               'Le Sourcier partage le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut maintenant l’utiliser.',
           sourceBuildingId: 'market',
+        ),
+      );
+    } else if (offer.kind == MerchantOfferKind.researchPattern &&
+        offer.patternId != null) {
+      final progress = _patternProgressFor(offer.patternId!);
+      progress.state = PTibugPatternState.discovered;
+      reports.add(
+        PtipoteMissionReport.system(
+          message: '${offer.planName} a été identifiée par le Sourcier.',
+          sourceBuildingId: 'kernel',
+          subject: 'Recherche disponible',
+          concerned: 'Kernel',
+          summary: offer.planName,
+        ),
+      );
+    } else if (offer.kind == MerchantOfferKind.specializedDataCell ||
+        offer.kind == MerchantOfferKind.neutralDataCell) {
+      pTibugDataCells.add(
+        _createMerchantDataCell(
+          neutral: offer.kind == MerchantOfferKind.neutralDataCell,
+          dominant: offer.dominantDataFamily,
+        ),
+      );
+    } else if (offer.kind == MerchantOfferKind.module &&
+        offer.moduleType != null) {
+      pTibugModuleInstances.add(
+        PTibugModuleInstance(
+          id: 'sourcier-module-${DateTime.now().microsecondsSinceEpoch}',
+          type: offer.moduleType!,
+          createdAt: DateTime.now(),
+          source: 'sourcier',
+        ),
+      );
+    } else if (offer.kind == MerchantOfferKind.capsule &&
+        offer.capsule != null) {
+      pTibugCapsules.add(
+        offer.capsule!.copyWith(
+          id: 'sourcier-capsule-${DateTime.now().microsecondsSinceEpoch}',
+          createdAt: DateTime.now(),
+          certificationId:
+              'sourcier-cert-${DateTime.now().microsecondsSinceEpoch}',
         ),
       );
     } else {
@@ -5347,6 +5556,42 @@ class Zone0GameState extends ChangeNotifier {
     return Zone0ActionResult(
       success: true,
       message: '${offer.planName} acheté.',
+    );
+  }
+
+  PTibugDataCell _createMerchantDataCell({
+    required bool neutral,
+    PTibugDataFamily? dominant,
+  }) {
+    final selectedDominant =
+        neutral ? null : (dominant ?? PTibugDataFamily.organique);
+    final shuffledFamilies = List<PTibugDataFamily>.from(
+      PTibugDataFamily.values,
+    )..shuffle(_random);
+    return PTibugDataCell(
+      id: 'sourcier-cell-${DateTime.now().microsecondsSinceEpoch}',
+      displayName: neutral
+          ? 'Cellule neutre du Sourcier'
+          : 'Cellule ${_ptibugDataFamilyLabel(selectedDominant!)} du Sourcier',
+      sourceBiomeId: 'sourcier',
+      dominantFamily: selectedDominant,
+      isNeutralCell: neutral,
+      entries: List<PTibugDataCellEntry>.generate(5, (index) {
+        final family = neutral
+            ? shuffledFamilies[index % shuffledFamilies.length]
+            : index < 2
+                ? selectedDominant!
+                : _pickWeightedDataFamily(<PTibugDataFamily, int>{
+                    for (final value in PTibugDataFamily.values) value: 1,
+                    selectedDominant!: 5,
+                  });
+        return PTibugDataCellEntry(
+          family: family,
+          quality: _pickWeightedDataQuality(),
+          slotIndex: index,
+        );
+      }),
+      createdAt: DateTime.now(),
     );
   }
 
@@ -6018,6 +6263,15 @@ class Zone0GameState extends ChangeNotifier {
     if (mission.biome == ForageBiome.plaineRiche) {
       plaineMissionsCompleted += 1;
     }
+    final dataCells = _createDataCellsForMission(
+      mission: mission,
+      duration: duration,
+      intensity: intensity,
+      completedAt: completedAt,
+    );
+    if (dataCells.isNotEmpty) {
+      pTibugDataCells.addAll(dataCells);
+    }
     final localState = biomeSecurity[mission.biome];
     if (localState != null) {
       localState.lastMissionAt = completedAt;
@@ -6098,6 +6352,8 @@ class Zone0GameState extends ChangeNotifier {
     final finalState = <String>[
       if (emergencyReturn)
         'Retour d’urgence : le butin est calculé au temps écoulé, avec +5% de risque événement.',
+      if (dataCells.isNotEmpty)
+        '${dataCells.length} Cellule${dataCells.length > 1 ? 's' : ''} de données à analyser dans le Kernel.',
       ...memberStateLabels,
     ].join(' ');
     reports.add(
@@ -6126,11 +6382,120 @@ class Zone0GameState extends ChangeNotifier {
         subject: 'Retour de mission Lisière',
         concerned: mission.figurineName,
         summary: incident == 'aucun'
-            ? 'Mission terminée.'
+            ? (dataCells.isEmpty
+                ? 'Mission terminée.'
+                : '${dataCells.length} Cellule${dataCells.length > 1 ? 's' : ''} de données trouvée${dataCells.length > 1 ? 's' : ''}.')
             : 'Événement : $incident.',
       ),
     );
     mission.status = ForageMissionStatus.completed;
+  }
+
+  /// Creates scientific discoveries once for a completed Lisière mission.
+  /// The legacy four mission biomes are mapped to the closest P'TIBUG biome
+  /// until all eight zones are directly explorable in the Lisière UI.
+  List<PTibugDataCell> _createDataCellsForMission({
+    required ForageMission mission,
+    required ForageDurationConfig duration,
+    required ForageIntensityConfig intensity,
+    required DateTime completedAt,
+  }) {
+    if (pTibugDataCells.any((cell) => cell.sourceMissionId == mission.id)) {
+      return const <PTibugDataCell>[];
+    }
+    final biomeId = _ptibugBiomeForForageBiome(mission.biome);
+    final biome = pTibugConfig.biomes[biomeId];
+    if (biome == null) return const <PTibugDataCell>[];
+
+    final attempts = pTibugConfig.maxCellsForMissionHours(
+      duration.theoreticalHours,
+    );
+    final chance =
+        (pTibugConfig.baseCellChancePercent + intensity.riskModifierPercent)
+            .clamp(0, 100);
+    final cells = <PTibugDataCell>[];
+    for (var attempt = 0; attempt < attempts; attempt += 1) {
+      if (_random.nextInt(100) >= chance) continue;
+      final isNeutral =
+          _random.nextInt(100) < pTibugConfig.neutralCellChancePercent;
+      final weights = Map<PTibugDataFamily, int>.from(biome.dataWeights);
+      if (biomeId == PTibugBiome.savaneTropicale && plaineNurseryLevel > 0) {
+        weights[PTibugDataFamily.comportementInsectoide] =
+            (weights[PTibugDataFamily.comportementInsectoide] ?? 0) +
+                biome.nurseryInsectBehaviourWeight;
+      }
+      final dominant = isNeutral ? null : _pickWeightedDataFamily(weights);
+      final entries = <PTibugDataCellEntry>[];
+      for (var slot = 0; slot < 5; slot += 1) {
+        final family = !isNeutral && slot < 2
+            ? dominant!
+            : _pickWeightedDataFamily(weights);
+        entries.add(
+          PTibugDataCellEntry(
+            family: family,
+            quality: _pickWeightedDataQuality(),
+            slotIndex: slot,
+          ),
+        );
+      }
+      cells.add(
+        PTibugDataCell(
+          id: 'cell-${mission.id}-$attempt',
+          displayName: isNeutral
+              ? 'Cellule neutre · ${biome.displayName}'
+              : 'Cellule ${_ptibugDataFamilyLabel(dominant!)} · ${biome.displayName}',
+          sourceBiomeId: biomeId.name,
+          sourceMissionId: mission.id,
+          dominantFamily: dominant,
+          isNeutralCell: isNeutral,
+          entries: entries,
+          createdAt: completedAt,
+        ),
+      );
+    }
+    return cells;
+  }
+
+  PTibugBiome _ptibugBiomeForForageBiome(ForageBiome biome) => switch (biome) {
+        ForageBiome.colline => PTibugBiome.hautsRefuges,
+        ForageBiome.plaineRiche => PTibugBiome.savaneTropicale,
+        ForageBiome.bassinMineral => PTibugBiome.semiDesertGarrigueTropicale,
+        ForageBiome.sousBois => PTibugBiome.foretHumideRelictuelle,
+      };
+
+  PTibugDataFamily _pickWeightedDataFamily(
+    Map<PTibugDataFamily, int> weights,
+  ) {
+    final positiveWeights = weights.entries
+        .where((entry) => entry.value > 0)
+        .toList(growable: false);
+    if (positiveWeights.isEmpty) return PTibugDataFamily.organique;
+    final total = positiveWeights.fold<int>(
+      0,
+      (totalWeight, entry) => totalWeight + entry.value,
+    );
+    var cursor = _random.nextInt(total);
+    for (final entry in positiveWeights) {
+      cursor -= entry.value;
+      if (cursor < 0) return entry.key;
+    }
+    return positiveWeights.last.key;
+  }
+
+  PTibugDataQuality _pickWeightedDataQuality() {
+    final weights = pTibugConfig.dataQualityWeights.entries
+        .where((entry) => entry.value > 0)
+        .toList(growable: false);
+    final total = weights.fold<int>(
+      0,
+      (totalWeight, entry) => totalWeight + entry.value,
+    );
+    var cursor = _random.nextInt(math.max(1, total));
+    for (final entry in weights) {
+      cursor -= entry.value;
+      if (cursor < 0) return entry.key;
+    }
+    return PTibugDataQuality.common;
   }
 
   int _towerTicksForPlan(TowerMissionPlan plan, int vitality) {
@@ -6385,18 +6750,13 @@ class Zone0GameState extends ChangeNotifier {
           'merchantNextArrivalAt': merchantNextArrivalAt == null
               ? null
               : Timestamp.fromDate(merchantNextArrivalAt!),
+          'merchantCallRequestedAt': merchantCallRequestedAt == null
+              ? null
+              : Timestamp.fromDate(merchantCallRequestedAt!),
           'merchantVisitsDayKey': merchantVisitsDayKey,
           'merchantVisitsToday': merchantVisitsToday,
-          'merchantOffers': merchantOffers
-              .map(
-                (item) => <String, dynamic>{
-                  'planName': item.planName,
-                  'price': item.price,
-                  'purchased': item.purchased,
-                  'ptibugSpecies': item.pTibugSpecies?.name,
-                },
-              )
-              .toList(),
+          'merchantOffers':
+              merchantOffers.map((item) => item.toFirebase()).toList(),
         },
         'biomeSecurity': biomeSecurity.map(
           (key, value) => MapEntry(key.name, value.toFirebase()),
@@ -7465,6 +7825,7 @@ class PTibugCapsule {
     this.xp = 0,
     this.originRefugeId,
     this.creatorPlayerId,
+    this.certificationId,
   });
 
   final String id;
@@ -7477,6 +7838,7 @@ class PTibugCapsule {
   final int xp;
   final String? originRefugeId;
   final String? creatorPlayerId;
+  final String? certificationId;
   final DateTime createdAt;
 
   factory PTibugCapsule.fromFirebase(Map<dynamic, dynamic> data) =>
@@ -7497,6 +7859,7 @@ class PTibugCapsule {
         xp: Zone0GameState.instance._readInt(data['xp']),
         originRefugeId: data['originRefugeId'] as String?,
         creatorPlayerId: data['creatorPlayerId'] as String?,
+        certificationId: data['certificationId'] as String?,
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
             DateTime.now(),
       );
@@ -7512,8 +7875,38 @@ class PTibugCapsule {
         'xp': xp,
         'originRefugeId': originRefugeId,
         'creatorPlayerId': creatorPlayerId,
+        'certificationId': certificationId,
         'createdAt': Timestamp.fromDate(createdAt),
       };
+
+  PTibugCapsule copyWith({
+    String? id,
+    PTibugSpecies? species,
+    String? styleVariant,
+    String? displayName,
+    String? biologicalTraitId,
+    int? biologicalTraitLevel,
+    int? level,
+    int? xp,
+    String? originRefugeId,
+    String? creatorPlayerId,
+    String? certificationId,
+    DateTime? createdAt,
+  }) =>
+      PTibugCapsule(
+        id: id ?? this.id,
+        species: species ?? this.species,
+        styleVariant: styleVariant ?? this.styleVariant,
+        displayName: displayName ?? this.displayName,
+        biologicalTraitId: biologicalTraitId ?? this.biologicalTraitId,
+        biologicalTraitLevel: biologicalTraitLevel ?? this.biologicalTraitLevel,
+        level: level ?? this.level,
+        xp: xp ?? this.xp,
+        originRefugeId: originRefugeId ?? this.originRefugeId,
+        creatorPlayerId: creatorPlayerId ?? this.creatorPlayerId,
+        certificationId: certificationId ?? this.certificationId,
+        createdAt: createdAt ?? this.createdAt,
+      );
 }
 
 class PTibugTraitData {
@@ -7769,17 +8162,86 @@ class WeatherAlert {
       };
 }
 
+enum MerchantOfferKind {
+  plan,
+  speciesPattern,
+  researchPattern,
+  specializedDataCell,
+  neutralDataCell,
+  module,
+  capsule,
+}
+
 class MerchantOffer {
   MerchantOffer({
     required this.planName,
     required this.price,
     this.purchased = false,
     this.pTibugSpecies,
+    this.kind = MerchantOfferKind.plan,
+    this.patternId,
+    this.dominantDataFamily,
+    this.moduleType,
+    this.capsule,
   });
   final String planName;
   final int price;
   bool purchased;
   final PTibugSpecies? pTibugSpecies;
+  final MerchantOfferKind kind;
+  final String? patternId;
+  final PTibugDataFamily? dominantDataFamily;
+  final PTibugModuleType? moduleType;
+  final PTibugCapsule? capsule;
+
+  factory MerchantOffer.fromFirebase(Map<dynamic, dynamic> data) =>
+      MerchantOffer(
+        planName: '${data['planName'] ?? 'Offre du Sourcier'}',
+        price: Zone0GameState.instance._readInt(data['price']),
+        purchased: data['purchased'] == true,
+        pTibugSpecies: data['pTibugSpecies'] == null
+            ? null
+            : ForageMission._enumByName(
+                PTibugSpecies.values,
+                '${data['pTibugSpecies']}',
+                PTibugSpecies.scarabe,
+              ),
+        kind: ForageMission._enumByName(
+          MerchantOfferKind.values,
+          '${data['kind'] ?? ''}',
+          MerchantOfferKind.plan,
+        ),
+        patternId: data['patternId'] as String?,
+        dominantDataFamily: data['dominantDataFamily'] == null
+            ? null
+            : ForageMission._enumByName(
+                PTibugDataFamily.values,
+                '${data['dominantDataFamily']}',
+                PTibugDataFamily.organique,
+              ),
+        moduleType: data['moduleType'] == null
+            ? null
+            : ForageMission._enumByName(
+                PTibugModuleType.values,
+                '${data['moduleType']}',
+                PTibugModuleType.ailes,
+              ),
+        capsule: data['capsule'] is Map
+            ? PTibugCapsule.fromFirebase(data['capsule'] as Map)
+            : null,
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'planName': planName,
+        'price': price,
+        'purchased': purchased,
+        'pTibugSpecies': pTibugSpecies?.name,
+        'kind': kind.name,
+        'patternId': patternId,
+        'dominantDataFamily': dominantDataFamily?.name,
+        'moduleType': moduleType?.name,
+        'capsule': capsule?.toFirebase(),
+      };
 }
 
 class TowerMission {

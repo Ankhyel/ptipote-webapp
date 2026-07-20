@@ -483,6 +483,30 @@ PTibugConfig _ptibug(Object? value) {
     moduleCraftCosts: base.moduleCraftCosts,
     moduleCraftEnergyCosts: base.moduleCraftEnergyCosts,
     moduleCraftMinutes: base.moduleCraftMinutes,
+    nurseryReserveCapacity: _int(
+      raw['nurseryReserveCapacity'],
+      base.nurseryReserveCapacity,
+    ),
+    sourcierResearchPatternPrice: _int(
+      raw['sourcierResearchPatternPrice'],
+      base.sourcierResearchPatternPrice,
+    ),
+    sourcierSpecializedCellPrice: _int(
+      raw['sourcierSpecializedCellPrice'],
+      base.sourcierSpecializedCellPrice,
+    ),
+    sourcierNeutralCellPrice: _int(
+      raw['sourcierNeutralCellPrice'],
+      base.sourcierNeutralCellPrice,
+    ),
+    sourcierModulePrice: _int(
+      raw['sourcierModulePrice'],
+      base.sourcierModulePrice,
+    ),
+    sourcierCapsulePrice: _int(
+      raw['sourcierCapsulePrice'],
+      base.sourcierCapsulePrice,
+    ),
   );
 }
 
@@ -794,6 +818,18 @@ TowerOperationsConfig _towerOperations(Object? value) {
     merchantRandomGapAdditionalHours: _int(
       raw['merchantRandomGapAdditionalHours'],
       base.merchantRandomGapAdditionalHours,
+    ),
+    merchantCallBatteryCost: _int(
+      raw['merchantCallBatteryCost'],
+      base.merchantCallBatteryCost,
+    ),
+    merchantCallMinimumWaitMinutes: _int(
+      raw['merchantCallMinimumWaitMinutes'],
+      base.merchantCallMinimumWaitMinutes,
+    ),
+    merchantCallRandomWaitAdditionalMinutes: _int(
+      raw['merchantCallRandomWaitAdditionalMinutes'],
+      base.merchantCallRandomWaitAdditionalMinutes,
     ),
     merchantOfferPrices: _resourceMap(
       raw['merchantOfferPrices'],

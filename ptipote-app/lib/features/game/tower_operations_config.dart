@@ -49,6 +49,9 @@ class TowerOperationsConfig {
     required this.merchantMaxVisitsPerDay,
     required this.merchantMinimumGapHours,
     required this.merchantRandomGapAdditionalHours,
+    required this.merchantCallBatteryCost,
+    required this.merchantCallMinimumWaitMinutes,
+    required this.merchantCallRandomWaitAdditionalMinutes,
     required this.merchantOfferPrices,
     required this.wellbeingBands,
     required this.weatherEvents,
@@ -69,6 +72,9 @@ class TowerOperationsConfig {
   final int merchantMaxVisitsPerDay;
   final int merchantMinimumGapHours;
   final int merchantRandomGapAdditionalHours;
+  final int merchantCallBatteryCost;
+  final int merchantCallMinimumWaitMinutes;
+  final int merchantCallRandomWaitAdditionalMinutes;
   final Map<String, int> merchantOfferPrices;
   final List<SecurityWellbeingBand> wellbeingBands;
   final List<TowerWeatherConfig> weatherEvents;
@@ -97,6 +103,9 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
   merchantMaxVisitsPerDay: 3,
   merchantMinimumGapHours: 4,
   merchantRandomGapAdditionalHours: 4,
+  merchantCallBatteryCost: 1,
+  merchantCallMinimumWaitMinutes: 5,
+  merchantCallRandomWaitAdditionalMinutes: 10,
   merchantOfferPrices: <String, int>{
     'Plan Filtre': 4,
     'Plan Ventilation Termite': 6,

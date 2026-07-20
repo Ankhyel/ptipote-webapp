@@ -1088,6 +1088,8 @@ class _KernelProgressTab extends StatelessWidget {
           description: 'Le Kernel observe la continuité de vos choix.',
           next: 'De nouveaux Plans pourront être partagés.',
         ),
+        const SizedBox(height: 12),
+        _KernelDataCellsCard(gameState: gameState),
         ...KernelAxis.values.map(
           (axis) => Padding(
             padding: const EdgeInsets.only(top: 12),
@@ -1102,6 +1104,276 @@ class _KernelProgressTab extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _KernelDataCellsCard extends StatelessWidget {
+  const _KernelDataCellsCard({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    final unopened = gameState.pTibugDataCells
+        .where((cell) => !cell.isOpened)
+        .toList(growable: false);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Expanded(
+                  child: Text(
+                    'Cellules de données',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                if (unopened.isNotEmpty)
+                  Chip(label: Text('${unopened.length} à analyser')),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              unopened.isEmpty
+                  ? 'Aucune cellule non analysée. Les missions de Lisière peuvent en rapporter.'
+                  : 'Analysez les cellules trouvées en Lisière pour alimenter les recherches P\'TIBUG.',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: PTibugDataFamily.values
+                  .map(
+                    (family) => Chip(
+                      label: Text(
+                        '${_kernelDataFamilyLabel(family)} ${gameState.pTibugDataReserve[family] ?? 0}',
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            if (unopened.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  showDragHandle: true,
+                  isScrollControlled: true,
+                  builder: (sheetContext) => _KernelDataCellsSheet(
+                    gameState: gameState,
+                    onCellOpened: () {
+                      Navigator.of(sheetContext).pop();
+                    },
+                  ),
+                ),
+                icon: const Icon(Icons.science_outlined),
+                label: const Text('Analyser les cellules'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _KernelDataCellsSheet extends StatefulWidget {
+  const _KernelDataCellsSheet({
+    required this.gameState,
+    required this.onCellOpened,
+  });
+
+  final Zone0GameState gameState;
+  final VoidCallback onCellOpened;
+
+  @override
+  State<_KernelDataCellsSheet> createState() => _KernelDataCellsSheetState();
+}
+
+class _KernelDataCellsSheetState extends State<_KernelDataCellsSheet> {
+  @override
+  Widget build(BuildContext context) {
+    final cells = widget.gameState.pTibugDataCells
+        .where((cell) => !cell.isOpened)
+        .toList(growable: false);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * .68,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'Cellules à analyser',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Chaque cellule contient cinq entrées de données. L\'analyse les transfère définitivement dans la réserve du Kernel.',
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: cells.length,
+                  separatorBuilder: (_, __) => const Divider(),
+                  itemBuilder: (context, index) {
+                    final cell = cells[index];
+                    final total = cell.entries.fold<int>(
+                      0,
+                      (sum, entry) => sum + entry.value(pTibugConfig),
+                    );
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.memory_outlined),
+                      title: Text(cell.displayName),
+                      subtitle: Text(
+                        '${cell.isNeutralCell ? 'Neutre' : _kernelDataFamilyLabel(cell.dominantFamily!)} · 5 données · valeur $total',
+                      ),
+                      trailing: FilledButton(
+                        onPressed: () async {
+                          final confirmed = await showModalBottomSheet<bool>(
+                            context: context,
+                            isScrollControlled: true,
+                            useSafeArea: true,
+                            builder: (_) => _KernelDataCellRevealSheet(
+                              cell: cell,
+                            ),
+                          );
+                          if (!mounted || confirmed != true) return;
+                          final result = widget.gameState.openPTibugDataCell(
+                            cell.id,
+                          );
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)),
+                          );
+                          if (result.success) widget.onCellOpened();
+                        },
+                        child: const Text('Ouvrir'),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KernelDataCellRevealSheet extends StatefulWidget {
+  const _KernelDataCellRevealSheet({required this.cell});
+
+  final PTibugDataCell cell;
+
+  @override
+  State<_KernelDataCellRevealSheet> createState() =>
+      _KernelDataCellRevealSheetState();
+}
+
+class _KernelDataCellRevealSheetState
+    extends State<_KernelDataCellRevealSheet> {
+  Timer? _timer;
+  int _revealedEntries = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 650), (timer) {
+      if (!mounted || _revealedEntries >= widget.cell.entries.length) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _revealedEntries += 1);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _revealAll() {
+    _timer?.cancel();
+    setState(() => _revealedEntries = widget.cell.entries.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final complete = _revealedEntries >= widget.cell.entries.length;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Analyse de ${widget.cell.displayName}',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Le Kernel révèle les cinq entrées avant leur ajout définitif à la réserve.',
+            ),
+            const SizedBox(height: 14),
+            ...widget.cell.entries.asMap().entries.map((item) {
+              final entry = item.value;
+              final visible = item.key < _revealedEntries;
+              return Card(
+                child: ListTile(
+                  leading: Icon(
+                    visible ? Icons.memory_outlined : Icons.lock_outline,
+                  ),
+                  title: Text(
+                    visible
+                        ? _kernelDataFamilyLabel(entry.family)
+                        : 'Entrée en cours d’analyse',
+                  ),
+                  trailing: visible
+                      ? Text(
+                          '+${entry.value(pTibugConfig)} · ${_kernelDataQualityLabel(entry.quality)}',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              );
+            }),
+            const SizedBox(height: 12),
+            if (!complete)
+              OutlinedButton.icon(
+                onPressed: _revealAll,
+                icon: const Icon(Icons.fast_forward_outlined),
+                label: const Text('Tout révéler'),
+              ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed:
+                    complete ? () => Navigator.of(context).pop(true) : null,
+                child: Text(
+                  complete
+                      ? 'Ajouter au Kernel'
+                      : 'Analyse $_revealedEntries / ${widget.cell.entries.length}',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1153,6 +1425,22 @@ String _categoryLabel(KernelPlanCategory? category) => switch (category) {
       KernelPlanCategory.cuisine => 'Cuisine',
       KernelPlanCategory.ptibug => 'PTIBUG',
       KernelPlanCategory.installations => 'Installations',
+    };
+
+String _kernelDataFamilyLabel(PTibugDataFamily family) => switch (family) {
+      PTibugDataFamily.organique => 'Organique',
+      PTibugDataFamily.minerale => 'Minérale',
+      PTibugDataFamily.mycelienne => 'Mycélienne',
+      PTibugDataFamily.toxine => 'Toxine',
+      PTibugDataFamily.biomimetisme => 'Biomimétisme',
+      PTibugDataFamily.energie => 'Énergie',
+      PTibugDataFamily.comportementInsectoide => 'Insectoïde',
+    };
+
+String _kernelDataQualityLabel(PTibugDataQuality quality) => switch (quality) {
+      PTibugDataQuality.common => 'Commune',
+      PTibugDataQuality.sought => 'Recherchée',
+      PTibugDataQuality.rare => 'Rare',
     };
 
 String _axisLabel(KernelAxis axis) => switch (axis) {
@@ -6907,6 +7195,9 @@ String _merchantArrivalLabel(Zone0GameState state) {
   final countdown = hours > 0
       ? '$hours h ${minutes.toString().padLeft(2, '0')} min'
       : '${math.max(1, minutes)} min';
+  if (state.hasPendingMerchantCall) {
+    return 'Appel transmis. Le Sourcier arrive dans $countdown.';
+  }
   return 'Prochaine visite dans $countdown. '
       '${state.merchantVisitsRemaining} passage(s) restant(s) aujourd’hui.';
 }
@@ -7679,11 +7970,42 @@ class _MarketPageState extends State<MarketPage> {
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 6),
-                        if (!widget.gameState.isMerchantAvailable)
+                        if (!widget.gameState.isMerchantAvailable) ...<Widget>[
                           Text(
                             _merchantArrivalLabel(widget.gameState),
-                          )
-                        else ...<Widget>[
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed:
+                                  widget.gameState.hasPendingMerchantCall ||
+                                          widget.gameState
+                                                  .merchantVisitsRemaining <=
+                                              0 ||
+                                          widget.gameState.bioBatteries <
+                                              towerOperationsConfig
+                                                  .merchantCallBatteryCost
+                                      ? null
+                                      : () => _message(
+                                            widget.gameState
+                                                .requestMerchantVisit()
+                                                .message,
+                                          ),
+                              icon:
+                                  const Icon(Icons.record_voice_over_outlined),
+                              label: Text(
+                                'Appeler le Sourcier '
+                                '(${towerOperationsConfig.merchantCallBatteryCost} bio-batterie)',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Arrivée aléatoire entre 5 et 15 min.',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ] else ...<Widget>[
                           Text(
                             'Présent encore ${_merchantRemainingLabel(widget.gameState)}',
                           ),
