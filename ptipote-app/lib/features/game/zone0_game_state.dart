@@ -3262,7 +3262,11 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     final cost = pTibugConfig.moduleCraftCostFor(type);
-    final energyCost = pTibugConfig.moduleCraftEnergyFor(type);
+    final energyCost = math.max(
+      0,
+      pTibugConfig.moduleCraftEnergyFor(type) -
+          _activePTibugEffect('Réduction énergie'),
+    );
     if (!hasResources(cost) || energyUnits < energyCost) {
       return const Zone0ActionResult(
         success: false,
@@ -3612,6 +3616,9 @@ class Zone0GameState extends ChangeNotifier {
         cycleAt = cycleAt.add(_pTibugCycleDuration(bug));
       }
       bug.nextProductionAt = cycleAt;
+      if (producedCycles > 0) {
+        _applyPTibugStability(bug, producedCycles);
+      }
       if (bug.storedAmount >= _pTibugCapacity(bug) && !bug.stockFullNotified) {
         bug.stockFullNotified = true;
         reports.add(
@@ -3708,17 +3715,7 @@ class Zone0GameState extends ChangeNotifier {
       case PTibugSpecies.hyme:
         add('Organique', 3);
       case PTibugSpecies.arac:
-        final variants = <Map<String, int>>[
-          <String, int>{'Organique': 3},
-          <String, int>{'Minéral': 3},
-          <String, int>{'Déchets': 3},
-          <String, int>{'Organique': 2, 'Minéral': 1},
-          <String, int>{'Organique': 2, 'Déchets': 1},
-          <String, int>{'Minéral': 2, 'Déchets': 1},
-        ];
-        variants[_random.nextInt(variants.length)].forEach(
-          (resource, amount) => add(resource, amount),
-        );
+        add(_pTibugAracResourceForBiome(bug.biome), 3);
     }
     final trait = bug.traitDataId == null
         ? null
@@ -3749,16 +3746,82 @@ class Zone0GameState extends ChangeNotifier {
         case PTibugSpecies.hyme:
           add('Organique', claws);
         case PTibugSpecies.arac:
-          add(
-            <String>['Organique', 'Minéral', 'Déchets'][_random.nextInt(3)],
-            claws,
-          );
+          add(_pTibugAracResourceForBiome(bug.biome), claws);
       }
     }
     final biome = pTibugConfig.biomes[bug.biome];
     biome?.localProductionBonus[bug.species]?.forEach(add);
     return output;
   }
+
+  /// Effects that do not create an inventory resource are consumed here by
+  /// their related system. A P'TIBUG must be assigned to a refuge slot for
+  /// its biological trait to help that biome.
+  int _pTibugEffectFor(PTibug bug, String effect) {
+    var result = 0;
+    final legacyTrait = bug.traitDataId == null
+        ? null
+        : pTibugTraitData
+            .where((item) => item.id == bug.traitDataId)
+            .firstOrNull;
+    if (legacyTrait != null) {
+      result += pTibugConfig
+              .traitDefinitionFor(legacyTrait.definitionId)
+              ?.effectForGrade(effect, legacyTrait.grade) ??
+          0;
+    }
+    final permanentTrait = bug.biologicalTraitId == null
+        ? null
+        : pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!);
+    if (permanentTrait != null) {
+      result += permanentTrait.effectForLevel(
+        effect,
+        bug.biologicalTraitLevel,
+      );
+    }
+    return result;
+  }
+
+  int _activePTibugEffect(String effect, {PTibugBiome? biome}) => pTibugs
+      .where(
+        (bug) =>
+            bug.assignedSlotIndex != null &&
+            (biome == null || bug.biome == biome),
+      )
+      .fold<int>(0, (total, bug) => total + _pTibugEffectFor(bug, effect));
+
+  String _pTibugAracResourceForBiome(PTibugBiome biome) {
+    final weights = pTibugConfig.biomes[biome]?.aracProductionWeights ??
+        const <String, int>{};
+    final entries = weights.entries.where((entry) => entry.value > 0).toList();
+    if (entries.isEmpty) return 'Organique';
+    final total = entries.fold<int>(0, (sum, entry) => sum + entry.value);
+    var cursor = _random.nextInt(total);
+    for (final entry in entries) {
+      cursor -= entry.value;
+      if (cursor < 0) return entry.key;
+    }
+    return entries.last.key;
+  }
+
+  void _applyPTibugStability(PTibug bug, int producedCycles) {
+    final gain = _pTibugEffectFor(bug, 'Sécurité locale') * producedCycles;
+    final forageBiome = _forageBiomeForPTibugBiome(bug.biome);
+    if (gain <= 0 || forageBiome == null) return;
+    final state = biomeSecurity[forageBiome];
+    if (state == null) return;
+    state.localSecurity = (state.localSecurity + gain)
+        .clamp(0, towerOperationsConfig.localSecurityMaximum)
+        .round();
+  }
+
+  ForageBiome? _forageBiomeForPTibugBiome(PTibugBiome biome) => switch (biome) {
+        PTibugBiome.hautsRefuges => ForageBiome.colline,
+        PTibugBiome.savaneTropicale => ForageBiome.plaineRiche,
+        PTibugBiome.semiDesertGarrigueTropicale => ForageBiome.bassinMineral,
+        PTibugBiome.foretHumideRelictuelle => ForageBiome.sousBois,
+        _ => null,
+      };
 
   Zone0ActionResult assignPTibugSlot(PTibug bug, int slot) {
     if (slot < 0 ||
@@ -6410,15 +6473,23 @@ class Zone0GameState extends ChangeNotifier {
     final attempts = pTibugConfig.maxCellsForMissionHours(
       duration.theoreticalHours,
     );
-    final chance =
-        (pTibugConfig.baseCellChancePercent + intensity.riskModifierPercent)
-            .clamp(0, 100);
+    // Security protects the group but never lowers scientific discovery.
+    final chance = (pTibugConfig.baseCellChancePercent +
+            intensity.riskModifierPercent +
+            _activePTibugEffect('Chance Cellule', biome: biomeId))
+        .clamp(0, 100);
     final cells = <PTibugDataCell>[];
     for (var attempt = 0; attempt < attempts; attempt += 1) {
       if (_random.nextInt(100) >= chance) continue;
       final isNeutral =
           _random.nextInt(100) < pTibugConfig.neutralCellChancePercent;
       final weights = Map<PTibugDataFamily, int>.from(biome.dataWeights);
+      final toxineWeightBonus =
+          _activePTibugEffect('Poids Toxine', biome: biomeId);
+      if (toxineWeightBonus > 0) {
+        weights[PTibugDataFamily.toxine] =
+            (weights[PTibugDataFamily.toxine] ?? 0) + toxineWeightBonus;
+      }
       if (biomeId == PTibugBiome.savaneTropicale && plaineNurseryLevel > 0) {
         weights[PTibugDataFamily.comportementInsectoide] =
             (weights[PTibugDataFamily.comportementInsectoide] ?? 0) +

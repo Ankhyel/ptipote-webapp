@@ -1055,7 +1055,14 @@ function renderKernelEditor() {
 
 function renderPTibugEditor() {
   const ptibug = zone0Settings.ptibug || {};
-  const { species = {}, patterns = {}, traitDefinitions = {}, ...general } = ptibug;
+  const {
+    species = {},
+    patterns = {},
+    traitDefinitions = {},
+    researchPatterns = {},
+    biomes = {},
+    ...general
+  } = ptibug;
   el.ptibugConfigList.innerHTML = [
     configCard("Nurserie et production", "ptibug", general, [], { open: true, meta: "Coûts, capacité, cycles et Sourcier" }),
     ...Object.entries(species).map(([speciesId, config]) => configCard(
@@ -1078,6 +1085,20 @@ function renderPTibugEditor() {
       definition,
       ["traitDefinitions", traitId],
       { meta: "Effets par ressource et multiplicateurs par grade" },
+    )),
+    ...Object.entries(researchPatterns).map(([patternId, pattern]) => configCard(
+      `Recherche · ${pattern.displayName || patternId}`,
+      "ptibug",
+      pattern,
+      ["researchPatterns", patternId],
+      { meta: "Maîtrise, familles de données et biomes conseillés" },
+    )),
+    ...Object.entries(biomes).map(([biomeId, biome]) => configCard(
+      `Biome · ${biome.displayName || biomeId}`,
+      "ptibug",
+      biome,
+      ["biomes", biomeId],
+      { meta: "Risques, cellules et production locale" },
     )),
   ].join("");
 
@@ -1127,6 +1148,33 @@ function addPTibugTrait(event) {
     },
     colorHex: String(form.get("colorHex") || "#817D66").trim(),
     isActive: true,
+    maxLevel: 3,
+    dataCostByLevel: {
+      1: { comportementInsectoide: 3, biomimetisme: 2 },
+      2: { comportementInsectoide: 6, biomimetisme: 4 },
+      3: { comportementInsectoide: 10, biomimetisme: 7 },
+    },
+    materialCostByLevel: {
+      1: { Organique: 3, "Minéral": 3 },
+      2: { Organique: 5, "Minéral": 5 },
+      3: { Organique: 8, "Minéral": 8 },
+    },
+    energyCostByLevel: { 1: 2, 2: 4, 3: 6 },
+  };
+  zone0Settings.ptibug.researchPatterns ||= {};
+  zone0Settings.ptibug.researchPatterns[`trait-${id}`] = {
+    id: `trait-${id}`,
+    displayName: `Pattern ${displayName}`,
+    category: "trait",
+    description: `Le Kernel apprend à stabiliser le trait ${displayName}.`,
+    masteryCosts: {
+      1: { comportementInsectoide: 6, biomimetisme: 4 },
+      2: { comportementInsectoide: 14, biomimetisme: 8, organique: 3 },
+      3: { comportementInsectoide: 25, biomimetisme: 10, organique: 8 },
+    },
+    linkedTraitId: id,
+    origin: "Dashboard",
+    biomesSuggested: [],
   };
   el.ptibugTraitForm.reset();
   renderPTibugEditor();

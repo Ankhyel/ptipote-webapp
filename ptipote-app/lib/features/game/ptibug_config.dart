@@ -68,6 +68,7 @@ class PTibugBiomeConfig {
     required this.dataWeights,
     required this.localProductionBonus,
     this.nurseryInsectBehaviourWeight = 0,
+    this.aracProductionWeights = const <String, int>{},
   });
 
   final String displayName;
@@ -75,6 +76,10 @@ class PTibugBiomeConfig {
   final Map<PTibugDataFamily, int> dataWeights;
   final Map<PTibugSpecies, Map<String, int>> localProductionBonus;
   final int nurseryInsectBehaviourWeight;
+
+  /// Arac keeps its adaptive production, but each biome steers the outcome.
+  /// Only material inventory resources are allowed in this table.
+  final Map<String, int> aracProductionWeights;
 }
 
 /// A scientific Pattern is one persistent Kernel research project. It is not
@@ -169,17 +174,42 @@ class PTibugTraitDefinition {
   final Map<int, int> energyCostByLevel;
   final int maxLevel;
 
-  Map<String, int> productionFor(PTibugTraitGrade grade) => effects.map(
-        (resource, amount) => MapEntry(
-          resource,
-          amount * (gradeMultipliers[grade] ?? 1),
-        ),
+  static const Set<String> _materialProductionEffects = <String>{
+    'Organique',
+    'Minéral',
+    'Mycélium',
+    'Déchets',
+  };
+
+  /// Only material effects belong in the passive production inventory. The
+  /// other effect keys are consumed by their dedicated game systems.
+  Map<String, int> productionFor(PTibugTraitGrade grade) => Map.fromEntries(
+        effects.entries
+            .where((entry) => _materialProductionEffects.contains(entry.key))
+            .map(
+              (entry) => MapEntry(
+                entry.key,
+                entry.value * (gradeMultipliers[grade] ?? 1),
+              ),
+            ),
       );
 
-  Map<String, int> productionForLevel(int level) => effects.map(
-        (resource, amount) =>
-            MapEntry(resource, amount * level.clamp(1, maxLevel)),
+  Map<String, int> productionForLevel(int level) => Map.fromEntries(
+        effects.entries
+            .where((entry) => _materialProductionEffects.contains(entry.key))
+            .map(
+              (entry) => MapEntry(
+                entry.key,
+                entry.value * level.clamp(1, maxLevel),
+              ),
+            ),
       );
+
+  int effectForGrade(String effect, PTibugTraitGrade grade) =>
+      (effects[effect] ?? 0) * (gradeMultipliers[grade] ?? 1);
+
+  int effectForLevel(String effect, int level) =>
+      (effects[effect] ?? 0) * level.clamp(1, maxLevel);
 
   Map<PTibugDataFamily, int> dataCostForLevel(int level) =>
       dataCostByLevel[level.clamp(1, maxLevel)] ??
@@ -493,12 +523,32 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
       colorHex: '#8A7654',
       isActive: true,
+      dataCostByLevel: <int, Map<PTibugDataFamily, int>>{
+        1: <PTibugDataFamily, int>{
+          PTibugDataFamily.minerale: 2,
+          PTibugDataFamily.biomimetisme: 3,
+        },
+        2: <PTibugDataFamily, int>{
+          PTibugDataFamily.minerale: 5,
+          PTibugDataFamily.biomimetisme: 6,
+        },
+        3: <PTibugDataFamily, int>{
+          PTibugDataFamily.minerale: 9,
+          PTibugDataFamily.biomimetisme: 10,
+        },
+      },
+      materialCostByLevel: <int, Map<String, int>>{
+        1: <String, int>{'Organique': 3, 'Minéral': 4},
+        2: <String, int>{'Organique': 5, 'Minéral': 7},
+        3: <String, int>{'Organique': 8, 'Minéral': 10},
+      },
+      energyCostByLevel: <int, int>{1: 2, 2: 4, 3: 6},
     ),
     'eclaireur': PTibugTraitDefinition(
       id: 'eclaireur',
       displayName: 'Éclaireur',
-      description: 'Prépare de futures découvertes de Cellules en sortie.',
-      effects: const <String, int>{},
+      description: 'Augmente les chances de découvrir des Cellules.',
+      effects: const <String, int>{'Chance Cellule': 5},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
         PTibugTraitGrade.rare: 2,
@@ -506,12 +556,32 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
       colorHex: '#C17E42',
       isActive: true,
+      dataCostByLevel: <int, Map<PTibugDataFamily, int>>{
+        1: <PTibugDataFamily, int>{
+          PTibugDataFamily.comportementInsectoide: 3,
+          PTibugDataFamily.biomimetisme: 2,
+        },
+        2: <PTibugDataFamily, int>{
+          PTibugDataFamily.comportementInsectoide: 6,
+          PTibugDataFamily.biomimetisme: 5,
+        },
+        3: <PTibugDataFamily, int>{
+          PTibugDataFamily.comportementInsectoide: 10,
+          PTibugDataFamily.biomimetisme: 9,
+        },
+      },
+      materialCostByLevel: <int, Map<String, int>>{
+        1: <String, int>{'Organique': 4, 'Minéral': 2},
+        2: <String, int>{'Organique': 7, 'Minéral': 4},
+        3: <String, int>{'Organique': 10, 'Minéral': 7},
+      },
+      energyCostByLevel: <int, int>{1: 2, 2: 4, 3: 6},
     ),
     'filtreur': PTibugTraitDefinition(
       id: 'filtreur',
       displayName: 'Filtreur',
-      description: 'Prépare la filtration des toxines et biofilms.',
-      effects: const <String, int>{},
+      description: 'Renforce les Cellules orientées toxines.',
+      effects: const <String, int>{'Poids Toxine': 5},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
         PTibugTraitGrade.rare: 2,
@@ -519,12 +589,32 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
       colorHex: '#617E85',
       isActive: true,
+      dataCostByLevel: <int, Map<PTibugDataFamily, int>>{
+        1: <PTibugDataFamily, int>{
+          PTibugDataFamily.toxine: 3,
+          PTibugDataFamily.mycelienne: 2,
+        },
+        2: <PTibugDataFamily, int>{
+          PTibugDataFamily.toxine: 6,
+          PTibugDataFamily.mycelienne: 5,
+        },
+        3: <PTibugDataFamily, int>{
+          PTibugDataFamily.toxine: 10,
+          PTibugDataFamily.mycelienne: 9,
+        },
+      },
+      materialCostByLevel: <int, Map<String, int>>{
+        1: <String, int>{'Organique': 3, 'Minéral': 3},
+        2: <String, int>{'Organique': 5, 'Minéral': 6},
+        3: <String, int>{'Organique': 8, 'Minéral': 9},
+      },
+      energyCostByLevel: <int, int>{1: 2, 2: 4, 3: 6},
     ),
     'econome': PTibugTraitDefinition(
       id: 'econome',
       displayName: 'Économe',
-      description: 'Prépare de futurs paliers d’économie énergétique.',
-      effects: const <String, int>{},
+      description: 'Réduit les coûts d’énergie de fabrication P’TIBUG.',
+      effects: const <String, int>{'Réduction énergie': 1},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
         PTibugTraitGrade.rare: 2,
@@ -532,12 +622,32 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
       colorHex: '#D0A943',
       isActive: true,
+      dataCostByLevel: <int, Map<PTibugDataFamily, int>>{
+        1: <PTibugDataFamily, int>{
+          PTibugDataFamily.energie: 3,
+          PTibugDataFamily.biomimetisme: 2,
+        },
+        2: <PTibugDataFamily, int>{
+          PTibugDataFamily.energie: 6,
+          PTibugDataFamily.biomimetisme: 5,
+        },
+        3: <PTibugDataFamily, int>{
+          PTibugDataFamily.energie: 10,
+          PTibugDataFamily.biomimetisme: 9,
+        },
+      },
+      materialCostByLevel: <int, Map<String, int>>{
+        1: <String, int>{'Organique': 2, 'Minéral': 3},
+        2: <String, int>{'Organique': 4, 'Minéral': 6},
+        3: <String, int>{'Organique': 6, 'Minéral': 9},
+      },
+      energyCostByLevel: <int, int>{1: 2, 2: 4, 3: 6},
     ),
     'stabilisateur': PTibugTraitDefinition(
       id: 'stabilisateur',
       displayName: 'Stabilisateur',
-      description: 'Prépare l’entretien lent de la sécurité locale.',
-      effects: const <String, int>{},
+      description: 'Entretient lentement la sécurité de son biome.',
+      effects: const <String, int>{'Sécurité locale': 1},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
         PTibugTraitGrade.rare: 2,
@@ -545,6 +655,26 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
       colorHex: '#5B8D8C',
       isActive: true,
+      dataCostByLevel: <int, Map<PTibugDataFamily, int>>{
+        1: <PTibugDataFamily, int>{
+          PTibugDataFamily.minerale: 3,
+          PTibugDataFamily.energie: 2,
+        },
+        2: <PTibugDataFamily, int>{
+          PTibugDataFamily.minerale: 6,
+          PTibugDataFamily.energie: 5,
+        },
+        3: <PTibugDataFamily, int>{
+          PTibugDataFamily.minerale: 10,
+          PTibugDataFamily.energie: 9,
+        },
+      },
+      materialCostByLevel: <int, Map<String, int>>{
+        1: <String, int>{'Organique': 3, 'Minéral': 4},
+        2: <String, int>{'Organique': 5, 'Minéral': 7},
+        3: <String, int>{'Organique': 8, 'Minéral': 10},
+      },
+      energyCostByLevel: <int, int>{1: 2, 2: 4, 3: 6},
     ),
   },
   researchPatterns: <String, PTibugResearchPatternConfig>{
@@ -651,6 +781,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
         PTibugSpecies.scarabe: <String, int>{'Minéral': 1},
       },
       nurseryInsectBehaviourWeight: 10,
+      aracProductionWeights: <String, int>{
+        'Minéral': 60,
+        'Organique': 20,
+        'Déchets': 20,
+      },
     ),
     PTibugBiome.foretHumideRelictuelle: PTibugBiomeConfig(
       displayName: 'Forêt humide relictuelle',
@@ -669,6 +804,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
         PTibugSpecies.hyme: <String, int>{'Organique': 1},
       },
       nurseryInsectBehaviourWeight: 10,
+      aracProductionWeights: <String, int>{
+        'Organique': 60,
+        'Déchets': 25,
+        'Minéral': 15,
+      },
     ),
     PTibugBiome.foretSecheTropicale: PTibugBiomeConfig(
       displayName: 'Forêt sèche tropicale',
@@ -680,6 +820,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
       localProductionBonus: <PTibugSpecies, Map<String, int>>{
         PTibugSpecies.hyme: <String, int>{'Organique': 1},
+      },
+      aracProductionWeights: <String, int>{
+        'Organique': 50,
+        'Minéral': 30,
+        'Déchets': 20,
       },
     ),
     PTibugBiome.savaneTropicale: PTibugBiomeConfig(
@@ -699,6 +844,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
         PTibugSpecies.hyme: <String, int>{'Organique': 1},
       },
       nurseryInsectBehaviourWeight: 15,
+      aracProductionWeights: <String, int>{
+        'Organique': 45,
+        'Minéral': 25,
+        'Déchets': 30,
+      },
     ),
     PTibugBiome.mangroves: PTibugBiomeConfig(
       displayName: 'Mangroves',
@@ -717,6 +867,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
         PTibugSpecies.hyme: <String, int>{'Organique': 1},
       },
       nurseryInsectBehaviourWeight: 15,
+      aracProductionWeights: <String, int>{
+        'Organique': 45,
+        'Déchets': 45,
+        'Minéral': 10,
+      },
     ),
     PTibugBiome.maraisSales: PTibugBiomeConfig(
       displayName: 'Marais salés',
@@ -730,6 +885,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
         PTibugSpecies.scarabe: <String, int>{'Minéral': 1},
       },
       nurseryInsectBehaviourWeight: 10,
+      aracProductionWeights: <String, int>{
+        'Minéral': 40,
+        'Déchets': 45,
+        'Organique': 15,
+      },
     ),
     PTibugBiome.semiDesertGarrigueTropicale: PTibugBiomeConfig(
       displayName: 'Semi-désert / Garrigue tropicale',
@@ -742,6 +902,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       localProductionBonus: <PTibugSpecies, Map<String, int>>{
         PTibugSpecies.scarabe: <String, int>{'Minéral': 1},
       },
+      aracProductionWeights: <String, int>{
+        'Minéral': 55,
+        'Déchets': 30,
+        'Organique': 15,
+      },
     ),
     PTibugBiome.littoral: PTibugBiomeConfig(
       displayName: 'Littoral',
@@ -753,6 +918,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
       localProductionBonus: const <PTibugSpecies, Map<String, int>>{},
       nurseryInsectBehaviourWeight: 10,
+      aracProductionWeights: <String, int>{
+        'Minéral': 40,
+        'Déchets': 45,
+        'Organique': 15,
+      },
     ),
   },
   dataQualityValues: <PTibugDataQuality, int>{

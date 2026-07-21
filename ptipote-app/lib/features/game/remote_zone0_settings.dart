@@ -40,11 +40,14 @@ String _string(Object? value, String fallback) =>
 
 Map<String, int> _resourceMap(Object? value, Map<String, int> fallback) {
   final raw = _map(value);
-  if (raw == null) return fallback;
-  return <String, int>{
-    for (final entry in fallback.entries)
-      entry.key: _int(raw[entry.key], entry.value),
-  };
+  if (raw == null) return Map<String, int>.from(fallback);
+  final result = Map<String, int>.from(fallback);
+  for (final entry in raw.entries) {
+    if (entry.value is num && (entry.value as num).isFinite) {
+      result[entry.key] = _int(entry.value, result[entry.key] ?? 0);
+    }
+  }
+  return result;
 }
 
 KernelConfig _kernel(Object? value) {
@@ -312,6 +315,158 @@ Map<int, int> _levelMap(Object? value, Map<int, int> fallback) {
   };
 }
 
+Map<int, int> _intLevels(
+  Object? value,
+  Map<int, int> fallback,
+  int maxLevel,
+) {
+  final raw = _map(value);
+  if (raw == null) return fallback;
+  return <int, int>{
+    for (var level = 1; level <= maxLevel; level++)
+      level: _int(raw['$level'], fallback[level] ?? 0),
+  };
+}
+
+Map<int, double> _doubleLevelMap(
+  Object? value,
+  Map<int, double> fallback,
+) {
+  final raw = _map(value);
+  if (raw == null) return fallback;
+  return <int, double>{
+    for (final entry in fallback.entries)
+      entry.key: _double(raw['${entry.key}'], entry.value),
+  };
+}
+
+PTibugPatternCategory _ptibugPatternCategory(
+  Object? value,
+  PTibugPatternCategory fallback,
+) =>
+    PTibugPatternCategory.values
+        .where((category) => category.name == value)
+        .firstOrNull ??
+    fallback;
+
+PTibugSpecies? _ptibugSpecies(Object? value) =>
+    PTibugSpecies.values.where((species) => species.name == value).firstOrNull;
+
+PTibugModuleType? _ptibugModuleType(Object? value) =>
+    PTibugModuleType.values.where((type) => type.name == value).firstOrNull;
+
+PTibugBiome? _ptibugBiome(Object? value) =>
+    PTibugBiome.values.where((biome) => biome.name == value).firstOrNull;
+
+Map<PTibugDataFamily, int> _dataFamilyMap(
+  Object? value,
+  Map<PTibugDataFamily, int> fallback,
+) {
+  final raw = _map(value);
+  if (raw == null) return fallback;
+  return <PTibugDataFamily, int>{
+    for (final family in PTibugDataFamily.values)
+      if (raw[family.name] is num || fallback.containsKey(family))
+        family: _int(raw[family.name], fallback[family] ?? 0),
+  };
+}
+
+Map<int, Map<PTibugDataFamily, int>> _dataCostsByLevel(
+  Object? value,
+  Map<int, Map<PTibugDataFamily, int>> fallback,
+  int maxLevel,
+) {
+  final raw = _map(value);
+  if (raw == null) return fallback;
+  return <int, Map<PTibugDataFamily, int>>{
+    for (var level = 1; level <= maxLevel; level++)
+      level: _dataFamilyMap(raw['$level'], fallback[level] ?? const {}),
+  };
+}
+
+Map<int, Map<String, int>> _materialCostsByLevel(
+  Object? value,
+  Map<int, Map<String, int>> fallback,
+  int maxLevel,
+) {
+  final raw = _map(value);
+  if (raw == null) return fallback;
+  return <int, Map<String, int>>{
+    for (var level = 1; level <= maxLevel; level++)
+      level: _resourceMap(raw['$level'], fallback[level] ?? const {}),
+  };
+}
+
+PTibugResearchPatternConfig _researchPattern(
+  String id,
+  Map<String, dynamic>? raw,
+  PTibugResearchPatternConfig? fallback,
+) {
+  final maxLevel = _int(raw?['maxLevel'], fallback?.masteryCosts.length ?? 3);
+  return PTibugResearchPatternConfig(
+    id: _string(raw?['id'], fallback?.id ?? id),
+    displayName: _string(raw?['displayName'], fallback?.displayName ?? id),
+    category: _ptibugPatternCategory(
+      raw?['category'],
+      fallback?.category ?? PTibugPatternCategory.advancedTechnology,
+    ),
+    description: _string(raw?['description'], fallback?.description ?? ''),
+    masteryCosts: _dataCostsByLevel(
+      raw?['masteryCosts'],
+      fallback?.masteryCosts ?? const <int, Map<PTibugDataFamily, int>>{},
+      maxLevel,
+    ),
+    linkedSpecies:
+        _ptibugSpecies(raw?['linkedSpecies']) ?? fallback?.linkedSpecies,
+    linkedTraitId: _string(
+      raw?['linkedTraitId'],
+      fallback?.linkedTraitId ?? '',
+    ).isEmpty
+        ? null
+        : _string(raw?['linkedTraitId'], fallback?.linkedTraitId ?? ''),
+    linkedModuleType: _ptibugModuleType(raw?['linkedModuleType']) ??
+        fallback?.linkedModuleType,
+    origin: _string(raw?['origin'], fallback?.origin ?? 'Kernel'),
+    biomesSuggested: raw?['biomesSuggested'] is List
+        ? (raw!['biomesSuggested'] as List)
+            .map(_ptibugBiome)
+            .whereType<PTibugBiome>()
+            .toList()
+        : fallback?.biomesSuggested ?? const <PTibugBiome>[],
+  );
+}
+
+PTibugBiomeConfig _biomeConfig(
+  Map<String, dynamic>? raw,
+  PTibugBiomeConfig fallback,
+) {
+  final rawBonuses = _map(raw?['localProductionBonus']);
+  return PTibugBiomeConfig(
+    displayName: _string(raw?['displayName'], fallback.displayName),
+    risks: raw?['risks'] is List
+        ? (raw!['risks'] as List).whereType<String>().toList()
+        : fallback.risks,
+    dataWeights: _dataFamilyMap(raw?['dataWeights'], fallback.dataWeights),
+    localProductionBonus: <PTibugSpecies, Map<String, int>>{
+      for (final species in PTibugSpecies.values)
+        if (_map(rawBonuses?[species.name]) != null ||
+            fallback.localProductionBonus.containsKey(species))
+          species: _resourceMap(
+            rawBonuses?[species.name],
+            fallback.localProductionBonus[species] ?? const <String, int>{},
+          ),
+    },
+    nurseryInsectBehaviourWeight: _int(
+      raw?['nurseryInsectBehaviourWeight'],
+      fallback.nurseryInsectBehaviourWeight,
+    ),
+    aracProductionWeights: _resourceMap(
+      raw?['aracProductionWeights'],
+      fallback.aracProductionWeights,
+    ),
+  );
+}
+
 PTibugConfig _ptibug(Object? value) {
   final raw = _map(value);
   final base = defaultPTibugConfig;
@@ -320,6 +475,13 @@ PTibugConfig _ptibug(Object? value) {
   final rawPatterns = _map(raw['patterns']);
   final rawPrices = _map(raw['sourcierPatternPrices']);
   final rawTraits = _map(raw['traitDefinitions']);
+  final rawResearchPatterns = _map(raw['researchPatterns']);
+  final rawBiomes = _map(raw['biomes']);
+  final rawQualityValues = _map(raw['dataQualityValues']);
+  final rawQualityWeights = _map(raw['dataQualityWeights']);
+  final rawModuleCraftCosts = _map(raw['moduleCraftCosts']);
+  final rawModuleCraftEnergyCosts = _map(raw['moduleCraftEnergyCosts']);
+  final rawModuleCraftMinutes = _map(raw['moduleCraftMinutes']);
   return PTibugConfig(
     nurseryRequirements: _resourceMap(
       raw['nurseryRequirements'],
@@ -409,6 +571,7 @@ PTibugConfig _ptibug(Object? value) {
         id: () {
           final item = _map(rawTraits?[id]);
           final fallback = base.traitDefinitions[id];
+          final maxLevel = _int(item?['maxLevel'], fallback?.maxLevel ?? 3);
           final rawEffects = _resourceMap(
             item?['effects'],
             fallback?.effects ?? const <String, int>{},
@@ -439,20 +602,58 @@ PTibugConfig _ptibug(Object? value) {
             isActive: item?['isActive'] is bool
                 ? item!['isActive'] as bool
                 : fallback?.isActive ?? true,
-            dataCostByLevel: fallback?.dataCostByLevel ??
-                const <int, Map<PTibugDataFamily, int>>{},
-            materialCostByLevel: fallback?.materialCostByLevel ??
-                const <int, Map<String, int>>{},
-            energyCostByLevel:
-                fallback?.energyCostByLevel ?? const <int, int>{},
-            maxLevel: fallback?.maxLevel ?? 3,
+            dataCostByLevel: _dataCostsByLevel(
+              item?['dataCostByLevel'],
+              fallback?.dataCostByLevel ??
+                  const <int, Map<PTibugDataFamily, int>>{},
+              maxLevel,
+            ),
+            materialCostByLevel: _materialCostsByLevel(
+              item?['materialCostByLevel'],
+              fallback?.materialCostByLevel ?? const <int, Map<String, int>>{},
+              maxLevel,
+            ),
+            energyCostByLevel: _intLevels(
+              item?['energyCostByLevel'],
+              fallback?.energyCostByLevel ?? const <int, int>{},
+              maxLevel,
+            ),
+            maxLevel: maxLevel,
           );
         }(),
     },
-    researchPatterns: base.researchPatterns,
-    biomes: base.biomes,
-    dataQualityValues: base.dataQualityValues,
-    dataQualityWeights: base.dataQualityWeights,
+    researchPatterns: <String, PTibugResearchPatternConfig>{
+      for (final id in <String>{
+        ...base.researchPatterns.keys,
+        ...?rawResearchPatterns?.keys,
+      })
+        id: _researchPattern(
+          id,
+          _map(rawResearchPatterns?[id]),
+          base.researchPatterns[id],
+        ),
+    },
+    biomes: <PTibugBiome, PTibugBiomeConfig>{
+      for (final entry in base.biomes.entries)
+        entry.key: _biomeConfig(
+          _map(rawBiomes?[entry.key.name]),
+          entry.value,
+        ),
+    },
+    dataQualityValues: <PTibugDataQuality, int>{
+      for (final quality in PTibugDataQuality.values)
+        quality: _int(
+          rawQualityValues?[quality.name],
+          base.dataQualityValues[quality] ?? 1,
+        ),
+    },
+    dataQualityWeights: <PTibugDataQuality, int>{
+      for (final quality in PTibugDataQuality.values)
+        quality: _int(
+          rawQualityWeights?[quality.name],
+          base.dataQualityWeights[quality] ?? 0,
+        ),
+    },
     baseCellChancePercent: _int(
       raw['baseCellChancePercent'],
       base.baseCellChancePercent,
@@ -469,7 +670,10 @@ PTibugConfig _ptibug(Object? value) {
       raw['reservoirCapacityBonusByLevel'],
       base.reservoirCapacityBonusByLevel,
     ),
-    wingsCycleReductionByLevel: base.wingsCycleReductionByLevel,
+    wingsCycleReductionByLevel: _doubleLevelMap(
+      raw['wingsCycleReductionByLevel'],
+      base.wingsCycleReductionByLevel,
+    ),
     clawProductionBonusByLevel: _levelMap(
       raw['clawProductionBonusByLevel'],
       base.clawProductionBonusByLevel,
@@ -480,9 +684,27 @@ PTibugConfig _ptibug(Object? value) {
     ),
     moduleMaxLevel: _int(raw['moduleMaxLevel'], base.moduleMaxLevel),
     capsuleEnergyCost: _int(raw['capsuleEnergyCost'], base.capsuleEnergyCost),
-    moduleCraftCosts: base.moduleCraftCosts,
-    moduleCraftEnergyCosts: base.moduleCraftEnergyCosts,
-    moduleCraftMinutes: base.moduleCraftMinutes,
+    moduleCraftCosts: <PTibugModuleType, Map<String, int>>{
+      for (final type in PTibugModuleType.values)
+        type: _resourceMap(
+          rawModuleCraftCosts?[type.name],
+          base.moduleCraftCosts[type] ?? const <String, int>{},
+        ),
+    },
+    moduleCraftEnergyCosts: <PTibugModuleType, int>{
+      for (final type in PTibugModuleType.values)
+        type: _int(
+          rawModuleCraftEnergyCosts?[type.name],
+          base.moduleCraftEnergyCosts[type] ?? 0,
+        ),
+    },
+    moduleCraftMinutes: <PTibugModuleType, int>{
+      for (final type in PTibugModuleType.values)
+        type: _int(
+          rawModuleCraftMinutes?[type.name],
+          base.moduleCraftMinutes[type] ?? 1,
+        ),
+    },
     nurseryReserveCapacity: _int(
       raw['nurseryReserveCapacity'],
       base.nurseryReserveCapacity,
