@@ -127,6 +127,7 @@ const ids = [
   "ptibugConfigList",
   "ptibugPatternList",
   "ptibugTraitForm",
+  "ptibugPatternForm",
   "publishPTibugButton",
   "campHeartStatus",
   "campHeartStageList",
@@ -1053,7 +1054,36 @@ function renderKernelEditor() {
   }));
 }
 
+function normalizePTibugResearchPatterns(ptibug) {
+  if (!ptibug?.researchPatterns) return;
+  Object.entries({ ...ptibug.researchPatterns }).forEach(([patternId, pattern]) => {
+    const linkedTraitId = String(pattern?.linkedTraitId || "").trim();
+    if (!linkedTraitId || !patternId.startsWith("trait-")) return;
+    const canonicalId = `ptibug-trait-${linkedTraitId}`;
+    if (!ptibug.researchPatterns[canonicalId]) {
+      ptibug.researchPatterns[canonicalId] = {
+        ...pattern,
+        id: canonicalId,
+        linkedTraitId,
+      };
+    }
+    delete ptibug.researchPatterns[patternId];
+  });
+}
+
+function ptibugEditorHeading(title, description) {
+  return `
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">P'TIBUG</p>
+        <h3>${title}</h3>
+        <p class="panel-note">${description}</p>
+      </div>
+    </div>`;
+}
+
 function renderPTibugEditor() {
+  normalizePTibugResearchPatterns(zone0Settings.ptibug);
   const ptibug = zone0Settings.ptibug || {};
   const {
     species = {},
@@ -1064,7 +1094,9 @@ function renderPTibugEditor() {
     ...general
   } = ptibug;
   el.ptibugConfigList.innerHTML = [
+    ptibugEditorHeading("Fondations de la Nurserie", "Capacité, production, cellules, Sourcier et règles communes."),
     configCard("Nurserie et production", "ptibug", general, [], { open: true, meta: "Coûts, capacité, cycles et Sourcier" }),
+    ptibugEditorHeading("Espèces et Patterns d'espèce", "Les espèces définissent la création; leurs Patterns définissent la connaissance du Kernel."),
     ...Object.entries(species).map(([speciesId, config]) => configCard(
       config.displayName || speciesId,
       "ptibug",
@@ -1079,6 +1111,7 @@ function renderPTibugEditor() {
       ["patterns", speciesId],
       { meta: "Identifiant Kernel et description" },
     )),
+    ptibugEditorHeading("Traits biologiques permanents", "Coûts d'application par niveau cible, sans cumul. Un P'TIBUG ne peut développer que le niveau suivant de son Trait actuel."),
     ...Object.entries(traitDefinitions).map(([traitId, definition]) => configCard(
       `Trait · ${definition.displayName || traitId}`,
       "ptibug",
@@ -1086,6 +1119,7 @@ function renderPTibugEditor() {
       ["traitDefinitions", traitId],
       { meta: "Effets par ressource et multiplicateurs par grade" },
     )),
+    ptibugEditorHeading("Recherches et maîtrise", "Les données scientifiques sont investies dans les Patterns. Elles ne consomment pas de matériaux."),
     ...Object.entries(researchPatterns).map(([patternId, pattern]) => configCard(
       `Recherche · ${pattern.displayName || patternId}`,
       "ptibug",
@@ -1093,6 +1127,7 @@ function renderPTibugEditor() {
       ["researchPatterns", patternId],
       { meta: "Maîtrise, familles de données et biomes conseillés" },
     )),
+    ptibugEditorHeading("Biomes et production locale", "Risques, Cellules de données, pondérations Arac et bonus de Refuges P'TIBUG."),
     ...Object.entries(biomes).map(([biomeId, biome]) => configCard(
       `Biome · ${biome.displayName || biomeId}`,
       "ptibug",
@@ -1162,8 +1197,9 @@ function addPTibugTrait(event) {
     energyCostByLevel: { 1: 2, 2: 4, 3: 6 },
   };
   zone0Settings.ptibug.researchPatterns ||= {};
-  zone0Settings.ptibug.researchPatterns[`trait-${id}`] = {
-    id: `trait-${id}`,
+  const patternId = `ptibug-trait-${id}`;
+  zone0Settings.ptibug.researchPatterns[patternId] = {
+    id: patternId,
     displayName: `Pattern ${displayName}`,
     category: "trait",
     description: `Le Kernel apprend à stabiliser le trait ${displayName}.`,
@@ -1179,6 +1215,63 @@ function addPTibugTrait(event) {
   el.ptibugTraitForm.reset();
   renderPTibugEditor();
   el.ptibugStatus.textContent = "Trait ajouté localement. Publie pour l'envoyer à l'application.";
+}
+
+function addPTibugPattern(event) {
+  event.preventDefault();
+  const form = new FormData(el.ptibugPatternForm);
+  const category = String(form.get("category") || "trait");
+  const rawId = String(form.get("id") || "").trim().toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  const displayName = String(form.get("displayName") || "").trim();
+  const linkedTraitId = String(form.get("linkedTraitId") || "").trim();
+  const familyA = String(form.get("familyA") || "").trim();
+  const familyB = String(form.get("familyB") || "").trim();
+  const amountA = craftNumber(form.get("amountA"));
+  const amountB = craftNumber(form.get("amountB"));
+
+  zone0Settings.ptibug ||= {};
+  zone0Settings.ptibug.researchPatterns ||= {};
+  zone0Settings.ptibug.traitDefinitions ||= {};
+
+  if (!rawId || !displayName || !familyA || amountA <= 0) {
+    el.ptibugStatus.textContent = "Renseigne un identifiant, un nom et au moins une famille de données avec son coût.";
+    return;
+  }
+  if (category === "trait" && !zone0Settings.ptibug.traitDefinitions[linkedTraitId]) {
+    el.ptibugStatus.textContent = "Un Pattern de Trait doit référencer un Trait existant.";
+    return;
+  }
+
+  const patternId = category === "trait"
+    ? `ptibug-trait-${linkedTraitId}`
+    : `ptibug-${category}-${rawId}`;
+  if (zone0Settings.ptibug.researchPatterns[patternId]) {
+    el.ptibugStatus.textContent = "Ce Pattern existe déjà. Modifie sa carte existante plutôt que d'en créer un doublon.";
+    return;
+  }
+
+  const masteryCost = { [familyA]: amountA };
+  if (familyB && amountB > 0) {
+    masteryCost[familyB] = (masteryCost[familyB] || 0) + amountB;
+  }
+  zone0Settings.ptibug.researchPatterns[patternId] = {
+    id: patternId,
+    displayName,
+    category,
+    description: String(form.get("description") || "").trim(),
+    masteryCosts: { 1: masteryCost },
+    origin: String(form.get("origin") || "Dashboard").trim() || "Dashboard",
+    biomesSuggested: [],
+    ...(category === "trait" ? { linkedTraitId } : {}),
+  };
+  el.ptibugPatternForm.reset();
+  renderPTibugEditor();
+  el.ptibugStatus.textContent = "Pattern ajouté localement. Complète ses paliers II et III dans sa carte, puis publie.";
 }
 
 function addKernelMission(event) {
@@ -1431,6 +1524,7 @@ document.getElementById("goToCraftPlanButton")?.addEventListener("click", () => 
 });
 el.kernelMissionForm.addEventListener("submit", addKernelMission);
 el.ptibugTraitForm.addEventListener("submit", addPTibugTrait);
+el.ptibugPatternForm.addEventListener("submit", addPTibugPattern);
 
 async function loadKernelProgressConfig() {
   const response = await fetch("./kernel-progress-config.json", { cache: "no-store" });

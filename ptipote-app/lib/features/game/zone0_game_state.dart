@@ -3299,6 +3299,24 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  /// Returns the only biological Trait level this P'TIBUG may receive next.
+  /// Traits are permanent, but their own Pattern can improve them one level
+  /// at a time. A different Trait can never replace the existing one.
+  int? nextPTibugTraitLevelFor(PTibug bug, String traitId) {
+    final definition = pTibugConfig.traitDefinitionFor(traitId);
+    if (!pTibugs.contains(bug) || definition == null) {
+      return null;
+    }
+    if (bug.biologicalTraitId == null) {
+      return 1;
+    }
+    if (bug.biologicalTraitId != traitId) {
+      return null;
+    }
+    final nextLevel = bug.biologicalTraitLevel + 1;
+    return nextLevel <= definition.maxLevel ? nextLevel : null;
+  }
+
   Zone0ActionResult applyPTibugPermanentTrait({
     required PTibug bug,
     required String traitId,
@@ -3309,29 +3327,31 @@ class Zone0GameState extends ChangeNotifier {
         message: 'P’TIBUG ou Nurserie indisponible.',
       );
     }
-    if (bug.biologicalTraitId != null) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Ce P’TIBUG possède déjà un Trait permanent.',
-      );
-    }
     final definition = pTibugConfig.traitDefinitionFor(traitId);
+    final targetLevel = nextPTibugTraitLevelFor(bug, traitId);
+    if (targetLevel == null) {
+      final message = bug.biologicalTraitId == traitId
+          ? 'Ce Trait est déjà au niveau maximum.'
+          : 'Un P’TIBUG ne peut développer qu’un seul Trait biologique.';
+      return Zone0ActionResult(success: false, message: message);
+    }
     final patternId = 'ptibug-trait-$traitId';
     final progress = pTibugPatternProgress[patternId];
     if (definition == null ||
         progress == null ||
         !definition.isActive ||
         !isPTibugPatternActive(patternId) ||
-        progress.masteryLevel <= 0) {
-      return const Zone0ActionResult(
+        progress.masteryLevel < targetLevel) {
+      return Zone0ActionResult(
         success: false,
-        message: 'Pattern de Trait non maîtrisé.',
+        message: 'Le Pattern doit atteindre la maîtrise $targetLevel.',
       );
     }
-    final level = progress.masteryLevel.clamp(1, definition.maxLevel);
-    final dataCost = definition.dataCostForLevel(level);
-    final materialCost = definition.materialCostForLevel(level);
-    final energyCost = definition.energyCostForLevel(level);
+    // Only the target level is paid. Previous transformations are never paid
+    // again when a P'TIBUG evolves from Trait I to Trait II or III.
+    final dataCost = definition.dataCostForLevel(targetLevel);
+    final materialCost = definition.materialCostForLevel(targetLevel);
+    final energyCost = definition.energyCostForLevel(targetLevel);
     if (dataCost.isEmpty || materialCost.isEmpty) {
       return const Zone0ActionResult(
         success: false,
@@ -3355,7 +3375,7 @@ class Zone0GameState extends ChangeNotifier {
     _consumePTibugData(dataCost);
     energyUnits -= energyCost;
     bug.biologicalTraitId = traitId;
-    bug.biologicalTraitLevel = level;
+    bug.biologicalTraitLevel = targetLevel;
     emitKernelProgressEvent(KernelProgressEventType.ptibugTraitEquipped);
     reports.add(
       PtipoteMissionReport.system(
@@ -3364,14 +3384,15 @@ class Zone0GameState extends ChangeNotifier {
         mailbox: Zone0MessageMailbox.companions,
         subject: 'Trait P’TIBUG',
         concerned: bug.displayName,
-        summary: 'Trait ${definition.displayName} niveau $level appliqué.',
+        summary:
+            'Trait ${definition.displayName} niveau $targetLevel appliqué.',
       ),
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: 'Trait ${definition.displayName} appliqué.',
+      message: 'Trait ${definition.displayName} niveau $targetLevel appliqué.',
     );
   }
 
@@ -4930,6 +4951,45 @@ class Zone0GameState extends ChangeNotifier {
   bool _migratePTibugScientificState() {
     var changed = false;
     final now = DateTime.now();
+
+    // Early remote configurations used `trait-<id>` for Trait Patterns.
+    // Keep the player's existing mastery under the canonical Pattern id so an
+    // already researched Trait remains usable after the configuration update.
+    for (final trait in pTibugConfig.traitDefinitions.keys) {
+      final legacyId = 'trait-$trait';
+      final canonicalId = 'ptibug-trait-$trait';
+      final legacyProgress = pTibugPatternProgress.remove(legacyId);
+      if (legacyProgress == null) continue;
+      final canonicalProgress = pTibugPatternProgress[canonicalId];
+      if (canonicalProgress == null) {
+        pTibugPatternProgress[canonicalId] = PTibugPatternProgress(
+          patternId: canonicalId,
+          state: legacyProgress.state,
+          masteryLevel: legacyProgress.masteryLevel,
+          investedDataByFamily: legacyProgress.investedDataByFamily,
+          discoveredAt: legacyProgress.discoveredAt,
+          activatedAt: legacyProgress.activatedAt,
+        );
+      } else {
+        if (legacyProgress.masteryLevel > canonicalProgress.masteryLevel) {
+          canonicalProgress.masteryLevel = legacyProgress.masteryLevel;
+        }
+        if (legacyProgress.state.index > canonicalProgress.state.index) {
+          canonicalProgress.state = legacyProgress.state;
+        }
+        canonicalProgress
+          ..discoveredAt ??= legacyProgress.discoveredAt
+          ..activatedAt ??= legacyProgress.activatedAt;
+        for (final entry in legacyProgress.investedDataByFamily.entries) {
+          final current =
+              canonicalProgress.investedDataByFamily[entry.key] ?? 0;
+          if (entry.value > current) {
+            canonicalProgress.investedDataByFamily[entry.key] = entry.value;
+          }
+        }
+      }
+      changed = true;
+    }
     for (final pattern in pTibugConfig.researchPatterns.values) {
       final legacySpeciesIsActive = pattern.linkedSpecies != null &&
           activePTibugPatterns.contains(pattern.linkedSpecies);

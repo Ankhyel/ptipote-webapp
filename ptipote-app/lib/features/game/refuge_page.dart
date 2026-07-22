@@ -8828,17 +8828,17 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           final patternId = 'ptibug-trait-${definition.id}';
           final active = widget.gameState.isPTibugPatternActive(patternId);
           final progress = widget.gameState.pTibugPatternProgress[patternId];
-          final level = (progress?.masteryLevel ?? 1).clamp(
-            1,
+          final masteryLevel = ((progress?.masteryLevel ?? 0).clamp(
+            0,
             definition.maxLevel,
-          );
-          final dataCost = definition.dataCostForLevel(level);
-          final materialCost = definition.materialCostForLevel(level);
-          final energyCost = definition.energyCostForLevel(level);
-          final costConfigured = dataCost.isNotEmpty && materialCost.isNotEmpty;
-          final candidates = widget.gameState.pTibugs
-              .where((bug) => bug.biologicalTraitId == null)
-              .toList();
+          ));
+          final candidates = widget.gameState.pTibugs.where((bug) {
+            final targetLevel = widget.gameState.nextPTibugTraitLevelFor(
+              bug,
+              definition.id,
+            );
+            return targetLevel != null && targetLevel <= masteryLevel;
+          }).toList();
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -8851,7 +8851,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          '${definition.displayName} · maîtrise $level',
+                          '${definition.displayName} · maîtrise $masteryLevel/${definition.maxLevel}',
                           style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
                       ),
@@ -8862,14 +8862,12 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   const SizedBox(height: 8),
                   Text(
                     active
-                        ? costConfigured
-                            ? 'Données : ${_dataCostLabel(dataCost)}\nMatériaux : ${_resourceCostLabel(materialCost)}\nÉnergie : $energyCost'
-                            : 'Coût de création à configurer dans le Dashboard.'
+                        ? 'Chaque évolution demande le coût de son niveau cible, sans cumul.\nSélectionnez un P’TIBUG compatible pour voir le coût exact.'
                         : 'Pattern à découvrir et maîtriser dans le Kernel.',
                   ),
                   const SizedBox(height: 10),
                   OutlinedButton.icon(
-                    onPressed: active && costConfigured && candidates.isNotEmpty
+                    onPressed: active && candidates.isNotEmpty
                         ? () => _pickPTibugForPermanentTrait(definition.id)
                         : null,
                     icon: const Icon(Icons.biotech_outlined),
@@ -9032,9 +9030,20 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   }
 
   Future<void> _pickPTibugForPermanentTrait(String traitId) async {
-    final candidates = widget.gameState.pTibugs
-        .where((bug) => bug.biologicalTraitId == null)
-        .toList();
+    final definition = pTibugConfig.traitDefinitionFor(traitId);
+    if (definition == null) {
+      return;
+    }
+    final patternId = 'ptibug-trait-$traitId';
+    final masteryLevel =
+        widget.gameState.pTibugPatternProgress[patternId]?.masteryLevel ?? 0;
+    final candidates = widget.gameState.pTibugs.where((bug) {
+      final targetLevel = widget.gameState.nextPTibugTraitLevelFor(
+        bug,
+        traitId,
+      );
+      return targetLevel != null && targetLevel <= masteryLevel;
+    }).toList();
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -9048,11 +9057,23 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
-            ...candidates.map(
-              (bug) => ListTile(
+            ...candidates.map((bug) {
+              final targetLevel = widget.gameState.nextPTibugTraitLevelFor(
+                bug,
+                traitId,
+              )!;
+              final dataCost = definition.dataCostForLevel(targetLevel);
+              final materialCost = definition.materialCostForLevel(targetLevel);
+              final energyCost = definition.energyCostForLevel(targetLevel);
+              return ListTile(
                 leading: Icon(_speciesIcon(bug.species)),
                 title: Text(widget.gameState.pTibugBiologicalNameFor(bug)),
-                subtitle: Text('Niveau ${bug.level}'),
+                subtitle: Text(
+                  'Vers ${definition.displayName} niveau $targetLevel\n'
+                  'Données : ${_dataCostLabel(dataCost)}\n'
+                  'Matériaux : ${_resourceCostLabel(materialCost)} · énergie $energyCost',
+                ),
+                isThreeLine: true,
                 onTap: () {
                   final result = widget.gameState.applyPTibugPermanentTrait(
                     bug: bug,
@@ -9061,8 +9082,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   Navigator.of(sheetContext).pop();
                   _message(result.message);
                 },
-              ),
-            ),
+              );
+            }),
           ],
         ),
       ),
