@@ -1431,3 +1431,11 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - `remote_zone0_settings.dart` fusionne désormais les valeurs distantes `zone0Settings.ptibug` pour les Traits, recherches, biomes, qualités de données, coûts/temps des Modules et leurs effets, sans remplacer les valeurs Dart absentes. Les sauvegardes joueur restent inchangées : seuls les réglages communs sont lus depuis Firestore.
 - `ptipote-dashboard/app.js` et `ptipote-dashboard/ptibug-config.json` exposent ces tables à l'édition : Traits et coûts par niveau, recherches, familles de données, biomes, Modules et tables de production. Les configurations Dart restent le fallback hors ligne.
 - Vérification ciblée : `ptipote-app/test/ptibug_config_test.dart` garantit que les effets systémiques ne sont pas injectés dans la production, que les pondérations locales d'Arac existent et que les huit Traits V1 possèdent leurs coûts par niveau.
+
+### Persistance Firebase Zone 0 et chantier de Nurserie
+
+- `ptipote-app/lib/features/game/refuge_page.dart` charge désormais l'état joueur avant toute simulation, applique ensuite les résolutions hors ligne et demande une sauvegarde au passage de l'application en arrière-plan.
+- `ptipote-app/lib/features/game/zone0_game_state.dart` bloque toute écriture avant le premier chargement Firebase et sérialise les écritures afin qu'une sauvegarde ancienne ne puisse plus écraser une sauvegarde récente.
+- Les missions, affectations Tour, sécurité/exploration des biomes, générateur, recycleur, inventaire, chantiers et production P'TIBUG appartiennent au runtime Zone 0 sauvegardé dans `users/{uid}/game/zone0`. Les règles Firestore autorisent ce document pour son propriétaire connecté.
+- Le Cœur du Camp est restauré avant les résolutions qui dépendent de son niveau. Cela évite de traiter la Nurserie, les chantiers et la production avec un niveau par défaut au redémarrage.
+- La Nurserie de Plaine utilise le projet de construction commun. Son prérequis V1 est le Cœur du Camp niveau 2 : en dessous, l'écran explique directement le blocage ; au niveau 2, les dépôts de matériaux peuvent être réalisés et sont persistés normalement.

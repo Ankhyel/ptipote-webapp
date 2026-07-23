@@ -34,7 +34,7 @@ class RefugePage extends StatefulWidget {
   State<RefugePage> createState() => _RefugePageState();
 }
 
-class _RefugePageState extends State<RefugePage> {
+class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
   static final _campHeartState = CampHeartState.placeholder();
   static final _zone0State = Zone0GameState.instance;
 
@@ -42,6 +42,7 @@ class _RefugePageState extends State<RefugePage> {
   final _figurineService = FigurineService();
   String? _refugeAsset;
   Timer? _missionResolutionTimer;
+  bool _simulationStarted = false;
 
   static const _buildings = <_RefugeBuilding>[
     _RefugeBuilding(
@@ -103,30 +104,27 @@ class _RefugePageState extends State<RefugePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _zone0State.addListener(_onZone0StateChanged);
-    _missionResolutionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _zone0State.resolveDueForageMissions();
-      _zone0State.resolveDueTowerMissions();
-      _zone0State.resolveGenerator(heartLevel: _campHeartState.campHeartLevel);
-      _zone0State.resolveWorkshopOrder();
-      _zone0State.resolveConstructionProjects();
-      _zone0State.resolvePTibugProduction();
-      _zone0State.resolveMarket();
-      _zone0State.resolveWasteAndRecycler(
-        campHeartLevel: _campHeartState.campHeartLevel,
-      );
-      if (mounted) setState(() {});
-    });
-    _warmAssets();
-    _zone0State.resolveDueForageMissions();
-    _zone0State.resolveGenerator(heartLevel: _campHeartState.campHeartLevel);
+    unawaited(_warmAssets());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_flushZone0State());
     _missionResolutionTimer?.cancel();
     _zone0State.removeListener(_onZone0StateChanged);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(_flushZone0State());
+    }
   }
 
   void _onZone0StateChanged() {
@@ -135,11 +133,18 @@ class _RefugePageState extends State<RefugePage> {
 
   Future<void> _warmAssets() async {
     await _zone0State.loadFromFirebase();
-    _zone0State.resolveDueForageMissions();
+    if (!mounted || !_zone0State.hasLoadedFromFirebase) return;
+
+    // The Camp Heart level affects several offline resolvers. Restore it
+    // before resolving any mission or production state from the saved game.
     final campHeartData = await _zone0State.loadCampHeartFromFirebase();
     if (campHeartData != null) {
       _campHeartState.applyFirebaseData(campHeartData);
     }
+    if (!mounted) return;
+
+    _zone0State.resolveDueForageMissions();
+    _zone0State.resolveDueTowerMissions();
     _zone0State.resolveGenerator(heartLevel: _campHeartState.campHeartLevel);
     _zone0State.resolveWorkshopOrder();
     _zone0State.resolveConstructionProjects();
@@ -154,7 +159,34 @@ class _RefugePageState extends State<RefugePage> {
     final figurines = await _figurineService.watchMyFigurines().first;
     _zone0State.recoverFigurineNeeds(figurines: figurines, tick: 1);
     _refugeAsset = await _assetResolver.resolve('Camp');
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    _startSimulationTimer();
+    setState(() {});
+  }
+
+  void _startSimulationTimer() {
+    if (_simulationStarted || !_zone0State.hasLoadedFromFirebase) return;
+    _simulationStarted = true;
+    _missionResolutionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _zone0State.resolveDueForageMissions();
+      _zone0State.resolveDueTowerMissions();
+      _zone0State.resolveGenerator(heartLevel: _campHeartState.campHeartLevel);
+      _zone0State.resolveWorkshopOrder();
+      _zone0State.resolveConstructionProjects();
+      _zone0State.resolvePTibugProduction();
+      _zone0State.resolveMarket();
+      _zone0State.resolveWasteAndRecycler(
+        campHeartLevel: _campHeartState.campHeartLevel,
+      );
+      if (mounted) setState(() {});
+    });
+  }
+
+  Future<void> _flushZone0State() async {
+    if (!_zone0State.hasLoadedFromFirebase) return;
+    await _zone0State.saveAllToFirebase();
+    await _zone0State.saveCampHeartToFirebase(_campHeartState.toFirebaseData());
+    await _zone0State.flushFirebaseWrites();
   }
 
   void _openBuilding(_RefugeBuilding building) {
@@ -5153,8 +5185,13 @@ class _BiomeBuildingsTab extends StatelessWidget {
                           title: 'Construire la Nurserie P’TIBUG',
                           description:
                               'La Nurserie a besoin d’une Plaine végétalisée et de matériaux réservés.',
-                          footer:
-                              'Les prérequis et ressources du chantier sont affichés ici.',
+                          campHeartLevel: campHeartLevel,
+                          blockedReason: campHeartLevel < 2
+                              ? 'Le Cœur du Camp doit atteindre le niveau 2 avant de construire la Nurserie.'
+                              : null,
+                          footer: campHeartLevel < 2
+                              ? 'Niveau actuel du Cœur : $campHeartLevel / 2.'
+                              : 'Les matériaux peuvent être déposés progressivement.',
                         ),
                       ),
                       icon: const Icon(Icons.pets_outlined),

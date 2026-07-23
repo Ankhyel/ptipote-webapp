@@ -193,6 +193,11 @@ class Zone0GameState extends ChangeNotifier {
   String firebaseSyncLabel = 'Non synchronisé';
   bool isFirebaseSyncing = false;
   bool _loadedFromFirebase = false;
+  Future<void> _firebaseWriteQueue = Future<void>.value();
+  int _firebaseSyncCount = 0;
+
+  /// Empêche les actions de simulation d'écraser les données avant le chargement.
+  bool get hasLoadedFromFirebase => _loadedFromFirebase;
 
   bool get isFablabBuilt => atelierLevel >= fablabConfig.cuisineUnlockLevel;
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
@@ -2995,6 +3000,12 @@ class Zone0GameState extends ChangeNotifier {
         success: false,
         message:
             'Le Cœur du Camp doit atteindre le niveau ${securityTowerConfig.requiredCampHeartLevel}.',
+      );
+    }
+    if (targetId == 'plaineNursery' && (campHeartLevel ?? 0) < 2) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Cœur du Camp doit atteindre le niveau 2.',
       );
     }
     if (targetId == 'market') {
@@ -6887,6 +6898,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Future<void> saveCampHeartToFirebase(Map<String, dynamic> campHeart) async {
+    if (!_loadedFromFirebase) return;
     final user = await _currentUser();
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde Cœur du Camp', () {
@@ -6898,6 +6910,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Future<void> saveInventoryToFirebase() async {
+    if (!_loadedFromFirebase) return;
     final user = await _currentUser();
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde inventaire', () {
@@ -6916,6 +6929,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Future<void> saveRuntimeToFirebase() async {
+    if (!_loadedFromFirebase) return;
     final user = await _currentUser();
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde missions/vitalité', () {
@@ -7079,6 +7093,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Future<void> saveBuildingsToFirebase() async {
+    if (!_loadedFromFirebase) return;
     final user = await _currentUser();
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde bâtiments', () {
@@ -7203,7 +7218,7 @@ class Zone0GameState extends ChangeNotifier {
           .where((user) => user != null)
           .cast<User>()
           .first
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 20));
     } on Object {
       lastFirebaseError = 'Utilisateur Firebase non prêt.';
       firebaseSyncLabel = 'Synchro impossible';
@@ -7215,28 +7230,47 @@ class Zone0GameState extends ChangeNotifier {
   Future<void> _runFirebaseSync(
     String label,
     Future<void> Function() action,
-  ) async {
-    isFirebaseSyncing = true;
-    firebaseSyncLabel = label;
-    lastFirebaseError = null;
-    notifyListeners();
-    try {
-      await action();
-      lastFirebaseSyncAt = DateTime.now();
-      firebaseSyncLabel = 'Synchronisé';
-    } on FirebaseException catch (error) {
-      lastFirebaseError = '${error.code}: ${error.message ?? error.plugin}';
-      firebaseSyncLabel = 'Erreur Firebase';
-      debugPrint('Zone0 Firebase sync failed: $label: $lastFirebaseError');
-    } on Object catch (error) {
-      lastFirebaseError = '$error';
-      firebaseSyncLabel = 'Erreur Firebase';
-      debugPrint('Zone0 Firebase sync failed: $label: $error');
-    } finally {
-      isFirebaseSyncing = false;
+  ) {
+    // Toutes les écritures partagent la même file : une sauvegarde plus
+    // ancienne ne peut pas terminer après une sauvegarde plus récente.
+    final queuedSync = _firebaseWriteQueue.then((_) async {
+      _firebaseSyncCount += 1;
+      isFirebaseSyncing = true;
+      firebaseSyncLabel = label;
+      lastFirebaseError = null;
       notifyListeners();
-    }
+      try {
+        await action();
+        lastFirebaseSyncAt = DateTime.now();
+        firebaseSyncLabel = 'Synchronisé';
+      } on FirebaseException catch (error) {
+        lastFirebaseError = '${error.code}: ${error.message ?? error.plugin}';
+        firebaseSyncLabel = 'Erreur Firebase';
+        debugPrint('Zone0 Firebase sync failed: $label: $lastFirebaseError');
+      } on Object catch (error) {
+        lastFirebaseError = '$error';
+        firebaseSyncLabel = 'Erreur Firebase';
+        debugPrint('Zone0 Firebase sync failed: $label: $error');
+      } finally {
+        _firebaseSyncCount -= 1;
+        isFirebaseSyncing = _firebaseSyncCount > 0;
+        notifyListeners();
+      }
+    });
+    _firebaseWriteQueue = queuedSync;
+    return queuedSync;
   }
+
+  /// Sauvegarde les trois fragments de Zone 0 avant une mise en arrière-plan.
+  Future<void> saveAllToFirebase() async {
+    if (!_loadedFromFirebase) return;
+    await saveInventoryToFirebase();
+    await saveBuildingsToFirebase();
+    await saveRuntimeToFirebase();
+  }
+
+  /// Attend les écritures déjà demandées, utile lors de la fermeture de l'app.
+  Future<void> flushFirebaseWrites() => _firebaseWriteQueue;
 }
 
 class PtipoteXpGainResult {
