@@ -4,6 +4,7 @@ enum KernelMissionStatus { locked, active, completed }
 
 enum KernelMissionConditionType {
   fablabBuilt,
+  ptibugCreated,
   securityTowerBuilt,
   mealsPrepared,
   plaineMissionsCompleted,
@@ -144,6 +145,20 @@ const KernelConfig defaultKernelConfig = KernelConfig(
       xpReward: 0,
       mailMessage:
           'Un nouvel habitant s’installe près du refuge après la construction du Fablab.',
+    ),
+    KernelMissionConfig(
+      id: 'create-first-ptibug',
+      type: KernelMissionType.main,
+      title: 'Créer ton premier P’TIBUG',
+      description:
+          'Active le Pattern choisi dans les Plans du Kernel, puis crée ton premier P’TIBUG dans la Nurserie.',
+      conditionType: KernelMissionConditionType.ptibugCreated,
+      requiredAmount: 1,
+      populationReward: 0,
+      bioBatteryReward: 0,
+      xpReward: 0,
+      mailMessage: 'Le premier P’TIBUG rejoint la Nurserie.',
+      requiredBuildingLevels: <String, int>{'plaineNursery': 1},
     ),
     KernelMissionConfig(
       id: 'build-security-tower',

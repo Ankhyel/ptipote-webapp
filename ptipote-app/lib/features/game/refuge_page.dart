@@ -166,6 +166,7 @@ class _RefugePageState extends State<RefugePage> {
             return LisierePage(
               gameState: _zone0State,
               campHeartLevel: _campHeartState.campHeartLevel,
+              campHeartState: _campHeartState,
             );
           }
           if (building.name == 'CampHeart') {
@@ -203,6 +204,7 @@ class _RefugePageState extends State<RefugePage> {
             return PTibugNurseryPage(
               gameState: _zone0State,
               campHeartLevel: _campHeartState.campHeartLevel,
+              campHeartState: _campHeartState,
             );
           }
           return _GameBuildingPage(building: building);
@@ -687,7 +689,7 @@ class _KernelMainMissionTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (mission == null && !gameState.hasPendingStarterPTibugChoice) {
+    if (mission == null) {
       return const _KernelEmptyState(
         message: 'Aucune mission principale active.',
       );
@@ -695,74 +697,10 @@ class _KernelMainMissionTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(18),
       children: <Widget>[
-        if (gameState.hasPendingStarterPTibugChoice)
-          _StarterPTibugChoiceCard(gameState: gameState),
-        if (mission != null) ...<Widget>[
-          if (gameState.hasPendingStarterPTibugChoice)
-            const SizedBox(height: 12),
-          _KernelMissionCard(mission: mission!, gameState: gameState),
-        ],
+        _KernelMissionCard(mission: mission!, gameState: gameState),
       ],
     );
   }
-}
-
-class _StarterPTibugChoiceCard extends StatelessWidget {
-  const _StarterPTibugChoiceCard({required this.gameState});
-
-  final Zone0GameState gameState;
-
-  @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                'Choisir le premier P’TIBUG',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Le Kernel peut stabiliser un seul Pattern de départ. Les autres se découvriront ensuite grâce aux missions ou au Sourcier.',
-              ),
-              const SizedBox(height: 12),
-              ...PTibugSpecies.values.map((species) {
-                final config = pTibugConfig.species[species]!;
-                final pattern = pTibugConfig.patterns[species]!;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: OutlinedButton(
-                    onPressed: () {
-                      final result =
-                          gameState.chooseStarterPTibugPattern(species);
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text(result.message)));
-                    },
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            config.displayName,
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                          Text(pattern.description),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ],
-          ),
-        ),
-      );
 }
 
 class _KernelRequestsTab extends StatelessWidget {
@@ -4548,10 +4486,12 @@ class LisierePage extends StatefulWidget {
     super.key,
     required this.gameState,
     required this.campHeartLevel,
+    required this.campHeartState,
   });
 
   final Zone0GameState gameState;
   final int campHeartLevel;
+  final CampHeartState campHeartState;
 
   @override
   State<LisierePage> createState() => _LisierePageState();
@@ -4815,6 +4755,7 @@ class _LisierePageState extends State<LisierePage> {
                 gameState: widget.gameState,
                 biome: biome,
                 campHeartLevel: widget.campHeartLevel,
+                campHeartState: widget.campHeartState,
               ),
             ),
           ],
@@ -5146,10 +5087,12 @@ class _BiomeBuildingsTab extends StatelessWidget {
     required this.gameState,
     required this.biome,
     required this.campHeartLevel,
+    required this.campHeartState,
   });
   final Zone0GameState gameState;
   final ForageBiome biome;
   final int campHeartLevel;
+  final CampHeartState campHeartState;
 
   @override
   Widget build(BuildContext context) {
@@ -5220,6 +5163,7 @@ class _BiomeBuildingsTab extends StatelessWidget {
                           builder: (_) => PTibugNurseryPage(
                             gameState: gameState,
                             campHeartLevel: campHeartLevel,
+                            campHeartState: campHeartState,
                           ),
                         ),
                       ),
@@ -8275,14 +8219,105 @@ class _MarketStockSlot extends StatelessWidget {
   }
 }
 
+class _StarterPTibugChoiceOption extends StatefulWidget {
+  const _StarterPTibugChoiceOption({
+    required this.species,
+    required this.title,
+    required this.description,
+    required this.onSelected,
+  });
+
+  final PTibugSpecies species;
+  final String title;
+  final String description;
+  final VoidCallback onSelected;
+
+  @override
+  State<_StarterPTibugChoiceOption> createState() =>
+      _StarterPTibugChoiceOptionState();
+}
+
+class _StarterPTibugChoiceOptionState extends State<_StarterPTibugChoiceOption>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  Color get _color => switch (widget.species) {
+        PTibugSpecies.scarabe => const Color(0xFF71889B),
+        PTibugSpecies.hyme => const Color(0xFFE0B53F),
+        PTibugSpecies.arac => const Color(0xFFC65A5A),
+      };
+
+  IconData get _icon => switch (widget.species) {
+        PTibugSpecies.scarabe => Icons.shield_outlined,
+        PTibugSpecies.hyme => Icons.hive_outlined,
+        PTibugSpecies.arac => Icons.hub_outlined,
+      };
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _color.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: widget.onSelected,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: <Widget>[
+              ScaleTransition(
+                scale: Tween<double>(begin: 0.92, end: 1.08).animate(
+                  CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+                ),
+                child: CircleAvatar(
+                  radius: 25,
+                  backgroundColor: _color,
+                  foregroundColor: Colors.white,
+                  child: Icon(_icon, size: 29),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      widget.title,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(widget.description),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded, color: _color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class PTibugNurseryPage extends StatefulWidget {
   const PTibugNurseryPage({
     super.key,
     required this.gameState,
     required this.campHeartLevel,
+    required this.campHeartState,
   });
   final Zone0GameState gameState;
   final int campHeartLevel;
+  final CampHeartState campHeartState;
 
   @override
   State<PTibugNurseryPage> createState() => _PTibugNurseryPageState();
@@ -8290,6 +8325,8 @@ class PTibugNurseryPage extends StatefulWidget {
 
 class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   Timer? _timer;
+  bool _starterChoiceDialogVisible = false;
+
   @override
   void initState() {
     super.initState();
@@ -8298,6 +8335,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       const Duration(seconds: 10),
       (_) => widget.gameState.resolvePTibugProduction(),
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showStarterChoiceIfNeeded();
+    });
   }
 
   @override
@@ -8309,6 +8349,89 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
 
   void _changed() {
     if (mounted) setState(() {});
+    _showStarterChoiceIfNeeded();
+  }
+
+  Future<void> _showStarterChoiceIfNeeded() async {
+    if (!mounted ||
+        _starterChoiceDialogVisible ||
+        !widget.gameState.hasPendingStarterPTibugChoice) {
+      return;
+    }
+    _starterChoiceDialogVisible = true;
+    final species = await showDialog<PTibugSpecies>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Choisis ton premier P’TIBUG'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: PTibugSpecies.values
+                  .map(
+                    (species) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _StarterPTibugChoiceOption(
+                        species: species,
+                        title: pTibugConfig.species[species]!.displayName,
+                        description:
+                            pTibugConfig.patterns[species]!.description,
+                        onSelected: () =>
+                            Navigator.of(dialogContext).pop(species),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!mounted || species == null) {
+      _starterChoiceDialogVisible = false;
+      return;
+    }
+
+    final result = widget.gameState.chooseStarterPTibugPattern(species);
+    if (!result.success) {
+      _starterChoiceDialogVisible = false;
+      _message(result.message);
+      return;
+    }
+
+    final openPlans = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('${pTibugConfig.species[species]!.displayName} choisi'),
+        content: const Text(
+          'Le Pattern est maintenant prêt dans les Plans du Kernel. Les autres espèces seront découvertes plus tard grâce au Kernel ou au Sourcier du savoir. Active ce Pattern avant de créer ton premier P’TIBUG.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Plus tard'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Ouvrir les Plans'),
+          ),
+        ],
+      ),
+    );
+    _starterChoiceDialogVisible = false;
+    if (!mounted || openPlans != true) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => KernelPage(
+          gameState: widget.gameState,
+          campHeartState: widget.campHeartState,
+          initialTabIndex: 3,
+        ),
+      ),
+    );
   }
 
   void _message(String message) => ScaffoldMessenger.of(

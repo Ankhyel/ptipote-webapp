@@ -508,6 +508,12 @@ class Zone0GameState extends ChangeNotifier {
   ) {
     final persistentMissions = kernelConfig.missions
         .where((mission) => mission.type != KernelMissionType.weather)
+        .where(
+          (mission) =>
+              mission.conditionType !=
+                  KernelMissionConditionType.ptibugCreated ||
+              starterPTibugChoiceMade,
+        )
         .where((mission) => !dismissedKernelMissionIds.contains(mission.id))
         .map(
           (mission) => KernelMissionProgress(
@@ -727,6 +733,9 @@ class Zone0GameState extends ChangeNotifier {
 
   KernelPlanState kernelPlanState(KernelTechnologyPlanConfig plan) {
     final pTibugPattern = pTibugConfig.patternForKernelPlanId(plan.id);
+    if (pTibugPattern != null && !starterPTibugChoiceMade) {
+      return KernelPlanState.unknown;
+    }
     if (activeKernelPlanIds.contains(plan.id) ||
         (pTibugPattern != null &&
             activePTibugPatterns.contains(pTibugPattern.species)) ||
@@ -765,26 +774,23 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     starterPTibugChoiceMade = true;
-    activePTibugPatterns.add(species);
     final researchPattern = pTibugConfig.researchPatterns.values
         .where((item) => item.linkedSpecies == species)
         .firstOrNull;
     if (researchPattern != null) {
       final progress = _patternProgressFor(researchPattern.id);
       progress
-        ..state = PTibugPatternState.active
-        ..masteryLevel = math.max(progress.masteryLevel, 1)
-        ..discoveredAt ??= DateTime.now()
-        ..activatedAt ??= DateTime.now();
+        ..state = PTibugPatternState.discovered
+        ..discoveredAt ??= DateTime.now();
     }
     final planId = pTibugConfig.patterns[species]!.kernelPlanId;
     discoveredKernelPlanIds.remove(planId);
-    readyKernelPlanIds.remove(planId);
-    activeKernelPlanIds.add(planId);
+    readyKernelPlanIds.add(planId);
+    activeKernelPlanIds.remove(planId);
     reports.add(
       PtipoteMissionReport.system(
         message:
-            'Le Kernel transmet le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut lancer sa première création.',
+            'Le Pattern ${pTibugConfig.species[species]!.displayName} est prêt. Active-le dans les Plans du Kernel avant de le créer dans la Nurserie.',
         sourceBuildingId: 'kernel',
         mailbox: Zone0MessageMailbox.kernel,
         subject: 'Plan Kernel',
@@ -1112,6 +1118,17 @@ class Zone0GameState extends ChangeNotifier {
     final pTibugPattern = pTibugConfig.patternForKernelPlanId(planId);
     if (pTibugPattern != null) {
       activePTibugPatterns.add(pTibugPattern.species);
+      final researchPattern = pTibugConfig.researchPatterns.values
+          .where((item) => item.linkedSpecies == pTibugPattern.species)
+          .firstOrNull;
+      if (researchPattern != null) {
+        final progress = _patternProgressFor(researchPattern.id);
+        progress
+          ..state = PTibugPatternState.active
+          ..masteryLevel = math.max(progress.masteryLevel, 1)
+          ..discoveredAt ??= DateTime.now()
+          ..activatedAt ??= DateTime.now();
+      }
     }
     reports.add(
       PtipoteMissionReport.system(
@@ -3611,6 +3628,7 @@ class Zone0GameState extends ChangeNotifier {
         ),
       );
       emitKernelProgressEvent(KernelProgressEventType.ptibugCreated);
+      refreshKernelMissions();
       changed = true;
     }
     for (final bug in pTibugs.where((item) => item.assignedSlotIndex != null)) {
@@ -6074,6 +6092,7 @@ class Zone0GameState extends ChangeNotifier {
   int _kernelMissionProgress(KernelMissionConfig mission) {
     return switch (mission.conditionType) {
       KernelMissionConditionType.fablabBuilt => isFablabBuilt ? 1 : 0,
+      KernelMissionConditionType.ptibugCreated => pTibugs.isNotEmpty ? 1 : 0,
       KernelMissionConditionType.securityTowerBuilt =>
         isSecurityTowerBuilt ? 1 : 0,
       KernelMissionConditionType.mealsPrepared => mealsPrepared,
@@ -6091,10 +6110,15 @@ class Zone0GameState extends ChangeNotifier {
         'securityTower' => securityTowerLevel,
         'market' => marketLevel,
         'house' => houseLevel,
+        'plaineNursery' => plaineNurseryLevel,
         _ => 0,
       };
 
   String? _kernelMissionPrerequisiteMessage(KernelMissionConfig mission) {
+    if (mission.conditionType == KernelMissionConditionType.ptibugCreated &&
+        !starterPTibugChoiceMade) {
+      return 'Choisis d’abord un Pattern dans la Nurserie.';
+    }
     for (final requirement in mission.requiredBuildingLevels.entries) {
       if (_kernelBuildingLevel(requirement.key) < requirement.value) {
         return '${requirement.key} niveau ${requirement.value} requis.';
@@ -6226,6 +6250,10 @@ class Zone0GameState extends ChangeNotifier {
 
     var restoredPopulation = 0;
     for (final mission in kernelConfig.missions) {
+      if (mission.conditionType == KernelMissionConditionType.ptibugCreated &&
+          !starterPTibugChoiceMade) {
+        continue;
+      }
       final wasCompleted = completedKernelMissionIds.contains(mission.id);
       if (!wasCompleted) {
         if (mission.requestedItem != null ||

@@ -1240,16 +1240,16 @@ Pour formater Dart:
 ### Patterns P'TIBUG - Kernel
 
 - `ptipote-app/lib/features/game/ptibug_config.dart` centralise les trois Patterns V1 et leur lien avec les Plans Kernel : Scarabé, Hymé et Arac.
-- `ptipote-app/lib/features/game/kernel_progress_config.dart` définit les Plans de Pattern. Scarabé est offert à la construction de la Nurserie ; Hymé se découvre après le premier P'TIBUG ; Arac après trois collectes P'TIBUG, avec les prérequis de Confiance et d'axe Éleveur affichés par le Kernel.
+- `ptipote-app/lib/features/game/kernel_progress_config.dart` définit les Plans de Pattern. Aucun Pattern d'espèce n'est offert par défaut : le premier est sélectionné dans la Nurserie, puis activé explicitement dans les Plans du Kernel. Hymé et Arac restent découvrables via le Kernel ou le Sourcier.
 - `ptipote-app/lib/features/game/zone0_game_state.dart` active un Pattern lors de l'activation de son Plan Kernel et persiste la liste dans `users/{uid}/game/zone0.ptibug`. Les créations restent refusées tant que le Pattern concerné n'est pas actif.
 - La Nurserie affiche tous les Patterns, avec leur état Kernel. Seuls les Patterns actifs proposent le bouton `Créer`.
 - Attente : la vente ou le partage social de Patterns via le Marché/Sourcier reste une étape ultérieure ; aucun Pattern n'est consommé à la création.
 
 ### Premier P'TIBUG et Sourcier V1
 
-- À la fin de la construction de la Nurserie, le Kernel affiche une carte de choix unique : Scarabé, Hymé ou Arac. Aucun Pattern n'est attribué automatiquement aux nouvelles sauvegardes.
-- Le choix est gratuit, actif immédiatement et sauvegardé dans `users/{uid}/game/zone0.ptibug.starterChoiceMade`. Les sauvegardes existantes ayant déjà un Pattern actif sont considérées comme ayant effectué ce choix afin d'éviter toute perte de progression.
-- Chaque proposition présente le rôle du P'TIBUG. Le Pattern choisi devient actif et permet sa création dans la Nurserie.
+- À la première ouverture de la Nurserie, une modale de choix unique propose Scarabé, Hymé ou Arac. Les icônes pulsantes gris-bleu, jaune et rouge signalent les trois choix possibles. Aucun Pattern d'espèce n'est attribué automatiquement aux nouvelles sauvegardes.
+- Le choix est gratuit et sauvegardé dans `users/{uid}/game/zone0.ptibug.starterChoiceMade`. Il rend le Pattern choisi `ready` dans le Kernel, sans l'activer immédiatement. Une seconde modale explique que les autres Patterns viennent du Kernel ou du Sourcier et propose d'ouvrir les Plans.
+- L'activation dans l'onglet Plans rend le Pattern créable dans la Nurserie. La mission principale `Créer ton premier P'TIBUG` apparaît après le choix et explique cette boucle. Les sauvegardes existantes ayant déjà un Pattern actif restent considérées comme ayant effectué ce choix afin d'éviter toute perte de progression.
 - Le Marché héberge le `Sourcier du savoir`. Lors de sa présence, il propose les Patterns Hymé et Arac encore inactifs contre des Bio-batteries configurées dans `ptibug_config.dart`. L'achat active directement le Pattern et le Plan Kernel correspondant.
 - Les découvertes par événements Kernel restent actives en parallèle : premier P'TIBUG pour Hymé, trois collectes P'TIBUG pour Arac. Les Plans déjà acquis ne sont pas proposés une seconde fois par le Sourcier.
 - Le cycle du Sourcier est configuré dans `tower_operations_config.dart`, publié dans `gameConfigs/zone0.zone0Settings.towerOperations` et utilisé hors ligne par `Zone0GameState`: une visite dure deux heures, avec au plus trois passages par jour et quatre a huit heures entre deux arrivées.
