@@ -18,6 +18,10 @@ class LisiereForageConfig {
     required this.refugeSafetyFallback,
     required this.minimumMissionRisk,
     required this.securityRiskReductionFactor,
+    required this.wasteLevelMax,
+    required this.wasteMultiplierPerLevel,
+    required this.wasteHoursPerLevelDepletion,
+    required this.organicBonusAtZeroWaste,
     required this.inventorySlotLimit,
     required this.inventoryStackLimit,
     required this.xpGainByDuration,
@@ -31,6 +35,10 @@ class LisiereForageConfig {
   final int refugeSafetyFallback;
   final int minimumMissionRisk;
   final double securityRiskReductionFactor;
+  final int wasteLevelMax;
+  final double wasteMultiplierPerLevel;
+  final double wasteHoursPerLevelDepletion;
+  final double organicBonusAtZeroWaste;
   final int inventorySlotLimit;
   final int inventoryStackLimit;
   final Map<ForageDuration, int> xpGainByDuration;
@@ -52,6 +60,7 @@ class ForageBiomeConfig {
     this.mineralRewardModifier = 0,
     this.riskModifier = 0,
     this.linkedPtipoteRefugeBonus = 0,
+    this.wasteBaseGain = 0,
     this.hazards = const <ForageHazard>[],
   });
 
@@ -65,6 +74,7 @@ class ForageBiomeConfig {
   final double mineralRewardModifier;
   final int riskModifier;
   final int linkedPtipoteRefugeBonus;
+  final int wasteBaseGain;
   final List<ForageHazard> hazards;
 }
 
@@ -106,6 +116,10 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
   refugeSafetyFallback: 0,
   minimumMissionRisk: 5,
   securityRiskReductionFactor: 0.4,
+  wasteLevelMax: 10,
+  wasteMultiplierPerLevel: 0.15,
+  wasteHoursPerLevelDepletion: 1,
+  organicBonusAtZeroWaste: 0.30,
   inventorySlotLimit: 10,
   inventoryStackLimit: 10,
   xpGainByDuration: <ForageDuration, int>{
@@ -125,6 +139,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       tendency: 'mixte',
       baseRewards: <String, int>{'Organique': 4, 'Minéral': 3},
       baseRiskPercent: 45,
+      wasteBaseGain: 3,
       hazards: <ForageHazard>[
         ForageHazard.terrainInstable,
         ForageHazard.droneErrant
@@ -135,6 +150,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       tendency: 'départ / restauration',
       baseRewards: <String, int>{'Organique': 2, 'Minéral': 1},
       baseRiskPercent: 30,
+      wasteBaseGain: 2,
       restorationLevel: 0,
       restorationStage: 'Plaine desséchée',
       hazards: <ForageHazard>[
@@ -147,6 +163,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       tendency: 'Minéral',
       baseRewards: <String, int>{'Organique': 1, 'Minéral': 5},
       baseRiskPercent: 35,
+      wasteBaseGain: 3,
       hazards: <ForageHazard>[
         ForageHazard.terrainInstable,
         ForageHazard.droneErrant
@@ -157,6 +174,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       tendency: 'Organique / transformation',
       baseRewards: <String, int>{'Organique': 5, 'Minéral': 1},
       baseRiskPercent: 40,
+      wasteBaseGain: 4,
       hazards: <ForageHazard>[
         ForageHazard.pollution,
         ForageHazard.climatDifficile

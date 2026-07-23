@@ -243,6 +243,7 @@ class PTibugConfig {
     required this.dataQualityValues,
     required this.dataQualityWeights,
     required this.baseCellChancePercent,
+    required this.cellChanceByOrdinal,
     required this.neutralCellChancePercent,
     required this.maxCellsByMission,
     required this.reservoirCapacityBonusByLevel,
@@ -281,6 +282,7 @@ class PTibugConfig {
   final Map<PTibugDataQuality, int> dataQualityValues;
   final Map<PTibugDataQuality, int> dataQualityWeights;
   final int baseCellChancePercent;
+  final Map<int, int> cellChanceByOrdinal;
   final int neutralCellChancePercent;
   final Map<int, int> maxCellsByMission;
   final Map<int, int> reservoirCapacityBonusByLevel;
@@ -325,6 +327,10 @@ class PTibugConfig {
     if (hours >= 6) return maxCellsByMission[3] ?? 3;
     if (hours >= 2) return maxCellsByMission[2] ?? 2;
     return maxCellsByMission[1] ?? 1;
+  }
+
+  int cellChanceForOrdinal(int ordinal) {
+    return (cellChanceByOrdinal[ordinal] ?? 0).clamp(0, 100).toInt();
   }
 
   int reservoirCapacityForLevel(int level) =>
@@ -936,6 +942,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     PTibugDataQuality.rare: 5,
   },
   baseCellChancePercent: 20,
+  cellChanceByOrdinal: <int, int>{1: 100, 2: 50, 3: 20},
   neutralCellChancePercent: 20,
   maxCellsByMission: <int, int>{1: 1, 2: 2, 3: 3},
   reservoirCapacityBonusByLevel: <int, int>{1: 15, 2: 18, 3: 20},

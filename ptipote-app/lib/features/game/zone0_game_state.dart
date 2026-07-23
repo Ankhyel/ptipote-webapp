@@ -6383,17 +6383,24 @@ class Zone0GameState extends ChangeNotifier {
       }
     }
 
-    final mainRewards = (rewards['Organique'] ?? 0) + (rewards['Minéral'] ?? 0);
-    if (mainRewards > 0) {
-      final percent = wasteRecyclerConfig.wasteRewardMinimumPercent +
-          _random.nextInt(
-            wasteRecyclerConfig.wasteRewardMaximumPercent -
-                wasteRecyclerConfig.wasteRewardMinimumPercent +
-                1,
-          );
-      final waste = (mainRewards * percent / 100).floor();
-      if (waste > 0) rewards['Déchets'] = waste;
+    final organicBonus = organicBonusForBiome(mission.biome);
+    if (organicBonus > 0) {
+      rewards['Organique'] =
+          ((rewards['Organique'] ?? 0) * (1 + organicBonus)).round();
     }
+    final wasteReward = estimatedBiomeWasteReward(
+      biome: mission.biome,
+      theoreticalHours: duration.theoreticalHours,
+      rewardMultiplier: intensity.rewardMultiplier * rewardRatio,
+    );
+    if (wasteReward > 0) {
+      rewards['Déchets'] = wasteReward;
+    }
+    _depleteBiomeWaste(
+      biome: mission.biome,
+      theoreticalHours: duration.theoreticalHours,
+      completionRatio: rewardRatio,
+    );
     final inventoryResult = addResources(rewards);
     final xpResults = <String, PtipoteXpGainResult>{};
     for (final memberId in mission.memberIds) {
@@ -6417,7 +6424,6 @@ class Zone0GameState extends ChangeNotifier {
     final dataCells = _createDataCellsForMission(
       mission: mission,
       duration: duration,
-      intensity: intensity,
       completedAt: completedAt,
     );
     if (dataCells.isNotEmpty) {
@@ -6542,13 +6548,62 @@ class Zone0GameState extends ChangeNotifier {
     mission.status = ForageMissionStatus.completed;
   }
 
+  int wasteLevelFor(ForageBiome biome) {
+    return biomeSecurity[biome]?.wasteLevel ??
+        lisiereForageConfig.wasteLevelMax;
+  }
+
+  double wasteMultiplierFor(ForageBiome biome) {
+    final maximum = lisiereForageConfig.wasteLevelMax;
+    if (maximum <= 0) return 0;
+    final level = wasteLevelFor(biome).clamp(0, maximum);
+    return (level * lisiereForageConfig.wasteMultiplierPerLevel)
+        .clamp(0, 1.5)
+        .toDouble();
+  }
+
+  double organicBonusForBiome(ForageBiome biome) {
+    return wasteLevelFor(biome) <= 0
+        ? lisiereForageConfig.organicBonusAtZeroWaste
+        : 0;
+  }
+
+  int estimatedBiomeWasteReward({
+    required ForageBiome biome,
+    required int theoreticalHours,
+    required double rewardMultiplier,
+  }) {
+    final baseReward = lisiereForageConfig.biomes[biome]?.wasteBaseGain ?? 0;
+    return (baseReward *
+            wasteMultiplierFor(biome) *
+            theoreticalHours *
+            rewardMultiplier)
+        .floor();
+  }
+
+  void _depleteBiomeWaste({
+    required ForageBiome biome,
+    required int theoreticalHours,
+    required double completionRatio,
+  }) {
+    final hoursPerLevel = lisiereForageConfig.wasteHoursPerLevelDepletion;
+    if (hoursPerLevel <= 0) return;
+    final levelLoss =
+        (theoreticalHours * completionRatio / hoursPerLevel).floor();
+    if (levelLoss <= 0) return;
+    final state = biomeSecurity.putIfAbsent(
+      biome,
+      () => BiomeSecurityState.initial(biome),
+    );
+    state.wasteLevel = math.max(0, state.wasteLevel - levelLoss).toInt();
+  }
+
   /// Creates scientific discoveries once for a completed Lisière mission.
   /// The legacy four mission biomes are mapped to the closest P'TIBUG biome
   /// until all eight zones are directly explorable in the Lisière UI.
   List<PTibugDataCell> _createDataCellsForMission({
     required ForageMission mission,
     required ForageDurationConfig duration,
-    required ForageIntensityConfig intensity,
     required DateTime completedAt,
   }) {
     if (pTibugDataCells.any((cell) => cell.sourceMissionId == mission.id)) {
@@ -6561,13 +6616,11 @@ class Zone0GameState extends ChangeNotifier {
     final attempts = pTibugConfig.maxCellsForMissionHours(
       duration.theoreticalHours,
     );
-    // Security protects the group but never lowers scientific discovery.
-    final chance = (pTibugConfig.baseCellChancePercent +
-            intensity.riskModifierPercent +
-            _activePTibugEffect('Chance Cellule', biome: biomeId))
-        .clamp(0, 100);
+    // The first Cell is guaranteed. Further Cells are independent bonuses;
+    // safety never changes scientific discoveries.
     final cells = <PTibugDataCell>[];
     for (var attempt = 0; attempt < attempts; attempt += 1) {
+      final chance = pTibugConfig.cellChanceForOrdinal(attempt + 1);
       if (_random.nextInt(100) >= chance) continue;
       final isNeutral =
           _random.nextInt(100) < pTibugConfig.neutralCellChancePercent;
@@ -8158,6 +8211,8 @@ class BiomeSecurityState {
     required this.status,
     this.localSecurity = 0,
     this.explorationProgress = 0,
+    // Keep a const-compatible fallback for legacy states; loaded settings clamp it.
+    this.wasteLevel = 10,
     this.lastPatrolAt,
     this.lastMissionAt,
     this.lastDecayAt,
@@ -8189,6 +8244,11 @@ class BiomeSecurityState {
         explorationProgress: ForageMission._readStaticInt(
           data['explorationProgress'],
         ),
+        wasteLevel: data.containsKey('wasteLevel')
+            ? ForageMission._readStaticInt(data['wasteLevel'])
+                .clamp(0, defaultLisiereForageConfig.wasteLevelMax)
+                .toInt()
+            : defaultLisiereForageConfig.wasteLevelMax,
         lastPatrolAt: ForageMission._readDate(data['lastPatrolAt']),
         lastMissionAt: ForageMission._readDate(data['lastMissionAt']),
         lastDecayAt: ForageMission._readDate(data['lastDecayAt']),
@@ -8198,6 +8258,7 @@ class BiomeSecurityState {
   BiomeDiscoveryStatus status;
   int localSecurity;
   int explorationProgress;
+  int wasteLevel;
   DateTime? lastPatrolAt;
   DateTime? lastMissionAt;
   DateTime? lastDecayAt;
@@ -8207,6 +8268,7 @@ class BiomeSecurityState {
         'status': status.name,
         'localSecurity': localSecurity,
         'explorationProgress': explorationProgress,
+        'wasteLevel': wasteLevel,
         'lastPatrolAt':
             lastPatrolAt == null ? null : Timestamp.fromDate(lastPatrolAt!),
         'lastMissionAt':

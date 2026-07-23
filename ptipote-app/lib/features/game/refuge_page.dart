@@ -4695,6 +4695,10 @@ class _LisierePageState extends State<LisierePage> {
                         _ForageEstimateCard(
                           estimate: groupEstimate,
                           selectedCount: selectedFigurines.length,
+                          gameState: widget.gameState,
+                          biome: _biome,
+                          duration: _duration,
+                          intensity: _intensity,
                         ),
                       const SizedBox(height: 12),
                       if (inventoryOverflow > 0)
@@ -5207,13 +5211,40 @@ class _ForageEstimateCard extends StatelessWidget {
   const _ForageEstimateCard({
     required this.estimate,
     required this.selectedCount,
+    required this.gameState,
+    required this.biome,
+    required this.duration,
+    required this.intensity,
   });
 
   final ForageGroupEstimate estimate;
   final int selectedCount;
+  final Zone0GameState gameState;
+  final ForageBiome biome;
+  final ForageDuration duration;
+  final ForageIntensity intensity;
 
   @override
   Widget build(BuildContext context) {
+    final durationConfig = lisiereForageConfig.durations[duration]!;
+    final intensityConfig = lisiereForageConfig.intensities[intensity]!;
+    final wasteLevel = gameState.wasteLevelFor(biome);
+    final wasteMaximum = lisiereForageConfig.wasteLevelMax;
+    final wasteMultiplier = gameState.wasteMultiplierFor(biome);
+    final organicBonus = gameState.organicBonusForBiome(biome);
+    final wasteEstimate = gameState.estimatedBiomeWasteReward(
+      biome: biome,
+      theoreticalHours: durationConfig.theoreticalHours,
+      rewardMultiplier: intensityConfig.rewardMultiplier,
+    );
+    final cellCount =
+        pTibugConfig.maxCellsForMissionHours(durationConfig.theoreticalHours);
+    final cellChanceLabel = <String>[
+      '1 garantie',
+      if (cellCount >= 2) '+1 à 50 %',
+      if (cellCount >= 3) '+1 à 20 %',
+    ].join(' · ');
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -5227,6 +5258,21 @@ class _ForageEstimateCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text('Groupe : $selectedCount P’TIPOTE(s)'),
             Text('Gain : ${_formatRewards(estimate.rewards)}'),
+            Text('Cellules de données : $cellChanceLabel'),
+            Text(
+              'Déchets du biome : $wasteLevel / $wasteMaximum · '
+              'x${wasteMultiplier.toStringAsFixed(2)}',
+            ),
+            if (organicBonus > 0)
+              Text(
+                'Biome assaini : +${(organicBonus * 100).round()} % Organique',
+                style: const TextStyle(
+                  color: Color(0xff4B8E55),
+                  fontWeight: FontWeight.w700,
+                ),
+              )
+            else
+              Text('Déchets estimés : +$wasteEstimate'),
             Text('Vitalité consommée : ${estimate.vitalityCost}'),
             Text('XP gagnée : ${estimate.xpGain} total'),
             Text('Sécurité locale : ${estimate.securityAtLaunch}%'),

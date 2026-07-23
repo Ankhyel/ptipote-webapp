@@ -658,6 +658,10 @@ PTibugConfig _ptibug(Object? value) {
       raw['baseCellChancePercent'],
       base.baseCellChancePercent,
     ),
+    cellChanceByOrdinal: _levelMap(
+      raw['cellChanceByOrdinal'],
+      base.cellChanceByOrdinal,
+    ),
     neutralCellChancePercent: _int(
       raw['neutralCellChancePercent'],
       base.neutralCellChancePercent,
@@ -850,6 +854,22 @@ LisiereForageConfig _lisiere(Object? value) {
       raw['securityRiskReductionFactor'],
       defaultLisiereForageConfig.securityRiskReductionFactor,
     ),
+    wasteLevelMax: _int(
+      raw['wasteLevelMax'],
+      defaultLisiereForageConfig.wasteLevelMax,
+    ),
+    wasteMultiplierPerLevel: _double(
+      raw['wasteMultiplierPerLevel'],
+      defaultLisiereForageConfig.wasteMultiplierPerLevel,
+    ),
+    wasteHoursPerLevelDepletion: _double(
+      raw['wasteHoursPerLevelDepletion'],
+      defaultLisiereForageConfig.wasteHoursPerLevelDepletion,
+    ),
+    organicBonusAtZeroWaste: _double(
+      raw['organicBonusAtZeroWaste'],
+      defaultLisiereForageConfig.organicBonusAtZeroWaste,
+    ),
     inventorySlotLimit: _int(
       raw['inventorySlotLimit'],
       defaultLisiereForageConfig.inventorySlotLimit,
@@ -929,6 +949,7 @@ ForageBiomeConfig _biome(ForageBiome key, Map<String, dynamic>? raw) {
     mineralRewardModifier: base.mineralRewardModifier,
     riskModifier: base.riskModifier,
     linkedPtipoteRefugeBonus: base.linkedPtipoteRefugeBonus,
+    wasteBaseGain: _int(raw?['wasteBaseGain'], base.wasteBaseGain),
     hazards: base.hazards,
   );
 }

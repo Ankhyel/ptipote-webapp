@@ -5,6 +5,10 @@
   "refugeSafetyFallback": 0,
   "minimumMissionRisk": 5,
   "securityRiskReductionFactor": 0.4,
+  "wasteLevelMax": 10,
+  "wasteMultiplierPerLevel": 0.15,
+  "wasteHoursPerLevelDepletion": 1,
+  "organicBonusAtZeroWaste": 0.3,
   "xpGainByDuration": {
     "oneHour": 10,
     "twoHours": 18,
@@ -33,6 +37,7 @@
       "label": "Colline",
       "baseRiskPercent": 45,
       "rewards": { "Organique": 4, "Minéral": 3 },
+      "wasteBaseGain": 3,
       "hazards": ["terrainInstable", "droneErrant"]
     },
     {
@@ -40,6 +45,7 @@
       "label": "Plaine",
       "baseRiskPercent": 30,
       "rewards": { "Organique": 2, "Minéral": 1 },
+      "wasteBaseGain": 2,
       "restorationLevel": 0,
       "restorationStage": "Plaine desséchée",
       "hazards": ["climatDifficile", "droneErrant"]
@@ -49,6 +55,7 @@
       "label": "Bassin minéral",
       "baseRiskPercent": 35,
       "rewards": { "Organique": 1, "Minéral": 5 },
+      "wasteBaseGain": 3,
       "hazards": ["terrainInstable", "droneErrant"]
     },
     {
@@ -56,6 +63,7 @@
       "label": "Sous-bois",
       "baseRiskPercent": 40,
       "rewards": { "Organique": 5, "Minéral": 1 },
+      "wasteBaseGain": 4,
       "hazards": ["pollution", "climatDifficile"]
     }
   ],
@@ -66,6 +74,7 @@
       "availableSoon": true,
       "baseRiskPercent": 55,
       "rewards": { "Organique": 1, "Minéral": 6 },
+      "wasteBaseGain": 3,
       "hazards": ["terrainInstable", "climatDifficile"]
     },
     {
@@ -74,6 +83,7 @@
       "availableSoon": true,
       "baseRiskPercent": 45,
       "rewards": { "Organique": 4, "Minéral": 2 },
+      "wasteBaseGain": 2,
       "hazards": ["climatDifficile", "droneErrant"]
     },
     {
@@ -82,6 +92,7 @@
       "availableSoon": true,
       "baseRiskPercent": 50,
       "rewards": { "Organique": 5, "Minéral": 2 },
+      "wasteBaseGain": 4,
       "hazards": ["pollution", "climatDifficile"]
     },
     {
@@ -90,6 +101,7 @@
       "availableSoon": true,
       "baseRiskPercent": 35,
       "rewards": { "Organique": 3, "Minéral": 3 },
+      "wasteBaseGain": 3,
       "hazards": ["droneErrant", "climatDifficile"]
     }
   ]
