@@ -197,7 +197,6 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
           if (building.name == 'Lisiere') {
             return LisierePage(
               gameState: _zone0State,
-              campHeartLevel: _campHeartState.campHeartLevel,
               campHeartState: _campHeartState,
             );
           }
@@ -295,9 +294,7 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
           description:
               'Installe des P’TIBUG dans la Plaine pour produire lentement des ressources.',
           campHeartLevel: _campHeartState.campHeartLevel,
-          blockedReason: _campHeartState.campHeartLevel < 2
-              ? 'Le Cœur du Camp doit atteindre le niveau 2.'
-              : null,
+          campHeartState: _campHeartState,
         ),
       );
       return;
@@ -4517,12 +4514,10 @@ class LisierePage extends StatefulWidget {
   const LisierePage({
     super.key,
     required this.gameState,
-    required this.campHeartLevel,
     required this.campHeartState,
   });
 
   final Zone0GameState gameState;
-  final int campHeartLevel;
   final CampHeartState campHeartState;
 
   @override
@@ -4540,6 +4535,7 @@ class _LisierePageState extends State<LisierePage> {
   void initState() {
     super.initState();
     widget.gameState.addListener(_onGameStateChanged);
+    widget.campHeartState.addListener(_onGameStateChanged);
     widget.gameState.resolveDueForageMissions();
     widget.gameState.resolveDueTowerMissions();
   }
@@ -4547,6 +4543,7 @@ class _LisierePageState extends State<LisierePage> {
   @override
   void dispose() {
     widget.gameState.removeListener(_onGameStateChanged);
+    widget.campHeartState.removeListener(_onGameStateChanged);
     super.dispose();
   }
 
@@ -4790,7 +4787,6 @@ class _LisierePageState extends State<LisierePage> {
               (biome) => _BiomeBuildingsTab(
                 gameState: widget.gameState,
                 biome: biome,
-                campHeartLevel: widget.campHeartLevel,
                 campHeartState: widget.campHeartState,
               ),
             ),
@@ -5122,16 +5118,15 @@ class _BiomeBuildingsTab extends StatelessWidget {
   const _BiomeBuildingsTab({
     required this.gameState,
     required this.biome,
-    required this.campHeartLevel,
     required this.campHeartState,
   });
   final Zone0GameState gameState;
   final ForageBiome biome;
-  final int campHeartLevel;
   final CampHeartState campHeartState;
 
   @override
   Widget build(BuildContext context) {
+    final campHeartLevel = campHeartState.campHeartLevel;
     final label = lisiereForageConfig.biomes[biome]!.label;
     if (biome != ForageBiome.plaineRiche) {
       return Center(
@@ -5186,9 +5181,7 @@ class _BiomeBuildingsTab extends StatelessWidget {
                           description:
                               'La Nurserie a besoin d’une Plaine végétalisée et de matériaux réservés.',
                           campHeartLevel: campHeartLevel,
-                          blockedReason: campHeartLevel < 2
-                              ? 'Le Cœur du Camp doit atteindre le niveau 2 avant de construire la Nurserie.'
-                              : null,
+                          campHeartState: campHeartState,
                           footer: campHeartLevel < 2
                               ? 'Niveau actuel du Cœur : $campHeartLevel / 2.'
                               : 'Les matériaux peuvent être déposés progressivement.',
@@ -7597,6 +7590,7 @@ class _ConstructionProjectSheet extends StatefulWidget {
     this.footer,
     this.blockedReason,
     this.campHeartLevel,
+    this.campHeartState,
   });
 
   final Zone0GameState gameState;
@@ -7606,6 +7600,7 @@ class _ConstructionProjectSheet extends StatefulWidget {
   final String? footer;
   final String? blockedReason;
   final int? campHeartLevel;
+  final CampHeartState? campHeartState;
 
   @override
   State<_ConstructionProjectSheet> createState() =>
@@ -7617,11 +7612,13 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
   void initState() {
     super.initState();
     widget.gameState.addListener(_changed);
+    widget.campHeartState?.addListener(_changed);
   }
 
   @override
   void dispose() {
     widget.gameState.removeListener(_changed);
+    widget.campHeartState?.removeListener(_changed);
     super.dispose();
   }
 
@@ -7632,6 +7629,10 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
   @override
   Widget build(BuildContext context) {
     final project = widget.gameState.projectFor(widget.targetId);
+    final campHeartLevel =
+        widget.campHeartState?.campHeartLevel ?? widget.campHeartLevel ?? 0;
+    final blockedReason = _resolvedBlockedReason(campHeartLevel);
+    final footer = _resolvedFooter(campHeartLevel);
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
@@ -7651,10 +7652,10 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
             ),
             const SizedBox(height: 8),
             Text(widget.description),
-            if (widget.blockedReason != null) ...<Widget>[
+            if (blockedReason != null) ...<Widget>[
               const SizedBox(height: 8),
               Text(
-                widget.blockedReason!,
+                blockedReason,
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.error,
                   fontWeight: FontWeight.w800,
@@ -7678,7 +7679,7 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                   resource: entry.key,
                   deposited: project.depositedMaterials[entry.key] ?? 0,
                   required: entry.value,
-                  enabled: widget.blockedReason == null,
+                  enabled: blockedReason == null,
                   onDeposit: (amount) =>
                       widget.gameState.depositProjectMaterial(
                     widget.targetId,
@@ -7691,23 +7692,23 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                   ),
                 ),
               ),
-            if (widget.footer != null) ...<Widget>[
+            if (footer != null) ...<Widget>[
               const SizedBox(height: 8),
               Text(
-                widget.footer!,
+                footer,
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ],
             const SizedBox(height: 12),
             FilledButton.icon(
-              onPressed: widget.blockedReason == null &&
+              onPressed: blockedReason == null &&
                       project.isReady &&
                       !project.isInProgress &&
                       project.state != ConstructionProjectState.maxLevel
                   ? () {
                       final result = widget.gameState.startConstructionProject(
                         widget.targetId,
-                        campHeartLevel: widget.campHeartLevel,
+                        campHeartLevel: campHeartLevel,
                       );
                       ScaffoldMessenger.of(
                         context,
@@ -7731,6 +7732,24 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
         ),
       ),
     );
+  }
+
+  String? _resolvedBlockedReason(int campHeartLevel) {
+    if (widget.targetId == 'plaineNursery') {
+      return campHeartLevel < 2
+          ? 'Le Cœur du Camp doit atteindre le niveau 2 avant de construire la Nurserie.'
+          : null;
+    }
+    return widget.blockedReason;
+  }
+
+  String? _resolvedFooter(int campHeartLevel) {
+    if (widget.targetId == 'plaineNursery') {
+      return campHeartLevel < 2
+          ? 'Niveau actuel du Coeur : $campHeartLevel / 2.'
+          : 'Les materiaux peuvent etre deposes progressivement.';
+    }
+    return widget.footer;
   }
 }
 
