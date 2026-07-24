@@ -1230,6 +1230,7 @@ Pour formater Dart:
 - `ptipote-app/lib/features/game/security_tower_config.dart` : la Tour gagne +2 Sécurité par tick et +2 lors de la recharge manuelle à chaque niveau supplémentaire. Les slots restent 1/2/3.
 - `ptipote-app/lib/features/game/market_config.dart` : le Marché ajoute trois slots, une demande active et 10 % de cadence de vente par niveau, avec un plafond de cadence à 50 % de l’intervalle de base.
 - `ptipote-app/lib/features/game/zone0_game_state.dart` : les badges parent utilisent une table unique (Fablab, Tour, Marché, Maison, Cœur). Les chantiers possèdent `completeAt`, utilisé par le retour hors ligne afin d’empêcher une seconde finalisation et une seconde notification.
+- Affectation Marché : un P’TIPOTE reste affecté même lorsque le stock de vente est vide. Il peut ainsi noter et livrer les demandes; son retour ne se produit que sur action manuelle ou lorsque sa Vitalité atteint le seuil de repos.
 - Migration : les niveaux indépendants sont bornés à leur configuration, l’ancien `fablabLevel` reste migré vers Atelier, la Cuisine reste au niveau 1 pour un ancien Fablab construit, et la capacité de logement ne descend jamais sous la population existante.
 - Tests : `ptipote-app/test/construction_project_test.dart` couvre le dépôt/lancement simulé, le retour après échéance et l’idempotence de fin de chantier, ainsi que les effets de niveau principaux. Le test Firebase réel reste manuel sur un compte existant, car il dépend de son état distant.
 # P'TIBUG V1 - NURSERIE ET PRODUCTION

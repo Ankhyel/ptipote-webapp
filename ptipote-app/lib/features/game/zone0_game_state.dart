@@ -1946,10 +1946,9 @@ class Zone0GameState extends ChangeNotifier {
           : marketNextSaleAt!.add(_marketSaleInterval());
       changed = true;
     }
-    if (marketStock.isEmpty && marketAssignedPtipoteId != null) {
-      removeFromMarket();
-      changed = true;
-    }
+    // An empty sales stock must not dismiss the P'TIPOTE automatically. They
+    // remain at the Market to handle resident requests and are removed only
+    // manually or when their vitality reaches the rest threshold.
     for (final request in marketRequests.where(
       (item) =>
           item.status != MarketRequestStatus.completed &&
