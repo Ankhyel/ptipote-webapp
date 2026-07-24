@@ -32,6 +32,24 @@ void main() {
         project.completeAt(startedAt.add(const Duration(hours: 2))), isFalse);
   });
 
+  test('un chantier non lance accepte les depots progressifs', () {
+    final project = ConstructionProject(
+      projectId: 'nursery',
+      targetId: 'plaineNursery',
+      targetType: 'building',
+      currentLevel: 0,
+      targetLevel: 1,
+      requirements: <String, int>{'Organique': 20, 'Minéral': 35},
+      constructionDuration: const Duration(minutes: 30),
+    );
+
+    expect(project.canEditMaterials, isTrue);
+    project.depositedMaterials['Organique'] = 5;
+    project.refreshState();
+    expect(project.state, ConstructionProjectState.collectingMaterials);
+    expect(project.canEditMaterials, isTrue);
+  });
+
   test('les effets de niveau restent bornes et progressifs', () {
     expect(workshopConfig.buildingSpeedBonusForLevel(1), 0);
     expect(workshopConfig.buildingSpeedBonusForLevel(3), 0.10);

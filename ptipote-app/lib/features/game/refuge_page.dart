@@ -7679,7 +7679,9 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                   resource: entry.key,
                   deposited: project.depositedMaterials[entry.key] ?? 0,
                   required: entry.value,
-                  enabled: blockedReason == null,
+                  // Le prerequis du Coeur bloque le lancement, pas la
+                  // preparation progressive des materiaux.
+                  enabled: project.canEditMaterials,
                   onDeposit: (amount) =>
                       widget.gameState.depositProjectMaterial(
                     widget.targetId,
@@ -7737,7 +7739,7 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
   String? _resolvedBlockedReason(int campHeartLevel) {
     if (widget.targetId == 'plaineNursery') {
       return campHeartLevel < 2
-          ? 'Le Cœur du Camp doit atteindre le niveau 2 avant de construire la Nurserie.'
+          ? 'Le Cœur du Camp doit atteindre le niveau 2 pour commencer les travaux de la Nurserie.'
           : null;
     }
     return widget.blockedReason;
@@ -7746,7 +7748,7 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
   String? _resolvedFooter(int campHeartLevel) {
     if (widget.targetId == 'plaineNursery') {
       return campHeartLevel < 2
-          ? 'Niveau actuel du Coeur : $campHeartLevel / 2.'
+          ? 'Vous pouvez préparer les matériaux maintenant. Les travaux pourront être lancés à partir du niveau 2 du Coeur ($campHeartLevel / 2).'
           : 'Les materiaux peuvent etre deposes progressivement.';
     }
     return widget.footer;

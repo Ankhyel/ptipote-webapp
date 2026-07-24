@@ -2841,6 +2841,20 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     if (existing != null) {
+      if (targetId == 'plaineNursery' &&
+          currentLevel == 0 &&
+          !existing.isInProgress &&
+          (existing.state == ConstructionProjectState.built ||
+              existing.state == ConstructionProjectState.maxLevel)) {
+        // Some legacy saves persisted an unbuilt nursery with a terminal
+        // project state. Normalize it back to the initial construction.
+        existing.currentLevel = 0;
+        existing.prepareNextLevel(
+          targetLevel: 1,
+          requirements: _projectRequirements(targetId, 1),
+          constructionDuration: _projectDuration(targetId),
+        );
+      }
       if (!existing.isInProgress && currentLevel >= maxLevel) {
         existing.currentLevel = currentLevel;
         existing.targetLevel = currentLevel;
