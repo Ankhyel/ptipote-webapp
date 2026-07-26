@@ -1433,6 +1433,20 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - `ptipote-dashboard/app.js` et `ptipote-dashboard/ptibug-config.json` exposent ces tables à l'édition : Traits et coûts par niveau, recherches, familles de données, biomes, Modules et tables de production. Les configurations Dart restent le fallback hors ligne.
 - Vérification ciblée : `ptipote-app/test/ptibug_config_test.dart` garantit que les effets systémiques ne sont pas injectés dans la production, que les pondérations locales d'Arac existent et que les huit Traits V1 possèdent leurs coûts par niveau.
 
+### Sourcier, niveaux Kernel et Cellules
+
+- Le Sourcier ne vend jamais un Pattern déjà actif : une visite propose exactement un Pattern de recherche aléatoire, trois Cellules (deux spécialisées et une neutre) et les objets d’Atelier configurés par la Tour, par exemple `Tenue ombragée`.
+- Un Pattern acheté est sauvegardé dans `users/{uid}/game/zone0.ptibug.sourcierPatternIds`, sous le stock du Kernel. Il ne devient ni découvert ni actif à l’achat.
+- Les prérequis du Plan Kernel (Confiance, axes et bâtiments) découvrent automatiquement le Pattern conservé par le Sourcier. Les données révélées par les Cellules sont ensuite investies dans la recherche pour l’activer : aucun achat ne contourne ces deux étapes.
+- Le Marché affiche `(Pas le niveau requis)` à côté d’un Pattern proposé dont les prérequis ne sont pas atteints. Le panneau `Cellules de données` du Kernel affiche le stock des Patterns Sourcier avec leurs niveaux requis, leur prochain coût en données et l’action d’investissement.
+
+### Stock de production P’TIBUG
+
+- Le stock interne d’un P’TIBUG est strictement plafonné. À capacité atteinte, `nextProductionAt` est vidé : aucun cycle n’est gardé en attente ni rejoué après une récolte Firebase.
+- Une récolte repart toujours sur un nouveau cycle à partir de l’instant de collecte. Elle ne peut donc récupérer que les ressources réellement présentes dans `storedResources`.
+- La capacité de stockage est multipliée par `storageMultiplier` (V1 : `5`) pour la capacité de base et le bonus du Module Réservoir. Les valeurs configurées 10 et +15/+18/+20 donnent ainsi 50 et +75/+90/+100.
+- Le Dashboard P’TIBUG expose séparément la capacité de base, le multiplicateur et les bonus de Réservoir par niveau ; toute modification est publiée dans `gameConfigs/zone0.zone0Settings.ptibug` et garde le fallback Dart versionné.
+
 ### Persistance Firebase Zone 0 et chantier de Nurserie
 
 - `ptipote-app/lib/features/game/refuge_page.dart` charge désormais l'état joueur avant toute simulation, applique ensuite les résolutions hors ligne et demande une sauvegarde au passage de l'application en arrière-plan.

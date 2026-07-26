@@ -1085,6 +1085,10 @@ class _KernelDataCellsCard extends StatelessWidget {
     final unopened = gameState.pTibugDataCells
         .where((cell) => !cell.isOpened)
         .toList(growable: false);
+    final sourcierPatterns = gameState.sourcierPatternIds
+        .map(gameState.pTibugResearchPattern)
+        .whereType<PTibugResearchPatternConfig>()
+        .toList(growable: false);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1123,6 +1127,90 @@ class _KernelDataCellsCard extends StatelessWidget {
                   )
                   .toList(growable: false),
             ),
+            if (sourcierPatterns.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 16),
+              const Text(
+                'Stock de Patterns du Sourcier',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Le niveau Kernel découvre le Pattern ; les données de Cellules activent ensuite sa recherche.',
+              ),
+              const SizedBox(height: 8),
+              ...sourcierPatterns.map((pattern) {
+                final progress = gameState.pTibugPatternProgress[pattern.id];
+                final discovered = progress != null &&
+                    progress.state != PTibugPatternState.unknown;
+                final active = gameState.isPTibugPatternActive(pattern.id);
+                final requirementsMet =
+                    gameState.sourcierPatternRequirementsMet(pattern.id);
+                final nextCost =
+                    pattern.masteryCosts[(progress?.masteryLevel ?? 0) + 1] ??
+                        const <PTibugDataFamily, int>{};
+                return Card(
+                  margin: const EdgeInsets.only(top: 8),
+                  child: ExpansionTile(
+                    leading: Icon(
+                      active
+                          ? Icons.check_circle_outline
+                          : discovered
+                              ? Icons.science_outlined
+                              : Icons.lock_outline,
+                    ),
+                    title: Text(pattern.displayName),
+                    subtitle: Text(
+                      active
+                          ? 'Recherche active'
+                          : discovered
+                              ? 'Découvert · données à investir'
+                              : '(Pas le niveau requis)',
+                    ),
+                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    children: <Widget>[
+                      Text(pattern.description),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Niveaux Kernel requis : ${gameState.sourcierPatternRequirementsLabel(pattern.id)}',
+                      ),
+                      if (!requirementsMet)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text(
+                              'Le Pattern restera en stock jusqu’à ces niveaux.'),
+                        ),
+                      if (nextCost.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Cellules à investir : ${nextCost.entries.map((entry) => '${_kernelDataFamilyLabel(entry.key)} ${entry.value}').join(' · ')}',
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      FilledButton(
+                        onPressed: discovered && !active
+                            ? () {
+                                final result = gameState
+                                    .completePTibugPatternAutomatically(
+                                  pattern.id,
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(result.message)),
+                                );
+                              }
+                            : null,
+                        child: Text(
+                          active
+                              ? 'Pattern actif'
+                              : discovered
+                                  ? 'Investir les Cellules disponibles'
+                                  : 'Niveau Kernel requis',
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
             if (unopened.isNotEmpty) ...<Widget>[
               const SizedBox(height: 12),
               FilledButton.icon(
@@ -1204,6 +1292,11 @@ class _KernelDataCellsSheetState extends State<_KernelDataCellsSheet> {
                         '${cell.isNeutralCell ? 'Neutre' : _kernelDataFamilyLabel(cell.dominantFamily!)} · 5 données · valeur $total',
                       ),
                       trailing: FilledButton(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                         onPressed: () async {
                           final confirmed = await showModalBottomSheet<bool>(
                             context: context,
@@ -7138,6 +7231,11 @@ class _TowerWeatherTab extends StatelessWidget {
                 title: Text(config.label),
                 subtitle: Text(config.announcement),
                 trailing: FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => KernelPage(
@@ -8058,56 +8156,74 @@ class _MarketPageState extends State<MarketPage> {
                             'Présent encore ${_merchantRemainingLabel(widget.gameState)}',
                           ),
                           ...widget.gameState.merchantOffers.map(
-                            (offer) => Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .outline
-                                        .withValues(alpha: 0.25),
+                            (offer) {
+                              final requirement = widget.gameState
+                                  .merchantOfferRequirementLabel(offer);
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outline
+                                          .withValues(alpha: 0.25),
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(10),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Text(
-                                        offer.planName,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(10),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          offer.planName,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text('${offer.price} Bio-batteries'),
-                                      const SizedBox(height: 8),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: offer.purchased
-                                            ? const OutlinedButton(
-                                                onPressed: null,
-                                                child: Text('Acheté'),
-                                              )
-                                            : FilledButton(
-                                                onPressed: () => _message(
-                                                  widget.gameState
-                                                      .buyMerchantOffer(offer)
-                                                      .message,
-                                                ),
-                                                child: const Text('Acheter'),
+                                        const SizedBox(height: 4),
+                                        Text('${offer.price} Bio-batteries'),
+                                        if (requirement != null)
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              '($requirement)',
+                                              style: TextStyle(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .error,
+                                                fontSize: 12,
                                               ),
-                                      ),
-                                    ],
+                                            ),
+                                          ),
+                                        const SizedBox(height: 8),
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: offer.purchased
+                                              ? const OutlinedButton(
+                                                  onPressed: null,
+                                                  child: Text('Acheté'),
+                                                )
+                                              : FilledButton(
+                                                  onPressed: () => _message(
+                                                    widget.gameState
+                                                        .buyMerchantOffer(offer)
+                                                        .message,
+                                                  ),
+                                                  child: const Text('Acheter'),
+                                                ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
+                              );
+                            },
                           ),
                           TextButton(
                             onPressed: () => _message(

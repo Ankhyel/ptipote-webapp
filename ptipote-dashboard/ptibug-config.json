@@ -5,6 +5,7 @@
   "moduleSlotsByLevel": {"1": 1, "2": 2, "3": 3},
   "productionCycleMinutes": 60,
   "carryingCapacity": 10,
+  "storageMultiplier": 5,
   "nurseryReserveCapacity": 12,
   "sourcierResearchPatternPrice": 7,
   "sourcierSpecializedCellPrice": 4,

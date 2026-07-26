@@ -84,6 +84,11 @@ class Zone0GameState extends ChangeNotifier {
     for (final family in PTibugDataFamily.values) family: 0,
   };
   final List<PTibugDataCell> pTibugDataCells = <PTibugDataCell>[];
+
+  /// Patterns purchased from the Sourcier. They are Kernel stock, not active
+  /// knowledge: Kernel prerequisites discover them, then Data Cells activate
+  /// them through normal research.
+  final Set<String> sourcierPatternIds = <String>{};
   final Map<String, PTibugPatternProgress> pTibugPatternProgress =
       <String, PTibugPatternProgress>{};
   final List<PTibugModuleInstance> pTibugModuleInstances =
@@ -821,6 +826,44 @@ class Zone0GameState extends ChangeNotifier {
   PTibugResearchPatternConfig? pTibugResearchPattern(String patternId) =>
       pTibugConfig.researchPatterns[patternId];
 
+  KernelTechnologyPlanConfig? kernelPlanForPTibugResearchPattern(
+    String patternId,
+  ) {
+    final pattern = pTibugResearchPattern(patternId);
+    final species = pattern?.linkedSpecies;
+    if (species == null) return null;
+    final planId = pTibugConfig.patterns[species]?.kernelPlanId;
+    if (planId == null) return null;
+    return kernelProgressConfig.plans
+        .where((plan) => plan.id == planId)
+        .firstOrNull;
+  }
+
+  bool sourcierPatternRequirementsMet(String patternId) {
+    final plan = kernelPlanForPTibugResearchPattern(patternId);
+    return plan == null || kernelPlanRequirementsMet(plan);
+  }
+
+  String sourcierPatternRequirementsLabel(String patternId) {
+    final plan = kernelPlanForPTibugResearchPattern(patternId);
+    return plan == null
+        ? 'Aucun niveau Kernel supplémentaire requis.'
+        : kernelPlanRequirementsLabel(plan);
+  }
+
+  String? merchantOfferRequirementLabel(MerchantOffer offer) {
+    final patternId = offer.kind == MerchantOfferKind.speciesPattern &&
+            offer.pTibugSpecies != null
+        ? 'ptibug-species-${offer.pTibugSpecies!.name}'
+        : offer.kind == MerchantOfferKind.researchPattern
+            ? offer.patternId
+            : null;
+    if (patternId == null || sourcierPatternRequirementsMet(patternId)) {
+      return null;
+    }
+    return 'Pas le niveau requis : ${sourcierPatternRequirementsLabel(patternId)}';
+  }
+
   bool isPTibugPatternActive(String patternId) {
     final progress = pTibugPatternProgress[patternId];
     return progress != null &&
@@ -1207,6 +1250,35 @@ class Zone0GameState extends ChangeNotifier {
         );
       }
     }
+    _refreshSourcierPatternDiscoveries();
+  }
+
+  bool _refreshSourcierPatternDiscoveries() {
+    var changed = false;
+    for (final patternId in sourcierPatternIds) {
+      final pattern = pTibugResearchPattern(patternId);
+      final progress = pattern == null ? null : _patternProgressFor(patternId);
+      if (pattern == null || progress!.state != PTibugPatternState.unknown) {
+        continue;
+      }
+      if (!sourcierPatternRequirementsMet(patternId)) continue;
+      progress
+        ..state = PTibugPatternState.discovered
+        ..discoveredAt = DateTime.now();
+      changed = true;
+      reports.add(
+        PtipoteMissionReport.system(
+          message:
+              'Le Kernel peut maintenant étudier ${pattern.displayName}, conservé dans le stock du Sourcier.',
+          sourceBuildingId: 'kernel',
+          mailbox: Zone0MessageMailbox.kernel,
+          subject: 'Pattern découvert',
+          concerned: 'Joueur',
+          summary: 'Les Cellules peuvent désormais être investies.',
+        ),
+      );
+    }
+    return changed;
   }
 
   int vitalityFor(PtipoteFigurine figurine) {
@@ -3656,18 +3728,51 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
     }
     for (final bug in pTibugs.where((item) => item.assignedSlotIndex != null)) {
+      final capacity = _pTibugCapacity(bug);
+      // Also pause saves written by older builds: their full-stock marker may
+      // coexist with an overdue cycle timestamp, especially after capacity
+      // tuning changes.
+      if (bug.stockFullNotified) {
+        if (bug.nextProductionAt != null) {
+          bug.nextProductionAt = null;
+          changed = true;
+        }
+        continue;
+      }
+      if (bug.storedAmount >= capacity) {
+        // A full internal stock pauses production. Keeping an overdue date here
+        // would replay every elapsed cycle immediately after a collection.
+        if (bug.nextProductionAt != null) {
+          bug.nextProductionAt = null;
+          changed = true;
+        }
+        if (!bug.stockFullNotified) {
+          bug.stockFullNotified = true;
+          reports.add(
+            PtipoteMissionReport.system(
+              message: '${bug.displayName} a atteint sa capacité de stockage.',
+              sourceBuildingId: 'plaineNursery',
+              mailbox: Zone0MessageMailbox.companions,
+              subject: 'Stock P’TIBUG plein',
+              concerned: bug.displayName,
+              summary: 'Production en pause jusqu’à la récolte.',
+            ),
+          );
+          changed = true;
+        }
+        continue;
+      }
       final next = bug.nextProductionAt;
       if (next == null || next.isAfter(current)) {
         continue;
       }
       var cycleAt = next;
       var producedCycles = 0;
-      while (!cycleAt.isAfter(current) &&
-          bug.storedAmount < _pTibugCapacity(bug)) {
+      while (!cycleAt.isAfter(current) && bug.storedAmount < capacity) {
         final production = _pTibugProduction(bug);
         if (bug.storedAmount +
                 production.values.fold(0, (total, value) => total + value) >
-            _pTibugCapacity(bug)) {
+            capacity) {
           break;
         }
         production.forEach((resource, amount) {
@@ -3678,11 +3783,13 @@ class Zone0GameState extends ChangeNotifier {
         producedCycles += 1;
         cycleAt = cycleAt.add(_pTibugCycleDuration(bug));
       }
-      bug.nextProductionAt = cycleAt;
+      // Do not keep a due timestamp when the stock cannot accept another
+      // cycle. Collection explicitly schedules the next production cycle.
+      bug.nextProductionAt = bug.storedAmount >= capacity ? null : cycleAt;
       if (producedCycles > 0) {
         _applyPTibugStability(bug, producedCycles);
       }
-      if (bug.storedAmount >= _pTibugCapacity(bug) && !bug.stockFullNotified) {
+      if (bug.storedAmount >= capacity && !bug.stockFullNotified) {
         bug.stockFullNotified = true;
         reports.add(
           PtipoteMissionReport.system(
@@ -3691,7 +3798,7 @@ class Zone0GameState extends ChangeNotifier {
             mailbox: Zone0MessageMailbox.companions,
             subject: 'Stock P’TIBUG plein',
             concerned: bug.displayName,
-            summary: 'Production prête à être récoltée.',
+            summary: 'Production en pause jusqu’à la récolte.',
           ),
         );
         changed = true;
@@ -3733,13 +3840,15 @@ class Zone0GameState extends ChangeNotifier {
         ),
       );
 
-  int _pTibugCapacity(PTibug bug) =>
-      pTibugConfig.carryingCapacity +
-      _pTibugModuleEffect(
-        bug,
-        PTibugModuleType.reservoir,
-        pTibugConfig.reservoirCapacityBonusByLevel,
-      ).round();
+  int _pTibugCapacity(PTibug bug) {
+    final baseCapacity = pTibugConfig.carryingCapacity +
+        _pTibugModuleEffect(
+          bug,
+          PTibugModuleType.reservoir,
+          pTibugConfig.reservoirCapacityBonusByLevel,
+        ).round();
+    return math.max(1, baseCapacity * pTibugConfig.storageMultiplier);
+  }
 
   int _pTibugModuleLevel(PTibug bug, PTibugModuleType type) {
     final levels = pTibugModuleInstances
@@ -3934,6 +4043,9 @@ class Zone0GameState extends ChangeNotifier {
     for (final bug in pTibugs) {
       bug.storedResources.clear();
       bug.stockFullNotified = false;
+      if (bug.assignedSlotIndex != null) {
+        bug.nextProductionAt = DateTime.now().add(_pTibugCycleDuration(bug));
+      }
     }
     emitKernelProgressEvent(KernelProgressEventType.ptibugProductionCollected);
     if (output.containsKey('Mycélium') &&
@@ -3967,7 +4079,7 @@ class Zone0GameState extends ChangeNotifier {
     addResources(output);
     bug.storedResources.clear();
     bug.stockFullNotified = false;
-    bug.nextProductionAt ??= DateTime.now().add(_pTibugCycleDuration(bug));
+    bug.nextProductionAt = DateTime.now().add(_pTibugCycleDuration(bug));
     emitKernelProgressEvent(KernelProgressEventType.ptibugProductionCollected);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -4850,6 +4962,13 @@ class Zone0GameState extends ChangeNotifier {
                 .whereType<Map>()
                 .map(PTibugDataCell.fromFirebase),
           );
+        sourcierPatternIds
+          ..clear()
+          ..addAll(
+            (ptibugData['sourcierPatternIds'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .where(pTibugConfig.researchPatterns.containsKey),
+          );
         pTibugPatternProgress
           ..clear()
           ..addEntries(
@@ -4980,9 +5099,10 @@ class Zone0GameState extends ChangeNotifier {
       lastManualTowerRechargeAt = _readDate(data['lastManualTowerRechargeAt']);
 
       final migratedPTibugState = _migratePTibugScientificState();
+      final discoveredSourcierPatterns = _refreshSourcierPatternDiscoveries();
       _loadedFromFirebase = true;
       resolveConstructionProjects();
-      if (migratedPTibugState) {
+      if (migratedPTibugState || discoveredSourcierPatterns) {
         unawaited(saveRuntimeToFirebase());
       }
     });
@@ -5448,85 +5568,60 @@ class Zone0GameState extends ChangeNotifier {
       ..addAll(
         towerOperationsConfig.merchantOfferPrices.entries.map(
           (entry) => MerchantOffer(
-            planName: entry.key,
+            planName: entry.key.replaceFirst('Plan ', ''),
             price: entry.value,
-            kind: MerchantOfferKind.plan,
+            kind: MerchantOfferKind.workshopItem,
+            itemName: entry.key.replaceFirst('Plan ', ''),
           ),
         ),
       );
-    merchantOffers.addAll(
-      pTibugConfig.sourcierPatternPrices.entries
-          .where((entry) => !activePTibugPatterns.contains(entry.key))
-          .map(
-            (entry) => MerchantOffer(
-              planName:
-                  'Pattern ${pTibugConfig.species[entry.key]!.displayName}',
-              price: entry.value,
-              pTibugSpecies: entry.key,
-              kind: MerchantOfferKind.speciesPattern,
-            ),
-          ),
-    );
     final unknownResearch = pTibugConfig.researchPatterns.values
         .where(
           (pattern) =>
               (pTibugPatternProgress[pattern.id]?.state ??
-                  PTibugPatternState.unknown) ==
-              PTibugPatternState.unknown,
+                      PTibugPatternState.unknown) ==
+                  PTibugPatternState.unknown &&
+              !sourcierPatternIds.contains(pattern.id),
         )
         .toList(growable: false);
     if (unknownResearch.isNotEmpty) {
       final pattern = unknownResearch[_random.nextInt(unknownResearch.length)];
       merchantOffers.add(
         MerchantOffer(
-          planName: 'Recherche ${pattern.displayName}',
+          planName: pattern.displayName,
           price: pTibugConfig.sourcierResearchPatternPrice,
           kind: MerchantOfferKind.researchPattern,
           patternId: pattern.id,
         ),
       );
     }
-    final families = PTibugDataFamily.values;
-    final dominant = families[_random.nextInt(families.length)];
+    final families = List<PTibugDataFamily>.from(PTibugDataFamily.values)
+      ..shuffle(_random);
+    final firstDominant = families.first;
+    final secondDominant = families[1];
     merchantOffers.addAll(<MerchantOffer>[
       MerchantOffer(
-        planName: 'Cellule ${_ptibugDataFamilyLabel(dominant)}',
+        planName: 'Cellule ${_ptibugDataFamilyLabel(firstDominant)}',
         price: pTibugConfig.sourcierSpecializedCellPrice,
         kind: MerchantOfferKind.specializedDataCell,
-        dominantDataFamily: dominant,
+        dominantDataFamily: firstDominant,
+      ),
+      MerchantOffer(
+        planName: 'Cellule ${_ptibugDataFamilyLabel(secondDominant)}',
+        price: pTibugConfig.sourcierSpecializedCellPrice,
+        kind: MerchantOfferKind.specializedDataCell,
+        dominantDataFamily: secondDominant,
       ),
       MerchantOffer(
         planName: 'Cellule neutre',
         price: pTibugConfig.sourcierNeutralCellPrice,
         kind: MerchantOfferKind.neutralDataCell,
       ),
-      MerchantOffer(
-        planName: 'Module ${PTibugModuleType.values.first.displayName} I',
-        price: pTibugConfig.sourcierModulePrice,
-        kind: MerchantOfferKind.module,
-        moduleType: PTibugModuleType.values.first,
-      ),
-      MerchantOffer(
-        planName:
-            'Capsule ${pTibugConfig.species[PTibugSpecies.scarabe]!.displayName}',
-        price: pTibugConfig.sourcierCapsulePrice,
-        kind: MerchantOfferKind.capsule,
-        capsule: PTibugCapsule(
-          id: 'merchant-template-scarabe',
-          species: PTibugSpecies.scarabe,
-          styleVariant: 'compact',
-          displayName: 'Scarabé',
-          originRefugeId: 'sourcier',
-          creatorPlayerId: 'sourcier',
-          certificationId: 'sourcier-scarabe',
-          createdAt: current,
-        ),
-      ),
     ]);
     reports.add(
       PtipoteMissionReport.system(
         message:
-            'Le Sourcier est arrivé au Marché avec des Plans et Patterns rares.',
+            'Le Sourcier est arrivé au Marché avec un Pattern, trois Cellules et des objets d’Atelier.',
         sourceBuildingId: 'market',
         subject: 'Sourcier arrivé',
         concerned: 'Joueur',
@@ -5646,32 +5741,35 @@ class Zone0GameState extends ChangeNotifier {
     }
     bioBatteries -= offer.price;
     offer.purchased = true;
-    if (offer.kind == MerchantOfferKind.speciesPattern &&
-        offer.pTibugSpecies != null) {
-      final species = offer.pTibugSpecies!;
-      activePTibugPatterns.add(species);
-      final planId = pTibugConfig.patterns[species]!.kernelPlanId;
-      discoveredKernelPlanIds.remove(planId);
-      readyKernelPlanIds.remove(planId);
-      activeKernelPlanIds.add(planId);
+    final sourcierPatternId = offer.kind == MerchantOfferKind.speciesPattern &&
+            offer.pTibugSpecies != null
+        ? 'ptibug-species-${offer.pTibugSpecies!.name}'
+        : offer.kind == MerchantOfferKind.researchPattern
+            ? offer.patternId
+            : null;
+    if (sourcierPatternId != null) {
+      sourcierPatternIds.add(sourcierPatternId);
+      _refreshSourcierPatternDiscoveries();
       reports.add(
         PtipoteMissionReport.system(
           message:
-              'Le Sourcier partage le Pattern ${pTibugConfig.species[species]!.displayName}. La Nurserie peut maintenant l’utiliser.',
-          sourceBuildingId: 'market',
-        ),
-      );
-    } else if (offer.kind == MerchantOfferKind.researchPattern &&
-        offer.patternId != null) {
-      final progress = _patternProgressFor(offer.patternId!);
-      progress.state = PTibugPatternState.discovered;
-      reports.add(
-        PtipoteMissionReport.system(
-          message: '${offer.planName} a été identifiée par le Sourcier.',
+              '${offer.planName} est conservé dans le stock du Kernel. Il sera découvert dès que les niveaux requis seront atteints, puis les Cellules permettront son activation.',
           sourceBuildingId: 'kernel',
           subject: 'Recherche disponible',
           concerned: 'Kernel',
           summary: offer.planName,
+        ),
+      );
+    } else if (offer.kind == MerchantOfferKind.workshopItem ||
+        offer.kind == MerchantOfferKind.plan) {
+      final itemName =
+          offer.itemName ?? offer.planName.replaceFirst('Plan ', '');
+      final amount = math.max(1, offer.itemAmount);
+      addResources(<String, int>{itemName: amount});
+      reports.add(
+        PtipoteMissionReport.system(
+          message: '$amount $itemName reçu(s) du Sourcier.',
+          sourceBuildingId: 'market',
         ),
       );
     } else if (offer.kind == MerchantOfferKind.specializedDataCell ||
@@ -7073,6 +7171,7 @@ class Zone0GameState extends ChangeNotifier {
           },
           'dataCells':
               pTibugDataCells.map((item) => item.toFirebase()).toList(),
+          'sourcierPatternIds': sourcierPatternIds.toList(),
           'patternProgress': pTibugPatternProgress.values
               .map((item) => item.toFirebase())
               .toList(),
@@ -8436,6 +8535,7 @@ enum MerchantOfferKind {
   researchPattern,
   specializedDataCell,
   neutralDataCell,
+  workshopItem,
   module,
   capsule,
 }
@@ -8449,6 +8549,8 @@ class MerchantOffer {
     this.kind = MerchantOfferKind.plan,
     this.patternId,
     this.dominantDataFamily,
+    this.itemName,
+    this.itemAmount = 1,
     this.moduleType,
     this.capsule,
   });
@@ -8459,6 +8561,8 @@ class MerchantOffer {
   final MerchantOfferKind kind;
   final String? patternId;
   final PTibugDataFamily? dominantDataFamily;
+  final String? itemName;
+  final int itemAmount;
   final PTibugModuleType? moduleType;
   final PTibugCapsule? capsule;
 
@@ -8487,6 +8591,11 @@ class MerchantOffer {
                 '${data['dominantDataFamily']}',
                 PTibugDataFamily.organique,
               ),
+        itemName: data['itemName'] as String?,
+        itemAmount: Zone0GameState.instance._readInt(
+          data['itemAmount'],
+          fallback: 1,
+        ),
         moduleType: data['moduleType'] == null
             ? null
             : ForageMission._enumByName(
@@ -8507,6 +8616,8 @@ class MerchantOffer {
         'kind': kind.name,
         'patternId': patternId,
         'dominantDataFamily': dominantDataFamily?.name,
+        'itemName': itemName,
+        'itemAmount': itemAmount,
         'moduleType': moduleType?.name,
         'capsule': capsule?.toFirebase(),
       };

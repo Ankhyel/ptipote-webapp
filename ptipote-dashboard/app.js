@@ -894,6 +894,9 @@ function prettyPath(path) {
     nurseryDurationMinutes: "Durée de création à la Nurserie",
     productionCycleMinutes: "Durée de cycle de production",
     carryingCapacity: "Capacité de base P'TIBUG",
+    storageMultiplier: "Multiplicateur de stockage P'TIBUG",
+    reservoirCapacityBonus: "Bonus Réservoir historique",
+    reservoirCapacityBonusByLevel: "Bonus du Réservoir par niveau (avant multiplicateur)",
     nurseryReserveCapacity: "Capacité de réserve de la Nurserie",
     sourcierResearchPatternPrice: "Prix d'un Pattern de recherche du Sourcier",
     sourcierSpecializedCellPrice: "Prix d'une Cellule spécialisée du Sourcier",
@@ -1091,11 +1094,18 @@ function renderPTibugEditor() {
     traitDefinitions = {},
     researchPatterns = {},
     biomes = {},
+    carryingCapacity,
+    storageMultiplier,
+    reservoirCapacityBonus,
+    reservoirCapacityBonusByLevel = {},
     ...general
   } = ptibug;
   el.ptibugConfigList.innerHTML = [
     ptibugEditorHeading("Fondations de la Nurserie", "Capacité, production, cellules, Sourcier et règles communes."),
     configCard("Nurserie et production", "ptibug", general, [], { open: true, meta: "Coûts, capacité, cycles et Sourcier" }),
+    ptibugEditorHeading("Stockage P'TIBUG et Réservoir", "Ces valeurs déterminent le stock interne réel. La capacité finale applique le multiplicateur à la base comme au bonus du Réservoir."),
+    configCard("Capacité de stockage", "ptibug", { carryingCapacity, storageMultiplier }, [], { open: true, meta: "Capacité finale = base × multiplicateur" }),
+    configCard("Module Réservoir", "ptibug", { reservoirCapacityBonus, reservoirCapacityBonusByLevel }, [], { open: true, meta: "Bonus par niveau, appliqué avant le multiplicateur" }),
     ptibugEditorHeading("Espèces et Patterns d'espèce", "Les espèces définissent la création; leurs Patterns définissent la connaissance du Kernel."),
     ...Object.entries(species).map(([speciesId, config]) => configCard(
       config.displayName || speciesId,

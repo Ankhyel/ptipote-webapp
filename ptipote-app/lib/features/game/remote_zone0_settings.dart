@@ -501,6 +501,10 @@ PTibugConfig _ptibug(Object? value) {
       base.productionCycleMinutes,
     ),
     carryingCapacity: _int(raw['carryingCapacity'], base.carryingCapacity),
+    storageMultiplier: _int(
+      raw['storageMultiplier'],
+      base.storageMultiplier,
+    ),
     xpPerCycle: _int(raw['xpPerCycle'], base.xpPerCycle),
     wingsCycleReduction: _double(
       raw['wingsCycleReduction'],

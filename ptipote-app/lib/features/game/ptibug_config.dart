@@ -230,6 +230,7 @@ class PTibugConfig {
     required this.moduleSlotsByLevel,
     required this.productionCycleMinutes,
     required this.carryingCapacity,
+    required this.storageMultiplier,
     required this.xpPerCycle,
     required this.wingsCycleReduction,
     required this.clawProductionBonus,
@@ -269,6 +270,7 @@ class PTibugConfig {
   final Map<int, int> moduleSlotsByLevel;
   final int productionCycleMinutes;
   final int carryingCapacity;
+  final int storageMultiplier;
   final int xpPerCycle;
   final double wingsCycleReduction;
   final int clawProductionBonus;
@@ -361,6 +363,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
   moduleSlotsByLevel: <int, int>{1: 1, 2: 2, 3: 3},
   productionCycleMinutes: 60,
   carryingCapacity: 10,
+  storageMultiplier: 5,
   xpPerCycle: 1,
   wingsCycleReduction: 0.15,
   clawProductionBonus: 1,
