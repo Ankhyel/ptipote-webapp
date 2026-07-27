@@ -891,6 +891,13 @@ class _KernelPlansTabState extends State<_KernelPlansTab> {
     final plans = kernelProgressConfig.plans
         .where((plan) => _category == null || plan.category == _category)
         .toList();
+    final pTibugPatterns = pTibugConfig.researchPatterns.values
+        .where(
+          (pattern) =>
+              (_category == null || _category == KernelPlanCategory.ptibug) &&
+              widget.gameState.pTibugResearchPatternVisibility(pattern) > 0,
+        )
+        .toList(growable: false);
     return ListView(
       padding: const EdgeInsets.all(18),
       children: <Widget>[
@@ -986,7 +993,112 @@ class _KernelPlansTabState extends State<_KernelPlansTab> {
             ),
           );
         }),
+        ...pTibugPatterns.map(
+          (pattern) => _PTibugKernelPatternCard(
+            gameState: widget.gameState,
+            pattern: pattern,
+          ),
+        ),
       ],
+    );
+  }
+}
+
+class _PTibugKernelPatternCard extends StatelessWidget {
+  const _PTibugKernelPatternCard({
+    required this.gameState,
+    required this.pattern,
+  });
+
+  final Zone0GameState gameState;
+  final PTibugResearchPatternConfig pattern;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibility = gameState.pTibugResearchPatternVisibility(pattern);
+    final progress = gameState.pTibugPatternProgress[pattern.id];
+    final discovered =
+        progress != null && progress.state != PTibugPatternState.unknown;
+    final active = gameState.isPTibugPatternActive(pattern.id);
+    final canEvolve = pattern.category == PTibugPatternCategory.trait &&
+        (progress?.masteryLevel ?? 0) < pattern.masteryCosts.length;
+    final canInvest = discovered && (!active || canEvolve);
+    final nextCost = pattern.masteryCosts[(progress?.masteryLevel ?? 0) + 1] ??
+        const <PTibugDataFamily, int>{};
+    final identified = visibility >= 2;
+
+    return Opacity(
+      opacity: identified ? 1 : 0.48,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Icon(
+                    active
+                        ? Icons.check_circle_outline
+                        : discovered
+                            ? Icons.science_outlined
+                            : Icons.lock_outline,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      identified
+                          ? pattern.displayName
+                          : 'Pattern non identifié',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  if (identified)
+                    Text(
+                      active
+                          ? 'Actif'
+                          : discovered
+                              ? 'Découvert'
+                              : 'Inconnu',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                ],
+              ),
+              if (identified) ...<Widget>[
+                const SizedBox(height: 10),
+                Text(pattern.description),
+                const SizedBox(height: 8),
+                Text(
+                  'Pré-requis : ${gameState.pTibugResearchPatternRequirementsLabel(pattern)}',
+                ),
+                if (discovered && nextCost.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Données requises : ${nextCost.entries.map((entry) => '${_kernelDataFamilyLabel(entry.key)} ${entry.value}').join(' · ')}',
+                  ),
+                ],
+                if (canInvest) ...<Widget>[
+                  const SizedBox(height: 10),
+                  FilledButton.tonal(
+                    onPressed: () {
+                      final result = gameState
+                          .completePTibugPatternAutomatically(pattern.id);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(result.message)),
+                      );
+                    },
+                    child: Text(
+                      active
+                          ? 'Investir pour le niveau suivant'
+                          : 'Investir les données disponibles',
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1102,10 +1214,6 @@ class _KernelDataCellsCard extends StatelessWidget {
     final unopened = gameState.pTibugDataCells
         .where((cell) => !cell.isOpened)
         .toList(growable: false);
-    final researchPatterns = pTibugConfig.researchPatterns.values
-        .where(
-            (pattern) => gameState.pTibugResearchPatternVisibility(pattern) > 0)
-        .toList(growable: false);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1144,101 +1252,6 @@ class _KernelDataCellsCard extends StatelessWidget {
                   )
                   .toList(growable: false),
             ),
-            if (researchPatterns.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 16),
-              const Text(
-                'Patterns du Kernel',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Approchez des niveaux requis pour identifier un Pattern, puis investissez les données de Cellules pour l’activer.',
-              ),
-              const SizedBox(height: 8),
-              ...researchPatterns.map((pattern) {
-                final progress = gameState.pTibugPatternProgress[pattern.id];
-                final discovered = progress != null &&
-                    progress.state != PTibugPatternState.unknown;
-                final active = gameState.isPTibugPatternActive(pattern.id);
-                final requirementsMet =
-                    gameState.pTibugResearchPatternRequirementsMet(pattern);
-                final visibility =
-                    gameState.pTibugResearchPatternVisibility(pattern);
-                final nextCost =
-                    pattern.masteryCosts[(progress?.masteryLevel ?? 0) + 1] ??
-                        const <PTibugDataFamily, int>{};
-                if (visibility == 1) {
-                  return const Card(
-                    margin: EdgeInsets.only(top: 8),
-                    child: ListTile(
-                      leading: Icon(Icons.lock_outline),
-                      title: Text('Pattern non identifié'),
-                    ),
-                  );
-                }
-                return Card(
-                  margin: const EdgeInsets.only(top: 8),
-                  child: ExpansionTile(
-                    leading: Icon(
-                      active
-                          ? Icons.check_circle_outline
-                          : discovered
-                              ? Icons.science_outlined
-                              : Icons.lock_outline,
-                    ),
-                    title: Text(pattern.displayName),
-                    subtitle: Text(
-                      active
-                          ? 'Recherche active'
-                          : discovered
-                              ? 'Découvert · données à investir'
-                              : '(Pas le niveau requis)',
-                    ),
-                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    children: <Widget>[
-                      Text(pattern.description),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Niveaux Kernel requis : ${gameState.pTibugResearchPatternRequirementsLabel(pattern)}',
-                      ),
-                      if (!requirementsMet)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 4),
-                          child: Text(
-                              'Le Kernel doit encore atteindre ces niveaux.'),
-                        ),
-                      if (nextCost.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Cellules à investir : ${nextCost.entries.map((entry) => '${_kernelDataFamilyLabel(entry.key)} ${entry.value}').join(' · ')}',
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      FilledButton(
-                        onPressed: discovered && !active
-                            ? () {
-                                final result = gameState
-                                    .completePTibugPatternAutomatically(
-                                  pattern.id,
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(result.message)),
-                                );
-                              }
-                            : null,
-                        child: Text(
-                          active
-                              ? 'Pattern actif'
-                              : discovered
-                                  ? 'Investir les Cellules disponibles'
-                                  : 'Niveau Kernel requis',
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ],
             if (unopened.isNotEmpty) ...<Widget>[
               const SizedBox(height: 12),
               FilledButton.icon(
