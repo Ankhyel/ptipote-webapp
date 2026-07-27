@@ -301,6 +301,10 @@ KernelProgressConfig _kernelProgress(Object? value) {
           item?['initialState'] ?? item?['state'],
           fallback.initialState,
         ),
+        discoverWhenRequirementsMet:
+            item?['discoverWhenRequirementsMet'] is bool
+                ? item!['discoverWhenRequirementsMet'] as bool
+                : fallback.discoverWhenRequirementsMet,
       );
     }).toList(),
   );

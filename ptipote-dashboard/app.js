@@ -882,6 +882,7 @@ function prettyPath(path) {
     requiredBreederLevel: "Niveau Éleveur requis",
     requiredBuilderLevel: "Niveau Bâtisseur requis",
     requiredRestorerLevel: "Niveau Régénérateur requis",
+    discoverWhenRequirementsMet: "Découvrir dès que les prérequis sont atteints",
     requiredBuildingLevels: "Bâtiments requis",
     plaineNursery: "Nurserie de Plaine requise",
     house: "Maison requise",

@@ -1447,6 +1447,12 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - La capacité de stockage est multipliée par `storageMultiplier` (V1 : `5`) pour la capacité de base et le bonus du Module Réservoir. Les valeurs configurées 10 et +15/+18/+20 donnent ainsi 50 et +75/+90/+100.
 - Le Dashboard P’TIBUG expose séparément la capacité de base, le multiplicateur et les bonus de Réservoir par niveau ; toute modification est publiée dans `gameConfigs/zone0.zone0Settings.ptibug` et garde le fallback Dart versionné.
 
+### Plans Kernel et recettes Atelier
+
+- Un Plan Kernel lié à une recette doit toujours contenir `category` et `workshopRecipeId`. Sans cette liaison, le Dashboard créait une seconde fiche `craft-…` pour la même recette, mais Flutter ignorait cette fiche car seules les entrées de Plans de base sont fusionnées avec la configuration distante.
+- Le Plan `filter` est découvert dès que ses prérequis Kernel sont atteints (Confiance 2, Régénérateur 1). La valeur `discoverWhenRequirementsMet` est un fallback Dart : les configurations Firebase plus anciennes, qui ne possèdent pas encore cette clé, ne peuvent donc plus bloquer le Filtre sur trois événements `pollutionObserved`.
+- Les autres Plans conservent leurs déclencheurs narratifs configurés (`craftCompleted`, mission, construction ou amélioration de l'écosystème). Leur liaison recette est néanmoins désormais versionnée dans `kernel-progress-config.json`, ce qui empêche les doublons Dashboard pour Cartouche, Tenue ombragée, Ventilation Termite et Lumière solaire.
+
 ### Persistance Firebase Zone 0 et chantier de Nurserie
 
 - `ptipote-app/lib/features/game/refuge_page.dart` charge désormais l'état joueur avant toute simulation, applique ensuite les résolutions hors ligne et demande une sauvegarde au passage de l'application en arrière-plan.

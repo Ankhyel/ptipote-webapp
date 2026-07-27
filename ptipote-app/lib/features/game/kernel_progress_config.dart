@@ -64,6 +64,7 @@ class KernelTechnologyPlanConfig {
     this.requiredRestorerLevel = 0,
     this.requiredBuildingLevels = const <String, int>{},
     this.initialState = KernelPlanState.unknown,
+    this.discoverWhenRequirementsMet = false,
   });
 
   final String id;
@@ -84,6 +85,10 @@ class KernelTechnologyPlanConfig {
   final int requiredRestorerLevel;
   final Map<String, int> requiredBuildingLevels;
   final KernelPlanState initialState;
+
+  /// Makes a plan visible as soon as its Kernel requirements are reached,
+  /// without waiting for an unrelated activity counter.
+  final bool discoverWhenRequirementsMet;
 }
 
 class KernelProgressConfig {
@@ -262,6 +267,7 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       requiredAxis: KernelAxis.restorer,
       requiredAxisLevel: 1,
       workshopRecipeId: 'filter',
+      discoverWhenRequirementsMet: true,
     ),
     KernelTechnologyPlanConfig(
       id: 'filter-cartridge',

@@ -50,7 +50,9 @@ class Zone0GameState extends ChangeNotifier {
 
   void _onRemoteConfigChanged() {
     _consumeManualWeatherTrigger();
+    _refreshKernelPlanReadiness();
     notifyListeners();
+    unawaited(saveRuntimeToFirebase());
   }
 
   final Map<String, int> vitalityOverrides = <String, int>{};
@@ -1219,10 +1221,14 @@ class Zone0GameState extends ChangeNotifier {
 
   void _refreshKernelPlanReadiness() {
     for (final plan in kernelProgressConfig.plans) {
-      if (kernelPlanState(plan) == KernelPlanState.unknown &&
-          plan.discoveryEvent != null &&
+      final eventDiscoveryReached = plan.discoveryEvent != null &&
           (kernelEventCounts[plan.discoveryEvent] ?? 0) >=
-              plan.discoveryThreshold) {
+              plan.discoveryThreshold;
+      final discoveryReached = plan.discoverWhenRequirementsMet
+          ? kernelPlanRequirementsMet(plan)
+          : eventDiscoveryReached;
+      if (kernelPlanState(plan) == KernelPlanState.unknown &&
+          discoveryReached) {
         discoveredKernelPlanIds.add(plan.id);
         reports.add(
           PtipoteMissionReport.system(
