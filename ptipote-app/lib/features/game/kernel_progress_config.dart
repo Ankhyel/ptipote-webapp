@@ -63,6 +63,7 @@ class KernelTechnologyPlanConfig {
     this.requiredBuilderLevel = 0,
     this.requiredRestorerLevel = 0,
     this.requiredBuildingLevels = const <String, int>{},
+    this.dataRequirements = const <String, int>{},
     this.initialState = KernelPlanState.unknown,
     this.discoverWhenRequirementsMet = false,
   });
@@ -84,6 +85,11 @@ class KernelTechnologyPlanConfig {
   final int requiredBuilderLevel;
   final int requiredRestorerLevel;
   final Map<String, int> requiredBuildingLevels;
+
+  /// Research data required once the Pattern has been discovered.
+  /// Keys are [PTibugDataFamily.name] values, kept as strings so the
+  /// Dashboard JSON can remain simple and versioned.
+  final Map<String, int> dataRequirements;
   final KernelPlanState initialState;
 
   /// Makes a plan visible as soon as its Kernel requirements are reached,
@@ -267,6 +273,7 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       requiredAxis: KernelAxis.restorer,
       requiredAxisLevel: 1,
       workshopRecipeId: 'filter',
+      dataRequirements: <String, int>{'toxine': 6, 'minerale': 3},
       discoverWhenRequirementsMet: true,
     ),
     KernelTechnologyPlanConfig(
@@ -284,6 +291,11 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       requiredAxis: KernelAxis.restorer,
       requiredAxisLevel: 2,
       workshopRecipeId: 'filterCartridge',
+      dataRequirements: <String, int>{
+        'toxine': 5,
+        'minerale': 6,
+        'biomimetisme': 2,
+      },
     ),
     KernelTechnologyPlanConfig(
       id: 'shade-suit',
@@ -300,6 +312,7 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       requiredAxis: KernelAxis.builder,
       requiredAxisLevel: 2,
       workshopRecipeId: 'shadeSuit',
+      dataRequirements: <String, int>{'energie': 5, 'biomimetisme': 4},
     ),
     KernelTechnologyPlanConfig(
       id: 'termite-ventilation',
@@ -316,6 +329,7 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       requiredAxis: KernelAxis.builder,
       requiredAxisLevel: 2,
       workshopRecipeId: 'termiteVentilation',
+      dataRequirements: <String, int>{'biomimetisme': 6, 'minerale': 6},
     ),
     KernelTechnologyPlanConfig(
       id: 'solar-light',
@@ -332,6 +346,7 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       requiredAxis: KernelAxis.builder,
       requiredAxisLevel: 2,
       workshopRecipeId: 'solarLight',
+      dataRequirements: <String, int>{'energie': 8, 'biomimetisme': 5},
     ),
   ],
 );

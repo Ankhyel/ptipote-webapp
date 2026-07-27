@@ -288,6 +288,10 @@ KernelProgressConfig _kernelProgress(Object? value) {
           item?['requiredBuildingLevels'],
           fallback.requiredBuildingLevels,
         ),
+        dataRequirements: _resourceMap(
+          item?['dataRequirements'],
+          fallback.dataRequirements,
+        ),
         workshopRecipeId: _string(
           item?['workshopRecipeId'],
           fallback.workshopRecipeId ?? '',
@@ -430,6 +434,22 @@ PTibugResearchPatternConfig _researchPattern(
         : _string(raw?['linkedTraitId'], fallback?.linkedTraitId ?? ''),
     linkedModuleType: _ptibugModuleType(raw?['linkedModuleType']) ??
         fallback?.linkedModuleType,
+    requiredTrustLevel: _int(
+      raw?['requiredTrustLevel'],
+      fallback?.requiredTrustLevel ?? 1,
+    ),
+    requiredBreederLevel: _int(
+      raw?['requiredBreederLevel'],
+      fallback?.requiredBreederLevel ?? 0,
+    ),
+    requiredBuilderLevel: _int(
+      raw?['requiredBuilderLevel'],
+      fallback?.requiredBuilderLevel ?? 0,
+    ),
+    requiredRestorerLevel: _int(
+      raw?['requiredRestorerLevel'],
+      fallback?.requiredRestorerLevel ?? 0,
+    ),
     origin: _string(raw?['origin'], fallback?.origin ?? 'Kernel'),
     biomesSuggested: raw?['biomesSuggested'] is List
         ? (raw!['biomesSuggested'] as List)
@@ -670,10 +690,9 @@ PTibugConfig _ptibug(Object? value) {
       raw['cellChanceByOrdinal'],
       base.cellChanceByOrdinal,
     ),
-    neutralCellChancePercent: _int(
-      raw['neutralCellChancePercent'],
-      base.neutralCellChancePercent,
-    ),
+    // Neutral Cells are retired. Keep the field in the Dart model only to
+    // read old remote configurations without re-enabling the feature.
+    neutralCellChancePercent: 0,
     maxCellsByMission: _levelMap(
       raw['maxCellsByMission'],
       base.maxCellsByMission,
@@ -721,25 +740,9 @@ PTibugConfig _ptibug(Object? value) {
       raw['nurseryReserveCapacity'],
       base.nurseryReserveCapacity,
     ),
-    sourcierResearchPatternPrice: _int(
-      raw['sourcierResearchPatternPrice'],
-      base.sourcierResearchPatternPrice,
-    ),
-    sourcierSpecializedCellPrice: _int(
-      raw['sourcierSpecializedCellPrice'],
-      base.sourcierSpecializedCellPrice,
-    ),
-    sourcierNeutralCellPrice: _int(
-      raw['sourcierNeutralCellPrice'],
-      base.sourcierNeutralCellPrice,
-    ),
-    sourcierModulePrice: _int(
-      raw['sourcierModulePrice'],
-      base.sourcierModulePrice,
-    ),
-    sourcierCapsulePrice: _int(
-      raw['sourcierCapsulePrice'],
-      base.sourcierCapsulePrice,
+    sourcierCellPricePerDataValue: _int(
+      raw['sourcierCellPricePerDataValue'],
+      base.sourcierCellPricePerDataValue,
     ),
   );
 }
@@ -958,6 +961,10 @@ ForageBiomeConfig _biome(ForageBiome key, Map<String, dynamic>? raw) {
     riskModifier: base.riskModifier,
     linkedPtipoteRefugeBonus: base.linkedPtipoteRefugeBonus,
     wasteBaseGain: _int(raw?['wasteBaseGain'], base.wasteBaseGain),
+    wasteHoursPerLevelRegeneration: _double(
+      raw?['wasteHoursPerLevelRegeneration'],
+      base.wasteHoursPerLevelRegeneration,
+    ),
     hazards: base.hazards,
   );
 }
@@ -1085,6 +1092,18 @@ TowerOperationsConfig _towerOperations(Object? value) {
     merchantOfferPrices: _resourceMap(
       raw['merchantOfferPrices'],
       base.merchantOfferPrices,
+    ),
+    merchantWorkshopOfferCount: _int(
+      raw['merchantWorkshopOfferCount'],
+      base.merchantWorkshopOfferCount,
+    ),
+    merchantWorkshopMinimumQuantity: _int(
+      raw['merchantWorkshopMinimumQuantity'],
+      base.merchantWorkshopMinimumQuantity,
+    ),
+    merchantWorkshopMaximumQuantity: _int(
+      raw['merchantWorkshopMaximumQuantity'],
+      base.merchantWorkshopMaximumQuantity,
     ),
     maxWeatherEventsPerDay: _int(
       raw['maxWeatherEventsPerDay'],

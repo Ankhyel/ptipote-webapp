@@ -896,14 +896,15 @@ function prettyPath(path) {
     productionCycleMinutes: "Durée de cycle de production",
     carryingCapacity: "Capacité de base P'TIBUG",
     storageMultiplier: "Multiplicateur de stockage P'TIBUG",
+    wasteHoursPerLevelRegeneration: "Heures par niveau de Déchets régénéré",
     reservoirCapacityBonus: "Bonus Réservoir historique",
     reservoirCapacityBonusByLevel: "Bonus du Réservoir par niveau (avant multiplicateur)",
     nurseryReserveCapacity: "Capacité de réserve de la Nurserie",
-    sourcierResearchPatternPrice: "Prix d'un Pattern de recherche du Sourcier",
-    sourcierSpecializedCellPrice: "Prix d'une Cellule spécialisée du Sourcier",
-    sourcierNeutralCellPrice: "Prix d'une Cellule neutre du Sourcier",
-    sourcierModulePrice: "Prix d'un Module du Sourcier",
-    sourcierCapsulePrice: "Prix d'une Capsule P'TIBUG du Sourcier",
+    sourcierCellPricePerDataValue: "Bio-batteries par valeur de Cellule du Sourcier",
+    merchantOfferPrices: "Prix unitaire des produits Atelier du Sourcier",
+    merchantWorkshopOfferCount: "Nombre de produits Atelier proposés par le Sourcier",
+    merchantWorkshopMinimumQuantity: "Quantité minimale d'un produit Atelier du Sourcier",
+    merchantWorkshopMaximumQuantity: "Quantité maximale d'un produit Atelier du Sourcier",
     creationEnergyCost: "Coût en énergie de création",
     creationBioBatteryCost: "Coût en bio-batteries de création",
     creationMinutes: "Durée de création",
@@ -1072,6 +1073,12 @@ function normalizePTibugResearchPatterns(ptibug) {
       };
     }
     delete ptibug.researchPatterns[patternId];
+  });
+  Object.values(ptibug.researchPatterns).forEach((pattern) => {
+    pattern.requiredTrustLevel ??= pattern.category === "trait" || pattern.category === "module" ? 2 : 1;
+    pattern.requiredBreederLevel ??= pattern.category === "trait" ? 2 : 0;
+    pattern.requiredBuilderLevel ??= pattern.category === "module" ? 1 : 0;
+    pattern.requiredRestorerLevel ??= 0;
   });
 }
 

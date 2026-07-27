@@ -61,6 +61,7 @@ class ForageBiomeConfig {
     this.riskModifier = 0,
     this.linkedPtipoteRefugeBonus = 0,
     this.wasteBaseGain = 0,
+    this.wasteHoursPerLevelRegeneration = 0,
     this.hazards = const <ForageHazard>[],
   });
 
@@ -75,6 +76,9 @@ class ForageBiomeConfig {
   final int riskModifier;
   final int linkedPtipoteRefugeBonus;
   final int wasteBaseGain;
+
+  /// Real-time hours required to regenerate one waste level in this biome.
+  final double wasteHoursPerLevelRegeneration;
   final List<ForageHazard> hazards;
 }
 
@@ -140,6 +144,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       baseRewards: <String, int>{'Organique': 4, 'Minéral': 3},
       baseRiskPercent: 45,
       wasteBaseGain: 3,
+      wasteHoursPerLevelRegeneration: 3,
       hazards: <ForageHazard>[
         ForageHazard.terrainInstable,
         ForageHazard.droneErrant
@@ -151,6 +156,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       baseRewards: <String, int>{'Organique': 2, 'Minéral': 1},
       baseRiskPercent: 30,
       wasteBaseGain: 2,
+      wasteHoursPerLevelRegeneration: 1,
       restorationLevel: 0,
       restorationStage: 'Plaine desséchée',
       hazards: <ForageHazard>[
@@ -164,6 +170,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       baseRewards: <String, int>{'Organique': 1, 'Minéral': 5},
       baseRiskPercent: 35,
       wasteBaseGain: 3,
+      wasteHoursPerLevelRegeneration: 2,
       hazards: <ForageHazard>[
         ForageHazard.terrainInstable,
         ForageHazard.droneErrant
@@ -175,6 +182,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       baseRewards: <String, int>{'Organique': 5, 'Minéral': 1},
       baseRiskPercent: 40,
       wasteBaseGain: 4,
+      wasteHoursPerLevelRegeneration: 2,
       hazards: <ForageHazard>[
         ForageHazard.pollution,
         ForageHazard.climatDifficile

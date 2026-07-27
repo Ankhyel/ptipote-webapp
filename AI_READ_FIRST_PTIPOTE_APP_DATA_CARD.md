@@ -1410,7 +1410,7 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 
 - `ptipote-app/lib/features/game/ptibug_config.dart` centralise les sept familles de données V1 (`Organique`, `Minérale`, `Mycélienne`, `Toxine`, `Biomimétisme`, `Énergie`, `Comportement insectoïde`), leurs qualités Commune/Recherchée/Rare et les valeurs 1/2/4. Il contient également les configurations de Patterns, Traits, Modules et des huit biomes P'TIBUG préparés.
 - `ptipote-app/lib/features/game/zone0_game_state.dart` sauvegarde dans la progression Zone 0 la réserve de données, les Cellules, les progressions de Pattern, les instances de Modules, les ordres de fabrication, les Capsules et les P'TIBUG. Les données restent dans le Kernel et ne prennent pas de case d'inventaire matériel.
-- Les missions de Lisière créent maintenant des `PTibugDataCell` fermées suivant trois tirages indépendants configurables par rang : première Cellule garantie (100 %), seconde à 50 %, troisième à 20 %. Le plafond reste lié à la durée (courte 1, moyenne 2, longue 3) ; l'intensité et la Sécurité n'altèrent pas ces chances. Le contenu reste tiré aléatoirement dans la table de Cellules et de familles du biome P'TIBUG associé aux anciens biomes de mission, avec une chance configurable de Cellule neutre. L'ouverture depuis l'onglet Progression du Kernel crédite définitivement la réserve de données et crée un message Kernel.
+- Les missions de Lisière créent maintenant des `PTibugDataCell` fermées suivant trois tirages indépendants configurables par rang : première Cellule garantie (100 %), seconde à 50 %, troisième à 20 %. Le plafond reste lié à la durée (courte 1, moyenne 2, longue 3) ; l'intensité et la Sécurité n'altèrent pas ces chances. Chaque Cellule appartient à une famille de données du biome P'TIBUG : les Cellules neutres sont supprimées. L'ouverture depuis l'onglet Progression du Kernel crédite définitivement la réserve de données et crée un message Kernel.
 - Chaque biome actif de Lisière conserve un niveau de `Déchets` de 0 à 10 dans `BiomeSecurityState` et dans Firestore. Le gain de mission utilise `wasteBaseGain × (wasteLevel × 0,15)`, pondéré par durée, intensité et retour anticipé ; le niveau baisse d'un palier par heure théorique effectivement passée. À 0, le biome est assaini et procure +30 % d'Organique tant qu'il reste propre. L'estimation Lisière affiche les tirages de Cellules, le niveau de Déchets, le multiplicateur ou le bonus d'Organique.
 - Une `PTibugDataCell` contient exactement cinq entrées. Son ouverture crédite la réserve du Kernel; les données sont ensuite investies manuellement dans une recherche. Les Patterns sont des connaissances à maîtrise progressive, pas des objets consommables.
 - Les Traits biologiques sont permanents : un P'TIBUG n'en reçoit qu'un. Son nom affiché devient par exemple `Hyme Pollinisateur II`. Le même Trait peut évoluer uniquement vers son niveau suivant via la Nurserie (I vers II, puis II vers III) lorsque le Pattern atteint la maîtrise cible. L'évolution consomme uniquement les données, matériaux et énergie du niveau cible : les coûts précédents ne sont jamais cumulés ou facturés une seconde fois. Un Trait différent ne peut pas remplacer le Trait biologique existant.
@@ -1433,12 +1433,14 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - `ptipote-dashboard/app.js` et `ptipote-dashboard/ptibug-config.json` exposent ces tables à l'édition : Traits et coûts par niveau, recherches, familles de données, biomes, Modules et tables de production. Les configurations Dart restent le fallback hors ligne.
 - Vérification ciblée : `ptipote-app/test/ptibug_config_test.dart` garantit que les effets systémiques ne sont pas injectés dans la production, que les pondérations locales d'Arac existent et que les huit Traits V1 possèdent leurs coûts par niveau.
 
-### Sourcier, niveaux Kernel et Cellules
+### Patterns Kernel, niveaux et Cellules
 
-- Le Sourcier ne vend jamais un Pattern déjà actif : une visite propose exactement un Pattern de recherche aléatoire, trois Cellules (deux spécialisées et une neutre) et les objets d’Atelier configurés par la Tour, par exemple `Tenue ombragée`.
-- Un Pattern acheté est sauvegardé dans `users/{uid}/game/zone0.ptibug.sourcierPatternIds`, sous le stock du Kernel. Il ne devient ni découvert ni actif à l’achat.
-- Les prérequis du Plan Kernel (Confiance, axes et bâtiments) découvrent automatiquement le Pattern conservé par le Sourcier. Les données révélées par les Cellules sont ensuite investies dans la recherche pour l’activer : aucun achat ne contourne ces deux étapes.
-- Le Marché affiche `(Pas le niveau requis)` à côté d’un Pattern proposé dont les prérequis ne sont pas atteints. Le panneau `Cellules de données` du Kernel affiche le stock des Patterns Sourcier avec leurs niveaux requis, leur prochain coût en données et l’action d’investissement.
+- Les Patterns ne sont plus vendus ni acquis par le Sourcier. Ils vivent tous dans le Kernel. Au-delà de deux niveaux manquants, ils sont invisibles ; à deux niveaux, seule leur icône apparaît ; à un niveau, leur nom et leurs prérequis apparaissent ; quand tous les prérequis sont atteints, ils deviennent découverts et affichent leurs coûts de données.
+- Les Patterns de productions s’activent une seule fois dans le Kernel grâce aux données investies, puis rendent leur recette disponible à l’Atelier. Les coûts de chaque recette sont dans `kernel-progress-config.json`, sous `plans[].dataRequirements`, et sont éditables dans le Dashboard Kernel.
+- Les Traits P’TIBUG sont les seuls Patterns à plusieurs maîtrises. Leur découverte et leur premier niveau passent par le même panneau de données du Kernel ; leurs évolutions sont appliquées dans la Nurserie.
+- Les Modules P’TIBUG sont fabriqués à l’Atelier. La Nurserie conserve uniquement leur stock, équipement, retrait et fusion ; les anciens indicateurs `unlockedModules` restent lus pour compatibilité mais ne servent plus de verrou de gameplay.
+- Le Sourcier propose exactement trois Cellules spécialisées de familles distinctes et un lot d’objet fini d’Atelier. Les Cellules sont vendues pour leur contenu réel : somme des cinq valeurs de données × `sourcierCellPricePerDataValue` (V1 : 3 Bio-batteries par valeur), réglable dans le Dashboard P’TIBUG.
+- Les offres d’Atelier sont des produits finis, jamais des Plans. V1 propose un produit aléatoire par visite, configuré dans le Dashboard Tour avec un stock tiré de 5 à 10 et un prix unitaire. Le Marché achète de 1 unité jusqu’au stock restant grâce au sélecteur ; le total est recalculé avant chaque achat.
 
 ### Stock de production P’TIBUG
 
@@ -1446,6 +1448,11 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - Une récolte repart toujours sur un nouveau cycle à partir de l’instant de collecte. Elle ne peut donc récupérer que les ressources réellement présentes dans `storedResources`.
 - La capacité de stockage est multipliée par `storageMultiplier` (V1 : `5`) pour la capacité de base et le bonus du Module Réservoir. Les valeurs configurées 10 et +15/+18/+20 donnent ainsi 50 et +75/+90/+100.
 - Le Dashboard P’TIBUG expose séparément la capacité de base, le multiplicateur et les bonus de Réservoir par niveau ; toute modification est publiée dans `gameConfigs/zone0.zone0Settings.ptibug` et garde le fallback Dart versionné.
+
+### Déchets des biomes de Lisière
+
+- Le niveau de Déchets d’un biome remonte automatiquement, jusqu’au maximum configuré, même après fermeture de l’application. Chaque biome conserve son horodatage `lastWasteRegenerationAt` dans `users/{uid}/game/zone0.biomeSecurity`; les anciennes sauvegardes démarrent le nouveau cycle sans gain rétroactif.
+- Le rythme `wasteHoursPerLevelRegeneration` est éditable dans chaque carte de biome du Dashboard Lisière. V1 : Plaine +1/h, Bassin minéral +1/2 h, Sous-bois +1/2 h, Colline +1/3 h. Une mission consomme les Déchets puis redémarre le cycle au moment de son retour.
 
 ### Plans Kernel et recettes Atelier
 

@@ -53,6 +53,9 @@ class TowerOperationsConfig {
     required this.merchantCallMinimumWaitMinutes,
     required this.merchantCallRandomWaitAdditionalMinutes,
     required this.merchantOfferPrices,
+    required this.merchantWorkshopOfferCount,
+    required this.merchantWorkshopMinimumQuantity,
+    required this.merchantWorkshopMaximumQuantity,
     required this.wellbeingBands,
     required this.weatherEvents,
     required this.maxWeatherEventsPerDay,
@@ -75,7 +78,12 @@ class TowerOperationsConfig {
   final int merchantCallBatteryCost;
   final int merchantCallMinimumWaitMinutes;
   final int merchantCallRandomWaitAdditionalMinutes;
+
+  /// Finished Atelier product prices, per unit.
   final Map<String, int> merchantOfferPrices;
+  final int merchantWorkshopOfferCount;
+  final int merchantWorkshopMinimumQuantity;
+  final int merchantWorkshopMaximumQuantity;
   final List<SecurityWellbeingBand> wellbeingBands;
   final List<TowerWeatherConfig> weatherEvents;
   final int maxWeatherEventsPerDay;
@@ -107,10 +115,13 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
   merchantCallMinimumWaitMinutes: 5,
   merchantCallRandomWaitAdditionalMinutes: 10,
   merchantOfferPrices: <String, int>{
-    'Plan Filtre': 4,
-    'Plan Ventilation Termite': 6,
-    'Plan Lumière solaire': 6,
+    'Filtre': 4,
+    'Tenue ombragée': 6,
+    'Ventilation Termite': 6,
   },
+  merchantWorkshopOfferCount: 1,
+  merchantWorkshopMinimumQuantity: 5,
+  merchantWorkshopMaximumQuantity: 10,
   maxWeatherEventsPerDay: 3,
   minimumWeatherIntervalMinutes: 240,
   manualWeatherTriggerId: '',

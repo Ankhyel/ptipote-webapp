@@ -910,7 +910,9 @@ class _KernelPlansTabState extends State<_KernelPlansTab> {
         const SizedBox(height: 12),
         ...plans.map((plan) {
           final state = widget.gameState.kernelPlanState(plan);
-          final visible = state != KernelPlanState.unknown;
+          final visibility = widget.gameState.kernelPlanVisibility(plan);
+          if (visibility == 0) return const SizedBox.shrink();
+          final visible = visibility >= 2;
           return Opacity(
             opacity: visible ? 1 : 0.48,
             child: Card(
@@ -925,19 +927,17 @@ class _KernelPlansTabState extends State<_KernelPlansTab> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            visible ? plan.title : 'Plan inconnu',
+                            visible ? plan.title : 'Pattern non identifié',
                             style: const TextStyle(fontWeight: FontWeight.w900),
                           ),
                         ),
-                        _KernelPlanStatePill(state: state),
+                        if (visible) _KernelPlanStatePill(state: state),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      visible
-                          ? plan.description
-                          : 'Le Kernel n’a encore rien identifié.',
-                    ),
+                    if (visible) ...<Widget>[
+                      const SizedBox(height: 10),
+                      Text(plan.description),
+                    ],
                     if (visible) ...<Widget>[
                       const SizedBox(height: 8),
                       Text('Origine : ${plan.origin}'),
@@ -948,6 +948,23 @@ class _KernelPlansTabState extends State<_KernelPlansTab> {
                       Text(
                         'Pré-requis : ${widget.gameState.kernelPlanRequirementsLabel(plan)}',
                       ),
+                      if (plan.dataRequirements.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Données requises : ${widget.gameState.kernelPlanDataRequirementsLabel(plan)}',
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton.tonal(
+                          onPressed: () {
+                            final result = widget.gameState
+                                .investKernelPlanDataAutomatically(plan.id);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(result.message)),
+                            );
+                          },
+                          child: const Text('Investir les données disponibles'),
+                        ),
+                      ],
                     ],
                     if (state == KernelPlanState.ready) ...<Widget>[
                       const SizedBox(height: 10),
@@ -1085,9 +1102,9 @@ class _KernelDataCellsCard extends StatelessWidget {
     final unopened = gameState.pTibugDataCells
         .where((cell) => !cell.isOpened)
         .toList(growable: false);
-    final sourcierPatterns = gameState.sourcierPatternIds
-        .map(gameState.pTibugResearchPattern)
-        .whereType<PTibugResearchPatternConfig>()
+    final researchPatterns = pTibugConfig.researchPatterns.values
+        .where(
+            (pattern) => gameState.pTibugResearchPatternVisibility(pattern) > 0)
         .toList(growable: false);
     return Card(
       child: Padding(
@@ -1127,27 +1144,38 @@ class _KernelDataCellsCard extends StatelessWidget {
                   )
                   .toList(growable: false),
             ),
-            if (sourcierPatterns.isNotEmpty) ...<Widget>[
+            if (researchPatterns.isNotEmpty) ...<Widget>[
               const SizedBox(height: 16),
               const Text(
-                'Stock de Patterns du Sourcier',
+                'Patterns du Kernel',
                 style: TextStyle(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 4),
               const Text(
-                'Le niveau Kernel découvre le Pattern ; les données de Cellules activent ensuite sa recherche.',
+                'Approchez des niveaux requis pour identifier un Pattern, puis investissez les données de Cellules pour l’activer.',
               ),
               const SizedBox(height: 8),
-              ...sourcierPatterns.map((pattern) {
+              ...researchPatterns.map((pattern) {
                 final progress = gameState.pTibugPatternProgress[pattern.id];
                 final discovered = progress != null &&
                     progress.state != PTibugPatternState.unknown;
                 final active = gameState.isPTibugPatternActive(pattern.id);
                 final requirementsMet =
-                    gameState.sourcierPatternRequirementsMet(pattern.id);
+                    gameState.pTibugResearchPatternRequirementsMet(pattern);
+                final visibility =
+                    gameState.pTibugResearchPatternVisibility(pattern);
                 final nextCost =
                     pattern.masteryCosts[(progress?.masteryLevel ?? 0) + 1] ??
                         const <PTibugDataFamily, int>{};
+                if (visibility == 1) {
+                  return const Card(
+                    margin: EdgeInsets.only(top: 8),
+                    child: ListTile(
+                      leading: Icon(Icons.lock_outline),
+                      title: Text('Pattern non identifié'),
+                    ),
+                  );
+                }
                 return Card(
                   margin: const EdgeInsets.only(top: 8),
                   child: ExpansionTile(
@@ -1171,13 +1199,13 @@ class _KernelDataCellsCard extends StatelessWidget {
                       Text(pattern.description),
                       const SizedBox(height: 8),
                       Text(
-                        'Niveaux Kernel requis : ${gameState.sourcierPatternRequirementsLabel(pattern.id)}',
+                        'Niveaux Kernel requis : ${gameState.pTibugResearchPatternRequirementsLabel(pattern)}',
                       ),
                       if (!requirementsMet)
                         const Padding(
                           padding: EdgeInsets.only(top: 4),
                           child: Text(
-                              'Le Pattern restera en stock jusqu’à ces niveaux.'),
+                              'Le Kernel doit encore atteindre ces niveaux.'),
                         ),
                       if (nextCost.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 8),
@@ -5354,6 +5382,8 @@ class _ForageEstimateCard extends StatelessWidget {
     final wasteLevel = gameState.wasteLevelFor(biome);
     final wasteMaximum = lisiereForageConfig.wasteLevelMax;
     final wasteMultiplier = gameState.wasteMultiplierFor(biome);
+    final wasteHoursPerLevel =
+        lisiereForageConfig.biomes[biome]!.wasteHoursPerLevelRegeneration;
     final organicBonus = gameState.organicBonusForBiome(biome);
     final wasteEstimate = gameState.estimatedBiomeWasteReward(
       biome: biome,
@@ -5386,6 +5416,11 @@ class _ForageEstimateCard extends StatelessWidget {
               'Déchets du biome : $wasteLevel / $wasteMaximum · '
               'x${wasteMultiplier.toStringAsFixed(2)}',
             ),
+            if (wasteHoursPerLevel > 0)
+              Text(
+                'Remplissage : +1 Déchet / '
+                '${wasteHoursPerLevel.toStringAsFixed(wasteHoursPerLevel == wasteHoursPerLevel.roundToDouble() ? 0 : 1)} h',
+              ),
             if (organicBonus > 0)
               Text(
                 'Biome assaini : +${(organicBonus * 100).round()} % Organique',
@@ -7978,6 +8013,7 @@ class MarketPage extends StatefulWidget {
 
 class _MarketPageState extends State<MarketPage> {
   final FigurineService _figurineService = FigurineService();
+  final Map<MerchantOffer, int> _merchantQuantities = <MerchantOffer, int>{};
   Timer? _timer;
 
   @override
@@ -8159,6 +8195,20 @@ class _MarketPageState extends State<MarketPage> {
                             (offer) {
                               final requirement = widget.gameState
                                   .merchantOfferRequirementLabel(offer);
+                              final isWorkshopProduct =
+                                  offer.kind == MerchantOfferKind.workshopItem;
+                              final quantityMaximum = math.max(
+                                1,
+                                offer.remainingItemAmount,
+                              );
+                              final selectedQuantity = isWorkshopProduct
+                                  ? (_merchantQuantities[offer] ?? 1)
+                                      .clamp(1, quantityMaximum)
+                                      .toInt()
+                                  : 1;
+                              final totalPrice = offer.priceForQuantity(
+                                selectedQuantity,
+                              );
                               return Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: DecoratedBox(
@@ -8186,7 +8236,61 @@ class _MarketPageState extends State<MarketPage> {
                                           ),
                                         ),
                                         const SizedBox(height: 4),
-                                        Text('${offer.price} Bio-batteries'),
+                                        Text(
+                                          isWorkshopProduct
+                                              ? '$totalPrice Bio-batteries · ${offer.price} / unité'
+                                              : '$totalPrice Bio-batteries',
+                                        ),
+                                        if (isWorkshopProduct) ...<Widget>[
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: <Widget>[
+                                              IconButton.outlined(
+                                                onPressed: offer
+                                                            .isUnavailable ||
+                                                        selectedQuantity <= 1
+                                                    ? null
+                                                    : () => setState(() {
+                                                          _merchantQuantities[
+                                                                  offer] =
+                                                              selectedQuantity -
+                                                                  1;
+                                                        }),
+                                                icon: const Icon(
+                                                  Icons.chevron_left,
+                                                ),
+                                                tooltip: 'Retirer une unité',
+                                              ),
+                                              Expanded(
+                                                child: Text(
+                                                  'Quantité : $selectedQuantity (${offer.remainingItemAmount} disponible${offer.remainingItemAmount > 1 ? 's' : ''})',
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                              IconButton.outlined(
+                                                onPressed: offer
+                                                            .isUnavailable ||
+                                                        selectedQuantity >=
+                                                            offer
+                                                                .remainingItemAmount
+                                                    ? null
+                                                    : () => setState(() {
+                                                          _merchantQuantities[
+                                                                  offer] =
+                                                              selectedQuantity +
+                                                                  1;
+                                                        }),
+                                                icon: const Icon(
+                                                  Icons.chevron_right,
+                                                ),
+                                                tooltip: 'Ajouter une unité',
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                         if (requirement != null)
                                           Padding(
                                             padding:
@@ -8204,18 +8308,26 @@ class _MarketPageState extends State<MarketPage> {
                                         const SizedBox(height: 8),
                                         SizedBox(
                                           width: double.infinity,
-                                          child: offer.purchased
+                                          child: offer.isUnavailable
                                               ? const OutlinedButton(
                                                   onPressed: null,
-                                                  child: Text('Acheté'),
+                                                  child: Text('Épuisé'),
                                                 )
                                               : FilledButton(
                                                   onPressed: () => _message(
                                                     widget.gameState
-                                                        .buyMerchantOffer(offer)
+                                                        .buyMerchantOffer(
+                                                          offer,
+                                                          quantity:
+                                                              selectedQuantity,
+                                                        )
                                                         .message,
                                                   ),
-                                                  child: const Text('Acheter'),
+                                                  child: Text(
+                                                    isWorkshopProduct
+                                                        ? 'Acheter $selectedQuantity'
+                                                        : 'Acheter',
+                                                  ),
                                                 ),
                                         ),
                                       ],
@@ -9071,92 +9183,13 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
 
   Widget _dataAndModules() {
     final traits = widget.gameState.pTibugTraitData;
-    final unlockedModules = widget.gameState.unlockedPTibugModules;
-    final activeCraft = widget.gameState.activePTibugModuleCraftOrder;
     final moduleInstances = widget.gameState.pTibugModuleInstances;
     final capsules = widget.gameState.pTibugCapsules;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
-        const Text(
-          'Fabrication de Modules',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Les Modules sont fabriqués à l’Atelier, puis équipés ou fusionnés ici.',
-        ),
-        const SizedBox(height: 10),
-        if (activeCraft != null)
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.precision_manufacturing_outlined),
-              title: Text(
-                  '${_moduleTitle(activeCraft.moduleType)} en fabrication'),
-              subtitle: Text(
-                  'Temps restant : ${_countdownLabel(activeCraft.endsAt)}'),
-            ),
-          ),
-        ...PTibugModuleType.values.map((module) {
-          final patternId = 'ptibug-module-${module.name}';
-          final patternActive =
-              widget.gameState.isPTibugPatternActive(patternId);
-          final legacyUnlocked = unlockedModules.contains(module);
-          final cost = pTibugConfig.moduleCraftCostFor(module);
-          final energyCost = pTibugConfig.moduleCraftEnergyFor(module);
-          final hasMaterials = widget.gameState.hasResources(cost);
-          final hasEnergy = widget.gameState.energyUnits >= energyCost;
-          final possible = _maxProductionCount(
-            cost,
-            widget.gameState.resourceAmount,
-          );
-          return _ProductionRecipeCard(
-            title: '${_moduleTitle(module)} · Atelier',
-            leadingIcon: _moduleIcon(module),
-            description: _moduleDescription(module),
-            slots: <_ProductionSlotData>[
-              _ProductionSlotData(
-                label: 'Matériaux',
-                value: cost.entries
-                    .map((entry) =>
-                        '${entry.key} : ${entry.value} / ${widget.gameState.resourceAmount(entry.key)}')
-                    .join('\n'),
-                icon: Icons.inventory_2_outlined,
-              ),
-              _ProductionSlotData(
-                label: 'Atelier',
-                value:
-                    'Énergie : $energyCost / ${widget.gameState.energyUnits}\nTemps : ${pTibugConfig.moduleCraftMinutesFor(module)} min',
-                icon: Icons.bolt_outlined,
-              ),
-            ],
-            details: <String>[
-              'Modules possibles avec le stock : $possible',
-              'Le Module pourra être retiré ou fusionné plus tard.',
-            ],
-            prerequisiteLabel: patternActive
-                ? 'Pattern Kernel actif'
-                : legacyUnlocked
-                    ? 'Module historique disponible. Pattern à rechercher pour les nouvelles fabrications.'
-                    : 'Pré-requis : Pattern Kernel actif',
-            prerequisiteMet: patternActive,
-            unavailableLabel: patternActive && (!hasMaterials || !hasEnergy)
-                ? !hasMaterials
-                    ? widget.gameState.missingResourcesLabel(cost)
-                    : 'Énergie insuffisante.'
-                : null,
-            primaryActionLabel: 'Fabriquer',
-            primaryActionHint: 'utilise $energyCost unité(s) d’énergie',
-            primaryActionIcon: Icons.precision_manufacturing_outlined,
-            primaryActionEnabled: patternActive &&
-                activeCraft == null &&
-                hasMaterials &&
-                hasEnergy,
-            onPrimaryAction: () => _message(
-              widget.gameState.startPTibugModuleCraft(module).message,
-            ),
-          );
-        }),
+        _KernelDataCellsCard(gameState: widget.gameState),
+        const SizedBox(height: 18),
         const SizedBox(height: 18),
         const Text(
           'Traits biologiques permanents',
@@ -9341,33 +9374,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         }),
         const SizedBox(height: 8),
         ..._fusionActions(),
-        const SizedBox(height: 18),
-        const Text('Modules', style: TextStyle(fontWeight: FontWeight.w900)),
-        const SizedBox(height: 4),
-        Text(
-          '${unlockedModules.length}/${PTibugModuleType.values.length} Modules déverrouillés',
-        ),
-        const SizedBox(height: 10),
-        ...PTibugModuleType.values.map((module) {
-          final unlocked = unlockedModules.contains(module);
-          return Opacity(
-            opacity: unlocked ? 1 : 0.48,
-            child: Card(
-              child: ListTile(
-                leading: CircleAvatar(child: Icon(_moduleIcon(module))),
-                title: Text(_moduleTitle(module)),
-                subtitle: Text(
-                  unlocked
-                      ? _moduleDescription(module)
-                      : 'Module verrouillé · à obtenir plus tard.',
-                ),
-                trailing: Icon(
-                  unlocked ? Icons.check_circle_outline : Icons.lock_outline,
-                ),
-              ),
-            ),
-          );
-        }),
       ],
     );
   }
@@ -10576,6 +10582,21 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                       },
                     ),
                   ),
+              const SizedBox(height: 18),
+              const Text(
+                'Modules P’TIBUG',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Les Modules sont fabriqués ici, puis stockés, équipés ou fusionnés dans la Nurserie.',
+              ),
+              ...PTibugModuleType.values.map(
+                (module) => _PTibugModuleAtelierCard(
+                  gameState: widget.gameState,
+                  module: module,
+                ),
+              ),
             ] else
               const Padding(
                 padding: EdgeInsets.only(top: 10),
@@ -10733,6 +10754,55 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
       figurine: figurine,
     );
     setState(() => _lastResult = result.message);
+  }
+}
+
+class _PTibugModuleAtelierCard extends StatelessWidget {
+  const _PTibugModuleAtelierCard({
+    required this.gameState,
+    required this.module,
+  });
+
+  final Zone0GameState gameState;
+  final PTibugModuleType module;
+
+  @override
+  Widget build(BuildContext context) {
+    final patternActive = gameState.isPTibugPatternActive(
+      'ptibug-module-${module.name}',
+    );
+    final cost = pTibugConfig.moduleCraftCostFor(module);
+    final energy = pTibugConfig.moduleCraftEnergyFor(module);
+    final canCraft = patternActive &&
+        gameState.activePTibugModuleCraftOrder == null &&
+        gameState.hasResources(cost) &&
+        gameState.energyUnits >= energy;
+    return Card(
+      margin: const EdgeInsets.only(top: 8),
+      child: ListTile(
+        leading: Icon(switch (module) {
+          PTibugModuleType.ailes => Icons.air_outlined,
+          PTibugModuleType.pinces => Icons.content_cut_outlined,
+          PTibugModuleType.reservoir => Icons.inventory_2_outlined,
+        }),
+        title: Text(module.displayName),
+        subtitle: Text(
+          patternActive
+              ? '${cost.entries.map((entry) => '${entry.key} ${entry.value}').join(' · ')} · énergie $energy'
+              : 'Pattern Kernel à activer',
+        ),
+        trailing: FilledButton(
+          onPressed: canCraft
+              ? () {
+                  final result = gameState.startPTibugModuleCraft(module);
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text(result.message)));
+                }
+              : null,
+          child: const Text('Fabriquer'),
+        ),
+      ),
+    );
   }
 }
 

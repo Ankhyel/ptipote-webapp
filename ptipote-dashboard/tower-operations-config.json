@@ -14,10 +14,13 @@
   "merchantCallMinimumWaitMinutes": 5,
   "merchantCallRandomWaitAdditionalMinutes": 10,
   "merchantOfferPrices": {
-    "Plan Filtre": 4,
-    "Plan Ventilation Termite": 6,
-    "Plan Lumière solaire": 6
+    "Filtre": 4,
+    "Tenue ombragée": 6,
+    "Ventilation Termite": 6
   },
+  "merchantWorkshopOfferCount": 1,
+  "merchantWorkshopMinimumQuantity": 5,
+  "merchantWorkshopMaximumQuantity": 10,
   "wellbeingBands": [
     {"minimumSecurity": 0, "wellbeingModifier": -12, "label": "Vulnérable"},
     {"minimumSecurity": 20, "wellbeingModifier": -5, "label": "Fragile"},

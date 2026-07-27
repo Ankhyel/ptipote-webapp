@@ -38,6 +38,7 @@
       "baseRiskPercent": 45,
       "rewards": { "Organique": 4, "Minéral": 3 },
       "wasteBaseGain": 3,
+      "wasteHoursPerLevelRegeneration": 3,
       "hazards": ["terrainInstable", "droneErrant"]
     },
     {
@@ -46,6 +47,7 @@
       "baseRiskPercent": 30,
       "rewards": { "Organique": 2, "Minéral": 1 },
       "wasteBaseGain": 2,
+      "wasteHoursPerLevelRegeneration": 1,
       "restorationLevel": 0,
       "restorationStage": "Plaine desséchée",
       "hazards": ["climatDifficile", "droneErrant"]
@@ -56,6 +58,7 @@
       "baseRiskPercent": 35,
       "rewards": { "Organique": 1, "Minéral": 5 },
       "wasteBaseGain": 3,
+      "wasteHoursPerLevelRegeneration": 2,
       "hazards": ["terrainInstable", "droneErrant"]
     },
     {
@@ -64,6 +67,7 @@
       "baseRiskPercent": 40,
       "rewards": { "Organique": 5, "Minéral": 1 },
       "wasteBaseGain": 4,
+      "wasteHoursPerLevelRegeneration": 2,
       "hazards": ["pollution", "climatDifficile"]
     }
   ],

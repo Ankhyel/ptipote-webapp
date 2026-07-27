@@ -140,6 +140,8 @@ class Zone0GameState extends ChangeNotifier {
   final Set<String> discoveredKernelPlanIds = <String>{};
   final Set<String> readyKernelPlanIds = <String>{};
   final Set<String> activeKernelPlanIds = <String>{};
+  final Map<String, Map<PTibugDataFamily, int>> kernelPlanDataInvestments =
+      <String, Map<PTibugDataFamily, int>>{};
   final List<KernelProgressHistoryEntry> kernelProgressHistory =
       <KernelProgressHistoryEntry>[];
   bool _needsKernelPopulationRewardMigration = false;
@@ -211,8 +213,10 @@ class Zone0GameState extends ChangeNotifier {
   bool get isMarketBuilt => marketLevel >= 1;
   bool get isPlaineNurseryBuilt => plaineNurseryLevel >= 1;
 
-  bool get hasPendingStarterPTibugChoice =>
-      isPlaineNurseryBuilt && !starterPTibugChoiceMade;
+  // Patterns are now discovered by the Kernel requirements. This legacy flag
+  // stays persisted only to read existing saves; it must no longer open a
+  // separate acquisition flow in the Nurserie.
+  bool get hasPendingStarterPTibugChoice => false;
   bool isRecyclerUnlocked(int campHeartLevel) =>
       isFablabBuilt &&
       campHeartLevel >= wasteRecyclerConfig.recyclerUnlockCampHeartLevel;
@@ -520,12 +524,6 @@ class Zone0GameState extends ChangeNotifier {
   ) {
     final persistentMissions = kernelConfig.missions
         .where((mission) => mission.type != KernelMissionType.weather)
-        .where(
-          (mission) =>
-              mission.conditionType !=
-                  KernelMissionConditionType.ptibugCreated ||
-              starterPTibugChoiceMade,
-        )
         .where((mission) => !dismissedKernelMissionIds.contains(mission.id))
         .map(
           (mission) => KernelMissionProgress(
@@ -699,6 +697,85 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  /// 0: hidden, 1: icon only, 2: name and requirements, 3: discovered.
+  int kernelPlanVisibility(KernelTechnologyPlanConfig plan) {
+    if (kernelPlanState(plan) != KernelPlanState.unknown) return 3;
+    final deficits = <int>[
+      plan.requiredTrustLevel - kernelTrustLevel,
+      if (plan.requiredAxis != null)
+        plan.requiredAxisLevel - kernelAxisLevel(plan.requiredAxis!),
+      plan.requiredBreederLevel - kernelAxisLevel(KernelAxis.breeder),
+      plan.requiredBuilderLevel - kernelAxisLevel(KernelAxis.builder),
+      plan.requiredRestorerLevel - kernelAxisLevel(KernelAxis.restorer),
+    ];
+    final largestDeficit = deficits.reduce(math.max);
+    if (largestDeficit > 2) return 0;
+    if (largestDeficit > 1) return 1;
+    return 2;
+  }
+
+  PTibugDataFamily? _dataFamilyForName(String name) => PTibugDataFamily.values
+      .where((family) => family.name == name)
+      .firstOrNull;
+
+  Map<PTibugDataFamily, int> kernelPlanMissingData(
+    KernelTechnologyPlanConfig plan,
+  ) {
+    final invested =
+        kernelPlanDataInvestments[plan.id] ?? const <PTibugDataFamily, int>{};
+    return <PTibugDataFamily, int>{
+      for (final entry in plan.dataRequirements.entries)
+        if (_dataFamilyForName(entry.key) case final family?)
+          family: math.max(0, entry.value - (invested[family] ?? 0)),
+    };
+  }
+
+  bool kernelPlanDataRequirementsMet(KernelTechnologyPlanConfig plan) =>
+      kernelPlanMissingData(plan).values.every((amount) => amount == 0);
+
+  String kernelPlanDataRequirementsLabel(KernelTechnologyPlanConfig plan) =>
+      plan.dataRequirements.entries.map((entry) {
+        final family = _dataFamilyForName(entry.key);
+        return '${family == null ? entry.key : _ptibugDataFamilyLabel(family)} ${entry.value}';
+      }).join(' · ');
+
+  Zone0ActionResult investKernelPlanDataAutomatically(String planId) {
+    final plan = kernelProgressConfig.plans
+        .where((item) => item.id == planId)
+        .firstOrNull;
+    if (plan == null || kernelPlanState(plan) == KernelPlanState.unknown) {
+      return const Zone0ActionResult(
+          success: false, message: 'Pattern introuvable.');
+    }
+    if (!kernelPlanRequirementsMet(plan)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Les niveaux requis ne sont pas encore atteints.');
+    }
+    final investments = kernelPlanDataInvestments.putIfAbsent(
+      plan.id,
+      () => <PTibugDataFamily, int>{},
+    );
+    var investedAny = false;
+    for (final entry in kernelPlanMissingData(plan).entries) {
+      final available = pTibugDataReserve[entry.key] ?? 0;
+      final amount = math.min(available, entry.value);
+      if (amount == 0) continue;
+      pTibugDataReserve[entry.key] = available - amount;
+      investments[entry.key] = (investments[entry.key] ?? 0) + amount;
+      investedAny = true;
+    }
+    if (!investedAny) {
+      return const Zone0ActionResult(
+          success: false, message: 'Réserve de données insuffisante.');
+    }
+    _refreshKernelPlanReadiness();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Données disponibles investies.');
+  }
+
   String kernelPlanRequirementsLabel(KernelTechnologyPlanConfig plan) {
     final requirements = <String>[
       'Confiance niv. ${plan.requiredTrustLevel}',
@@ -745,9 +822,6 @@ class Zone0GameState extends ChangeNotifier {
 
   KernelPlanState kernelPlanState(KernelTechnologyPlanConfig plan) {
     final pTibugPattern = pTibugConfig.patternForKernelPlanId(plan.id);
-    if (pTibugPattern != null && !starterPTibugChoiceMade) {
-      return KernelPlanState.unknown;
-    }
     if (activeKernelPlanIds.contains(plan.id) ||
         (pTibugPattern != null &&
             activePTibugPatterns.contains(pTibugPattern.species)) ||
@@ -842,15 +916,49 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool sourcierPatternRequirementsMet(String patternId) {
-    final plan = kernelPlanForPTibugResearchPattern(patternId);
-    return plan == null || kernelPlanRequirementsMet(plan);
+    final pattern = pTibugResearchPattern(patternId);
+    return pattern != null && pTibugResearchPatternRequirementsMet(pattern);
   }
 
   String sourcierPatternRequirementsLabel(String patternId) {
-    final plan = kernelPlanForPTibugResearchPattern(patternId);
-    return plan == null
-        ? 'Aucun niveau Kernel supplémentaire requis.'
-        : kernelPlanRequirementsLabel(plan);
+    final pattern = pTibugResearchPattern(patternId);
+    return pattern == null
+        ? 'Pattern inconnu.'
+        : pTibugResearchPatternRequirementsLabel(pattern);
+  }
+
+  bool pTibugResearchPatternRequirementsMet(
+    PTibugResearchPatternConfig pattern,
+  ) =>
+      kernelTrustLevel >= pattern.requiredTrustLevel &&
+      kernelAxisLevel(KernelAxis.breeder) >= pattern.requiredBreederLevel &&
+      kernelAxisLevel(KernelAxis.builder) >= pattern.requiredBuilderLevel &&
+      kernelAxisLevel(KernelAxis.restorer) >= pattern.requiredRestorerLevel;
+
+  String pTibugResearchPatternRequirementsLabel(
+    PTibugResearchPatternConfig pattern,
+  ) =>
+      <String>[
+        'Confiance niv. ${pattern.requiredTrustLevel}',
+        if (pattern.requiredBreederLevel > 0)
+          'Éleveur niv. ${pattern.requiredBreederLevel}',
+        if (pattern.requiredBuilderLevel > 0)
+          'Bâtisseur niv. ${pattern.requiredBuilderLevel}',
+        if (pattern.requiredRestorerLevel > 0)
+          'Régénérateur niv. ${pattern.requiredRestorerLevel}',
+      ].join(' · ');
+
+  int pTibugResearchPatternVisibility(PTibugResearchPatternConfig pattern) {
+    final deficits = <int>[
+      pattern.requiredTrustLevel - kernelTrustLevel,
+      pattern.requiredBreederLevel - kernelAxisLevel(KernelAxis.breeder),
+      pattern.requiredBuilderLevel - kernelAxisLevel(KernelAxis.builder),
+      pattern.requiredRestorerLevel - kernelAxisLevel(KernelAxis.restorer),
+    ];
+    final largestDeficit = deficits.reduce(math.max);
+    if (largestDeficit > 2) return 0;
+    if (largestDeficit > 1) return 1;
+    return 2;
   }
 
   String? merchantOfferRequirementLabel(MerchantOffer offer) {
@@ -952,6 +1060,10 @@ class Zone0GameState extends ChangeNotifier {
     final pattern = pTibugResearchPattern(patternId);
     final progress = pTibugPatternProgress[patternId];
     if (pattern == null || progress == null) {
+      return const <PTibugDataFamily, int>{};
+    }
+    if (pattern.category != PTibugPatternCategory.trait &&
+        progress.masteryLevel >= 1) {
       return const <PTibugDataFamily, int>{};
     }
     final nextLevel = progress.masteryLevel + 1;
@@ -1062,11 +1174,13 @@ class Zone0GameState extends ChangeNotifier {
         )) {
       return;
     }
+    final canEvolveAgain = pattern.category == PTibugPatternCategory.trait &&
+        pattern.masteryCosts.containsKey(nextLevel + 1);
     progress
       ..masteryLevel = nextLevel
       ..investedDataByFamily.clear()
       ..activatedAt = DateTime.now()
-      ..state = pattern.masteryCosts.containsKey(nextLevel + 1)
+      ..state = canEvolveAgain
           ? PTibugPatternState.masteredCurrentLevel
           : PTibugPatternState.active;
     if (pattern.linkedSpecies != null) {
@@ -1157,7 +1271,9 @@ class Zone0GameState extends ChangeNotifier {
     final plan = kernelProgressConfig.plans
         .where((item) => item.id == planId)
         .firstOrNull;
-    if (plan == null || kernelPlanState(plan) != KernelPlanState.ready) {
+    if (plan == null ||
+        kernelPlanState(plan) != KernelPlanState.ready ||
+        !kernelPlanDataRequirementsMet(plan)) {
       return const Zone0ActionResult(
         success: false,
         message: 'Ce Plan n’est pas encore prêt.',
@@ -1221,12 +1337,7 @@ class Zone0GameState extends ChangeNotifier {
 
   void _refreshKernelPlanReadiness() {
     for (final plan in kernelProgressConfig.plans) {
-      final eventDiscoveryReached = plan.discoveryEvent != null &&
-          (kernelEventCounts[plan.discoveryEvent] ?? 0) >=
-              plan.discoveryThreshold;
-      final discoveryReached = plan.discoverWhenRequirementsMet
-          ? kernelPlanRequirementsMet(plan)
-          : eventDiscoveryReached;
+      final discoveryReached = kernelPlanRequirementsMet(plan);
       if (kernelPlanState(plan) == KernelPlanState.unknown &&
           discoveryReached) {
         discoveredKernelPlanIds.add(plan.id);
@@ -1242,7 +1353,8 @@ class Zone0GameState extends ChangeNotifier {
         );
       }
       if (kernelPlanState(plan) != KernelPlanState.discovered) continue;
-      if (kernelPlanRequirementsMet(plan)) {
+      if (kernelPlanRequirementsMet(plan) &&
+          kernelPlanDataRequirementsMet(plan)) {
         readyKernelPlanIds.add(plan.id);
         reports.add(
           PtipoteMissionReport.system(
@@ -1256,26 +1368,22 @@ class Zone0GameState extends ChangeNotifier {
         );
       }
     }
-    _refreshSourcierPatternDiscoveries();
+    _refreshPTibugResearchPatternDiscoveries();
   }
 
-  bool _refreshSourcierPatternDiscoveries() {
+  bool _refreshPTibugResearchPatternDiscoveries() {
     var changed = false;
-    for (final patternId in sourcierPatternIds) {
-      final pattern = pTibugResearchPattern(patternId);
-      final progress = pattern == null ? null : _patternProgressFor(patternId);
-      if (pattern == null || progress!.state != PTibugPatternState.unknown) {
-        continue;
-      }
-      if (!sourcierPatternRequirementsMet(patternId)) continue;
+    for (final pattern in pTibugConfig.researchPatterns.values) {
+      final progress = _patternProgressFor(pattern.id);
+      if (progress.state != PTibugPatternState.unknown ||
+          !pTibugResearchPatternRequirementsMet(pattern)) continue;
       progress
         ..state = PTibugPatternState.discovered
         ..discoveredAt = DateTime.now();
       changed = true;
       reports.add(
         PtipoteMissionReport.system(
-          message:
-              'Le Kernel peut maintenant étudier ${pattern.displayName}, conservé dans le stock du Sourcier.',
+          message: 'Le Kernel peut maintenant étudier ${pattern.displayName}.',
           sourceBuildingId: 'kernel',
           mailbox: Zone0MessageMailbox.kernel,
           subject: 'Pattern découvert',
@@ -4845,6 +4953,21 @@ class Zone0GameState extends ChangeNotifier {
               (id) => '$id',
             ),
           );
+        kernelPlanDataInvestments.clear();
+        final planDataInvestments = kernelData['planDataInvestments'] as Map?;
+        if (planDataInvestments != null) {
+          for (final entry in planDataInvestments.entries) {
+            if (entry.value is! Map) continue;
+            final values = <PTibugDataFamily, int>{};
+            for (final family in PTibugDataFamily.values) {
+              final amount = _readInt((entry.value as Map)[family.name]);
+              if (amount > 0) values[family] = amount;
+            }
+            if (values.isNotEmpty) {
+              kernelPlanDataInvestments['${entry.key}'] = values;
+            }
+          }
+        }
         kernelProgressHistory
           ..clear()
           ..addAll(
@@ -5105,10 +5228,14 @@ class Zone0GameState extends ChangeNotifier {
       lastManualTowerRechargeAt = _readDate(data['lastManualTowerRechargeAt']);
 
       final migratedPTibugState = _migratePTibugScientificState();
-      final discoveredSourcierPatterns = _refreshSourcierPatternDiscoveries();
+      final discoveredSourcierPatterns =
+          _refreshPTibugResearchPatternDiscoveries();
+      final refreshedMerchantOffers = _refreshMerchantOffersForCurrentRules();
       _loadedFromFirebase = true;
       resolveConstructionProjects();
-      if (migratedPTibugState || discoveredSourcierPatterns) {
+      if (migratedPTibugState ||
+          discoveredSourcierPatterns ||
+          refreshedMerchantOffers) {
         unawaited(saveRuntimeToFirebase());
       }
     });
@@ -5464,6 +5591,7 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
     }
     for (final state in biomeSecurity.values) {
+      changed = _regenerateBiomeWaste(state: state, now: current) || changed;
       final lastActivity = state.lastMissionAt ?? state.lastPatrolAt;
       if (lastActivity == null ||
           current.difference(lastActivity).inHours >=
@@ -5569,71 +5697,139 @@ class Zone0GameState extends ChangeNotifier {
     merchantAvailableUntil = current.add(
       Duration(hours: towerOperationsConfig.merchantPresenceHours),
     );
-    merchantOffers
-      ..clear()
-      ..addAll(
-        towerOperationsConfig.merchantOfferPrices.entries.map(
-          (entry) => MerchantOffer(
-            planName: entry.key.replaceFirst('Plan ', ''),
-            price: entry.value,
-            kind: MerchantOfferKind.workshopItem,
-            itemName: entry.key.replaceFirst('Plan ', ''),
-          ),
-        ),
-      );
-    final unknownResearch = pTibugConfig.researchPatterns.values
-        .where(
-          (pattern) =>
-              (pTibugPatternProgress[pattern.id]?.state ??
-                      PTibugPatternState.unknown) ==
-                  PTibugPatternState.unknown &&
-              !sourcierPatternIds.contains(pattern.id),
-        )
-        .toList(growable: false);
-    if (unknownResearch.isNotEmpty) {
-      final pattern = unknownResearch[_random.nextInt(unknownResearch.length)];
-      merchantOffers.add(
-        MerchantOffer(
-          planName: pattern.displayName,
-          price: pTibugConfig.sourcierResearchPatternPrice,
-          kind: MerchantOfferKind.researchPattern,
-          patternId: pattern.id,
-        ),
-      );
-    }
-    final families = List<PTibugDataFamily>.from(PTibugDataFamily.values)
-      ..shuffle(_random);
-    final firstDominant = families.first;
-    final secondDominant = families[1];
-    merchantOffers.addAll(<MerchantOffer>[
-      MerchantOffer(
-        planName: 'Cellule ${_ptibugDataFamilyLabel(firstDominant)}',
-        price: pTibugConfig.sourcierSpecializedCellPrice,
-        kind: MerchantOfferKind.specializedDataCell,
-        dominantDataFamily: firstDominant,
-      ),
-      MerchantOffer(
-        planName: 'Cellule ${_ptibugDataFamilyLabel(secondDominant)}',
-        price: pTibugConfig.sourcierSpecializedCellPrice,
-        kind: MerchantOfferKind.specializedDataCell,
-        dominantDataFamily: secondDominant,
-      ),
-      MerchantOffer(
-        planName: 'Cellule neutre',
-        price: pTibugConfig.sourcierNeutralCellPrice,
-        kind: MerchantOfferKind.neutralDataCell,
-      ),
-    ]);
+    _generateMerchantOffers();
     reports.add(
       PtipoteMissionReport.system(
         message:
-            'Le Sourcier est arrivé au Marché avec un Pattern, trois Cellules et des objets d’Atelier.',
+            'Le Sourcier est arrivé au Marché avec trois Cellules et un lot de produit fini de l’Atelier.',
         sourceBuildingId: 'market',
         subject: 'Sourcier arrivé',
         concerned: 'Joueur',
         summary: 'Nouvelles offres disponibles pendant deux heures.',
       ),
     );
+  }
+
+  void _generateMerchantOffers() {
+    merchantOffers.clear();
+    final families = List<PTibugDataFamily>.from(PTibugDataFamily.values)
+      ..shuffle(_random);
+    final firstDominant = families.first;
+    final secondDominant = families[1];
+    final thirdDominant = families[2];
+    final firstCell = _createMerchantDataCell(
+      neutral: false,
+      dominant: firstDominant,
+    );
+    final secondCell = _createMerchantDataCell(
+      neutral: false,
+      dominant: secondDominant,
+    );
+    final thirdCell = _createMerchantDataCell(
+      neutral: false,
+      dominant: thirdDominant,
+    );
+    merchantOffers.addAll(<MerchantOffer>[
+      MerchantOffer(
+        planName: 'Cellule ${_ptibugDataFamilyLabel(firstDominant)}',
+        price: _merchantDataCellPrice(firstCell),
+        kind: MerchantOfferKind.specializedDataCell,
+        dominantDataFamily: firstDominant,
+        dataCell: firstCell,
+      ),
+      MerchantOffer(
+        planName: 'Cellule ${_ptibugDataFamilyLabel(secondDominant)}',
+        price: _merchantDataCellPrice(secondCell),
+        kind: MerchantOfferKind.specializedDataCell,
+        dominantDataFamily: secondDominant,
+        dataCell: secondCell,
+      ),
+      MerchantOffer(
+        planName: 'Cellule ${_ptibugDataFamilyLabel(thirdDominant)}',
+        price: _merchantDataCellPrice(thirdCell),
+        kind: MerchantOfferKind.specializedDataCell,
+        dominantDataFamily: thirdDominant,
+        dataCell: thirdCell,
+      ),
+    ]);
+    final products = towerOperationsConfig.merchantOfferPrices.entries
+        .toList(growable: false)
+      ..shuffle(_random);
+    final minimumQuantity = math.max(
+      1,
+      towerOperationsConfig.merchantWorkshopMinimumQuantity,
+    );
+    final maximumQuantity = math.max(
+      minimumQuantity,
+      towerOperationsConfig.merchantWorkshopMaximumQuantity,
+    );
+    final offerCount = math.min(
+      products.length,
+      math.max(0, towerOperationsConfig.merchantWorkshopOfferCount),
+    );
+    for (final product in products.take(offerCount)) {
+      final amount = minimumQuantity +
+          _random.nextInt(maximumQuantity - minimumQuantity + 1);
+      merchantOffers.add(
+        MerchantOffer(
+          planName: product.key,
+          price: product.value,
+          kind: MerchantOfferKind.workshopItem,
+          itemName: product.key,
+          itemAmount: amount,
+          remainingItemAmount: amount,
+        ),
+      );
+    }
+  }
+
+  int _merchantDataCellPrice(PTibugDataCell cell) {
+    final value = cell.entries.fold<int>(
+      0,
+      (total, entry) => total + entry.value(pTibugConfig),
+    );
+    return math.max(1, value * pTibugConfig.sourcierCellPricePerDataValue);
+  }
+
+  bool _refreshMerchantOffersForCurrentRules() {
+    if (!isMerchantAvailable) return false;
+    final patterns = merchantOffers
+        .where((offer) => offer.kind == MerchantOfferKind.researchPattern)
+        .length;
+    final cells = merchantOffers
+        .where(
+          (offer) =>
+              offer.kind == MerchantOfferKind.specializedDataCell ||
+              offer.kind == MerchantOfferKind.neutralDataCell,
+        )
+        .toList(growable: false);
+    final products = merchantOffers
+        .where((offer) => offer.kind == MerchantOfferKind.workshopItem)
+        .toList(growable: false);
+    final desiredProductCount = math.min(
+      towerOperationsConfig.merchantOfferPrices.length,
+      math.max(0, towerOperationsConfig.merchantWorkshopOfferCount),
+    );
+    final minimumQuantity = math.max(
+      1,
+      towerOperationsConfig.merchantWorkshopMinimumQuantity,
+    );
+    final maximumQuantity = math.max(
+      minimumQuantity,
+      towerOperationsConfig.merchantWorkshopMaximumQuantity,
+    );
+    final matchesCurrentRules = patterns == 0 &&
+        cells.length == 3 &&
+        cells.every((offer) => offer.dataCell != null) &&
+        products.length == desiredProductCount &&
+        products.every(
+          (offer) =>
+              offer.itemAmount >= minimumQuantity &&
+              offer.itemAmount <= maximumQuantity,
+        );
+    if (matchesCurrentRules) return false;
+    _generateMerchantOffers();
+    return true;
   }
 
   /// Kept public for existing debug controls. Normal gameplay starts visits
@@ -5732,21 +5928,38 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
-  Zone0ActionResult buyMerchantOffer(MerchantOffer offer) {
-    if (!isMerchantAvailable || offer.purchased) {
+  Zone0ActionResult buyMerchantOffer(MerchantOffer offer, {int quantity = 1}) {
+    if (!isMerchantAvailable || offer.isUnavailable) {
       return const Zone0ActionResult(
         success: false,
         message: 'Offre indisponible.',
       );
     }
-    if (bioBatteries < offer.price) {
+    if (offer.kind == MerchantOfferKind.speciesPattern ||
+        offer.kind == MerchantOfferKind.researchPattern) {
+      return const Zone0ActionResult(
+        success: false,
+        message:
+            'Les Patterns sont désormais découverts directement par le Kernel.',
+      );
+    }
+    final selectedQuantity = offer.kind == MerchantOfferKind.workshopItem
+        ? quantity.clamp(1, offer.remainingItemAmount).toInt()
+        : 1;
+    final totalPrice = offer.priceForQuantity(selectedQuantity);
+    if (bioBatteries < totalPrice) {
       return const Zone0ActionResult(
         success: false,
         message: 'Bio-batteries insuffisantes.',
       );
     }
-    bioBatteries -= offer.price;
-    offer.purchased = true;
+    bioBatteries -= totalPrice;
+    if (offer.kind == MerchantOfferKind.workshopItem) {
+      offer.remainingItemAmount -= selectedQuantity;
+      offer.purchased = offer.remainingItemAmount <= 0;
+    } else {
+      offer.purchased = true;
+    }
     final sourcierPatternId = offer.kind == MerchantOfferKind.speciesPattern &&
             offer.pTibugSpecies != null
         ? 'ptibug-species-${offer.pTibugSpecies!.name}'
@@ -5755,7 +5968,7 @@ class Zone0GameState extends ChangeNotifier {
             : null;
     if (sourcierPatternId != null) {
       sourcierPatternIds.add(sourcierPatternId);
-      _refreshSourcierPatternDiscoveries();
+      _refreshPTibugResearchPatternDiscoveries();
       reports.add(
         PtipoteMissionReport.system(
           message:
@@ -5770,7 +5983,7 @@ class Zone0GameState extends ChangeNotifier {
         offer.kind == MerchantOfferKind.plan) {
       final itemName =
           offer.itemName ?? offer.planName.replaceFirst('Plan ', '');
-      final amount = math.max(1, offer.itemAmount);
+      final amount = selectedQuantity;
       addResources(<String, int>{itemName: amount});
       reports.add(
         PtipoteMissionReport.system(
@@ -5781,10 +5994,11 @@ class Zone0GameState extends ChangeNotifier {
     } else if (offer.kind == MerchantOfferKind.specializedDataCell ||
         offer.kind == MerchantOfferKind.neutralDataCell) {
       pTibugDataCells.add(
-        _createMerchantDataCell(
-          neutral: offer.kind == MerchantOfferKind.neutralDataCell,
-          dominant: offer.dominantDataFamily,
-        ),
+        offer.dataCell ??
+            _createMerchantDataCell(
+              neutral: offer.kind == MerchantOfferKind.neutralDataCell,
+              dominant: offer.dominantDataFamily,
+            ),
       );
     } else if (offer.kind == MerchantOfferKind.module &&
         offer.moduleType != null) {
@@ -5814,7 +6028,7 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     if (merchantOffers.isNotEmpty &&
-        merchantOffers.every((item) => item.purchased)) {
+        merchantOffers.every((item) => item.isUnavailable)) {
       _finishMerchantVisit(
         DateTime.now(),
         message: 'Toutes les offres du Sourcier ont été acquises.',
@@ -5824,7 +6038,8 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: '${offer.planName} acheté.',
+      message:
+          '${offer.planName} acheté${selectedQuantity > 1 ? ' ×$selectedQuantity' : ''}.',
     );
   }
 
@@ -6243,10 +6458,6 @@ class Zone0GameState extends ChangeNotifier {
       };
 
   String? _kernelMissionPrerequisiteMessage(KernelMissionConfig mission) {
-    if (mission.conditionType == KernelMissionConditionType.ptibugCreated &&
-        !starterPTibugChoiceMade) {
-      return 'Choisis d’abord un Pattern dans la Nurserie.';
-    }
     for (final requirement in mission.requiredBuildingLevels.entries) {
       if (_kernelBuildingLevel(requirement.key) < requirement.value) {
         return '${requirement.key} niveau ${requirement.value} requis.';
@@ -6378,10 +6589,6 @@ class Zone0GameState extends ChangeNotifier {
 
     var restoredPopulation = 0;
     for (final mission in kernelConfig.missions) {
-      if (mission.conditionType == KernelMissionConditionType.ptibugCreated &&
-          !starterPTibugChoiceMade) {
-        continue;
-      }
       final wasCompleted = completedKernelMissionIds.contains(mission.id);
       if (!wasCompleted) {
         if (mission.requestedItem != null ||
@@ -6528,6 +6735,7 @@ class Zone0GameState extends ChangeNotifier {
       biome: mission.biome,
       theoreticalHours: duration.theoreticalHours,
       completionRatio: rewardRatio,
+      completedAt: completedAt,
     );
     final inventoryResult = addResources(rewards);
     final xpResults = <String, PtipoteXpGainResult>{};
@@ -6713,6 +6921,7 @@ class Zone0GameState extends ChangeNotifier {
     required ForageBiome biome,
     required int theoreticalHours,
     required double completionRatio,
+    required DateTime completedAt,
   }) {
     final hoursPerLevel = lisiereForageConfig.wasteHoursPerLevelDepletion;
     if (hoursPerLevel <= 0) return;
@@ -6724,6 +6933,33 @@ class Zone0GameState extends ChangeNotifier {
       () => BiomeSecurityState.initial(biome),
     );
     state.wasteLevel = math.max(0, state.wasteLevel - levelLoss).toInt();
+    state.lastWasteRegenerationAt = completedAt;
+  }
+
+  bool _regenerateBiomeWaste({
+    required BiomeSecurityState state,
+    required DateTime now,
+  }) {
+    final maximum = lisiereForageConfig.wasteLevelMax;
+    if (state.wasteLevel >= maximum) return false;
+    final hoursPerLevel =
+        lisiereForageConfig.biomes[state.biome]?.wasteHoursPerLevelRegeneration;
+    if (hoursPerLevel == null || hoursPerLevel <= 0) return false;
+
+    final last = state.lastWasteRegenerationAt;
+    if (last == null || now.isBefore(last)) {
+      state.lastWasteRegenerationAt = now;
+      return true;
+    }
+    final minutesPerLevel = math.max(1, (hoursPerLevel * 60).round());
+    final gainedLevels = now.difference(last).inMinutes ~/ minutesPerLevel;
+    if (gainedLevels <= 0) return false;
+
+    state.wasteLevel = math.min(maximum, state.wasteLevel + gainedLevels);
+    state.lastWasteRegenerationAt = state.wasteLevel >= maximum
+        ? now
+        : last.add(Duration(minutes: gainedLevels * minutesPerLevel));
+    return true;
   }
 
   /// Creates scientific discoveries once for a completed Lisière mission.
@@ -6750,8 +6986,6 @@ class Zone0GameState extends ChangeNotifier {
     for (var attempt = 0; attempt < attempts; attempt += 1) {
       final chance = pTibugConfig.cellChanceForOrdinal(attempt + 1);
       if (_random.nextInt(100) >= chance) continue;
-      final isNeutral =
-          _random.nextInt(100) < pTibugConfig.neutralCellChancePercent;
       final weights = Map<PTibugDataFamily, int>.from(biome.dataWeights);
       final toxineWeightBonus =
           _activePTibugEffect('Poids Toxine', biome: biomeId);
@@ -6764,12 +6998,10 @@ class Zone0GameState extends ChangeNotifier {
             (weights[PTibugDataFamily.comportementInsectoide] ?? 0) +
                 biome.nurseryInsectBehaviourWeight;
       }
-      final dominant = isNeutral ? null : _pickWeightedDataFamily(weights);
+      final dominant = _pickWeightedDataFamily(weights);
       final entries = <PTibugDataCellEntry>[];
       for (var slot = 0; slot < 5; slot += 1) {
-        final family = !isNeutral && slot < 2
-            ? dominant!
-            : _pickWeightedDataFamily(weights);
+        final family = slot < 2 ? dominant : _pickWeightedDataFamily(weights);
         entries.add(
           PTibugDataCellEntry(
             family: family,
@@ -6781,13 +7013,12 @@ class Zone0GameState extends ChangeNotifier {
       cells.add(
         PTibugDataCell(
           id: 'cell-${mission.id}-$attempt',
-          displayName: isNeutral
-              ? 'Cellule neutre · ${biome.displayName}'
-              : 'Cellule ${_ptibugDataFamilyLabel(dominant!)} · ${biome.displayName}',
+          displayName:
+              'Cellule ${_ptibugDataFamilyLabel(dominant)} · ${biome.displayName}',
           sourceBiomeId: biomeId.name,
           sourceMissionId: mission.id,
           dominantFamily: dominant,
-          isNeutralCell: isNeutral,
+          isNeutralCell: false,
           entries: entries,
           createdAt: completedAt,
         ),
@@ -7129,6 +7360,13 @@ class Zone0GameState extends ChangeNotifier {
           'discoveredPlanIds': discoveredKernelPlanIds.toList(),
           'readyPlanIds': readyKernelPlanIds.toList(),
           'activePlanIds': activeKernelPlanIds.toList(),
+          'planDataInvestments': <String, Map<String, int>>{
+            for (final entry in kernelPlanDataInvestments.entries)
+              entry.key: <String, int>{
+                for (final invested in entry.value.entries)
+                  invested.key.name: invested.value,
+              },
+          },
           'progressHistory': kernelProgressHistory
               .take(50)
               .map((entry) => entry.toFirebase())
@@ -8368,6 +8606,7 @@ class BiomeSecurityState {
     this.lastPatrolAt,
     this.lastMissionAt,
     this.lastDecayAt,
+    this.lastWasteRegenerationAt,
   });
 
   factory BiomeSecurityState.initial(ForageBiome biome) => BiomeSecurityState(
@@ -8404,6 +8643,9 @@ class BiomeSecurityState {
         lastPatrolAt: ForageMission._readDate(data['lastPatrolAt']),
         lastMissionAt: ForageMission._readDate(data['lastMissionAt']),
         lastDecayAt: ForageMission._readDate(data['lastDecayAt']),
+        lastWasteRegenerationAt: ForageMission._readDate(
+          data['lastWasteRegenerationAt'],
+        ),
       );
 
   final ForageBiome biome;
@@ -8414,6 +8656,7 @@ class BiomeSecurityState {
   DateTime? lastPatrolAt;
   DateTime? lastMissionAt;
   DateTime? lastDecayAt;
+  DateTime? lastWasteRegenerationAt;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'securitySchema': 2,
@@ -8427,6 +8670,9 @@ class BiomeSecurityState {
             lastMissionAt == null ? null : Timestamp.fromDate(lastMissionAt!),
         'lastDecayAt':
             lastDecayAt == null ? null : Timestamp.fromDate(lastDecayAt!),
+        'lastWasteRegenerationAt': lastWasteRegenerationAt == null
+            ? null
+            : Timestamp.fromDate(lastWasteRegenerationAt!),
       };
 }
 
@@ -8557,9 +8803,11 @@ class MerchantOffer {
     this.dominantDataFamily,
     this.itemName,
     this.itemAmount = 1,
+    int? remainingItemAmount,
     this.moduleType,
     this.capsule,
-  });
+    this.dataCell,
+  }) : remainingItemAmount = remainingItemAmount ?? itemAmount;
   final String planName;
   final int price;
   bool purchased;
@@ -8569,8 +8817,17 @@ class MerchantOffer {
   final PTibugDataFamily? dominantDataFamily;
   final String? itemName;
   final int itemAmount;
+  int remainingItemAmount;
   final PTibugModuleType? moduleType;
   final PTibugCapsule? capsule;
+  final PTibugDataCell? dataCell;
+
+  bool get isUnavailable =>
+      purchased ||
+      (kind == MerchantOfferKind.workshopItem && remainingItemAmount <= 0);
+
+  int priceForQuantity(int quantity) =>
+      kind == MerchantOfferKind.workshopItem ? price * quantity : price;
 
   factory MerchantOffer.fromFirebase(Map<dynamic, dynamic> data) =>
       MerchantOffer(
@@ -8602,6 +8859,11 @@ class MerchantOffer {
           data['itemAmount'],
           fallback: 1,
         ),
+        remainingItemAmount: Zone0GameState.instance._readInt(
+          data['remainingItemAmount'],
+          fallback:
+              Zone0GameState.instance._readInt(data['itemAmount'], fallback: 1),
+        ),
         moduleType: data['moduleType'] == null
             ? null
             : ForageMission._enumByName(
@@ -8611,6 +8873,9 @@ class MerchantOffer {
               ),
         capsule: data['capsule'] is Map
             ? PTibugCapsule.fromFirebase(data['capsule'] as Map)
+            : null,
+        dataCell: data['dataCell'] is Map
+            ? PTibugDataCell.fromFirebase(data['dataCell'] as Map)
             : null,
       );
 
@@ -8624,8 +8889,10 @@ class MerchantOffer {
         'dominantDataFamily': dominantDataFamily?.name,
         'itemName': itemName,
         'itemAmount': itemAmount,
+        'remainingItemAmount': remainingItemAmount,
         'moduleType': moduleType?.name,
         'capsule': capsule?.toFirebase(),
+        'dataCell': dataCell?.toFirebase(),
       };
 }
 
