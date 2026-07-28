@@ -6004,6 +6004,7 @@ class Zone0GameState extends ChangeNotifier {
     required int securityAtLaunch,
     required int securityReduction,
     required Map<String, int> xpGainByMember,
+    ForageMissionType type = ForageMissionType.harvest,
   }) {
     final start = DateTime.now();
     final durationConfig = lisiereForageConfig.durations[duration]!;
@@ -6032,6 +6033,7 @@ class Zone0GameState extends ChangeNotifier {
       biome: biome,
       duration: duration,
       intensity: intensity,
+      type: type,
       startTime: start,
       endTime: start.add(
         Duration(
@@ -7343,7 +7345,7 @@ class Zone0GameState extends ChangeNotifier {
     }
 
     final organicBonus = organicBonusForBiome(mission.biome);
-    if (organicBonus > 0) {
+    if (mission.type == ForageMissionType.harvest && organicBonus > 0) {
       rewards['Organique'] =
           ((rewards['Organique'] ?? 0) * (1 + organicBonus)).round();
     }
@@ -7353,9 +7355,18 @@ class Zone0GameState extends ChangeNotifier {
       completionRatio: rewardRatio,
       completedAt: completedAt,
     );
+    final biomassBefore = biomassFor(mission.biome);
+    final configuredBiomassCost = biomassMissionConsumptionFor(
+      mission.intensity,
+      mission.type,
+    );
+    final biomassCost = configuredBiomassCost <= 0
+        ? 0
+        : math.max(1, (configuredBiomassCost * rewardRatio).ceil());
     _depleteBiomeBiomass(
       biome: mission.biome,
       intensity: mission.intensity,
+      missionType: mission.type,
       completionRatio: rewardRatio,
       completedAt: completedAt,
     );
@@ -7465,6 +7476,10 @@ class Zone0GameState extends ChangeNotifier {
       }
     }
     final finalState = <String>[
+      mission.type == ForageMissionType.research
+          ? 'Recherche : aucune ressource naturelle extraite.'
+          : 'Récolte : ressources naturelles prélevées.',
+      'Vigueur : $biomassBefore% → ${math.max(0, biomassBefore - biomassCost)}% (-$biomassCost%).',
       if (emergencyReturn)
         'Retour d’urgence : le butin est calculé au temps écoulé, avec +5% de risque événement.',
       if (dataCells.isNotEmpty)
@@ -7477,7 +7492,8 @@ class Zone0GameState extends ChangeNotifier {
         figurineName: mission.figurineName,
         biomeLabel: biome.label,
         durationLabel: duration.label,
-        intensityLabel: intensity.label,
+        intensityLabel:
+            '${mission.type == ForageMissionType.research ? 'Recherche · ' : 'Récolte · '}${intensity.label}',
         rewards: rewards,
         incidentLabel: incident,
         xpGain: mission.xpGain,
@@ -7497,10 +7513,8 @@ class Zone0GameState extends ChangeNotifier {
         subject: 'Retour de mission Lisière',
         concerned: mission.figurineName,
         summary: incident == 'aucun'
-            ? (dataCells.isEmpty
-                ? 'Mission terminée.'
-                : '${dataCells.length} Cellule${dataCells.length > 1 ? 's' : ''} de données trouvée${dataCells.length > 1 ? 's' : ''}.')
-            : 'Événement : $incident.',
+            ? '${mission.type == ForageMissionType.research ? 'Recherche' : 'Récolte'} terminée : ${dataCells.length} Cellule${dataCells.length > 1 ? 's' : ''} de données trouvée${dataCells.length > 1 ? 's' : ''}, Vigueur -$biomassCost%.'
+            : 'Événement : $incident. Vigueur -$biomassCost%.',
       ),
     );
     mission.status = ForageMissionStatus.completed;
@@ -7560,6 +7574,16 @@ class Zone0GameState extends ChangeNotifier {
         lisiereForageConfig.biomass.missionConsumptionByIntensity[intensity] ??
             0,
       );
+
+  int biomassMissionConsumptionFor(
+    ForageIntensity intensity,
+    ForageMissionType type,
+  ) {
+    final base = biomassMissionConsumption(intensity);
+    final multiplier =
+        lisiereForageConfig.missionTypes[type]?.vigorMultiplier ?? 1;
+    return math.max(0, (base * multiplier).round());
+  }
 
   Map<String, int> biomassRevitalizeCost(ForageBiome biome) {
     final config = lisiereForageConfig.biomass;
@@ -7687,10 +7711,11 @@ class Zone0GameState extends ChangeNotifier {
   void _depleteBiomeBiomass({
     required ForageBiome biome,
     required ForageIntensity intensity,
+    ForageMissionType missionType = ForageMissionType.harvest,
     required double completionRatio,
     required DateTime completedAt,
   }) {
-    final base = biomassMissionConsumption(intensity);
+    final base = biomassMissionConsumptionFor(intensity, missionType);
     if (base <= 0) return;
     final consumed = math.max(1, (base * completionRatio).ceil());
     final state = biomeSecurity.putIfAbsent(
@@ -7756,14 +7781,24 @@ class Zone0GameState extends ChangeNotifier {
     final biome = pTibugConfig.biomes[biomeId];
     if (biome == null) return const <PTibugDataCell>[];
 
-    final attempts = pTibugConfig.maxCellsForMissionHours(
-      duration.theoreticalHours,
+    final typeConfig = lisiereForageConfig.missionTypes[mission.type] ??
+        lisiereForageConfig.missionTypes[ForageMissionType.harvest]!;
+    final intensityConfig = lisiereForageConfig.intensities[mission.intensity]!;
+    final attempts = math.max(
+      0,
+      (pTibugConfig.maxCellsForMissionHours(duration.theoreticalHours) *
+              typeConfig.maximumCellsMultiplier *
+              intensityConfig.rewardMultiplier)
+          .ceil(),
     );
-    // The first Cell is guaranteed. Further Cells are independent bonuses;
-    // safety never changes scientific discoveries.
+    // Research is the active way to acquire Cells. Harvest keeps the same
+    // biome table but its findings remain occasional.
     final cells = <PTibugDataCell>[];
     for (var attempt = 0; attempt < attempts; attempt += 1) {
-      final chance = pTibugConfig.cellChanceForOrdinal(attempt + 1);
+      final chance = (pTibugConfig.cellChanceForOrdinal(attempt + 1) *
+              typeConfig.cellChanceMultiplier)
+          .round()
+          .clamp(0, 100);
       if (_random.nextInt(100) >= chance) continue;
       final weights = Map<PTibugDataFamily, int>.from(biome.dataWeights);
       final toxineWeightBonus =
@@ -9947,6 +9982,7 @@ class ForageMission {
     required this.biome,
     required this.duration,
     required this.intensity,
+    required this.type,
     required this.startTime,
     required this.endTime,
     required this.expectedRewards,
@@ -9978,6 +10014,11 @@ class ForageMission {
       '${data['intensity'] ?? ''}',
       ForageIntensity.normal,
     );
+    final type = _enumByName(
+      ForageMissionType.values,
+      '${data['type'] ?? ''}',
+      ForageMissionType.harvest,
+    );
     final mission = ForageMission(
       id: '${data['id'] ?? 'mission-${DateTime.now().microsecondsSinceEpoch}'}',
       figurineId: '${data['figurineId'] ?? ''}',
@@ -9991,6 +10032,7 @@ class ForageMission {
       biome: biome,
       duration: duration,
       intensity: intensity,
+      type: type,
       startTime: _readDate(data['startTime']) ?? DateTime.now(),
       endTime: _readDate(data['endTime']) ?? DateTime.now(),
       expectedRewards: _readIntMap(data['expectedRewards']),
@@ -10023,6 +10065,9 @@ class ForageMission {
   final ForageBiome biome;
   final ForageDuration duration;
   final ForageIntensity intensity;
+
+  /// Old missions omit this field and are migrated as harvest missions.
+  final ForageMissionType type;
   final DateTime startTime;
   final DateTime endTime;
   final Map<String, int> expectedRewards;
@@ -10048,6 +10093,7 @@ class ForageMission {
       'biome': biome.name,
       'duration': duration.name,
       'intensity': intensity.name,
+      'type': type.name,
       'startTime': Timestamp.fromDate(startTime),
       'endTime': Timestamp.fromDate(endTime),
       'expectedRewards': expectedRewards,

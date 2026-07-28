@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ptipote_app/features/game/ptibug_config.dart';
 import 'package:ptipote_app/features/game/kernel_progress_config.dart';
 import 'package:ptipote_app/features/game/tower_operations_config.dart';
+import 'package:ptipote_app/features/game/lisiere_forage_config.dart';
 
 void main() {
   test('un trait separe les bonus de production des effets systemiques', () {
@@ -123,5 +124,23 @@ void main() {
         10);
     expect(
         config.moduleCraftCostFor(PTibugModuleType.etancheite)['Minéral'], 10);
+  });
+
+  test('les missions distinguent Récolte et Recherche dans la configuration',
+      () {
+    final harvest =
+        defaultLisiereForageConfig.missionTypes[ForageMissionType.harvest]!;
+    final research =
+        defaultLisiereForageConfig.missionTypes[ForageMissionType.research]!;
+
+    expect(harvest.vigorMultiplier, 1);
+    expect(
+        harvest.cellChanceMultiplier, lessThan(research.cellChanceMultiplier));
+    expect(research.vigorMultiplier, lessThan(harvest.vigorMultiplier));
+    expect(research.wastePerHour, greaterThan(0));
+    expect(defaultLisiereForageConfig.intensities[ForageIntensity.normal],
+        isNotNull);
+    expect(defaultLisiereForageConfig.intensities[ForageIntensity.intensif],
+        isNotNull);
   });
 }

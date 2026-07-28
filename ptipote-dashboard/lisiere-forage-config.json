@@ -46,6 +46,22 @@
       {"minimumPercent": 0, "maximumPercent": 19, "label": "Épuisée", "icon": "🪨"}
     ]
   },
+  "missionTypes": {
+    "harvest": {
+      "label": "Récolte",
+      "vigorMultiplier": 1.0,
+      "cellChanceMultiplier": 0.25,
+      "maximumCellsMultiplier": 1.0,
+      "wastePerHour": 1
+    },
+    "research": {
+      "label": "Recherche",
+      "vigorMultiplier": 0.2,
+      "cellChanceMultiplier": 1.0,
+      "maximumCellsMultiplier": 1.0,
+      "wastePerHour": 2
+    }
+  },
   "xpGainByDuration": {
     "oneHour": 10,
     "twoHours": 18,

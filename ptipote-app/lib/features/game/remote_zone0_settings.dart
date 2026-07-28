@@ -971,6 +971,7 @@ LisiereForageConfig _lisiere(Object? value) {
   };
   final xp = _map(raw['xpGainByDuration']);
   final intensityXp = _map(raw['intensityXpMultiplier']);
+  final missionTypes = _map(raw['missionTypes']);
   return LisiereForageConfig(
     forageTimeScale: _int(
       raw['forageTimeScale'],
@@ -1039,6 +1040,23 @@ LisiereForageConfig _lisiere(Object? value) {
         key: _biome(key, biomeById[key.name]),
     },
     biomass: _biomass(_map(raw['biomass'])),
+    missionTypes: <ForageMissionType, ForageMissionTypeConfig>{
+      for (final type in ForageMissionType.values)
+        type: () {
+          final base = defaultLisiereForageConfig.missionTypes[type]!;
+          final item = _map(missionTypes?[type.name]);
+          return ForageMissionTypeConfig(
+            label: _string(item?['label'], base.label),
+            vigorMultiplier:
+                _double(item?['vigorMultiplier'], base.vigorMultiplier),
+            cellChanceMultiplier: _double(
+                item?['cellChanceMultiplier'], base.cellChanceMultiplier),
+            maximumCellsMultiplier: _double(
+                item?['maximumCellsMultiplier'], base.maximumCellsMultiplier),
+            wastePerHour: _int(item?['wastePerHour'], base.wastePerHour),
+          );
+        }(),
+    },
   );
 }
 

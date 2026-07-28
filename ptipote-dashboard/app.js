@@ -470,9 +470,13 @@ function renderLisiereForageConfig() {
   const durations = Array.isArray(lisiereForageConfig.durations) ? lisiereForageConfig.durations : [];
   const intensities = Array.isArray(lisiereForageConfig.intensities) ? lisiereForageConfig.intensities : [];
   const biomes = Array.isArray(lisiereForageConfig.biomes) ? lisiereForageConfig.biomes : [];
+  const missionTypes = lisiereForageConfig.missionTypes || {};
   const rows = [];
   rows.push('<div class="stage-row"><div><strong>Temps</strong><span>Multiplicateur test x' + escapeHtml(lisiereForageConfig.forageTimeScale) + ' · ' + durations.map((item) => escapeHtml(item.label) + ' => ' + escapeHtml(item.realMinutes) + ' min').join(' · ') + '</span></div><strong>durées</strong></div>');
-  rows.push('<div class="stage-row"><div><strong>Intensités</strong><span>' + intensities.map((item) => escapeHtml(item.label) + ' x' + escapeHtml(item.rewardMultiplier) + ' risque ' + escapeHtml(item.riskModifierPercent) + '%').join(' · ') + '</span></div><strong>coûts</strong></div>');
+  rows.push('<div class="stage-row"><div><strong>Intensités</strong><span>' + intensities.filter((item) => item.id !== "doux").map((item) => escapeHtml(item.label) + ' x' + escapeHtml(item.rewardMultiplier) + ' risque ' + escapeHtml(item.riskModifierPercent) + '%').join(' · ') + '</span></div><strong>coûts</strong></div>');
+  Object.entries(missionTypes).forEach(([id, type]) => {
+    rows.push('<div class="stage-row"><div><strong>' + escapeHtml(type.label || id) + '</strong><span>Vigueur x' + escapeHtml(type.vigorMultiplier) + ' · Cellules x' + escapeHtml(type.cellChanceMultiplier) + ' · Déchets/h ' + escapeHtml(type.wastePerHour) + '</span></div><strong>mission</strong></div>');
+  });
   const xpByDuration = lisiereForageConfig.xpGainByDuration || {};
   const xpByIntensity = lisiereForageConfig.intensityXpMultiplier || {};
   rows.push('<div class="stage-row"><div><strong>XP mission</strong><span>Base par durée: ' + Object.entries(xpByDuration).map(([key, value]) => escapeHtml(key) + ' +' + escapeHtml(value)).join(' · ') + ' | intensité: ' + Object.entries(xpByIntensity).map(([key, value]) => escapeHtml(key) + ' x' + escapeHtml(value)).join(' · ') + '</span></div><strong>progression</strong></div>');

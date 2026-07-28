@@ -4,6 +4,24 @@ enum ForageDuration { oneHour, twoHours, sixHours, tenHours }
 
 enum ForageIntensity { doux, normal, intensif }
 
+enum ForageMissionType { harvest, research }
+
+class ForageMissionTypeConfig {
+  const ForageMissionTypeConfig({
+    required this.label,
+    required this.vigorMultiplier,
+    required this.cellChanceMultiplier,
+    required this.maximumCellsMultiplier,
+    required this.wastePerHour,
+  });
+
+  final String label;
+  final double vigorMultiplier;
+  final double cellChanceMultiplier;
+  final double maximumCellsMultiplier;
+  final int wastePerHour;
+}
+
 enum ForageHazard {
   none,
   pollution,
@@ -30,6 +48,7 @@ class LisiereForageConfig {
     required this.durations,
     required this.intensities,
     required this.biomass,
+    required this.missionTypes,
   });
 
   final int forageTimeScale;
@@ -48,6 +67,7 @@ class LisiereForageConfig {
   final Map<ForageDuration, ForageDurationConfig> durations;
   final Map<ForageIntensity, ForageIntensityConfig> intensities;
   final BiomassConfig biomass;
+  final Map<ForageMissionType, ForageMissionTypeConfig> missionTypes;
 }
 
 class BiomassTierConfig {
@@ -354,6 +374,22 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
           minimumPercent: 0, maximumPercent: 19, label: 'Épuisée', icon: '🪨'),
     ],
   ),
+  missionTypes: const <ForageMissionType, ForageMissionTypeConfig>{
+    ForageMissionType.harvest: ForageMissionTypeConfig(
+      label: 'Récolte',
+      vigorMultiplier: 1,
+      cellChanceMultiplier: .25,
+      maximumCellsMultiplier: 1,
+      wastePerHour: 1,
+    ),
+    ForageMissionType.research: ForageMissionTypeConfig(
+      label: 'Recherche',
+      vigorMultiplier: .20,
+      cellChanceMultiplier: 1,
+      maximumCellsMultiplier: 1,
+      wastePerHour: 2,
+    ),
+  },
 );
 
 LisiereForageConfig lisiereForageConfig = defaultLisiereForageConfig;

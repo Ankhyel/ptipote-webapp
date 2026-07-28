@@ -1499,6 +1499,15 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 
 ### Persistance Firebase Zone 0 et chantier de Nurserie
 
+### Missions de Lisière : Récolte et Recherche
+
+- L’onglet **Missions** réutilise un configurateur unique : type, biome, participants, durée et intensité. Les nouvelles missions ne proposent que **Normale** et **Intense** ; `doux` reste uniquement lisible dans les anciennes sauvegardes pour qu’une mission déjà partie se termine sans perte.
+- Chaque `ForageMission` sauvegarde désormais `type` (`harvest` ou `research`). Une mission historique sans ce champ est migrée en Récolte. Les tirages de Cellules restent attachés à l’identifiant unique de mission (`sourceMissionId`) : une réouverture ne peut ni relancer les tirages ni dupliquer le rapport.
+- **Récolte** produit les ressources naturelles du biome, les Déchets disponibles et des Cellules occasionnelles. Son rendement matériel passe par les seuils de Vigueur existants (100 %, 75 %, 50 %).
+- **Recherche** ne produit jamais Organique, Minéral, nourriture, Mycélium ni autre ressource naturelle : elle rapporte seulement des Déchets et des Cellules provenant de la même table de biome que Capteur intelligent. La Vigueur ne réduit pas les Cellules et son coût est réglé séparément (V1 : x0,20 du coût de Récolte).
+- L’estimation avant départ, les missions en cours et le rapport indiquent le type, les Cellules, les Déchets et l’impact prévu sur la Vigueur. Sécurité et météo continuent d’être affichées comme risques indépendants de la Vigueur.
+- `lisiere-forage-config.json` expose `missionTypes.harvest` et `missionTypes.research` : multiplicateur de Vigueur, probabilité/maximum de Cellules et Déchets par heure. Le Dashboard Lisière les rend visibles dans la configuration versionnée ; `lisiere_forage_config.dart` reste le fallback hors ligne et `remote_zone0_settings.dart` fusionne toute valeur distante publiée.
+
 ### Traits P’TIBUG V1, Capteur intelligent et météo
 
 - Les huit Traits V1 sont Pollinisateur, Mineur, Décomposeur, Récupérateur, Stabilisateur, Économe, Filtreur et Capteur intelligent. Les deux emplacements de Trait issus du Renouvellement utilisent le même service d’effets : leurs bonus matériels se cumulent et les doublons restent interdits.

@@ -4663,6 +4663,7 @@ class _LisierePageState extends State<LisierePage> {
   ForageBiome _biome = ForageBiome.plaineRiche;
   ForageDuration _duration = ForageDuration.oneHour;
   ForageIntensity _intensity = ForageIntensity.normal;
+  ForageMissionType _missionType = ForageMissionType.harvest;
   final Set<String> _selectedFigurineIds = <String>{};
 
   @override
@@ -4741,6 +4742,30 @@ class _LisierePageState extends State<LisierePage> {
                   return ListView(
                     padding: const EdgeInsets.all(16),
                     children: <Widget>[
+                      _ForageChoiceCard(
+                        title: 'Type de mission',
+                        child: Wrap(
+                          spacing: 8,
+                          children: ForageMissionType.values.map((type) {
+                            final config =
+                                lisiereForageConfig.missionTypes[type]!;
+                            return ChoiceChip(
+                              label: Text(config.label),
+                              selected: _missionType == type,
+                              onSelected: (_) =>
+                                  setState(() => _missionType = type),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          _missionType == ForageMissionType.research
+                              ? 'Explorer le biome pour découvrir des Cellules de données. Aucun Organique ni Minéral n’est récolté.'
+                              : 'Prélever les ressources naturelles du biome.',
+                        ),
+                      ),
                       _ForageChoiceCard(
                         title: 'Biome',
                         child: Wrap(
@@ -4842,7 +4867,10 @@ class _LisierePageState extends State<LisierePage> {
                         title: 'Intensité',
                         child: Wrap(
                           spacing: 8,
-                          children: ForageIntensity.values.map((intensity) {
+                          children: ForageIntensity.values
+                              .where((intensity) =>
+                                  intensity != ForageIntensity.doux)
+                              .map((intensity) {
                             final config =
                                 lisiereForageConfig.intensities[intensity]!;
                             return ChoiceChip(
@@ -4864,6 +4892,7 @@ class _LisierePageState extends State<LisierePage> {
                           biome: _biome,
                           duration: _duration,
                           intensity: _intensity,
+                          missionType: _missionType,
                         ),
                       const SizedBox(height: 12),
                       if (inventoryOverflow > 0)
@@ -4900,7 +4929,7 @@ class _LisierePageState extends State<LisierePage> {
                         icon: const Icon(Icons.forest_outlined),
                         label: Text(
                           selectedFigurines.length <= 1
-                              ? 'Envoyer récolter'
+                              ? 'Lancer ${_missionType == ForageMissionType.research ? 'la recherche' : 'la récolte'}'
                               : 'Envoyer ${selectedFigurines.length} P’TIPOTES',
                         ),
                       ),
@@ -4983,6 +5012,16 @@ class _LisierePageState extends State<LisierePage> {
     final biome = lisiereForageConfig.biomes[_biome]!;
     final duration = lisiereForageConfig.durations[_duration]!;
     final intensity = lisiereForageConfig.intensities[_intensity]!;
+    final typeConfig = lisiereForageConfig.missionTypes[_missionType]!;
+    if (_missionType == ForageMissionType.research) {
+      final waste = (typeConfig.wastePerHour *
+              duration.theoreticalHours *
+              intensity.rewardMultiplier)
+          .round();
+      return waste <= 0
+          ? const <String, int>{}
+          : <String, int>{'Déchets': waste};
+    }
     final rewards = <String, int>{};
     for (final entry in biome.baseRewards.entries) {
       var value =
@@ -5102,6 +5141,7 @@ class _LisierePageState extends State<LisierePage> {
       biome: _biome,
       duration: _duration,
       intensity: _intensity,
+      type: _missionType,
       expectedRewards: groupEstimate.rewards,
       vitalityCostByMember: <String, int>{
         for (final figurine in launchable)
@@ -5949,6 +5989,7 @@ class _ForageEstimateCard extends StatelessWidget {
     required this.biome,
     required this.duration,
     required this.intensity,
+    required this.missionType,
   });
 
   final ForageGroupEstimate estimate;
@@ -5957,6 +5998,7 @@ class _ForageEstimateCard extends StatelessWidget {
   final ForageBiome biome;
   final ForageDuration duration;
   final ForageIntensity intensity;
+  final ForageMissionType missionType;
 
   @override
   Widget build(BuildContext context) {
@@ -5969,13 +6011,14 @@ class _ForageEstimateCard extends StatelessWidget {
     final organicBonus = gameState.organicBonusForBiome(biome);
     final biomass = gameState.biomassFor(biome);
     final biomassState = gameState.biomassVisualStateFor(biome);
+    final typeConfig = lisiereForageConfig.missionTypes[missionType]!;
     final cellCount =
-        pTibugConfig.maxCellsForMissionHours(durationConfig.theoreticalHours);
-    final cellChanceLabel = <String>[
-      '1 garantie',
-      if (cellCount >= 2) '+1 à 50 %',
-      if (cellCount >= 3) '+1 à 20 %',
-    ].join(' · ');
+        (pTibugConfig.maxCellsForMissionHours(durationConfig.theoreticalHours) *
+                typeConfig.maximumCellsMultiplier)
+            .ceil();
+    final cellChanceLabel = missionType == ForageMissionType.research
+        ? '$cellCount tentative${cellCount > 1 ? 's' : ''} de Cellule selon le biome'
+        : 'Cellules occasionnelles (${(typeConfig.cellChanceMultiplier * 100).round()} % des chances habituelles)';
 
     return Card(
       child: Padding(
@@ -5991,10 +6034,10 @@ class _ForageEstimateCard extends StatelessWidget {
             Text('Groupe : $selectedCount P’TIPOTE(s)'),
             Text('Gain : ${_formatRewards(estimate.rewards)}'),
             Text(
-              'Biomasse : ${biomassState.icon} ${biomassState.label} · $biomass% · rendement x${gameState.biomassResourceMultiplierFor(biome).toStringAsFixed(2)}',
+              'Vigueur : ${biomassState.icon} ${biomassState.label} · $biomass%${missionType == ForageMissionType.harvest ? ' · rendement x${gameState.biomassResourceMultiplierFor(biome).toStringAsFixed(2)}' : ''}',
             ),
             Text(
-              'Consommation Biomasse : -${gameState.biomassMissionConsumption(intensity)}%',
+              'Coût de Vigueur estimé : -${gameState.biomassMissionConsumptionFor(intensity, missionType)}% · après mission ${math.max(0, biomass - gameState.biomassMissionConsumptionFor(intensity, missionType))}%',
             ),
             Text('Cellules de données : $cellChanceLabel'),
             Text(
@@ -6068,7 +6111,7 @@ class _ActiveMissionsCard extends StatelessWidget {
                     children: <Widget>[
                       Expanded(
                         child: Text(
-                          '${mission.figurineName} · ${biome.label}',
+                          '${mission.type == ForageMissionType.research ? '🔎 Recherche' : '🪵 Récolte'} · ${mission.figurineName} · ${biome.label}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
