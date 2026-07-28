@@ -8303,6 +8303,10 @@ class _MarketPageState extends State<MarketPage> {
                               final totalPrice = offer.priceForQuantity(
                                 selectedQuantity,
                               );
+                              final offerTitle = isWorkshopProduct
+                                  ? offer.itemName ??
+                                      offer.planName.replaceFirst('Plan ', '')
+                                  : offer.planName;
                               return Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: DecoratedBox(
@@ -8322,7 +8326,7 @@ class _MarketPageState extends State<MarketPage> {
                                           CrossAxisAlignment.start,
                                       children: <Widget>[
                                         Text(
-                                          offer.planName,
+                                          offerTitle,
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
@@ -10335,6 +10339,8 @@ class FablabRecyclerView extends StatelessWidget {
       children: <Widget>[
         _FablabEnergyCard(gameState: gameState),
         const SizedBox(height: 12),
+        _FablabActiveCraftsPanel(gameState: gameState),
+        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -10543,6 +10549,209 @@ class FablabRecyclerView extends StatelessWidget {
   }
 }
 
+/// Same live production summary on every Fablab unit. The current tab never
+/// filters this list: a player can therefore see a Cuisine, Atelier, module or
+/// Recycleur task without having to switch tabs.
+class _FablabActiveCraftsPanel extends StatelessWidget {
+  const _FablabActiveCraftsPanel({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    final orders = gameState.activeWorkshopOrders;
+    final moduleOrder = gameState.activePTibugModuleCraftOrder;
+    final recyclerStartedAt = gameState.recyclerCycleStartedAt;
+    final count = orders.length +
+        (moduleOrder == null ? 0 : 1) +
+        (recyclerStartedAt == null ? 0 : 1);
+    if (count == 0) return const SizedBox.shrink();
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        leading: const Icon(Icons.pending_actions_outlined),
+        title: Text(
+          'Crafts en cours ($count)',
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        subtitle:
+            const Text('Ouvrir pour suivre toutes les fabrications du Fablab.'),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        children: <Widget>[
+          ...orders.map(
+            (order) => _FablabActiveCraftCard.workshopOrder(
+              gameState: gameState,
+              order: order,
+            ),
+          ),
+          if (moduleOrder != null)
+            _FablabActiveCraftCard.moduleOrder(moduleOrder: moduleOrder),
+          if (recyclerStartedAt != null)
+            _FablabActiveCraftCard.recycler(
+              startedAt: recyclerStartedAt,
+              level: gameState.recyclerLevel,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FablabActiveCraftCard extends StatelessWidget {
+  const _FablabActiveCraftCard._({
+    required this.title,
+    required this.location,
+    required this.locationColor,
+    required this.details,
+    required this.progress,
+    required this.remaining,
+    this.onCancel,
+  });
+
+  factory _FablabActiveCraftCard.workshopOrder({
+    required Zone0GameState gameState,
+    required WorkshopCraftOrder order,
+  }) {
+    final recipe = craftConfig.recipes.firstWhere(
+      (item) => item.id == order.recipeId,
+      orElse: () => defaultCraftConfig.simpleMealRecipe,
+    );
+    final isKitchen = order.area == WorkshopOrderArea.kitchen;
+    final secondsLeft = math.max(
+      0,
+      order.nextCompletionTime.difference(DateTime.now()).inSeconds,
+    );
+    final unitProgress = (1 - secondsLeft / order.unitDurationSeconds).clamp(
+      0.0,
+      1.0,
+    );
+    final progress = ((order.completedQuantity + unitProgress) /
+            math.max(1, order.requestedQuantity))
+        .clamp(0.0, 1.0);
+    return _FablabActiveCraftCard._(
+      title: recipe.displayName,
+      location: isKitchen ? 'Cuisine' : 'Atelier',
+      locationColor: isKitchen ? Colors.deepOrange : Colors.indigo,
+      details:
+          '${order.completedQuantity} / ${order.requestedQuantity} · ${order.assignedPtipoteName == null ? 'Mode manuel' : 'Avec ${order.assignedPtipoteName}'}',
+      progress: progress,
+      remaining: _durationLabel(Duration(seconds: secondsLeft)),
+      onCancel: () => gameState.cancelWorkshopOrder(order.id),
+    );
+  }
+
+  factory _FablabActiveCraftCard.moduleOrder({
+    required PTibugModuleCraftOrder moduleOrder,
+  }) {
+    final remaining = moduleOrder.endsAt.difference(DateTime.now());
+    final total = moduleOrder.endsAt.difference(moduleOrder.startedAt);
+    return _FablabActiveCraftCard._(
+      title: '${moduleOrder.moduleType.displayName} · Module P’TIBUG',
+      location: 'Atelier',
+      locationColor: Colors.indigo,
+      details: 'Fabrication d’un module pour la Nurserie.',
+      progress: (1 - remaining.inSeconds / math.max(1, total.inSeconds)).clamp(
+        0.0,
+        1.0,
+      ),
+      remaining: _durationLabel(remaining),
+    );
+  }
+
+  factory _FablabActiveCraftCard.recycler({
+    required DateTime startedAt,
+    required int level,
+  }) {
+    final total = Duration(minutes: wasteRecyclerConfig.cycleMinutes(level));
+    final remaining = startedAt.add(total).difference(DateTime.now());
+    return _FablabActiveCraftCard._(
+      title: 'Traitement des déchets',
+      location: 'Recycleur',
+      locationColor: Colors.teal,
+      details: 'Conversion de Déchets en Organique et Minéral.',
+      progress: (1 - remaining.inSeconds / math.max(1, total.inSeconds)).clamp(
+        0.0,
+        1.0,
+      ),
+      remaining: _durationLabel(remaining),
+    );
+  }
+
+  final String title;
+  final String location;
+  final Color locationColor;
+  final String details;
+  final double progress;
+  final String remaining;
+  final VoidCallback? onCancel;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color:
+                  Theme.of(context).colorScheme.outline.withValues(alpha: .25),
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    Text(
+                      location,
+                      style: TextStyle(
+                        color: locationColor,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(details),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 8,
+                    color: locationColor,
+                    backgroundColor: locationColor.withValues(alpha: .18),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text('Temps restant : $remaining'),
+                if (onCancel != null) ...<Widget>[
+                  const SizedBox(height: 6),
+                  OutlinedButton(
+                    onPressed: onCancel,
+                    child: const Text('Annuler'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+String _durationLabel(Duration duration) {
+  final seconds = math.max(0, duration.inSeconds);
+  return '${seconds ~/ 60}m ${seconds.remainder(60).toString().padLeft(2, '0')}s';
+}
+
 class FablabWorkshopView extends StatefulWidget {
   const FablabWorkshopView({super.key, required this.gameState});
 
@@ -10573,17 +10782,8 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
     if (mounted) setState(() {});
   }
 
-  String _remaining(WorkshopCraftOrder order) {
-    final seconds = math.max(
-      0,
-      order.nextCompletionTime.difference(DateTime.now()).inSeconds,
-    );
-    return '${seconds ~/ 60}m ${seconds.remainder(60).toString().padLeft(2, '0')}s';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final orders = widget.gameState.activeWorkshopOrders;
     return StreamBuilder<List<PtipoteFigurine>>(
       stream: _figurineService.watchMyFigurines(),
       builder: (context, snapshot) {
@@ -10592,6 +10792,8 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
           padding: const EdgeInsets.all(16),
           children: <Widget>[
             _FablabEnergyCard(gameState: widget.gameState),
+            const SizedBox(height: 12),
+            _FablabActiveCraftsPanel(gameState: widget.gameState),
             const SizedBox(height: 12),
             Text(
               'Atelier',
@@ -10605,40 +10807,6 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
               '${widget.gameState.activeManualWorkshopOrders}/1 créneau manuel. Chaque niveau ajoute un emplacement P’TIPOTE.',
             ),
             const SizedBox(height: 12),
-            ...orders.map(
-              (order) => Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Text(
-                        craftConfig.recipes
-                            .firstWhere(
-                              (recipe) => recipe.id == order.recipeId,
-                              orElse: () => defaultCraftConfig.simpleMealRecipe,
-                            )
-                            .displayName,
-                        style: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                      Text(
-                        '${order.completedQuantity} / ${order.requestedQuantity} · prochaine unité ${_remaining(order)}',
-                      ),
-                      Text(
-                        order.assignedPtipoteName == null
-                            ? 'Mode manuel'
-                            : 'Avec ${order.assignedPtipoteName}',
-                      ),
-                      OutlinedButton(
-                        onPressed: () =>
-                            widget.gameState.cancelWorkshopOrder(order.id),
-                        child: const Text('Annuler'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
             if (widget.gameState.activeManualWorkshopOrders < 1 ||
                 widget.gameState.activePtipoteWorkshopOrders <
                     widget.gameState.workshopSlots) ...<Widget>[
@@ -10676,26 +10844,26 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                       },
                     ),
                   ),
-              const SizedBox(height: 18),
-              const Text(
-                'Modules P’TIBUG',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Les Modules sont fabriqués ici, puis stockés, équipés ou fusionnés dans la Nurserie.',
-              ),
-              ...PTibugModuleType.values.map(
-                (module) => _PTibugModuleAtelierCard(
-                  gameState: widget.gameState,
-                  module: module,
-                ),
-              ),
             ] else
               const Padding(
                 padding: EdgeInsets.only(top: 10),
                 child: Text('Créneau manuel et emplacements P’TIPOTE occupés.'),
               ),
+            const SizedBox(height: 18),
+            const Text(
+              'Modules P’TIBUG',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Les Modules sont fabriqués ici, puis stockés, équipés ou fusionnés dans la Nurserie.',
+            ),
+            ...PTibugModuleType.values.map(
+              (module) => _PTibugModuleAtelierCard(
+                gameState: widget.gameState,
+                module: module,
+              ),
+            ),
           ],
         );
       },
@@ -10751,11 +10919,12 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
       stream: _figurineService.watchMyFigurines(),
       builder: (context, snapshot) {
         final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-        final orders = widget.gameState.activeKitchenOrders;
         return ListView(
           padding: const EdgeInsets.all(18),
           children: <Widget>[
             _FablabEnergyCard(gameState: widget.gameState),
+            const SizedBox(height: 12),
+            _FablabActiveCraftsPanel(gameState: widget.gameState),
             const SizedBox(height: 12),
             Text(
               'Cuisine niveau ${widget.gameState.cuisineLevel}',
@@ -10773,26 +10942,6 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
               onChanged: (value) => setState(() => _quantity = value),
             ),
             const SizedBox(height: 12),
-            ...orders.map(
-              (order) => Card(
-                child: ListTile(
-                  title: Text(
-                    craftConfig.recipes
-                        .firstWhere((recipe) => recipe.id == order.recipeId)
-                        .displayName,
-                  ),
-                  subtitle: Text(
-                    '${order.completedQuantity}/${order.requestedQuantity} · ${_countdownLabel(order.nextCompletionTime)}\n${order.assignedPtipoteName == null ? 'Mode manuel' : 'Avec ${order.assignedPtipoteName}'}',
-                  ),
-                  trailing: IconButton(
-                    tooltip: 'Annuler',
-                    onPressed: () =>
-                        widget.gameState.cancelWorkshopOrder(order.id),
-                    icon: const Icon(Icons.close),
-                  ),
-                ),
-              ),
-            ),
             ...craftConfig.recipes
                 .where((recipe) => recipe.craftSection == CraftSection.cuisine)
                 .map(
@@ -10867,35 +11016,65 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
     );
     final cost = pTibugConfig.moduleCraftCostFor(module);
     final energy = pTibugConfig.moduleCraftEnergyFor(module);
-    final canCraft = patternActive &&
-        gameState.activePTibugModuleCraftOrder == null &&
-        gameState.hasResources(cost) &&
-        gameState.energyUnits >= energy;
-    return Card(
-      margin: const EdgeInsets.only(top: 8),
-      child: ListTile(
-        leading: Icon(switch (module) {
-          PTibugModuleType.ailes => Icons.air_outlined,
-          PTibugModuleType.pinces => Icons.content_cut_outlined,
-          PTibugModuleType.reservoir => Icons.inventory_2_outlined,
-        }),
-        title: Text(module.displayName),
-        subtitle: Text(
-          patternActive
-              ? '${cost.entries.map((entry) => '${entry.key} ${entry.value}').join(' · ')} · énergie $energy'
-              : 'Pattern Kernel à activer',
+    final hasMaterials = gameState.hasResources(cost);
+    final hasEnergy = gameState.energyUnits >= energy;
+    final craftingModule = gameState.activePTibugModuleCraftOrder;
+    final canCraft =
+        patternActive && craftingModule == null && hasMaterials && hasEnergy;
+    final ingredientText = cost.entries
+        .map(
+          (entry) =>
+              '${entry.key} : ${entry.value} / ${gameState.resourceAmount(entry.key)}',
+        )
+        .join('\n');
+    final icon = switch (module) {
+      PTibugModuleType.ailes => Icons.air_outlined,
+      PTibugModuleType.pinces => Icons.content_cut_outlined,
+      PTibugModuleType.reservoir => Icons.inventory_2_outlined,
+    };
+    return _ProductionRecipeCard(
+      title: '${module.displayName} · Atelier',
+      leadingIcon: icon,
+      description:
+          'Module fabriqué à l’Atelier, puis équipé ou fusionné dans la Nurserie.',
+      slots: <_ProductionSlotData>[
+        _ProductionSlotData(
+          label: 'Ingrédients',
+          value: ingredientText,
+          icon: Icons.eco_outlined,
         ),
-        trailing: FilledButton(
-          onPressed: canCraft
-              ? () {
-                  final result = gameState.startPTibugModuleCraft(module);
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(SnackBar(content: Text(result.message)));
-                }
-              : null,
-          child: const Text('Fabriquer'),
+        _ProductionSlotData(
+          label: 'Atelier',
+          value:
+              'Énergie : $energy / ${gameState.energyUnits}\nTemps : ${pTibugConfig.moduleCraftMinutesFor(module)} min',
+          icon: Icons.precision_manufacturing_outlined,
         ),
-      ),
+      ],
+      details: <String>[
+        'Modules possibles avec le stock : ${_maxProductionCount(cost, gameState.resourceAmount)}',
+      ],
+      prerequisiteLabel: patternActive
+          ? 'Pattern Kernel actif'
+          : 'Pré-requis : Pattern Kernel actif',
+      prerequisiteMet: patternActive,
+      unavailableLabel: !patternActive
+          ? null
+          : craftingModule != null
+              ? 'Un module est déjà en fabrication.'
+              : !hasMaterials
+                  ? gameState.missingResourcesLabel(cost)
+                  : !hasEnergy
+                      ? 'Énergie insuffisante.'
+                      : null,
+      primaryActionLabel: 'Fabriquer',
+      primaryActionHint: 'utilise $energy unité(s) d’énergie',
+      primaryActionIcon: Icons.precision_manufacturing_outlined,
+      primaryActionEnabled: canCraft,
+      onPrimaryAction: () {
+        final result = gameState.startPTibugModuleCraft(module);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(result.message)));
+      },
     );
   }
 }

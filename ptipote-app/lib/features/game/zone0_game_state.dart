@@ -5863,7 +5863,12 @@ class Zone0GameState extends ChangeNotifier {
         products.every(
           (offer) =>
               offer.itemAmount >= minimumQuantity &&
-              offer.itemAmount <= maximumQuantity,
+              offer.itemAmount <= maximumQuantity &&
+              offer.itemName != null &&
+              towerOperationsConfig.merchantOfferPrices.containsKey(
+                offer.itemName,
+              ) &&
+              offer.planName == offer.itemName,
         );
     if (matchesCurrentRules) return false;
     _generateMerchantOffers();
