@@ -5597,6 +5597,13 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final inactive =
         bug.assignedBuildingId == null || bug.inactiveReason != null;
+    final weather = gameState.pTibugWeatherFor(bug);
+    final weatherLabel = switch (weather) {
+      TowerWeatherType.toxicCloud => '☁️ Nuage toxique · Filtreur requis',
+      TowerWeatherType.heatWave => '☀️ Forte chaleur · Réflecteur requis',
+      TowerWeatherType.heavyRain => '🌧️ Pluie intense · Étanchéité requise',
+      null => null,
+    };
     final card = Card(
       child: SizedBox(
         width: 170,
@@ -5630,6 +5637,10 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                     'Production : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
                 Text(
                     'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
+                if (weatherLabel != null)
+                  Text(weatherLabel,
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 6),
                 OutlinedButton(
                   onPressed: bug.storedAmount == 0 &&
@@ -9376,22 +9387,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             _collection(),
             _creation(),
             _dataAndModules(),
-            _BuildingUpgradeTab(
-              gameState: widget.gameState,
-              targetId: 'plaineNursery',
-              title: 'Améliorer la Nurserie',
-              description:
-                  'Ajoute des slots P’TIBUG et des emplacements de modules.',
-              currentEffects: <String>[
-                '${widget.gameState.pTibugActiveSlots} slot(s) actif(s)',
-                '${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel)} module(s) par P’TIBUG',
-              ],
-              nextEffects: <String>[
-                '${pTibugConfig.slotsForLevel(widget.gameState.plaineNurseryLevel + 1)} slot(s) actif(s)',
-                '${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel + 1)} module(s) par P’TIBUG',
-              ],
-              campHeartLevel: widget.campHeartLevel,
-            ),
+            _improvement(),
           ],
         ),
       ),
@@ -9468,8 +9464,126 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           ),
           ...producing.map(_productionOverviewCard),
         ],
+        ...producing.where(widget.gameState.canRenewPTibug).map(
+              (bug) => Card(
+                child: ListTile(
+                  leading: const Icon(Icons.auto_awesome_outlined),
+                  title: Text('Renouveler ${bug.displayName}'),
+                  subtitle: const Text(
+                      'Conserve niveau, Trait I, Modules et identité. Débloque le second Trait.'),
+                  trailing: FilledButton(
+                    onPressed: () => _confirmRenewal(bug),
+                    child: const Text('Renouveler'),
+                  ),
+                ),
+              ),
+            ),
       ],
     );
+  }
+
+  Future<void> _confirmRenewal(PTibug bug) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Renouveler ${bug.displayName} ?'),
+        content: const Text(
+            'Le P’TIBUG conserve son identité, son niveau, son premier Trait et ses Modules. L’action est permanente et ouvre l’accès au second Trait.'),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Annuler')),
+          FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Renouveler')),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      _message(widget.gameState.renewPTibug(bug).message);
+    }
+  }
+
+  Widget _improvement() => Column(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+            child: _moduleCapacityUpgradeCard(),
+          ),
+          Expanded(
+            child: _BuildingUpgradeTab(
+              gameState: widget.gameState,
+              targetId: 'plaineNursery',
+              title: 'Améliorer la Nurserie',
+              description:
+                  'Ajoute des emplacements P’TIBUG. La capacité des Modules est une amélioration globale, réglée ci-dessus.',
+              currentEffects: <String>[
+                '${widget.gameState.pTibugActiveSlots} slot(s) actif(s)',
+                '${widget.gameState.maxModulesPerPTibug} module(s) par P’TIBUG',
+              ],
+              nextEffects: <String>[
+                '${pTibugConfig.slotsForLevel(widget.gameState.plaineNurseryLevel + 1)} slot(s) actif(s)',
+                'Capacité Modules globale inchangée',
+              ],
+              campHeartLevel: widget.campHeartLevel,
+            ),
+          ),
+        ],
+      );
+
+  Widget _moduleCapacityUpgradeCard() {
+    final config = pTibugConfig.moduleCapacity;
+    final next = widget.gameState.pTibugModuleCapacityLevel + 1;
+    final maximum = next > config.maximumUpgrades;
+    final materials =
+        config.materialCostsByLevel[next] ?? const <String, int>{};
+    final data =
+        config.dataCostsByLevel[next] ?? const <PTibugDataFamily, int>{};
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                  'Capacité globale des Modules : ${widget.gameState.maxModulesPerPTibug}/${config.capacityForLevel(config.maximumUpgrades)}',
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              Text(maximum
+                  ? 'Niveau maximum atteint.'
+                  : 'Prochain niveau : ${config.capacityForLevel(next)} Modules par P’TIBUG.'),
+              if (!maximum)
+                Text(
+                    'Matériaux : ${materials.entries.map((entry) => '${entry.key} ${entry.value}/${widget.gameState.resourceAmount(entry.key)}').join(' · ')}\nBio-batteries : ${config.bioBatteryCostsByLevel[next] ?? 0}/${widget.gameState.bioBatteries}\nDonnées : ${data.entries.map((entry) => '${entry.key.name} ${entry.value}/${widget.gameState.pTibugDataReserve[entry.key] ?? 0}').join(' · ')}'),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: maximum ? null : _confirmModuleCapacityUpgrade,
+                child: const Text('Lancer l’amélioration'),
+              ),
+            ]),
+      ),
+    );
+  }
+
+  Future<void> _confirmModuleCapacityUpgrade() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Améliorer la capacité des Modules ?'),
+        content: const Text(
+            'Les matériaux, Bio-batteries et données affichés seront consommés une seule fois. Cette amélioration est globale pour tous les P’TIBUG.'),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Annuler')),
+          FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Confirmer')),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      _message(widget.gameState.upgradePTibugModuleCapacity().message);
+    }
   }
 
   Future<void> _showNurseryTransfer(PTibugTerritoryBuilding building) =>
@@ -9755,9 +9869,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                             ),
                           ),
                           ...List<Widget>.generate(
-                            pTibugConfig.moduleSlotsForLevel(
-                              widget.gameState.plaineNurseryLevel,
-                            ),
+                            widget.gameState.maxModulesPerPTibug,
                             (index) {
                               final equippedInstances =
                                   widget.gameState.pTibugModuleInstances
@@ -10137,8 +10249,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       final equippedModules = widget.gameState.pTibugModuleInstances
           .where((item) => item.equippedPTibugId == bug.id)
           .length;
-      return equippedModules <
-          pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel);
+      return equippedModules < widget.gameState.maxModulesPerPTibug;
     }).toList();
     await showModalBottomSheet<void>(
       context: context,
@@ -10162,7 +10273,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   leading: Icon(_speciesIcon(bug.species)),
                   title: Text(widget.gameState.pTibugBiologicalNameFor(bug)),
                   subtitle: Text(
-                    '$equippedModules/${pTibugConfig.moduleSlotsForLevel(widget.gameState.plaineNurseryLevel)} slots occupés',
+                    '$equippedModules/${widget.gameState.maxModulesPerPTibug} slots occupés',
                   ),
                   onTap: () {
                     final result = widget.gameState.equipPTibugModuleInstance(
@@ -10275,12 +10386,13 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         final availableInstances = widget.gameState.pTibugModuleInstances
             .where((instance) => !instance.isEquipped)
             .toList();
-        final slots = pTibugConfig.moduleSlotsForLevel(
-          widget.gameState.plaineNurseryLevel,
-        );
+        final slots = widget.gameState.maxModulesPerPTibug;
         final trait = bug.biologicalTraitId == null
             ? null
             : pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!);
+        final secondTrait = bug.secondTraitId == null
+            ? null
+            : pTibugConfig.traitDefinitionFor(bug.secondTraitId!);
         return SafeArea(
           child: DraggableScrollableSheet(
             expand: false,
@@ -10300,6 +10412,39 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                 Text(
                   '${pTibugConfig.species[bug.species]!.displayName} · niveau ${bug.level}',
                 ),
+                Text(
+                  'XP ${bug.xp}/${pTibugConfig.progression.xpForNextLevel(bug.level)} · rendement ${((pTibugConfig.progression.yieldMultiplierForLevel(bug.level)) * 100).round()}% · énergie de base ${pTibugConfig.progression.baseEnergyPerDayForLevel(bug.level)}/jour',
+                ),
+                Text(
+                  bug.isRenewed
+                      ? 'Renouvelé · second Trait ${bug.secondTraitId == null ? 'à choisir' : '${bug.secondTraitId} niveau ${bug.secondTraitLevel}'}'
+                      : bug.level >= 3 && bug.biologicalTraitLevel >= 3
+                          ? 'Renouvellement disponible dans la Nurserie.'
+                          : bug.level >= 3
+                              ? 'Niveau 3 atteint : premier Trait III requis avant Renouvellement.'
+                              : 'Niveau ${bug.level} : Trait principal ${bug.level} disponible.',
+                ),
+                const SizedBox(height: 14),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text('Détails du calcul',
+                            style: TextStyle(fontWeight: FontWeight.w900)),
+                        Text(
+                            'Production finale : ${widget.gameState.pTibugProductionFor(bug).entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
+                        Text(
+                            'Vigueur : ${(widget.gameState.biomassPTibugMultiplierFor(bug.refugeBiome) * 100).round()}% · bonus niveau : +${((pTibugConfig.progression.yieldMultiplierForLevel(bug.level) - 1) * 100).round()}%'),
+                        Text(
+                            'Capteur : ${widget.gameState.pTibugWeatherFor(bug) == null ? 'aucun malus météo' : 'météo active, protection vérifiée au cycle'}'),
+                        Text(
+                            'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity} · chance ${bug.biologicalTraitId == 'capteurIntelligent' ? pTibugConfig.weather.sensorChanceByLevel[bug.biologicalTraitLevel] ?? 0 : bug.secondTraitId == 'capteurIntelligent' ? pTibugConfig.weather.sensorChanceByLevel[bug.secondTraitLevel] ?? 0 : 0}%'),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 14),
                 Card(
                   child: Padding(
@@ -10317,6 +10462,14 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                               ? 'Aucun Trait permanent.'
                               : '${trait.displayName} niveau ${bug.biologicalTraitLevel}\n${trait.description}',
                         ),
+                        if (bug.isRenewed) ...<Widget>[
+                          const SizedBox(height: 8),
+                          Text(
+                            secondTrait == null
+                                ? 'Second Trait : à choisir, à partir du niveau 4.'
+                                : 'Second Trait : ${secondTrait.displayName} niveau ${bug.secondTraitLevel}\n${secondTrait.description}',
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -10486,12 +10639,16 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         PTibugModuleType.ailes => Icons.air_outlined,
         PTibugModuleType.pinces => Icons.content_cut_outlined,
         PTibugModuleType.reservoir => Icons.inventory_2_outlined,
+        PTibugModuleType.reflecteur => Icons.wb_sunny_outlined,
+        PTibugModuleType.etancheite => Icons.water_drop_outlined,
       };
 
   String _moduleTitle(PTibugModuleType module) => switch (module) {
         PTibugModuleType.ailes => 'Ailes',
         PTibugModuleType.pinces => 'Pinces',
         PTibugModuleType.reservoir => 'Réservoir',
+        PTibugModuleType.reflecteur => 'Réflecteur',
+        PTibugModuleType.etancheite => 'Étanchéité',
       };
 
   String _moduleDescription(PTibugModuleType module) => switch (module) {
@@ -10501,6 +10658,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           '+${pTibugConfig.clawProductionBonus} ressource selon l’espèce.',
         PTibugModuleType.reservoir =>
           '+${pTibugConfig.reservoirCapacityBonus} de capacité de réserve.',
+        PTibugModuleType.reflecteur => 'Annule le malus de Forte chaleur.',
+        PTibugModuleType.etancheite => 'Annule le malus de Pluie intense.',
       };
 
   PTibugTraitDefinition? _traitDefinition(PTibugTraitData trait) =>
@@ -11626,6 +11785,8 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
       PTibugModuleType.ailes => Icons.air_outlined,
       PTibugModuleType.pinces => Icons.content_cut_outlined,
       PTibugModuleType.reservoir => Icons.inventory_2_outlined,
+      PTibugModuleType.reflecteur => Icons.wb_sunny_outlined,
+      PTibugModuleType.etancheite => Icons.water_drop_outlined,
     };
     return _ProductionRecipeCard(
       title: '${module.displayName} · Atelier',

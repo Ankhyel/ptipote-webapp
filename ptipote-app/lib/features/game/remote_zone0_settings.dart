@@ -488,6 +488,9 @@ PTibugBiomeConfig _biomeConfig(
       raw?['aracProductionWeights'],
       fallback.aracProductionWeights,
     ),
+    weatherTypes: raw?['weatherTypes'] is List
+        ? (raw!['weatherTypes'] as List).whereType<String>().toList()
+        : fallback.weatherTypes,
   );
 }
 
@@ -507,6 +510,9 @@ PTibugConfig _ptibug(Object? value) {
   final rawModuleCraftEnergyCosts = _map(raw['moduleCraftEnergyCosts']);
   final rawModuleCraftMinutes = _map(raw['moduleCraftMinutes']);
   final rawTerritory = _map(raw['territory']);
+  final rawProgression = _map(raw['progression']);
+  final rawModuleCapacity = _map(raw['moduleCapacity']);
+  final rawWeather = _map(raw['weather']);
   return PTibugConfig(
     nurseryRequirements: _resourceMap(
       raw['nurseryRequirements'],
@@ -595,7 +601,7 @@ PTibugConfig _ptibug(Object? value) {
     traitDefinitions: <String, PTibugTraitDefinition>{
       for (final id in <String>{
         ...base.traitDefinitions.keys,
-        ...?rawTraits?.keys,
+        ...?rawTraits?.keys.where((key) => key != 'eclaireur'),
       })
         id: () {
           final item = _map(rawTraits?[id]);
@@ -654,7 +660,9 @@ PTibugConfig _ptibug(Object? value) {
     researchPatterns: <String, PTibugResearchPatternConfig>{
       for (final id in <String>{
         ...base.researchPatterns.keys,
-        ...?rawResearchPatterns?.keys,
+        ...?rawResearchPatterns?.keys.where(
+          (key) => key != 'ptibug-trait-eclaireur',
+        ),
       })
         id: _researchPattern(
           id,
@@ -784,6 +792,80 @@ PTibugConfig _ptibug(Object? value) {
           base.territory.refugeEnergyEveryHours),
       dataCellStorageCapacity: _int(rawTerritory?['dataCellStorageCapacity'],
           base.territory.dataCellStorageCapacity),
+    ),
+    progression: PTibugProgressionConfig(
+      maximumLevel:
+          _int(rawProgression?['maximumLevel'], base.progression.maximumLevel),
+      xpRequiredByLevel: _levelMap(rawProgression?['xpRequiredByLevel'],
+          base.progression.xpRequiredByLevel),
+      yieldBonusPerLevel: _double(rawProgression?['yieldBonusPerLevel'],
+          base.progression.yieldBonusPerLevel),
+      baseEnergyPerDay: _int(rawProgression?['baseEnergyPerDay'],
+          base.progression.baseEnergyPerDay),
+      energyReductionPerLevel: _int(rawProgression?['energyReductionPerLevel'],
+          base.progression.energyReductionPerLevel),
+      minimumEnergyPerDay: _int(rawProgression?['minimumEnergyPerDay'],
+          base.progression.minimumEnergyPerDay),
+      renewalLevel:
+          _int(rawProgression?['renewalLevel'], base.progression.renewalLevel),
+      renewalMaterialCost: _resourceMap(rawProgression?['renewalMaterialCost'],
+          base.progression.renewalMaterialCost),
+      renewalEnergyCost: _int(rawProgression?['renewalEnergyCost'],
+          base.progression.renewalEnergyCost),
+      renewalBioBatteryCost: _int(rawProgression?['renewalBioBatteryCost'],
+          base.progression.renewalBioBatteryCost),
+      renewalDurationMinutes: _int(rawProgression?['renewalDurationMinutes'],
+          base.progression.renewalDurationMinutes),
+      maximumRenewals: _int(
+          rawProgression?['maximumRenewals'], base.progression.maximumRenewals),
+    ),
+    moduleCapacity: PTibugModuleCapacityConfig(
+      initialCapacity: _int(rawModuleCapacity?['initialCapacity'],
+          base.moduleCapacity.initialCapacity),
+      maximumUpgrades: _int(rawModuleCapacity?['maximumUpgrades'],
+          base.moduleCapacity.maximumUpgrades),
+      capacityPerUpgrade: _int(rawModuleCapacity?['capacityPerUpgrade'],
+          base.moduleCapacity.capacityPerUpgrade),
+      materialCostsByLevel: _materialCostsByLevel(
+          rawModuleCapacity?['materialCostsByLevel'],
+          base.moduleCapacity.materialCostsByLevel,
+          base.moduleCapacity.maximumUpgrades),
+      bioBatteryCostsByLevel: _intLevels(
+          rawModuleCapacity?['bioBatteryCostsByLevel'],
+          base.moduleCapacity.bioBatteryCostsByLevel,
+          base.moduleCapacity.maximumUpgrades),
+      dataCostsByLevel: _dataCostsByLevel(
+          rawModuleCapacity?['dataCostsByLevel'],
+          base.moduleCapacity.dataCostsByLevel,
+          base.moduleCapacity.maximumUpgrades),
+    ),
+    weather: PTibugWeatherConfig(
+      productionMalusPercent: _int(rawWeather?['productionMalusPercent'],
+          base.weather.productionMalusPercent),
+      sensorMaterialPenaltyPercent: _int(
+          rawWeather?['sensorMaterialPenaltyPercent'],
+          base.weather.sensorMaterialPenaltyPercent),
+      sensorChanceByLevel: _intLevels(rawWeather?['sensorChanceByLevel'],
+          base.weather.sensorChanceByLevel, 3),
+      sensorPityEnabled: rawWeather?['sensorPityEnabled'] is bool
+          ? rawWeather!['sensorPityEnabled'] as bool
+          : base.weather.sensorPityEnabled,
+      sensorPityCycleThreshold: _int(rawWeather?['sensorPityCycleThreshold'],
+          base.weather.sensorPityCycleThreshold),
+      stabilizerRegenerationPercentByLevel: _intLevels(
+          rawWeather?['stabilizerRegenerationPercentByLevel'],
+          base.weather.stabilizerRegenerationPercentByLevel,
+          3),
+      stabilizerMaximumPercent: _int(rawWeather?['stabilizerMaximumPercent'],
+          base.weather.stabilizerMaximumPercent),
+      economyOrganicReductionPercentByLevel: _intLevels(
+          rawWeather?['economyOrganicReductionPercentByLevel'],
+          base.weather.economyOrganicReductionPercentByLevel,
+          3),
+      economyEnergyReductionPercentByLevel: _intLevels(
+          rawWeather?['economyEnergyReductionPercentByLevel'],
+          base.weather.economyEnergyReductionPercentByLevel,
+          3),
     ),
   );
 }

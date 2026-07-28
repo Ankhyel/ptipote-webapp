@@ -38,7 +38,7 @@ void main() {
       'mineur',
       'decomposeur',
       'recuperateur',
-      'eclaireur',
+      'capteurIntelligent',
       'filtreur',
       'econome',
       'stabilisateur',
@@ -76,5 +76,52 @@ void main() {
     expect(territory.nurseryCapacityForLevel(6), 6);
     expect(territory.refugeCapacityForLevel(4), 4);
     expect(territory.dataCellStorageCapacity, 3);
+  });
+
+  test('la progression V1 applique rendement et énergie par niveau', () {
+    final progression = defaultPTibugConfig.progression;
+
+    expect(progression.maximumLevel, 6);
+    expect(progression.yieldMultiplierForLevel(1), 1);
+    expect(progression.yieldMultiplierForLevel(3), 1.2);
+    expect(progression.yieldMultiplierForLevel(6), 1.5);
+    expect(progression.baseEnergyPerDayForLevel(1), 3);
+    expect(progression.baseEnergyPerDayForLevel(2), 2);
+    expect(progression.baseEnergyPerDayForLevel(3), 1);
+    expect(progression.baseEnergyPerDayForLevel(6), 1);
+  });
+
+  test('les améliorations globales de Modules ont les coûts V1', () {
+    final modules = defaultPTibugConfig.moduleCapacity;
+
+    expect(modules.capacityForLevel(0), 1);
+    expect(modules.capacityForLevel(1), 2);
+    expect(modules.capacityForLevel(2), 3);
+    expect(modules.materialCostsByLevel[1], <String, int>{
+      'Organique': 60,
+      'Minéral': 30,
+    });
+    expect(modules.bioBatteryCostsByLevel[2], 20);
+    expect(modules.dataCostsByLevel[2]![PTibugDataFamily.biomimetisme], 20);
+    expect(
+        modules.dataCostsByLevel[2]![PTibugDataFamily.comportementInsectoide],
+        20);
+  });
+
+  test('Capteur intelligent et météo V1 ont leurs réglages pilotables', () {
+    final config = defaultPTibugConfig;
+    final sensor = config.traitDefinitionFor('capteurIntelligent')!;
+
+    expect(config.traitDefinitionFor('eclaireur'), isNull);
+    expect(sensor.displayName, 'Capteur intelligent');
+    expect(config.weather.sensorChanceByLevel, <int, int>{1: 5, 2: 10, 3: 15});
+    expect(config.weather.sensorMaterialPenaltyPercent, 50);
+    expect(config.weather.productionMalusPercent, 30);
+    expect(PTibugModuleType.values, contains(PTibugModuleType.reflecteur));
+    expect(PTibugModuleType.values, contains(PTibugModuleType.etancheite));
+    expect(config.moduleCraftCostFor(PTibugModuleType.reflecteur)['Organique'],
+        10);
+    expect(
+        config.moduleCraftCostFor(PTibugModuleType.etancheite)['Minéral'], 10);
   });
 }

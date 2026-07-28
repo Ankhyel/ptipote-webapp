@@ -2,7 +2,7 @@ enum PTibugSpecies { scarabe, hyme, arac }
 
 enum PTibugTraitGrade { commun, rare, avance }
 
-enum PTibugModuleType { ailes, pinces, reservoir }
+enum PTibugModuleType { ailes, pinces, reservoir, reflecteur, etancheite }
 
 extension PTibugModuleTypeLabel on PTibugModuleType {
   String get displayName {
@@ -13,6 +13,10 @@ extension PTibugModuleTypeLabel on PTibugModuleType {
         return 'Pinces';
       case PTibugModuleType.reservoir:
         return 'Réservoir';
+      case PTibugModuleType.reflecteur:
+        return 'Réflecteur';
+      case PTibugModuleType.etancheite:
+        return 'Étanchéité';
     }
   }
 }
@@ -69,6 +73,7 @@ class PTibugBiomeConfig {
     required this.localProductionBonus,
     this.nurseryInsectBehaviourWeight = 0,
     this.aracProductionWeights = const <String, int>{},
+    this.weatherTypes = const <String>[],
   });
 
   final String displayName;
@@ -80,6 +85,10 @@ class PTibugBiomeConfig {
   /// Arac keeps its adaptive production, but each biome steers the outcome.
   /// Only material inventory resources are allowed in this table.
   final Map<String, int> aracProductionWeights;
+
+  /// Weather identifiers accepted by this biome: toxicCloud, heatWave,
+  /// heavyRain. The Tower remains the single source of the active alert.
+  final List<String> weatherTypes;
 }
 
 /// A scientific Pattern is one persistent Kernel research project. It is not
@@ -267,6 +276,9 @@ class PTibugConfig {
     required this.nurseryReserveCapacity,
     required this.sourcierCellPricePerDataValue,
     required this.territory,
+    required this.progression,
+    required this.moduleCapacity,
+    required this.weather,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -304,6 +316,9 @@ class PTibugConfig {
   final int nurseryReserveCapacity;
   final int sourcierCellPricePerDataValue;
   final PTibugTerritoryConfig territory;
+  final PTibugProgressionConfig progression;
+  final PTibugModuleCapacityConfig moduleCapacity;
+  final PTibugWeatherConfig weather;
 
   int slotsForLevel(int level) => territory.nurseryCapacityForLevel(level);
   int moduleSlotsForLevel(int level) =>
@@ -354,6 +369,89 @@ class PTibugConfig {
 
   int moduleCraftMinutesFor(PTibugModuleType type) =>
       moduleCraftMinutes[type] ?? 1;
+}
+
+class PTibugProgressionConfig {
+  const PTibugProgressionConfig(
+      {required this.maximumLevel,
+      required this.xpRequiredByLevel,
+      required this.yieldBonusPerLevel,
+      required this.baseEnergyPerDay,
+      required this.energyReductionPerLevel,
+      required this.minimumEnergyPerDay,
+      required this.renewalLevel,
+      required this.renewalMaterialCost,
+      required this.renewalEnergyCost,
+      required this.renewalBioBatteryCost,
+      required this.renewalDurationMinutes,
+      required this.maximumRenewals});
+  final int maximumLevel;
+  final Map<int, int> xpRequiredByLevel;
+  final double yieldBonusPerLevel;
+  final int baseEnergyPerDay;
+  final int energyReductionPerLevel;
+  final int minimumEnergyPerDay;
+  final int renewalLevel;
+  final Map<String, int> renewalMaterialCost;
+  final int renewalEnergyCost;
+  final int renewalBioBatteryCost;
+  final int renewalDurationMinutes;
+  final int maximumRenewals;
+  int xpForNextLevel(int level) =>
+      xpRequiredByLevel[level.clamp(1, maximumLevel).toInt()] ?? 0;
+  double yieldMultiplierForLevel(int level) =>
+      1 + (level.clamp(1, maximumLevel).toInt() - 1) * yieldBonusPerLevel;
+  int baseEnergyPerDayForLevel(int level) {
+    final reduced = baseEnergyPerDay -
+        (level.clamp(1, maximumLevel).toInt() - 1) * energyReductionPerLevel;
+    return reduced < minimumEnergyPerDay ? minimumEnergyPerDay : reduced;
+  }
+}
+
+class PTibugModuleCapacityConfig {
+  const PTibugModuleCapacityConfig(
+      {required this.initialCapacity,
+      required this.maximumUpgrades,
+      required this.capacityPerUpgrade,
+      required this.materialCostsByLevel,
+      required this.bioBatteryCostsByLevel,
+      required this.dataCostsByLevel});
+  final int initialCapacity;
+  final int maximumUpgrades;
+  final int capacityPerUpgrade;
+  final Map<int, Map<String, int>> materialCostsByLevel;
+  final Map<int, int> bioBatteryCostsByLevel;
+  final Map<int, Map<PTibugDataFamily, int>> dataCostsByLevel;
+  int capacityForLevel(int level) =>
+      initialCapacity +
+      level.clamp(0, maximumUpgrades).toInt() * capacityPerUpgrade;
+}
+
+class PTibugWeatherConfig {
+  const PTibugWeatherConfig({
+    required this.productionMalusPercent,
+    required this.sensorMaterialPenaltyPercent,
+    required this.sensorChanceByLevel,
+    required this.sensorPityEnabled,
+    required this.sensorPityCycleThreshold,
+    required this.stabilizerRegenerationPercentByLevel,
+    required this.stabilizerMaximumPercent,
+    required this.economyOrganicReductionPercentByLevel,
+    required this.economyEnergyReductionPercentByLevel,
+  });
+
+  final int productionMalusPercent;
+  final int sensorMaterialPenaltyPercent;
+  final Map<int, int> sensorChanceByLevel;
+  final bool sensorPityEnabled;
+  final int sensorPityCycleThreshold;
+  final Map<int, int> stabilizerRegenerationPercentByLevel;
+  final int stabilizerMaximumPercent;
+  final Map<int, int> economyOrganicReductionPercentByLevel;
+  final Map<int, int> economyEnergyReductionPercentByLevel;
+
+  double multiplierForPenalty(int percent) =>
+      (100 - percent.clamp(0, 100)) / 100;
 }
 
 /// Territorial rules are intentionally separate from species and Traits: they
@@ -600,11 +698,12 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
       energyCostByLevel: <int, int>{1: 2, 2: 4, 3: 6},
     ),
-    'eclaireur': PTibugTraitDefinition(
-      id: 'eclaireur',
-      displayName: 'Éclaireur',
-      description: 'Augmente les chances de découvrir des Cellules.',
-      effects: const <String, int>{'Chance Cellule': 5},
+    'capteurIntelligent': PTibugTraitDefinition(
+      id: 'capteurIntelligent',
+      displayName: 'Capteur intelligent',
+      description:
+          'Veille localement sur les Cellules du biome, avec une production matérielle réduite.',
+      effects: const <String, int>{'Chance Cellule': 5, 'Malus matériel %': 50},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
         PTibugTraitGrade.rare: 2,
@@ -636,8 +735,8 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'filtreur': PTibugTraitDefinition(
       id: 'filtreur',
       displayName: 'Filtreur',
-      description: 'Renforce les Cellules orientées toxines.',
-      effects: const <String, int>{'Poids Toxine': 5},
+      description: 'Annule le malus de production du Nuage toxique.',
+      effects: const <String, int>{'Protection Nuage toxique': 1},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
         PTibugTraitGrade.rare: 2,
@@ -669,8 +768,12 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'econome': PTibugTraitDefinition(
       id: 'econome',
       displayName: 'Économe',
-      description: 'Réduit les coûts d’énergie de fabrication P’TIBUG.',
-      effects: const <String, int>{'Réduction énergie': 1},
+      description:
+          'Réduit les consommations organiques et énergétiques du P’TIBUG.',
+      effects: const <String, int>{
+        'Réduction Organique %': 20,
+        'Réduction énergie %': 10
+      },
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
         PTibugTraitGrade.rare: 2,
@@ -702,8 +805,8 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'stabilisateur': PTibugTraitDefinition(
       id: 'stabilisateur',
       displayName: 'Stabilisateur',
-      description: 'Entretient lentement la sécurité de son biome.',
-      effects: const <String, int>{'Sécurité locale': 1},
+      description: 'Accélère la régénération de Vigueur du biome local.',
+      effects: const <String, int>{'Régénération Vigueur %': 5},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
         PTibugTraitGrade.rare: 2,
@@ -780,7 +883,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       'mineur',
       'decomposeur',
       'recuperateur',
-      'eclaireur',
+      'capteurIntelligent',
       'filtreur',
       'econome',
       'stabilisateur',
@@ -832,6 +935,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     PTibugBiome.hautsRefuges: PTibugBiomeConfig(
       displayName: 'Hauts-Refuges',
       risks: <String>['Glissements', 'Vents', 'Anciennes structures'],
+      weatherTypes: <String>['heavyRain'],
       dataWeights: <PTibugDataFamily, int>{
         PTibugDataFamily.minerale: 45,
         PTibugDataFamily.biomimetisme: 30,
@@ -855,6 +959,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
         'Faible visibilité',
         'Toxines biologiques'
       ],
+      weatherTypes: <String>['heavyRain', 'toxicCloud'],
       dataWeights: <PTibugDataFamily, int>{
         PTibugDataFamily.organique: 40,
         PTibugDataFamily.mycelienne: 35,
@@ -873,6 +978,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     PTibugBiome.foretSecheTropicale: PTibugBiomeConfig(
       displayName: 'Forêt sèche tropicale',
       risks: <String>['Chaleur', 'Sécheresse', 'Incendies locaux'],
+      weatherTypes: <String>['heatWave'],
       dataWeights: <PTibugDataFamily, int>{
         PTibugDataFamily.organique: 40,
         PTibugDataFamily.energie: 30,
@@ -895,6 +1001,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
         'Déchets anciens',
         'Petits organismes'
       ],
+      weatherTypes: <String>['heatWave', 'heavyRain'],
       dataWeights: <PTibugDataFamily, int>{
         PTibugDataFamily.organique: 35,
         PTibugDataFamily.biomimetisme: 30,
@@ -918,6 +1025,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
         'Biofilms',
         'Salinité'
       ],
+      weatherTypes: <String>['heavyRain', 'toxicCloud'],
       dataWeights: <PTibugDataFamily, int>{
         PTibugDataFamily.mycelienne: 40,
         PTibugDataFamily.toxine: 35,
@@ -936,6 +1044,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     PTibugBiome.maraisSales: PTibugBiomeConfig(
       displayName: 'Marais salés',
       risks: <String>['Corrosion', 'Toxines', 'Sol fragile', 'Forte salinité'],
+      weatherTypes: <String>['toxicCloud', 'heavyRain'],
       dataWeights: <PTibugDataFamily, int>{
         PTibugDataFamily.toxine: 40,
         PTibugDataFamily.minerale: 30,
@@ -954,6 +1063,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     PTibugBiome.semiDesertGarrigueTropicale: PTibugBiomeConfig(
       displayName: 'Semi-désert / Garrigue tropicale',
       risks: <String>['Chaleur', 'Poussières', 'Vent', 'Manque d’ombre'],
+      weatherTypes: <String>['heatWave'],
       dataWeights: <PTibugDataFamily, int>{
         PTibugDataFamily.minerale: 40,
         PTibugDataFamily.energie: 35,
@@ -971,6 +1081,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     PTibugBiome.littoral: PTibugBiomeConfig(
       displayName: 'Littoral',
       risks: <String>['Corrosion', 'Embruns', 'Vents', 'Ruissellement'],
+      weatherTypes: <String>['heavyRain'],
       dataWeights: <PTibugDataFamily, int>{
         PTibugDataFamily.energie: 40,
         PTibugDataFamily.toxine: 30,
@@ -1009,16 +1120,22 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     PTibugModuleType.ailes: <String, int>{'Organique': 6, 'Minéral': 4},
     PTibugModuleType.pinces: <String, int>{'Organique': 4, 'Minéral': 6},
     PTibugModuleType.reservoir: <String, int>{'Organique': 8, 'Minéral': 8},
+    PTibugModuleType.reflecteur: <String, int>{'Organique': 10, 'Minéral': 6},
+    PTibugModuleType.etancheite: <String, int>{'Organique': 8, 'Minéral': 10},
   },
   moduleCraftEnergyCosts: <PTibugModuleType, int>{
     PTibugModuleType.ailes: 1,
     PTibugModuleType.pinces: 1,
     PTibugModuleType.reservoir: 2,
+    PTibugModuleType.reflecteur: 2,
+    PTibugModuleType.etancheite: 2,
   },
   moduleCraftMinutes: <PTibugModuleType, int>{
     PTibugModuleType.ailes: 8,
     PTibugModuleType.pinces: 8,
     PTibugModuleType.reservoir: 10,
+    PTibugModuleType.reflecteur: 10,
+    PTibugModuleType.etancheite: 10,
   },
   nurseryReserveCapacity: 12,
   sourcierCellPricePerDataValue: 3,
@@ -1039,6 +1156,61 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     refugeEnergyAmount: 1,
     refugeEnergyEveryHours: 8,
     dataCellStorageCapacity: 3,
+  ),
+  progression: const PTibugProgressionConfig(
+    maximumLevel: 6,
+    xpRequiredByLevel: <int, int>{1: 10, 2: 20, 3: 30, 4: 40, 5: 50},
+    yieldBonusPerLevel: .10,
+    baseEnergyPerDay: 3,
+    energyReductionPerLevel: 1,
+    minimumEnergyPerDay: 1,
+    renewalLevel: 3,
+    renewalMaterialCost: <String, int>{},
+    renewalEnergyCost: 0,
+    renewalBioBatteryCost: 0,
+    renewalDurationMinutes: 0,
+    maximumRenewals: 1,
+  ),
+  moduleCapacity: const PTibugModuleCapacityConfig(
+    initialCapacity: 1,
+    maximumUpgrades: 2,
+    capacityPerUpgrade: 1,
+    materialCostsByLevel: <int, Map<String, int>>{
+      1: <String, int>{'Organique': 60, 'Minéral': 30},
+      2: <String, int>{'Organique': 120, 'Minéral': 60},
+    },
+    bioBatteryCostsByLevel: <int, int>{1: 10, 2: 20},
+    dataCostsByLevel: <int, Map<PTibugDataFamily, int>>{
+      1: <PTibugDataFamily, int>{
+        PTibugDataFamily.organique: 10,
+        PTibugDataFamily.minerale: 5,
+        PTibugDataFamily.mycelienne: 5,
+        PTibugDataFamily.toxine: 2,
+        PTibugDataFamily.biomimetisme: 10,
+        PTibugDataFamily.energie: 5,
+        PTibugDataFamily.comportementInsectoide: 10
+      },
+      2: <PTibugDataFamily, int>{
+        PTibugDataFamily.organique: 20,
+        PTibugDataFamily.minerale: 10,
+        PTibugDataFamily.mycelienne: 10,
+        PTibugDataFamily.toxine: 4,
+        PTibugDataFamily.biomimetisme: 20,
+        PTibugDataFamily.energie: 10,
+        PTibugDataFamily.comportementInsectoide: 20
+      },
+    },
+  ),
+  weather: const PTibugWeatherConfig(
+    productionMalusPercent: 30,
+    sensorMaterialPenaltyPercent: 50,
+    sensorChanceByLevel: <int, int>{1: 5, 2: 10, 3: 15},
+    sensorPityEnabled: false,
+    sensorPityCycleThreshold: 0,
+    stabilizerRegenerationPercentByLevel: <int, int>{1: 5, 2: 10, 3: 15},
+    stabilizerMaximumPercent: 30,
+    economyOrganicReductionPercentByLevel: <int, int>{1: 20, 2: 40, 3: 60},
+    economyEnergyReductionPercentByLevel: <int, int>{1: 10, 2: 20, 3: 30},
   ),
 );
 

@@ -1060,7 +1060,28 @@ function renderKernelEditor() {
 }
 
 function normalizePTibugResearchPatterns(ptibug) {
+  if (ptibug?.traitDefinitions?.eclaireur) {
+    const legacy = ptibug.traitDefinitions.eclaireur;
+    ptibug.traitDefinitions.capteurIntelligent ??= {
+      ...legacy,
+      id: "capteurIntelligent",
+      displayName: "Capteur intelligent",
+      description: "Détecte des Cellules du biome actif, avec une production matérielle réduite.",
+      effects: { "Chance Cellule": 5, "Malus matériel %": 50 },
+    };
+    delete ptibug.traitDefinitions.eclaireur;
+  }
   if (!ptibug?.researchPatterns) return;
+  if (ptibug.researchPatterns["ptibug-trait-eclaireur"]) {
+    const legacy = ptibug.researchPatterns["ptibug-trait-eclaireur"];
+    ptibug.researchPatterns["ptibug-trait-capteurIntelligent"] ??= {
+      ...legacy,
+      id: "ptibug-trait-capteurIntelligent",
+      displayName: "Pattern Capteur intelligent",
+      linkedTraitId: "capteurIntelligent",
+    };
+    delete ptibug.researchPatterns["ptibug-trait-eclaireur"];
+  }
   Object.entries({ ...ptibug.researchPatterns }).forEach(([patternId, pattern]) => {
     const linkedTraitId = String(pattern?.linkedTraitId || "").trim();
     if (!linkedTraitId || !patternId.startsWith("trait-")) return;
@@ -1107,6 +1128,9 @@ function renderPTibugEditor() {
     reservoirCapacityBonus,
     reservoirCapacityBonusByLevel = {},
     territory = {},
+    progression = {},
+    moduleCapacity = {},
+    weather = {},
     ...general
   } = ptibug;
   el.ptibugConfigList.innerHTML = [
@@ -1117,6 +1141,12 @@ function renderPTibugEditor() {
     configCard("Module Réservoir", "ptibug", { reservoirCapacityBonus, reservoirCapacityBonusByLevel }, [], { open: true, meta: "Bonus par niveau, appliqué avant le multiplicateur" }),
     ptibugEditorHeading("Gestion territoriale P'TIBUG", "Niveaux, stocks locaux, consommation hors ligne et compartiment de Cellules."),
     configCard("Bâtiments, consommation et Cellules", "ptibug", territory, ["territory"], { open: true, meta: "Nurserie, futurs Refuges, énergie locale et capacités" }),
+    ptibugEditorHeading("Progression et Renouvellement", "Niveaux, rendement, énergie et second Trait après Renouvellement."),
+    configCard("Progression P'TIBUG", "ptibug", progression, ["progression"], { open: true, meta: "XP, niveau maximum, rendement et Renouvellement" }),
+    ptibugEditorHeading("Capacité globale des Modules", "Portée joueur : tous les P'TIBUG utilisent immédiatement la nouvelle capacité."),
+    configCard("Améliorations Modules", "ptibug", moduleCapacity, ["moduleCapacity"], { open: true, meta: "Coûts matériaux, Bio-batteries et données par niveau" }),
+    ptibugEditorHeading("Traits, Cellules et météo P'TIBUG", "Capteur intelligent, Économe, Stabilisateur, malus météo et contre-mesures."),
+    configCard("Capteur intelligent, Vigueur et météo", "ptibug", weather, ["weather"], { open: true, meta: "Chances de Cellules, pénalités, économies et plafonds" }),
     ptibugEditorHeading("Espèces et Patterns d'espèce", "Les espèces définissent la création; leurs Patterns définissent la connaissance du Kernel."),
     ...Object.entries(species).map(([speciesId, config]) => configCard(
       config.displayName || speciesId,

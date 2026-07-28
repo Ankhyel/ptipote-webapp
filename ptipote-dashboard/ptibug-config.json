@@ -26,6 +26,39 @@
     "refugeEnergyEveryHours": 8,
     "dataCellStorageCapacity": 3
   },
+  "progression": {
+    "maximumLevel": 6,
+    "xpRequiredByLevel": {"1": 10, "2": 20, "3": 30, "4": 40, "5": 50},
+    "yieldBonusPerLevel": 0.1,
+    "baseEnergyPerDay": 3,
+    "energyReductionPerLevel": 1,
+    "minimumEnergyPerDay": 1,
+    "renewalLevel": 3,
+    "renewalMaterialCost": {},
+    "renewalEnergyCost": 0,
+    "renewalBioBatteryCost": 0,
+    "renewalDurationMinutes": 0,
+    "maximumRenewals": 1
+  },
+  "moduleCapacity": {
+    "initialCapacity": 1,
+    "maximumUpgrades": 2,
+    "capacityPerUpgrade": 1,
+    "materialCostsByLevel": {"1": {"Organique": 60, "Minéral": 30}, "2": {"Organique": 120, "Minéral": 60}},
+    "bioBatteryCostsByLevel": {"1": 10, "2": 20},
+    "dataCostsByLevel": {"1": {"organique": 10, "minerale": 5, "mycelienne": 5, "toxine": 2, "biomimetisme": 10, "energie": 5, "comportementInsectoide": 10}, "2": {"organique": 20, "minerale": 10, "mycelienne": 10, "toxine": 4, "biomimetisme": 20, "energie": 10, "comportementInsectoide": 20}}
+  },
+  "weather": {
+    "productionMalusPercent": 30,
+    "sensorMaterialPenaltyPercent": 50,
+    "sensorChanceByLevel": {"1": 5, "2": 10, "3": 15},
+    "sensorPityEnabled": false,
+    "sensorPityCycleThreshold": 0,
+    "stabilizerRegenerationPercentByLevel": {"1": 5, "2": 10, "3": 15},
+    "stabilizerMaximumPercent": 30,
+    "economyOrganicReductionPercentByLevel": {"1": 20, "2": 40, "3": 60},
+    "economyEnergyReductionPercentByLevel": {"1": 10, "2": 20, "3": 30}
+  },
   "xpPerCycle": 1,
   "wingsCycleReduction": 0.15,
   "clawProductionBonus": 1,
@@ -79,17 +112,17 @@
     "mineur": {"id": "mineur", "displayName": "Mineur", "description": "Améliore la collecte minérale.", "effects": {"Minéral": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#4977A6", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"minerale": 3, "comportementInsectoide": 2}, "2": {"minerale": 6, "biomimetisme": 3, "comportementInsectoide": 2}, "3": {"minerale": 10, "biomimetisme": 6, "comportementInsectoide": 4}}, "materialCostByLevel": {"1": {"Organique": 2, "Minéral": 4}, "2": {"Organique": 4, "Minéral": 7}, "3": {"Organique": 7, "Minéral": 10}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}},
     "decomposeur": {"id": "decomposeur", "displayName": "Décomposeur", "description": "Transforme les matières en organique et mycélium.", "effects": {"Organique": 1, "Mycélium": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#8C5AA2", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"mycelienne": 3, "organique": 2}, "2": {"mycelienne": 6, "toxine": 3, "organique": 2}, "3": {"mycelienne": 10, "toxine": 6, "organique": 4}}, "materialCostByLevel": {"1": {"Organique": 4, "Minéral": 2}, "2": {"Organique": 7, "Minéral": 4}, "3": {"Organique": 10, "Minéral": 7}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}},
     "recuperateur": {"id": "recuperateur", "displayName": "Récupérateur", "description": "Récupère des déchets utiles.", "effects": {"Déchets": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#8B775A", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"comportementInsectoide": 3, "minerale": 2}, "2": {"comportementInsectoide": 6, "minerale": 4}, "3": {"comportementInsectoide": 10, "minerale": 7}}, "materialCostByLevel": {"1": {"Organique": 3, "Minéral": 3}, "2": {"Organique": 5, "Minéral": 5}, "3": {"Organique": 8, "Minéral": 8}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}},
-    "eclaireur": {"id": "eclaireur", "displayName": "Éclaireur", "description": "Augmente la chance de Cellule de données.", "effects": {"Chance Cellule": 5}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#D29B4B", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"comportementInsectoide": 3, "energie": 2}, "2": {"comportementInsectoide": 6, "energie": 4}, "3": {"comportementInsectoide": 10, "energie": 7}}, "materialCostByLevel": {"1": {"Organique": 3, "Minéral": 3}, "2": {"Organique": 5, "Minéral": 5}, "3": {"Organique": 8, "Minéral": 8}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}},
-    "filtreur": {"id": "filtreur", "displayName": "Filtreur", "description": "Favorise les données Toxine.", "effects": {"Poids Toxine": 5}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#5C9D9A", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"toxine": 3, "mycelienne": 2}, "2": {"toxine": 6, "mycelienne": 4}, "3": {"toxine": 10, "mycelienne": 7}}, "materialCostByLevel": {"1": {"Organique": 3, "Minéral": 3}, "2": {"Organique": 5, "Minéral": 5}, "3": {"Organique": 8, "Minéral": 8}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}},
-    "econome": {"id": "econome", "displayName": "Économe", "description": "Réduit les coûts énergétiques.", "effects": {"Réduction énergie": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#79965B", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"energie": 3, "biomimetisme": 2}, "2": {"energie": 6, "biomimetisme": 4}, "3": {"energie": 10, "biomimetisme": 7}}, "materialCostByLevel": {"1": {"Organique": 3, "Minéral": 3}, "2": {"Organique": 5, "Minéral": 5}, "3": {"Organique": 8, "Minéral": 8}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}},
-    "stabilisateur": {"id": "stabilisateur", "displayName": "Stabilisateur", "description": "Entretient légèrement la sécurité locale.", "effects": {"Sécurité locale": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#6385A4", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"minerale": 3, "biomimetisme": 2}, "2": {"minerale": 6, "biomimetisme": 4}, "3": {"minerale": 10, "biomimetisme": 7}}, "materialCostByLevel": {"1": {"Organique": 3, "Minéral": 3}, "2": {"Organique": 5, "Minéral": 5}, "3": {"Organique": 8, "Minéral": 8}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}}
+    "capteurIntelligent": {"id": "capteurIntelligent", "displayName": "Capteur intelligent", "description": "Détecte des Cellules du biome actif, avec une production matérielle réduite.", "effects": {"Chance Cellule": 5, "Malus matériel %": 50}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#D29B4B", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"comportementInsectoide": 3, "energie": 2}, "2": {"comportementInsectoide": 6, "energie": 4}, "3": {"comportementInsectoide": 10, "energie": 7}}, "materialCostByLevel": {"1": {"Organique": 3, "Minéral": 3}, "2": {"Organique": 5, "Minéral": 5}, "3": {"Organique": 8, "Minéral": 8}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}},
+    "filtreur": {"id": "filtreur", "displayName": "Filtreur", "description": "Annule le malus de Nuage toxique.", "effects": {"Protection Nuage toxique": 1}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#5C9D9A", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"toxine": 3, "mycelienne": 2}, "2": {"toxine": 6, "mycelienne": 4}, "3": {"toxine": 10, "mycelienne": 7}}, "materialCostByLevel": {"1": {"Organique": 3, "Minéral": 3}, "2": {"Organique": 5, "Minéral": 5}, "3": {"Organique": 8, "Minéral": 8}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}},
+    "econome": {"id": "econome", "displayName": "Économe", "description": "Réduit les consommations du P’TIBUG.", "effects": {"Réduction Organique %": 20, "Réduction énergie %": 10}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#79965B", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"energie": 3, "biomimetisme": 2}, "2": {"energie": 6, "biomimetisme": 4}, "3": {"energie": 10, "biomimetisme": 7}}, "materialCostByLevel": {"1": {"Organique": 3, "Minéral": 3}, "2": {"Organique": 5, "Minéral": 5}, "3": {"Organique": 8, "Minéral": 8}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}},
+    "stabilisateur": {"id": "stabilisateur", "displayName": "Stabilisateur", "description": "Accélère la régénération de Vigueur locale.", "effects": {"Régénération Vigueur %": 5}, "gradeMultipliers": {"commun": 1, "rare": 2, "avance": 3}, "colorHex": "#6385A4", "isActive": true, "maxLevel": 3, "dataCostByLevel": {"1": {"minerale": 3, "biomimetisme": 2}, "2": {"minerale": 6, "biomimetisme": 4}, "3": {"minerale": 10, "biomimetisme": 7}}, "materialCostByLevel": {"1": {"Organique": 3, "Minéral": 3}, "2": {"Organique": 5, "Minéral": 5}, "3": {"Organique": 8, "Minéral": 8}}, "energyCostByLevel": {"1": 2, "2": 4, "3": 6}}
   },
   "dataQualityValues": {"common": 1, "sought": 2, "rare": 4},
   "dataQualityWeights": {"common": 70, "sought": 25, "rare": 5},
   "cellChanceByOrdinal": {"1": 100, "2": 50, "3": 20},
-  "moduleCraftCosts": {"ailes": {"Organique": 8, "Minéral": 5}, "pinces": {"Organique": 5, "Minéral": 8}, "reservoir": {"Organique": 10, "Minéral": 10}},
-  "moduleCraftEnergyCosts": {"ailes": 2, "pinces": 2, "reservoir": 3},
-  "moduleCraftMinutes": {"ailes": 15, "pinces": 15, "reservoir": 20},
+  "moduleCraftCosts": {"ailes": {"Organique": 8, "Minéral": 5}, "pinces": {"Organique": 5, "Minéral": 8}, "reservoir": {"Organique": 10, "Minéral": 10}, "reflecteur": {"Organique": 10, "Minéral": 6}, "etancheite": {"Organique": 8, "Minéral": 10}},
+  "moduleCraftEnergyCosts": {"ailes": 2, "pinces": 2, "reservoir": 3, "reflecteur": 2, "etancheite": 2},
+  "moduleCraftMinutes": {"ailes": 15, "pinces": 15, "reservoir": 20, "reflecteur": 10, "etancheite": 10},
   "researchPatterns": {
     "ptibug-species-scarabe": {"id": "ptibug-species-scarabe", "displayName": "Pattern Scarabé", "category": "species", "description": "Un collecteur robuste pour les sols minéraux.", "masteryCosts": {"1": {"minerale": 4, "comportementInsectoide": 3}, "2": {"minerale": 9, "comportementInsectoide": 7, "biomimetisme": 3}, "3": {"minerale": 16, "comportementInsectoide": 13, "biomimetisme": 8}}, "linkedSpecies": "scarabe", "origin": "Kernel", "biomesSuggested": ["hautsRefuges", "semiDesertGarrigueTropicale"]},
     "ptibug-species-hyme": {"id": "ptibug-species-hyme", "displayName": "Pattern Hyme", "category": "species", "description": "Une espèce attentive aux matières organiques.", "masteryCosts": {"1": {"organique": 5, "comportementInsectoide": 4}, "2": {"organique": 10, "comportementInsectoide": 9, "biomimetisme": 3}, "3": {"organique": 18, "comportementInsectoide": 16, "biomimetisme": 8}}, "linkedSpecies": "hyme", "origin": "Sourcier", "biomesSuggested": ["foretHumideRelictuelle", "savaneTropicale"]},
@@ -104,7 +137,10 @@
     "ptibug-trait-stabilisateur": {"id": "ptibug-trait-stabilisateur", "displayName": "Pattern Stabilisateur", "category": "trait", "description": "Une spécialisation de sécurité locale.", "masteryCosts": {"1": {"minerale": 6, "biomimetisme": 4}, "2": {"minerale": 14, "biomimetisme": 8, "energie": 3}, "3": {"minerale": 25, "biomimetisme": 15, "energie": 10}}, "linkedTraitId": "stabilisateur", "origin": "Sourcier", "biomesSuggested": ["hautsRefuges", "maraisSales"]},
     "ptibug-module-ailes": {"id": "ptibug-module-ailes", "displayName": "Pattern Ailes", "category": "module", "description": "Un module qui réduit le temps de cycle.", "masteryCosts": {"1": {"biomimetisme": 4, "minerale": 3}, "2": {"biomimetisme": 9, "minerale": 7, "energie": 2}, "3": {"biomimetisme": 16, "minerale": 12, "energie": 6}}, "linkedModuleType": "ailes", "origin": "Sourcier", "biomesSuggested": ["savaneTropicale", "littoral"]},
     "ptibug-module-pinces": {"id": "ptibug-module-pinces", "displayName": "Pattern Pinces", "category": "module", "description": "Un module qui augmente la production.", "masteryCosts": {"1": {"minerale": 4, "biomimetisme": 3}, "2": {"minerale": 9, "biomimetisme": 7, "energie": 2}, "3": {"minerale": 16, "biomimetisme": 12, "energie": 6}}, "linkedModuleType": "pinces", "origin": "Sourcier", "biomesSuggested": ["hautsRefuges", "semiDesertGarrigueTropicale"]},
-    "ptibug-module-reservoir": {"id": "ptibug-module-reservoir", "displayName": "Pattern Réservoir", "category": "module", "description": "Un module qui augmente fortement la capacité.", "masteryCosts": {"1": {"organique": 4, "biomimetisme": 3}, "2": {"organique": 9, "biomimetisme": 7, "energie": 2}, "3": {"organique": 16, "biomimetisme": 12, "energie": 6}}, "linkedModuleType": "reservoir", "origin": "Sourcier", "biomesSuggested": ["foretHumideRelictuelle", "mangroves"]}
+    "ptibug-module-reservoir": {"id": "ptibug-module-reservoir", "displayName": "Pattern Réservoir", "category": "module", "description": "Un module qui augmente fortement la capacité.", "masteryCosts": {"1": {"organique": 4, "biomimetisme": 3}, "2": {"organique": 9, "biomimetisme": 7, "energie": 2}, "3": {"organique": 16, "biomimetisme": 12, "energie": 6}}, "linkedModuleType": "reservoir", "origin": "Sourcier", "biomesSuggested": ["foretHumideRelictuelle", "mangroves"]},
+    "ptibug-trait-capteurIntelligent": {"id": "ptibug-trait-capteurIntelligent", "displayName": "Pattern Capteur intelligent", "category": "trait", "description": "Une spécialisation de veille scientifique locale.", "masteryCosts": {"1": {"comportementInsectoide": 6, "energie": 4}, "2": {"comportementInsectoide": 14, "energie": 8, "biomimetisme": 3}, "3": {"comportementInsectoide": 25, "energie": 15, "biomimetisme": 10}}, "linkedTraitId": "capteurIntelligent", "origin": "Kernel", "biomesSuggested": ["savaneTropicale", "littoral"]},
+    "ptibug-module-reflecteur": {"id": "ptibug-module-reflecteur", "displayName": "Pattern Réflecteur", "category": "module", "description": "Annule le malus de Forte chaleur.", "masteryCosts": {"1": {"energie": 4, "biomimetisme": 3}}, "linkedModuleType": "reflecteur", "origin": "Kernel", "biomesSuggested": ["foretSecheTropicale", "semiDesertGarrigueTropicale"]},
+    "ptibug-module-etancheite": {"id": "ptibug-module-etancheite", "displayName": "Pattern Étanchéité", "category": "module", "description": "Annule le malus de Pluie intense.", "masteryCosts": {"1": {"minerale": 4, "biomimetisme": 3}}, "linkedModuleType": "etancheite", "origin": "Kernel", "biomesSuggested": ["mangroves", "littoral"]}
   },
   "biomes": {
     "hautsRefuges": {"displayName": "Hauts-Refuges", "risks": ["Glissements", "Vents", "Anciennes structures"], "dataWeights": {"minerale": 45, "biomimetisme": 30, "energie": 25}, "aracProductionWeights": {"Minéral": 60, "Organique": 20, "Déchets": 20}, "localProductionBonus": {"scarabe": {"Minéral": 1}}, "nurseryInsectBehaviourWeight": 8},

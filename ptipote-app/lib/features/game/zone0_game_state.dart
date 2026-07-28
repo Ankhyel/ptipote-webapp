@@ -98,6 +98,7 @@ class Zone0GameState extends ChangeNotifier {
   final List<PTibugModuleCraftOrder> pTibugModuleCraftOrders =
       <PTibugModuleCraftOrder>[];
   final List<PTibugCapsule> pTibugCapsules = <PTibugCapsule>[];
+  int pTibugModuleCapacityLevel = 0;
   final Map<String, PTibugTerritoryBuilding> pTibugTerritoryBuildings =
       <String, PTibugTerritoryBuilding>{};
   bool starterPTibugChoiceMade = false;
@@ -241,6 +242,9 @@ class Zone0GameState extends ChangeNotifier {
       building.kind == PTibugTerritoryKind.nursery
           ? pTibugConfig.territory.nurseryCapacityForLevel(building.level)
           : pTibugConfig.territory.refugeCapacityForLevel(building.level);
+
+  int get maxModulesPerPTibug =>
+      pTibugConfig.moduleCapacity.capacityForLevel(pTibugModuleCapacityLevel);
 
   // Patterns are now discovered by the Kernel requirements. This legacy flag
   // stays persisted only to read existing saves; it must no longer open a
@@ -3567,24 +3571,36 @@ class Zone0GameState extends ChangeNotifier {
     if (!pTibugs.contains(bug) || definition == null) {
       return null;
     }
-    if (bug.biologicalTraitId == null) {
-      return 1;
+    if (bug.biologicalTraitId == null) return bug.level >= 1 ? 1 : null;
+    if (bug.biologicalTraitId == traitId) {
+      final nextLevel = bug.biologicalTraitLevel + 1;
+      return nextLevel <= definition.maxLevel &&
+              nextLevel <= bug.level.clamp(1, 3)
+          ? nextLevel
+          : null;
     }
-    if (bug.biologicalTraitId != traitId) {
+    if (!bug.isRenewed || bug.level < 4) {
       return null;
     }
-    final nextLevel = bug.biologicalTraitLevel + 1;
-    return nextLevel <= definition.maxLevel ? nextLevel : null;
+    if (bug.secondTraitId == null)
+      return traitId == bug.biologicalTraitId ? null : 1;
+    if (bug.secondTraitId != traitId) return null;
+    final nextLevel = bug.secondTraitLevel + 1;
+    return nextLevel <= definition.maxLevel && nextLevel <= bug.level - 3
+        ? nextLevel
+        : null;
   }
 
   Zone0ActionResult applyPTibugPermanentTrait({
     required PTibug bug,
     required String traitId,
   }) {
-    if (!pTibugs.contains(bug) || !isPlaineNurseryBuilt) {
+    if (!pTibugs.contains(bug) ||
+        !isPlaineNurseryBuilt ||
+        bug.assignedBuildingId != plaineNurseryTerritoryId) {
       return const Zone0ActionResult(
         success: false,
-        message: 'P’TIBUG ou Nurserie indisponible.',
+        message: 'Le P’TIBUG doit être présent dans la Nurserie.',
       );
     }
     final definition = pTibugConfig.traitDefinitionFor(traitId);
@@ -3592,7 +3608,7 @@ class Zone0GameState extends ChangeNotifier {
     if (targetLevel == null) {
       final message = bug.biologicalTraitId == traitId
           ? 'Ce Trait est déjà au niveau maximum.'
-          : 'Un P’TIBUG ne peut développer qu’un seul Trait biologique.';
+          : 'Ce second Trait exige un Renouvellement et un niveau compatible.';
       return Zone0ActionResult(success: false, message: message);
     }
     final patternId = 'ptibug-trait-$traitId';
@@ -3634,8 +3650,15 @@ class Zone0GameState extends ChangeNotifier {
     }
     _consumePTibugData(dataCost);
     energyUnits -= energyCost;
-    bug.biologicalTraitId = traitId;
-    bug.biologicalTraitLevel = targetLevel;
+    if (bug.biologicalTraitId == null || bug.biologicalTraitId == traitId) {
+      bug
+        ..biologicalTraitId = traitId
+        ..biologicalTraitLevel = targetLevel;
+    } else {
+      bug
+        ..secondTraitId = traitId
+        ..secondTraitLevel = targetLevel;
+    }
     emitKernelProgressEvent(KernelProgressEventType.ptibugTraitEquipped);
     reports.add(
       PtipoteMissionReport.system(
@@ -3656,6 +3679,83 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  bool canRenewPTibug(PTibug bug) {
+    final config = pTibugConfig.progression;
+    return !bug.isRenewed &&
+        bug.renewalCount < config.maximumRenewals &&
+        bug.level >= config.renewalLevel &&
+        bug.biologicalTraitLevel >= 3 &&
+        bug.assignedBuildingId == plaineNurseryTerritoryId &&
+        bug.storedAmount == 0 &&
+        bug.storedDataCells.isEmpty;
+  }
+
+  Zone0ActionResult renewPTibug(PTibug bug) {
+    final config = pTibugConfig.progression;
+    if (!canRenewPTibug(bug)) {
+      return const Zone0ActionResult(
+          success: false,
+          message:
+              'Renouvellement indisponible : niveau 3, Trait I niveau III, Nurserie et stocks vides requis.');
+    }
+    if (!hasResources(config.renewalMaterialCost) ||
+        energyUnits < config.renewalEnergyCost ||
+        bioBatteries < config.renewalBioBatteryCost) {
+      return const Zone0ActionResult(
+          success: false, message: 'Coût de Renouvellement insuffisant.');
+    }
+    if (!removeResources(config.renewalMaterialCost)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Matériaux insuffisants.');
+    }
+    energyUnits -= config.renewalEnergyCost;
+    bioBatteries -= config.renewalBioBatteryCost;
+    bug
+      ..isRenewed = true
+      ..renewedAt = DateTime.now()
+      ..renewalCount += 1;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true,
+        message:
+            'Renouvellement accompli. Le second Trait est désormais accessible au niveau 4.');
+  }
+
+  Zone0ActionResult upgradePTibugModuleCapacity() {
+    final config = pTibugConfig.moduleCapacity;
+    final targetLevel = pTibugModuleCapacityLevel + 1;
+    if (targetLevel > config.maximumUpgrades) {
+      return const Zone0ActionResult(
+          success: false, message: 'Capacité de Modules maximale atteinte.');
+    }
+    final materials =
+        config.materialCostsByLevel[targetLevel] ?? const <String, int>{};
+    final data =
+        config.dataCostsByLevel[targetLevel] ?? const <PTibugDataFamily, int>{};
+    final batteries = config.bioBatteryCostsByLevel[targetLevel] ?? 0;
+    if (!hasResources(materials) ||
+        !_hasPTibugData(data) ||
+        bioBatteries < batteries) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Matériaux, Bio-batteries ou données insuffisants.');
+    }
+    if (!removeResources(materials)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Matériaux insuffisants.');
+    }
+    _consumePTibugData(data);
+    bioBatteries -= batteries;
+    pTibugModuleCapacityLevel = targetLevel;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            'Capacité globale : $maxModulesPerPTibug Modules par P’TIBUG.');
+  }
+
   Zone0ActionResult equipPTibugModuleInstance({
     required PTibug bug,
     required String moduleInstanceId,
@@ -3670,8 +3770,7 @@ class Zone0GameState extends ChangeNotifier {
         instance.isEquipped ||
         !pTibugs.contains(bug) ||
         equippedModules.any((item) => item.type == instance.type) ||
-        equippedModules.length >=
-            pTibugConfig.moduleSlotsForLevel(plaineNurseryLevel)) {
+        equippedModules.length >= maxModulesPerPTibug) {
       return const Zone0ActionResult(
         success: false,
         message: 'Module indisponible ou aucun slot libre.',
@@ -3931,7 +4030,8 @@ class Zone0GameState extends ChangeNotifier {
           bug.storedResources[resource] =
               (bug.storedResources[resource] ?? 0) + amount;
         });
-        bug.xp += pTibugConfig.xpPerCycle;
+        _tryDetectSensorDataCell(bug, cycleAt);
+        _gainPTibugXp(bug, pTibugConfig.xpPerCycle);
         producedCycles += 1;
         cycleAt = cycleAt.add(_pTibugCycleDuration(bug));
       }
@@ -3964,6 +4064,18 @@ class Zone0GameState extends ChangeNotifier {
     return changed;
   }
 
+  void _gainPTibugXp(PTibug bug, int amount) {
+    final config = pTibugConfig.progression;
+    if (bug.level >= config.maximumLevel) return;
+    bug.xp += amount;
+    while (bug.level < config.maximumLevel) {
+      final required = config.xpForNextLevel(bug.level);
+      if (required <= 0 || bug.xp < required) break;
+      bug.xp -= required;
+      bug.level += 1;
+    }
+  }
+
   bool _resolvePTibugTerritoryConsumption(DateTime current) {
     var changed = false;
     for (final building in activePTibugTerritories) {
@@ -3974,8 +4086,6 @@ class Zone0GameState extends ChangeNotifier {
           elapsedHours ~/ math.max(1, pTibugConfig.territory.organicEveryHours);
       final mineralCycles =
           elapsedHours ~/ math.max(1, pTibugConfig.territory.mineralEveryHours);
-      final bugEnergyCycles =
-          elapsedHours ~/ math.max(1, pTibugConfig.territory.energyEveryHours);
       final moduleEnergyCycles = elapsedHours ~/
           math.max(1, pTibugConfig.territory.moduleEnergyEveryHours);
       final buildingEnergyEveryHours =
@@ -3992,16 +4102,36 @@ class Zone0GameState extends ChangeNotifier {
               bug.equippedModules.isNotEmpty ||
               bug.equippedModuleInstanceIds.isNotEmpty)
           .length;
-      final organicNeed = residents.length *
-          organicCycles *
-          pTibugConfig.territory.organicAmount;
+      final organicExact = building.pTibugOrganicRemainder +
+          residents.fold<double>(
+            0,
+            (total, bug) =>
+                total +
+                organicCycles *
+                    pTibugConfig.territory.organicAmount *
+                    pTibugConfig.weather.multiplierForPenalty(
+                      _pTibugEffectFor(bug, 'Réduction Organique %'),
+                    ),
+          );
+      final organicNeed = organicExact.floor();
       final mineralNeed = residents.length *
           mineralCycles *
           pTibugConfig.territory.mineralAmount;
+      final bugEnergyExact = building.pTibugEnergyRemainder +
+          residents.fold<double>(
+            0,
+            (total, bug) =>
+                total +
+                pTibugConfig.progression.baseEnergyPerDayForLevel(bug.level) *
+                    pTibugConfig.weather.multiplierForPenalty(
+                      _pTibugEffectFor(bug, 'Réduction énergie %'),
+                    ) *
+                    elapsedHours /
+                    24,
+          );
+      final bugEnergyNeed = bugEnergyExact.floor();
       final energyNeed = buildingEnergyCycles * buildingEnergyAmount +
-          residents.length *
-              bugEnergyCycles *
-              pTibugConfig.territory.energyAmount +
+          bugEnergyNeed +
           equippedResidents *
               moduleEnergyCycles *
               pTibugConfig.territory.moduleEnergyAmount;
@@ -4029,6 +4159,8 @@ class Zone0GameState extends ChangeNotifier {
             ..nextProductionAt = null;
         }
         building.lastConsumptionAt = current;
+        building.pTibugOrganicRemainder = 0;
+        building.pTibugEnergyRemainder = 0;
         changed = true;
         continue;
       }
@@ -4042,6 +4174,8 @@ class Zone0GameState extends ChangeNotifier {
       }
       if (energyNeed > 0) building.localEnergy -= energyNeed;
       building.lastConsumptionAt = current;
+      building.pTibugOrganicRemainder = organicExact - organicNeed;
+      building.pTibugEnergyRemainder = bugEnergyExact - bugEnergyNeed;
       for (final bug in residents) {
         if (bug.inactiveReason != null) {
           bug.inactiveReason = null;
@@ -4071,13 +4205,29 @@ class Zone0GameState extends ChangeNotifier {
         : perDay(
             territory.refugeEnergyAmount, territory.refugeEnergyEveryHours);
     return PTibugTerritoryConsumption(
-      organicPerDay: residents.length *
-          perDay(territory.organicAmount, territory.organicEveryHours),
+      organicPerDay: residents.fold<int>(
+        0,
+        (total, bug) =>
+            total +
+            (perDay(territory.organicAmount, territory.organicEveryHours) *
+                    pTibugConfig.weather.multiplierForPenalty(
+                      _pTibugEffectFor(bug, 'Réduction Organique %'),
+                    ))
+                .ceil(),
+      ),
       mineralPerDay: residents.length *
           perDay(territory.mineralAmount, territory.mineralEveryHours),
       energyPerDay: buildingEnergy +
-          residents.length *
-              perDay(territory.energyAmount, territory.energyEveryHours) +
+          residents.fold<int>(
+            0,
+            (total, bug) =>
+                total +
+                (pTibugConfig.progression.baseEnergyPerDayForLevel(bug.level) *
+                        pTibugConfig.weather.multiplierForPenalty(
+                          _pTibugEffectFor(bug, 'Réduction énergie %'),
+                        ))
+                    .ceil(),
+          ) +
           equipped *
               perDay(territory.moduleEnergyAmount,
                   territory.moduleEnergyEveryHours),
@@ -4163,6 +4313,13 @@ class Zone0GameState extends ChangeNotifier {
     }
     final biome = pTibugConfig.biomes[bug.biome];
     biome?.localProductionBonus[bug.species]?.forEach(add);
+    // The level bonus is intentionally applied here: after species and biome,
+    // before Traits and Modules. It has one unique place in the pipeline.
+    final levelMultiplier =
+        pTibugConfig.progression.yieldMultiplierForLevel(bug.level);
+    for (final entry in output.entries.toList()) {
+      output[entry.key] = (entry.value * levelMultiplier).round();
+    }
     final trait = bug.traitDataId == null
         ? null
         : pTibugTraitData
@@ -4180,6 +4337,12 @@ class Zone0GameState extends ChangeNotifier {
     if (permanentTrait != null) {
       permanentTrait.productionForLevel(bug.biologicalTraitLevel).forEach(add);
     }
+    final secondTrait = bug.secondTraitId == null
+        ? null
+        : pTibugConfig.traitDefinitionFor(bug.secondTraitId!);
+    if (secondTrait != null) {
+      secondTrait.productionForLevel(bug.secondTraitLevel).forEach(add);
+    }
     final claws = _pTibugModuleEffect(
       bug,
       PTibugModuleType.pinces,
@@ -4195,11 +4358,92 @@ class Zone0GameState extends ChangeNotifier {
           add(_pTibugAracResourceForBiome(bug.biome), claws);
       }
     }
-    final multiplier = biomassPTibugMultiplierFor(bug.refugeBiome);
+    final sensorPenalty = _pTibugEffectFor(bug, 'Malus matériel %');
+    if (sensorPenalty > 0) {
+      final sensorMultiplier = pTibugConfig.weather.multiplierForPenalty(
+        sensorPenalty,
+      );
+      for (final entry in output.entries.toList()) {
+        // A scientific P'TIBUG never becomes a false zero-producer merely
+        // because a one-unit material output is halved.
+        output[entry.key] =
+            math.max(1, (entry.value * sensorMultiplier).round());
+      }
+    }
+    final weather = pTibugWeatherFor(bug);
+    final protected =
+        weather != null && _hasPTibugWeatherProtection(bug, weather);
+    final multiplier = biomassPTibugMultiplierFor(bug.refugeBiome) *
+        (weather == null || protected
+            ? 1
+            : pTibugConfig.weather.multiplierForPenalty(
+                pTibugConfig.weather.productionMalusPercent,
+              ));
     return <String, int>{
       for (final entry in output.entries)
         entry.key: math.max(0, (entry.value * multiplier).round()),
     };
+  }
+
+  TowerWeatherType? pTibugWeatherFor(PTibug bug) {
+    final alert = weatherAlerts
+        .where(
+          (item) =>
+              !item.startsAt.isAfter(DateTime.now()) &&
+              item.endsAt.isAfter(DateTime.now()),
+        )
+        .firstOrNull;
+    if (alert == null) return null;
+    final allowed =
+        pTibugConfig.biomes[bug.biome]?.weatherTypes ?? const <String>[];
+    return allowed.contains(alert.type.name) ? alert.type : null;
+  }
+
+  bool _hasPTibugWeatherProtection(PTibug bug, TowerWeatherType weather) =>
+      switch (weather) {
+        TowerWeatherType.toxicCloud =>
+          _pTibugEffectFor(bug, 'Protection Nuage toxique') > 0,
+        TowerWeatherType.heatWave =>
+          _pTibugModuleLevel(bug, PTibugModuleType.reflecteur) > 0,
+        TowerWeatherType.heavyRain =>
+          _pTibugModuleLevel(bug, PTibugModuleType.etancheite) > 0,
+      };
+
+  void _tryDetectSensorDataCell(PTibug bug, DateTime cycleAt) {
+    final level = bug.biologicalTraitId == 'capteurIntelligent'
+        ? bug.biologicalTraitLevel
+        : bug.secondTraitId == 'capteurIntelligent'
+            ? bug.secondTraitLevel
+            : 0;
+    if (level <= 0 ||
+        bug.storedDataCells.length >=
+            pTibugConfig.territory.dataCellStorageCapacity ||
+        _random.nextInt(100) >=
+            (pTibugConfig.weather.sensorChanceByLevel[level] ?? 0)) {
+      return;
+    }
+    final biome = pTibugConfig.biomes[bug.biome];
+    if (biome == null) return;
+    final dominant = _pickWeightedDataFamily(biome.dataWeights);
+    final entries = List<PTibugDataCellEntry>.generate(
+        5,
+        (index) => PTibugDataCellEntry(
+              family: index < 2
+                  ? dominant
+                  : _pickWeightedDataFamily(biome.dataWeights),
+              quality: _pickWeightedDataQuality(),
+              slotIndex: index,
+            ));
+    bug.storedDataCells.add(PTibugDataCell(
+      id: 'sensor-${bug.id}-${cycleAt.microsecondsSinceEpoch}',
+      displayName:
+          'Cellule ${_ptibugDataFamilyLabel(dominant)} · ${biome.displayName}',
+      sourceBiomeId: bug.biome.name,
+      dominantFamily: dominant,
+      isNeutralCell: false,
+      entries: entries,
+      createdAt: cycleAt,
+    ));
   }
 
   /// Effects that do not create an inventory resource are consumed here by
@@ -4226,6 +4470,12 @@ class Zone0GameState extends ChangeNotifier {
         effect,
         bug.biologicalTraitLevel,
       );
+    }
+    final secondTrait = bug.secondTraitId == null
+        ? null
+        : pTibugConfig.traitDefinitionFor(bug.secondTraitId!);
+    if (secondTrait != null) {
+      result += secondTrait.effectForLevel(effect, bug.secondTraitLevel);
     }
     return result;
   }
@@ -4510,8 +4760,7 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult equipPTibugModule(PTibug bug, PTibugModuleType module) {
     if (!unlockedPTibugModules.contains(module) ||
         bug.hasModule(module) ||
-        bug.equippedModules.length >=
-            pTibugConfig.moduleSlotsForLevel(plaineNurseryLevel)) {
+        bug.equippedModules.length >= maxModulesPerPTibug) {
       return const Zone0ActionResult(
         success: false,
         message: 'Module indisponible ou aucun slot libre.',
@@ -5301,6 +5550,9 @@ class Zone0GameState extends ChangeNotifier {
       }
       final ptibugData = data['ptibug'];
       if (ptibugData is Map) {
+        pTibugModuleCapacityLevel = _readInt(
+          ptibugData['moduleCapacityLevel'],
+        ).clamp(0, pTibugConfig.moduleCapacity.maximumUpgrades);
         plaineNurseryLevel = _readInt(ptibugData['nurseryLevel']).clamp(
           0,
           pTibugConfig.territory.nurseryMaximumLevel,
@@ -5347,6 +5599,10 @@ class Zone0GameState extends ChangeNotifier {
         final nurseryCapacity = pTibugTerritoryCapacity(nursery);
         var assignedNursery = 0;
         for (final bug in pTibugs) {
+          if (bug.secondTraitId == bug.biologicalTraitId) {
+            bug.secondTraitId = null;
+            bug.secondTraitLevel = 0;
+          }
           // Existing saves had a single slot system. Preserve the old active
           // residents in the Plaine nursery, and place any overflow safely in
           // the inactive reserve rather than duplicating or deleting a bug.
@@ -5552,6 +5808,45 @@ class Zone0GameState extends ChangeNotifier {
     var changed = false;
     final now = DateTime.now();
 
+    // Éclaireur is the historical name of Capteur intelligent. Keep every
+    // acquired level, owner and Pattern investment; this is a rename, never a
+    // new free Trait or a new Cellule roll.
+    for (final oldId in <String>[
+      'trait-eclaireur',
+      'ptibug-trait-eclaireur',
+    ]) {
+      final progress = pTibugPatternProgress.remove(oldId);
+      if (progress == null) continue;
+      final targetId = 'ptibug-trait-capteurIntelligent';
+      final target = pTibugPatternProgress[targetId];
+      if (target == null) {
+        pTibugPatternProgress[targetId] = PTibugPatternProgress(
+          patternId: targetId,
+          state: progress.state,
+          masteryLevel: progress.masteryLevel,
+          investedDataByFamily: progress.investedDataByFamily,
+          discoveredAt: progress.discoveredAt,
+          activatedAt: progress.activatedAt,
+        );
+      } else {
+        target.masteryLevel =
+            math.max(target.masteryLevel, progress.masteryLevel);
+        if (progress.state.index > target.state.index)
+          target.state = progress.state;
+      }
+      changed = true;
+    }
+    for (var index = 0; index < pTibugTraitData.length; index += 1) {
+      final data = pTibugTraitData[index];
+      if (data.definitionId != 'eclaireur') continue;
+      pTibugTraitData[index] = PTibugTraitData(
+        id: data.id,
+        definitionId: 'capteurIntelligent',
+        grade: data.grade,
+      );
+      changed = true;
+    }
+
     // Early remote configurations used `trait-<id>` for Trait Patterns.
     // Keep the player's existing mastery under the canonical Pattern id so an
     // already researched Trait remains usable after the configuration update.
@@ -5616,6 +5911,14 @@ class Zone0GameState extends ChangeNotifier {
     }
 
     for (final bug in pTibugs) {
+      if (bug.biologicalTraitId == 'eclaireur') {
+        bug.biologicalTraitId = 'capteurIntelligent';
+        changed = true;
+      }
+      if (bug.secondTraitId == 'eclaireur') {
+        bug.secondTraitId = 'capteurIntelligent';
+        changed = true;
+      }
       if (bug.biologicalTraitId == null && bug.traitDataId != null) {
         final legacyTrait = pTibugTraitData
             .where((item) => item.id == bug.traitDataId)
@@ -7411,11 +7714,20 @@ class Zone0GameState extends ChangeNotifier {
     }
     var cursor = last;
     var biomass = state.biomassPercent;
+    final pTibugBiome = _ptibugBiomeForForageBiome(state.biome);
+    final stabilizerBonus = _activePTibugEffect(
+      'Régénération Vigueur %',
+      biome: pTibugBiome,
+    ).clamp(0, pTibugConfig.weather.stabilizerMaximumPercent);
     while (biomass < config.maximumPercent) {
       final multiplier = _biomassMultiplierFor(biomass, config.recoveryTiers);
       final minutes = math.max(
         1,
-        (config.recoveryHoursPerPoint * multiplier * 60).round(),
+        (config.recoveryHoursPerPoint *
+                multiplier *
+                60 /
+                (1 + stabilizerBonus / 100))
+            .round(),
       );
       final next = cursor.add(Duration(minutes: minutes));
       if (next.isAfter(now)) break;
@@ -7893,6 +8205,7 @@ class Zone0GameState extends ChangeNotifier {
               pTibugModuleInstances.map((item) => item.toFirebase()).toList(),
           'moduleCraftOrders':
               pTibugModuleCraftOrders.map((item) => item.toFirebase()).toList(),
+          'moduleCapacityLevel': pTibugModuleCapacityLevel,
           'capsules': pTibugCapsules.map((item) => item.toFirebase()).toList(),
         },
         'lastSimulationAt': lastSimulationAt == null
@@ -8026,6 +8339,11 @@ class Zone0GameState extends ChangeNotifier {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse('$value') ?? fallback;
+  }
+
+  double _readDouble(Object? value, {double fallback = 0}) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('${value ?? ''}') ?? fallback;
   }
 
   DateTime? _readDate(Object? value) {
@@ -8553,6 +8871,8 @@ class PTibugTerritoryBuilding {
     required this.isBuilt,
     Map<String, int>? localResources,
     this.localEnergy = 0,
+    this.pTibugOrganicRemainder = 0,
+    this.pTibugEnergyRemainder = 0,
     this.lastConsumptionAt,
   }) : localResources = localResources ?? <String, int>{};
 
@@ -8573,6 +8893,13 @@ class PTibugTerritoryBuilding {
   bool isBuilt;
   final Map<String, int> localResources;
   int localEnergy;
+
+  double pTibugOrganicRemainder;
+
+  /// Fractional daily P'TIBUG energy consumption carried between offline
+  /// resolutions. It prevents low-consumption, high-level bugs from being
+  /// skipped whenever the building is resolved more often than once a day.
+  double pTibugEnergyRemainder;
   DateTime? lastConsumptionAt;
 
   int resourceAmount(String resource) => localResources[resource] ?? 0;
@@ -8603,6 +8930,10 @@ class PTibugTerritoryBuilding {
               ),
         ),
         localEnergy: Zone0GameState.instance._readInt(data['localEnergy']),
+        pTibugOrganicRemainder:
+            Zone0GameState.instance._readDouble(data['pTibugOrganicRemainder']),
+        pTibugEnergyRemainder:
+            Zone0GameState.instance._readDouble(data['pTibugEnergyRemainder']),
         lastConsumptionAt: Zone0GameState.instance._readDate(
           data['lastConsumptionAt'],
         ),
@@ -8616,6 +8947,8 @@ class PTibugTerritoryBuilding {
         'isBuilt': isBuilt,
         'localResources': localResources,
         'localEnergy': localEnergy,
+        'pTibugOrganicRemainder': pTibugOrganicRemainder,
+        'pTibugEnergyRemainder': pTibugEnergyRemainder,
         'lastConsumptionAt': lastConsumptionAt == null
             ? null
             : Timestamp.fromDate(lastConsumptionAt!),
@@ -8638,6 +8971,11 @@ class PTibug {
     this.traitDataId,
     this.biologicalTraitId,
     this.biologicalTraitLevel = 0,
+    this.secondTraitId,
+    this.secondTraitLevel = 0,
+    this.isRenewed = false,
+    this.renewedAt,
+    this.renewalCount = 0,
     List<PTibugModuleType>? equippedModules,
     List<String>? equippedModuleInstanceIds,
     this.biome = PTibugBiome.savaneTropicale,
@@ -8663,6 +9001,11 @@ class PTibug {
   String? traitDataId;
   String? biologicalTraitId;
   int biologicalTraitLevel;
+  String? secondTraitId;
+  int secondTraitLevel;
+  bool isRenewed;
+  DateTime? renewedAt;
+  int renewalCount;
   final List<PTibugModuleType> equippedModules;
   final List<String> equippedModuleInstanceIds;
   PTibugBiome biome;
@@ -8700,6 +9043,12 @@ class PTibug {
         biologicalTraitLevel: Zone0GameState.instance._readInt(
           data['biologicalTraitLevel'],
         ),
+        secondTraitId: data['secondTraitId'] as String?,
+        secondTraitLevel:
+            Zone0GameState.instance._readInt(data['secondTraitLevel']),
+        isRenewed: data['isRenewed'] == true,
+        renewedAt: Zone0GameState.instance._readDate(data['renewedAt']),
+        renewalCount: Zone0GameState.instance._readInt(data['renewalCount']),
         equippedModules: (data['equippedModules'] as List? ?? const <dynamic>[])
             .map(
               (value) => ForageMission._enumByName(
@@ -8761,6 +9110,11 @@ class PTibug {
         'traitDataId': traitDataId,
         'biologicalTraitId': biologicalTraitId,
         'biologicalTraitLevel': biologicalTraitLevel,
+        'secondTraitId': secondTraitId,
+        'secondTraitLevel': secondTraitLevel,
+        'isRenewed': isRenewed,
+        'renewedAt': renewedAt == null ? null : Timestamp.fromDate(renewedAt!),
+        'renewalCount': renewalCount,
         'equippedModules': equippedModules.map((item) => item.name).toList(),
         'equippedModuleInstanceIds': equippedModuleInstanceIds,
         'biome': biome.name,
