@@ -22,4 +22,30 @@ void main() {
       3,
     );
   });
+
+  test('la Biomasse V1 couvre rendement, récupération et Revigorer', () {
+    final biomass = defaultLisiereForageConfig.biomass;
+
+    expect(biomass.maximumPercent, 100);
+    expect(biomass.missionConsumptionByIntensity[ForageIntensity.doux], 4);
+    expect(biomass.missionConsumptionByIntensity[ForageIntensity.normal], 8);
+    expect(
+      biomass.missionConsumptionByIntensity[ForageIntensity.intensif],
+      16,
+    );
+    expect(
+      biomass.resourceYieldTiers
+          .firstWhere((tier) => tier.contains(25))
+          .multiplier,
+      .75,
+    );
+    expect(
+      biomass.recoveryTiers.firstWhere((tier) => tier.contains(5)).multiplier,
+      16,
+    );
+    expect(
+      biomass.visualStates.firstWhere((state) => state.contains(85)).icon,
+      '🌿',
+    );
+  });
 }

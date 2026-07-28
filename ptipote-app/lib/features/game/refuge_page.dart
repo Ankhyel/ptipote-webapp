@@ -4762,6 +4762,11 @@ class _LisierePageState extends State<LisierePage> {
                           }).toList(),
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      _BiomeBiomassCard(
+                        gameState: widget.gameState,
+                        biome: _biome,
+                      ),
                       _ForageChoiceCard(
                         title: 'P’TIPOTE',
                         child: figurines.isEmpty
@@ -4842,10 +4847,11 @@ class _LisierePageState extends State<LisierePage> {
                         child: Wrap(
                           spacing: 8,
                           children: ForageIntensity.values.map((intensity) {
+                            final config =
+                                lisiereForageConfig.intensities[intensity]!;
                             return ChoiceChip(
                               label: Text(
-                                lisiereForageConfig
-                                    .intensities[intensity]!.label,
+                                '${config.label} · vitesse x${(1 / config.timeMultiplier).toStringAsFixed(2)}',
                               ),
                               selected: _intensity == intensity,
                               onSelected: (_) =>
@@ -5012,7 +5018,15 @@ class _LisierePageState extends State<LisierePage> {
       }
       rewards[entry.key] = math.max(0, value.round());
     }
-    return rewards;
+    final wasteReward = widget.gameState.estimatedBiomeWasteReward(
+      biome: _biome,
+      theoreticalHours: duration.theoreticalHours,
+      rewardMultiplier: intensity.rewardMultiplier,
+    );
+    if (wasteReward > 0) {
+      rewards['Déchets'] = wasteReward;
+    }
+    return widget.gameState.biomassAdjustedNaturalRewards(_biome, rewards);
   }
 
   int _riskPercent(PtipoteFigurine figurine) {
@@ -5371,6 +5385,67 @@ class _ForageChoiceCard extends StatelessWidget {
   }
 }
 
+class _BiomeBiomassCard extends StatelessWidget {
+  const _BiomeBiomassCard({required this.gameState, required this.biome});
+
+  final Zone0GameState gameState;
+  final ForageBiome biome;
+
+  @override
+  Widget build(BuildContext context) {
+    final biomass = gameState.biomassFor(biome);
+    final visual = gameState.biomassVisualStateFor(biome);
+    final maximum = lisiereForageConfig.biomass.maximumPercent;
+    final cost = gameState.biomassRevitalizeCost(biome);
+    final multiplier = gameState.biomassResourceMultiplierFor(biome);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Text(visual.icon, style: const TextStyle(fontSize: 24)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Biomasse · ${visual.label}',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                Text('$biomass%'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+                value: maximum <= 0 ? 0 : biomass / maximum),
+            const SizedBox(height: 8),
+            Text(
+              'Rendement naturel : x${multiplier.toStringAsFixed(2)} · Production P’TIBUG locale : x${gameState.biomassPTibugMultiplierFor(biome).toStringAsFixed(2)}',
+            ),
+            const SizedBox(height: 10),
+            FilledButton.tonalIcon(
+              onPressed: biomass >= maximum
+                  ? null
+                  : () {
+                      final result = gameState.revitalizeBiome(biome);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(result.message)),
+                      );
+                    },
+              icon: const Icon(Icons.eco_outlined),
+              label: Text(
+                'Revigorer · ${cost['Organique']} Organique · ${cost['Minéral']} Minéral',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ForageEstimateCard extends StatelessWidget {
   const _ForageEstimateCard({
     required this.estimate,
@@ -5391,18 +5466,14 @@ class _ForageEstimateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final durationConfig = lisiereForageConfig.durations[duration]!;
-    final intensityConfig = lisiereForageConfig.intensities[intensity]!;
     final wasteLevel = gameState.wasteLevelFor(biome);
     final wasteMaximum = lisiereForageConfig.wasteLevelMax;
     final wasteMultiplier = gameState.wasteMultiplierFor(biome);
     final wasteHoursPerLevel =
         lisiereForageConfig.biomes[biome]!.wasteHoursPerLevelRegeneration;
     final organicBonus = gameState.organicBonusForBiome(biome);
-    final wasteEstimate = gameState.estimatedBiomeWasteReward(
-      biome: biome,
-      theoreticalHours: durationConfig.theoreticalHours,
-      rewardMultiplier: intensityConfig.rewardMultiplier,
-    );
+    final biomass = gameState.biomassFor(biome);
+    final biomassState = gameState.biomassVisualStateFor(biome);
     final cellCount =
         pTibugConfig.maxCellsForMissionHours(durationConfig.theoreticalHours);
     final cellChanceLabel = <String>[
@@ -5424,6 +5495,12 @@ class _ForageEstimateCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text('Groupe : $selectedCount P’TIPOTE(s)'),
             Text('Gain : ${_formatRewards(estimate.rewards)}'),
+            Text(
+              'Biomasse : ${biomassState.icon} ${biomassState.label} · $biomass% · rendement x${gameState.biomassResourceMultiplierFor(biome).toStringAsFixed(2)}',
+            ),
+            Text(
+              'Consommation Biomasse : -${gameState.biomassMissionConsumption(intensity)}%',
+            ),
             Text('Cellules de données : $cellChanceLabel'),
             Text(
               'Déchets du biome : $wasteLevel / $wasteMaximum · '
@@ -5443,7 +5520,8 @@ class _ForageEstimateCard extends StatelessWidget {
                 ),
               )
             else
-              Text('Déchets estimés : +$wasteEstimate'),
+              const Text(
+                  'Le biome ne contient actuellement aucun Déchet récupérable.'),
             Text('Vitalité consommée : ${estimate.vitalityCost}'),
             Text('XP gagnée : ${estimate.xpGain} total'),
             Text('Sécurité locale : ${estimate.securityAtLaunch}%'),
@@ -7033,6 +7111,9 @@ class _TowerExplorationTab extends StatelessWidget {
                                 ),
                               Text(
                                 'Danger potentiel : ${lisiereForageConfig.biomes[biome]!.baseRiskPercent}%',
+                              ),
+                              Text(
+                                'Biomasse : ${gameState.biomassVisualStateFor(biome).icon} ${gameState.biomassVisualStateFor(biome).label} · ${gameState.biomassFor(biome)}%',
                               ),
                               if (!unlocked) ...<Widget>[
                                 Text(

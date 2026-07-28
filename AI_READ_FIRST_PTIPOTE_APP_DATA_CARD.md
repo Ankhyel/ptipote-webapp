@@ -1452,6 +1452,17 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 ### Déchets des biomes de Lisière
 
 - Le niveau de Déchets d’un biome remonte automatiquement, jusqu’au maximum configuré, même après fermeture de l’application. Chaque biome conserve son horodatage `lastWasteRegenerationAt` dans `users/{uid}/game/zone0.biomeSecurity`; les anciennes sauvegardes démarrent le nouveau cycle sans gain rétroactif.
+
+### Biomasse des biomes
+
+- Chaque biome de Lisière possède une Biomasse indépendante de `0` à `100`, sauvegardée avec son état dans `users/{uid}/game/zone0.biomeSecurity.<biome>.biomassPercent`. Elle ne remplace ni les Déchets du biome (butin recyclable) ni la Sécurité locale (risque).
+- Les intensités modifient aussi la durée réelle de mission : Douce est plus lente, Normale est équilibrée et Intensive est plus rapide. À la fin d’une mission, la Biomasse perd la consommation associée à son intensité (`doux`, `normal`, `intensif`), proportionnellement en cas de retour anticipé. Les Cellules de données, l’exploration et les objectifs restent possibles quel que soit le niveau de Biomasse.
+- Les ressources naturelles de mission (`Organique`, `Minéral`, `Déchets`) reçoivent le multiplicateur de rendement de Biomasse configuré : V1, 50–100 % = x1, 20–49 % = x0,75, 0–19 % = x0,5. Les autres récompenses ne sont pas réduites.
+- La Biomasse régénère automatiquement, point par point. Le temps de base et les paliers de multiplicateur sont configurés : V1 x1 au-dessus de 50 %, x2 entre 30–49 %, x4 entre 20–29 %, x8 entre 10–19 %, x16 entre 0–9 %. `lastBiomassRegenerationAt` évite tout gain rétroactif sur les anciennes sauvegardes.
+- `Revigorer` dépense Organique et Minéral pour restaurer un nombre configurable de points. Les coûts utilisent un multiplicateur configurable qui augmente quand la Biomasse est faible.
+- L’interface Lisière et les cartes de biomes de la Tour affichent l’état visuel configuré : 🌿 Luxuriante (80–100 %), 🌱 Stable (50–79 %), 🍂 Fragile (20–49 %), 🪨 Épuisée (0–19 %), avec barre et pourcentage dans la Lisière.
+- La production P’TIBUG applique la Biomasse après l’espèce, le bonus de biome, les Traits et les Modules. Le P’TIBUG contient désormais `refugeBiome` : tous les P’TIBUG existants sont migrés vers la Plaine, qui représente la Nurserie principale. Les futurs Refuges P’TIBUG n’auront qu’à modifier ce biome de Refuge ; ils ne créent ni n’améliorent de P’TIBUG.
+- Le Dashboard Lisière expose une carte `Biomasse` : maximum, consommation par intensité, seuils de rendement de mission et P’TIBUG, récupération, Revigorer, et états/pictogrammes. Les valeurs Dart restent le fallback versionné.
 - Le rythme `wasteHoursPerLevelRegeneration` est éditable dans chaque carte de biome du Dashboard Lisière. V1 : Plaine +1/h, Bassin minéral +1/2 h, Sous-bois +1/2 h, Colline +1/3 h. Une mission consomme les Déchets puis redémarre le cycle au moment de son retour.
 
 ### Plans Kernel et recettes Atelier

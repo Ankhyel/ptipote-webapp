@@ -1340,9 +1340,10 @@ function addKernelMission(event) {
 }
 
 function renderLisiereEditor() {
-  const { biomes = [], upcomingBiomes = [], durations = [], intensities = [], ...general } = zone0Settings.lisiere || {};
+  const { biomes = [], upcomingBiomes = [], durations = [], intensities = [], biomass = {}, ...general } = zone0Settings.lisiere || {};
   el.lisiereForageList.innerHTML = [
     configCard("Réglages généraux", "lisiere", general, [], { open: true, meta: "Temps, inventaire et sécurité" }),
+    configCard("Biomasse", "lisiere", biomass, ["biomass"], { open: true, meta: "Épuisement, rendement, récupération, Revigorer et Refuges P'TIBUG" }),
     configCard("Durées de mission", "lisiere", durations, ["durations"], { meta: "Durées et coût de vitalité" }),
     configCard("Intensités", "lisiere", intensities, ["intensities"], { meta: "Gains, fatigue et risque" }),
     ...biomes.map((biome, index) => configCard(biome.label || `Biome ${index + 1}`, "lisiere", biome, ["biomes", index], { meta: "Récompenses et risque" })),

@@ -29,6 +29,7 @@ class LisiereForageConfig {
     required this.biomes,
     required this.durations,
     required this.intensities,
+    required this.biomass,
   });
 
   final int forageTimeScale;
@@ -46,6 +47,67 @@ class LisiereForageConfig {
   final Map<ForageBiome, ForageBiomeConfig> biomes;
   final Map<ForageDuration, ForageDurationConfig> durations;
   final Map<ForageIntensity, ForageIntensityConfig> intensities;
+  final BiomassConfig biomass;
+}
+
+class BiomassTierConfig {
+  const BiomassTierConfig({
+    required this.minimumPercent,
+    required this.maximumPercent,
+    required this.multiplier,
+  });
+
+  final int minimumPercent;
+  final int maximumPercent;
+  final double multiplier;
+
+  bool contains(int percent) =>
+      percent >= minimumPercent && percent <= maximumPercent;
+}
+
+class BiomassVisualStateConfig {
+  const BiomassVisualStateConfig({
+    required this.minimumPercent,
+    required this.maximumPercent,
+    required this.label,
+    required this.icon,
+  });
+
+  final int minimumPercent;
+  final int maximumPercent;
+  final String label;
+  final String icon;
+
+  bool contains(int percent) =>
+      percent >= minimumPercent && percent <= maximumPercent;
+}
+
+class BiomassConfig {
+  const BiomassConfig({
+    required this.maximumPercent,
+    required this.missionConsumptionByIntensity,
+    required this.resourceYieldTiers,
+    required this.recoveryHoursPerPoint,
+    required this.recoveryTiers,
+    required this.revitalizeBaseOrganicCost,
+    required this.revitalizeBaseMineralCost,
+    required this.revitalizeGain,
+    required this.revitalizeCostTiers,
+    required this.ptibugYieldTiers,
+    required this.visualStates,
+  });
+
+  final int maximumPercent;
+  final Map<ForageIntensity, int> missionConsumptionByIntensity;
+  final List<BiomassTierConfig> resourceYieldTiers;
+  final double recoveryHoursPerPoint;
+  final List<BiomassTierConfig> recoveryTiers;
+  final int revitalizeBaseOrganicCost;
+  final int revitalizeBaseMineralCost;
+  final int revitalizeGain;
+  final List<BiomassTierConfig> revitalizeCostTiers;
+  final List<BiomassTierConfig> ptibugYieldTiers;
+  final List<BiomassVisualStateConfig> visualStates;
 }
 
 class ForageBiomeConfig {
@@ -103,6 +165,7 @@ class ForageIntensityConfig {
   const ForageIntensityConfig({
     required this.label,
     required this.rewardMultiplier,
+    required this.timeMultiplier,
     required this.vitalityMultiplier,
     required this.riskModifierPercent,
     required this.zoneFatigueLabel,
@@ -110,6 +173,10 @@ class ForageIntensityConfig {
 
   final String label;
   final double rewardMultiplier;
+
+  /// Real mission duration multiplier. Intensive runs finish faster; Douce
+  /// runs take longer while consuming less Biomass.
+  final double timeMultiplier;
   final double vitalityMultiplier;
   final int riskModifierPercent;
   final String zoneFatigueLabel;
@@ -215,6 +282,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
     ForageIntensity.doux: ForageIntensityConfig(
       label: 'Doux',
       rewardMultiplier: 0.75,
+      timeMultiplier: 1.25,
       vitalityMultiplier: 0.75,
       riskModifierPercent: -5,
       zoneFatigueLabel: 'faible',
@@ -222,6 +290,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
     ForageIntensity.normal: ForageIntensityConfig(
       label: 'Normal',
       rewardMultiplier: 1,
+      timeMultiplier: 1,
       vitalityMultiplier: 1,
       riskModifierPercent: 0,
       zoneFatigueLabel: 'normale',
@@ -229,11 +298,62 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
     ForageIntensity.intensif: ForageIntensityConfig(
       label: 'Intensif',
       rewardMultiplier: 1.35,
+      timeMultiplier: .75,
       vitalityMultiplier: 1.25,
       riskModifierPercent: 10,
       zoneFatigueLabel: 'forte',
     ),
   },
+  biomass: BiomassConfig(
+    maximumPercent: 100,
+    missionConsumptionByIntensity: <ForageIntensity, int>{
+      ForageIntensity.doux: 4,
+      ForageIntensity.normal: 8,
+      ForageIntensity.intensif: 16,
+    },
+    resourceYieldTiers: <BiomassTierConfig>[
+      BiomassTierConfig(minimumPercent: 50, maximumPercent: 100, multiplier: 1),
+      BiomassTierConfig(
+          minimumPercent: 20, maximumPercent: 49, multiplier: .75),
+      BiomassTierConfig(minimumPercent: 0, maximumPercent: 19, multiplier: .5),
+    ],
+    recoveryHoursPerPoint: 1,
+    recoveryTiers: <BiomassTierConfig>[
+      BiomassTierConfig(minimumPercent: 50, maximumPercent: 100, multiplier: 1),
+      BiomassTierConfig(minimumPercent: 30, maximumPercent: 49, multiplier: 2),
+      BiomassTierConfig(minimumPercent: 20, maximumPercent: 29, multiplier: 4),
+      BiomassTierConfig(minimumPercent: 10, maximumPercent: 19, multiplier: 8),
+      BiomassTierConfig(minimumPercent: 0, maximumPercent: 9, multiplier: 16),
+    ],
+    revitalizeBaseOrganicCost: 4,
+    revitalizeBaseMineralCost: 2,
+    revitalizeGain: 10,
+    revitalizeCostTiers: <BiomassTierConfig>[
+      BiomassTierConfig(minimumPercent: 50, maximumPercent: 100, multiplier: 1),
+      BiomassTierConfig(minimumPercent: 30, maximumPercent: 49, multiplier: 2),
+      BiomassTierConfig(minimumPercent: 10, maximumPercent: 29, multiplier: 3),
+      BiomassTierConfig(minimumPercent: 0, maximumPercent: 9, multiplier: 4),
+    ],
+    ptibugYieldTiers: <BiomassTierConfig>[
+      BiomassTierConfig(minimumPercent: 50, maximumPercent: 100, multiplier: 1),
+      BiomassTierConfig(
+          minimumPercent: 20, maximumPercent: 49, multiplier: .75),
+      BiomassTierConfig(minimumPercent: 0, maximumPercent: 19, multiplier: .5),
+    ],
+    visualStates: <BiomassVisualStateConfig>[
+      BiomassVisualStateConfig(
+          minimumPercent: 80,
+          maximumPercent: 100,
+          label: 'Luxuriante',
+          icon: '🌿'),
+      BiomassVisualStateConfig(
+          minimumPercent: 50, maximumPercent: 79, label: 'Stable', icon: '🌱'),
+      BiomassVisualStateConfig(
+          minimumPercent: 20, maximumPercent: 49, label: 'Fragile', icon: '🍂'),
+      BiomassVisualStateConfig(
+          minimumPercent: 0, maximumPercent: 19, label: 'Épuisée', icon: '🪨'),
+    ],
+  ),
 );
 
 LisiereForageConfig lisiereForageConfig = defaultLisiereForageConfig;

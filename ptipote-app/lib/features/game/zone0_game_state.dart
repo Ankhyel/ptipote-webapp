@@ -4003,6 +4003,8 @@ class Zone0GameState extends ChangeNotifier {
       case PTibugSpecies.arac:
         add(_pTibugAracResourceForBiome(bug.biome), 3);
     }
+    final biome = pTibugConfig.biomes[bug.biome];
+    biome?.localProductionBonus[bug.species]?.forEach(add);
     final trait = bug.traitDataId == null
         ? null
         : pTibugTraitData
@@ -4035,9 +4037,11 @@ class Zone0GameState extends ChangeNotifier {
           add(_pTibugAracResourceForBiome(bug.biome), claws);
       }
     }
-    final biome = pTibugConfig.biomes[bug.biome];
-    biome?.localProductionBonus[bug.species]?.forEach(add);
-    return output;
+    final multiplier = biomassPTibugMultiplierFor(bug.refugeBiome);
+    return <String, int>{
+      for (final entry in output.entries)
+        entry.key: math.max(0, (entry.value * multiplier).round()),
+    };
   }
 
   /// Effects that do not create an inventory resource are consumed here by
@@ -4135,6 +4139,29 @@ class Zone0GameState extends ChangeNotifier {
     return const Zone0ActionResult(
       success: true,
       message: 'P’TIBUG rangé dans la Nurserie.',
+    );
+  }
+
+  /// Future Refuge buildings use this transition. The main Nurserie is the
+  /// Plaine Refuge by default; moving a P'TIBUG immediately switches only its
+  /// local Biomass source, never its species, Traits or stored production.
+  Zone0ActionResult movePTibugToRefugeBiome(
+    PTibug bug,
+    ForageBiome refugeBiome,
+  ) {
+    if (!isBiomeUnlocked(refugeBiome)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce biome ne possède pas encore de Refuge disponible.',
+      );
+    }
+    bug.refugeBiome = refugeBiome;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          '${bug.displayName} utilise désormais la Biomasse de ${lisiereForageConfig.biomes[refugeBiome]!.label}.',
     );
   }
 
@@ -5399,6 +5426,7 @@ class Zone0GameState extends ChangeNotifier {
   }) {
     final start = DateTime.now();
     final durationConfig = lisiereForageConfig.durations[duration]!;
+    final intensityConfig = lisiereForageConfig.intensities[intensity]!;
     for (final figurine in figurines) {
       levelOverrides.putIfAbsent(figurine.id, () => figurine.levelValue);
       xpOverrides.putIfAbsent(figurine.id, () => figurine.xpValue);
@@ -5425,7 +5453,16 @@ class Zone0GameState extends ChangeNotifier {
       intensity: intensity,
       startTime: start,
       endTime: start.add(
-        durationConfig.realDuration(lisiereForageConfig.forageTimeScale),
+        Duration(
+          seconds: math.max(
+            1,
+            (durationConfig
+                        .realDuration(lisiereForageConfig.forageTimeScale)
+                        .inSeconds *
+                    intensityConfig.timeMultiplier)
+                .round(),
+          ),
+        ),
       ),
       expectedRewards: expectedRewards,
       vitalityCost: totalVitalityCost,
@@ -5592,6 +5629,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     for (final state in biomeSecurity.values) {
       changed = _regenerateBiomeWaste(state: state, now: current) || changed;
+      changed = _regenerateBiomeBiomass(state: state, now: current) || changed;
       final lastActivity = state.lastMissionAt ?? state.lastPatrolAt;
       if (lastActivity == null ||
           current.difference(lastActivity).inHours >=
@@ -6723,17 +6761,15 @@ class Zone0GameState extends ChangeNotifier {
       rewards['Organique'] =
           ((rewards['Organique'] ?? 0) * (1 + organicBonus)).round();
     }
-    final wasteReward = estimatedBiomeWasteReward(
-      biome: mission.biome,
-      theoreticalHours: duration.theoreticalHours,
-      rewardMultiplier: intensity.rewardMultiplier * rewardRatio,
-    );
-    if (wasteReward > 0) {
-      rewards['Déchets'] = wasteReward;
-    }
     _depleteBiomeWaste(
       biome: mission.biome,
       theoreticalHours: duration.theoreticalHours,
+      completionRatio: rewardRatio,
+      completedAt: completedAt,
+    );
+    _depleteBiomeBiomass(
+      biome: mission.biome,
+      intensity: mission.intensity,
       completionRatio: rewardRatio,
       completedAt: completedAt,
     );
@@ -6889,6 +6925,106 @@ class Zone0GameState extends ChangeNotifier {
         lisiereForageConfig.wasteLevelMax;
   }
 
+  int biomassFor(ForageBiome biome) {
+    final maximum = lisiereForageConfig.biomass.maximumPercent;
+    return (biomeSecurity[biome]?.biomassPercent ?? maximum)
+        .clamp(0, maximum)
+        .toInt();
+  }
+
+  BiomassVisualStateConfig biomassVisualStateFor(ForageBiome biome) {
+    final percent = biomassFor(biome);
+    return lisiereForageConfig.biomass.visualStates
+            .where((state) => state.contains(percent))
+            .firstOrNull ??
+        lisiereForageConfig.biomass.visualStates.last;
+  }
+
+  double _biomassMultiplierFor(int percent, List<BiomassTierConfig> tiers) =>
+      tiers.where((tier) => tier.contains(percent)).firstOrNull?.multiplier ??
+      1;
+
+  double biomassResourceMultiplierFor(ForageBiome biome) =>
+      _biomassMultiplierFor(
+        biomassFor(biome),
+        lisiereForageConfig.biomass.resourceYieldTiers,
+      );
+
+  double biomassPTibugMultiplierFor(ForageBiome biome) => _biomassMultiplierFor(
+        biomassFor(biome),
+        lisiereForageConfig.biomass.ptibugYieldTiers,
+      );
+
+  Map<String, int> biomassAdjustedNaturalRewards(
+    ForageBiome biome,
+    Map<String, int> rewards,
+  ) {
+    final multiplier = biomassResourceMultiplierFor(biome);
+    const naturalResources = <String>{'Organique', 'Minéral', 'Déchets'};
+    return <String, int>{
+      for (final entry in rewards.entries)
+        entry.key: naturalResources.contains(entry.key)
+            ? math.max(0, (entry.value * multiplier).round())
+            : entry.value,
+    };
+  }
+
+  int biomassMissionConsumption(ForageIntensity intensity) => math.max(
+        0,
+        lisiereForageConfig.biomass.missionConsumptionByIntensity[intensity] ??
+            0,
+      );
+
+  Map<String, int> biomassRevitalizeCost(ForageBiome biome) {
+    final config = lisiereForageConfig.biomass;
+    final multiplier = _biomassMultiplierFor(
+      biomassFor(biome),
+      config.revitalizeCostTiers,
+    );
+    return <String, int>{
+      'Organique': math.max(
+        1,
+        (config.revitalizeBaseOrganicCost * multiplier).ceil(),
+      ),
+      'Minéral': math.max(
+        1,
+        (config.revitalizeBaseMineralCost * multiplier).ceil(),
+      ),
+    };
+  }
+
+  Zone0ActionResult revitalizeBiome(ForageBiome biome) {
+    final state = biomeSecurity.putIfAbsent(
+      biome,
+      () => BiomeSecurityState.initial(biome),
+    );
+    final maximum = lisiereForageConfig.biomass.maximumPercent;
+    if (state.biomassPercent >= maximum) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'La Biomasse de ce biome est déjà au maximum.',
+      );
+    }
+    final cost = biomassRevitalizeCost(biome);
+    if (!hasResources(cost)) {
+      return Zone0ActionResult(
+        success: false,
+        message: missingResourcesLabel(cost),
+      );
+    }
+    removeResources(cost);
+    final gain = math.max(1, lisiereForageConfig.biomass.revitalizeGain);
+    state.biomassPercent = math.min(maximum, state.biomassPercent + gain);
+    state.lastBiomassRegenerationAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          'Biomasse de ${lisiereForageConfig.biomes[biome]!.label} : +$gain%.',
+    );
+  }
+
   double wasteMultiplierFor(ForageBiome biome) {
     final maximum = lisiereForageConfig.wasteLevelMax;
     if (maximum <= 0) return 0;
@@ -6959,6 +7095,54 @@ class Zone0GameState extends ChangeNotifier {
     state.lastWasteRegenerationAt = state.wasteLevel >= maximum
         ? now
         : last.add(Duration(minutes: gainedLevels * minutesPerLevel));
+    return true;
+  }
+
+  void _depleteBiomeBiomass({
+    required ForageBiome biome,
+    required ForageIntensity intensity,
+    required double completionRatio,
+    required DateTime completedAt,
+  }) {
+    final base = biomassMissionConsumption(intensity);
+    if (base <= 0) return;
+    final consumed = math.max(1, (base * completionRatio).ceil());
+    final state = biomeSecurity.putIfAbsent(
+      biome,
+      () => BiomeSecurityState.initial(biome),
+    );
+    state.biomassPercent = math.max(0, state.biomassPercent - consumed);
+    state.lastBiomassRegenerationAt = completedAt;
+  }
+
+  bool _regenerateBiomeBiomass({
+    required BiomeSecurityState state,
+    required DateTime now,
+  }) {
+    final config = lisiereForageConfig.biomass;
+    if (state.biomassPercent >= config.maximumPercent) return false;
+    final last = state.lastBiomassRegenerationAt;
+    if (last == null || now.isBefore(last)) {
+      state.lastBiomassRegenerationAt = now;
+      return true;
+    }
+    var cursor = last;
+    var biomass = state.biomassPercent;
+    while (biomass < config.maximumPercent) {
+      final multiplier = _biomassMultiplierFor(biomass, config.recoveryTiers);
+      final minutes = math.max(
+        1,
+        (config.recoveryHoursPerPoint * multiplier * 60).round(),
+      );
+      final next = cursor.add(Duration(minutes: minutes));
+      if (next.isAfter(now)) break;
+      biomass += 1;
+      cursor = next;
+    }
+    if (biomass == state.biomassPercent) return false;
+    state.biomassPercent = biomass;
+    state.lastBiomassRegenerationAt =
+        biomass >= config.maximumPercent ? now : cursor;
     return true;
   }
 
@@ -8077,6 +8261,7 @@ class PTibug {
     List<PTibugModuleType>? equippedModules,
     List<String>? equippedModuleInstanceIds,
     this.biome = PTibugBiome.savaneTropicale,
+    this.refugeBiome = ForageBiome.plaineRiche,
     this.stockFullNotified = false,
     this.nextProductionAt,
   })  : storedResources = storedResources ?? <String, int>{},
@@ -8097,6 +8282,10 @@ class PTibug {
   final List<PTibugModuleType> equippedModules;
   final List<String> equippedModuleInstanceIds;
   PTibugBiome biome;
+
+  /// The P'TIBUG works in one Refuge at a time. The main Nurserie is Plaine;
+  /// future local Refuges will only update this biome association.
+  ForageBiome refugeBiome;
   bool stockFullNotified;
   DateTime? nextProductionAt;
   int get storedAmount =>
@@ -8140,6 +8329,11 @@ class PTibug {
           '${data['biome'] ?? ''}',
           PTibugBiome.savaneTropicale,
         ),
+        refugeBiome: ForageMission._enumByName(
+          ForageBiome.values,
+          '${data['refugeBiome'] ?? ''}',
+          ForageBiome.plaineRiche,
+        ),
         stockFullNotified: data['stockFullNotified'] == true,
         nextProductionAt: Zone0GameState.instance._readDate(
           data['nextProductionAt'],
@@ -8172,6 +8366,7 @@ class PTibug {
         'equippedModules': equippedModules.map((item) => item.name).toList(),
         'equippedModuleInstanceIds': equippedModuleInstanceIds,
         'biome': biome.name,
+        'refugeBiome': refugeBiome.name,
         'stockFullNotified': stockFullNotified,
         'nextProductionAt': nextProductionAt == null
             ? null
@@ -8603,10 +8798,12 @@ class BiomeSecurityState {
     this.explorationProgress = 0,
     // Keep a const-compatible fallback for legacy states; loaded settings clamp it.
     this.wasteLevel = 10,
+    this.biomassPercent = 100,
     this.lastPatrolAt,
     this.lastMissionAt,
     this.lastDecayAt,
     this.lastWasteRegenerationAt,
+    this.lastBiomassRegenerationAt,
   });
 
   factory BiomeSecurityState.initial(ForageBiome biome) => BiomeSecurityState(
@@ -8614,6 +8811,7 @@ class BiomeSecurityState {
         status: biome == ForageBiome.plaineRiche
             ? BiomeDiscoveryStatus.unlocked
             : BiomeDiscoveryStatus.discovered,
+        biomassPercent: lisiereForageConfig.biomass.maximumPercent,
       );
 
   factory BiomeSecurityState.fromFirebase(
@@ -8640,11 +8838,21 @@ class BiomeSecurityState {
                 .clamp(0, defaultLisiereForageConfig.wasteLevelMax)
                 .toInt()
             : defaultLisiereForageConfig.wasteLevelMax,
+        // Existing biomes begin fully preserved. Avoid retroactive recovery
+        // while still making their future Biomass persist independently.
+        biomassPercent: data.containsKey('biomassPercent')
+            ? ForageMission._readStaticInt(data['biomassPercent'])
+                .clamp(0, lisiereForageConfig.biomass.maximumPercent)
+                .toInt()
+            : lisiereForageConfig.biomass.maximumPercent,
         lastPatrolAt: ForageMission._readDate(data['lastPatrolAt']),
         lastMissionAt: ForageMission._readDate(data['lastMissionAt']),
         lastDecayAt: ForageMission._readDate(data['lastDecayAt']),
         lastWasteRegenerationAt: ForageMission._readDate(
           data['lastWasteRegenerationAt'],
+        ),
+        lastBiomassRegenerationAt: ForageMission._readDate(
+          data['lastBiomassRegenerationAt'],
         ),
       );
 
@@ -8653,10 +8861,12 @@ class BiomeSecurityState {
   int localSecurity;
   int explorationProgress;
   int wasteLevel;
+  int biomassPercent;
   DateTime? lastPatrolAt;
   DateTime? lastMissionAt;
   DateTime? lastDecayAt;
   DateTime? lastWasteRegenerationAt;
+  DateTime? lastBiomassRegenerationAt;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'securitySchema': 2,
@@ -8664,6 +8874,7 @@ class BiomeSecurityState {
         'localSecurity': localSecurity,
         'explorationProgress': explorationProgress,
         'wasteLevel': wasteLevel,
+        'biomassPercent': biomassPercent,
         'lastPatrolAt':
             lastPatrolAt == null ? null : Timestamp.fromDate(lastPatrolAt!),
         'lastMissionAt':
@@ -8673,6 +8884,9 @@ class BiomeSecurityState {
         'lastWasteRegenerationAt': lastWasteRegenerationAt == null
             ? null
             : Timestamp.fromDate(lastWasteRegenerationAt!),
+        'lastBiomassRegenerationAt': lastBiomassRegenerationAt == null
+            ? null
+            : Timestamp.fromDate(lastBiomassRegenerationAt!),
       };
 }
 

@@ -9,6 +9,43 @@
   "wasteMultiplierPerLevel": 0.15,
   "wasteHoursPerLevelDepletion": 1,
   "organicBonusAtZeroWaste": 0.3,
+  "biomass": {
+    "maximumPercent": 100,
+    "missionConsumptionByIntensity": {"doux": 4, "normal": 8, "intensif": 16},
+    "resourceYieldTiers": [
+      {"minimumPercent": 50, "maximumPercent": 100, "multiplier": 1.0},
+      {"minimumPercent": 20, "maximumPercent": 49, "multiplier": 0.75},
+      {"minimumPercent": 0, "maximumPercent": 19, "multiplier": 0.5}
+    ],
+    "recoveryHoursPerPoint": 1,
+    "recoveryTiers": [
+      {"minimumPercent": 50, "maximumPercent": 100, "multiplier": 1},
+      {"minimumPercent": 30, "maximumPercent": 49, "multiplier": 2},
+      {"minimumPercent": 20, "maximumPercent": 29, "multiplier": 4},
+      {"minimumPercent": 10, "maximumPercent": 19, "multiplier": 8},
+      {"minimumPercent": 0, "maximumPercent": 9, "multiplier": 16}
+    ],
+    "revitalizeBaseOrganicCost": 4,
+    "revitalizeBaseMineralCost": 2,
+    "revitalizeGain": 10,
+    "revitalizeCostTiers": [
+      {"minimumPercent": 50, "maximumPercent": 100, "multiplier": 1},
+      {"minimumPercent": 30, "maximumPercent": 49, "multiplier": 2},
+      {"minimumPercent": 10, "maximumPercent": 29, "multiplier": 3},
+      {"minimumPercent": 0, "maximumPercent": 9, "multiplier": 4}
+    ],
+    "ptibugYieldTiers": [
+      {"minimumPercent": 50, "maximumPercent": 100, "multiplier": 1.0},
+      {"minimumPercent": 20, "maximumPercent": 49, "multiplier": 0.75},
+      {"minimumPercent": 0, "maximumPercent": 19, "multiplier": 0.5}
+    ],
+    "visualStates": [
+      {"minimumPercent": 80, "maximumPercent": 100, "label": "Luxuriante", "icon": "🌿"},
+      {"minimumPercent": 50, "maximumPercent": 79, "label": "Stable", "icon": "🌱"},
+      {"minimumPercent": 20, "maximumPercent": 49, "label": "Fragile", "icon": "🍂"},
+      {"minimumPercent": 0, "maximumPercent": 19, "label": "Épuisée", "icon": "🪨"}
+    ]
+  },
   "xpGainByDuration": {
     "oneHour": 10,
     "twoHours": 18,
@@ -27,9 +64,9 @@
     { "id": "tenHours", "label": "10h", "theoreticalHours": 10, "realMinutes": 100, "baseVitalityCost": 80 }
   ],
   "intensities": [
-    { "id": "doux", "label": "Doux", "rewardMultiplier": 0.75, "vitalityMultiplier": 0.75, "riskModifierPercent": -5 },
-    { "id": "normal", "label": "Normal", "rewardMultiplier": 1.0, "vitalityMultiplier": 1.0, "riskModifierPercent": 0 },
-    { "id": "intensif", "label": "Intensif", "rewardMultiplier": 1.35, "vitalityMultiplier": 1.25, "riskModifierPercent": 10 }
+    { "id": "doux", "label": "Doux", "rewardMultiplier": 0.75, "timeMultiplier": 1.25, "vitalityMultiplier": 0.75, "riskModifierPercent": -5 },
+    { "id": "normal", "label": "Normal", "rewardMultiplier": 1.0, "timeMultiplier": 1.0, "vitalityMultiplier": 1.0, "riskModifierPercent": 0 },
+    { "id": "intensif", "label": "Intensif", "rewardMultiplier": 1.35, "timeMultiplier": 0.75, "vitalityMultiplier": 1.25, "riskModifierPercent": 10 }
   ],
   "biomes": [
     {

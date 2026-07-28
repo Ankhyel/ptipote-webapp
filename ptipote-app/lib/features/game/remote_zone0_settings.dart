@@ -915,6 +915,95 @@ LisiereForageConfig _lisiere(Object? value) {
       for (final key in ForageBiome.values)
         key: _biome(key, biomeById[key.name]),
     },
+    biomass: _biomass(_map(raw['biomass'])),
+  );
+}
+
+List<BiomassTierConfig> _biomassTiers(
+  Object? value,
+  List<BiomassTierConfig> fallback,
+) {
+  final raw = value is List ? value : null;
+  if (raw == null) return fallback;
+  final tiers = raw
+      .map(_map)
+      .whereType<Map<String, dynamic>>()
+      .map(
+        (item) => BiomassTierConfig(
+          minimumPercent: _int(item['minimumPercent'], 0),
+          maximumPercent: _int(item['maximumPercent'], 100),
+          multiplier: _double(item['multiplier'], 1),
+        ),
+      )
+      .toList(growable: false);
+  return tiers.isEmpty ? fallback : tiers;
+}
+
+List<BiomassVisualStateConfig> _biomassVisualStates(
+  Object? value,
+  List<BiomassVisualStateConfig> fallback,
+) {
+  final raw = value is List ? value : null;
+  if (raw == null) return fallback;
+  final states = raw
+      .map(_map)
+      .whereType<Map<String, dynamic>>()
+      .map(
+        (item) => BiomassVisualStateConfig(
+          minimumPercent: _int(item['minimumPercent'], 0),
+          maximumPercent: _int(item['maximumPercent'], 100),
+          label: _string(item['label'], ''),
+          icon: _string(item['icon'], ''),
+        ),
+      )
+      .where((item) => item.label.isNotEmpty && item.icon.isNotEmpty)
+      .toList(growable: false);
+  return states.isEmpty ? fallback : states;
+}
+
+BiomassConfig _biomass(Map<String, dynamic>? raw) {
+  final base = defaultLisiereForageConfig.biomass;
+  if (raw == null) return base;
+  final consumption = _map(raw['missionConsumptionByIntensity']);
+  return BiomassConfig(
+    maximumPercent: _int(raw['maximumPercent'], base.maximumPercent),
+    missionConsumptionByIntensity: <ForageIntensity, int>{
+      for (final intensity in ForageIntensity.values)
+        intensity: _int(
+          consumption?[intensity.name],
+          base.missionConsumptionByIntensity[intensity] ?? 0,
+        ),
+    },
+    resourceYieldTiers: _biomassTiers(
+      raw['resourceYieldTiers'],
+      base.resourceYieldTiers,
+    ),
+    recoveryHoursPerPoint: _double(
+      raw['recoveryHoursPerPoint'],
+      base.recoveryHoursPerPoint,
+    ),
+    recoveryTiers: _biomassTiers(raw['recoveryTiers'], base.recoveryTiers),
+    revitalizeBaseOrganicCost: _int(
+      raw['revitalizeBaseOrganicCost'],
+      base.revitalizeBaseOrganicCost,
+    ),
+    revitalizeBaseMineralCost: _int(
+      raw['revitalizeBaseMineralCost'],
+      base.revitalizeBaseMineralCost,
+    ),
+    revitalizeGain: _int(raw['revitalizeGain'], base.revitalizeGain),
+    revitalizeCostTiers: _biomassTiers(
+      raw['revitalizeCostTiers'],
+      base.revitalizeCostTiers,
+    ),
+    ptibugYieldTiers: _biomassTiers(
+      raw['ptibugYieldTiers'],
+      base.ptibugYieldTiers,
+    ),
+    visualStates: _biomassVisualStates(
+      raw['visualStates'],
+      base.visualStates,
+    ),
   );
 }
 
@@ -935,6 +1024,7 @@ ForageIntensityConfig _intensity(
   return ForageIntensityConfig(
     label: _string(raw?['label'], base.label),
     rewardMultiplier: _double(raw?['rewardMultiplier'], base.rewardMultiplier),
+    timeMultiplier: _double(raw?['timeMultiplier'], base.timeMultiplier),
     vitalityMultiplier: _double(
       raw?['vitalityMultiplier'],
       base.vitalityMultiplier,
