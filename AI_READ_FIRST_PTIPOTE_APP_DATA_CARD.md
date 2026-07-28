@@ -1451,6 +1451,16 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 
 ### Déchets des biomes de Lisière
 
+### Gestion territoriale P’TIBUG
+
+- La Lisière expose désormais deux onglets principaux : `Missions` (ancien contenu Récolte intact) et `P’TIBUG`. Ce dernier est le tableau territorial : Plaine/Nurserie d’abord, puis chaque biome découvert et enfin les P’TIBUG inactifs.
+- L’affectation est persistée par `PTibug.assignedBuildingId`. La migration lit les anciens `assignedSlotIndex`, conserve les résidents qui tiennent dans la capacité de la Nurserie de Plaine et place tout dépassement ou bâtiment inconnu dans les inactifs, sans supprimer P’TIBUG, niveau, Traits, Modules, ressources ou Cellules.
+- `PTibugTerritoryBuilding` sauvegarde le biome, type Nurserie/Refuge, niveau, stocks locaux Organique/Minéral, énergie locale et horodatage de consommation dans `users/{uid}/game/zone0.ptibug.territoryBuildings`. Les futurs Refuges restent non construits tant qu’un chantier réel ne les crée pas.
+- Les P’TIBUG ne tirent plus leurs consommations de l’inventaire global : le joueur transfère Organique/Minéral vers le bâtiment et ouvre une Bio-batterie pour y convertir l’énergie avec le même ratio que le Fablab. Les coûts hors ligne partent de `lastConsumptionAt`; un manque rend les résidents inactifs sans coût partiel, et ils reprennent après alimentation.
+- Chaque P’TIBUG garde `storedResources`/`storedMaterialProduction` séparé de `storedDataCells`. Le bouton Récolter transfère séparément les matériaux (sans dépasser l’inventaire global) et les Cellules vers la réserve Kernel; un reliquat matériel reste sur le P’TIBUG.
+- La carte territoriale, l’Aperçu et la Collection doivent s’appuyer sur `pTibugTerritoryDailyConsumption`, seul calcul du bilan quotidien, afin d’éviter une valeur purement visuelle différente de la simulation. Les multiplicateurs de Biomasse déjà existants restent appliqués selon le biome du bâtiment.
+- Le Dashboard P’TIBUG contient la carte `Gestion territoriale P'TIBUG`, publiée dans `gameConfigs/zone0.zone0Settings.ptibug.territory` : plafonds des niveaux, capacité par niveau, fréquences/coûts Organique, Minéral et Énergie, surcharge Module, consommation des bâtiments et capacité de Cellules.
+
 - Le niveau de Déchets d’un biome remonte automatiquement, jusqu’au maximum configuré, même après fermeture de l’application. Chaque biome conserve son horodatage `lastWasteRegenerationAt` dans `users/{uid}/game/zone0.biomeSecurity`; les anciennes sauvegardes démarrent le nouveau cycle sans gain rétroactif.
 
 ### Biomasse des biomes

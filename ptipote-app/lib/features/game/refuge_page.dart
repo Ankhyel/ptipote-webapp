@@ -4687,20 +4687,16 @@ class _LisierePageState extends State<LisierePage> {
 
   @override
   Widget build(BuildContext context) {
-    final unlockedBiomes =
-        ForageBiome.values.where(widget.gameState.isBiomeUnlocked).toList();
     return DefaultTabController(
-      length: 1 + unlockedBiomes.length,
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Lisière proche'),
           bottom: TabBar(
             isScrollable: true,
             tabs: <Widget>[
-              const Tab(text: 'Récolte'),
-              ...unlockedBiomes.map(
-                (biome) => Tab(text: lisiereForageConfig.biomes[biome]!.label),
-              ),
+              const Tab(text: 'Missions'),
+              const Tab(text: 'P’TIBUG'),
             ],
           ),
         ),
@@ -4923,12 +4919,9 @@ class _LisierePageState extends State<LisierePage> {
                 },
               ),
             ),
-            ...unlockedBiomes.map(
-              (biome) => _BiomeBuildingsTab(
-                gameState: widget.gameState,
-                biome: biome,
-                campHeartState: widget.campHeartState,
-              ),
+            _PTibugTerritoryTab(
+              gameState: widget.gameState,
+              campHeartState: widget.campHeartState,
             ),
           ],
         ),
@@ -5261,6 +5254,497 @@ class ForageGroupEstimate {
     return rewards.values.fold(0, (total, amount) => total + amount);
   }
 }
+
+class _PTibugTerritoryTab extends StatelessWidget {
+  const _PTibugTerritoryTab({
+    required this.gameState,
+    required this.campHeartState,
+  });
+
+  final Zone0GameState gameState;
+  final CampHeartState campHeartState;
+
+  @override
+  Widget build(BuildContext context) {
+    final biomes = ForageBiome.values.where(gameState.isBiomeUnlocked).toList();
+    final plaine =
+        biomes.where((biome) => biome == ForageBiome.plaineRiche).firstOrNull;
+    final otherBiomes =
+        biomes.where((biome) => biome != ForageBiome.plaineRiche);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: <Widget>[
+        const Text(
+          'Territoire P’TIBUG',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 22),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+            'Gérez les affectations, les stocks locaux et chaque production individuelle.'),
+        const SizedBox(height: 12),
+        if (plaine != null)
+          _PTibugTerritoryBiomeCard(
+            gameState: gameState,
+            biome: plaine,
+            building: gameState.plaineNurseryTerritory,
+            campHeartState: campHeartState,
+          ),
+        ...otherBiomes.map(
+          (biome) => Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: _PTibugTerritoryBiomeCard(
+              gameState: gameState,
+              biome: biome,
+              building:
+                  gameState.territoryBuildingForId('refuge-${biome.name}'),
+              campHeartState: campHeartState,
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        const Text('P’TIBUG inactifs',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+        const SizedBox(height: 6),
+        DragTarget<PTibug>(
+          onWillAcceptWithDetails: (_) => true,
+          onAcceptWithDetails: (details) => _message(
+            context,
+            gameState.setPTibugInactive(details.data).message,
+          ),
+          builder: (context, candidates, _) {
+            final inactive = gameState.pTibugs
+                .where((bug) => bug.assignedBuildingId == null)
+                .toList(growable: false);
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color: candidates.isEmpty
+                    ? null
+                    : Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: .08),
+                border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outline
+                        .withValues(alpha: .35)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: inactive.isEmpty
+                    ? const Text(
+                        'Aucun P’TIBUG inactif. Glissez un P’TIBUG ici pour le désaffecter.')
+                    : Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: inactive
+                            .map((bug) => _PTibugTerritoryBugCard(
+                                  gameState: gameState,
+                                  bug: bug,
+                                  building: null,
+                                ))
+                            .toList(),
+                      ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  void _message(BuildContext context, String message) =>
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+}
+
+class _PTibugTerritoryBiomeCard extends StatelessWidget {
+  const _PTibugTerritoryBiomeCard({
+    required this.gameState,
+    required this.biome,
+    required this.building,
+    required this.campHeartState,
+  });
+
+  final Zone0GameState gameState;
+  final ForageBiome biome;
+  final PTibugTerritoryBuilding? building;
+  final CampHeartState campHeartState;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = lisiereForageConfig.biomes[biome]!;
+    final biomass = gameState.biomassFor(biome);
+    final visual = gameState.biomassVisualStateFor(biome);
+    final activeBuilding = building?.isBuilt == true ? building : null;
+    if (activeBuilding == null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(config.label,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w900, fontSize: 19)),
+              Text(
+                  '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
+              const SizedBox(height: 10),
+              const Text('Emplacement réservé pour un futur Refuge P’TIBUG.'),
+            ],
+          ),
+        ),
+      );
+    }
+    final residents = gameState.pTibugsForTerritory(activeBuilding.id);
+    final capacity = gameState.pTibugTerritoryCapacity(activeBuilding);
+    final consumption =
+        gameState.pTibugTerritoryDailyConsumption(activeBuilding);
+    final production = <String, int>{};
+    for (final bug in residents) {
+      gameState.pTibugProductionFor(bug).forEach(
+            (resource, amount) =>
+                production[resource] = (production[resource] ?? 0) + amount,
+          );
+    }
+    return DragTarget<PTibug>(
+      onWillAcceptWithDetails: (details) =>
+          residents.length < capacity ||
+          details.data.assignedBuildingId == activeBuilding.id,
+      onAcceptWithDetails: (details) => _message(
+        context,
+        gameState
+            .assignPTibugToTerritory(details.data, activeBuilding.id)
+            .message,
+      ),
+      builder: (context, candidates, _) => Card(
+        color: candidates.isEmpty
+            ? null
+            : Theme.of(context).colorScheme.primary.withValues(alpha: .06),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                      child: Text(config.label,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w900, fontSize: 19))),
+                  Text(
+                      activeBuilding.kind == PTibugTerritoryKind.nursery
+                          ? 'Nurserie'
+                          : 'Refuge',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w900)),
+                ],
+              ),
+              Text(
+                  '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
+              const SizedBox(height: 10),
+              Text(
+                  'Niveau ${activeBuilding.level} · ${residents.length}/$capacity P’TIBUG actifs',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text(
+                  'Production locale : ${production.isEmpty ? 'Aucune' : production.entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
+              const SizedBox(height: 8),
+              _PTibugTerritoryStockSummary(
+                  building: activeBuilding, consumption: consumption),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  OutlinedButton.icon(
+                    onPressed: () =>
+                        _showTransferSheet(context, activeBuilding),
+                    icon: const Icon(Icons.add_box_outlined),
+                    label: const Text('Alimenter'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: gameState.bioBatteries <= 0
+                        ? null
+                        : () => _message(
+                            context,
+                            gameState
+                                .openBioBatteryForPTibugTerritory(
+                                    activeBuilding.id)
+                                .message),
+                    icon: const Icon(Icons.battery_charging_full_outlined),
+                    label: const Text('Ouvrir une Bio-batterie'),
+                  ),
+                  if (activeBuilding.kind == PTibugTerritoryKind.nursery)
+                    OutlinedButton.icon(
+                      onPressed: () =>
+                          Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => PTibugNurseryPage(
+                          gameState: gameState,
+                          campHeartLevel: campHeartState.campHeartLevel,
+                          campHeartState: campHeartState,
+                        ),
+                      )),
+                      icon: const Icon(Icons.home_work_outlined),
+                      label: const Text('Entrer dans la Nurserie'),
+                    ),
+                ],
+              ),
+              if (residents.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: residents
+                      .map((bug) => _PTibugTerritoryBugCard(
+                          gameState: gameState,
+                          bug: bug,
+                          building: activeBuilding))
+                      .toList(),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showTransferSheet(
+          BuildContext context, PTibugTerritoryBuilding building) =>
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const Text('Alimenter les stocks locaux',
+                    style: TextStyle(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                ...(<String>['Organique', 'Minéral'].map(
+                  (resource) => Wrap(
+                    spacing: 8,
+                    children: const <int>[1, 5, 10]
+                        .map((amount) => OutlinedButton(
+                              onPressed:
+                                  gameState.resourceAmount(resource) < amount
+                                      ? null
+                                      : () {
+                                          final result = gameState
+                                              .transferResourcesToPTibugTerritory(
+                                            territoryId: building.id,
+                                            resources: <String, int>{
+                                              resource: amount
+                                            },
+                                          );
+                                          Navigator.of(sheetContext).pop();
+                                          _message(context, result.message);
+                                        },
+                              child: Text('+$amount $resource'),
+                            ))
+                        .toList(),
+                  ),
+                )),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  void _message(BuildContext context, String message) =>
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+}
+
+class _PTibugTerritoryStockSummary extends StatelessWidget {
+  const _PTibugTerritoryStockSummary(
+      {required this.building, required this.consumption});
+  final PTibugTerritoryBuilding building;
+  final PTibugTerritoryConsumption consumption;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+              'Organique : ${building.resourceAmount('Organique')} · -${consumption.organicPerDay}/jour'),
+          Text(
+              'Minéral : ${building.resourceAmount('Minéral')} · -${consumption.mineralPerDay}/jour'),
+          Text(
+              'Énergie : ${building.localEnergy} · -${consumption.energyPerDay}/jour'),
+          const SizedBox(height: 4),
+          LinearProgressIndicator(
+              value: (building.localEnergy /
+                      math.max(10, consumption.energyPerDay * 2))
+                  .clamp(0.0, 1.0)),
+        ],
+      );
+}
+
+class _PTibugTerritoryBugCard extends StatelessWidget {
+  const _PTibugTerritoryBugCard(
+      {required this.gameState, required this.bug, required this.building});
+  final Zone0GameState gameState;
+  final PTibug bug;
+  final PTibugTerritoryBuilding? building;
+
+  @override
+  Widget build(BuildContext context) {
+    final inactive =
+        bug.assignedBuildingId == null || bug.inactiveReason != null;
+    final card = Card(
+      child: SizedBox(
+        width: 170,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Opacity(
+            opacity: inactive ? .58 : 1,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                InkWell(
+                  onTap: () => _showDetails(context),
+                  child: Row(children: <Widget>[
+                    CircleAvatar(
+                      child: Icon(_territorySpeciesIcon(bug.species)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: Text(bug.displayName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w900))),
+                  ]),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                    '${pTibugConfig.species[bug.species]!.displayName} · niv. ${bug.level}'),
+                Text(inactive ? (bug.inactiveReason ?? 'Inactif') : 'Actif'),
+                Text(
+                    'Production : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
+                Text(
+                    'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
+                const SizedBox(height: 6),
+                OutlinedButton(
+                  onPressed: bug.storedAmount == 0 &&
+                          bug.storedDataCells.isEmpty
+                      ? null
+                      : () => _message(context,
+                          gameState.collectPTibugProductionFor(bug).message),
+                  child: const Text('Récolter'),
+                ),
+                TextButton(
+                  onPressed: () => _showAssign(context),
+                  child: const Text('Affecter'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    return LongPressDraggable<PTibug>(
+      data: bug,
+      feedback: Material(
+          color: Colors.transparent, child: SizedBox(width: 170, child: card)),
+      childWhenDragging: Opacity(opacity: .3, child: card),
+      child: card,
+    );
+  }
+
+  Future<void> _showAssign(BuildContext context) => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) {
+          final destinations = gameState.activePTibugTerritories;
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              children: <Widget>[
+                const ListTile(title: Text('Affecter ce P’TIBUG')),
+                ...destinations.map((destination) {
+                  final current =
+                      gameState.pTibugsForTerritory(destination.id).length;
+                  final capacity =
+                      gameState.pTibugTerritoryCapacity(destination);
+                  final available = current < capacity ||
+                      bug.assignedBuildingId == destination.id;
+                  return ListTile(
+                    enabled: available,
+                    title: Text(destination.kind == PTibugTerritoryKind.nursery
+                        ? 'Nurserie de la Plaine'
+                        : 'Refuge'),
+                    subtitle: Text('$current/$capacity emplacement(s)'),
+                    onTap: !available
+                        ? null
+                        : () {
+                            final result = gameState.assignPTibugToTerritory(
+                                bug, destination.id);
+                            Navigator.of(sheetContext).pop();
+                            _message(context, result.message);
+                          },
+                  );
+                }),
+                ListTile(
+                  title: const Text('P’TIBUG inactifs'),
+                  subtitle: const Text('Ne produit ni ne consomme.'),
+                  onTap: () {
+                    final result = gameState.setPTibugInactive(bug);
+                    Navigator.of(sheetContext).pop();
+                    _message(context, result.message);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+  Future<void> _showDetails(BuildContext context) => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (_) => SafeArea(
+            child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(bug.displayName,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 20)),
+                Text(
+                    '${pTibugConfig.species[bug.species]!.displayName} · niveau ${bug.level}'),
+                Text(
+                    'Biome : ${lisiereForageConfig.biomes[bug.refugeBiome]!.label}'),
+                Text(
+                    'Production : ${gameState.pTibugProductionFor(bug).entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
+                Text(
+                    'Stock matériel : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
+                Text(
+                    'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
+                Text(
+                    'État : ${bug.inactiveReason ?? (bug.assignedBuildingId == null ? 'Inactif' : 'Actif')}'),
+              ]),
+        )),
+      );
+
+  void _message(BuildContext context, String message) =>
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+}
+
+IconData _territorySpeciesIcon(PTibugSpecies species) => switch (species) {
+      PTibugSpecies.scarabe => Icons.shield_outlined,
+      PTibugSpecies.hyme => Icons.hive_outlined,
+      PTibugSpecies.arac => Icons.hub_outlined,
+    };
 
 class _BiomeBuildingsTab extends StatelessWidget {
   const _BiomeBuildingsTab({
@@ -8879,8 +9363,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             isScrollable: true,
             tabs: <Widget>[
               Tab(text: 'Aperçu'),
-              Tab(text: 'Créer'),
               Tab(text: 'Collection'),
+              Tab(text: 'Créer'),
               Tab(text: 'Données'),
               Tab(text: 'Amélioration'),
             ],
@@ -8889,8 +9373,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         body: TabBarView(
           children: <Widget>[
             _overview(),
-            _creation(),
             _collection(),
+            _creation(),
             _dataAndModules(),
             _BuildingUpgradeTab(
               gameState: widget.gameState,
@@ -8915,9 +9399,10 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   }
 
   Widget _overview() {
-    final producing = widget.gameState.pTibugs
-        .where((bug) => bug.assignedSlotIndex != null)
-        .toList();
+    final nursery = widget.gameState.plaineNurseryTerritory;
+    final producing = widget.gameState.pTibugsForTerritory(nursery.id);
+    final consumption =
+        widget.gameState.pTibugTerritoryDailyConsumption(nursery);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
@@ -8935,8 +9420,36 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   ),
                 ),
                 Text(
-                  '${widget.gameState.pTibugs.where((bug) => bug.assignedSlotIndex != null).length}/${widget.gameState.pTibugActiveSlots} P’TIBUG actifs',
+                  '${producing.length}/${widget.gameState.pTibugTerritoryCapacity(nursery)} P’TIBUG actifs',
                 ),
+                Text(
+                    'Niveau maximum : ${pTibugConfig.territory.nurseryMaximumLevel} · capacité ${widget.gameState.pTibugTerritoryCapacity(nursery)}'),
+                Text(
+                    'Organique local : ${nursery.resourceAmount('Organique')} · -${consumption.organicPerDay}/jour'),
+                Text(
+                    'Minéral local : ${nursery.resourceAmount('Minéral')} · -${consumption.mineralPerDay}/jour'),
+                Text(
+                    'Énergie locale : ${nursery.localEnergy} · -${consumption.energyPerDay}/jour'),
+                const SizedBox(height: 6),
+                LinearProgressIndicator(
+                    value: (nursery.localEnergy /
+                            math.max(10, consumption.energyPerDay * 2))
+                        .clamp(0.0, 1.0)),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, children: <Widget>[
+                  OutlinedButton.icon(
+                      onPressed: () => _showNurseryTransfer(nursery),
+                      icon: const Icon(Icons.add_box_outlined),
+                      label: const Text('Alimenter')),
+                  FilledButton.icon(
+                      onPressed: widget.gameState.bioBatteries <= 0
+                          ? null
+                          : () => _message(widget.gameState
+                              .openBioBatteryForPTibugTerritory(nursery.id)
+                              .message),
+                      icon: const Icon(Icons.battery_charging_full_outlined),
+                      label: const Text('Ouvrir une Bio-batterie')),
+                ]),
                 const Text(
                     'Chaque P’TIBUG conserve sa production jusqu’à sa récolte.'),
               ],
@@ -8958,6 +9471,47 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       ],
     );
   }
+
+  Future<void> _showNurseryTransfer(PTibugTerritoryBuilding building) =>
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                const SizedBox(
+                  width: double.infinity,
+                  child: Text('Alimenter la Nurserie',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                ),
+                ...(<String>['Organique', 'Minéral'].expand(
+                  (resource) => const <int>[1, 5, 10].map(
+                    (amount) => OutlinedButton(
+                      onPressed:
+                          widget.gameState.resourceAmount(resource) < amount
+                              ? null
+                              : () {
+                                  final result = widget.gameState
+                                      .transferResourcesToPTibugTerritory(
+                                    territoryId: building.id,
+                                    resources: <String, int>{resource: amount},
+                                  );
+                                  Navigator.of(sheetContext).pop();
+                                  _message(result.message);
+                                },
+                      child: Text('+$amount $resource'),
+                    ),
+                  ),
+                )),
+              ],
+            ),
+          ),
+        ),
+      );
 
   Widget _creationInProgressCard() {
     final order = widget.gameState.pTibugCreationOrder!;
@@ -9175,6 +9729,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       Text(
                         'XP ${bug.xp} · Réserve ${bug.storedAmount}/${widget.gameState.pTibugCapacityFor(bug)}',
                       ),
+                      Text(
+                        'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}',
+                      ),
                       const SizedBox(height: 8),
                       if (bug.biologicalTraitId != null)
                         _LoadoutPill(
@@ -9236,40 +9793,29 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        bug.assignedSlotIndex == null
-                            ? 'En réserve'
-                            : 'Production active · prochain cycle ${bug.nextProductionAt == null ? 'à lancer' : _countdownLabel(bug.nextProductionAt!)}',
+                        bug.assignedBuildingId == null
+                            ? 'Inactif · ${bug.inactiveReason ?? 'en attente d’affectation'}'
+                            : '${widget.gameState.territoryBuildingForId(bug.assignedBuildingId)?.kind == PTibugTerritoryKind.nursery ? 'Nurserie de la Plaine' : 'Refuge'} · ${bug.inactiveReason ?? (bug.nextProductionAt == null ? 'cycle en attente' : 'prochain cycle ${_countdownLabel(bug.nextProductionAt!)}')}',
                       ),
                       const SizedBox(height: 8),
                       OutlinedButton.icon(
-                        onPressed: bug.storedAmount == 0
-                            ? null
-                            : () => _message(
-                                  widget.gameState
-                                      .collectPTibugProductionFor(bug)
-                                      .message,
-                                ),
+                        onPressed:
+                            bug.storedAmount == 0 && bug.storedDataCells.isEmpty
+                                ? null
+                                : () => _message(
+                                      widget.gameState
+                                          .collectPTibugProductionFor(bug)
+                                          .message,
+                                    ),
                         icon: const Icon(Icons.inventory_2_outlined),
                         label: const Text('Récolter'),
                       ),
                       const SizedBox(height: 8),
-                      bug.assignedSlotIndex == null
-                          ? FilledButton.icon(
-                              onPressed: () => _message(
-                                widget.gameState
-                                    .assignPTibugSlot(bug, _firstFreeSlot())
-                                    .message,
-                              ),
-                              icon: const Icon(Icons.play_arrow_outlined),
-                              label: const Text('Installer en production'),
-                            )
-                          : OutlinedButton.icon(
-                              onPressed: () => _message(
-                                widget.gameState.removePTibugSlot(bug).message,
-                              ),
-                              icon: const Icon(Icons.inventory_2_outlined),
-                              label: const Text('Retirer de la production'),
-                            ),
+                      FilledButton.icon(
+                        onPressed: () => _showTerritoryAssignment(bug),
+                        icon: const Icon(Icons.swap_horiz_outlined),
+                        label: const Text('Affecter'),
+                      ),
                     ],
                   ),
                 ),
@@ -9277,6 +9823,55 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             ),
           ),
         ],
+      );
+
+  Future<void> _showTerritoryAssignment(PTibug bug) =>
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) {
+          final destinations = widget.gameState.activePTibugTerritories;
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              children: <Widget>[
+                const ListTile(title: Text('Choisir une affectation')),
+                ...destinations.map((building) {
+                  final used = widget.gameState
+                      .pTibugsForTerritory(building.id)
+                      .where((item) => item.id != bug.id)
+                      .length;
+                  final capacity =
+                      widget.gameState.pTibugTerritoryCapacity(building);
+                  return ListTile(
+                    enabled: used < capacity,
+                    title: Text(building.kind == PTibugTerritoryKind.nursery
+                        ? 'Nurserie de la Plaine'
+                        : 'Refuge'),
+                    subtitle: Text('$used/$capacity emplacement(s) occupé(s)'),
+                    onTap: used >= capacity
+                        ? null
+                        : () {
+                            final result = widget.gameState
+                                .assignPTibugToTerritory(bug, building.id);
+                            Navigator.of(sheetContext).pop();
+                            _message(result.message);
+                          },
+                  );
+                }),
+                ListTile(
+                  title: const Text('P’TIBUG inactifs'),
+                  subtitle: const Text('Ne produit ni ne consomme.'),
+                  onTap: () {
+                    final result = widget.gameState.setPTibugInactive(bug);
+                    Navigator.of(sheetContext).pop();
+                    _message(result.message);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
       );
 
   Widget _dataAndModules() {

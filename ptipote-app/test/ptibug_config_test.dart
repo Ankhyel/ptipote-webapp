@@ -67,4 +67,14 @@ void main() {
     });
     expect(plans['solar-light']!.dataRequirements['energie'], 8);
   });
+
+  test('la gestion territoriale applique une capacité par niveau configurable',
+      () {
+    final territory = defaultPTibugConfig.territory;
+
+    expect(territory.nurseryCapacityForLevel(1), 1);
+    expect(territory.nurseryCapacityForLevel(6), 6);
+    expect(territory.refugeCapacityForLevel(4), 4);
+    expect(territory.dataCellStorageCapacity, 3);
+  });
 }

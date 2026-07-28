@@ -98,6 +98,8 @@ class Zone0GameState extends ChangeNotifier {
   final List<PTibugModuleCraftOrder> pTibugModuleCraftOrders =
       <PTibugModuleCraftOrder>[];
   final List<PTibugCapsule> pTibugCapsules = <PTibugCapsule>[];
+  final Map<String, PTibugTerritoryBuilding> pTibugTerritoryBuildings =
+      <String, PTibugTerritoryBuilding>{};
   bool starterPTibugChoiceMade = false;
   final Map<String, ConstructionProject> constructionProjects =
       <String, ConstructionProject>{};
@@ -212,6 +214,33 @@ class Zone0GameState extends ChangeNotifier {
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
   bool get isMarketBuilt => marketLevel >= 1;
   bool get isPlaineNurseryBuilt => plaineNurseryLevel >= 1;
+
+  static const String plaineNurseryTerritoryId = 'nursery-plaine';
+
+  PTibugTerritoryBuilding? territoryBuildingForId(String? id) =>
+      id == null ? null : pTibugTerritoryBuildings[id];
+
+  PTibugTerritoryBuilding get plaineNurseryTerritory =>
+      pTibugTerritoryBuildings.putIfAbsent(
+        plaineNurseryTerritoryId,
+        () => PTibugTerritoryBuilding.nurseryPlaine(
+          level: plaineNurseryLevel,
+        ),
+      );
+
+  List<PTibugTerritoryBuilding> get activePTibugTerritories =>
+      pTibugTerritoryBuildings.values
+          .where((building) => building.isBuilt)
+          .toList(growable: false);
+
+  List<PTibug> pTibugsForTerritory(String territoryId) => pTibugs
+      .where((bug) => bug.assignedBuildingId == territoryId)
+      .toList(growable: false);
+
+  int pTibugTerritoryCapacity(PTibugTerritoryBuilding building) =>
+      building.kind == PTibugTerritoryKind.nursery
+          ? pTibugConfig.territory.nurseryCapacityForLevel(building.level)
+          : pTibugConfig.territory.refugeCapacityForLevel(building.level);
 
   // Patterns are now discovered by the Kernel requirements. This legacy flag
   // stays persisted only to read existing saves; it must no longer open a
@@ -3117,7 +3146,7 @@ class Zone0GameState extends ChangeNotifier {
         'market' => 5,
         'house' => housingConfig.houseMaxLevel,
         'housing' => 99,
-        'plaineNursery' => 3,
+        'plaineNursery' => pTibugConfig.territory.nurseryMaximumLevel,
         _ => 1,
       };
 
@@ -3309,6 +3338,10 @@ class Zone0GameState extends ChangeNotifier {
         housingCapacity = housingUnits * housingConfig.residentsPerHousingUnit;
       case 'plaineNursery':
         plaineNurseryLevel = project.currentLevel;
+        final nursery = plaineNurseryTerritory;
+        nursery
+          ..level = plaineNurseryLevel
+          ..isBuilt = plaineNurseryLevel > 0;
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
     }
     if (!project.notificationCreated) {
@@ -3809,6 +3842,9 @@ class Zone0GameState extends ChangeNotifier {
   bool resolvePTibugProduction({DateTime? now}) {
     final current = now ?? DateTime.now();
     var changed = false;
+    if (_resolvePTibugTerritoryConsumption(current)) {
+      changed = true;
+    }
     if (_resolvePTibugModuleCrafts(current)) {
       changed = true;
     }
@@ -3841,7 +3877,9 @@ class Zone0GameState extends ChangeNotifier {
       refreshKernelMissions();
       changed = true;
     }
-    for (final bug in pTibugs.where((item) => item.assignedSlotIndex != null)) {
+    for (final bug in pTibugs.where(
+      (item) => item.assignedBuildingId != null && item.inactiveReason == null,
+    )) {
       final capacity = _pTibugCapacity(bug);
       // Also pause saves written by older builds: their full-stock marker may
       // coexist with an overdue cycle timestamp, especially after capacity
@@ -3924,6 +3962,126 @@ class Zone0GameState extends ChangeNotifier {
       unawaited(saveRuntimeToFirebase());
     }
     return changed;
+  }
+
+  bool _resolvePTibugTerritoryConsumption(DateTime current) {
+    var changed = false;
+    for (final building in activePTibugTerritories) {
+      final previous = building.lastConsumptionAt ?? current;
+      final elapsedHours = math.max(0, current.difference(previous).inHours);
+      final residents = pTibugsForTerritory(building.id);
+      final organicCycles =
+          elapsedHours ~/ math.max(1, pTibugConfig.territory.organicEveryHours);
+      final mineralCycles =
+          elapsedHours ~/ math.max(1, pTibugConfig.territory.mineralEveryHours);
+      final bugEnergyCycles =
+          elapsedHours ~/ math.max(1, pTibugConfig.territory.energyEveryHours);
+      final moduleEnergyCycles = elapsedHours ~/
+          math.max(1, pTibugConfig.territory.moduleEnergyEveryHours);
+      final buildingEnergyEveryHours =
+          building.kind == PTibugTerritoryKind.nursery
+              ? pTibugConfig.territory.nurseryEnergyEveryHours
+              : pTibugConfig.territory.refugeEnergyEveryHours;
+      final buildingEnergyAmount = building.kind == PTibugTerritoryKind.nursery
+          ? pTibugConfig.territory.nurseryEnergyAmount
+          : pTibugConfig.territory.refugeEnergyAmount;
+      final buildingEnergyCycles =
+          elapsedHours ~/ math.max(1, buildingEnergyEveryHours);
+      final equippedResidents = residents
+          .where((bug) =>
+              bug.equippedModules.isNotEmpty ||
+              bug.equippedModuleInstanceIds.isNotEmpty)
+          .length;
+      final organicNeed = residents.length *
+          organicCycles *
+          pTibugConfig.territory.organicAmount;
+      final mineralNeed = residents.length *
+          mineralCycles *
+          pTibugConfig.territory.mineralAmount;
+      final energyNeed = buildingEnergyCycles * buildingEnergyAmount +
+          residents.length *
+              bugEnergyCycles *
+              pTibugConfig.territory.energyAmount +
+          equippedResidents *
+              moduleEnergyCycles *
+              pTibugConfig.territory.moduleEnergyAmount;
+      if (organicNeed == 0 && mineralNeed == 0 && energyNeed == 0) {
+        for (final bug in residents) {
+          if (bug.inactiveReason != null) {
+            bug.inactiveReason = null;
+            bug.nextProductionAt ??= current.add(_pTibugCycleDuration(bug));
+            changed = true;
+          }
+        }
+        continue;
+      }
+      final missing = building.resourceAmount('Organique') < organicNeed
+          ? 'Organique insuffisant'
+          : building.resourceAmount('Minéral') < mineralNeed
+              ? 'Minéral insuffisant'
+              : building.localEnergy < energyNeed
+                  ? 'Énergie locale insuffisante'
+                  : null;
+      if (missing != null) {
+        for (final bug in residents) {
+          bug
+            ..inactiveReason = missing
+            ..nextProductionAt = null;
+        }
+        building.lastConsumptionAt = current;
+        changed = true;
+        continue;
+      }
+      if (organicNeed > 0) {
+        building.localResources['Organique'] =
+            building.resourceAmount('Organique') - organicNeed;
+      }
+      if (mineralNeed > 0) {
+        building.localResources['Minéral'] =
+            building.resourceAmount('Minéral') - mineralNeed;
+      }
+      if (energyNeed > 0) building.localEnergy -= energyNeed;
+      building.lastConsumptionAt = current;
+      for (final bug in residents) {
+        if (bug.inactiveReason != null) {
+          bug.inactiveReason = null;
+          bug.nextProductionAt ??= current.add(_pTibugCycleDuration(bug));
+        }
+      }
+      changed = true;
+    }
+    return changed;
+  }
+
+  PTibugTerritoryConsumption pTibugTerritoryDailyConsumption(
+    PTibugTerritoryBuilding building,
+  ) {
+    final residents = pTibugsForTerritory(building.id);
+    final territory = pTibugConfig.territory;
+    int perDay(int amount, int everyHours) =>
+        (amount * 24 / math.max(1, everyHours)).ceil();
+    final equipped = residents
+        .where((bug) =>
+            bug.equippedModules.isNotEmpty ||
+            bug.equippedModuleInstanceIds.isNotEmpty)
+        .length;
+    final buildingEnergy = building.kind == PTibugTerritoryKind.nursery
+        ? perDay(
+            territory.nurseryEnergyAmount, territory.nurseryEnergyEveryHours)
+        : perDay(
+            territory.refugeEnergyAmount, territory.refugeEnergyEveryHours);
+    return PTibugTerritoryConsumption(
+      organicPerDay: residents.length *
+          perDay(territory.organicAmount, territory.organicEveryHours),
+      mineralPerDay: residents.length *
+          perDay(territory.mineralAmount, territory.mineralEveryHours),
+      energyPerDay: buildingEnergy +
+          residents.length *
+              perDay(territory.energyAmount, territory.energyEveryHours) +
+          equipped *
+              perDay(territory.moduleEnergyAmount,
+                  territory.moduleEnergyEveryHours),
+    );
   }
 
   int get pTibugActiveSlots => pTibugConfig.slotsForLevel(plaineNurseryLevel);
@@ -4114,31 +4272,98 @@ class Zone0GameState extends ChangeNotifier {
       };
 
   Zone0ActionResult assignPTibugSlot(PTibug bug, int slot) {
-    if (slot < 0 ||
-        slot >= pTibugActiveSlots ||
-        pTibugs.any(
-          (item) => item.id != bug.id && item.assignedSlotIndex == slot,
-        )) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Slot indisponible.',
-      );
-    }
-    bug.assignedSlotIndex = slot;
-    bug.nextProductionAt ??= DateTime.now().add(_pTibugCycleDuration(bug));
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
-    return const Zone0ActionResult(success: true, message: 'P’TIBUG installé.');
+    return assignPTibugToTerritory(bug, plaineNurseryTerritoryId);
   }
 
   Zone0ActionResult removePTibugSlot(PTibug bug) {
+    return setPTibugInactive(bug);
+  }
+
+  Zone0ActionResult assignPTibugToTerritory(PTibug bug, String territoryId) {
+    final building = territoryBuildingForId(territoryId);
+    if (building == null || !building.isBuilt) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce bâtiment P’TIBUG n’est pas encore construit.',
+      );
+    }
+    final residents = pTibugsForTerritory(territoryId)
+        .where((item) => item.id != bug.id)
+        .length;
+    if (residents >= pTibugTerritoryCapacity(building)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucun emplacement libre dans ce bâtiment.',
+      );
+    }
+    bug
+      ..assignedBuildingId = territoryId
+      ..refugeBiome = building.biome
+      ..assignedSlotIndex = residents
+      ..inactiveReason = null
+      ..nextProductionAt ??= DateTime.now().add(_pTibugCycleDuration(bug));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          '${bug.displayName} affecté à ${building.kind == PTibugTerritoryKind.nursery ? 'la Nurserie' : 'ce Refuge'}.',
+    );
+  }
+
+  Zone0ActionResult setPTibugInactive(PTibug bug) {
     bug.assignedSlotIndex = null;
-    bug.nextProductionAt = null;
+    bug
+      ..assignedBuildingId = null
+      ..nextProductionAt = null
+      ..inactiveReason = 'En attente d’affectation';
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
       success: true,
-      message: 'P’TIBUG rangé dans la Nurserie.',
+      message: 'P’TIBUG placé dans les inactifs.',
+    );
+  }
+
+  Zone0ActionResult transferResourcesToPTibugTerritory({
+    required String territoryId,
+    required Map<String, int> resources,
+  }) {
+    final building = territoryBuildingForId(territoryId);
+    if (building == null ||
+        !building.isBuilt ||
+        resources.values.any((v) => v < 0)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Transfert impossible.');
+    }
+    if (!hasResources(resources) || !removeResources(resources)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Inventaire insuffisant.');
+    }
+    resources.forEach((resource, amount) {
+      building.localResources[resource] =
+          building.resourceAmount(resource) + amount;
+    });
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Stocks locaux alimentés.');
+  }
+
+  Zone0ActionResult openBioBatteryForPTibugTerritory(String territoryId) {
+    final building = territoryBuildingForId(territoryId);
+    if (building == null || !building.isBuilt || bioBatteries <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Bio-batterie indisponible.');
+    }
+    bioBatteries -= 1;
+    building.localEnergy += wasteRecyclerConfig.energyUnitsPerBioBattery;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          '+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie locale.',
     );
   }
 
@@ -4204,29 +4429,38 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult collectPTibugProductionFor(PTibug bug) {
-    if (bug.storedResources.isEmpty) {
+    if (bug.storedResources.isEmpty && bug.storedDataCells.isEmpty) {
       return const Zone0ActionResult(
         success: false,
         message: 'Aucune production prête.',
       );
     }
     final output = Map<String, int>.from(bug.storedResources);
-    if (!hasInventoryCapacityFor(output)) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Inventaire insuffisant.',
-      );
+    final materialResult = output.isEmpty ? null : addResources(output);
+    bug.storedResources
+      ..clear()
+      ..addAll(materialResult?.pending ?? const <String, int>{});
+    final collectedCells = bug.storedDataCells.length;
+    final collectedMaterials =
+        output.values.fold<int>(0, (sum, value) => sum + value) -
+            (materialResult?.pending.values
+                    .fold<int>(0, (sum, value) => sum + value) ??
+                0);
+    if (collectedCells > 0) {
+      pTibugDataCells.addAll(bug.storedDataCells);
+      bug.storedDataCells.clear();
     }
-    addResources(output);
-    bug.storedResources.clear();
     bug.stockFullNotified = false;
-    bug.nextProductionAt = DateTime.now().add(_pTibugCycleDuration(bug));
+    if (bug.assignedBuildingId != null && bug.inactiveReason == null) {
+      bug.nextProductionAt = DateTime.now().add(_pTibugCycleDuration(bug));
+    }
     emitKernelProgressEvent(KernelProgressEventType.ptibugProductionCollected);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: 'Production de ${bug.displayName} récupérée.',
+      message:
+          '${bug.displayName} : $collectedMaterials ressource(s) et $collectedCells Cellule(s) récupérée(s).',
     );
   }
 
@@ -5067,7 +5301,10 @@ class Zone0GameState extends ChangeNotifier {
       }
       final ptibugData = data['ptibug'];
       if (ptibugData is Map) {
-        plaineNurseryLevel = _readInt(ptibugData['nurseryLevel']).clamp(0, 3);
+        plaineNurseryLevel = _readInt(ptibugData['nurseryLevel']).clamp(
+          0,
+          pTibugConfig.territory.nurseryMaximumLevel,
+        );
         activePTibugPatterns
           ..clear()
           ..addAll(
@@ -5088,6 +5325,47 @@ class Zone0GameState extends ChangeNotifier {
                 .whereType<Map>()
                 .map(PTibug.fromFirebase),
           );
+        pTibugTerritoryBuildings
+          ..clear()
+          ..addEntries(
+            (ptibugData['territoryBuildings'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(PTibugTerritoryBuilding.fromFirebase)
+                .where((building) => building.id.isNotEmpty)
+                .map((building) => MapEntry(building.id, building)),
+          );
+        final nursery = pTibugTerritoryBuildings.putIfAbsent(
+          plaineNurseryTerritoryId,
+          () => PTibugTerritoryBuilding.nurseryPlaine(
+            level: plaineNurseryLevel,
+          ),
+        );
+        nursery
+          ..level = plaineNurseryLevel
+          ..isBuilt = plaineNurseryLevel > 0
+          ..lastConsumptionAt ??= DateTime.now();
+        final nurseryCapacity = pTibugTerritoryCapacity(nursery);
+        var assignedNursery = 0;
+        for (final bug in pTibugs) {
+          // Existing saves had a single slot system. Preserve the old active
+          // residents in the Plaine nursery, and place any overflow safely in
+          // the inactive reserve rather than duplicating or deleting a bug.
+          if (bug.assignedBuildingId == null && bug.assignedSlotIndex != null) {
+            bug.assignedBuildingId = plaineNurseryTerritoryId;
+          }
+          if (bug.assignedBuildingId == plaineNurseryTerritoryId) {
+            if (assignedNursery >= nurseryCapacity) {
+              bug.assignedBuildingId = null;
+              bug.assignedSlotIndex = null;
+            } else {
+              bug.assignedSlotIndex = assignedNursery++;
+            }
+          } else if (bug.assignedBuildingId != null &&
+              !pTibugTerritoryBuildings.containsKey(bug.assignedBuildingId)) {
+            bug.assignedBuildingId = null;
+            bug.assignedSlotIndex = null;
+          }
+        }
         pTibugTraitData
           ..clear()
           ..addAll(
@@ -7594,6 +7872,9 @@ class Zone0GameState extends ChangeNotifier {
           'starterChoiceMade': starterPTibugChoiceMade,
           'creation': pTibugCreationOrder?.toFirebase(),
           'items': pTibugs.map((item) => item.toFirebase()).toList(),
+          'territoryBuildings': pTibugTerritoryBuildings.values
+              .map((item) => item.toFirebase())
+              .toList(),
           'traitData':
               pTibugTraitData.map((item) => item.toFirebase()).toList(),
           'unlockedModules':
@@ -8249,6 +8530,98 @@ class ConstructionProject {
       };
 }
 
+enum PTibugTerritoryKind { nursery, refuge }
+
+class PTibugTerritoryConsumption {
+  const PTibugTerritoryConsumption({
+    required this.organicPerDay,
+    required this.mineralPerDay,
+    required this.energyPerDay,
+  });
+
+  final int organicPerDay;
+  final int mineralPerDay;
+  final int energyPerDay;
+}
+
+class PTibugTerritoryBuilding {
+  PTibugTerritoryBuilding({
+    required this.id,
+    required this.kind,
+    required this.biome,
+    required this.level,
+    required this.isBuilt,
+    Map<String, int>? localResources,
+    this.localEnergy = 0,
+    this.lastConsumptionAt,
+  }) : localResources = localResources ?? <String, int>{};
+
+  factory PTibugTerritoryBuilding.nurseryPlaine({required int level}) =>
+      PTibugTerritoryBuilding(
+        id: Zone0GameState.plaineNurseryTerritoryId,
+        kind: PTibugTerritoryKind.nursery,
+        biome: ForageBiome.plaineRiche,
+        level: level,
+        isBuilt: level > 0,
+        lastConsumptionAt: DateTime.now(),
+      );
+
+  final String id;
+  final PTibugTerritoryKind kind;
+  final ForageBiome biome;
+  int level;
+  bool isBuilt;
+  final Map<String, int> localResources;
+  int localEnergy;
+  DateTime? lastConsumptionAt;
+
+  int resourceAmount(String resource) => localResources[resource] ?? 0;
+
+  factory PTibugTerritoryBuilding.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugTerritoryBuilding(
+        id: '${data['id'] ?? ''}',
+        kind: ForageMission._enumByName(
+          PTibugTerritoryKind.values,
+          '${data['kind'] ?? ''}',
+          PTibugTerritoryKind.refuge,
+        ),
+        biome: ForageMission._enumByName(
+          ForageBiome.values,
+          '${data['biome'] ?? ''}',
+          ForageBiome.plaineRiche,
+        ),
+        level: Zone0GameState.instance._readInt(data['level']),
+        isBuilt: data['isBuilt'] == true,
+        localResources: Map<String, int>.fromEntries(
+          (data['localResources'] as Map? ?? const <dynamic, dynamic>{})
+              .entries
+              .map(
+                (entry) => MapEntry(
+                  '${entry.key}',
+                  Zone0GameState.instance._readInt(entry.value),
+                ),
+              ),
+        ),
+        localEnergy: Zone0GameState.instance._readInt(data['localEnergy']),
+        lastConsumptionAt: Zone0GameState.instance._readDate(
+          data['lastConsumptionAt'],
+        ),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'kind': kind.name,
+        'biome': biome.name,
+        'level': level,
+        'isBuilt': isBuilt,
+        'localResources': localResources,
+        'localEnergy': localEnergy,
+        'lastConsumptionAt': lastConsumptionAt == null
+            ? null
+            : Timestamp.fromDate(lastConsumptionAt!),
+      };
+}
+
 class PTibug {
   PTibug({
     required this.id,
@@ -8257,7 +8630,9 @@ class PTibug {
     required this.styleVariant,
     required this.createdAt,
     this.assignedSlotIndex,
+    this.assignedBuildingId,
     Map<String, int>? storedResources,
+    List<PTibugDataCell>? storedDataCells,
     this.level = 1,
     this.xp = 0,
     this.traitDataId,
@@ -8267,9 +8642,11 @@ class PTibug {
     List<String>? equippedModuleInstanceIds,
     this.biome = PTibugBiome.savaneTropicale,
     this.refugeBiome = ForageBiome.plaineRiche,
+    this.inactiveReason,
     this.stockFullNotified = false,
     this.nextProductionAt,
   })  : storedResources = storedResources ?? <String, int>{},
+        storedDataCells = storedDataCells ?? <PTibugDataCell>[],
         equippedModules = equippedModules ?? <PTibugModuleType>[],
         equippedModuleInstanceIds = equippedModuleInstanceIds ?? <String>[];
   final String id;
@@ -8278,7 +8655,9 @@ class PTibug {
   final String styleVariant;
   final DateTime createdAt;
   int? assignedSlotIndex;
+  String? assignedBuildingId;
   final Map<String, int> storedResources;
+  final List<PTibugDataCell> storedDataCells;
   int level;
   int xp;
   String? traitDataId;
@@ -8291,10 +8670,14 @@ class PTibug {
   /// The P'TIBUG works in one Refuge at a time. The main Nurserie is Plaine;
   /// future local Refuges will only update this biome association.
   ForageBiome refugeBiome;
+  String? inactiveReason;
   bool stockFullNotified;
   DateTime? nextProductionAt;
   int get storedAmount =>
       storedResources.values.fold(0, (total, value) => total + value);
+  Map<String, int> get storedMaterialProduction => storedResources;
+  int get materialStorageCapacity =>
+      pTibugConfig.carryingCapacity * pTibugConfig.storageMultiplier;
   bool hasModule(PTibugModuleType type) => equippedModules.contains(type);
 
   factory PTibug.fromFirebase(Map<dynamic, dynamic> data) => PTibug(
@@ -8309,6 +8692,7 @@ class PTibug {
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
             DateTime.now(),
         assignedSlotIndex: data['assignedSlotIndex'] as int?,
+        assignedBuildingId: data['assignedBuildingId'] as String?,
         level: Zone0GameState.instance._readInt(data['level'], fallback: 1),
         xp: Zone0GameState.instance._readInt(data['xp']),
         traitDataId: data['traitDataId'] as String?,
@@ -8339,6 +8723,7 @@ class PTibug {
           '${data['refugeBiome'] ?? ''}',
           ForageBiome.plaineRiche,
         ),
+        inactiveReason: data['inactiveReason'] as String?,
         stockFullNotified: data['stockFullNotified'] == true,
         nextProductionAt: Zone0GameState.instance._readDate(
           data['nextProductionAt'],
@@ -8353,6 +8738,10 @@ class PTibug {
                 ),
               ),
         ),
+        storedDataCells: (data['storedDataCells'] as List? ?? const <dynamic>[])
+            .whereType<Map>()
+            .map(PTibugDataCell.fromFirebase)
+            .toList(),
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -8362,7 +8751,11 @@ class PTibug {
         'styleVariant': styleVariant,
         'createdAt': Timestamp.fromDate(createdAt),
         'assignedSlotIndex': assignedSlotIndex,
+        'assignedBuildingId': assignedBuildingId,
         'storedResources': storedResources,
+        'storedMaterialProduction': storedResources,
+        'storedDataCells':
+            storedDataCells.map((item) => item.toFirebase()).toList(),
         'level': level,
         'xp': xp,
         'traitDataId': traitDataId,
@@ -8372,6 +8765,7 @@ class PTibug {
         'equippedModuleInstanceIds': equippedModuleInstanceIds,
         'biome': biome.name,
         'refugeBiome': refugeBiome.name,
+        'inactiveReason': inactiveReason,
         'stockFullNotified': stockFullNotified,
         'nextProductionAt': nextProductionAt == null
             ? null

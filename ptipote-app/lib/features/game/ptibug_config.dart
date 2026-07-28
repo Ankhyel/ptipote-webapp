@@ -266,6 +266,7 @@ class PTibugConfig {
     required this.moduleCraftMinutes,
     required this.nurseryReserveCapacity,
     required this.sourcierCellPricePerDataValue,
+    required this.territory,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -302,8 +303,9 @@ class PTibugConfig {
   final Map<PTibugModuleType, int> moduleCraftMinutes;
   final int nurseryReserveCapacity;
   final int sourcierCellPricePerDataValue;
+  final PTibugTerritoryConfig territory;
 
-  int slotsForLevel(int level) => slotsByLevel[level.clamp(1, 3)] ?? 1;
+  int slotsForLevel(int level) => territory.nurseryCapacityForLevel(level);
   int moduleSlotsForLevel(int level) =>
       moduleSlotsByLevel[level.clamp(1, 3)] ?? 1;
 
@@ -352,6 +354,51 @@ class PTibugConfig {
 
   int moduleCraftMinutesFor(PTibugModuleType type) =>
       moduleCraftMinutes[type] ?? 1;
+}
+
+/// Territorial rules are intentionally separate from species and Traits: they
+/// describe the building that hosts a P'TIBUG, not the P'TIBUG itself.
+class PTibugTerritoryConfig {
+  const PTibugTerritoryConfig({
+    required this.nurseryMaximumLevel,
+    required this.refugeMaximumLevel,
+    required this.capacityPerLevel,
+    required this.organicAmount,
+    required this.organicEveryHours,
+    required this.mineralAmount,
+    required this.mineralEveryHours,
+    required this.energyAmount,
+    required this.energyEveryHours,
+    required this.moduleEnergyAmount,
+    required this.moduleEnergyEveryHours,
+    required this.nurseryEnergyAmount,
+    required this.nurseryEnergyEveryHours,
+    required this.refugeEnergyAmount,
+    required this.refugeEnergyEveryHours,
+    required this.dataCellStorageCapacity,
+  });
+
+  final int nurseryMaximumLevel;
+  final int refugeMaximumLevel;
+  final int capacityPerLevel;
+  final int organicAmount;
+  final int organicEveryHours;
+  final int mineralAmount;
+  final int mineralEveryHours;
+  final int energyAmount;
+  final int energyEveryHours;
+  final int moduleEnergyAmount;
+  final int moduleEnergyEveryHours;
+  final int nurseryEnergyAmount;
+  final int nurseryEnergyEveryHours;
+  final int refugeEnergyAmount;
+  final int refugeEnergyEveryHours;
+  final int dataCellStorageCapacity;
+
+  int nurseryCapacityForLevel(int level) =>
+      level.clamp(0, nurseryMaximumLevel).toInt() * capacityPerLevel;
+  int refugeCapacityForLevel(int level) =>
+      level.clamp(0, refugeMaximumLevel).toInt() * capacityPerLevel;
 }
 
 /// Runtime final because this catalog uses collection-for entries to keep the
@@ -975,6 +1022,24 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
   },
   nurseryReserveCapacity: 12,
   sourcierCellPricePerDataValue: 3,
+  territory: const PTibugTerritoryConfig(
+    nurseryMaximumLevel: 6,
+    refugeMaximumLevel: 4,
+    capacityPerLevel: 1,
+    organicAmount: 1,
+    organicEveryHours: 4,
+    mineralAmount: 1,
+    mineralEveryHours: 24,
+    energyAmount: 1,
+    energyEveryHours: 8,
+    moduleEnergyAmount: 1,
+    moduleEnergyEveryHours: 8,
+    nurseryEnergyAmount: 1,
+    nurseryEnergyEveryHours: 4,
+    refugeEnergyAmount: 1,
+    refugeEnergyEveryHours: 8,
+    dataCellStorageCapacity: 3,
+  ),
 );
 
 /// Active tuning published by the internal Dashboard. Player-owned P'TIBUG

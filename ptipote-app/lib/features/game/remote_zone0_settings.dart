@@ -506,6 +506,7 @@ PTibugConfig _ptibug(Object? value) {
   final rawModuleCraftCosts = _map(raw['moduleCraftCosts']);
   final rawModuleCraftEnergyCosts = _map(raw['moduleCraftEnergyCosts']);
   final rawModuleCraftMinutes = _map(raw['moduleCraftMinutes']);
+  final rawTerritory = _map(raw['territory']);
   return PTibugConfig(
     nurseryRequirements: _resourceMap(
       raw['nurseryRequirements'],
@@ -743,6 +744,46 @@ PTibugConfig _ptibug(Object? value) {
     sourcierCellPricePerDataValue: _int(
       raw['sourcierCellPricePerDataValue'],
       base.sourcierCellPricePerDataValue,
+    ),
+    territory: PTibugTerritoryConfig(
+      nurseryMaximumLevel: _int(
+        rawTerritory?['nurseryMaximumLevel'],
+        base.territory.nurseryMaximumLevel,
+      ),
+      refugeMaximumLevel: _int(
+        rawTerritory?['refugeMaximumLevel'],
+        base.territory.refugeMaximumLevel,
+      ),
+      capacityPerLevel: _int(
+        rawTerritory?['capacityPerLevel'],
+        base.territory.capacityPerLevel,
+      ),
+      organicAmount:
+          _int(rawTerritory?['organicAmount'], base.territory.organicAmount),
+      organicEveryHours: _int(
+          rawTerritory?['organicEveryHours'], base.territory.organicEveryHours),
+      mineralAmount:
+          _int(rawTerritory?['mineralAmount'], base.territory.mineralAmount),
+      mineralEveryHours: _int(
+          rawTerritory?['mineralEveryHours'], base.territory.mineralEveryHours),
+      energyAmount:
+          _int(rawTerritory?['energyAmount'], base.territory.energyAmount),
+      energyEveryHours: _int(
+          rawTerritory?['energyEveryHours'], base.territory.energyEveryHours),
+      moduleEnergyAmount: _int(rawTerritory?['moduleEnergyAmount'],
+          base.territory.moduleEnergyAmount),
+      moduleEnergyEveryHours: _int(rawTerritory?['moduleEnergyEveryHours'],
+          base.territory.moduleEnergyEveryHours),
+      nurseryEnergyAmount: _int(rawTerritory?['nurseryEnergyAmount'],
+          base.territory.nurseryEnergyAmount),
+      nurseryEnergyEveryHours: _int(rawTerritory?['nurseryEnergyEveryHours'],
+          base.territory.nurseryEnergyEveryHours),
+      refugeEnergyAmount: _int(rawTerritory?['refugeEnergyAmount'],
+          base.territory.refugeEnergyAmount),
+      refugeEnergyEveryHours: _int(rawTerritory?['refugeEnergyEveryHours'],
+          base.territory.refugeEnergyEveryHours),
+      dataCellStorageCapacity: _int(rawTerritory?['dataCellStorageCapacity'],
+          base.territory.dataCellStorageCapacity),
     ),
   );
 }

@@ -1106,6 +1106,7 @@ function renderPTibugEditor() {
     storageMultiplier,
     reservoirCapacityBonus,
     reservoirCapacityBonusByLevel = {},
+    territory = {},
     ...general
   } = ptibug;
   el.ptibugConfigList.innerHTML = [
@@ -1114,6 +1115,8 @@ function renderPTibugEditor() {
     ptibugEditorHeading("Stockage P'TIBUG et Réservoir", "Ces valeurs déterminent le stock interne réel. La capacité finale applique le multiplicateur à la base comme au bonus du Réservoir."),
     configCard("Capacité de stockage", "ptibug", { carryingCapacity, storageMultiplier }, [], { open: true, meta: "Capacité finale = base × multiplicateur" }),
     configCard("Module Réservoir", "ptibug", { reservoirCapacityBonus, reservoirCapacityBonusByLevel }, [], { open: true, meta: "Bonus par niveau, appliqué avant le multiplicateur" }),
+    ptibugEditorHeading("Gestion territoriale P'TIBUG", "Niveaux, stocks locaux, consommation hors ligne et compartiment de Cellules."),
+    configCard("Bâtiments, consommation et Cellules", "ptibug", territory, ["territory"], { open: true, meta: "Nurserie, futurs Refuges, énergie locale et capacités" }),
     ptibugEditorHeading("Espèces et Patterns d'espèce", "Les espèces définissent la création; leurs Patterns définissent la connaissance du Kernel."),
     ...Object.entries(species).map(([speciesId, config]) => configCard(
       config.displayName || speciesId,
