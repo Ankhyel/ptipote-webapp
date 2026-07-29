@@ -1639,6 +1639,76 @@ MarketConfig _market(Object? value) {
       raw['saleIntervalPopulationImpactPercent'],
       b.saleIntervalPopulationImpactPercent,
     ),
+    maximumLevel: _int(raw['maximumLevel'], b.maximumLevel),
+    manualSlotsByLevel: _levelMap(
+      raw['manualSlotsByLevel'],
+      b.manualSlotsByLevel,
+    ),
+    allowDuplicateStacks: raw['allowDuplicateStacks'] is bool
+        ? raw['allowDuplicateStacks'] as bool
+        : b.allowDuplicateStacks,
+    stackQuantityLimit: _int(raw['stackQuantityLimit'], b.stackQuantityLimit),
+    distributorConstructionCost: _resourceMap(
+      raw['distributorConstructionCost'],
+      b.distributorConstructionCost,
+    ),
+    distributorConstructionMinutes: _int(
+      raw['distributorConstructionMinutes'],
+      b.distributorConstructionMinutes,
+    ),
+    distributorEnergyCapacity: _int(
+      raw['distributorEnergyCapacity'],
+      b.distributorEnergyCapacity,
+    ),
+    distributorEnergyPerBioBattery: _int(
+      raw['distributorEnergyPerBioBattery'],
+      b.distributorEnergyPerBioBattery,
+    ),
+    distributorDailyEnergyByLevel: _levelMap(
+      raw['distributorDailyEnergyByLevel'],
+      b.distributorDailyEnergyByLevel,
+    ),
+    distributorSlotsByLevel: _levelMap(
+      raw['distributorSlotsByLevel'], b.distributorSlotsByLevel,
+    ),
+    distributorBreakDenominatorByLevel: _levelMap(
+      raw['distributorBreakDenominatorByLevel'],
+      b.distributorBreakDenominatorByLevel,
+    ),
+    distributorRepairMinutesByLevel: _levelMap(
+      raw['distributorRepairMinutesByLevel'],
+      b.distributorRepairMinutesByLevel,
+    ),
+    distributorRepairCost: _resourceMap(
+      raw['distributorRepairCost'], b.distributorRepairCost,
+    ),
+    confidenceSuccessGain: _int(
+      raw['confidenceSuccessGain'], b.confidenceSuccessGain,
+    ),
+    confidenceFailurePenalty: _int(
+      raw['confidenceFailurePenalty'], b.confidenceFailurePenalty,
+    ),
+    confidenceMaxPaymentBonusPercent: _double(
+      raw['confidenceMaxPaymentBonusPercent'],
+      b.confidenceMaxPaymentBonusPercent,
+    ),
+    maxActiveLicenses: _int(raw['maxActiveLicenses'], b.maxActiveLicenses),
+    licenseCostBioBatteries: _int(
+      raw['licenseCostBioBatteries'], b.licenseCostBioBatteries,
+    ),
+    licenseChangeCostBioBatteries: _int(
+      raw['licenseChangeCostBioBatteries'], b.licenseChangeCostBioBatteries,
+    ),
+    licenseDirectedRatioPercent: _int(
+      raw['licenseDirectedRatioPercent'], b.licenseDirectedRatioPercent,
+    ),
+    shopSlots: _int(raw['shopSlots'], b.shopSlots),
+    maxConstructibleShops: _int(
+      raw['maxConstructibleShops'], b.maxConstructibleShops,
+    ),
+    firstShopFree: raw['firstShopFree'] is bool
+        ? raw['firstShopFree'] as bool
+        : b.firstShopFree,
   );
 }
 

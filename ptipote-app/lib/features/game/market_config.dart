@@ -17,6 +17,29 @@ class MarketConfig {
     required this.saleIntervalReductionPerLevel,
     required this.maxActiveRequestsBonusPerLevel,
     required this.saleIntervalPopulationImpactPercent,
+    required this.maximumLevel,
+    required this.manualSlotsByLevel,
+    required this.allowDuplicateStacks,
+    required this.stackQuantityLimit,
+    required this.distributorConstructionCost,
+    required this.distributorConstructionMinutes,
+    required this.distributorEnergyCapacity,
+    required this.distributorEnergyPerBioBattery,
+    required this.distributorDailyEnergyByLevel,
+    required this.distributorSlotsByLevel,
+    required this.distributorBreakDenominatorByLevel,
+    required this.distributorRepairMinutesByLevel,
+    required this.distributorRepairCost,
+    required this.confidenceSuccessGain,
+    required this.confidenceFailurePenalty,
+    required this.confidenceMaxPaymentBonusPercent,
+    required this.maxActiveLicenses,
+    required this.licenseCostBioBatteries,
+    required this.licenseChangeCostBioBatteries,
+    required this.licenseDirectedRatioPercent,
+    required this.shopSlots,
+    required this.maxConstructibleShops,
+    required this.firstShopFree,
   });
 
   final Map<String, int> constructionCost;
@@ -36,8 +59,45 @@ class MarketConfig {
   final double saleIntervalReductionPerLevel;
   final int maxActiveRequestsBonusPerLevel;
   final int saleIntervalPopulationImpactPercent;
+  final int maximumLevel;
+  final Map<int, int> manualSlotsByLevel;
+  final bool allowDuplicateStacks;
+  final int stackQuantityLimit;
+  final Map<String, int> distributorConstructionCost;
+  final int distributorConstructionMinutes;
+  final int distributorEnergyCapacity;
+  final int distributorEnergyPerBioBattery;
+  final Map<int, int> distributorDailyEnergyByLevel;
+  final Map<int, int> distributorSlotsByLevel;
+  final Map<int, int> distributorBreakDenominatorByLevel;
+  final Map<int, int> distributorRepairMinutesByLevel;
+  final Map<String, int> distributorRepairCost;
+  final int confidenceSuccessGain;
+  final int confidenceFailurePenalty;
+  final double confidenceMaxPaymentBonusPercent;
+  final int maxActiveLicenses;
+  final int licenseCostBioBatteries;
+  final int licenseChangeCostBioBatteries;
+  final int licenseDirectedRatioPercent;
+  final int shopSlots;
+  final int maxConstructibleShops;
+  final bool firstShopFree;
 
-  int slotsForLevel(int level) => level.clamp(0, 99) * saleSlotsPerLevel;
+  int slotsForLevel(int level) =>
+      manualSlotsByLevel[level.clamp(0, maximumLevel)] ??
+      level.clamp(0, 99) * saleSlotsPerLevel;
+
+  int distributorSlotsForLevel(int level) =>
+      distributorSlotsByLevel[level.clamp(1, 3)] ?? 0;
+
+  int distributorEnergyPerDayForLevel(int level) =>
+      distributorDailyEnergyByLevel[level.clamp(1, 3)] ?? 0;
+
+  int distributorBreakDenominatorForLevel(int level) =>
+      distributorBreakDenominatorByLevel[level.clamp(1, 3)] ?? 1;
+
+  int distributorRepairMinutesForLevel(int level) =>
+      distributorRepairMinutesByLevel[level.clamp(1, 3)] ?? 30;
 
   double saleIntervalMultiplierForLevel(int level) =>
       (1 - (level.clamp(1, 99) - 1) * saleIntervalReductionPerLevel).clamp(
@@ -78,6 +138,29 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   saleIntervalReductionPerLevel: 0.10,
   maxActiveRequestsBonusPerLevel: 1,
   saleIntervalPopulationImpactPercent: 100,
+  maximumLevel: 4,
+  manualSlotsByLevel: <int, int>{1: 3, 2: 6, 3: 6, 4: 6},
+  allowDuplicateStacks: true,
+  stackQuantityLimit: 10,
+  distributorConstructionCost: <String, int>{'Organique': 20, 'Minéral': 10},
+  distributorConstructionMinutes: 1,
+  distributorEnergyCapacity: 100,
+  distributorEnergyPerBioBattery: 10,
+  distributorDailyEnergyByLevel: <int, int>{1: 10, 2: 8, 3: 6},
+  distributorSlotsByLevel: <int, int>{1: 2, 2: 3, 3: 4},
+  distributorBreakDenominatorByLevel: <int, int>{1: 6, 2: 12, 3: 24},
+  distributorRepairMinutesByLevel: <int, int>{1: 30, 2: 20, 3: 10},
+  distributorRepairCost: <String, int>{'Organique': 1, 'Minéral': 1},
+  confidenceSuccessGain: 5,
+  confidenceFailurePenalty: 2,
+  confidenceMaxPaymentBonusPercent: 30,
+  maxActiveLicenses: 2,
+  licenseCostBioBatteries: 5,
+  licenseChangeCostBioBatteries: 3,
+  licenseDirectedRatioPercent: 80,
+  shopSlots: 6,
+  maxConstructibleShops: 2,
+  firstShopFree: true,
 );
 
 MarketConfig marketConfig = defaultMarketConfig;

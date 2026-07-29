@@ -9165,6 +9165,65 @@ class _MarketPageState extends State<MarketPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                if (widget.gameState.marketLevel >= 2)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text('Distributeur automatique', style: TextStyle(fontWeight: FontWeight.w900)),
+                          if (!widget.gameState.marketDistributor.isBuilt) ...<Widget>[
+                            Text(widget.gameState.isMarketDistributorReadyToBuild
+                                ? 'Matériaux complets · prêt à démarrer'
+                                : 'Construction : ${marketConfig.distributorConstructionCost.entries.map((entry) => '${entry.key} ${widget.gameState.marketDistributor.constructionDeposits[entry.key] ?? 0}/${entry.value}').join(' · ')}'),
+                            Wrap(
+                              spacing: 6,
+                              children: marketConfig.distributorConstructionCost.keys.map((resource) => OutlinedButton(
+                                onPressed: () => _message(widget.gameState.depositMarketDistributorMaterial(resource, 1).message),
+                                child: Text('Déposer $resource'),
+                              )).toList(),
+                            ),
+                            FilledButton(
+                              onPressed: widget.gameState.isMarketDistributorReadyToBuild
+                                  ? () => _message(widget.gameState.startMarketDistributorConstruction().message)
+                                  : null,
+                              child: const Text('Commencer les travaux'),
+                            ),
+                          ] else ...<Widget>[
+                            Text('Niveau ${widget.gameState.marketDistributor.level} · ${widget.gameState.marketDistributor.isBroken ? 'En panne' : widget.gameState.marketDistributor.energy <= 0 ? 'Sans Énergie' : 'Opérationnel'}'),
+                            Text('Énergie : ${widget.gameState.marketDistributor.energy}/${marketConfig.distributorEnergyCapacity}'),
+                            Row(children: <Widget>[
+                              Expanded(child: OutlinedButton(
+                                onPressed: () => _message(widget.gameState.openBioBatteryForMarketDistributor().message),
+                                child: const Text('Ouvrir une Bio-batterie'),
+                              )),
+                              if (widget.gameState.marketDistributor.isBroken) ...<Widget>[
+                                const SizedBox(width: 8),
+                                Expanded(child: FilledButton(
+                                  onPressed: () => _message(widget.gameState.repairMarketDistributor().message),
+                                  child: const Text('Réparer'),
+                                )),
+                              ],
+                            ]),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                if (widget.gameState.marketContracts.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 10),
+                  const Text('Contrats du Sourcier', style: TextStyle(fontWeight: FontWeight.w900)),
+                  ...widget.gameState.marketContracts.where((contract) => contract.status == MarketContractStatus.offered || contract.status == MarketContractStatus.accepted).map((contract) => Card(
+                    child: ListTile(
+                      title: Text(contract.requestedItems.entries.map((entry) => '${entry.value} ${entry.key}').join(', ')),
+                      subtitle: Text('Confiance ${widget.gameState.sourcierConfidence}/100 · paiement ${contract.rewardBioBatteries} à ${(widget.gameState.sourcierConfidencePaymentMultiplier * 100).round()} %'),
+                      trailing: contract.status == MarketContractStatus.offered
+                          ? FilledButton(onPressed: () => _message(widget.gameState.acceptMarketContract(contract).message), child: const Text('Accepter'))
+                          : FilledButton(onPressed: () => _message(widget.gameState.deliverMarketContract(contract).message), child: const Text('Livrer')),
+                    ),
+                  )),
+                ],
                 Text(
                   'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
                   style: const TextStyle(fontWeight: FontWeight.w900),
@@ -9184,7 +9243,7 @@ class _MarketPageState extends State<MarketPage> {
                           : null;
                       return _MarketStockSlot(
                         stack: stack,
-                        onTap: () => _editMarketSlot(stack?.resource),
+                        onTap: () => _editMarketSlot(stack),
                       );
                     },
                   ),
@@ -9206,9 +9265,18 @@ class _MarketPageState extends State<MarketPage> {
                     subtitle: Text(
                       request.status == MarketRequestStatus.completed
                           ? 'Livrée'
-                          : 'Retour client : ${request.customerReturnTime.hour.toString().padLeft(2, '0')}:${request.customerReturnTime.minute.toString().padLeft(2, '0')}',
+                          : request.status == MarketRequestStatus.expired
+                              ? 'Demande expirée sans pénalité'
+                              : 'Temps restant : ${request.customerReturnTime.difference(DateTime.now()).inMinutes.clamp(0, 999)} min',
                     ),
-                    trailing: Text('+${request.rewardBioBattery} 🔋'),
+                    trailing: request.isOpen
+                        ? FilledButton(
+                            onPressed: widget.gameState.marketStockAmount(request.requestedItemId) >= request.requestedQuantity
+                                ? () => _message(widget.gameState.sellMarketRequest(request).message)
+                                : null,
+                            child: const Text('Vendre'),
+                          )
+                        : Text('+${request.rewardBioBattery} 🔋'),
                   ),
                 ),
               ],
@@ -9223,7 +9291,8 @@ class _MarketPageState extends State<MarketPage> {
         context,
       ).showSnackBar(SnackBar(content: Text(value)));
 
-  Future<void> _editMarketSlot(String? initialResource) async {
+  Future<void> _editMarketSlot(Zone0InventoryStack? initialStack) async {
+    final initialResource = initialStack?.resource;
     final resources = marketConfig.saleValues.keys
         .where(
           (resource) =>
@@ -9285,7 +9354,7 @@ class _MarketPageState extends State<MarketPage> {
               OutlinedButton.icon(
                 onPressed: () {
                   _message(
-                    widget.gameState.returnMarketStock(initialResource).message,
+                    widget.gameState.returnMarketStock(initialStack!).message,
                   );
                   Navigator.of(sheetContext).pop();
                 },
