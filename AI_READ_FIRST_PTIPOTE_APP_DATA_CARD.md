@@ -1544,6 +1544,8 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 
 Le Marché utilise des piles de vente indépendantes : deux piles identiques ne sont jamais fusionnées et la logique commune de prélèvement consomme d’abord la pile la plus entamée. Les demandes habitantes sont temporaires (10–20 minutes par défaut), sans pénalité à l’expiration. Elles sont vendues manuellement ou automatiquement par un P’TIPOTE affecté, exclusivement depuis les piles du Marché.
 
+À partir du niveau 2, le Livre des demandes enregistre sur 24 h les demandes observées par le P’TIPOTE : heure, délai, produit, quantité, habitant lorsqu’il est connu, résultat et gain. Au niveau 3, il devient automatique. Les entrées terminées et expirées sont purgées après 24 h.
+
 À partir du niveau 2, le Distributeur dispose de son propre chantier, de dépôts progressifs, d’une réserve d’Énergie commune au Marché, de ses piles de matières premières, d’une consommation hors ligne et de pannes sauvegardées. Une Bio-batterie apporte 10 Énergies par défaut. Les contrats du Sourcier sont séparés de ses quatre offres : ils doivent être acceptés volontairement, sont payés à la livraison et font évoluer la Confiance (0–100) uniquement en cas de réussite ou d’échec après acceptation. Les licences orientent les futurs contrats et restent configurables.
 
 Réglages : `ptipote-dashboard/market-config.json`, chargés par `remote_zone0_settings.dart`. Sauvegarde : `users/{uid}/game/zone0.runtime.market` (piles avec identifiant, demandes, Distributeur, contrats, Confiance, licences et magasins). Fichiers métier : `market_config.dart`, `zone0_game_state.dart`; interface : `refuge_page.dart`.

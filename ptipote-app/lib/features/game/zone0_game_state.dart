@@ -107,6 +107,7 @@ class Zone0GameState extends ChangeNotifier {
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
   final List<Zone0InventoryStack> marketStock = <Zone0InventoryStack>[];
   final List<MarketCustomerRequest> marketRequests = <MarketCustomerRequest>[];
+  final List<MarketRequestLogEntry> marketRequestLog = <MarketRequestLogEntry>[];
   final List<MarketSourcierContract> marketContracts =
       <MarketSourcierContract>[];
   final List<MarketShop> marketShops = <MarketShop>[];
@@ -2073,6 +2074,7 @@ class Zone0GameState extends ChangeNotifier {
     bioBatteries += request.rewardBioBattery;
     campWellbeing = math.min(100, campWellbeing + request.rewardWellbeing);
     request.status = MarketRequestStatus.completed;
+    _recordMarketRequestOutcome(request, completedAt: DateTime.now());
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -2175,6 +2177,13 @@ class Zone0GameState extends ChangeNotifier {
     if (!isMarketBuilt) return false;
     final current = now ?? DateTime.now();
     var changed = _resolveMerchantSchedule(current);
+    final historyCutoff = current.subtract(const Duration(hours: 24));
+    final beforeRequests = marketRequests.length;
+    marketRequests.removeWhere((request) =>
+        !request.isOpen && request.customerReturnTime.isBefore(historyCutoff));
+    final beforeLog = marketRequestLog.length;
+    marketRequestLog.removeWhere((entry) => entry.createdAt.isBefore(historyCutoff));
+    changed = changed || beforeRequests != marketRequests.length || beforeLog != marketRequestLog.length;
     if (marketAssignedPtipoteId != null) {
       marketLastWorkTickAt ??= current;
       final ticks = current.difference(marketLastWorkTickAt!).inMinutes ~/
@@ -2243,6 +2252,7 @@ class Zone0GameState extends ChangeNotifier {
           ));
         } else {
           request.status = MarketRequestStatus.expired;
+          _recordMarketRequestOutcome(request, completedAt: current);
         }
         changed = true;
       }
@@ -2263,8 +2273,7 @@ class Zone0GameState extends ChangeNotifier {
     }).toList();
     final item = entries[_random.nextInt(entries.length)];
     final isResource = item == 'Organique' || item == 'Minéral';
-    marketRequests.add(
-      MarketCustomerRequest(
+    final request = MarketCustomerRequest(
         id: 'request-${now.microsecondsSinceEpoch}-${marketRequests.length}',
         requestedItemId: item,
         requestedQuantity:
@@ -2278,13 +2287,32 @@ class Zone0GameState extends ChangeNotifier {
         createdAt: now,
         customerReturnTime: now.add(_randomMarketReturnDelay()),
         status: MarketRequestStatus.noted,
-      ),
-    );
+      );
+    marketRequests.add(request);
+    // The Book only records level 2 requests when a P’TIPOTE was actually
+    // present; from level 3 the register runs autonomously.
+    if (marketLevel >= 3 || (marketLevel >= 2 && marketAssignedPtipoteId != null)) {
+      marketRequestLog.add(MarketRequestLogEntry.fromRequest(request));
+    }
     reports.add(
       PtipoteMissionReport.system(
         message: 'Demande du Marché : $item recherché.',
       ),
     );
+  }
+
+  void _recordMarketRequestOutcome(
+    MarketCustomerRequest request, {
+    required DateTime completedAt,
+  }) {
+    final entry = marketRequestLog.where((item) => item.requestId == request.id).firstOrNull;
+    if (entry == null) return;
+    entry
+      ..status = request.status
+      ..resolvedAt = completedAt
+      ..rewardBioBatteries = request.status == MarketRequestStatus.completed
+          ? request.rewardBioBattery
+          : 0;
   }
 
   Duration _randomMarketReturnDelay() => Duration(
@@ -2421,6 +2449,7 @@ class Zone0GameState extends ChangeNotifier {
       if (stack.amount <= 0) marketDistributor.stock.remove(stack);
       bioBatteries += request.rewardBioBattery;
       request.status = MarketRequestStatus.completed;
+      _recordMarketRequestOutcome(request, completedAt: current);
       changed = true;
       if (_random.nextInt(math.max(1, marketConfig.distributorBreakDenominatorForLevel(marketDistributor.level))) == 0) {
         marketDistributor.isBroken = true;
@@ -5688,6 +5717,11 @@ class Zone0GameState extends ChangeNotifier {
                 .whereType<Map>()
                 .map(MarketCustomerRequest.fromFirebase),
           );
+        marketRequestLog
+          ..clear()
+          ..addAll((marketData['requestLog'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(MarketRequestLogEntry.fromFirebase));
         marketNextSaleAt = _readDate(marketData['nextSaleAt']);
         marketLastWorkTickAt = _readDate(marketData['lastWorkTickAt']);
         marketAssignedPtipoteId = marketData['assignedPtipoteId'] as String?;
@@ -8577,6 +8611,7 @@ class Zone0GameState extends ChangeNotifier {
               .map((item) => item.toFirebase())
               .toList(),
           'requests': marketRequests.map((item) => item.toFirebase()).toList(),
+          'requestLog': marketRequestLog.map((item) => item.toFirebase()).toList(),
           'nextSaleAt': marketNextSaleAt == null
               ? null
               : Timestamp.fromDate(marketNextSaleAt!),
@@ -9164,6 +9199,7 @@ class MarketCustomerRequest {
     required this.createdAt,
     required this.customerReturnTime,
     required this.status,
+    this.customerName,
   });
 
   factory MarketCustomerRequest.fromFirebase(
@@ -9190,6 +9226,7 @@ class MarketCustomerRequest {
           '${data['status'] ?? ''}',
           MarketRequestStatus.noted,
         ),
+        customerName: data['customerName'] as String?,
       );
 
   final String id;
@@ -9200,6 +9237,7 @@ class MarketCustomerRequest {
   final DateTime createdAt;
   DateTime customerReturnTime;
   MarketRequestStatus status;
+  final String? customerName;
 
   bool get isOpen => status == MarketRequestStatus.noted || status == MarketRequestStatus.ready || status == MarketRequestStatus.waitingCustomer;
 
@@ -9212,6 +9250,67 @@ class MarketCustomerRequest {
         'createdAt': Timestamp.fromDate(createdAt),
         'customerReturnTime': Timestamp.fromDate(customerReturnTime),
         'status': status.name,
+        'customerName': customerName,
+      };
+}
+
+class MarketRequestLogEntry {
+  MarketRequestLogEntry({
+    required this.requestId,
+    required this.createdAt,
+    required this.deadline,
+    required this.requestedItemId,
+    required this.requestedQuantity,
+    required this.customerName,
+    required this.status,
+    this.resolvedAt,
+    this.rewardBioBatteries = 0,
+  });
+
+  factory MarketRequestLogEntry.fromRequest(MarketCustomerRequest request) =>
+      MarketRequestLogEntry(
+        requestId: request.id,
+        createdAt: request.createdAt,
+        deadline: request.customerReturnTime,
+        requestedItemId: request.requestedItemId,
+        requestedQuantity: request.requestedQuantity,
+        customerName: request.customerName,
+        status: request.status,
+      );
+
+  factory MarketRequestLogEntry.fromFirebase(Map<dynamic, dynamic> data) =>
+      MarketRequestLogEntry(
+        requestId: '${data['requestId'] ?? ''}',
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ?? DateTime.now(),
+        deadline: Zone0GameState.instance._readDate(data['deadline']) ?? DateTime.now(),
+        requestedItemId: '${data['requestedItemId'] ?? ''}',
+        requestedQuantity: Zone0GameState.instance._readInt(data['requestedQuantity']),
+        customerName: data['customerName'] as String?,
+        status: ForageMission._enumByName(MarketRequestStatus.values, '${data['status'] ?? ''}', MarketRequestStatus.noted),
+        resolvedAt: Zone0GameState.instance._readDate(data['resolvedAt']),
+        rewardBioBatteries: Zone0GameState.instance._readInt(data['rewardBioBatteries']),
+      );
+
+  final String requestId;
+  final DateTime createdAt;
+  final DateTime deadline;
+  final String requestedItemId;
+  final int requestedQuantity;
+  final String? customerName;
+  MarketRequestStatus status;
+  DateTime? resolvedAt;
+  int rewardBioBatteries;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'requestId': requestId,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'deadline': Timestamp.fromDate(deadline),
+        'requestedItemId': requestedItemId,
+        'requestedQuantity': requestedQuantity,
+        'customerName': customerName,
+        'status': status.name,
+        'resolvedAt': resolvedAt == null ? null : Timestamp.fromDate(resolvedAt!),
+        'rewardBioBatteries': rewardBioBatteries,
       };
 }
 

@@ -5295,7 +5295,7 @@ class ForageGroupEstimate {
   }
 }
 
-class _PTibugTerritoryTab extends StatelessWidget {
+class _PTibugTerritoryTab extends StatefulWidget {
   const _PTibugTerritoryTab({
     required this.gameState,
     required this.campHeartState,
@@ -5305,13 +5305,44 @@ class _PTibugTerritoryTab extends StatelessWidget {
   final CampHeartState campHeartState;
 
   @override
+  State<_PTibugTerritoryTab> createState() => _PTibugTerritoryTabState();
+}
+
+class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _autoScrollForDrag(DragUpdateDetails details) {
+    if (!_scrollController.hasClients) return;
+    final height = MediaQuery.sizeOf(context).height;
+    const edge = 110.0;
+    final y = details.globalPosition.dy;
+    final direction = y < edge ? -1.0 : (y > height - edge ? 1.0 : 0.0);
+    if (direction == 0) return;
+    final position = _scrollController.position;
+    final next = (position.pixels + direction * 26).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    _scrollController.jumpTo(next);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final gameState = widget.gameState;
+    final campHeartState = widget.campHeartState;
     final biomes = ForageBiome.values.where(gameState.isBiomeUnlocked).toList();
     final plaine =
         biomes.where((biome) => biome == ForageBiome.plaineRiche).firstOrNull;
     final otherBiomes =
         biomes.where((biome) => biome != ForageBiome.plaineRiche);
     return ListView(
+      controller: _scrollController,
       padding: const EdgeInsets.all(16),
       children: <Widget>[
         const Text(
@@ -5328,6 +5359,7 @@ class _PTibugTerritoryTab extends StatelessWidget {
             biome: plaine,
             building: gameState.plaineNurseryTerritory,
             campHeartState: campHeartState,
+            onDragUpdate: _autoScrollForDrag,
           ),
         ...otherBiomes.map(
           (biome) => Padding(
@@ -5338,6 +5370,7 @@ class _PTibugTerritoryTab extends StatelessWidget {
               building:
                   gameState.territoryBuildingForId('refuge-${biome.name}'),
               campHeartState: campHeartState,
+              onDragUpdate: _autoScrollForDrag,
             ),
           ),
         ),
@@ -5383,6 +5416,7 @@ class _PTibugTerritoryTab extends StatelessWidget {
                                   gameState: gameState,
                                   bug: bug,
                                   building: null,
+                                  onDragUpdate: _autoScrollForDrag,
                                 ))
                             .toList(),
                       ),
@@ -5405,12 +5439,14 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
     required this.biome,
     required this.building,
     required this.campHeartState,
+    this.onDragUpdate,
   });
 
   final Zone0GameState gameState;
   final ForageBiome biome;
   final PTibugTerritoryBuilding? building;
   final CampHeartState campHeartState;
+  final ValueChanged<DragUpdateDetails>? onDragUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -5637,7 +5673,8 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                       .map((bug) => _PTibugTerritoryBugCard(
                           gameState: gameState,
                           bug: bug,
-                          building: activeBuilding))
+                          building: activeBuilding,
+                          onDragUpdate: onDragUpdate))
                       .toList(),
                 ),
               ],
@@ -5801,10 +5838,14 @@ bool _hasSmartSensor(PTibug bug) =>
 
 class _PTibugTerritoryBugCard extends StatelessWidget {
   const _PTibugTerritoryBugCard(
-      {required this.gameState, required this.bug, required this.building});
+      {required this.gameState,
+      required this.bug,
+      required this.building,
+      this.onDragUpdate});
   final Zone0GameState gameState;
   final PTibug bug;
   final PTibugTerritoryBuilding? building;
+  final ValueChanged<DragUpdateDetails>? onDragUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -5876,6 +5917,7 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
     );
     return LongPressDraggable<PTibug>(
       data: bug,
+      onDragUpdate: onDragUpdate,
       feedback: Material(
           color: Colors.transparent, child: SizedBox(width: 170, child: card)),
       childWhenDragging: Opacity(opacity: .3, child: card),
@@ -5903,8 +5945,8 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                   return ListTile(
                     enabled: available,
                     title: Text(destination.kind == PTibugTerritoryKind.nursery
-                        ? 'Nurserie de la Plaine'
-                        : 'Refuge'),
+                        ? 'Nurserie · Plaine'
+                        : 'Refuge · ${lisiereForageConfig.biomes[destination.biome]!.label}'),
                     subtitle: Text('$current/$capacity emplacement(s)'),
                     onTap: !available
                         ? null
@@ -8824,7 +8866,10 @@ class MarketPage extends StatefulWidget {
 class _MarketPageState extends State<MarketPage> {
   final FigurineService _figurineService = FigurineService();
   final Map<MerchantOffer, int> _merchantQuantities = <MerchantOffer, int>{};
+  final List<String> _constructionActions = <String>[];
   Timer? _timer;
+  Timer? _constructionNoticeTimer;
+  int _marketTab = 0;
 
   @override
   void initState() {
@@ -8843,12 +8888,27 @@ class _MarketPageState extends State<MarketPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _constructionNoticeTimer?.cancel();
     widget.gameState.removeListener(_changed);
     super.dispose();
   }
 
   void _changed() {
     if (mounted) setState(() {});
+  }
+
+  void _recordConstructionAction(String message) {
+    _constructionActions.add(message);
+    if (_constructionActions.length > 8) _constructionActions.removeAt(0);
+    _constructionNoticeTimer?.cancel();
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Construction : ${_constructionActions.join(' · ')}'),
+      duration: const Duration(seconds: 10),
+    ));
+    _constructionNoticeTimer = Timer(const Duration(minutes: 1), () {
+      _constructionActions.clear();
+    });
   }
 
   @override
@@ -8951,6 +9011,20 @@ class _MarketPageState extends State<MarketPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                if (widget.gameState.marketLevel >= 2)
+                  SegmentedButton<int>(
+                    segments: const <ButtonSegment<int>>[
+                      ButtonSegment(value: 0, icon: Icon(Icons.storefront_outlined), label: Text('Vente')),
+                      ButtonSegment(value: 1, icon: Icon(Icons.menu_book_outlined), label: Text('Livre des demandes')),
+                    ],
+                    selected: <int>{_marketTab},
+                    onSelectionChanged: (value) => setState(() => _marketTab = value.first),
+                  ),
+                if (widget.gameState.marketLevel >= 2)
+                  const SizedBox(height: 10),
+                if (_marketTab == 1)
+                  _marketRequestBook(),
+                if (_marketTab == 0) ...<Widget>[
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(14),
@@ -9177,12 +9251,21 @@ class _MarketPageState extends State<MarketPage> {
                             Text(widget.gameState.isMarketDistributorReadyToBuild
                                 ? 'Matériaux complets · prêt à démarrer'
                                 : 'Construction : ${marketConfig.distributorConstructionCost.entries.map((entry) => '${entry.key} ${widget.gameState.marketDistributor.constructionDeposits[entry.key] ?? 0}/${entry.value}').join(' · ')}'),
-                            Wrap(
-                              spacing: 6,
-                              children: marketConfig.distributorConstructionCost.keys.map((resource) => OutlinedButton(
-                                onPressed: () => _message(widget.gameState.depositMarketDistributorMaterial(resource, 1).message),
-                                child: Text('Déposer $resource'),
-                              )).toList(),
+                            ...marketConfig.distributorConstructionCost.keys.map(
+                              (resource) => Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: <Widget>[
+                                  Text(resource, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                  ...const <int>[1, 5, 10].map((amount) => OutlinedButton(
+                                    onPressed: () {
+                                      final result = widget.gameState.depositMarketDistributorMaterial(resource, amount);
+                                      if (result.success) _recordConstructionAction(result.message);
+                                    },
+                                    child: Text('+$amount'),
+                                  )),
+                                ],
+                              ),
                             ),
                             FilledButton(
                               onPressed: widget.gameState.isMarketDistributorReadyToBuild
@@ -9279,9 +9362,57 @@ class _MarketPageState extends State<MarketPage> {
                         : Text('+${request.rewardBioBattery} 🔋'),
                   ),
                 ),
+                ],
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _marketRequestBook() {
+    final entries = widget.gameState.marketRequestLog.reversed.toList();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              widget.gameState.marketLevel >= 3
+                  ? 'Registre automatique · dernières 24 h'
+                  : 'Livre des demandes · dernières 24 h',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            if (widget.gameState.marketLevel == 2 &&
+                widget.gameState.marketAssignedPtipoteId == null)
+              const Text('Un P’TIPOTE doit être affecté au Marché pour noter les nouvelles demandes.'),
+            if (entries.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text('Aucune demande enregistrée sur les dernières 24 heures.'),
+              ),
+            ...entries.map((entry) {
+              final created = '${entry.createdAt.hour.toString().padLeft(2, '0')}:${entry.createdAt.minute.toString().padLeft(2, '0')}';
+              final deadlineMinutes = entry.deadline.difference(entry.createdAt).inMinutes;
+              final status = switch (entry.status) {
+                MarketRequestStatus.completed => 'Répondue',
+                MarketRequestStatus.expired => 'Expirée',
+                _ => 'En attente',
+              };
+              return ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text('${entry.requestedQuantity} ${entry.requestedItemId} · $status'),
+                subtitle: Text(
+                  '$created · délai $deadlineMinutes min · ${entry.customerName ?? 'Habitant non identifié'}'
+                  '${entry.status == MarketRequestStatus.completed ? ' · gain +${entry.rewardBioBatteries} 🔋' : ''}',
+                ),
+              );
+            }),
+          ],
         ),
       ),
     );
@@ -10249,8 +10380,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   return ListTile(
                     enabled: used < capacity,
                     title: Text(building.kind == PTibugTerritoryKind.nursery
-                        ? 'Nurserie de la Plaine'
-                        : 'Refuge'),
+                        ? 'Nurserie · Plaine'
+                        : 'Refuge · ${lisiereForageConfig.biomes[building.biome]!.label}'),
                     subtitle: Text('$used/$capacity emplacement(s) occupé(s)'),
                     onTap: used >= capacity
                         ? null
