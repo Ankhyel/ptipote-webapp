@@ -4834,7 +4834,7 @@ class Zone0GameState extends ChangeNotifier {
           .toSet())
         '${bug.storedDataCells.where((cell) => cell.dominantFamily == family).length} Cellule ${_ptibugDataFamilyLabel(family)}',
     ];
-    if (collectedCells > 0) {
+    if (bug.storedDataCells.isNotEmpty) {
       pTibugDataCells.addAll(bug.storedDataCells);
       bug.storedDataCells.clear();
     }
