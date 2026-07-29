@@ -1498,6 +1498,10 @@ WorkshopConfig _workshop(Object? value) {
       b.maxBuildingSpeedBonusPercent,
     ),
     slotsPerLevel: _int(raw['slotsPerLevel'], b.slotsPerLevel),
+    ptipoteCraftTimeReductionPercent: _double(
+      raw['ptipoteCraftTimeReductionPercent'],
+      b.ptipoteCraftTimeReductionPercent,
+    ),
   );
 }
 

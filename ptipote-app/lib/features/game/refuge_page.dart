@@ -11737,10 +11737,10 @@ class _FablabActiveCraftsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final orders = gameState.activeWorkshopOrders;
-    final moduleOrder = gameState.activePTibugModuleCraftOrder;
+    final moduleOrders = gameState.activePTibugModuleCraftOrders;
     final recyclerStartedAt = gameState.recyclerCycleStartedAt;
     final count = orders.length +
-        (moduleOrder == null ? 0 : 1) +
+        moduleOrders.length +
         (recyclerStartedAt == null ? 0 : 1);
     if (count == 0) return const SizedBox.shrink();
 
@@ -11762,8 +11762,11 @@ class _FablabActiveCraftsPanel extends StatelessWidget {
               order: order,
             ),
           ),
-          if (moduleOrder != null)
-            _FablabActiveCraftCard.moduleOrder(moduleOrder: moduleOrder),
+          ...moduleOrders.map(
+            (moduleOrder) => _FablabActiveCraftCard.moduleOrder(
+              moduleOrder: moduleOrder,
+            ),
+          ),
           if (recyclerStartedAt != null)
             _FablabActiveCraftCard.recycler(
               startedAt: recyclerStartedAt,
@@ -11827,7 +11830,9 @@ class _FablabActiveCraftCard extends StatelessWidget {
       title: '${moduleOrder.moduleType.displayName} · Module P’TIBUG',
       location: 'Atelier',
       locationColor: Colors.indigo,
-      details: 'Fabrication d’un module pour la Nurserie.',
+      details: moduleOrder.assignedPtipoteName == null
+          ? 'Fabrication manuelle d’un module pour la Nurserie.'
+          : 'Avec ${moduleOrder.assignedPtipoteName}.',
       progress: (1 - remaining.inSeconds / math.max(1, total.inSeconds)).clamp(
         0.0,
         1.0,
@@ -12039,6 +12044,7 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
               (module) => _PTibugModuleAtelierCard(
                 gameState: widget.gameState,
                 module: module,
+                figurines: figurines,
               ),
             ),
           ],
@@ -12181,10 +12187,12 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
   const _PTibugModuleAtelierCard({
     required this.gameState,
     required this.module,
+    required this.figurines,
   });
 
   final Zone0GameState gameState;
   final PTibugModuleType module;
+  final List<PtipoteFigurine> figurines;
 
   @override
   Widget build(BuildContext context) {
@@ -12194,10 +12202,11 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
     final cost = pTibugConfig.moduleCraftCostFor(module);
     final energy = pTibugConfig.moduleCraftEnergyFor(module);
     final hasMaterials = gameState.hasResources(cost);
-    final hasEnergy = gameState.energyUnits >= energy;
-    final craftingModule = gameState.activePTibugModuleCraftOrder;
-    final canCraft =
-        patternActive && craftingModule == null && hasMaterials && hasEnergy;
+    final manualAvailable = gameState.activeManualWorkshopOrders < 1;
+    final ptipoteAvailable =
+        gameState.activePtipoteWorkshopOrders < gameState.workshopSlots;
+    final hasEnergy = gameState.energyUnits >= energy + 1;
+    final canCraft = patternActive && manualAvailable && hasMaterials && hasEnergy;
     final ingredientText = cost.entries
         .map(
           (entry) =>
@@ -12225,7 +12234,7 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
         _ProductionSlotData(
           label: 'Atelier',
           value:
-              'Énergie : $energy / ${gameState.energyUnits}\nTemps : ${pTibugConfig.moduleCraftMinutesFor(module)} min',
+              'Énergie module : $energy\nLancement manuel : +1\nDisponible : ${gameState.energyUnits}\nTemps : ${pTibugConfig.moduleCraftMinutesFor(module)} min',
           icon: Icons.precision_manufacturing_outlined,
         ),
       ],
@@ -12238,21 +12247,35 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
       prerequisiteMet: patternActive,
       unavailableLabel: !patternActive
           ? null
-          : craftingModule != null
-              ? 'Un module est déjà en fabrication.'
+          : !manualAvailable
+              ? 'Créneau manuel de l’Atelier occupé.'
               : !hasMaterials
                   ? gameState.missingResourcesLabel(cost)
                   : !hasEnergy
                       ? 'Énergie insuffisante.'
                       : null,
       primaryActionLabel: 'Fabriquer',
-      primaryActionHint: 'utilise $energy unité(s) d’énergie',
+      primaryActionHint: 'utilise ${energy + 1} unité(s) d’énergie',
       primaryActionIcon: Icons.precision_manufacturing_outlined,
       primaryActionEnabled: canCraft,
       onPrimaryAction: () {
         final result = gameState.startPTibugModuleCraft(module);
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(result.message)));
+      },
+      secondaryActionLabel: 'Confier à un P’TIPOTE',
+      secondaryActionEnabled: patternActive && ptipoteAvailable && hasMaterials && gameState.energyUnits >= energy,
+      onSecondaryAction: () async {
+        final figurine = await _pickPtipoteForActivity(
+          context: context,
+          gameState: gameState,
+          figurines: figurines,
+          title: 'Confier ${module.displayName}',
+        );
+        if (figurine != null && context.mounted) {
+          final result = gameState.startPTibugModuleCraft(module, figurine: figurine);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
+        }
       },
     );
   }

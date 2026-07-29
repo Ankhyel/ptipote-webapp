@@ -390,7 +390,10 @@ class Zone0GameState extends ChangeNotifier {
             order.area == WorkshopOrderArea.workshop &&
             order.assignedPtipoteId == null,
       )
-      .length;
+      .length +
+      activePTibugModuleCraftOrders
+          .where((order) => order.assignedPtipoteId == null)
+          .length;
 
   int get activePtipoteWorkshopOrders => activeWorkshopOrders
       .where(
@@ -398,7 +401,10 @@ class Zone0GameState extends ChangeNotifier {
             order.area == WorkshopOrderArea.workshop &&
             order.assignedPtipoteId != null,
       )
-      .length;
+      .length +
+      activePTibugModuleCraftOrders
+          .where((order) => order.assignedPtipoteId != null)
+          .length;
 
   List<WorkshopCraftOrder> get activeKitchenOrders => activeWorkshopOrders
       .where((order) => order.area == WorkshopOrderArea.kitchen)
@@ -417,6 +423,9 @@ class Zone0GameState extends ChangeNotifier {
   int get kitchenSlots => workshopConfig.slotsForLevel(cuisineLevel);
 
   bool isAssignedToWorkshop(String figurineId) => activeWorkshopOrders.any(
+        (order) => order.assignedPtipoteId == figurineId,
+      ) ||
+      activePTibugModuleCraftOrders.any(
         (order) => order.assignedPtipoteId == figurineId,
       );
 
@@ -1584,7 +1593,8 @@ class Zone0GameState extends ChangeNotifier {
   }) {
     final figurineBonus =
         levelFor(figurine) * workshopConfig.levelSpeedBonusPercent;
-    return (figurineBonus.clamp(0, workshopConfig.maxLevelSpeedBonusPercent) +
+    return (workshopConfig.ptipoteCraftTimeReductionPercent +
+            figurineBonus.clamp(0, workshopConfig.maxLevelSpeedBonusPercent) +
             workshopConfig.buildingSpeedBonusForLevel(buildingLevel))
         .clamp(0, 0.50);
   }
@@ -3878,7 +3888,10 @@ class Zone0GameState extends ChangeNotifier {
     return changed;
   }
 
-  Zone0ActionResult startPTibugModuleCraft(PTibugModuleType type) {
+  Zone0ActionResult startPTibugModuleCraft(
+    PTibugModuleType type, {
+    PtipoteFigurine? figurine,
+  }) {
     if (atelierLevel < 1) {
       return const Zone0ActionResult(
         success: false,
@@ -3891,10 +3904,23 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Pattern de Module non actif.',
       );
     }
-    if (activePTibugModuleCraftOrder != null) {
+    resolveWorkshopOrder();
+    if (figurine == null && activeManualWorkshopOrders >= 1) {
       return const Zone0ActionResult(
         success: false,
-        message: 'Un Module P’TIBUG est déjà en fabrication.',
+        message: 'Le créneau manuel de l’Atelier est occupé.',
+      );
+    }
+    if (figurine != null && activePtipoteWorkshopOrders >= workshopSlots) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Tous les emplacements P’TIPOTE sont occupés.',
+      );
+    }
+    if (figurine != null && isBusy(figurine)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'P’TIPOTE occupé.',
       );
     }
     final cost = pTibugConfig.moduleCraftCostFor(type);
@@ -3903,7 +3929,8 @@ class Zone0GameState extends ChangeNotifier {
       pTibugConfig.moduleCraftEnergyFor(type) -
           _activePTibugEffect('Réduction énergie'),
     );
-    if (!hasResources(cost) || energyUnits < energyCost) {
+    final totalEnergyCost = energyCost + (figurine == null ? 1 : 0);
+    if (!hasResources(cost) || energyUnits < totalEnergyCost) {
       return const Zone0ActionResult(
         success: false,
         message: 'Ressources ou énergie insuffisantes.',
@@ -3915,23 +3942,30 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Ressources insuffisantes.',
       );
     }
-    energyUnits -= energyCost;
+    energyUnits -= totalEnergyCost;
     final current = DateTime.now();
+    final duration = Duration(
+      minutes: pTibugConfig.moduleCraftMinutesFor(type),
+    );
+    final speedBonus = craftSpeedBonus(figurine, atelierLevel);
     pTibugModuleCraftOrders.add(
       PTibugModuleCraftOrder(
         id: current.microsecondsSinceEpoch.toString(),
         moduleType: type,
         startedAt: current,
-        endsAt: current.add(
-          Duration(minutes: pTibugConfig.moduleCraftMinutesFor(type)),
-        ),
+        endsAt: current.add(Duration(
+          seconds: math.max(1, (duration.inSeconds * (1 - speedBonus)).round()),
+        )),
+        assignedPtipoteId: figurine?.id,
+        assignedPtipoteName: figurine?.displayName,
+        energyCost: totalEnergyCost,
       ),
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: 'Fabrication de ${type.displayName} lancée.',
+      message: 'Fabrication de ${type.displayName} lancée${figurine == null ? ' manuellement' : ' avec ${figurine.displayName}'}.',
     );
   }
 
@@ -4617,8 +4651,11 @@ class Zone0GameState extends ChangeNotifier {
 
   int get pTibugActiveSlots => pTibugConfig.slotsForLevel(plaineNurseryLevel);
 
+  List<PTibugModuleCraftOrder> get activePTibugModuleCraftOrders =>
+      pTibugModuleCraftOrders.where((item) => item.isActive).toList();
+
   PTibugModuleCraftOrder? get activePTibugModuleCraftOrder =>
-      pTibugModuleCraftOrders.where((item) => item.isActive).firstOrNull;
+      activePTibugModuleCraftOrders.firstOrNull;
 
   String pTibugBiologicalNameFor(PTibug bug) => _pTibugBiologicalName(bug);
 
@@ -10085,6 +10122,9 @@ class PTibugModuleCraftOrder {
     required this.moduleType,
     required this.startedAt,
     required this.endsAt,
+    this.assignedPtipoteId,
+    this.assignedPtipoteName,
+    this.energyCost = 0,
     this.completedAt,
   });
 
@@ -10092,6 +10132,9 @@ class PTibugModuleCraftOrder {
   final PTibugModuleType moduleType;
   final DateTime startedAt;
   final DateTime endsAt;
+  final String? assignedPtipoteId;
+  final String? assignedPtipoteName;
+  final int energyCost;
   DateTime? completedAt;
 
   bool get isActive => completedAt == null;
@@ -10108,6 +10151,9 @@ class PTibugModuleCraftOrder {
             DateTime.now(),
         endsAt:
             Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
+        assignedPtipoteId: data['assignedPtipoteId'] as String?,
+        assignedPtipoteName: data['assignedPtipoteName'] as String?,
+        energyCost: Zone0GameState.instance._readInt(data['energyCost']),
         completedAt: Zone0GameState.instance._readDate(data['completedAt']),
       );
 
@@ -10116,6 +10162,9 @@ class PTibugModuleCraftOrder {
         'moduleType': moduleType.name,
         'startedAt': Timestamp.fromDate(startedAt),
         'endsAt': Timestamp.fromDate(endsAt),
+        'assignedPtipoteId': assignedPtipoteId,
+        'assignedPtipoteName': assignedPtipoteName,
+        'energyCost': energyCost,
         'completedAt':
             completedAt == null ? null : Timestamp.fromDate(completedAt!),
       };

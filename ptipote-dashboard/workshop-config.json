@@ -4,5 +4,6 @@
   "maxLevelSpeedBonusPercent": 0.15,
   "buildingLevelSpeedBonusPercent": 0.05,
   "maxBuildingSpeedBonusPercent": 0.2,
-  "slotsPerLevel": 1
+  "slotsPerLevel": 1,
+  "ptipoteCraftTimeReductionPercent": 0.2
 }
