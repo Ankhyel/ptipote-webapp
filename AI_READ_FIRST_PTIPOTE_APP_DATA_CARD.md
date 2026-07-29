@@ -1507,6 +1507,13 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - Pendant des travaux d’amélioration, les P’TIBUG restent affectés mais production et consommation du Refuge sont suspendues ; à la fin ils reprennent leur cycle si les stocks sont suffisants. Les sauvegardes existantes sans Refuge restent des chantiers non construits, sans création automatique de bâtiment.
 - La section Dashboard **P’TIBUG → Bâtiments, consommation et Cellules** édite `territory` : niveaux/capacité, coût et durée de construction, coûts/durée d’amélioration, consommation du Refuge et capacité des Cellules. Les valeurs distantes sont fusionnées par `remote_zone0_settings.dart`, avec `ptibug_config.dart` comme fallback versionné.
 
+### Récoltes détaillées et alertes de besoins
+
+- Les cartes P’TIBUG n’affichent le compartiment **Cellules** que lorsqu’un Trait principal ou secondaire est `capteurIntelligent`. La récolte individuelle détaille désormais chaque ressource transférée, les Cellules par famille et tout reliquat matériel conservé faute de place.
+- La jauge Déchets représente la réserve de Déchets récupérables du biome : à 10/10, l’estimation de mission affiche bien le gain disponible. Les sorties `Déchets` des P’TIBUG sont également pondérées par cette même réserve, sans toucher à Organique ni Minéral.
+- Les retours de mission listent les ressources, Cellules, Vigueur et l’état de chaque P’TIPOTE (énergie, faim, sommeil et bonheur). Les rapports de ronde indiquent déjà le gain de sécurité et la météo détaille la préparation, demande et durée.
+- `functions/index.js` ajoute `notifySavedPtipoteNeeds`, un contrôle Firebase planifié toutes les 30 minutes. Il convertit les besoins sauvegardés critiques (faim, repos, énergie) en documents de notifications ; le déclencheur FCM existant les envoie sur l’iPhone même lorsque l’application est fermée. Son déploiement Firebase est requis pour l’activer en production.
+
 ### Missions de Lisière : Récolte et Recherche
 
 - L’onglet **Missions** réutilise un configurateur unique : type, biome, participants, durée et intensité. Les nouvelles missions ne proposent que **Normale** et **Intense** ; `doux` reste uniquement lisible dans les anciennes sauvegardes pour qu’une mission déjà partie se termine sans perte.

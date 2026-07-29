@@ -5795,6 +5795,10 @@ class _PTibugTerritoryStockSummary extends StatelessWidget {
       );
 }
 
+bool _hasSmartSensor(PTibug bug) =>
+    bug.biologicalTraitId == 'capteurIntelligent' ||
+    bug.secondTraitId == 'capteurIntelligent';
+
 class _PTibugTerritoryBugCard extends StatelessWidget {
   const _PTibugTerritoryBugCard(
       {required this.gameState, required this.bug, required this.building});
@@ -5844,8 +5848,9 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                 Text(inactive ? (bug.inactiveReason ?? 'Inactif') : 'Actif'),
                 Text(
                     'Production : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
-                Text(
-                    'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
+                if (_hasSmartSensor(bug))
+                  Text(
+                      'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
                 if (weatherLabel != null)
                   Text(weatherLabel,
                       style: const TextStyle(
@@ -5947,8 +5952,9 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                     'Production : ${gameState.pTibugProductionFor(bug).entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
                 Text(
                     'Stock matériel : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
-                Text(
-                    'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
+                if (_hasSmartSensor(bug))
+                  Text(
+                      'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
                 Text(
                     'État : ${bug.inactiveReason ?? (bug.assignedBuildingId == null ? 'Inactif' : 'Actif')}'),
               ]),
@@ -6226,9 +6232,12 @@ class _ForageEstimateCard extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                 ),
               )
+            else if (wasteLevel <= 0)
+              const Text(
+                  'Le biome ne contient actuellement aucun Déchet récupérable.')
             else
               const Text(
-                  'Le biome ne contient actuellement aucun Déchet récupérable.'),
+                  'Déchets récupérables : gain estimé inclus dans la mission.'),
             Text('Vitalité consommée : ${estimate.vitalityCost}'),
             Text('XP gagnée : ${estimate.xpGain} total'),
             Text('Sécurité locale : ${estimate.securityAtLaunch}%'),
@@ -10055,9 +10064,10 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       Text(
                         'XP ${bug.xp} · Réserve ${bug.storedAmount}/${widget.gameState.pTibugCapacityFor(bug)}',
                       ),
-                      Text(
-                        'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}',
-                      ),
+                      if (_hasSmartSensor(bug))
+                        Text(
+                          'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}',
+                        ),
                       const SizedBox(height: 8),
                       if (bug.biologicalTraitId != null)
                         _LoadoutPill(
@@ -10651,8 +10661,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                             'Vigueur : ${(widget.gameState.biomassPTibugMultiplierFor(bug.refugeBiome) * 100).round()}% · bonus niveau : +${((pTibugConfig.progression.yieldMultiplierForLevel(bug.level) - 1) * 100).round()}%'),
                         Text(
                             'Capteur : ${widget.gameState.pTibugWeatherFor(bug) == null ? 'aucun malus météo' : 'météo active, protection vérifiée au cycle'}'),
-                        Text(
-                            'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity} · chance ${bug.biologicalTraitId == 'capteurIntelligent' ? pTibugConfig.weather.sensorChanceByLevel[bug.biologicalTraitLevel] ?? 0 : bug.secondTraitId == 'capteurIntelligent' ? pTibugConfig.weather.sensorChanceByLevel[bug.secondTraitLevel] ?? 0 : 0}%'),
+                        if (_hasSmartSensor(bug))
+                          Text(
+                              'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity} · chance ${bug.biologicalTraitId == 'capteurIntelligent' ? pTibugConfig.weather.sensorChanceByLevel[bug.biologicalTraitLevel] ?? 0 : pTibugConfig.weather.sensorChanceByLevel[bug.secondTraitLevel] ?? 0}%'),
                       ],
                     ),
                   ),

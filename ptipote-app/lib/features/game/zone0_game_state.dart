@@ -4496,6 +4496,12 @@ class Zone0GameState extends ChangeNotifier {
             math.max(1, (entry.value * sensorMultiplier).round());
       }
     }
+    // Déchets are local to the biome: a full waste reserve boosts their
+    // production, while an assainied biome no longer yields exploitable waste.
+    if (output.containsKey('Déchets')) {
+      output['Déchets'] =
+          (output['Déchets']! * wasteMultiplierFor(bug.refugeBiome)).round();
+    }
     final weather = pTibugWeatherFor(bug);
     final protected =
         weather != null && _hasPTibugWeatherProtection(bug, weather);
@@ -4816,12 +4822,18 @@ class Zone0GameState extends ChangeNotifier {
     bug.storedResources
       ..clear()
       ..addAll(materialResult?.pending ?? const <String, int>{});
-    final collectedCells = bug.storedDataCells.length;
-    final collectedMaterials =
-        output.values.fold<int>(0, (sum, value) => sum + value) -
-            (materialResult?.pending.values
-                    .fold<int>(0, (sum, value) => sum + value) ??
-                0);
+    final collectedResourceDetails = <String>[
+      for (final entry in output.entries)
+        if (entry.value - (materialResult?.pending[entry.key] ?? 0) > 0)
+          '${entry.value - (materialResult?.pending[entry.key] ?? 0)} ${entry.key}',
+    ];
+    final collectedCellDetails = <String>[
+      for (final family in bug.storedDataCells
+          .map((cell) => cell.dominantFamily)
+          .whereType<PTibugDataFamily>()
+          .toSet())
+        '${bug.storedDataCells.where((cell) => cell.dominantFamily == family).length} Cellule ${_ptibugDataFamilyLabel(family)}',
+    ];
     if (collectedCells > 0) {
       pTibugDataCells.addAll(bug.storedDataCells);
       bug.storedDataCells.clear();
@@ -4835,8 +4847,10 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message:
-          '${bug.displayName} : $collectedMaterials ressource(s) et $collectedCells Cellule(s) récupérée(s).',
+      message: '${bug.displayName} : '
+          '${collectedResourceDetails.isEmpty ? 'aucune ressource' : collectedResourceDetails.join(', ')}'
+          '${collectedCellDetails.isEmpty ? '' : ' · ${collectedCellDetails.join(', ')}'}'
+          '${materialResult?.hasPending == true ? ' · reliquat conservé : ${materialResult!.pending.entries.map((entry) => '${entry.value} ${entry.key}').join(', ')}' : ''}.',
     );
   }
 
@@ -6972,7 +6986,8 @@ class Zone0GameState extends ChangeNotifier {
         mailbox: Zone0MessageMailbox.companions,
         subject: 'Alerte météo',
         concerned: 'Maison',
-        summary: config.announcement,
+        summary:
+            '${config.announcement}${requestedItem == null ? '' : ' Demande : $requestedAmount $requestedItem.'} Durée : ${config.durationMinutes} min.',
       ),
     );
   }
@@ -6996,8 +7011,8 @@ class Zone0GameState extends ChangeNotifier {
           subject: 'Rapport météo terminé',
           concerned: 'Maison',
           summary: alert.preparationCompleted
-              ? '$label atténué.'
-              : '$label non préparé.',
+              ? '$label atténué. Préparation validée : ${alert.requestedAmount} ${alert.requestedItem ?? 'objet'}.'
+              : '$label non préparé. Les Refuges concernés ont subi leur malus de production.',
         ),
       );
       alert.reportSent = true;
@@ -7592,6 +7607,7 @@ class Zone0GameState extends ChangeNotifier {
           figurineName: memberName,
           vitality: vitality,
           hunger: hunger,
+          rest: rest,
           moodLabel: moodLabel,
         ),
       );
@@ -7638,9 +7654,12 @@ class Zone0GameState extends ChangeNotifier {
         mailbox: Zone0MessageMailbox.companions,
         subject: 'Retour de mission Lisière',
         concerned: mission.figurineName,
-        summary: incident == 'aucun'
-            ? '${mission.type == ForageMissionType.research ? 'Recherche' : 'Récolte'} terminée : ${dataCells.length} Cellule${dataCells.length > 1 ? 's' : ''} de données trouvée${dataCells.length > 1 ? 's' : ''}, Vigueur -$biomassCost%.'
-            : 'Événement : $incident. Vigueur -$biomassCost%.',
+        summary:
+            '${mission.type == ForageMissionType.research ? 'Recherche' : 'Récolte'} : '
+            '${rewards.isEmpty ? 'aucune ressource matérielle' : rewards.entries.map((entry) => '${entry.value} ${entry.key}').join(', ')}'
+            '${dataCells.isEmpty ? '' : ' · ${dataCells.length} Cellule(s)'}'
+            ' · Vigueur -$biomassCost%'
+            '${incident == 'aucun' ? '' : ' · événement : $incident'}.',
       ),
     );
     mission.status = ForageMissionStatus.completed;
@@ -8137,6 +8156,7 @@ class Zone0GameState extends ChangeNotifier {
     required String figurineName,
     required int vitality,
     required int hunger,
+    required int rest,
     required String moodLabel,
   }) {
     final notes = <String>[];
@@ -8152,7 +8172,9 @@ class Zone0GameState extends ChangeNotifier {
     if (hunger <= ptipoteStatsConfig.happyHungerThreshold) {
       notes.add('$figurineName aimerait manger.');
     }
-    notes.add('État de bonheur : $moodLabel.');
+    notes.add(
+      'Énergie : $vitality/${ptipoteStatsConfig.maxVitality} · faim : $hunger/${ptipoteStatsConfig.baseHunger} · sommeil : $rest/${ptipoteStatsConfig.maxRest} · bonheur : $moodLabel.',
+    );
     return notes.join(' ');
   }
 
