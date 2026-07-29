@@ -792,6 +792,29 @@ PTibugConfig _ptibug(Object? value) {
           base.territory.refugeEnergyEveryHours),
       dataCellStorageCapacity: _int(rawTerritory?['dataCellStorageCapacity'],
           base.territory.dataCellStorageCapacity),
+      refugeConstructionOrganic: _int(
+          rawTerritory?['refugeConstructionOrganic'],
+          base.territory.refugeConstructionOrganic),
+      refugeConstructionMineral: _int(
+          rawTerritory?['refugeConstructionMineral'],
+          base.territory.refugeConstructionMineral),
+      refugeConstructionBioBatteries: _int(
+          rawTerritory?['refugeConstructionBioBatteries'],
+          base.territory.refugeConstructionBioBatteries),
+      refugeConstructionMinutes: _int(
+          rawTerritory?['refugeConstructionMinutes'],
+          base.territory.refugeConstructionMinutes),
+      refugeUpgradeOrganicByLevel: _levelMap(
+          rawTerritory?['refugeUpgradeOrganicByLevel'],
+          base.territory.refugeUpgradeOrganicByLevel),
+      refugeUpgradeMineralByLevel: _levelMap(
+          rawTerritory?['refugeUpgradeMineralByLevel'],
+          base.territory.refugeUpgradeMineralByLevel),
+      refugeUpgradeBioBatteriesByLevel: _levelMap(
+          rawTerritory?['refugeUpgradeBioBatteriesByLevel'],
+          base.territory.refugeUpgradeBioBatteriesByLevel),
+      refugeUpgradeMinutes: _int(rawTerritory?['refugeUpgradeMinutes'],
+          base.territory.refugeUpgradeMinutes),
     ),
     progression: PTibugProgressionConfig(
       maximumLevel:

@@ -143,4 +143,19 @@ void main() {
     expect(defaultLisiereForageConfig.intensities[ForageIntensity.intensif],
         isNotNull);
   });
+
+  test('les Refuges ont leur chantier et leur capacité V1 configurables', () {
+    final territory = defaultPTibugConfig.territory;
+
+    expect(territory.refugeMaximumLevel, 4);
+    expect(territory.refugeCapacityForLevel(1), 1);
+    expect(territory.refugeCapacityForLevel(4), 4);
+    expect(territory.refugeRequirementsForLevel(1), <String, int>{
+      'Organique': 20,
+      'Minéral': 10,
+    });
+    expect(territory.refugeBioBatteriesForLevel(1), 1);
+    expect(territory.refugeRequirementsForLevel(2)['Organique'], 30);
+    expect(territory.refugeUpgradeBioBatteriesByLevel[4], 8);
+  });
 }

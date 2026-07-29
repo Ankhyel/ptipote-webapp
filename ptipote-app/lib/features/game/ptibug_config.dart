@@ -474,6 +474,14 @@ class PTibugTerritoryConfig {
     required this.refugeEnergyAmount,
     required this.refugeEnergyEveryHours,
     required this.dataCellStorageCapacity,
+    required this.refugeConstructionOrganic,
+    required this.refugeConstructionMineral,
+    required this.refugeConstructionBioBatteries,
+    required this.refugeConstructionMinutes,
+    required this.refugeUpgradeOrganicByLevel,
+    required this.refugeUpgradeMineralByLevel,
+    required this.refugeUpgradeBioBatteriesByLevel,
+    required this.refugeUpgradeMinutes,
   });
 
   final int nurseryMaximumLevel;
@@ -492,11 +500,35 @@ class PTibugTerritoryConfig {
   final int refugeEnergyAmount;
   final int refugeEnergyEveryHours;
   final int dataCellStorageCapacity;
+  final int refugeConstructionOrganic;
+  final int refugeConstructionMineral;
+  final int refugeConstructionBioBatteries;
+  final int refugeConstructionMinutes;
+  final Map<int, int> refugeUpgradeOrganicByLevel;
+  final Map<int, int> refugeUpgradeMineralByLevel;
+  final Map<int, int> refugeUpgradeBioBatteriesByLevel;
+  final int refugeUpgradeMinutes;
 
   int nurseryCapacityForLevel(int level) =>
       level.clamp(0, nurseryMaximumLevel).toInt() * capacityPerLevel;
   int refugeCapacityForLevel(int level) =>
       level.clamp(0, refugeMaximumLevel).toInt() * capacityPerLevel;
+
+  Map<String, int> refugeRequirementsForLevel(int level) => <String, int>{
+        'Organique': level <= 1
+            ? refugeConstructionOrganic
+            : refugeUpgradeOrganicByLevel[level] ?? 0,
+        'Minéral': level <= 1
+            ? refugeConstructionMineral
+            : refugeUpgradeMineralByLevel[level] ?? 0,
+      }..removeWhere((_, amount) => amount <= 0);
+
+  int refugeBioBatteriesForLevel(int level) => level <= 1
+      ? refugeConstructionBioBatteries
+      : refugeUpgradeBioBatteriesByLevel[level] ?? 0;
+
+  int refugeMinutesForLevel(int level) =>
+      level <= 1 ? refugeConstructionMinutes : refugeUpgradeMinutes;
 }
 
 /// Runtime final because this catalog uses collection-for entries to keep the
@@ -1156,6 +1188,14 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     refugeEnergyAmount: 1,
     refugeEnergyEveryHours: 8,
     dataCellStorageCapacity: 3,
+    refugeConstructionOrganic: 20,
+    refugeConstructionMineral: 10,
+    refugeConstructionBioBatteries: 1,
+    refugeConstructionMinutes: 1,
+    refugeUpgradeOrganicByLevel: <int, int>{2: 30, 3: 60, 4: 120},
+    refugeUpgradeMineralByLevel: <int, int>{2: 15, 3: 30, 4: 60},
+    refugeUpgradeBioBatteriesByLevel: <int, int>{2: 2, 3: 4, 4: 8},
+    refugeUpgradeMinutes: 1,
   ),
   progression: const PTibugProgressionConfig(
     maximumLevel: 6,

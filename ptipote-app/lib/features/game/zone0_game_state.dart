@@ -221,6 +221,22 @@ class Zone0GameState extends ChangeNotifier {
   PTibugTerritoryBuilding? territoryBuildingForId(String? id) =>
       id == null ? null : pTibugTerritoryBuildings[id];
 
+  String refugeTerritoryId(ForageBiome biome) => 'refuge-${biome.name}';
+
+  PTibugTerritoryBuilding? refugeForBiome(ForageBiome biome) =>
+      territoryBuildingForId(refugeTerritoryId(biome));
+
+  bool _isRefugeTarget(String targetId) => targetId.startsWith('refuge-');
+
+  ForageBiome? _refugeBiomeForTarget(String targetId) {
+    if (!_isRefugeTarget(targetId)) return null;
+    final name = targetId.substring('refuge-'.length);
+    return ForageBiome.values.where((biome) => biome.name == name).firstOrNull;
+  }
+
+  bool isTerritoryUnderConstruction(PTibugTerritoryBuilding building) =>
+      constructionProjects[building.id]?.isInProgress ?? false;
+
   PTibugTerritoryBuilding get plaineNurseryTerritory =>
       pTibugTerritoryBuildings.putIfAbsent(
         plaineNurseryTerritoryId,
@@ -3106,6 +3122,9 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Map<String, int> _projectRequirements(String targetId, int targetLevel) {
+    if (_isRefugeTarget(targetId)) {
+      return pTibugConfig.territory.refugeRequirementsForLevel(targetLevel);
+    }
     if (targetId == 'housing') {
       return housingConfig.housingRequirementsForUnit(targetLevel).map(
             (resource, amount) => MapEntry(
@@ -3125,34 +3144,77 @@ class Zone0GameState extends ChangeNotifier {
   Duration _projectDuration(String targetId) => Duration(
         minutes: targetId == 'housing'
             ? housingConfig.housingDurationMinutes
-            : buildingConstructionConfig.project(targetId).durationMinutes,
+            : _isRefugeTarget(targetId)
+                ? pTibugConfig.territory
+                    .refugeMinutesForLevel(_buildingLevel(targetId) + 1)
+                : buildingConstructionConfig.project(targetId).durationMinutes,
       );
 
-  int _buildingLevel(String targetId) => switch (targetId) {
-        'fablab' => atelierLevel,
-        'cuisine' => cuisineLevel,
-        'atelier' => atelierLevel,
-        'recycler' => recyclerLevel,
-        'securityTower' => securityTowerLevel,
-        'market' => marketLevel,
-        'house' => houseLevel,
-        'housing' => housingUnits,
-        'plaineNursery' => plaineNurseryLevel,
-        _ => 0,
-      };
+  int _buildingLevel(String targetId) {
+    if (_isRefugeTarget(targetId)) {
+      return territoryBuildingForId(targetId)?.level ?? 0;
+    }
+    return switch (targetId) {
+      'fablab' => atelierLevel,
+      'cuisine' => cuisineLevel,
+      'atelier' => atelierLevel,
+      'recycler' => recyclerLevel,
+      'securityTower' => securityTowerLevel,
+      'market' => marketLevel,
+      'house' => houseLevel,
+      'housing' => housingUnits,
+      'plaineNursery' => plaineNurseryLevel,
+      _ => 0,
+    };
+  }
 
-  int _projectMaxLevel(String targetId) => switch (targetId) {
-        'fablab' => 1,
-        'cuisine' => fablabConfig.cuisineMaxLevel,
-        'atelier' => fablabConfig.atelierMaxLevel,
-        'recycler' => wasteRecyclerConfig.recyclerMaxLevel,
-        'securityTower' => 3,
-        'market' => 5,
-        'house' => housingConfig.houseMaxLevel,
-        'housing' => 99,
-        'plaineNursery' => pTibugConfig.territory.nurseryMaximumLevel,
-        _ => 1,
-      };
+  int _projectMaxLevel(String targetId) {
+    if (_isRefugeTarget(targetId))
+      return pTibugConfig.territory.refugeMaximumLevel;
+    return switch (targetId) {
+      'fablab' => 1,
+      'cuisine' => fablabConfig.cuisineMaxLevel,
+      'atelier' => fablabConfig.atelierMaxLevel,
+      'recycler' => wasteRecyclerConfig.recyclerMaxLevel,
+      'securityTower' => 3,
+      'market' => 5,
+      'house' => housingConfig.houseMaxLevel,
+      'housing' => 99,
+      'plaineNursery' => pTibugConfig.territory.nurseryMaximumLevel,
+      _ => 1,
+    };
+  }
+
+  int projectBioBatteryRequirement(String targetId) {
+    final project = projectFor(targetId);
+    if (!_isRefugeTarget(targetId)) return 0;
+    return pTibugConfig.territory
+        .refugeBioBatteriesForLevel(project.targetLevel);
+  }
+
+  Zone0ActionResult depositProjectBioBattery(String targetId,
+      {int amount = 1}) {
+    final project = projectFor(targetId);
+    final required = projectBioBatteryRequirement(targetId);
+    if (!_isRefugeTarget(targetId) ||
+        !project.canEditMaterials ||
+        required <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Dépôt impossible.');
+    }
+    final deposit = math.min(amount,
+        math.min(bioBatteries, required - project.depositedBioBatteries));
+    if (deposit <= 0)
+      return const Zone0ActionResult(
+          success: false, message: 'Aucune Bio-batterie à déposer.');
+    bioBatteries -= deposit;
+    project.depositedBioBatteries += deposit;
+    project.refreshState(extraReady: project.depositedBioBatteries >= required);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$deposit Bio-batterie(s) déposée(s).');
+  }
 
   Zone0ActionResult depositProjectMaterial(
     String targetId,
@@ -3160,6 +3222,13 @@ class Zone0GameState extends ChangeNotifier {
     int amount,
   ) {
     final project = projectFor(targetId);
+    final refugeBiome = _refugeBiomeForTarget(targetId);
+    if (refugeBiome != null &&
+        (refugeBiome == ForageBiome.plaineRiche ||
+            !isBiomeUnlocked(refugeBiome))) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ce Refuge ne peut pas être construit ici.');
+    }
     if (!project.canEditMaterials) {
       return const Zone0ActionResult(
         success: false,
@@ -3226,6 +3295,15 @@ class Zone0GameState extends ChangeNotifier {
     String targetId, {
     int? campHeartLevel,
   }) {
+    final refugeBiome = _refugeBiomeForTarget(targetId);
+    if (refugeBiome != null &&
+        (refugeBiome == ForageBiome.plaineRiche ||
+            !isBiomeUnlocked(refugeBiome))) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce Refuge ne peut pas être construit ici.',
+      );
+    }
     if (targetId == 'securityTower' &&
         (campHeartLevel ?? 0) < securityTowerConfig.requiredCampHeartLevel) {
       return Zone0ActionResult(
@@ -3262,7 +3340,15 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Ce batiment est deja au niveau maximum.',
       );
     }
-    if (!project.isReady) {
+    if (project.isInProgress) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Les travaux sont déjà en cours.',
+      );
+    }
+    if (!project.isReady ||
+        project.depositedBioBatteries <
+            projectBioBatteryRequirement(targetId)) {
       return const Zone0ActionResult(
         success: false,
         message: 'Tous les matériaux sont requis.',
@@ -3347,6 +3433,33 @@ class Zone0GameState extends ChangeNotifier {
           ..level = plaineNurseryLevel
           ..isBuilt = plaineNurseryLevel > 0;
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
+      default:
+        final refugeBiome = _refugeBiomeForTarget(project.targetId);
+        if (refugeBiome != null) {
+          final refuge = pTibugTerritoryBuildings.putIfAbsent(
+            project.targetId,
+            () => PTibugTerritoryBuilding(
+              id: project.targetId,
+              kind: PTibugTerritoryKind.refuge,
+              biome: refugeBiome,
+              level: project.currentLevel,
+              isBuilt: true,
+              lastConsumptionAt: now,
+            ),
+          );
+          refuge
+            ..level = project.currentLevel
+            ..isBuilt = true
+            ..lastConsumptionAt = now;
+          for (final bug in pTibugsForTerritory(refuge.id)) {
+            if (bug.inactiveReason == 'Travaux en cours') {
+              bug
+                ..inactiveReason = null
+                ..nextProductionAt = now.add(_pTibugCycleDuration(bug));
+            }
+          }
+          emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
+        }
     }
     if (!project.notificationCreated) {
       final isFablabUnit = const <String>{
@@ -3357,7 +3470,7 @@ class Zone0GameState extends ChangeNotifier {
       reports.add(
         PtipoteMissionReport.system(
           message:
-              'Les travaux de ${buildingConstructionConfig.project(project.targetId).label} sont terminés. Niveau ${project.currentLevel}.',
+              'Les travaux de ${_projectLabel(project.targetId)} sont terminés. Niveau ${project.currentLevel}.',
           sourceBuildingId: project.targetId,
           mailbox: isFablabUnit
               ? Zone0MessageMailbox.fablab
@@ -3365,12 +3478,16 @@ class Zone0GameState extends ChangeNotifier {
           subject: 'Fin de chantier',
           concerned: 'Joueur',
           summary:
-              '${buildingConstructionConfig.project(project.targetId).label} niveau ${project.currentLevel} est prêt.',
+              '${_projectLabel(project.targetId)} niveau ${project.currentLevel} est prêt.',
         ),
       );
       project.notificationCreated = true;
     }
   }
+
+  String _projectLabel(String targetId) => _isRefugeTarget(targetId)
+      ? 'Refuge P’TIBUG'
+      : buildingConstructionConfig.project(targetId).label;
 
   Zone0ActionResult thankResidentsForHousing(String projectId) {
     final project = constructionProjects[projectId];
@@ -3979,6 +4096,14 @@ class Zone0GameState extends ChangeNotifier {
     for (final bug in pTibugs.where(
       (item) => item.assignedBuildingId != null && item.inactiveReason == null,
     )) {
+      final building = territoryBuildingForId(bug.assignedBuildingId);
+      if (building != null && isTerritoryUnderConstruction(building)) {
+        bug
+          ..inactiveReason = 'Travaux en cours'
+          ..nextProductionAt = null;
+        changed = true;
+        continue;
+      }
       final capacity = _pTibugCapacity(bug);
       // Also pause saves written by older builds: their full-stock marker may
       // coexist with an overdue cycle timestamp, especially after capacity
@@ -4079,6 +4204,7 @@ class Zone0GameState extends ChangeNotifier {
   bool _resolvePTibugTerritoryConsumption(DateTime current) {
     var changed = false;
     for (final building in activePTibugTerritories) {
+      if (isTerritoryUnderConstruction(building)) continue;
       final previous = building.lastConsumptionAt ?? current;
       final elapsedHours = math.max(0, current.difference(previous).inHours);
       final residents = pTibugsForTerritory(building.id);
@@ -8756,6 +8882,7 @@ class ConstructionProject {
     required this.requirements,
     required this.constructionDuration,
     Map<String, int>? depositedMaterials,
+    this.depositedBioBatteries = 0,
     this.state = ConstructionProjectState.available,
     this.startedAt,
     this.endsAt,
@@ -8784,6 +8911,8 @@ class ConstructionProject {
       targetLevel: Zone0GameState.instance._readInt(data['targetLevel']),
       requirements: mapValue(data['requirements']),
       depositedMaterials: mapValue(data['depositedMaterials']),
+      depositedBioBatteries:
+          Zone0GameState.instance._readInt(data['depositedBioBatteries']),
       constructionDuration: Duration(seconds: math.max(1, durationSeconds)),
       state: ForageMission._enumByName(
         ConstructionProjectState.values,
@@ -8804,6 +8933,7 @@ class ConstructionProject {
   int targetLevel;
   Map<String, int> requirements;
   final Map<String, int> depositedMaterials;
+  int depositedBioBatteries;
   Duration constructionDuration;
   ConstructionProjectState state;
   DateTime? startedAt;
@@ -8837,17 +8967,18 @@ class ConstructionProject {
     this.requirements = requirements;
     this.constructionDuration = constructionDuration;
     depositedMaterials.clear();
+    depositedBioBatteries = 0;
     startedAt = null;
     endsAt = null;
     completedAt = null;
     state = ConstructionProjectState.available;
   }
 
-  void refreshState() {
+  void refreshState({bool extraReady = true}) {
     if (isInProgress || state == ConstructionProjectState.built) return;
     if (depositedMaterials.isEmpty) {
       state = ConstructionProjectState.available;
-    } else if (isReady) {
+    } else if (isReady && extraReady) {
       state = ConstructionProjectState.readyToBuild;
     } else {
       state = ConstructionProjectState.collectingMaterials;
@@ -8861,6 +8992,7 @@ class ConstructionProject {
     currentLevel = targetLevel;
     completedAt = now;
     depositedMaterials.clear();
+    depositedBioBatteries = 0;
     state = ConstructionProjectState.built;
     return true;
   }
@@ -8873,6 +9005,7 @@ class ConstructionProject {
         'targetLevel': targetLevel,
         'requirements': requirements,
         'depositedMaterials': depositedMaterials,
+        'depositedBioBatteries': depositedBioBatteries,
         'constructionDurationSeconds': constructionDuration.inSeconds,
         'state': state.name,
         'startedAt': startedAt == null ? null : Timestamp.fromDate(startedAt!),

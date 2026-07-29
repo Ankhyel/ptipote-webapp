@@ -5419,6 +5419,29 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
     final visual = gameState.biomassVisualStateFor(biome);
     final activeBuilding = building?.isBuilt == true ? building : null;
     if (activeBuilding == null) {
+      if (biome == ForageBiome.plaineRiche) {
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(config.label,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w900, fontSize: 19)),
+                  Text(
+                      '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
+                  const SizedBox(height: 8),
+                  const Text(
+                      'La Plaine accueille uniquement la Nurserie principale.'),
+                ]),
+          ),
+        );
+      }
+      final targetId = gameState.refugeTerritoryId(biome);
+      final project = gameState.projectFor(targetId);
+      final requirements = project.requirements;
+      final batteries = gameState.projectBioBatteryRequirement(targetId);
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -5431,7 +5454,66 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
               Text(
                   '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
               const SizedBox(height: 10),
-              const Text('Emplacement réservé pour un futur Refuge P’TIBUG.'),
+              const SizedBox(height: 10),
+              const Text('🏕️ Refuge P’TIBUG',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+              Text(project.isInProgress
+                  ? 'En construction · fin ${project.endsAt == null ? 'prochainement' : _countdownLabel(project.endsAt!)}'
+                  : 'Non construit · capacité future : ${pTibugConfig.territory.refugeCapacityForLevel(1)} P’TIBUG'),
+              const SizedBox(height: 6),
+              const Text(
+                  'Construisez un Refuge pour accueillir des P’TIBUG et produire les ressources locales de ce biome.'),
+              const SizedBox(height: 8),
+              Text(
+                  'Organique : ${project.depositedMaterials['Organique'] ?? 0} / ${requirements['Organique'] ?? 0}'),
+              Text(
+                  'Minéral : ${project.depositedMaterials['Minéral'] ?? 0} / ${requirements['Minéral'] ?? 0}'),
+              Text(
+                  'Bio-batteries : ${project.depositedBioBatteries} / $batteries'),
+              const SizedBox(height: 8),
+              if (!project.isInProgress)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    ...(<String>['Organique', 'Minéral']
+                        .map((resource) => OutlinedButton(
+                              onPressed: (project.missingFor(resource) <= 0 ||
+                                      gameState.resourceAmount(resource) <= 0)
+                                  ? null
+                                  : () => _message(
+                                      context,
+                                      gameState
+                                          .depositProjectMaterial(
+                                              targetId, resource, 1)
+                                          .message),
+                              child: Text('+1 $resource'),
+                            ))),
+                    OutlinedButton(
+                      onPressed: project.depositedBioBatteries >= batteries ||
+                              gameState.bioBatteries <= 0
+                          ? null
+                          : () => _message(
+                              context,
+                              gameState
+                                  .depositProjectBioBattery(targetId)
+                                  .message),
+                      child: const Text('+1 Bio-batterie'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: project.isReady &&
+                              project.depositedBioBatteries >= batteries
+                          ? () => _message(
+                              context,
+                              gameState
+                                  .startConstructionProject(targetId)
+                                  .message)
+                          : null,
+                      icon: const Icon(Icons.construction_outlined),
+                      label: const Text('Commencer les travaux'),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),
@@ -5488,6 +5570,11 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
               Text(
                   'Niveau ${activeBuilding.level} · ${residents.length}/$capacity P’TIBUG actifs',
                   style: const TextStyle(fontWeight: FontWeight.w800)),
+              if (gameState.isTerritoryUnderConstruction(activeBuilding))
+                const Text(
+                    'Travaux en cours : production et consommations suspendues.',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800, color: Color(0xff8A3B24))),
               Text(
                   'Production locale : ${production.isEmpty ? 'Aucune' : production.entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
               const SizedBox(height: 8),
@@ -5528,6 +5615,16 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                       )),
                       icon: const Icon(Icons.home_work_outlined),
                       label: const Text('Entrer dans la Nurserie'),
+                    ),
+                  if (activeBuilding.kind == PTibugTerritoryKind.refuge)
+                    OutlinedButton.icon(
+                      onPressed: activeBuilding.level >=
+                              pTibugConfig.territory.refugeMaximumLevel
+                          ? null
+                          : () =>
+                              _showRefugeUpgradeSheet(context, activeBuilding),
+                      icon: const Icon(Icons.upgrade_outlined),
+                      label: const Text('Améliorer'),
                     ),
                 ],
               ),
@@ -5595,6 +5692,78 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
           ),
         ),
       );
+
+  Future<void> _showRefugeUpgradeSheet(
+    BuildContext context,
+    PTibugTerritoryBuilding building,
+  ) async {
+    final project = gameState.projectFor(building.id);
+    final batteries = gameState.projectBioBatteryRequirement(building.id);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text('Améliorer le Refuge · niveau ${project.targetLevel}',
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                ...(<String>['Organique', 'Minéral'].map((resource) => Text(
+                    '$resource : ${project.depositedMaterials[resource] ?? 0} / ${project.requirements[resource] ?? 0}'))),
+                Text(
+                    'Bio-batteries : ${project.depositedBioBatteries} / $batteries'),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, children: <Widget>[
+                  ...(<String>['Organique', 'Minéral'].map((resource) =>
+                      OutlinedButton(
+                          onPressed: project.missingFor(resource) <= 0 ||
+                                  gameState.resourceAmount(resource) <= 0
+                              ? null
+                              : () {
+                                  _message(
+                                      context,
+                                      gameState
+                                          .depositProjectMaterial(
+                                              building.id, resource, 1)
+                                          .message);
+                                  Navigator.of(sheetContext).pop();
+                                },
+                          child: Text('+1 $resource')))),
+                  OutlinedButton(
+                      onPressed: project.depositedBioBatteries >= batteries ||
+                              gameState.bioBatteries <= 0
+                          ? null
+                          : () {
+                              _message(
+                                  context,
+                                  gameState
+                                      .depositProjectBioBattery(building.id)
+                                      .message);
+                              Navigator.of(sheetContext).pop();
+                            },
+                      child: const Text('+1 Bio-batterie')),
+                ]),
+                const SizedBox(height: 8),
+                FilledButton(
+                    onPressed: project.isReady &&
+                            project.depositedBioBatteries >= batteries
+                        ? () {
+                            final result =
+                                gameState.startConstructionProject(building.id);
+                            Navigator.of(sheetContext).pop();
+                            _message(context, result.message);
+                          }
+                        : null,
+                    child: const Text('Commencer les travaux')),
+              ]),
+        ),
+      ),
+    );
+  }
 
   void _message(BuildContext context, String message) =>
       ScaffoldMessenger.of(context)

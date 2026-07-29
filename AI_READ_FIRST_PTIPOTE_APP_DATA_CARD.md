@@ -1499,6 +1499,14 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 
 ### Persistance Firebase Zone 0 et chantier de Nurserie
 
+### Refuge P’TIBUG V1
+
+- Chaque biome découvert hors Plaine expose désormais un unique chantier `refuge-<biome>`. La Plaine conserve exclusivement la Nurserie principale. Les chantiers et les Refuges utilisent `ConstructionProject` et `PTibugTerritoryBuilding`, donc la même persistance, les mêmes calculs hors ligne et les mêmes protections contre les doubles lancements que les autres bâtiments.
+- Les coûts V1 sont déposés progressivement : construction 20 Organique, 10 Minéral et 1 Bio-batterie, puis améliorations 2/3/4 : 30/15/2, 60/30/4, 120/60/8. Le joueur lance ensuite explicitement les travaux (1 minute V1). `depositedBioBatteries` est sauvegardé avec le projet ; la finalisation crée ou met à jour un seul Refuge de niveau 1 à 4.
+- Un Refuge construit réutilise ses stocks locaux Organique, Minéral et Énergie, l’ouverture de Bio-batterie de l’Atelier, le bilan journalier, les affectations, les récoltes matérielles et de Cellules, la Vigueur et la météo de son biome. Sa capacité est `niveau × capacitéParNiveau` (1 à 4 V1).
+- Pendant des travaux d’amélioration, les P’TIBUG restent affectés mais production et consommation du Refuge sont suspendues ; à la fin ils reprennent leur cycle si les stocks sont suffisants. Les sauvegardes existantes sans Refuge restent des chantiers non construits, sans création automatique de bâtiment.
+- La section Dashboard **P’TIBUG → Bâtiments, consommation et Cellules** édite `territory` : niveaux/capacité, coût et durée de construction, coûts/durée d’amélioration, consommation du Refuge et capacité des Cellules. Les valeurs distantes sont fusionnées par `remote_zone0_settings.dart`, avec `ptibug_config.dart` comme fallback versionné.
+
 ### Missions de Lisière : Récolte et Recherche
 
 - L’onglet **Missions** réutilise un configurateur unique : type, biome, participants, durée et intensité. Les nouvelles missions ne proposent que **Normale** et **Intense** ; `doux` reste uniquement lisible dans les anciennes sauvegardes pour qu’une mission déjà partie se termine sans perte.

@@ -24,7 +24,15 @@
     "nurseryEnergyEveryHours": 4,
     "refugeEnergyAmount": 1,
     "refugeEnergyEveryHours": 8,
-    "dataCellStorageCapacity": 3
+    "dataCellStorageCapacity": 3,
+    "refugeConstructionOrganic": 20,
+    "refugeConstructionMineral": 10,
+    "refugeConstructionBioBatteries": 1,
+    "refugeConstructionMinutes": 1,
+    "refugeUpgradeOrganicByLevel": {"2": 30, "3": 60, "4": 120},
+    "refugeUpgradeMineralByLevel": {"2": 15, "3": 30, "4": 60},
+    "refugeUpgradeBioBatteriesByLevel": {"2": 2, "3": 4, "4": 8},
+    "refugeUpgradeMinutes": 1
   },
   "progression": {
     "maximumLevel": 6,
