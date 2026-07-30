@@ -1286,6 +1286,10 @@ TowerOperationsConfig _towerOperations(Object? value) {
       raw['wellbeingBands'] is List ? raw['wellbeingBands'] as List : const [];
   final weather =
       raw['weatherEvents'] is List ? raw['weatherEvents'] as List : const [];
+  final globalWeather = _globalWeather(
+    raw['globalWeather'],
+    base.globalWeather,
+  );
   return TowerOperationsConfig(
     biomeRevealSecurityThreshold: _int(
       raw['biomeRevealSecurityThreshold'],
@@ -1374,6 +1378,7 @@ TowerOperationsConfig _towerOperations(Object? value) {
     manualWeatherTriggerType: TowerWeatherType.values
         .where((type) => type.name == raw['manualWeatherTriggerType'])
         .firstOrNull,
+    globalWeather: globalWeather,
     wellbeingBands: List<SecurityWellbeingBand>.generate(
       base.wellbeingBands.length,
       (index) {
@@ -1425,6 +1430,54 @@ TowerOperationsConfig _towerOperations(Object? value) {
         );
       },
     ),
+  );
+}
+
+GlobalWeatherConfig _globalWeather(Object? value, GlobalWeatherConfig base) {
+  final raw = _map(value);
+  if (raw == null) return base;
+  final intensities = _map(raw['intensities']);
+  final sensitivities = _map(raw['biomeSensitivities']);
+  return GlobalWeatherConfig(
+    cycleMinutes: _int(raw['cycleMinutes'], base.cycleMinutes),
+    forecastMinutes: _int(raw['forecastMinutes'], base.forecastMinutes),
+    maximumConsecutiveAdverseEvents: _int(raw['maximumConsecutiveAdverseEvents'], base.maximumConsecutiveAdverseEvents),
+    allowConsecutiveSevereEvents: _int(raw['allowConsecutiveSevereEvents'], base.allowConsecutiveSevereEvents),
+    forcedCalmChancePercent: _int(raw['forcedCalmChancePercent'], base.forcedCalmChancePercent),
+    maximumPTibugMalusPercent: _int(raw['maximumPTibugMalusPercent'], base.maximumPTibugMalusPercent),
+    localImpactMultipliers: <String, double>{
+      for (final entry in base.localImpactMultipliers.entries)
+        entry.key: _double(_map(raw['localImpactMultipliers'])?[entry.key], entry.value),
+    },
+    intensities: <GlobalWeatherIntensity, GlobalWeatherIntensityConfig>{
+      for (final intensity in GlobalWeatherIntensity.values)
+        intensity: () {
+          final fallback = base.intensities[intensity]!;
+          final item = _map(intensities?[intensity.name]);
+          return GlobalWeatherIntensityConfig(
+            weight: _int(item?['weight'], fallback.weight),
+            ptibugMalusPercent: _int(item?['ptibugMalusPercent'], fallback.ptibugMalusPercent),
+            minimumAffectedBiomes: _int(item?['minimumAffectedBiomes'], fallback.minimumAffectedBiomes),
+            maximumAffectedBiomes: _int(item?['maximumAffectedBiomes'], fallback.maximumAffectedBiomes),
+          );
+        }(),
+    },
+    biomeSensitivities: <String, Map<TowerWeatherType, GlobalWeatherBiomeSensitivity>>{
+      for (final biomeEntry in base.biomeSensitivities.entries)
+        biomeEntry.key: <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
+          for (final typeEntry in biomeEntry.value.entries)
+            typeEntry.key: () {
+              final fallback = typeEntry.value;
+              final item = _map(_map(sensitivities?[biomeEntry.key])?[typeEntry.key.name]);
+              return GlobalWeatherBiomeSensitivity(
+                chancePercent: _int(item?['chancePercent'], fallback.chancePercent),
+                impactMultiplier: _double(item?['impactMultiplier'], fallback.impactMultiplier),
+                immune: item?['immune'] is bool ? item!['immune'] as bool : fallback.immune,
+                reason: _string(item?['reason'], fallback.reason),
+              );
+            }(),
+        },
+    },
   );
 }
 

@@ -4550,6 +4550,15 @@ class MissionReportsSheet extends StatelessWidget {
               context,
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
+          if (reports.isNotEmpty)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => gameState.deleteReports(mailbox: mailbox),
+                icon: const Icon(Icons.delete_sweep_outlined),
+                label: const Text('Tout supprimer'),
+              ),
+            ),
           const SizedBox(height: 12),
           if (reports.isEmpty)
             _SheetEmptyState(text: _emptyLabel)
@@ -5489,6 +5498,15 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                       fontWeight: FontWeight.w900, fontSize: 19)),
               Text(
                   '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
+              if (gameState.activeGlobalWeatherEvent case final weather?)
+                Text(
+                  weather.type == TowerWeatherType.calm
+                      ? '🌤️ Temps calme · ce biome ne subit aucun malus.'
+                      : weather.isBiomeAffected(biome)
+                          ? '${switch (weather.type) { TowerWeatherType.toxicCloud => '☁️ Nuage toxique', TowerWeatherType.heatWave => '☀️ Forte chaleur', TowerWeatherType.heavyRain => '🌧️ Pluie intense', TowerWeatherType.calm => '🌤️ Temps calme' }} · ${switch (weather.intensity) { GlobalWeatherIntensity.calm => 'Calme', GlobalWeatherIntensity.moderate => 'Modérée', GlobalWeatherIntensity.strong => 'Forte', GlobalWeatherIntensity.severe => 'Sévère' }} · impact ${weather.impactFor(biome).localImpactLevel == 'high' ? 'élevé' : weather.impactFor(biome).localImpactLevel == 'medium' ? 'moyen' : 'faible'}'
+                          : 'Météo globale active · ce biome n’est pas touché.',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
               const SizedBox(height: 10),
               const SizedBox(height: 10),
               const Text('🏕️ Refuge P’TIBUG',
@@ -5853,6 +5871,7 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
         bug.assignedBuildingId == null || bug.inactiveReason != null;
     final weather = gameState.pTibugWeatherFor(bug);
     final weatherLabel = switch (weather) {
+      TowerWeatherType.calm => '🌤️ Temps calme',
       TowerWeatherType.toxicCloud => '☁️ Nuage toxique · Filtreur requis',
       TowerWeatherType.heatWave => '☀️ Forte chaleur · Réflecteur requis',
       TowerWeatherType.heavyRain => '🌧️ Pluie intense · Étanchéité requise',
@@ -8103,7 +8122,24 @@ class _TowerWeatherTab extends StatelessWidget {
   final Zone0GameState gameState;
   @override
   Widget build(BuildContext context) {
-    final alerts = gameState.weatherAlerts;
+    final active = gameState.activeGlobalWeatherEvent;
+    final next = gameState.nextGlobalWeatherEvent;
+    String label(TowerWeatherType type) => switch (type) {
+      TowerWeatherType.calm => '🌤️ Temps calme',
+      TowerWeatherType.toxicCloud => '☁️ Nuage toxique',
+      TowerWeatherType.heatWave => '☀️ Forte chaleur',
+      TowerWeatherType.heavyRain => '🌧️ Pluie intense',
+    };
+    String intensity(GlobalWeatherIntensity value) => switch (value) {
+      GlobalWeatherIntensity.calm => 'Calme',
+      GlobalWeatherIntensity.moderate => 'Modérée',
+      GlobalWeatherIntensity.strong => 'Forte',
+      GlobalWeatherIntensity.severe => 'Sévère',
+    };
+    String biomes(GlobalWeatherEvent event) => event.affectedBiomes
+        .where((impact) => impact.isAffected)
+        .map((impact) => '${lisiereForageConfig.biomes[impact.biome]!.label} · ${impact.localImpactLevel == 'high' ? 'élevé' : impact.localImpactLevel == 'medium' ? 'moyen' : 'faible'}')
+        .join(', ');
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -8111,41 +8147,61 @@ class _TowerWeatherTab extends StatelessWidget {
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(
-                alerts.isEmpty
-                    ? 'Aucun événement météo annoncé. La Tour préviendra le refuge avant les prochaines perturbations.'
-                    : 'Événements annoncés',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Météo actuelle', style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  Text(active == null
+                      ? 'Prévisions en cours.'
+                      : '${label(active.type)} · ${intensity(active.intensity)}'),
+                  if (active != null) ...<Widget>[
+                    Text('Temps restant : ${_countdownLabel(active.endsAt)}'),
+                    Text(active.type == TowerWeatherType.calm
+                        ? 'Conditions calmes sur la Zone 0.'
+                        : 'Biomes touchés : ${biomes(active)}'),
+                  ],
+                ],
               ),
             ),
           ),
-          ...alerts.map((alert) {
-            final config = towerOperationsConfig.weatherEvents.firstWhere(
-              (item) => item.type == alert.type,
-            );
-            return Card(
-              child: ListTile(
-                title: Text(config.label),
-                subtitle: Text(config.announcement),
-                trailing: FilledButton(
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 44),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => KernelPage(
-                        gameState: gameState,
-                        campHeartState: _RefugePageState._campHeartState,
-                        initialTabIndex: 4,
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Prochaine météo', style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  if (next == null)
+                    const Text('Prévisions en cours.')
+                  else if (next.status == GlobalWeatherEventStatus.planned)
+                    const Text('Prévisions en cours : la Tour annoncera l’événement deux heures avant son arrivée.')
+                  else ...<Widget>[
+                    Text('${label(next.type)} · ${intensity(next.intensity)}'),
+                    Text('Arrivée : ${_countdownLabel(next.startsAt)}'),
+                    Text(next.type == TowerWeatherType.calm
+                        ? 'Aucun biome lourdement touché.'
+                        : 'Impacts prévus : ${biomes(next)}'),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => KernelPage(
+                            gameState: gameState,
+                            campHeartState: _RefugePageState._campHeartState,
+                            initialTabIndex: 4,
+                          ),
+                        ),
                       ),
+                      child: const Text('Voir le Kernel'),
                     ),
-                  ),
-                  child: const Text('Voir le Kernel'),
-                ),
+                  ],
+                ],
               ),
-            );
-          }),
+            ),
+          ),
         ],
       ),
     );
@@ -9319,6 +9375,9 @@ class _MarketPageState extends State<MarketPage> {
                       ),
                     ),
                   ),
+                const SizedBox(height: 12),
+                _activeMarketRequestsSection(),
+                const SizedBox(height: 12),
                 Text(
                   'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
                   style: const TextStyle(fontWeight: FontWeight.w900),
@@ -9349,6 +9408,101 @@ class _MarketPageState extends State<MarketPage> {
           },
         ),
       ),
+    );
+  }
+
+  /// The selling view only shows live requests. The completed/expired history
+  /// remains in the separate Book tab, while this section stays visible even
+  /// when every sale slot is empty.
+  Widget _activeMarketRequestsSection() {
+    final now = DateTime.now();
+    final requests = widget.gameState.marketRequests
+        .where((request) => request.isOpen)
+        .toList()
+      ..sort((a, b) => a.customerReturnTime.compareTo(b.customerReturnTime));
+    if (requests.isEmpty) {
+      final nextAt = widget.gameState.marketNextRequestAt;
+      final remaining = nextAt == null
+          ? Duration.zero
+          : nextAt.difference(now);
+      final minutes = remaining.isNegative ? 0 : remaining.inMinutes;
+      final seconds = remaining.isNegative ? 0 : remaining.inSeconds % 60;
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Demandes habitantes',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              Text(
+                'Prochaine demande dans ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}.',
+              ),
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(value: 0),
+              const SizedBox(height: 6),
+              const Text('Le stock n’influence pas l’arrivée des demandes.'),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Text('Demandes habitantes en attente',
+            style: TextStyle(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        ...requests.map((request) {
+          final totalSeconds = request.customerReturnTime
+              .difference(request.createdAt)
+              .inSeconds
+              .clamp(1, 1 << 30)
+              .toInt();
+          final remaining = request.customerReturnTime.difference(now);
+          final remainingSeconds = remaining.isNegative ? 0 : remaining.inSeconds;
+          final progress =
+              (remainingSeconds / totalSeconds).clamp(0.0, 1.0).toDouble();
+          final minutes = remainingSeconds ~/ 60;
+          final seconds = remainingSeconds % 60;
+          final available = widget.gameState
+              .marketStockAmount(request.requestedItemId);
+          final canSell = available >= request.requestedQuantity;
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Text(
+                    '${request.requestedQuantity} ${request.requestedItemId}',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('Client : ${request.customerName ?? 'Habitant non identifié'}'),
+                  Text('Temps restant : ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}'),
+                  const SizedBox(height: 7),
+                  LinearProgressIndicator(value: progress),
+                  const SizedBox(height: 7),
+                  Text('Stock Marché : $available/${request.requestedQuantity}'),
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    onPressed: canSell
+                        ? () => _message(
+                              widget.gameState.sellMarketRequest(request).message,
+                            )
+                        : null,
+                    child: Text(canSell
+                        ? 'Vendre · +${request.rewardBioBattery} bio-batterie(s)'
+                        : 'Stock insuffisant'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -10865,11 +11019,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) {
-        final availableTraits = widget.gameState.pTibugTraitData.where(
-          (data) => !widget.gameState.pTibugs.any(
-            (item) => item.id != bug.id && item.traitDataId == data.id,
-          ),
-        );
         final equippedInstances = widget.gameState.pTibugModuleInstances
             .where((instance) => instance.equippedPTibugId == bug.id)
             .toList();
@@ -11004,66 +11153,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                     icon: const Icon(Icons.add_circle_outline),
                     label: const Text('Équiper un Module disponible'),
                   ),
-                const Divider(height: 30),
-                const Text(
-                  'Équipements disponibles',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 8),
-                ...availableTraits.map(
-                  (traitData) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      Icons.auto_awesome,
-                      color: _traitColor(traitData.grade, traitData),
-                    ),
-                    title: Text(
-                      '${_traitTitle(traitData)} · ${_traitGradeTitle(traitData.grade)}',
-                    ),
-                    subtitle: Text(_traitDescription(traitData)),
-                    trailing: traitData.id == bug.traitDataId
-                        ? const Icon(Icons.check_circle)
-                        : TextButton(
-                            onPressed: () {
-                              _message(
-                                widget.gameState
-                                    .equipPTibugTrait(bug, traitData)
-                                    .message,
-                              );
-                              Navigator.of(sheetContext).pop();
-                            },
-                            child: const Text('Équiper'),
-                          ),
-                  ),
-                ),
-                ...PTibugModuleType.values.map((module) {
-                  final unlocked =
-                      widget.gameState.unlockedPTibugModules.contains(module);
-                  final equipped = bug.hasModule(module);
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(_moduleIcon(module)),
-                    title: Text(_moduleTitle(module)),
-                    subtitle: Text(
-                      unlocked ? _moduleDescription(module) : 'Verrouillé',
-                    ),
-                    trailing: equipped
-                        ? const Icon(Icons.check_circle)
-                        : unlocked
-                            ? TextButton(
-                                onPressed: () {
-                                  _message(
-                                    widget.gameState
-                                        .equipPTibugModule(bug, module)
-                                        .message,
-                                  );
-                                  Navigator.of(sheetContext).pop();
-                                },
-                                child: const Text('Équiper'),
-                              )
-                            : const Icon(Icons.lock_outline),
-                  );
-                }),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
                   onPressed: () => _confirmPTibugEncapsulation(

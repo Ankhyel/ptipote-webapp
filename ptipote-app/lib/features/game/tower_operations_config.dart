@@ -1,4 +1,61 @@
-enum TowerWeatherType { toxicCloud, heatWave, heavyRain }
+enum TowerWeatherType { calm, toxicCloud, heatWave, heavyRain }
+
+enum GlobalWeatherIntensity { calm, moderate, strong, severe }
+
+enum GlobalWeatherEventStatus { planned, announced, active, completed }
+
+class GlobalWeatherIntensityConfig {
+  const GlobalWeatherIntensityConfig({
+    required this.weight,
+    required this.ptibugMalusPercent,
+    required this.minimumAffectedBiomes,
+    required this.maximumAffectedBiomes,
+  });
+
+  final int weight;
+  final int ptibugMalusPercent;
+  final int minimumAffectedBiomes;
+  final int maximumAffectedBiomes;
+}
+
+class GlobalWeatherBiomeSensitivity {
+  const GlobalWeatherBiomeSensitivity({
+    required this.chancePercent,
+    required this.impactMultiplier,
+    this.immune = false,
+    this.reason = '',
+  });
+
+  final int chancePercent;
+  final double impactMultiplier;
+  final bool immune;
+  final String reason;
+}
+
+class GlobalWeatherConfig {
+  const GlobalWeatherConfig({
+    required this.cycleMinutes,
+    required this.forecastMinutes,
+    required this.maximumConsecutiveAdverseEvents,
+    required this.allowConsecutiveSevereEvents,
+    required this.forcedCalmChancePercent,
+    required this.maximumPTibugMalusPercent,
+    required this.localImpactMultipliers,
+    required this.intensities,
+    required this.biomeSensitivities,
+  });
+
+  final int cycleMinutes;
+  final int forecastMinutes;
+  final int maximumConsecutiveAdverseEvents;
+  final int allowConsecutiveSevereEvents;
+  final int forcedCalmChancePercent;
+  final int maximumPTibugMalusPercent;
+  final Map<String, double> localImpactMultipliers;
+  final Map<GlobalWeatherIntensity, GlobalWeatherIntensityConfig> intensities;
+  final Map<String, Map<TowerWeatherType, GlobalWeatherBiomeSensitivity>>
+      biomeSensitivities;
+}
 
 class SecurityWellbeingBand {
   const SecurityWellbeingBand({
@@ -62,6 +119,7 @@ class TowerOperationsConfig {
     required this.minimumWeatherIntervalMinutes,
     required this.manualWeatherTriggerId,
     required this.manualWeatherTriggerType,
+    required this.globalWeather,
   });
 
   final int biomeRevealSecurityThreshold;
@@ -90,6 +148,7 @@ class TowerOperationsConfig {
   final int minimumWeatherIntervalMinutes;
   final String manualWeatherTriggerId;
   final TowerWeatherType? manualWeatherTriggerType;
+  final GlobalWeatherConfig globalWeather;
 
   SecurityWellbeingBand wellbeingBandFor(int security) =>
       wellbeingBands.where((band) => security >= band.minimumSecurity).reduce(
@@ -126,6 +185,47 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
   minimumWeatherIntervalMinutes: 240,
   manualWeatherTriggerId: '',
   manualWeatherTriggerType: null,
+  globalWeather: GlobalWeatherConfig(
+    cycleMinutes: 360,
+    forecastMinutes: 120,
+    maximumConsecutiveAdverseEvents: 3,
+    allowConsecutiveSevereEvents: 0,
+    forcedCalmChancePercent: 100,
+    maximumPTibugMalusPercent: 60,
+    localImpactMultipliers: const <String, double>{
+      'low': 0.5,
+      'medium': 1.0,
+      'high': 1.5,
+    },
+    intensities: const <GlobalWeatherIntensity, GlobalWeatherIntensityConfig>{
+      GlobalWeatherIntensity.calm: GlobalWeatherIntensityConfig(weight: 40, ptibugMalusPercent: 0, minimumAffectedBiomes: 0, maximumAffectedBiomes: 0),
+      GlobalWeatherIntensity.moderate: GlobalWeatherIntensityConfig(weight: 35, ptibugMalusPercent: 10, minimumAffectedBiomes: 1, maximumAffectedBiomes: 3),
+      GlobalWeatherIntensity.strong: GlobalWeatherIntensityConfig(weight: 20, ptibugMalusPercent: 20, minimumAffectedBiomes: 3, maximumAffectedBiomes: 4),
+      GlobalWeatherIntensity.severe: GlobalWeatherIntensityConfig(weight: 5, ptibugMalusPercent: 30, minimumAffectedBiomes: 4, maximumAffectedBiomes: 4),
+    },
+    biomeSensitivities: <String, Map<TowerWeatherType, GlobalWeatherBiomeSensitivity>>{
+      'plaineRiche': <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
+        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(chancePercent: 90, impactMultiplier: 1.0, reason: 'Plaine exposée à la chaleur.'),
+        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(chancePercent: 80, impactMultiplier: 1.0, reason: 'Plaine sensible au ruissellement.'),
+        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(chancePercent: 45, impactMultiplier: 1.0),
+      },
+      'colline': <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
+        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(chancePercent: 65, impactMultiplier: 0.8),
+        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(chancePercent: 80, impactMultiplier: 1.2, reason: 'Ruissellement des hauteurs.'),
+        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(chancePercent: 20, impactMultiplier: 0.5, reason: 'Zone ventilée.'),
+      },
+      'bassinMineral': <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
+        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(chancePercent: 85, impactMultiplier: 1.3),
+        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(chancePercent: 35, impactMultiplier: 0.5),
+        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(chancePercent: 70, impactMultiplier: 1.3, reason: 'Bassin confiné.'),
+      },
+      'sousBois': <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
+        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(chancePercent: 45, impactMultiplier: 0.5),
+        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(chancePercent: 90, impactMultiplier: 1.3),
+        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(chancePercent: 65, impactMultiplier: 1.0),
+      },
+    },
+  ),
   wellbeingBands: <SecurityWellbeingBand>[
     SecurityWellbeingBand(
       minimumSecurity: 0,

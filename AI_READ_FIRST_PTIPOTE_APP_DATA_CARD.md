@@ -1552,3 +1552,13 @@ Réglages : `ptipote-dashboard/market-config.json`, chargés par `remote_zone0_s
 # Fabrication parallèle des modules P’TIBUG
 
 Les modules P’TIBUG sont désormais des commandes de l’Atelier : chaque P’TIPOTE affecté occupe un emplacement Atelier et peut fabriquer un module en parallèle des autres. Le créneau manuel reste unique et coûte une unité d’Énergie de lancement supplémentaire, en plus du coût propre au module. Un craft confié à un P’TIPOTE reçoit une réduction de durée de 20 % configurée par `workshop.ptipoteCraftTimeReductionPercent`; elle s’applique à tous les crafts Cuisine, Atelier et modules.
+
+# Météo globale V1
+
+La météo Zone 0 est maintenant portée par un seul `GlobalWeatherEvent` actif et un événement suivant déjà tiré : type, intensité, horaires, biomes touchés, impacts locaux, graine et état (`planned`, `announced`, `active`, `completed`) sont sauvegardés dans `users/{uid}/game/zone0.weather`. Le cycle par défaut est de 6 h et la Tour annonce exactement le prochain événement 2 h avant son début. Les anciens `WeatherAlert` restent lus pour la migration et les missions Kernel, mais ne calculent plus eux-mêmes le malus P’TIBUG.
+
+Les intensités sont Calme, Modérée, Forte et Sévère. Temps calme ne génère aucun malus ni mission. Les événements défavorables utilisent les sensibilités configurables de chaque biome : chaque biome est non touché, ou reçoit un impact faible, moyen ou élevé. La Plaine pilote la Nurserie ; chaque Refuge lit uniquement l’impact du biome auquel il appartient. Filtreur, Étanchéité et Réflecteur annulent toujours leur malus respectif. Le malus P’TIBUG est centralisé : base de l’intensité × impact local, puis plafonné par la configuration ; aucun biome hors zone d’impact ne reçoit de malus.
+
+La Tour affiche l’événement actif et la prévision annoncée, avec biomes et impacts. La mission Kernel de préparation est créée une seule fois quand la prévision passe à `announced` et garde l’objet/demande tirés. Les transitions sont résolues au retour hors ligne sans relancer les tirages. Le Dashboard édite `towerOperations.globalWeather` : cycle, préavis, poids/intensités, malus, limites de successions, sensibilités et multiplicateurs locaux. Fichiers principaux : `tower_operations_config.dart`, `remote_zone0_settings.dart`, `zone0_game_state.dart`, `refuge_page.dart`, `tower-operations-config.json`.
+
+Attentes futures non développées : Viabilité et réparations de bâtiments, installations structurelles, maisons/habitants détaillés, demandes météo du Marché, grands chantiers, coffre à Bio-batteries et pertes/transformation de stocks.

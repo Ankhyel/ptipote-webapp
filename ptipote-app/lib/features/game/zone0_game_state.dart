@@ -123,6 +123,10 @@ class Zone0GameState extends ChangeNotifier {
   final List<BiomeExplorationMission> explorationMissions =
       <BiomeExplorationMission>[];
   final List<WeatherAlert> weatherAlerts = <WeatherAlert>[];
+  GlobalWeatherEvent? activeGlobalWeatherEvent;
+  GlobalWeatherEvent? nextGlobalWeatherEvent;
+  int globalWeatherConsecutiveAdverseEvents = 0;
+  int globalWeatherConsecutiveSevereEvents = 0;
   String weatherScheduleDayKey = '';
   int weatherEventsToday = 0;
   DateTime? nextWeatherEligibleAt;
@@ -2188,15 +2192,29 @@ class Zone0GameState extends ChangeNotifier {
     if (!isMarketBuilt) return false;
     final current = now ?? DateTime.now();
     var changed = _resolveMerchantSchedule(current);
-    marketNextRequestAt ??= current.add(
-      marketConfig.residentRequestInterval(currentPopulation, _random),
-    );
+    // Older builds kept requests but did not always create their Book entry.
+    // Backfill every still-persisted request once, without inventing history
+    // for requests that had already been deleted by those builds.
+    final logsBeforeBackfill = marketRequestLog.length;
+    for (final request in marketRequests) {
+      _ensureMarketRequestLog(request);
+    }
+    changed = changed || logsBeforeBackfill != marketRequestLog.length;
+    // Existing saves did not have a scheduled request. A first release of
+    // the feature could also persist a future date without recording any
+    // request. Start both cases immediately so the player is never left with
+    // an empty Book merely because the market stock is empty.
+    if (marketNextRequestAt == null ||
+        (marketLevel >= 3 && marketRequestLog.isEmpty)) {
+      marketNextRequestAt = current;
+    }
     var requestGuard = 0;
     while (marketNextRequestAt != null &&
         !current.isBefore(marketNextRequestAt!) &&
         requestGuard++ < 48) {
-      _createMarketRequest(marketNextRequestAt!);
-      marketNextRequestAt = marketNextRequestAt!.add(
+      final createdAt = marketNextRequestAt!;
+      _createMarketRequest(createdAt);
+      marketNextRequestAt = createdAt.add(
         marketConfig.residentRequestInterval(currentPopulation, _random),
       );
       changed = true;
@@ -2242,7 +2260,10 @@ class Zone0GameState extends ChangeNotifier {
       );
       stack.amount -= 1;
       marketValueRemainder += marketConfig.saleValues[stack.resource] ?? 0;
-      if (stack.amount <= 0) marketStock.removeAt(0);
+      // `stack` is selected by its remaining quantity, so it is not
+      // necessarily the first entry. Removing index 0 left the depleted
+      // stack in place and allowed the next tick to show -1.
+      if (stack.amount <= 0) marketStock.remove(stack);
       final earned = marketValueRemainder ~/ marketConfig.valuePerBioBattery;
       if (earned > 0) {
         bioBatteries += earned;
@@ -2263,9 +2284,6 @@ class Zone0GameState extends ChangeNotifier {
             marketStockAmount(request.requestedItemId) >=
                 request.requestedQuantity) {
           sellMarketRequest(request);
-          reports.add(PtipoteMissionReport.system(
-            message: 'Demande habitante automatisée : ${request.requestedQuantity} ${request.requestedItemId}.',
-          ));
         } else {
           request.status = MarketRequestStatus.expired;
           _recordMarketRequestOutcome(request, completedAt: current);
@@ -2306,24 +2324,16 @@ class Zone0GameState extends ChangeNotifier {
           Duration(minutes: marketConfig.distributorResponseDelayMinutes),
         ),
         status: MarketRequestStatus.noted,
-      );
-    marketRequests.add(request);
-    // The Book only records level 2 requests when a P’TIPOTE was actually
-    // present; from level 3 the register runs autonomously.
-    if (marketLevel >= 3 || (marketLevel >= 2 && marketAssignedPtipoteId != null)) {
-      marketRequestLog.add(MarketRequestLogEntry.fromRequest(request));
-    }
-    reports.add(
-      PtipoteMissionReport.system(
-        message: 'Demande du Marché : $item recherché.',
-      ),
     );
+    marketRequests.add(request);
+    _ensureMarketRequestLog(request);
   }
 
   void _recordMarketRequestOutcome(
     MarketCustomerRequest request, {
     required DateTime completedAt,
   }) {
+    _ensureMarketRequestLog(request);
     final entry = marketRequestLog.where((item) => item.requestId == request.id).firstOrNull;
     if (entry == null) return;
     entry
@@ -2332,6 +2342,16 @@ class Zone0GameState extends ChangeNotifier {
       ..rewardBioBatteries = request.status == MarketRequestStatus.completed
           ? request.rewardBioBattery
           : 0;
+  }
+
+  void _ensureMarketRequestLog(MarketCustomerRequest request) {
+    final shouldRecord = marketLevel >= 3 ||
+        (marketLevel >= 2 && marketAssignedPtipoteId != null);
+    if (!shouldRecord ||
+        marketRequestLog.any((entry) => entry.requestId == request.id)) {
+      return;
+    }
+    marketRequestLog.add(MarketRequestLogEntry.fromRequest(request));
   }
 
   Duration _randomMarketReturnDelay() => Duration(
@@ -4834,7 +4854,7 @@ class Zone0GameState extends ChangeNotifier {
         (weather == null || protected
             ? 1
             : pTibugConfig.weather.multiplierForPenalty(
-                pTibugConfig.weather.productionMalusPercent,
+                pTibugWeatherMalusPercentFor(bug),
               ));
     return <String, int>{
       for (final entry in output.entries)
@@ -4843,21 +4863,27 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   TowerWeatherType? pTibugWeatherFor(PTibug bug) {
-    final alert = weatherAlerts
-        .where(
-          (item) =>
-              !item.startsAt.isAfter(DateTime.now()) &&
-              item.endsAt.isAfter(DateTime.now()),
-        )
-        .firstOrNull;
-    if (alert == null) return null;
-    final allowed =
-        pTibugConfig.biomes[bug.biome]?.weatherTypes ?? const <String>[];
-    return allowed.contains(alert.type.name) ? alert.type : null;
+    final event = activeGlobalWeatherEvent;
+    if (event == null ||
+        event.status != GlobalWeatherEventStatus.active ||
+        event.type == TowerWeatherType.calm ||
+        !event.isBiomeAffected(bug.refugeBiome)) return null;
+    return event.type;
+  }
+
+  int pTibugWeatherMalusPercentFor(PTibug bug) {
+    final event = activeGlobalWeatherEvent;
+    if (event == null || !event.isBiomeAffected(bug.refugeBiome)) return 0;
+    final base = towerOperationsConfig.globalWeather.intensities[event.intensity]!
+        .ptibugMalusPercent;
+    return (base * event.impactFor(bug.refugeBiome).localImpactMultiplier)
+        .round()
+        .clamp(0, towerOperationsConfig.globalWeather.maximumPTibugMalusPercent);
   }
 
   bool _hasPTibugWeatherProtection(PTibug bug, TowerWeatherType weather) =>
       switch (weather) {
+        TowerWeatherType.calm => true,
         TowerWeatherType.toxicCloud =>
           _pTibugEffectFor(bug, 'Protection Nuage toxique') > 0,
         TowerWeatherType.heatWave =>
@@ -5903,6 +5929,18 @@ class Zone0GameState extends ChangeNotifier {
                   WeatherAlert.fromFirebase,
                 ),
           );
+        final activeGlobal = weatherData['activeGlobalEvent'];
+        activeGlobalWeatherEvent = activeGlobal is Map
+            ? GlobalWeatherEvent.fromFirebase(activeGlobal)
+            : null;
+        final nextGlobal = weatherData['nextGlobalEvent'];
+        nextGlobalWeatherEvent = nextGlobal is Map
+            ? GlobalWeatherEvent.fromFirebase(nextGlobal)
+            : null;
+        globalWeatherConsecutiveAdverseEvents =
+            _readInt(weatherData['consecutiveAdverseEvents']);
+        globalWeatherConsecutiveSevereEvents =
+            _readInt(weatherData['consecutiveSevereEvents']);
       }
 
       final kernelData = data['kernel'];
@@ -7286,38 +7324,208 @@ class Zone0GameState extends ChangeNotifier {
     var changed = _closeFinishedWeatherAlerts(current);
     if (!isSecurityTowerBuilt) return changed;
 
-    final dayKey = _weatherDayKey(current);
-    if (weatherScheduleDayKey != dayKey) {
-      weatherScheduleDayKey = dayKey;
-      weatherEventsToday = 0;
+    _migrateGlobalWeatherIfNeeded(current);
+    activeGlobalWeatherEvent ??= _newGlobalWeatherEvent(
+      startsAt: current,
+      intensity: GlobalWeatherIntensity.calm,
+    )..status = GlobalWeatherEventStatus.active;
+    nextGlobalWeatherEvent ??= _newGlobalWeatherEvent(
+      startsAt: activeGlobalWeatherEvent!.endsAt,
+    );
+
+    while (!current.isBefore(activeGlobalWeatherEvent!.endsAt)) {
+      activeGlobalWeatherEvent!.status = GlobalWeatherEventStatus.completed;
+      final promoted = nextGlobalWeatherEvent!;
+      promoted.status = GlobalWeatherEventStatus.active;
+      activeGlobalWeatherEvent = promoted;
+      _notifyGlobalWeatherStarted(promoted);
+      nextGlobalWeatherEvent = _newGlobalWeatherEvent(
+        startsAt: promoted.endsAt,
+      );
       changed = true;
     }
-    if (weatherAlerts.any((alert) => alert.endsAt.isAfter(current))) {
-      return changed;
+    final upcoming = nextGlobalWeatherEvent!;
+    if (upcoming.status == GlobalWeatherEventStatus.planned &&
+        !current.isBefore(upcoming.announcedAt)) {
+      upcoming.status = GlobalWeatherEventStatus.announced;
+      _announceGlobalWeather(upcoming);
+      changed = true;
     }
-    if (weatherEventsToday >= towerOperationsConfig.maxWeatherEventsPerDay) {
-      return changed;
-    }
-    if (!forceFirstAlert &&
-        nextWeatherEligibleAt != null &&
-        nextWeatherEligibleAt!.isAfter(current)) {
-      return changed;
-    }
-    _createWeatherAlert(_weightedWeatherConfig(), current, manual: false);
-    return true;
+    return changed || forceFirstAlert;
   }
+
+  void _migrateGlobalWeatherIfNeeded(DateTime now) {
+    if (activeGlobalWeatherEvent != null) return;
+    final legacy = weatherAlerts
+        .where((alert) => alert.endsAt.isAfter(now))
+        .firstOrNull;
+    if (legacy == null) return;
+    activeGlobalWeatherEvent = _newGlobalWeatherEvent(
+      startsAt: legacy.startsAt,
+      type: legacy.type,
+      intensity: GlobalWeatherIntensity.strong,
+      endsAt: legacy.endsAt,
+      status: legacy.startsAt.isAfter(now)
+          ? GlobalWeatherEventStatus.announced
+          : GlobalWeatherEventStatus.active,
+      id: 'migrated-${legacy.id}',
+    );
+  }
+
+  GlobalWeatherEvent _newGlobalWeatherEvent({
+    required DateTime startsAt,
+    TowerWeatherType? type,
+    GlobalWeatherIntensity? intensity,
+    DateTime? endsAt,
+    GlobalWeatherEventStatus status = GlobalWeatherEventStatus.planned,
+    String? id,
+  }) {
+    final settings = towerOperationsConfig.globalWeather;
+    final selectedIntensity = intensity ?? _pickGlobalWeatherIntensity();
+    final selectedType = type ??
+        (selectedIntensity == GlobalWeatherIntensity.calm
+            ? TowerWeatherType.calm
+            : _weightedWeatherConfig().type);
+    final eventEndsAt = endsAt ??
+        startsAt.add(Duration(minutes: settings.cycleMinutes));
+    return GlobalWeatherEvent(
+      id: id ?? 'global-weather-${startsAt.microsecondsSinceEpoch}',
+      type: selectedType,
+      intensity: selectedIntensity,
+      plannedAt: startsAt,
+      announcedAt: startsAt.subtract(Duration(minutes: settings.forecastMinutes)),
+      startsAt: startsAt,
+      endsAt: eventEndsAt,
+      status: status,
+      affectedBiomes: _globalWeatherBiomeImpacts(selectedType, selectedIntensity),
+      seed: _random.nextInt(1 << 31),
+    );
+  }
+
+  GlobalWeatherIntensity _pickGlobalWeatherIntensity() {
+    final settings = towerOperationsConfig.globalWeather;
+    final forceCalm = globalWeatherConsecutiveAdverseEvents >=
+            settings.maximumConsecutiveAdverseEvents &&
+        _random.nextInt(100) < settings.forcedCalmChancePercent;
+    if (forceCalm) return GlobalWeatherIntensity.calm;
+    final choices = GlobalWeatherIntensity.values.where((intensity) {
+      if (intensity != GlobalWeatherIntensity.severe) return true;
+      return globalWeatherConsecutiveSevereEvents <
+          settings.allowConsecutiveSevereEvents + 1;
+    }).toList();
+    final total = choices.fold<int>(0, (sum, item) =>
+        sum + math.max(0, settings.intensities[item]!.weight));
+    if (total <= 0) return GlobalWeatherIntensity.calm;
+    var roll = _random.nextInt(total);
+    for (final item in choices) {
+      roll -= math.max(0, settings.intensities[item]!.weight);
+      if (roll < 0) return item;
+    }
+    return choices.last;
+  }
+
+  List<GlobalWeatherBiomeImpact> _globalWeatherBiomeImpacts(
+    TowerWeatherType type,
+    GlobalWeatherIntensity intensity,
+  ) {
+    if (type == TowerWeatherType.calm) {
+      return <GlobalWeatherBiomeImpact>[
+        for (final biome in ForageBiome.values)
+          GlobalWeatherBiomeImpact(biome: biome, isAffected: false),
+      ];
+    }
+    final settings = towerOperationsConfig.globalWeather;
+    final requested = settings.intensities[intensity]!;
+    final eligible = ForageBiome.values.where((biome) {
+      final sensitivity = settings.biomeSensitivities[biome.name]?[type];
+      return sensitivity != null && !sensitivity.immune;
+    }).toList()
+      ..sort((a, b) =>
+          (settings.biomeSensitivities[b.name]?[type]?.chancePercent ?? 0)
+              .compareTo(settings.biomeSensitivities[a.name]?[type]?.chancePercent ?? 0));
+    final count = math.min(
+      eligible.length,
+      math.max(requested.minimumAffectedBiomes,
+          requested.minimumAffectedBiomes + _random.nextInt(math.max(1, requested.maximumAffectedBiomes - requested.minimumAffectedBiomes + 1))),
+    );
+    final affected = eligible.take(count).toSet();
+    return <GlobalWeatherBiomeImpact>[
+      for (final biome in ForageBiome.values)
+        () {
+          final sensitivity = settings.biomeSensitivities[biome.name]?[type];
+          final active = affected.contains(biome);
+          final multiplier = sensitivity?.impactMultiplier ?? 0;
+          final level = multiplier >= 1.25
+              ? 'high'
+              : multiplier <= 0.75 ? 'low' : 'medium';
+          return GlobalWeatherBiomeImpact(
+            biome: biome,
+            isAffected: active,
+            localImpactLevel: active ? level : 'none',
+            localImpactMultiplier: active ? multiplier : 0,
+            sensitivityMultiplier: multiplier,
+            displayReason: sensitivity?.reason,
+          );
+        }(),
+    ];
+  }
+
+  void _announceGlobalWeather(GlobalWeatherEvent event) {
+    if (event.type == TowerWeatherType.calm) return;
+    final config = towerOperationsConfig.weatherEvents
+        .where((item) => item.type == event.type)
+        .firstOrNull;
+    if (config == null) return;
+    _createWeatherAlert(
+      config,
+      event.announcedAt,
+      manual: false,
+      startsAt: event.startsAt,
+      endsAt: event.endsAt,
+      globalWeatherEventId: event.id,
+      announcementMessage:
+          'Prévision de la Tour : ${_weatherTypeLabel(event.type)} ${_weatherIntensityLabel(event.intensity)} dans ${towerOperationsConfig.globalWeather.forecastMinutes ~/ 60} h. Biomes affectés : ${event.affectedBiomes.where((item) => item.isAffected).map((item) => lisiereForageConfig.biomes[item.biome]!.label).join(', ')}.',
+    );
+  }
+
+  void _notifyGlobalWeatherStarted(GlobalWeatherEvent event) {
+    if (event.type == TowerWeatherType.calm) {
+      globalWeatherConsecutiveAdverseEvents = 0;
+      globalWeatherConsecutiveSevereEvents = 0;
+      return;
+    }
+    reports.add(PtipoteMissionReport.system(
+      message: '${_weatherTypeLabel(event.type)} ${_weatherIntensityLabel(event.intensity)} active.',
+      sourceBuildingId: 'securityTower',
+      mailbox: Zone0MessageMailbox.companions,
+      subject: 'Météo active',
+      concerned: 'Zone 0',
+      summary: 'Biomes touchés : ${event.affectedBiomes.where((item) => item.isAffected).map((item) => lisiereForageConfig.biomes[item.biome]!.label).join(', ')}. Consulte la Tour.',
+    ));
+    globalWeatherConsecutiveAdverseEvents += 1;
+    globalWeatherConsecutiveSevereEvents = event.intensity == GlobalWeatherIntensity.severe
+        ? globalWeatherConsecutiveSevereEvents + 1 : 0;
+  }
+
+  String _weatherTypeLabel(TowerWeatherType type) => switch (type) {
+    TowerWeatherType.calm => 'Temps calme',
+    TowerWeatherType.toxicCloud => 'Nuage toxique',
+    TowerWeatherType.heatWave => 'Forte chaleur',
+    TowerWeatherType.heavyRain => 'Pluie intense',
+  };
+
+  String _weatherIntensityLabel(GlobalWeatherIntensity intensity) => switch (intensity) {
+    GlobalWeatherIntensity.calm => 'Calme',
+    GlobalWeatherIntensity.moderate => 'Modérée',
+    GlobalWeatherIntensity.strong => 'Forte',
+    GlobalWeatherIntensity.severe => 'Sévère',
+  };
 
   Zone0ActionResult triggerManualWeatherAlert(TowerWeatherType type) {
     if (!isSecurityTowerBuilt) {
       return const Zone0ActionResult(
         success: false,
         message: 'La Tour de sécurité doit être construite.',
-      );
-    }
-    if (weatherAlerts.any((alert) => alert.endsAt.isAfter(DateTime.now()))) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Une alerte météo est déjà active.',
       );
     }
     final config = towerOperationsConfig.weatherEvents
@@ -7329,7 +7537,25 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Cette intempérie n’est pas configurée.',
       );
     }
-    _createWeatherAlert(config, DateTime.now(), manual: true);
+    final current = DateTime.now();
+    activeGlobalWeatherEvent = _newGlobalWeatherEvent(
+      startsAt: current,
+      type: type,
+      intensity: GlobalWeatherIntensity.strong,
+      status: GlobalWeatherEventStatus.active,
+      id: 'manual-global-${current.microsecondsSinceEpoch}',
+    );
+    nextGlobalWeatherEvent = _newGlobalWeatherEvent(
+      startsAt: activeGlobalWeatherEvent!.endsAt,
+    );
+    _createWeatherAlert(
+      config,
+      current,
+      manual: true,
+      startsAt: current,
+      endsAt: activeGlobalWeatherEvent!.endsAt,
+      globalWeatherEventId: activeGlobalWeatherEvent!.id,
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -7368,6 +7594,10 @@ class Zone0GameState extends ChangeNotifier {
     TowerWeatherConfig config,
     DateTime now, {
     required bool manual,
+    DateTime? startsAt,
+    DateTime? endsAt,
+    String? globalWeatherEventId,
+    String? announcementMessage,
   }) {
     final template = kernelConfig.missions
         .where(
@@ -7397,11 +7627,12 @@ class Zone0GameState extends ChangeNotifier {
     final alert = WeatherAlert(
       id: 'weather-${now.microsecondsSinceEpoch}',
       type: config.type,
-      startsAt: now.add(Duration(minutes: config.warningMinutes)),
-      endsAt: now.add(
+      startsAt: startsAt ?? now.add(Duration(minutes: config.warningMinutes)),
+      endsAt: endsAt ?? now.add(
         Duration(minutes: config.warningMinutes + config.durationMinutes),
       ),
       manual: manual,
+      globalWeatherEventId: globalWeatherEventId,
       requestedItem: requestedItem,
       requestedAmount: requestedAmount,
     );
@@ -7412,7 +7643,7 @@ class Zone0GameState extends ChangeNotifier {
     );
     reports.add(
       PtipoteMissionReport.system(
-        message:
+        message: announcementMessage ??
             'Alerte Tour : ${config.label} approche. Consulte le Kernel pour voir la demande de préparation.',
         sourceBuildingId: 'securityTower',
         mailbox: Zone0MessageMailbox.companions,
@@ -7625,6 +7856,17 @@ class Zone0GameState extends ChangeNotifier {
   void deleteReport(String reportId) {
     final before = reports.length;
     reports.removeWhere((report) => report.id == reportId);
+    if (reports.length != before) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+  }
+
+  void deleteReports({Zone0MessageMailbox? mailbox}) {
+    final before = reports.length;
+    reports.removeWhere(
+      (report) => mailbox == null || report.mailbox == mailbox,
+    );
     if (reports.length != before) {
       notifyListeners();
       unawaited(saveRuntimeToFirebase());
@@ -8844,6 +9086,10 @@ class Zone0GameState extends ChangeNotifier {
           'processedManualTriggerIds':
               processedManualWeatherTriggerIds.toList(),
           'alerts': weatherAlerts.map((alert) => alert.toFirebase()).toList(),
+          'activeGlobalEvent': activeGlobalWeatherEvent?.toFirebase(),
+          'nextGlobalEvent': nextGlobalWeatherEvent?.toFirebase(),
+          'consecutiveAdverseEvents': globalWeatherConsecutiveAdverseEvents,
+          'consecutiveSevereEvents': globalWeatherConsecutiveSevereEvents,
         },
         'missions': missions.map((mission) => mission.toFirebase()).toList(),
         'reports': reports.map((report) => report.toFirebase()).toList(),
@@ -9051,8 +9297,9 @@ class PtipoteXpGainResult {
 }
 
 class Zone0InventoryStack {
-  Zone0InventoryStack({String? id, required this.resource, required this.amount})
-      : id = id ?? 'stack-${DateTime.now().microsecondsSinceEpoch}';
+  Zone0InventoryStack({String? id, required this.resource, required int amount})
+      : id = id ?? 'stack-${DateTime.now().microsecondsSinceEpoch}',
+        amount = math.max(0, amount);
 
   final String id;
   final String resource;
@@ -10562,6 +10809,116 @@ class BiomeExplorationMission {
 
 enum WeatherPreparationType { craft, own, provide }
 
+class GlobalWeatherBiomeImpact {
+  GlobalWeatherBiomeImpact({
+    required this.biome,
+    required this.isAffected,
+    this.localImpactLevel = 'none',
+    this.localImpactMultiplier = 0,
+    this.sensitivityMultiplier = 0,
+    this.displayReason,
+  });
+
+  final ForageBiome biome;
+  final bool isAffected;
+  final String localImpactLevel;
+  final double localImpactMultiplier;
+  final double sensitivityMultiplier;
+  final String? displayReason;
+
+  factory GlobalWeatherBiomeImpact.fromFirebase(Map<dynamic, dynamic> data) =>
+      GlobalWeatherBiomeImpact(
+        biome: ForageMission._enumByName(
+          ForageBiome.values,
+          '${data['biome'] ?? ''}',
+          ForageBiome.plaineRiche,
+        ),
+        isAffected: data['isAffected'] == true,
+        localImpactLevel: '${data['localImpactLevel'] ?? 'none'}',
+        localImpactMultiplier:
+            (data['localImpactMultiplier'] as num?)?.toDouble() ?? 0,
+        sensitivityMultiplier:
+            (data['sensitivityMultiplier'] as num?)?.toDouble() ?? 0,
+        displayReason: data['displayReason'] as String?,
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'biome': biome.name,
+        'isAffected': isAffected,
+        'localImpactLevel': localImpactLevel,
+        'localImpactMultiplier': localImpactMultiplier,
+        'sensitivityMultiplier': sensitivityMultiplier,
+        'displayReason': displayReason,
+      };
+}
+
+class GlobalWeatherEvent {
+  GlobalWeatherEvent({
+    required this.id,
+    required this.type,
+    required this.intensity,
+    required this.plannedAt,
+    required this.announcedAt,
+    required this.startsAt,
+    required this.endsAt,
+    required this.status,
+    required this.affectedBiomes,
+    required this.seed,
+    this.consequencesResolved = false,
+    this.preparationMissionId,
+  });
+
+  final String id;
+  final TowerWeatherType type;
+  final GlobalWeatherIntensity intensity;
+  final DateTime plannedAt;
+  final DateTime announcedAt;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  GlobalWeatherEventStatus status;
+  final List<GlobalWeatherBiomeImpact> affectedBiomes;
+  final int seed;
+  bool consequencesResolved;
+  String? preparationMissionId;
+
+  bool isBiomeAffected(ForageBiome biome) =>
+      affectedBiomes.where((item) => item.biome == biome).firstOrNull?.isAffected ?? false;
+  GlobalWeatherBiomeImpact impactFor(ForageBiome biome) =>
+      affectedBiomes.where((item) => item.biome == biome).firstOrNull ??
+      GlobalWeatherBiomeImpact(biome: biome, isAffected: false);
+
+  factory GlobalWeatherEvent.fromFirebase(Map<dynamic, dynamic> data) =>
+      GlobalWeatherEvent(
+        id: '${data['id'] ?? ''}',
+        type: ForageMission._enumByName(TowerWeatherType.values, '${data['type'] ?? ''}', TowerWeatherType.calm),
+        intensity: ForageMission._enumByName(GlobalWeatherIntensity.values, '${data['intensity'] ?? ''}', GlobalWeatherIntensity.calm),
+        plannedAt: Zone0GameState.instance._readDate(data['plannedAt']) ?? DateTime.now(),
+        announcedAt: Zone0GameState.instance._readDate(data['announcedAt']) ?? DateTime.now(),
+        startsAt: Zone0GameState.instance._readDate(data['startsAt']) ?? DateTime.now(),
+        endsAt: Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
+        status: ForageMission._enumByName(GlobalWeatherEventStatus.values, '${data['status'] ?? ''}', GlobalWeatherEventStatus.planned),
+        affectedBiomes: (data['affectedBiomes'] as List? ?? const <dynamic>[]).whereType<Map>().map(GlobalWeatherBiomeImpact.fromFirebase).toList(),
+        seed: Zone0GameState.instance._readInt(data['seed']),
+        consequencesResolved: data['consequencesResolved'] == true,
+        preparationMissionId: data['preparationMissionId'] as String?,
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'type': type.name,
+        'intensity': intensity.name,
+        'plannedAt': Timestamp.fromDate(plannedAt),
+        'announcedAt': Timestamp.fromDate(announcedAt),
+        'startsAt': Timestamp.fromDate(startsAt),
+        'endsAt': Timestamp.fromDate(endsAt),
+        'status': status.name,
+        'affectedBiomes': affectedBiomes.map((item) => item.toFirebase()).toList(),
+        'seed': seed,
+        'consequencesResolved': consequencesResolved,
+        'preparationMissionId': preparationMissionId,
+      };
+}
+
 class WeatherAlert {
   WeatherAlert({
     required this.id,
@@ -10571,6 +10928,7 @@ class WeatherAlert {
     this.preparationCompleted = false,
     this.reportSent = false,
     this.manual = false,
+    this.globalWeatherEventId,
     this.requestedItem,
     this.requestedAmount = 0,
   });
@@ -10581,6 +10939,7 @@ class WeatherAlert {
   bool preparationCompleted;
   bool reportSent;
   final bool manual;
+  final String? globalWeatherEventId;
   final String? requestedItem;
   final int requestedAmount;
 
@@ -10598,6 +10957,7 @@ class WeatherAlert {
         preparationCompleted: data['preparationCompleted'] == true,
         reportSent: data['reportSent'] == true,
         manual: data['manual'] == true,
+        globalWeatherEventId: data['globalWeatherEventId'] as String?,
         requestedItem: data['requestedItem'] as String?,
         requestedAmount: (data['requestedAmount'] as num?)?.round() ?? 0,
       );
@@ -10610,6 +10970,7 @@ class WeatherAlert {
         'preparationCompleted': preparationCompleted,
         'reportSent': reportSent,
         'manual': manual,
+        'globalWeatherEventId': globalWeatherEventId,
         'requestedItem': requestedItem,
         'requestedAmount': requestedAmount,
       };
