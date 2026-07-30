@@ -1,4 +1,24 @@
 {
+  "communityProjects": {
+    "choicesPerCoreLevel": 1,
+    "maximumActiveProjects": 1,
+    "playerDailyContribution": 5,
+    "residentHappinessThreshold": 70,
+    "residentDailyContribution": 1,
+    "residentContributionCapEnabled": false,
+    "residentContributionCap": 0,
+    "protectedBatteryCapacity": 50,
+    "stockLossPercentByIntensity": {"moderate": 5, "strong": 10, "severe": 20},
+    "projects": [
+      {"id":"solarReflector","label":"Réflecteur solaire","weatherType":"heatWave","tier":1,"requiredCoreLevel":1,"prerequisiteId":null,"materialCosts":{"Organique":20,"Minéral":10},"requiredContributionPoints":100,"globalProtectionPercent":10,"description":"Réduit les dégâts de Forte chaleur."},
+      {"id":"highCanopyWood","label":"Bois aux Hautes-Cimes","weatherType":"heatWave","tier":2,"requiredCoreLevel":2,"prerequisiteId":"solarReflector","materialCosts":{"Organique":40,"Minéral":20},"requiredContributionPoints":250,"globalProtectionPercent":10,"description":"Renforce la protection contre la Forte chaleur."},
+      {"id":"canalisations","label":"Canalisations","weatherType":"heavyRain","tier":1,"requiredCoreLevel":1,"prerequisiteId":null,"materialCosts":{"Organique":20,"Minéral":10},"requiredContributionPoints":100,"globalProtectionPercent":10,"description":"Réduit les dégâts de Pluie intense."},
+      {"id":"myceliumMoss","label":"Mousse-mycelium","weatherType":"heavyRain","tier":2,"requiredCoreLevel":2,"prerequisiteId":"canalisations","materialCosts":{"Organique":40,"Minéral":20},"requiredContributionPoints":250,"globalProtectionPercent":10,"description":"Renforce la protection contre la Pluie intense."},
+      {"id":"stabilizingWood","label":"Bois stabilisateur","weatherType":"heavyRain","tier":3,"requiredCoreLevel":3,"prerequisiteId":"myceliumMoss","materialCosts":{"Organique":60,"Minéral":30},"requiredContributionPoints":500,"globalProtectionPercent":10,"description":"Stabilise le camp sous la Pluie intense."},
+      {"id":"giantFiltration","label":"Filtration géante","weatherType":"toxicCloud","tier":1,"requiredCoreLevel":1,"prerequisiteId":null,"materialCosts":{"Organique":20,"Minéral":10},"requiredContributionPoints":100,"globalProtectionPercent":10,"description":"Réduit les dégâts de Nuage toxique."},
+      {"id":"giantMushroom","label":"Champignon géant","weatherType":"toxicCloud","tier":2,"requiredCoreLevel":2,"prerequisiteId":"giantFiltration","materialCosts":{"Organique":40,"Minéral":20},"requiredContributionPoints":250,"globalProtectionPercent":10,"description":"Renforce la filtration contre le Nuage toxique."}
+    ]
+  },
   "stages": [
     {
       "level": 1,

@@ -42,5 +42,12 @@
   "residentsPerHourlyRequest": 3,
   "requestJitterMinPercent": 10,
   "requestJitterMaxPercent": 30,
-  "distributorResponseDelayMinutes": 1
+  "distributorResponseDelayMinutes": 1,
+  "weatherRequestRatioPercent": 80,
+  "weatherRequestPopulationDivisor": 3,
+  "weatherRequestItems": {
+    "heatWave": ["Tenue ombragée", "Repas simple"],
+    "heavyRain": ["Ventilation Termite"],
+    "toxicCloud": ["Cartouche de filtration", "Filtre"]
+  }
 }

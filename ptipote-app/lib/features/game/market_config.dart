@@ -46,6 +46,9 @@ class MarketConfig {
     required this.requestJitterMinPercent,
     required this.requestJitterMaxPercent,
     required this.distributorResponseDelayMinutes,
+    required this.weatherRequestRatioPercent,
+    required this.weatherRequestPopulationDivisor,
+    required this.weatherRequestItems,
   });
 
   final Map<String, int> constructionCost;
@@ -92,6 +95,9 @@ class MarketConfig {
   final int requestJitterMinPercent;
   final int requestJitterMaxPercent;
   final int distributorResponseDelayMinutes;
+  final int weatherRequestRatioPercent;
+  final int weatherRequestPopulationDivisor;
+  final Map<String, List<String>> weatherRequestItems;
 
   int slotsForLevel(int level) =>
       manualSlotsByLevel[level.clamp(0, maximumLevel)] ??
@@ -119,13 +125,19 @@ class MarketConfig {
       maxActiveRequests +
       (level.clamp(1, 99) - 1) * maxActiveRequestsBonusPerLevel;
 
-  int licenseSlotsForLevel(int level) => level >= 4 ? 2 : level >= 2 ? 1 : 0;
+  int licenseSlotsForLevel(int level) => level >= 4
+      ? 2
+      : level >= 2
+          ? 1
+          : 0;
 
   Duration residentRequestInterval(int population, math.Random random) {
-    final requestsPerHour = math.max(1, population ~/ math.max(1, residentsPerHourlyRequest));
+    final requestsPerHour =
+        math.max(1, population ~/ math.max(1, residentsPerHourlyRequest));
     final baseMinutes = 60 / requestsPerHour;
     final min = requestJitterMinPercent.clamp(0, 100) / 100;
-    final max = requestJitterMaxPercent.clamp(requestJitterMinPercent, 100) / 100;
+    final max =
+        requestJitterMaxPercent.clamp(requestJitterMinPercent, 100) / 100;
     final amplitude = min + random.nextDouble() * (max - min);
     // Alternate around the target interval instead of only delaying every
     // request: the population target therefore remains meaningful over time.
@@ -191,6 +203,13 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   requestJitterMinPercent: 10,
   requestJitterMaxPercent: 30,
   distributorResponseDelayMinutes: 1,
+  weatherRequestRatioPercent: 80,
+  weatherRequestPopulationDivisor: 3,
+  weatherRequestItems: <String, List<String>>{
+    'heatWave': <String>['Tenue ombragée', 'Repas simple'],
+    'heavyRain': <String>['Ventilation Termite'],
+    'toxicCloud': <String>['Cartouche de filtration', 'Filtre'],
+  },
 );
 
 MarketConfig marketConfig = defaultMarketConfig;

@@ -1,9 +1,59 @@
 enum CampStage { camp, refuge, bourgade, village, petiteVille }
 
+class CommunityProjectDefinition {
+  const CommunityProjectDefinition(
+      {required this.id,
+      required this.label,
+      required this.weatherType,
+      required this.tier,
+      required this.requiredCoreLevel,
+      required this.prerequisiteId,
+      required this.materialCosts,
+      required this.requiredContributionPoints,
+      required this.globalProtectionPercent,
+      required this.description});
+  final String id;
+  final String label;
+  final String weatherType;
+  final int tier;
+  final int requiredCoreLevel;
+  final String? prerequisiteId;
+  final Map<String, int> materialCosts;
+  final int requiredContributionPoints;
+  final int globalProtectionPercent;
+  final String description;
+}
+
+class CommunityProjectsConfig {
+  const CommunityProjectsConfig(
+      {required this.choicesPerCoreLevel,
+      required this.maximumActiveProjects,
+      required this.playerDailyContribution,
+      required this.residentHappinessThreshold,
+      required this.residentDailyContribution,
+      required this.residentContributionCapEnabled,
+      required this.residentContributionCap,
+      required this.projects,
+      required this.protectedBatteryCapacity,
+      required this.stockLossPercentByIntensity});
+  final int choicesPerCoreLevel;
+  final int maximumActiveProjects;
+  final int playerDailyContribution;
+  final int residentHappinessThreshold;
+  final int residentDailyContribution;
+  final bool residentContributionCapEnabled;
+  final int residentContributionCap;
+  final List<CommunityProjectDefinition> projects;
+  final int protectedBatteryCapacity;
+  final Map<String, int> stockLossPercentByIntensity;
+}
+
 class CampHeartConfig {
-  const CampHeartConfig({required this.stages});
+  const CampHeartConfig(
+      {required this.stages, required this.communityProjects});
 
   final List<CampHeartStageConfig> stages;
+  final CommunityProjectsConfig communityProjects;
 
   CampHeartStageConfig stageForLevel(int level) {
     final safeLevel = level.clamp(1, stages.length);
@@ -47,6 +97,100 @@ class CampHeartStageConfig {
 }
 
 const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
+  communityProjects: CommunityProjectsConfig(
+    choicesPerCoreLevel: 1,
+    maximumActiveProjects: 1,
+    playerDailyContribution: 5,
+    residentHappinessThreshold: 70,
+    residentDailyContribution: 1,
+    residentContributionCapEnabled: false,
+    residentContributionCap: 0,
+    protectedBatteryCapacity: 50,
+    stockLossPercentByIntensity: <String, int>{
+      'moderate': 5,
+      'strong': 10,
+      'severe': 20
+    },
+    projects: <CommunityProjectDefinition>[
+      CommunityProjectDefinition(
+          id: 'solarReflector',
+          label: 'Réflecteur solaire',
+          weatherType: 'heatWave',
+          tier: 1,
+          requiredCoreLevel: 1,
+          prerequisiteId: null,
+          materialCosts: <String, int>{'Organique': 20, 'Minéral': 10},
+          requiredContributionPoints: 100,
+          globalProtectionPercent: 10,
+          description: 'Réduit les dégâts de Forte chaleur.'),
+      CommunityProjectDefinition(
+          id: 'highCanopyWood',
+          label: 'Bois aux Hautes-Cimes',
+          weatherType: 'heatWave',
+          tier: 2,
+          requiredCoreLevel: 2,
+          prerequisiteId: 'solarReflector',
+          materialCosts: <String, int>{'Organique': 40, 'Minéral': 20},
+          requiredContributionPoints: 250,
+          globalProtectionPercent: 10,
+          description: 'Renforce la protection contre la Forte chaleur.'),
+      CommunityProjectDefinition(
+          id: 'canalisations',
+          label: 'Canalisations',
+          weatherType: 'heavyRain',
+          tier: 1,
+          requiredCoreLevel: 1,
+          prerequisiteId: null,
+          materialCosts: <String, int>{'Organique': 20, 'Minéral': 10},
+          requiredContributionPoints: 100,
+          globalProtectionPercent: 10,
+          description: 'Réduit les dégâts de Pluie intense.'),
+      CommunityProjectDefinition(
+          id: 'myceliumMoss',
+          label: 'Mousse-mycelium',
+          weatherType: 'heavyRain',
+          tier: 2,
+          requiredCoreLevel: 2,
+          prerequisiteId: 'canalisations',
+          materialCosts: <String, int>{'Organique': 40, 'Minéral': 20},
+          requiredContributionPoints: 250,
+          globalProtectionPercent: 10,
+          description: 'Renforce la protection contre la Pluie intense.'),
+      CommunityProjectDefinition(
+          id: 'stabilizingWood',
+          label: 'Bois stabilisateur',
+          weatherType: 'heavyRain',
+          tier: 3,
+          requiredCoreLevel: 3,
+          prerequisiteId: 'myceliumMoss',
+          materialCosts: <String, int>{'Organique': 60, 'Minéral': 30},
+          requiredContributionPoints: 500,
+          globalProtectionPercent: 10,
+          description: 'Stabilise le camp sous la Pluie intense.'),
+      CommunityProjectDefinition(
+          id: 'giantFiltration',
+          label: 'Filtration géante',
+          weatherType: 'toxicCloud',
+          tier: 1,
+          requiredCoreLevel: 1,
+          prerequisiteId: null,
+          materialCosts: <String, int>{'Organique': 20, 'Minéral': 10},
+          requiredContributionPoints: 100,
+          globalProtectionPercent: 10,
+          description: 'Réduit les dégâts de Nuage toxique.'),
+      CommunityProjectDefinition(
+          id: 'giantMushroom',
+          label: 'Champignon géant',
+          weatherType: 'toxicCloud',
+          tier: 2,
+          requiredCoreLevel: 2,
+          prerequisiteId: 'giantFiltration',
+          materialCosts: <String, int>{'Organique': 40, 'Minéral': 20},
+          requiredContributionPoints: 250,
+          globalProtectionPercent: 10,
+          description: 'Renforce la filtration contre le Nuage toxique.'),
+    ],
+  ),
   stages: <CampHeartStageConfig>[
     CampHeartStageConfig(
       level: 1,

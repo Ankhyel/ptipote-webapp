@@ -6805,10 +6805,8 @@ class _CampHousingTab extends StatelessWidget {
           _HabitationStatCard(
             icon: Icons.sentiment_satisfied_alt_outlined,
             title: 'Bien-être',
-            value: '${gameState.campWellbeing}%',
-            subtitle: gameState.housingWellbeingPenalty > 0
-                ? 'Logements : -${gameState.housingWellbeingPenalty}'
-                : 'Aucun malus de logement',
+            value: '${gameState.residentHappiness}%',
+            subtitle: 'Moyenne des habitants actifs',
             onTap: () => _showStatInfo(
               context,
               'Bien-être',
@@ -6827,6 +6825,97 @@ class _CampHousingTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          if (gameState.residentHouses.isNotEmpty) ...<Widget>[
+            Text('Maisons',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            ...gameState.residentHouses.map((house) => Card(
+                  child: ListTile(
+                    leading: Icon(house.currentViability == 0
+                        ? Icons.home_work_outlined
+                        : house.currentViability < 50
+                            ? Icons.home_repair_service_outlined
+                            : Icons.home_outlined),
+                    title: Text(house.displayName),
+                    subtitle: Text(
+                        '${house.residentIds.length}/${house.capacity} habitant(s) · Viabilité ${house.currentViability}%${house.currentViability < 50 ? ' · bonheur -${housingConfig.houseViabilityDamageHappinessPercent}%' : ''}'),
+                    trailing: house.currentViability < house.maximumViability
+                        ? OutlinedButton(
+                            onPressed: () {
+                              final result =
+                                  gameState.repairResidentHouse(house.id);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(result.message)));
+                            },
+                            child: const Text('Réparer'),
+                          )
+                        : const Text('Bon état'),
+                    onTap: () => showModalBottomSheet<void>(
+                      context: context,
+                      showDragHandle: true,
+                      builder: (_) => ListView(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.all(20),
+                        children: <Widget>[
+                          Text(
+                              '${house.displayName} · protections ${house.installedStructuralProtections.length}/${housingConfig.houseProtectionSlots}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w900, fontSize: 18)),
+                          const SizedBox(height: 8),
+                          for (final type in StructuralProtectionType.values)
+                            ListTile(
+                              title: Text(switch (type) {
+                                StructuralProtectionType.ventilationTermite =>
+                                  'Ventilation Termite',
+                                StructuralProtectionType.chloroCanaux =>
+                                  'Chloro-canaux',
+                                StructuralProtectionType.filtration =>
+                                  'Installation filtrante'
+                              }),
+                              trailing: FilledButton(
+                                onPressed: () {
+                                  final result = gameState
+                                      .installHouseProtection(house.id, type);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(result.message)));
+                                },
+                                child: const Text('Installer'),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )),
+            const SizedBox(height: 12),
+          ],
+          if (gameState.residents.isNotEmpty) ...<Widget>[
+            Text('Habitants',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            ...gameState.residents
+                .where((resident) => resident.isActive)
+                .map((resident) {
+              final house = gameState.residentHouseForId(resident.houseId);
+              final damaged = house != null && house.currentViability < 50;
+              return Card(
+                  child: ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: Text(resident.displayName),
+                subtitle: Text(
+                    '${house?.displayName ?? 'Sans logement'}${damaged ? ' · Maison endommagée : -${housingConfig.houseViabilityDamageHappinessPercent}%' : ''}'),
+                trailing: Text('${gameState.residentHappinessFor(resident)}%',
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+              ));
+            }),
+            const SizedBox(height: 12),
+          ],
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -6992,6 +7081,11 @@ class _CampHeartPageState extends State<CampHeartPage> {
                     onDeposit: _deposit,
                   ),
                   const SizedBox(height: 12),
+                  _CommunityProjectsCard(
+                    gameState: widget.gameState,
+                    heartLevel: state.campHeartLevel,
+                  ),
+                  const SizedBox(height: 12),
                   _CampHeartStageCard(
                     title: nextStage == null
                         ? 'Niveau max V1'
@@ -7026,6 +7120,146 @@ class _CampHeartPageState extends State<CampHeartPage> {
       ),
     );
   }
+}
+
+class _CommunityProjectsCard extends StatelessWidget {
+  const _CommunityProjectsCard(
+      {required this.gameState, required this.heartLevel});
+
+  final Zone0GameState gameState;
+  final int heartLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = campHeartConfig.communityProjects;
+    final active = gameState.activeCommunityProject;
+    final incident = gameState.lastWeatherStockIncident;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('Grands chantiers',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text(
+                'Choix : ${gameState.communityProjectChoicesUsed}/${gameState.communityProjectChoiceLimit} · Un chantier actif à la fois.'),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.lock_outline),
+              title: const Text('Coffre à Bio-batteries'),
+              subtitle: Text(
+                  '${gameState.protectedBioBatteryCount}/${config.protectedBatteryCapacity} protégées · ${gameState.exposedBioBatteryCount} exposée(s). Total HUD inchangé : ${gameState.bioBatteries}.'),
+            ),
+            if (incident != null)
+              Text(
+                  'Dernière intempérie : ${incident.wasteCreated} Déchet(s) créés, ${incident.batteriesLost} Bio-batterie(s) exposée(s) perdue(s).'),
+            const Divider(),
+            for (final definition in config.projects)
+              _CommunityProjectTile(
+                gameState: gameState,
+                definition: definition,
+                isActive: active?.definition.id == definition.id,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityProjectTile extends StatelessWidget {
+  const _CommunityProjectTile(
+      {required this.gameState,
+      required this.definition,
+      required this.isActive});
+
+  final Zone0GameState gameState;
+  final CommunityProjectDefinition definition;
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    final project = gameState.communityProjects[definition.id];
+    final progress = project == null
+        ? 0.0
+        : (project.currentContributionPoints /
+                definition.requiredContributionPoints)
+            .clamp(0.0, 1.0);
+    final isComplete = project?.status == CommunityProjectStatus.completed;
+    final accessible = gameState.canSelectCommunityProject(definition);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(children: <Widget>[
+                Expanded(
+                    child: Text(definition.label,
+                        style: const TextStyle(fontWeight: FontWeight.w900))),
+                Text(isComplete ? 'Terminé' : 'Niv. ${definition.tier}'),
+              ]),
+              Text(definition.description),
+              Text(
+                  'Protection globale : +${definition.globalProtectionPercent}% · ${definition.materialCosts.entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
+              if (project != null) ...<Widget>[
+                const SizedBox(height: 6),
+                LinearProgressIndicator(value: progress),
+                Text(
+                    '${project.currentContributionPoints}/${definition.requiredContributionPoints} contributions'),
+              ],
+              const SizedBox(height: 6),
+              Wrap(spacing: 8, runSpacing: 6, children: <Widget>[
+                if (project == null && accessible)
+                  OutlinedButton(
+                      onPressed: () => _show(
+                          context,
+                          gameState
+                              .selectCommunityProject(definition.id)
+                              .message),
+                      child: const Text('Choisir')),
+                if (project != null && !isComplete && !isActive)
+                  OutlinedButton(
+                      onPressed: () => _show(
+                          context,
+                          gameState
+                              .activateCommunityProject(definition.id)
+                              .message),
+                      child: const Text('Commencer')),
+                if (isActive) ...<Widget>[
+                  for (final cost in definition.materialCosts.entries)
+                    OutlinedButton(
+                        onPressed: () => _show(
+                            context,
+                            gameState
+                                .depositCommunityProjectMaterial(
+                                    definition.id, cost.key, 1)
+                                .message),
+                        child: Text('+1 ${cost.key}')),
+                  FilledButton(
+                      onPressed: () => _show(context,
+                          gameState.contributeToCommunityProject().message),
+                      child: const Text('Contribuer')),
+                ],
+              ]),
+              if (project == null && !accessible && !isComplete)
+                const Text(
+                    'Niveau du Cœur, prérequis ou choix disponible requis.'),
+            ]),
+      ),
+    );
+  }
+
+  void _show(BuildContext context, String message) =>
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
 }
 
 class _CampGeneratorView extends StatelessWidget {

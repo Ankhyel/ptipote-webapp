@@ -14,6 +14,12 @@ class HousingConfig {
     required this.thanksBioBatteryCost,
     required this.thanksWellbeingBonus,
     required this.thanksDurationHours,
+    required this.houseViabilityDamageHappinessPercent,
+    required this.houseRepairGain,
+    required this.houseRepairOrganicCost,
+    required this.houseRepairMineralCost,
+    required this.houseProtectionSlots,
+    required this.neutralHappinessWithoutResidents,
   });
 
   final int houseMaxLevel;
@@ -29,6 +35,12 @@ class HousingConfig {
   final int thanksBioBatteryCost;
   final int thanksWellbeingBonus;
   final int thanksDurationHours;
+  final int houseViabilityDamageHappinessPercent;
+  final int houseRepairGain;
+  final int houseRepairOrganicCost;
+  final int houseRepairMineralCost;
+  final int houseProtectionSlots;
+  final int neutralHappinessWithoutResidents;
 
   int alcovesForHouseLevel(int level) =>
       alcovesByHouseLevel[level.clamp(1, houseMaxLevel)] ?? 2;
@@ -58,6 +70,12 @@ const HousingConfig defaultHousingConfig = HousingConfig(
   thanksBioBatteryCost: 2,
   thanksWellbeingBonus: 3,
   thanksDurationHours: 48,
+  houseViabilityDamageHappinessPercent: 30,
+  houseRepairGain: 15,
+  houseRepairOrganicCost: 5,
+  houseRepairMineralCost: 3,
+  houseProtectionSlots: 1,
+  neutralHappinessWithoutResidents: 50,
 );
 
 HousingConfig housingConfig = defaultHousingConfig;

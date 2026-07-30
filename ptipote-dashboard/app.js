@@ -982,10 +982,12 @@ function renderConfigEditor(target, keys) {
 
 function renderCampHeartEditor() {
   const stages = zone0Settings.campHeart?.stages || [];
+  const community = zone0Settings.campHeart?.communityProjects || {};
   const kernel = zone0Settings.kernel || {};
   const { missions: _missions, plans: _plans, ...campSettings } = kernel;
   el.campHeartStageList.innerHTML = [
     configCard("Camp et capacité", "kernel", campSettings, [], { open: true, meta: "Population, accueil et bien-être du Cœur" }),
+    configCard("Grands chantiers, coffre et pertes météo", "campHeart", community, ["communityProjects"], { open: true, meta: "Contributions, protections globales et Bio-batteries protégées" }),
     ...stages.map((stage, index) => configCard(
       `Niveau ${stage.level} · ${stage.label}`,
       "campHeart",

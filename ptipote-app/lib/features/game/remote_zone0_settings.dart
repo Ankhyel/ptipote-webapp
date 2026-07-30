@@ -929,6 +929,7 @@ CampHeartConfig _campHeart(Object? value) {
     return defaultCampHeartConfig;
   }
   return CampHeartConfig(
+    communityProjects: _communityProjects(raw?['communityProjects']),
     stages: List<CampHeartStageConfig>.generate(stages.length, (index) {
       final base = defaultCampHeartConfig.stages[index];
       final item = _map(stages[index]);
@@ -969,6 +970,72 @@ CampHeartConfig _campHeart(Object? value) {
         effects: base.effects,
       );
     }),
+  );
+}
+
+CommunityProjectsConfig _communityProjects(Object? value) {
+  final raw = _map(value);
+  final fallback = defaultCampHeartConfig.communityProjects;
+  if (raw == null) return fallback;
+  final configuredProjects =
+      raw['projects'] is List ? raw['projects'] as List : const <dynamic>[];
+  final definitions = <CommunityProjectDefinition>[
+    for (final base in fallback.projects)
+      (() {
+        final item =
+            configuredProjects.whereType<Map>().cast<dynamic>().firstWhere(
+                  (entry) => _string(_map(entry)?['id'], '') == base.id,
+                  orElse: () => null,
+                );
+        final map = _map(item);
+        final costs = _map(map?['materialCosts']);
+        return CommunityProjectDefinition(
+          id: base.id,
+          label: _string(map?['label'], base.label),
+          weatherType: _string(map?['weatherType'], base.weatherType),
+          tier: _int(map?['tier'], base.tier),
+          requiredCoreLevel:
+              _int(map?['requiredCoreLevel'], base.requiredCoreLevel),
+          prerequisiteId: map?['prerequisiteId'] == null
+              ? base.prerequisiteId
+              : _string(map?['prerequisiteId'], ''),
+          materialCosts: <String, int>{
+            for (final cost in base.materialCosts.entries)
+              cost.key: _int(costs?[cost.key], cost.value),
+          },
+          requiredContributionPoints: _int(map?['requiredContributionPoints'],
+              base.requiredContributionPoints),
+          globalProtectionPercent: _int(
+              map?['globalProtectionPercent'], base.globalProtectionPercent),
+          description: _string(map?['description'], base.description),
+        );
+      })(),
+  ];
+  final stockLoss = _map(raw['stockLossPercentByIntensity']);
+  return CommunityProjectsConfig(
+    choicesPerCoreLevel:
+        _int(raw['choicesPerCoreLevel'], fallback.choicesPerCoreLevel),
+    maximumActiveProjects:
+        _int(raw['maximumActiveProjects'], fallback.maximumActiveProjects),
+    playerDailyContribution:
+        _int(raw['playerDailyContribution'], fallback.playerDailyContribution),
+    residentHappinessThreshold: _int(
+        raw['residentHappinessThreshold'], fallback.residentHappinessThreshold),
+    residentDailyContribution: _int(
+        raw['residentDailyContribution'], fallback.residentDailyContribution),
+    residentContributionCapEnabled:
+        raw['residentContributionCapEnabled'] is bool
+            ? raw['residentContributionCapEnabled'] as bool
+            : fallback.residentContributionCapEnabled,
+    residentContributionCap:
+        _int(raw['residentContributionCap'], fallback.residentContributionCap),
+    projects: definitions,
+    protectedBatteryCapacity: _int(
+        raw['protectedBatteryCapacity'], fallback.protectedBatteryCapacity),
+    stockLossPercentByIntensity: <String, int>{
+      for (final entry in fallback.stockLossPercentByIntensity.entries)
+        entry.key: _int(stockLoss?[entry.key], entry.value),
+    },
   );
 }
 
@@ -1858,6 +1925,18 @@ MarketConfig _market(Object? value) {
       raw['distributorResponseDelayMinutes'],
       b.distributorResponseDelayMinutes,
     ),
+    weatherRequestRatioPercent:
+        _int(raw['weatherRequestRatioPercent'], b.weatherRequestRatioPercent),
+    weatherRequestPopulationDivisor: _int(
+        raw['weatherRequestPopulationDivisor'],
+        b.weatherRequestPopulationDivisor),
+    weatherRequestItems: <String, List<String>>{
+      for (final entry in b.weatherRequestItems.entries)
+        entry.key: ((raw['weatherRequestItems'] as Map?)?[entry.key] as List? ??
+                entry.value)
+            .map((item) => '$item')
+            .toList(),
+    },
   );
 }
 
@@ -1916,5 +1995,18 @@ HousingConfig _housing(Object? value) {
       raw['thanksDurationHours'],
       b.thanksDurationHours,
     ),
+    houseViabilityDamageHappinessPercent: _int(
+        raw['houseViabilityDamageHappinessPercent'],
+        b.houseViabilityDamageHappinessPercent),
+    houseRepairGain: _int(raw['houseRepairGain'], b.houseRepairGain),
+    houseRepairOrganicCost:
+        _int(raw['houseRepairOrganicCost'], b.houseRepairOrganicCost),
+    houseRepairMineralCost:
+        _int(raw['houseRepairMineralCost'], b.houseRepairMineralCost),
+    houseProtectionSlots:
+        _int(raw['houseProtectionSlots'], b.houseProtectionSlots),
+    neutralHappinessWithoutResidents: _int(
+        raw['neutralHappinessWithoutResidents'],
+        b.neutralHappinessWithoutResidents),
   );
 }

@@ -11,5 +11,11 @@
   "maximumHousingWellbeingPenalty": 30,
   "thanksBioBatteryCost": 2,
   "thanksWellbeingBonus": 3,
-  "thanksDurationHours": 48
+  "thanksDurationHours": 48,
+  "houseViabilityDamageHappinessPercent": 30,
+  "houseRepairGain": 15,
+  "houseRepairOrganicCost": 5,
+  "houseRepairMineralCost": 3,
+  "houseProtectionSlots": 1,
+  "neutralHappinessWithoutResidents": 50
 }

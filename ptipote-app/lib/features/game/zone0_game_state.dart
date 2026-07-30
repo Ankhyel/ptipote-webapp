@@ -9,6 +9,7 @@ import '../../services/notification_service.dart';
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'building_construction_config.dart';
+import 'camp_heart_config.dart';
 import 'camp_generator_config.dart';
 import 'housing_config.dart';
 import 'craft_config.dart';
@@ -180,6 +181,15 @@ class Zone0GameState extends ChangeNotifier {
   int housingUnits = 0;
   // Housing remains separate from the Camp Heart population capacity.
   int housingCapacity = 0;
+
+  /// Couche sociale minimale : des identités stables, sans simulation de
+  /// métier, famille ou besoins individuels.
+  final List<Zone0Resident> residents = <Zone0Resident>[];
+  final List<ResidentHouse> residentHouses = <ResidentHouse>[];
+  final Map<String, CommunityProjectProgress> communityProjects =
+      <String, CommunityProjectProgress>{};
+  final Set<String> resolvedWeatherStockLossEventIds = <String>{};
+  WeatherStockIncident? lastWeatherStockIncident;
   CommunityConstructionThanks? communityConstructionThanks;
   int plaineNurseryLevel = 0;
   PTibugCreationOrder? pTibugCreationOrder;
@@ -499,10 +509,11 @@ class Zone0GameState extends ChangeNotifier {
       if (impact == null || !impact.isAffected) continue;
       final raw = config.damageFor(event.type, event.intensity) *
           impact.localImpactMultiplier;
-      final reduced = raw *
-          (1 -
-              structuralProtectionReductionPercent(buildingId, event.type) /
-                  100);
+      final protection =
+          (structuralProtectionReductionPercent(buildingId, event.type) +
+                  globalWeatherProtectionPercent(event.type))
+              .clamp(0, config.protectionCapPercent);
+      final reduced = raw * (1 - protection / 100);
       final damage = reduced.ceil();
       if (damage <= 0) continue;
       final previous = state.current;
@@ -519,6 +530,356 @@ class Zone0GameState extends ChangeNotifier {
             buildingId, 'est endommagé et fonctionne en mode dégradé.');
       }
     }
+  }
+
+  void _migrateResidentsAndHouses() {
+    final targetResidents = math.max(0, currentPopulation);
+    while (residents.length < targetResidents) {
+      final index = residents.length;
+      residents.add(Zone0Resident(
+        id: 'resident-migrated-${index + 1}',
+        displayName: _residentNameFor(index),
+        createdAt: DateTime.now(),
+      ));
+    }
+    // Do not destroy identities when a temporary population value falls.
+    while (residentHouses.length < housingUnits) {
+      final index = residentHouses.length;
+      residentHouses.add(ResidentHouse(
+        id: 'house-${index + 1}',
+        displayName: 'Maison ${index + 1}',
+        biome: ForageBiome.plaineRiche,
+        capacity: housingConfig.residentsPerHousingUnit,
+      ));
+    }
+    for (final house in residentHouses) {
+      house.capacity = housingConfig.residentsPerHousingUnit;
+      house.residentIds.removeWhere(
+        (id) => !residents.any((resident) => resident.id == id),
+      );
+    }
+    for (final resident in residents) {
+      final assigned = residentHouseForId(resident.houseId);
+      if (assigned != null && assigned.residentIds.contains(resident.id))
+        continue;
+      resident.houseId = null;
+      final house = residentHouses
+          .where((item) => item.residentIds.length < item.capacity)
+          .firstOrNull;
+      if (house != null) {
+        house.residentIds.add(resident.id);
+        resident.houseId = house.id;
+      }
+    }
+  }
+
+  String _residentNameFor(int index) {
+    const names = <String>[
+      'Malo',
+      'Sacha',
+      'Noa',
+      'Ari',
+      'Lio',
+      'Nima',
+      'Cam',
+      'Eden',
+      'Sol',
+      'Yaël',
+      'Mika',
+      'Iris',
+      'Lou',
+      'Ayo',
+      'Nox',
+      'Rin',
+    ];
+    final cycle = index ~/ names.length;
+    return cycle == 0
+        ? names[index % names.length]
+        : '${names[index % names.length]} ${cycle + 1}';
+  }
+
+  Zone0ActionResult repairResidentHouse(String houseId) {
+    final house = residentHouseForId(houseId);
+    if (house == null)
+      return const Zone0ActionResult(
+          success: false, message: 'Maison introuvable.');
+    if (house.currentViability >= house.maximumViability) {
+      return const Zone0ActionResult(
+          success: false, message: 'La maison est déjà en bon état.');
+    }
+    final costs = <String, int>{
+      'Organique': housingConfig.houseRepairOrganicCost,
+      'Minéral': housingConfig.houseRepairMineralCost,
+    };
+    if (!hasResources(costs) || !removeResources(costs)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Ressources insuffisantes pour réparer cette maison.');
+    }
+    house.currentViability = math.min(house.maximumViability,
+        house.currentViability + housingConfig.houseRepairGain);
+    house.updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            'Maison réparée : +${housingConfig.houseRepairGain}% de Viabilité.');
+  }
+
+  Zone0ActionResult installHouseProtection(
+    String houseId,
+    StructuralProtectionType type,
+  ) {
+    final house = residentHouseForId(houseId);
+    if (house == null)
+      return const Zone0ActionResult(
+          success: false, message: 'Maison introuvable.');
+    if (house.installedStructuralProtections.length >=
+        housingConfig.houseProtectionSlots) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Aucun emplacement de protection disponible.');
+    }
+    final item = switch (type) {
+      StructuralProtectionType.ventilationTermite => 'Ventilation Termite',
+      StructuralProtectionType.chloroCanaux => 'Chloro-canaux',
+      StructuralProtectionType.filtration => 'Installation filtrante',
+    };
+    if (resourceAmount(item) < 1 || removeResource(item, 1) <= 0) {
+      return Zone0ActionResult(
+          success: false, message: '$item requis dans l’inventaire.');
+    }
+    house.installedStructuralProtections.add(type);
+    house.updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$item installé dans ${house.displayName}.');
+  }
+
+  void _applyWeatherHouseDamage(GlobalWeatherEvent event) {
+    if (event.type == TowerWeatherType.calm) return;
+    final config = towerOperationsConfig.buildingViability;
+    for (final house in residentHouses) {
+      if (house.lastDamageEventId == event.id) continue;
+      house.lastDamageEventId = event.id;
+      final impact = event.affectedBiomes
+          .where((item) => item.biome == house.biome)
+          .firstOrNull;
+      if (impact == null || !impact.isAffected) continue;
+      final protection = (house.protectionReductionPercent(event.type, config) +
+              globalWeatherProtectionPercent(event.type))
+          .clamp(0, config.protectionCapPercent);
+      final raw = config.damageFor(event.type, event.intensity) *
+          impact.localImpactMultiplier;
+      house.currentViability = math
+          .max(
+            0,
+            house.currentViability - (raw * (1 - protection / 100)).ceil(),
+          )
+          .toInt();
+      house.updatedAt = DateTime.now();
+    }
+  }
+
+  CommunityProjectDefinition? communityProjectDefinition(String id) =>
+      campHeartConfig.communityProjects.projects
+          .where((project) => project.id == id)
+          .firstOrNull;
+
+  bool canSelectCommunityProject(CommunityProjectDefinition definition) {
+    if (communityProjects.containsKey(definition.id) ||
+        communityProjectChoicesUsed >= communityProjectChoiceLimit ||
+        _lastKnownCampHeartLevel < definition.requiredCoreLevel) return false;
+    if (definition.prerequisiteId != null &&
+        communityProjects[definition.prerequisiteId]?.status !=
+            CommunityProjectStatus.completed) return false;
+    return activeCommunityProject == null ||
+        campHeartConfig.communityProjects.maximumActiveProjects > 1;
+  }
+
+  Zone0ActionResult selectCommunityProject(String definitionId) {
+    final definition = communityProjectDefinition(definitionId);
+    if (definition == null || !canSelectCommunityProject(definition)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Ce grand chantier n’est pas encore accessible.');
+    }
+    communityProjects[definition.id] =
+        CommunityProjectProgress(definition: definition);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '${definition.label} choisi.');
+  }
+
+  Zone0ActionResult activateCommunityProject(String definitionId) {
+    final project = communityProjects[definitionId];
+    if (project == null ||
+        project.status == CommunityProjectStatus.completed ||
+        (activeCommunityProject != null && activeCommunityProject != project)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Un seul grand chantier peut être actif.');
+    }
+    project.status = CommunityProjectStatus.active;
+    project.startedAt ??= DateTime.now();
+    _resolveCommunityDailyContribution(DateTime.now());
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '${project.definition.label} est actif.');
+  }
+
+  Zone0ActionResult depositCommunityProjectMaterial(
+      String projectId, String resource, int amount) {
+    final project = communityProjects[projectId];
+    final required = project?.definition.materialCosts[resource] ?? 0;
+    if (project == null || amount <= 0 || required <= 0)
+      return const Zone0ActionResult(
+          success: false, message: 'Dépôt indisponible.');
+    final missing = math
+        .max(
+          0,
+          required - (project.depositedMaterials[resource] ?? 0),
+        )
+        .toInt();
+    final moved =
+        math.min(amount, math.min(missing, resourceAmount(resource))).toInt();
+    if (moved <= 0 || removeResource(resource, moved) <= 0)
+      return const Zone0ActionResult(
+          success: false, message: 'Ressource insuffisante.');
+    project.depositedMaterials[resource] =
+        (project.depositedMaterials[resource] ?? 0) + moved;
+    project.updatedAt = DateTime.now();
+    _completeCommunityProjectIfReady(project);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$moved $resource déposés.');
+  }
+
+  Zone0ActionResult contributeToCommunityProject() {
+    final project = activeCommunityProject;
+    if (project == null)
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun grand chantier actif.');
+    final day = _communityDayKey(DateTime.now());
+    if (project.playerContributionDay == day)
+      return const Zone0ActionResult(
+          success: false, message: 'Contribution quotidienne déjà utilisée.');
+    project
+      ..playerContributionDay = day
+      ..currentContributionPoints +=
+          campHeartConfig.communityProjects.playerDailyContribution
+      ..updatedAt = DateTime.now();
+    _completeCommunityProjectIfReady(project);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            '+${campHeartConfig.communityProjects.playerDailyContribution} points de contribution.');
+  }
+
+  void _resolveCommunityDailyContribution(DateTime now) {
+    final project = activeCommunityProject;
+    if (project == null) return;
+    final day = _communityDayKey(now);
+    if (project.residentContributionDay == day) return;
+    var points = residents
+            .where((resident) =>
+                resident.isActive &&
+                residentHappinessFor(resident) >=
+                    campHeartConfig
+                        .communityProjects.residentHappinessThreshold)
+            .length *
+        campHeartConfig.communityProjects.residentDailyContribution;
+    final config = campHeartConfig.communityProjects;
+    if (config.residentContributionCapEnabled)
+      points = math.min(points, config.residentContributionCap).toInt();
+    project
+      ..residentContributionDay = day
+      ..residentContributionToday = points
+      ..currentContributionPoints += points
+      ..updatedAt = now;
+    _completeCommunityProjectIfReady(project);
+  }
+
+  String _communityDayKey(DateTime date) =>
+      '${date.year}-${date.month}-${date.day}';
+
+  void _completeCommunityProjectIfReady(CommunityProjectProgress project) {
+    if (project.status == CommunityProjectStatus.completed ||
+        !project.materialsComplete ||
+        project.currentContributionPoints <
+            project.definition.requiredContributionPoints) return;
+    project
+      ..status = CommunityProjectStatus.completed
+      ..completedAt = DateTime.now();
+    reports.add(PtipoteMissionReport.system(
+        message:
+            '${project.definition.label} est terminé. Le camp résiste mieux aux intempéries.',
+        sourceBuildingId: 'campHeart',
+        subject: 'Grand chantier terminé',
+        concerned: 'Camp',
+        summary:
+            '+${project.definition.globalProtectionPercent}% contre ${project.definition.weatherType}.'));
+  }
+
+  void _applyWeatherStockLosses(GlobalWeatherEvent event) {
+    if (!resolvedWeatherStockLossEventIds.add(event.id) ||
+        event.type == TowerWeatherType.calm) return;
+    final impact = event.affectedBiomes
+        .where((item) => item.biome == ForageBiome.plaineRiche)
+        .firstOrNull;
+    if (impact == null || !impact.isAffected) return;
+    final rate = campHeartConfig.communityProjects
+            .stockLossPercentByIntensity[event.intensity.name] ??
+        0;
+    final reduction = globalWeatherProtectionPercent(event.type)
+        .clamp(0, towerOperationsConfig.buildingViability.protectionCapPercent);
+    final effectiveRate =
+        rate * impact.localImpactMultiplier * (1 - reduction / 100);
+    final perishable = switch (event.type) {
+      TowerWeatherType.heatWave => <String>['Organique', 'Repas simple'],
+      TowerWeatherType.heavyRain => <String>['Organique', 'Repas simple'],
+      TowerWeatherType.toxicCloud => <String>['Organique', 'Repas simple'],
+      TowerWeatherType.calm => <String>[],
+    };
+    var waste = 0;
+    for (final item in perishable) {
+      final loss = (resourceAmount(item) * effectiveRate / 100).floor();
+      if (loss > 0) {
+        removeResource(item, loss);
+        waste += loss;
+      }
+    }
+    if (waste > 0) addResources(<String, int>{'Déchets': waste});
+    var batteriesLost = 0;
+    if (event.type == TowerWeatherType.heavyRain) {
+      batteriesLost = math
+          .min(
+            exposedBioBatteryCount,
+            (exposedBioBatteryCount * effectiveRate / 100).floor(),
+          )
+          .toInt();
+      bioBatteries -= batteriesLost;
+    }
+    lastWeatherStockIncident = WeatherStockIncident(
+        eventId: event.id,
+        wasteCreated: waste,
+        batteriesLost: batteriesLost,
+        protectionPercent: reduction,
+        resolvedAt: DateTime.now());
+    if (waste > 0 || batteriesLost > 0)
+      reports.add(PtipoteMissionReport.system(
+          message:
+              'Intempérie : $waste ressource(s) transformée(s) en Déchets, $batteriesLost Bio-batterie(s) exposée(s) perdue(s).',
+          sourceBuildingId: 'campHeart',
+          subject: 'Bilan météo',
+          concerned: 'Stocks',
+          summary: 'Protection globale : $reduction%.'));
   }
 
   void _reportBuildingViability(String buildingId, String message) {
@@ -617,6 +978,67 @@ class Zone0GameState extends ChangeNotifier {
   int get unhousedPopulation =>
       math.max(0, currentPopulation - housingCapacity);
 
+  int get residentHappiness =>
+      residents.where((resident) => resident.isActive).isEmpty
+          ? housingConfig.neutralHappinessWithoutResidents
+          : (residents
+                      .where((resident) => resident.isActive)
+                      .map(residentHappinessFor)
+                      .reduce((sum, value) => sum + value) /
+                  residents.where((resident) => resident.isActive).length)
+              .round();
+
+  ResidentHouse? residentHouseForId(String? houseId) => houseId == null
+      ? null
+      : residentHouses.where((house) => house.id == houseId).firstOrNull;
+
+  int residentHappinessFor(Zone0Resident resident) {
+    final house = residentHouseForId(resident.houseId);
+    final homePenalty = house != null && house.currentViability < 50
+        ? housingConfig.houseViabilityDamageHappinessPercent
+        : 0;
+    final unhousedPenalty = resident.houseId == null
+        ? housingConfig.wellbeingPenaltyPerUnhousedResident
+        : 0;
+    return (resident.baseHappiness +
+            resident.temporaryHappinessModifier -
+            homePenalty -
+            unhousedPenalty)
+        .clamp(0, 100);
+  }
+
+  int get displayedCampWellbeing => (residentHappiness +
+          securityWellbeingModifier +
+          communityThanksWellbeingBonus)
+      .clamp(0, 100);
+
+  int get protectedBioBatteryCount => math
+      .min(
+        bioBatteries,
+        campHeartConfig.communityProjects.protectedBatteryCapacity,
+      )
+      .toInt();
+  int get exposedBioBatteryCount =>
+      math.max(0, bioBatteries - protectedBioBatteryCount).toInt();
+
+  int get communityProjectChoiceLimit => (_lastKnownCampHeartLevel *
+          campHeartConfig.communityProjects.choicesPerCoreLevel)
+      .toInt();
+  int get communityProjectChoicesUsed => communityProjects.length;
+  CommunityProjectProgress? get activeCommunityProject =>
+      communityProjects.values
+          .where((project) => project.status == CommunityProjectStatus.active)
+          .firstOrNull;
+
+  int globalWeatherProtectionPercent(TowerWeatherType weather) =>
+      communityProjects.values
+          .where(
+              (project) => project.status == CommunityProjectStatus.completed)
+          .map((project) => project.definition.weatherType == weather.name
+              ? project.definition.globalProtectionPercent
+              : 0)
+          .fold<int>(0, (total, value) => total + value);
+
   int get housingWellbeingPenalty => math.min(
         housingConfig.maximumHousingWellbeingPenalty,
         unhousedPopulation * housingConfig.wellbeingPenaltyPerUnhousedResident,
@@ -627,12 +1049,6 @@ class Zone0GameState extends ChangeNotifier {
     if (thanks == null || !thanks.isActive) return 0;
     return thanks.bonusValue;
   }
-
-  int get displayedCampWellbeing => (campWellbeing +
-          securityWellbeingModifier -
-          housingWellbeingPenalty +
-          communityThanksWellbeingBonus)
-      .clamp(0, 100);
 
   bool get isMerchantAvailable =>
       merchantAvailableUntil != null &&
@@ -2665,7 +3081,29 @@ class Zone0GameState extends ChangeNotifier {
       if (marketLevel <= 1) return item == 'Organique' || item == 'Minéral';
       return true;
     }).toList();
-    final item = entries[_random.nextInt(entries.length)];
+    final weather = _marketWeatherRequestType();
+    final weatherItems = weather == null
+        ? const <String>[]
+        : marketConfig.weatherRequestItems[weather.name] ?? const <String>[];
+    final weatherActiveCount = marketRequests
+        .where((request) => request.isOpen && request.weatherType != null)
+        .length;
+    final weatherCap = residents.where((resident) => resident.isActive).isEmpty
+        ? 0
+        : math.max(
+            1,
+            residents.where((resident) => resident.isActive).length ~/
+                math.max(1, marketConfig.weatherRequestPopulationDivisor),
+          );
+    final useWeather = weather != null &&
+        weatherItems.isNotEmpty &&
+        weatherActiveCount < weatherCap &&
+        _random.nextInt(100) < marketConfig.weatherRequestRatioPercent;
+    final eligibleWeatherItems =
+        weatherItems.where(entries.contains).toList(growable: false);
+    final item = useWeather && eligibleWeatherItems.isNotEmpty
+        ? eligibleWeatherItems[_random.nextInt(eligibleWeatherItems.length)]
+        : entries[_random.nextInt(entries.length)];
     final isResource = item == 'Organique' || item == 'Minéral';
     final request = MarketCustomerRequest(
       id: 'request-${now.microsecondsSinceEpoch}-${marketRequests.length}',
@@ -2683,9 +3121,27 @@ class Zone0GameState extends ChangeNotifier {
         Duration(minutes: marketConfig.distributorResponseDelayMinutes),
       ),
       status: MarketRequestStatus.noted,
+      weatherType:
+          useWeather && eligibleWeatherItems.isNotEmpty ? weather!.name : null,
     );
     marketRequests.add(request);
     _ensureMarketRequestLog(request);
+  }
+
+  TowerWeatherType? _marketWeatherRequestType() {
+    final upcoming = nextGlobalWeatherEvent;
+    if (upcoming != null &&
+        upcoming.status == GlobalWeatherEventStatus.announced &&
+        upcoming.type != TowerWeatherType.calm) {
+      return upcoming.type;
+    }
+    final active = activeGlobalWeatherEvent;
+    if (active != null &&
+        active.status == GlobalWeatherEventStatus.active &&
+        active.type != TowerWeatherType.calm) {
+      return active.type;
+    }
+    return null;
   }
 
   void _recordMarketRequestOutcome(
@@ -4188,6 +4644,7 @@ class Zone0GameState extends ChangeNotifier {
           emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
         }
     }
+    _migrateResidentsAndHouses();
     if (!project.notificationCreated) {
       final isFablabUnit = const <String>{
         'cuisine',
@@ -6702,6 +7159,30 @@ class Zone0GameState extends ChangeNotifier {
 
       final buildingsData = data['buildings'];
       if (buildingsData is Map) {
+        final communityData = buildingsData['communityProjects'];
+        if (communityData is List) {
+          communityProjects
+            ..clear()
+            ..addEntries(communityData.whereType<Map>().map((data) {
+              final definition =
+                  communityProjectDefinition('${data['projectId'] ?? ''}');
+              return definition == null
+                  ? null
+                  : MapEntry(definition.id,
+                      CommunityProjectProgress.fromFirebase(data, definition));
+            }).whereType<MapEntry<String, CommunityProjectProgress>>());
+        }
+        final stockLossData = buildingsData['weatherStockLoss'];
+        if (stockLossData is Map) {
+          resolvedWeatherStockLossEventIds
+            ..clear()
+            ..addAll((stockLossData['resolvedEventIds'] as List? ?? const [])
+                .map((item) => '$item'));
+          lastWeatherStockIncident = stockLossData['lastIncident'] is Map
+              ? WeatherStockIncident.fromFirebase(
+                  stockLossData['lastIncident'] as Map)
+              : null;
+        }
         final viabilityData = buildingsData['viability'];
         if (viabilityData is Map) {
           buildingViabilities
@@ -6759,6 +7240,20 @@ class Zone0GameState extends ChangeNotifier {
               housingUnits * housingConfig.residentsPerHousingUnit;
           communityConstructionThanks =
               CommunityConstructionThanks.fromFirebase(housingData['thanks']);
+          residents
+            ..clear()
+            ..addAll(
+              (housingData['residents'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map(Zone0Resident.fromFirebase),
+            );
+          residentHouses
+            ..clear()
+            ..addAll(
+              (housingData['functionalHouses'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map(ResidentHouse.fromFirebase),
+            );
         }
         final projectData = buildingsData['projects'];
         if (projectData is Map) {
@@ -6794,6 +7289,7 @@ class Zone0GameState extends ChangeNotifier {
         housingConfig.alcovesForHouseLevel(houseLevel),
       );
       _migrateBuildingViability();
+      _migrateResidentsAndHouses();
       refugeSafety = _readInt(
         data['campSecurity'],
       ).clamp(0, securityTowerConfig.maxSecurity);
@@ -7823,6 +8319,7 @@ class Zone0GameState extends ChangeNotifier {
 
   bool resolveWeatherCycle({DateTime? now, bool forceFirstAlert = false}) {
     final current = now ?? DateTime.now();
+    _resolveCommunityDailyContribution(current);
     var changed = _closeFinishedWeatherAlerts(current);
     if (!isSecurityTowerBuilt) return changed;
 
@@ -7846,6 +8343,8 @@ class Zone0GameState extends ChangeNotifier {
       promoted.status = GlobalWeatherEventStatus.active;
       activeGlobalWeatherEvent = promoted;
       _applyWeatherViabilityDamage(promoted);
+      _applyWeatherHouseDamage(promoted);
+      _applyWeatherStockLosses(promoted);
       _notifyGlobalWeatherStarted(promoted);
       nextGlobalWeatherEvent = _newGlobalWeatherEvent(
         startsAt: promoted.endsAt,
@@ -8070,6 +8569,8 @@ class Zone0GameState extends ChangeNotifier {
       id: 'manual-global-${current.microsecondsSinceEpoch}',
     );
     _applyWeatherViabilityDamage(activeGlobalWeatherEvent!);
+    _applyWeatherHouseDamage(activeGlobalWeatherEvent!);
+    _applyWeatherStockLosses(activeGlobalWeatherEvent!);
     nextGlobalWeatherEvent = _newGlobalWeatherEvent(
       startsAt: activeGlobalWeatherEvent!.endsAt,
     );
@@ -9680,10 +10181,21 @@ class Zone0GameState extends ChangeNotifier {
             'units': housingUnits,
             'capacity': housingCapacity,
             'thanks': communityConstructionThanks?.toFirebase(),
+            'residents':
+                residents.map((resident) => resident.toFirebase()).toList(),
+            'functionalHouses':
+                residentHouses.map((house) => house.toFirebase()).toList(),
           },
           'viability': buildingViabilities.map(
             (key, value) => MapEntry(key, value.toFirebase()),
           ),
+          'communityProjects': communityProjects.values
+              .map((project) => project.toFirebase())
+              .toList(),
+          'weatherStockLoss': <String, dynamic>{
+            'resolvedEventIds': resolvedWeatherStockLossEventIds.toList(),
+            'lastIncident': lastWeatherStockIncident?.toFirebase(),
+          },
           'projects': constructionProjects.map(
             (key, value) => MapEntry(key, value.toFirebase()),
           ),
@@ -10105,6 +10617,7 @@ class MarketCustomerRequest {
     required this.status,
     DateTime? distributorEligibleAt,
     this.customerName,
+    this.weatherType,
   }) : distributorEligibleAt = distributorEligibleAt ?? createdAt;
 
   factory MarketCustomerRequest.fromFirebase(
@@ -10132,6 +10645,7 @@ class MarketCustomerRequest {
           MarketRequestStatus.noted,
         ),
         customerName: data['customerName'] as String?,
+        weatherType: data['weatherType'] as String?,
         distributorEligibleAt: Zone0GameState.instance._readDate(
           data['distributorEligibleAt'],
         ),
@@ -10146,6 +10660,7 @@ class MarketCustomerRequest {
   DateTime customerReturnTime;
   MarketRequestStatus status;
   final String? customerName;
+  final String? weatherType;
   final DateTime distributorEligibleAt;
 
   bool get isOpen =>
@@ -10163,6 +10678,7 @@ class MarketCustomerRequest {
         'customerReturnTime': Timestamp.fromDate(customerReturnTime),
         'status': status.name,
         'customerName': customerName,
+        'weatherType': weatherType,
         'distributorEligibleAt': Timestamp.fromDate(distributorEligibleAt),
       };
 }
@@ -10625,6 +11141,260 @@ class BuildingViabilityState {
         'restartRequired': restartRequired,
         'installedStructuralProtections':
             installedStructuralProtections.map((item) => item.name).toList(),
+      };
+}
+
+class Zone0Resident {
+  Zone0Resident({
+    required this.id,
+    required this.displayName,
+    required this.createdAt,
+    this.houseId,
+    this.baseHappiness = 100,
+    this.temporaryHappinessModifier = 0,
+    this.isActive = true,
+    this.contributionEligible = false,
+    DateTime? updatedAt,
+  }) : updatedAt = updatedAt ?? createdAt;
+
+  factory Zone0Resident.fromFirebase(Map<dynamic, dynamic> data) =>
+      Zone0Resident(
+        id: '${data['residentId'] ?? ''}',
+        displayName: '${data['displayName'] ?? 'Habitant'}',
+        houseId: data['houseId'] as String?,
+        baseHappiness: Zone0GameState.instance
+            ._readInt(data['baseHappiness'], fallback: 100)
+            .clamp(0, 100),
+        temporaryHappinessModifier: Zone0GameState.instance
+            ._readInt(data['temporaryHappinessModifier']),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+        isActive: data['isActive'] != false,
+        contributionEligible: data['contributionEligible'] == true,
+      );
+
+  final String id;
+  String displayName;
+  String? houseId;
+  int baseHappiness;
+  int temporaryHappinessModifier;
+  final DateTime createdAt;
+  DateTime updatedAt;
+  bool isActive;
+  bool contributionEligible;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'residentId': id,
+        'displayName': displayName,
+        'houseId': houseId,
+        'baseHappiness': baseHappiness,
+        'temporaryHappinessModifier': temporaryHappinessModifier,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'updatedAt': Timestamp.fromDate(updatedAt),
+        'isActive': isActive,
+        'contributionEligible': contributionEligible,
+      };
+}
+
+class ResidentHouse {
+  ResidentHouse({
+    required this.id,
+    required this.displayName,
+    required this.biome,
+    required this.capacity,
+    this.currentViability = 100,
+    this.maximumViability = 100,
+    List<String>? residentIds,
+    List<StructuralProtectionType>? installedStructuralProtections,
+    this.lastDamageEventId,
+    this.isUnderRepair = false,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  })  : residentIds = residentIds ?? <String>[],
+        installedStructuralProtections =
+            installedStructuralProtections ?? <StructuralProtectionType>[],
+        createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
+
+  factory ResidentHouse.fromFirebase(Map<dynamic, dynamic> data) =>
+      ResidentHouse(
+        id: '${data['houseId'] ?? ''}',
+        displayName: '${data['displayName'] ?? 'Maison'}',
+        biome: ForageMission._enumByName(ForageBiome.values,
+            '${data['biomeId'] ?? ''}', ForageBiome.plaineRiche),
+        capacity: Zone0GameState.instance
+            ._readInt(data['residentCapacity'], fallback: 3),
+        currentViability: Zone0GameState.instance
+            ._readInt(data['currentViability'], fallback: 100),
+        maximumViability: Zone0GameState.instance
+            ._readInt(data['maxViability'], fallback: 100),
+        residentIds: (data['residentIds'] as List? ?? const [])
+            .map((item) => '$item')
+            .toList(),
+        installedStructuralProtections:
+            (data['installedStructuralProtections'] as List? ?? const [])
+                .map((item) => ForageMission._enumByName(
+                    StructuralProtectionType.values,
+                    '$item',
+                    StructuralProtectionType.ventilationTermite))
+                .toList(),
+        lastDamageEventId: data['lastDamageEventId'] as String?,
+        isUnderRepair: data['isUnderRepair'] == true,
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']),
+        updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+      );
+
+  final String id;
+  String displayName;
+  ForageBiome biome;
+  int capacity;
+  int currentViability;
+  int maximumViability;
+  final List<String> residentIds;
+  final List<StructuralProtectionType> installedStructuralProtections;
+  String? lastDamageEventId;
+  bool isUnderRepair;
+  final DateTime createdAt;
+  DateTime updatedAt;
+
+  int protectionReductionPercent(
+      TowerWeatherType weather, BuildingViabilityConfig config) {
+    final type = switch (weather) {
+      TowerWeatherType.heatWave => StructuralProtectionType.ventilationTermite,
+      TowerWeatherType.heavyRain => StructuralProtectionType.chloroCanaux,
+      TowerWeatherType.toxicCloud => StructuralProtectionType.filtration,
+      TowerWeatherType.calm => null,
+    };
+    if (type == null || config.protectionReductionPercents.isEmpty) return 0;
+    final count =
+        installedStructuralProtections.where((item) => item == type).length;
+    var total = 0;
+    for (var index = 0; index < count; index++) {
+      total += config.protectionReductionPercents[
+          index < config.protectionReductionPercents.length
+              ? index
+              : config.protectionReductionPercents.length - 1];
+    }
+    return total.clamp(0, config.protectionCapPercent);
+  }
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'houseId': id,
+        'displayName': displayName,
+        'biomeId': biome.name,
+        'currentViability': currentViability,
+        'maxViability': maximumViability,
+        'residentCapacity': capacity,
+        'residentIds': residentIds,
+        'installedStructuralProtections':
+            installedStructuralProtections.map((item) => item.name).toList(),
+        'lastDamageEventId': lastDamageEventId,
+        'isUnderRepair': isUnderRepair,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'updatedAt': Timestamp.fromDate(updatedAt),
+      };
+}
+
+enum CommunityProjectStatus { selected, active, paused, completed }
+
+class CommunityProjectProgress {
+  CommunityProjectProgress({
+    required this.definition,
+    this.status = CommunityProjectStatus.selected,
+    Map<String, int>? depositedMaterials,
+    this.currentContributionPoints = 0,
+    this.playerContributionDay,
+    this.residentContributionDay,
+    this.residentContributionToday = 0,
+    this.startedAt,
+    this.completedAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  })  : depositedMaterials = depositedMaterials ?? <String, int>{},
+        createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
+
+  final CommunityProjectDefinition definition;
+  CommunityProjectStatus status;
+  final Map<String, int> depositedMaterials;
+  int currentContributionPoints;
+  String? playerContributionDay;
+  String? residentContributionDay;
+  int residentContributionToday;
+  DateTime? startedAt;
+  DateTime? completedAt;
+  final DateTime createdAt;
+  DateTime updatedAt;
+  bool get materialsComplete => definition.materialCosts.entries
+      .every((entry) => (depositedMaterials[entry.key] ?? 0) >= entry.value);
+
+  factory CommunityProjectProgress.fromFirebase(
+          Map<dynamic, dynamic> data, CommunityProjectDefinition definition) =>
+      CommunityProjectProgress(
+        definition: definition,
+        status: ForageMission._enumByName(CommunityProjectStatus.values,
+            '${data['status'] ?? ''}', CommunityProjectStatus.selected),
+        depositedMaterials: Map<String, int>.fromEntries(
+            (data['depositedMaterials'] as Map? ?? const {}).entries.map(
+                (entry) => MapEntry('${entry.key}',
+                    Zone0GameState.instance._readInt(entry.value)))),
+        currentContributionPoints:
+            Zone0GameState.instance._readInt(data['currentContributionPoints']),
+        playerContributionDay: data['playerContributionDay'] as String?,
+        residentContributionDay: data['residentContributionDay'] as String?,
+        residentContributionToday:
+            Zone0GameState.instance._readInt(data['residentContributionToday']),
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']),
+        completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']),
+        updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'projectId': definition.id,
+        'status': status.name,
+        'depositedMaterials': depositedMaterials,
+        'currentContributionPoints': currentContributionPoints,
+        'playerContributionDay': playerContributionDay,
+        'residentContributionDay': residentContributionDay,
+        'residentContributionToday': residentContributionToday,
+        'startedAt': startedAt == null ? null : Timestamp.fromDate(startedAt!),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
+        'createdAt': Timestamp.fromDate(createdAt),
+        'updatedAt': Timestamp.fromDate(updatedAt),
+      };
+}
+
+class WeatherStockIncident {
+  const WeatherStockIncident(
+      {required this.eventId,
+      required this.wasteCreated,
+      required this.batteriesLost,
+      required this.protectionPercent,
+      required this.resolvedAt});
+  final String eventId;
+  final int wasteCreated;
+  final int batteriesLost;
+  final int protectionPercent;
+  final DateTime resolvedAt;
+  factory WeatherStockIncident.fromFirebase(Map<dynamic, dynamic> data) =>
+      WeatherStockIncident(
+          eventId: '${data['eventId'] ?? ''}',
+          wasteCreated: Zone0GameState.instance._readInt(data['wasteCreated']),
+          batteriesLost:
+              Zone0GameState.instance._readInt(data['batteriesLost']),
+          protectionPercent:
+              Zone0GameState.instance._readInt(data['protectionPercent']),
+          resolvedAt: Zone0GameState.instance._readDate(data['resolvedAt']) ??
+              DateTime.now());
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'eventId': eventId,
+        'wasteCreated': wasteCreated,
+        'batteriesLost': batteriesLost,
+        'protectionPercent': protectionPercent,
+        'resolvedAt': Timestamp.fromDate(resolvedAt)
       };
 }
 
