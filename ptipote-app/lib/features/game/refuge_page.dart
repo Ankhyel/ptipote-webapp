@@ -5503,9 +5503,20 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                   weather.type == TowerWeatherType.calm
                       ? '🌤️ Temps calme · ce biome ne subit aucun malus.'
                       : weather.isBiomeAffected(biome)
-                          ? '${switch (weather.type) { TowerWeatherType.toxicCloud => '☁️ Nuage toxique', TowerWeatherType.heatWave => '☀️ Forte chaleur', TowerWeatherType.heavyRain => '🌧️ Pluie intense', TowerWeatherType.calm => '🌤️ Temps calme' }} · ${switch (weather.intensity) { GlobalWeatherIntensity.calm => 'Calme', GlobalWeatherIntensity.moderate => 'Modérée', GlobalWeatherIntensity.strong => 'Forte', GlobalWeatherIntensity.severe => 'Sévère' }} · impact ${weather.impactFor(biome).localImpactLevel == 'high' ? 'élevé' : weather.impactFor(biome).localImpactLevel == 'medium' ? 'moyen' : 'faible'}'
+                          ? '${switch (weather.type) {
+                              TowerWeatherType.toxicCloud => '☁️ Nuage toxique',
+                              TowerWeatherType.heatWave => '☀️ Forte chaleur',
+                              TowerWeatherType.heavyRain => '🌧️ Pluie intense',
+                              TowerWeatherType.calm => '🌤️ Temps calme'
+                            }} · ${switch (weather.intensity) {
+                              GlobalWeatherIntensity.calm => 'Calme',
+                              GlobalWeatherIntensity.moderate => 'Modérée',
+                              GlobalWeatherIntensity.strong => 'Forte',
+                              GlobalWeatherIntensity.severe => 'Sévère'
+                            }} · impact ${weather.impactFor(biome).localImpactLevel == 'high' ? 'élevé' : weather.impactFor(biome).localImpactLevel == 'medium' ? 'moyen' : 'faible'}'
                           : 'Météo globale active · ce biome n’est pas touché.',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700),
                 ),
               const SizedBox(height: 10),
               const SizedBox(height: 10),
@@ -5620,6 +5631,11 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
               ),
               Text(
                   '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
+              const SizedBox(height: 8),
+              _BuildingViabilityCard(
+                gameState: gameState,
+                buildingId: activeBuilding.id,
+              ),
               const SizedBox(height: 10),
               Text(
                   'Niveau ${activeBuilding.level} · ${residents.length}/$capacity P’TIBUG actifs',
@@ -5825,6 +5841,151 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
           .showSnackBar(SnackBar(content: Text(message)));
 }
 
+class _BuildingViabilityCard extends StatelessWidget {
+  const _BuildingViabilityCard({
+    required this.gameState,
+    required this.buildingId,
+  });
+
+  final Zone0GameState gameState;
+  final String buildingId;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = gameState.viabilityForBuilding(buildingId);
+    final config = towerOperationsConfig.buildingViability;
+    final disabled = state.isDisabled;
+    final degraded = state.isDegraded(config.degradedThreshold);
+    final status = disabled
+        ? 'Hors service'
+        : degraded
+            ? 'Dégradé'
+            : 'Normal';
+    final color = disabled
+        ? const Color(0xffA1392C)
+        : degraded
+            ? const Color(0xff8A6B17)
+            : const Color(0xff54724A);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('Viabilité : ${state.current}/${state.maximum}% · $status',
+                style: TextStyle(fontWeight: FontWeight.w900, color: color)),
+            const SizedBox(height: 5),
+            LinearProgressIndicator(
+                value: state.current / state.maximum, color: color),
+            if (degraded) ...<Widget>[
+              const SizedBox(height: 5),
+              Text(
+                  'Fonctionnement dégradé : temps et coûts de craft +${config.degradedCraftTimePercent} %.')
+            ],
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 6, children: <Widget>[
+              if (disabled)
+                FilledButton(
+                  onPressed: () => _showRestartDialog(context),
+                  child: const Text('Remettre en marche'),
+                ),
+              if (state.current < state.maximum && !disabled)
+                OutlinedButton(
+                  onPressed: () => _showMessage(
+                      context, gameState.repairBuilding(buildingId).message),
+                  child: const Text('Réparer'),
+                ),
+              OutlinedButton(
+                onPressed: () => _showInstallations(context),
+                child: Text(
+                    'Installations ${state.installedStructuralProtections.length}/${gameState.structuralProtectionSlotsFor(buildingId)}'),
+              ),
+            ]),
+          ]),
+    );
+  }
+
+  void _showRestartDialog(BuildContext context) => showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Bâtiment hors service'),
+          content: Text(
+              'La remise en marche restaure ${towerOperationsConfig.buildingViability.restartViability}% de Viabilité. Le diagnostic prototype valide trois connexions, sans consommer de ressources.'),
+          actions: <Widget>[
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Fermer')),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _showMessage(context,
+                    gameState.restartBuildingByMiniGame(buildingId).message);
+              },
+              child: const Text('Mini-jeu : valider les connexions'),
+            ),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _showMessage(context,
+                    gameState.restartBuildingByPayment(buildingId).message);
+              },
+              child: const Text('Payer la remise en marche'),
+            ),
+          ],
+        ),
+      );
+
+  void _showInstallations(BuildContext context) => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(20),
+          children: <Widget>[
+            const Text('Installations structurelles',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
+            const SizedBox(height: 8),
+            const Text(
+                'Chaque niveau du bâtiment ouvre un emplacement. Les réductions de dégâts sont plafonnées à 70 %.'),
+            for (final type in StructuralProtectionType.values)
+              ListTile(
+                title: Text(switch (type) {
+                  StructuralProtectionType.ventilationTermite =>
+                    'Ventilation Termite',
+                  StructuralProtectionType.chloroCanaux => 'Chloro-canaux',
+                  StructuralProtectionType.filtration =>
+                    'Installation filtrante'
+                }),
+                subtitle: Text(switch (type) {
+                  StructuralProtectionType.ventilationTermite =>
+                    'Réduit les dégâts de Forte chaleur.',
+                  StructuralProtectionType.chloroCanaux =>
+                    'Réduit les dégâts de Pluie intense.',
+                  StructuralProtectionType.filtration =>
+                    'Réduit les dégâts de Nuage toxique.'
+                }),
+                trailing: FilledButton(
+                  onPressed: () => _showMessage(
+                      context,
+                      gameState
+                          .installStructuralProtection(buildingId, type)
+                          .message),
+                  child: const Text('Installer'),
+                ),
+              ),
+          ],
+        ),
+      );
+
+  void _showMessage(BuildContext context, String message) =>
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+}
+
 class _PTibugTerritoryStockSummary extends StatelessWidget {
   const _PTibugTerritoryStockSummary(
       {required this.building, required this.consumption});
@@ -5998,36 +6159,39 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
         builder: (_) {
           final consumption = gameState.pTibugDailyConsumptionFor(bug);
           return SafeArea(
-            child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(bug.displayName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w900, fontSize: 20)),
-                Text(
-                    '${pTibugConfig.species[bug.species]!.displayName} · niveau ${bug.level}'),
-                Text(
-                    'Biome : ${lisiereForageConfig.biomes[bug.refugeBiome]!.label}'),
-                Text(
-                    'Production : ${gameState.pTibugProductionFor(bug).entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
-                Text(
-                    'Stock matériel : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
-                const SizedBox(height: 8),
-                const Text('Consommation réelle sur 24 h',
-                    style: TextStyle(fontWeight: FontWeight.w900)),
-                Text('Organique : ${consumption['Organique']!.toStringAsFixed(1)}'),
-                Text('Minéral : ${consumption['Minéral']!.toStringAsFixed(1)}'),
-                Text('Énergie : ${consumption['Énergie']!.toStringAsFixed(1)}'),
-                if (_hasSmartSensor(bug))
+              child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(bug.displayName,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w900, fontSize: 20)),
                   Text(
-                      'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
-                Text(
-                    'État : ${bug.inactiveReason ?? (bug.assignedBuildingId == null ? 'Inactif' : 'Actif')}'),
-              ]),
-        ));
+                      '${pTibugConfig.species[bug.species]!.displayName} · niveau ${bug.level}'),
+                  Text(
+                      'Biome : ${lisiereForageConfig.biomes[bug.refugeBiome]!.label}'),
+                  Text(
+                      'Production : ${gameState.pTibugProductionFor(bug).entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
+                  Text(
+                      'Stock matériel : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
+                  const SizedBox(height: 8),
+                  const Text('Consommation réelle sur 24 h',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  Text(
+                      'Organique : ${consumption['Organique']!.toStringAsFixed(1)}'),
+                  Text(
+                      'Minéral : ${consumption['Minéral']!.toStringAsFixed(1)}'),
+                  Text(
+                      'Énergie : ${consumption['Énergie']!.toStringAsFixed(1)}'),
+                  if (_hasSmartSensor(bug))
+                    Text(
+                        'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
+                  Text(
+                      'État : ${bug.inactiveReason ?? (bug.assignedBuildingId == null ? 'Inactif' : 'Actif')}'),
+                ]),
+          ));
         },
       );
 
@@ -6139,6 +6303,10 @@ class _BiomeBuildingsTab extends StatelessWidget {
       ),
     );
   }
+
+  void _showMessage(BuildContext context, String message) =>
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
 }
 
 class _ForageChoiceCard extends StatelessWidget {
@@ -8125,20 +8293,21 @@ class _TowerWeatherTab extends StatelessWidget {
     final active = gameState.activeGlobalWeatherEvent;
     final next = gameState.nextGlobalWeatherEvent;
     String label(TowerWeatherType type) => switch (type) {
-      TowerWeatherType.calm => '🌤️ Temps calme',
-      TowerWeatherType.toxicCloud => '☁️ Nuage toxique',
-      TowerWeatherType.heatWave => '☀️ Forte chaleur',
-      TowerWeatherType.heavyRain => '🌧️ Pluie intense',
-    };
+          TowerWeatherType.calm => '🌤️ Temps calme',
+          TowerWeatherType.toxicCloud => '☁️ Nuage toxique',
+          TowerWeatherType.heatWave => '☀️ Forte chaleur',
+          TowerWeatherType.heavyRain => '🌧️ Pluie intense',
+        };
     String intensity(GlobalWeatherIntensity value) => switch (value) {
-      GlobalWeatherIntensity.calm => 'Calme',
-      GlobalWeatherIntensity.moderate => 'Modérée',
-      GlobalWeatherIntensity.strong => 'Forte',
-      GlobalWeatherIntensity.severe => 'Sévère',
-    };
+          GlobalWeatherIntensity.calm => 'Calme',
+          GlobalWeatherIntensity.moderate => 'Modérée',
+          GlobalWeatherIntensity.strong => 'Forte',
+          GlobalWeatherIntensity.severe => 'Sévère',
+        };
     String biomes(GlobalWeatherEvent event) => event.affectedBiomes
         .where((impact) => impact.isAffected)
-        .map((impact) => '${lisiereForageConfig.biomes[impact.biome]!.label} · ${impact.localImpactLevel == 'high' ? 'élevé' : impact.localImpactLevel == 'medium' ? 'moyen' : 'faible'}')
+        .map((impact) =>
+            '${lisiereForageConfig.biomes[impact.biome]!.label} · ${impact.localImpactLevel == 'high' ? 'élevé' : impact.localImpactLevel == 'medium' ? 'moyen' : 'faible'}')
         .join(', ');
     return SafeArea(
       child: ListView(
@@ -8150,7 +8319,8 @@ class _TowerWeatherTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const Text('Météo actuelle', style: TextStyle(fontWeight: FontWeight.w900)),
+                  const Text('Météo actuelle',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
                   Text(active == null
                       ? 'Prévisions en cours.'
@@ -8172,12 +8342,14 @@ class _TowerWeatherTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const Text('Prochaine météo', style: TextStyle(fontWeight: FontWeight.w900)),
+                  const Text('Prochaine météo',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
                   if (next == null)
                     const Text('Prévisions en cours.')
                   else if (next.status == GlobalWeatherEventStatus.planned)
-                    const Text('Prévisions en cours : la Tour annoncera l’événement deux heures avant son arrivée.')
+                    const Text(
+                        'Prévisions en cours : la Tour annoncera l’événement deux heures avant son arrivée.')
                   else ...<Widget>[
                     Text('${label(next.type)} · ${intensity(next.intensity)}'),
                     Text('Arrivée : ${_countdownLabel(next.startsAt)}'),
@@ -9079,329 +9251,364 @@ class _MarketPageState extends State<MarketPage> {
                 if (widget.gameState.marketLevel >= 2)
                   SegmentedButton<int>(
                     segments: const <ButtonSegment<int>>[
-                      ButtonSegment(value: 0, icon: Icon(Icons.storefront_outlined), label: Text('Vente')),
-                      ButtonSegment(value: 1, icon: Icon(Icons.menu_book_outlined), label: Text('Livre des demandes')),
+                      ButtonSegment(
+                          value: 0,
+                          icon: Icon(Icons.storefront_outlined),
+                          label: Text('Vente')),
+                      ButtonSegment(
+                          value: 1,
+                          icon: Icon(Icons.menu_book_outlined),
+                          label: Text('Livre des demandes')),
                     ],
                     selected: <int>{_marketTab},
-                    onSelectionChanged: (value) => setState(() => _marketTab = value.first),
+                    onSelectionChanged: (value) =>
+                        setState(() => _marketTab = value.first),
                   ),
                 if (widget.gameState.marketLevel >= 2)
                   const SizedBox(height: 10),
-                if (_marketTab == 1)
-                  _marketRequestBook(),
+                if (_marketTab == 1) _marketRequestBook(),
                 if (_marketTab == 0) ...<Widget>[
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Text(
-                          'Sourcier du savoir',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 6),
-                        Text('Confiance : ${widget.gameState.sourcierConfidence}/100'),
-                        const SizedBox(height: 4),
-                        LinearProgressIndicator(
-                          value: widget.gameState.sourcierConfidence / 100,
-                        ),
-                        if (widget.gameState.marketLevel >= 2) ...<Widget>[
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            onPressed: _showSourcierLicenses,
-                            icon: const Icon(Icons.workspace_premium_outlined),
-                            label: Text('Licences commerciales (${widget.gameState.activeMarketLicenses.length}/${marketConfig.licenseSlotsForLevel(widget.gameState.marketLevel)})'),
-                          ),
-                        ],
-                        if (!widget.gameState.isMerchantAvailable) ...<Widget>[
-                          Text(
-                            _merchantArrivalLabel(widget.gameState),
-                          ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed:
-                                  widget.gameState.hasPendingMerchantCall ||
-                                          widget.gameState
-                                                  .merchantVisitsRemaining <=
-                                              0 ||
-                                          widget.gameState.bioBatteries <
-                                              towerOperationsConfig
-                                                  .merchantCallBatteryCost
-                                      ? null
-                                      : () => _message(
-                                            widget.gameState
-                                                .requestMerchantVisit()
-                                                .message,
-                                          ),
-                              icon:
-                                  const Icon(Icons.record_voice_over_outlined),
-                              label: Text(
-                                'Appeler le Sourcier '
-                                '(${towerOperationsConfig.merchantCallBatteryCost} bio-batterie)',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Arrivée aléatoire entre 5 et 15 min.',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ] else ...<Widget>[
-                          Text(
-                            'Présent encore ${_merchantRemainingLabel(widget.gameState)}',
-                          ),
-                          ...widget.gameState.merchantOffers.map(
-                            (offer) {
-                              final requirement = widget.gameState
-                                  .merchantOfferRequirementLabel(offer);
-                              final isWorkshopProduct =
-                                  offer.kind == MerchantOfferKind.workshopItem;
-                              final quantityMaximum = math.max(
-                                1,
-                                offer.remainingItemAmount,
-                              );
-                              final selectedQuantity = isWorkshopProduct
-                                  ? (_merchantQuantities[offer] ?? 1)
-                                      .clamp(1, quantityMaximum)
-                                      .toInt()
-                                  : 1;
-                              final totalPrice = offer.priceForQuantity(
-                                selectedQuantity,
-                              );
-                              final offerTitle = isWorkshopProduct
-                                  ? offer.itemName ??
-                                      offer.planName.replaceFirst('Plan ', '')
-                                  : offer.planName;
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .outline
-                                          .withValues(alpha: 0.25),
-                                    ),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(10),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Text(
-                                          offerTitle,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          isWorkshopProduct
-                                              ? '$totalPrice Bio-batteries · ${offer.price} / unité'
-                                              : '$totalPrice Bio-batteries',
-                                        ),
-                                        if (isWorkshopProduct) ...<Widget>[
-                                          const SizedBox(height: 8),
-                                          Row(
-                                            children: <Widget>[
-                                              IconButton.outlined(
-                                                onPressed: offer
-                                                            .isUnavailable ||
-                                                        selectedQuantity <= 1
-                                                    ? null
-                                                    : () => setState(() {
-                                                          _merchantQuantities[
-                                                                  offer] =
-                                                              selectedQuantity -
-                                                                  1;
-                                                        }),
-                                                icon: const Icon(
-                                                  Icons.chevron_left,
-                                                ),
-                                                tooltip: 'Retirer une unité',
-                                              ),
-                                              Expanded(
-                                                child: Text(
-                                                  'Quantité : $selectedQuantity (${offer.remainingItemAmount} disponible${offer.remainingItemAmount > 1 ? 's' : ''})',
-                                                  textAlign: TextAlign.center,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ),
-                                              IconButton.outlined(
-                                                onPressed: offer
-                                                            .isUnavailable ||
-                                                        selectedQuantity >=
-                                                            offer
-                                                                .remainingItemAmount
-                                                    ? null
-                                                    : () => setState(() {
-                                                          _merchantQuantities[
-                                                                  offer] =
-                                                              selectedQuantity +
-                                                                  1;
-                                                        }),
-                                                icon: const Icon(
-                                                  Icons.chevron_right,
-                                                ),
-                                                tooltip: 'Ajouter une unité',
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                        if (requirement != null)
-                                          Padding(
-                                            padding:
-                                                const EdgeInsets.only(top: 4),
-                                            child: Text(
-                                              '($requirement)',
-                                              style: TextStyle(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .error,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ),
-                                        const SizedBox(height: 8),
-                                        SizedBox(
-                                          width: double.infinity,
-                                          child: offer.isUnavailable
-                                              ? const OutlinedButton(
-                                                  onPressed: null,
-                                                  child: Text('Épuisé'),
-                                                )
-                                              : FilledButton(
-                                                  onPressed: () => _message(
-                                                    widget.gameState
-                                                        .buyMerchantOffer(
-                                                          offer,
-                                                          quantity:
-                                                              selectedQuantity,
-                                                        )
-                                                        .message,
-                                                  ),
-                                                  child: Text(
-                                                    isWorkshopProduct
-                                                        ? 'Acheter $selectedQuantity'
-                                                        : 'Acheter',
-                                                  ),
-                                                ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          TextButton(
-                            onPressed: () => _message(
-                              widget.gameState
-                                  .finishMerchantTransaction()
-                                  .message,
-                            ),
-                            child: const Text('Terminer la transaction'),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _sourcierContractsSection(),
-                if (widget.gameState.marketContracts.isNotEmpty)
-                  const SizedBox(height: 10),
-                if (widget.gameState.marketLevel >= 2)
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          const Text('Distributeur automatique', style: TextStyle(fontWeight: FontWeight.w900)),
-                          if (!widget.gameState.marketDistributor.isBuilt) ...<Widget>[
-                            Text(widget.gameState.isMarketDistributorReadyToBuild
-                                ? 'Matériaux complets · prêt à démarrer'
-                                : 'Construction : ${marketConfig.distributorConstructionCost.entries.map((entry) => '${entry.key} ${widget.gameState.marketDistributor.constructionDeposits[entry.key] ?? 0}/${entry.value}').join(' · ')}'),
-                            ...marketConfig.distributorConstructionCost.keys.map(
-                              (resource) => Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: <Widget>[
-                                  Text(resource, style: const TextStyle(fontWeight: FontWeight.w800)),
-                                  ...const <int>[1, 5, 10].map((amount) => OutlinedButton(
-                                    onPressed: () {
-                                      final result = widget.gameState.depositMarketDistributorMaterial(resource, amount);
-                                      if (result.success) _recordConstructionAction(result.message);
-                                    },
-                                    child: Text('+$amount'),
-                                  )),
-                                ],
+                          const Text(
+                            'Sourcier du savoir',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                              'Confiance : ${widget.gameState.sourcierConfidence}/100'),
+                          const SizedBox(height: 4),
+                          LinearProgressIndicator(
+                            value: widget.gameState.sourcierConfidence / 100,
+                          ),
+                          if (widget.gameState.marketLevel >= 2) ...<Widget>[
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(
+                              onPressed: _showSourcierLicenses,
+                              icon:
+                                  const Icon(Icons.workspace_premium_outlined),
+                              label: Text(
+                                  'Licences commerciales (${widget.gameState.activeMarketLicenses.length}/${marketConfig.licenseSlotsForLevel(widget.gameState.marketLevel)})'),
+                            ),
+                          ],
+                          if (!widget
+                              .gameState.isMerchantAvailable) ...<Widget>[
+                            Text(
+                              _merchantArrivalLabel(widget.gameState),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed:
+                                    widget.gameState.hasPendingMerchantCall ||
+                                            widget.gameState
+                                                    .merchantVisitsRemaining <=
+                                                0 ||
+                                            widget.gameState.bioBatteries <
+                                                towerOperationsConfig
+                                                    .merchantCallBatteryCost
+                                        ? null
+                                        : () => _message(
+                                              widget.gameState
+                                                  .requestMerchantVisit()
+                                                  .message,
+                                            ),
+                                icon: const Icon(
+                                    Icons.record_voice_over_outlined),
+                                label: Text(
+                                  'Appeler le Sourcier '
+                                  '(${towerOperationsConfig.merchantCallBatteryCost} bio-batterie)',
+                                ),
                               ),
                             ),
-                            FilledButton(
-                              onPressed: widget.gameState.isMarketDistributorReadyToBuild
-                                  ? () => _message(widget.gameState.startMarketDistributorConstruction().message)
-                                  : null,
-                              child: const Text('Commencer les travaux'),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Arrivée aléatoire entre 5 et 15 min.',
+                              style: TextStyle(fontSize: 12),
                             ),
                           ] else ...<Widget>[
-                            Text('Niveau ${widget.gameState.marketDistributor.level} · ${widget.gameState.marketDistributor.isBroken ? 'En panne' : widget.gameState.marketDistributor.energy <= 0 ? 'Sans Énergie' : 'Opérationnel'}'),
-                            Text('Énergie : ${widget.gameState.marketDistributor.energy}/${marketConfig.distributorEnergyCapacity}'),
-                            Row(children: <Widget>[
-                              Expanded(child: OutlinedButton(
-                                onPressed: () => _message(widget.gameState.openBioBatteryForMarketDistributor().message),
-                                child: const Text('Ouvrir une Bio-batterie'),
-                              )),
-                              if (widget.gameState.marketDistributor.isBroken) ...<Widget>[
-                                const SizedBox(width: 8),
-                                Expanded(child: FilledButton(
-                                  onPressed: () => _message(widget.gameState.repairMarketDistributor().message),
-                                  child: const Text('Réparer'),
-                                )),
-                              ],
-                            ]),
+                            Text(
+                              'Présent encore ${_merchantRemainingLabel(widget.gameState)}',
+                            ),
+                            ...widget.gameState.merchantOffers.map(
+                              (offer) {
+                                final requirement = widget.gameState
+                                    .merchantOfferRequirementLabel(offer);
+                                final isWorkshopProduct = offer.kind ==
+                                    MerchantOfferKind.workshopItem;
+                                final quantityMaximum = math.max(
+                                  1,
+                                  offer.remainingItemAmount,
+                                );
+                                final selectedQuantity = isWorkshopProduct
+                                    ? (_merchantQuantities[offer] ?? 1)
+                                        .clamp(1, quantityMaximum)
+                                        .toInt()
+                                    : 1;
+                                final totalPrice = offer.priceForQuantity(
+                                  selectedQuantity,
+                                );
+                                final offerTitle = isWorkshopProduct
+                                    ? offer.itemName ??
+                                        offer.planName.replaceFirst('Plan ', '')
+                                    : offer.planName;
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .outline
+                                            .withValues(alpha: 0.25),
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(10),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: <Widget>[
+                                          Text(
+                                            offerTitle,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            isWorkshopProduct
+                                                ? '$totalPrice Bio-batteries · ${offer.price} / unité'
+                                                : '$totalPrice Bio-batteries',
+                                          ),
+                                          if (isWorkshopProduct) ...<Widget>[
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              children: <Widget>[
+                                                IconButton.outlined(
+                                                  onPressed: offer
+                                                              .isUnavailable ||
+                                                          selectedQuantity <= 1
+                                                      ? null
+                                                      : () => setState(() {
+                                                            _merchantQuantities[
+                                                                    offer] =
+                                                                selectedQuantity -
+                                                                    1;
+                                                          }),
+                                                  icon: const Icon(
+                                                    Icons.chevron_left,
+                                                  ),
+                                                  tooltip: 'Retirer une unité',
+                                                ),
+                                                Expanded(
+                                                  child: Text(
+                                                    'Quantité : $selectedQuantity (${offer.remainingItemAmount} disponible${offer.remainingItemAmount > 1 ? 's' : ''})',
+                                                    textAlign: TextAlign.center,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ),
+                                                IconButton.outlined(
+                                                  onPressed: offer
+                                                              .isUnavailable ||
+                                                          selectedQuantity >=
+                                                              offer
+                                                                  .remainingItemAmount
+                                                      ? null
+                                                      : () => setState(() {
+                                                            _merchantQuantities[
+                                                                    offer] =
+                                                                selectedQuantity +
+                                                                    1;
+                                                          }),
+                                                  icon: const Icon(
+                                                    Icons.chevron_right,
+                                                  ),
+                                                  tooltip: 'Ajouter une unité',
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                          if (requirement != null)
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.only(top: 4),
+                                              child: Text(
+                                                '($requirement)',
+                                                style: TextStyle(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .error,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                          const SizedBox(height: 8),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: offer.isUnavailable
+                                                ? const OutlinedButton(
+                                                    onPressed: null,
+                                                    child: Text('Épuisé'),
+                                                  )
+                                                : FilledButton(
+                                                    onPressed: () => _message(
+                                                      widget.gameState
+                                                          .buyMerchantOffer(
+                                                            offer,
+                                                            quantity:
+                                                                selectedQuantity,
+                                                          )
+                                                          .message,
+                                                    ),
+                                                    child: Text(
+                                                      isWorkshopProduct
+                                                          ? 'Acheter $selectedQuantity'
+                                                          : 'Acheter',
+                                                    ),
+                                                  ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            TextButton(
+                              onPressed: () => _message(
+                                widget.gameState
+                                    .finishMerchantTransaction()
+                                    .message,
+                              ),
+                              child: const Text('Terminer la transaction'),
+                            ),
                           ],
                         ],
                       ),
                     ),
                   ),
-                const SizedBox(height: 12),
-                _activeMarketRequestsSection(),
-                const SizedBox(height: 12),
-                Text(
-                  'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 8),
-                GridView.count(
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: List<Widget>.generate(
-                    widget.gameState.marketSlotLimit,
-                    (index) {
-                      final stack = index < widget.gameState.marketStock.length
-                          ? widget.gameState.marketStock[index]
-                          : null;
-                      return _MarketStockSlot(
-                        stack: stack,
-                        onTap: () => _editMarketSlot(stack),
-                      );
-                    },
+                  const SizedBox(height: 10),
+                  _sourcierContractsSection(),
+                  if (widget.gameState.marketContracts.isNotEmpty)
+                    const SizedBox(height: 10),
+                  if (widget.gameState.marketLevel >= 2)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const Text('Distributeur automatique',
+                                style: TextStyle(fontWeight: FontWeight.w900)),
+                            if (!widget.gameState.marketDistributor
+                                .isBuilt) ...<Widget>[
+                              Text(widget
+                                      .gameState.isMarketDistributorReadyToBuild
+                                  ? 'Matériaux complets · prêt à démarrer'
+                                  : 'Construction : ${marketConfig.distributorConstructionCost.entries.map((entry) => '${entry.key} ${widget.gameState.marketDistributor.constructionDeposits[entry.key] ?? 0}/${entry.value}').join(' · ')}'),
+                              ...marketConfig.distributorConstructionCost.keys
+                                  .map(
+                                (resource) => Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: <Widget>[
+                                    Text(resource,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800)),
+                                    ...const <int>[1, 5, 10]
+                                        .map((amount) => OutlinedButton(
+                                              onPressed: () {
+                                                final result = widget.gameState
+                                                    .depositMarketDistributorMaterial(
+                                                        resource, amount);
+                                                if (result.success)
+                                                  _recordConstructionAction(
+                                                      result.message);
+                                              },
+                                              child: Text('+$amount'),
+                                            )),
+                                  ],
+                                ),
+                              ),
+                              FilledButton(
+                                onPressed: widget.gameState
+                                        .isMarketDistributorReadyToBuild
+                                    ? () => _message(widget.gameState
+                                        .startMarketDistributorConstruction()
+                                        .message)
+                                    : null,
+                                child: const Text('Commencer les travaux'),
+                              ),
+                            ] else ...<Widget>[
+                              Text(
+                                  'Niveau ${widget.gameState.marketDistributor.level} · ${widget.gameState.marketDistributor.isBroken ? 'En panne' : widget.gameState.marketDistributor.energy <= 0 ? 'Sans Énergie' : 'Opérationnel'}'),
+                              Text(
+                                  'Énergie : ${widget.gameState.marketDistributor.energy}/${marketConfig.distributorEnergyCapacity}'),
+                              Row(children: <Widget>[
+                                Expanded(
+                                    child: OutlinedButton(
+                                  onPressed: () => _message(widget.gameState
+                                      .openBioBatteryForMarketDistributor()
+                                      .message),
+                                  child: const Text('Ouvrir une Bio-batterie'),
+                                )),
+                                if (widget.gameState.marketDistributor
+                                    .isBroken) ...<Widget>[
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                      child: FilledButton(
+                                    onPressed: () => _message(widget.gameState
+                                        .repairMarketDistributor()
+                                        .message),
+                                    child: const Text('Réparer'),
+                                  )),
+                                ],
+                              ]),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  _activeMarketRequestsSection(),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  GridView.count(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: List<Widget>.generate(
+                      widget.gameState.marketSlotLimit,
+                      (index) {
+                        final stack =
+                            index < widget.gameState.marketStock.length
+                                ? widget.gameState.marketStock[index]
+                                : null;
+                        return _MarketStockSlot(
+                          stack: stack,
+                          onTap: () => _editMarketSlot(stack),
+                        );
+                      },
+                    ),
+                  ),
                 ],
               ],
             );
@@ -9422,9 +9629,7 @@ class _MarketPageState extends State<MarketPage> {
       ..sort((a, b) => a.customerReturnTime.compareTo(b.customerReturnTime));
     if (requests.isEmpty) {
       final nextAt = widget.gameState.marketNextRequestAt;
-      final remaining = nextAt == null
-          ? Duration.zero
-          : nextAt.difference(now);
+      final remaining = nextAt == null ? Duration.zero : nextAt.difference(now);
       final minutes = remaining.isNegative ? 0 : remaining.inMinutes;
       final seconds = remaining.isNegative ? 0 : remaining.inSeconds % 60;
       return Card(
@@ -9461,13 +9666,14 @@ class _MarketPageState extends State<MarketPage> {
               .clamp(1, 1 << 30)
               .toInt();
           final remaining = request.customerReturnTime.difference(now);
-          final remainingSeconds = remaining.isNegative ? 0 : remaining.inSeconds;
+          final remainingSeconds =
+              remaining.isNegative ? 0 : remaining.inSeconds;
           final progress =
               (remainingSeconds / totalSeconds).clamp(0.0, 1.0).toDouble();
           final minutes = remainingSeconds ~/ 60;
           final seconds = remainingSeconds % 60;
-          final available = widget.gameState
-              .marketStockAmount(request.requestedItemId);
+          final available =
+              widget.gameState.marketStockAmount(request.requestedItemId);
           final canSell = available >= request.requestedQuantity;
           return Card(
             child: Padding(
@@ -9480,17 +9686,22 @@ class _MarketPageState extends State<MarketPage> {
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 4),
-                  Text('Client : ${request.customerName ?? 'Habitant non identifié'}'),
-                  Text('Temps restant : ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}'),
+                  Text(
+                      'Client : ${request.customerName ?? 'Habitant non identifié'}'),
+                  Text(
+                      'Temps restant : ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}'),
                   const SizedBox(height: 7),
                   LinearProgressIndicator(value: progress),
                   const SizedBox(height: 7),
-                  Text('Stock Marché : $available/${request.requestedQuantity}'),
+                  Text(
+                      'Stock Marché : $available/${request.requestedQuantity}'),
                   const SizedBox(height: 8),
                   FilledButton(
                     onPressed: canSell
                         ? () => _message(
-                              widget.gameState.sellMarketRequest(request).message,
+                              widget.gameState
+                                  .sellMarketRequest(request)
+                                  .message,
                             )
                         : null,
                     child: Text(canSell
@@ -9523,15 +9734,19 @@ class _MarketPageState extends State<MarketPage> {
             const SizedBox(height: 6),
             if (widget.gameState.marketLevel == 2 &&
                 widget.gameState.marketAssignedPtipoteId == null)
-              const Text('Un P’TIPOTE doit être affecté au Marché pour noter les nouvelles demandes.'),
+              const Text(
+                  'Un P’TIPOTE doit être affecté au Marché pour noter les nouvelles demandes.'),
             if (entries.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
-                child: Text('Aucune demande enregistrée sur les dernières 24 heures.'),
+                child: Text(
+                    'Aucune demande enregistrée sur les dernières 24 heures.'),
               ),
             ...entries.map((entry) {
-              final created = '${entry.createdAt.hour.toString().padLeft(2, '0')}:${entry.createdAt.minute.toString().padLeft(2, '0')}';
-              final deadlineMinutes = entry.deadline.difference(entry.createdAt).inMinutes;
+              final created =
+                  '${entry.createdAt.hour.toString().padLeft(2, '0')}:${entry.createdAt.minute.toString().padLeft(2, '0')}';
+              final deadlineMinutes =
+                  entry.deadline.difference(entry.createdAt).inMinutes;
               final status = switch (entry.status) {
                 MarketRequestStatus.completed => 'Répondue',
                 MarketRequestStatus.expired => 'Expirée',
@@ -9540,7 +9755,8 @@ class _MarketPageState extends State<MarketPage> {
               return ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: Text('${entry.requestedQuantity} ${entry.requestedItemId} · $status'),
+                title: Text(
+                    '${entry.requestedQuantity} ${entry.requestedItemId} · $status'),
                 subtitle: Text(
                   '$created · délai $deadlineMinutes min · ${entry.customerName ?? 'Habitant non identifié'}'
                   '${entry.status == MarketRequestStatus.completed ? ' · gain +${entry.rewardBioBatteries} 🔋' : ''}',
@@ -9563,36 +9779,46 @@ class _MarketPageState extends State<MarketPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Text('Contrats du Sourcier', style: TextStyle(fontWeight: FontWeight.w900)),
+        const Text('Contrats du Sourcier',
+            style: TextStyle(fontWeight: FontWeight.w900)),
         const SizedBox(height: 6),
         ...contracts.map((contract) => Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  contract.requestedItems.entries
-                      .map((entry) => '${entry.value} ${entry.key}')
-                      .join(', '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Text(
+                      contract.requestedItems.entries
+                          .map((entry) => '${entry.value} ${entry.key}')
+                          .join(', '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                        'Paiement de base : ${contract.rewardBioBatteries} bio-batterie(s)'),
+                    Text(
+                        'Confiance : ${widget.gameState.sourcierConfidence}/100 · paiement prévu ${(contract.rewardBioBatteries * widget.gameState.sourcierConfidencePaymentMultiplier).floor()}'),
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      onPressed: contract.status == MarketContractStatus.offered
+                          ? () => _message(widget.gameState
+                              .acceptMarketContract(contract)
+                              .message)
+                          : () => _message(widget.gameState
+                              .deliverMarketContract(contract)
+                              .message),
+                      child: Text(
+                          contract.status == MarketContractStatus.offered
+                              ? 'Accepter'
+                              : 'Livrer'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text('Paiement de base : ${contract.rewardBioBatteries} bio-batterie(s)'),
-                Text('Confiance : ${widget.gameState.sourcierConfidence}/100 · paiement prévu ${(contract.rewardBioBatteries * widget.gameState.sourcierConfidencePaymentMultiplier).floor()}'),
-                const SizedBox(height: 10),
-                FilledButton(
-                  onPressed: contract.status == MarketContractStatus.offered
-                      ? () => _message(widget.gameState.acceptMarketContract(contract).message)
-                      : () => _message(widget.gameState.deliverMarketContract(contract).message),
-                  child: Text(contract.status == MarketContractStatus.offered ? 'Accepter' : 'Livrer'),
-                ),
-              ],
-            ),
-          ),
-        )),
+              ),
+            )),
       ],
     );
   }
@@ -9601,7 +9827,8 @@ class _MarketPageState extends State<MarketPage> {
         context: context,
         showDragHandle: true,
         builder: (sheetContext) {
-          final slots = marketConfig.licenseSlotsForLevel(widget.gameState.marketLevel);
+          final slots =
+              marketConfig.licenseSlotsForLevel(widget.gameState.marketLevel);
           const names = <String, String>{
             'materials': 'Matériaux',
             'atelier': 'Fournitures',
@@ -9613,25 +9840,45 @@ class _MarketPageState extends State<MarketPage> {
               shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
               children: <Widget>[
-                Text('Licences du Sourcier', style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                Text('Licences du Sourcier',
+                    style: Theme.of(sheetContext)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900)),
                 const SizedBox(height: 6),
-                Text('$slots slot${slots > 1 ? 's' : ''} disponible${slots > 1 ? 's' : ''} · 80 % des futurs contrats sont orientés par les licences.'),
+                Text(
+                    '$slots slot${slots > 1 ? 's' : ''} disponible${slots > 1 ? 's' : ''} · 80 % des futurs contrats sont orientés par les licences.'),
                 const SizedBox(height: 8),
                 ...names.entries.map((entry) {
-                  final active = widget.gameState.activeMarketLicenses.contains(entry.key);
-                  final full = widget.gameState.activeMarketLicenses.length >= slots;
-                  final cost = active ? 0 : full
-                      ? marketConfig.licenseCostBioBatteries + marketConfig.licenseChangeCostBioBatteries
-                      : marketConfig.licenseCostBioBatteries;
+                  final active =
+                      widget.gameState.activeMarketLicenses.contains(entry.key);
+                  final full =
+                      widget.gameState.activeMarketLicenses.length >= slots;
+                  final cost = active
+                      ? 0
+                      : full
+                          ? marketConfig.licenseCostBioBatteries +
+                              marketConfig.licenseChangeCostBioBatteries
+                          : marketConfig.licenseCostBioBatteries;
                   return ListTile(
                     title: Text(entry.value),
-                    subtitle: Text(active ? 'Active' : full ? 'Remplace une licence · $cost bio-batteries' : '$cost bio-batteries'),
-                    trailing: active ? const Icon(Icons.check_circle) : const Icon(Icons.add_circle_outline),
-                    onTap: active ? null : () {
-                      final result = widget.gameState.setMarketLicense(entry.key);
-                      _message(result.message);
-                      if (result.success) Navigator.of(sheetContext).pop();
-                    },
+                    subtitle: Text(active
+                        ? 'Active'
+                        : full
+                            ? 'Remplace une licence · $cost bio-batteries'
+                            : '$cost bio-batteries'),
+                    trailing: active
+                        ? const Icon(Icons.check_circle)
+                        : const Icon(Icons.add_circle_outline),
+                    onTap: active
+                        ? null
+                        : () {
+                            final result =
+                                widget.gameState.setMarketLicense(entry.key);
+                            _message(result.message);
+                            if (result.success)
+                              Navigator.of(sheetContext).pop();
+                          },
                   );
                 }),
               ],
@@ -11453,6 +11700,12 @@ class _FablabUpgradeOverview extends StatelessWidget {
             'Les unités progressent séparément. Les projets en cours ne bloquent pas leur fonctionnement au niveau actuel.',
           ),
           const SizedBox(height: 14),
+          _BuildingViabilityCard(gameState: gameState, buildingId: 'atelier'),
+          const SizedBox(height: 10),
+          _BuildingViabilityCard(gameState: gameState, buildingId: 'cuisine'),
+          const SizedBox(height: 10),
+          _BuildingViabilityCard(gameState: gameState, buildingId: 'recycler'),
+          const SizedBox(height: 14),
           _FablabUnitUpgradeCard(
             gameState: gameState,
             targetId: 'cuisine',
@@ -12359,7 +12612,8 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
     final ptipoteAvailable =
         gameState.activePtipoteWorkshopOrders < gameState.workshopSlots;
     final hasEnergy = gameState.energyUnits >= energy + 1;
-    final canCraft = patternActive && manualAvailable && hasMaterials && hasEnergy;
+    final canCraft =
+        patternActive && manualAvailable && hasMaterials && hasEnergy;
     final ingredientText = cost.entries
         .map(
           (entry) =>
@@ -12417,7 +12671,10 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
             .showSnackBar(SnackBar(content: Text(result.message)));
       },
       secondaryActionLabel: 'Confier à un P’TIPOTE',
-      secondaryActionEnabled: patternActive && ptipoteAvailable && hasMaterials && gameState.energyUnits >= energy,
+      secondaryActionEnabled: patternActive &&
+          ptipoteAvailable &&
+          hasMaterials &&
+          gameState.energyUnits >= energy,
       onSecondaryAction: () async {
         final figurine = await _pickPtipoteForActivity(
           context: context,
@@ -12426,8 +12683,10 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
           title: 'Confier ${module.displayName}',
         );
         if (figurine != null && context.mounted) {
-          final result = gameState.startPTibugModuleCraft(module, figurine: figurine);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
+          final result =
+              gameState.startPTibugModuleCraft(module, figurine: figurine);
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(result.message)));
         }
       },
     );

@@ -57,5 +57,29 @@
       "bassinMineral": {"heatWave": {"chancePercent": 85, "impactMultiplier": 1.3}, "heavyRain": {"chancePercent": 35, "impactMultiplier": 0.5}, "toxicCloud": {"chancePercent": 70, "impactMultiplier": 1.3, "reason": "Bassin confiné."}},
       "sousBois": {"heatWave": {"chancePercent": 45, "impactMultiplier": 0.5}, "heavyRain": {"chancePercent": 90, "impactMultiplier": 1.3}, "toxicCloud": {"chancePercent": 65, "impactMultiplier": 1.0}}
     }
+  },
+  "buildingViability": {
+    "maximumViability": 100,
+    "initialViability": 100,
+    "degradedThreshold": 50,
+    "restartViability": 25,
+    "degradedCraftTimePercent": 25,
+    "degradedCraftCostPercent": 25,
+    "degradedProductionPercent": 25,
+    "repairGain": 15,
+    "repairOrganicCost": 5,
+    "repairMineralCost": 3,
+    "restartOrganicCost": 8,
+    "restartMineralCost": 4,
+    "restartBioBatteryCost": 1,
+    "slotsPerLevel": 1,
+    "protectionCapPercent": 70,
+    "protectionReductionPercents": [25, 15, 10],
+    "damageByWeatherAndIntensity": {
+      "calm": {"calm": 0, "moderate": 0, "strong": 0, "severe": 0},
+      "heatWave": {"calm": 0, "moderate": 5, "strong": 12, "severe": 25},
+      "heavyRain": {"calm": 0, "moderate": 5, "strong": 12, "severe": 25},
+      "toxicCloud": {"calm": 0, "moderate": 5, "strong": 12, "severe": 25}
+    }
   }
 }

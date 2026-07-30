@@ -57,6 +57,53 @@ class GlobalWeatherConfig {
       biomeSensitivities;
 }
 
+/// Réglages communs de durabilité des bâtiments. Les bâtiments ne portent que
+/// leur état courant : les règles de dégâts, réparation et protection restent
+/// pilotables à distance depuis cette configuration versionnée.
+class BuildingViabilityConfig {
+  const BuildingViabilityConfig({
+    required this.maximumViability,
+    required this.initialViability,
+    required this.degradedThreshold,
+    required this.restartViability,
+    required this.degradedCraftTimePercent,
+    required this.degradedCraftCostPercent,
+    required this.degradedProductionPercent,
+    required this.repairGain,
+    required this.repairOrganicCost,
+    required this.repairMineralCost,
+    required this.restartOrganicCost,
+    required this.restartMineralCost,
+    required this.restartBioBatteryCost,
+    required this.slotsPerLevel,
+    required this.protectionCapPercent,
+    required this.protectionReductionPercents,
+    required this.damageByWeatherAndIntensity,
+  });
+
+  final int maximumViability;
+  final int initialViability;
+  final int degradedThreshold;
+  final int restartViability;
+  final int degradedCraftTimePercent;
+  final int degradedCraftCostPercent;
+  final int degradedProductionPercent;
+  final int repairGain;
+  final int repairOrganicCost;
+  final int repairMineralCost;
+  final int restartOrganicCost;
+  final int restartMineralCost;
+  final int restartBioBatteryCost;
+  final int slotsPerLevel;
+  final int protectionCapPercent;
+  final List<int> protectionReductionPercents;
+  final Map<TowerWeatherType, Map<GlobalWeatherIntensity, int>>
+      damageByWeatherAndIntensity;
+
+  int damageFor(TowerWeatherType type, GlobalWeatherIntensity intensity) =>
+      damageByWeatherAndIntensity[type]?[intensity] ?? 0;
+}
+
 class SecurityWellbeingBand {
   const SecurityWellbeingBand({
     required this.minimumSecurity,
@@ -120,6 +167,7 @@ class TowerOperationsConfig {
     required this.manualWeatherTriggerId,
     required this.manualWeatherTriggerType,
     required this.globalWeather,
+    required this.buildingViability,
   });
 
   final int biomeRevealSecurityThreshold;
@@ -149,6 +197,7 @@ class TowerOperationsConfig {
   final String manualWeatherTriggerId;
   final TowerWeatherType? manualWeatherTriggerType;
   final GlobalWeatherConfig globalWeather;
+  final BuildingViabilityConfig buildingViability;
 
   SecurityWellbeingBand wellbeingBandFor(int security) =>
       wellbeingBands.where((band) => security >= band.minimumSecurity).reduce(
@@ -198,31 +247,113 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
       'high': 1.5,
     },
     intensities: const <GlobalWeatherIntensity, GlobalWeatherIntensityConfig>{
-      GlobalWeatherIntensity.calm: GlobalWeatherIntensityConfig(weight: 40, ptibugMalusPercent: 0, minimumAffectedBiomes: 0, maximumAffectedBiomes: 0),
-      GlobalWeatherIntensity.moderate: GlobalWeatherIntensityConfig(weight: 35, ptibugMalusPercent: 10, minimumAffectedBiomes: 1, maximumAffectedBiomes: 3),
-      GlobalWeatherIntensity.strong: GlobalWeatherIntensityConfig(weight: 20, ptibugMalusPercent: 20, minimumAffectedBiomes: 3, maximumAffectedBiomes: 4),
-      GlobalWeatherIntensity.severe: GlobalWeatherIntensityConfig(weight: 5, ptibugMalusPercent: 30, minimumAffectedBiomes: 4, maximumAffectedBiomes: 4),
+      GlobalWeatherIntensity.calm: GlobalWeatherIntensityConfig(
+          weight: 40,
+          ptibugMalusPercent: 0,
+          minimumAffectedBiomes: 0,
+          maximumAffectedBiomes: 0),
+      GlobalWeatherIntensity.moderate: GlobalWeatherIntensityConfig(
+          weight: 35,
+          ptibugMalusPercent: 10,
+          minimumAffectedBiomes: 1,
+          maximumAffectedBiomes: 3),
+      GlobalWeatherIntensity.strong: GlobalWeatherIntensityConfig(
+          weight: 20,
+          ptibugMalusPercent: 20,
+          minimumAffectedBiomes: 3,
+          maximumAffectedBiomes: 4),
+      GlobalWeatherIntensity.severe: GlobalWeatherIntensityConfig(
+          weight: 5,
+          ptibugMalusPercent: 30,
+          minimumAffectedBiomes: 4,
+          maximumAffectedBiomes: 4),
     },
-    biomeSensitivities: <String, Map<TowerWeatherType, GlobalWeatherBiomeSensitivity>>{
+    biomeSensitivities: <String,
+        Map<TowerWeatherType, GlobalWeatherBiomeSensitivity>>{
       'plaineRiche': <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
-        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(chancePercent: 90, impactMultiplier: 1.0, reason: 'Plaine exposée à la chaleur.'),
-        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(chancePercent: 80, impactMultiplier: 1.0, reason: 'Plaine sensible au ruissellement.'),
-        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(chancePercent: 45, impactMultiplier: 1.0),
+        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(
+            chancePercent: 90,
+            impactMultiplier: 1.0,
+            reason: 'Plaine exposée à la chaleur.'),
+        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(
+            chancePercent: 80,
+            impactMultiplier: 1.0,
+            reason: 'Plaine sensible au ruissellement.'),
+        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(
+            chancePercent: 45, impactMultiplier: 1.0),
       },
       'colline': <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
-        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(chancePercent: 65, impactMultiplier: 0.8),
-        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(chancePercent: 80, impactMultiplier: 1.2, reason: 'Ruissellement des hauteurs.'),
-        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(chancePercent: 20, impactMultiplier: 0.5, reason: 'Zone ventilée.'),
+        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(
+            chancePercent: 65, impactMultiplier: 0.8),
+        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(
+            chancePercent: 80,
+            impactMultiplier: 1.2,
+            reason: 'Ruissellement des hauteurs.'),
+        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(
+            chancePercent: 20, impactMultiplier: 0.5, reason: 'Zone ventilée.'),
       },
       'bassinMineral': <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
-        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(chancePercent: 85, impactMultiplier: 1.3),
-        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(chancePercent: 35, impactMultiplier: 0.5),
-        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(chancePercent: 70, impactMultiplier: 1.3, reason: 'Bassin confiné.'),
+        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(
+            chancePercent: 85, impactMultiplier: 1.3),
+        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(
+            chancePercent: 35, impactMultiplier: 0.5),
+        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(
+            chancePercent: 70,
+            impactMultiplier: 1.3,
+            reason: 'Bassin confiné.'),
       },
       'sousBois': <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
-        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(chancePercent: 45, impactMultiplier: 0.5),
-        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(chancePercent: 90, impactMultiplier: 1.3),
-        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(chancePercent: 65, impactMultiplier: 1.0),
+        TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(
+            chancePercent: 45, impactMultiplier: 0.5),
+        TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(
+            chancePercent: 90, impactMultiplier: 1.3),
+        TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(
+            chancePercent: 65, impactMultiplier: 1.0),
+      },
+    },
+  ),
+  buildingViability: BuildingViabilityConfig(
+    maximumViability: 100,
+    initialViability: 100,
+    degradedThreshold: 50,
+    restartViability: 25,
+    degradedCraftTimePercent: 25,
+    degradedCraftCostPercent: 25,
+    degradedProductionPercent: 25,
+    repairGain: 15,
+    repairOrganicCost: 5,
+    repairMineralCost: 3,
+    restartOrganicCost: 8,
+    restartMineralCost: 4,
+    restartBioBatteryCost: 1,
+    slotsPerLevel: 1,
+    protectionCapPercent: 70,
+    protectionReductionPercents: const <int>[25, 15, 10],
+    damageByWeatherAndIntensity: const <TowerWeatherType,
+        Map<GlobalWeatherIntensity, int>>{
+      TowerWeatherType.calm: <GlobalWeatherIntensity, int>{
+        GlobalWeatherIntensity.calm: 0,
+        GlobalWeatherIntensity.moderate: 0,
+        GlobalWeatherIntensity.strong: 0,
+        GlobalWeatherIntensity.severe: 0,
+      },
+      TowerWeatherType.heatWave: <GlobalWeatherIntensity, int>{
+        GlobalWeatherIntensity.calm: 0,
+        GlobalWeatherIntensity.moderate: 5,
+        GlobalWeatherIntensity.strong: 12,
+        GlobalWeatherIntensity.severe: 25,
+      },
+      TowerWeatherType.heavyRain: <GlobalWeatherIntensity, int>{
+        GlobalWeatherIntensity.calm: 0,
+        GlobalWeatherIntensity.moderate: 5,
+        GlobalWeatherIntensity.strong: 12,
+        GlobalWeatherIntensity.severe: 25,
+      },
+      TowerWeatherType.toxicCloud: <GlobalWeatherIntensity, int>{
+        GlobalWeatherIntensity.calm: 0,
+        GlobalWeatherIntensity.moderate: 5,
+        GlobalWeatherIntensity.strong: 12,
+        GlobalWeatherIntensity.severe: 25,
       },
     },
   ),

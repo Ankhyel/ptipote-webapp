@@ -107,7 +107,8 @@ class Zone0GameState extends ChangeNotifier {
   final List<PtipoteMissionReport> reports = <PtipoteMissionReport>[];
   final List<Zone0InventoryStack> marketStock = <Zone0InventoryStack>[];
   final List<MarketCustomerRequest> marketRequests = <MarketCustomerRequest>[];
-  final List<MarketRequestLogEntry> marketRequestLog = <MarketRequestLogEntry>[];
+  final List<MarketRequestLogEntry> marketRequestLog =
+      <MarketRequestLogEntry>[];
   final List<MarketSourcierContract> marketContracts =
       <MarketSourcierContract>[];
   final List<MarketShop> marketShops = <MarketShop>[];
@@ -127,6 +128,11 @@ class Zone0GameState extends ChangeNotifier {
   GlobalWeatherEvent? nextGlobalWeatherEvent;
   int globalWeatherConsecutiveAdverseEvents = 0;
   int globalWeatherConsecutiveSevereEvents = 0;
+
+  /// Etat persistant unique par bâtiment. Les clés sont les identifiants de
+  /// bâtiment déjà employés par les projets et les écrans, jamais des widgets.
+  final Map<String, BuildingViabilityState> buildingViabilities =
+      <String, BuildingViabilityState>{};
   String weatherScheduleDayKey = '';
   int weatherEventsToday = 0;
   DateTime? nextWeatherEligibleAt;
@@ -249,6 +255,316 @@ class Zone0GameState extends ChangeNotifier {
 
   bool isTerritoryUnderConstruction(PTibugTerritoryBuilding building) =>
       constructionProjects[building.id]?.isInProgress ?? false;
+
+  BuildingViabilityState viabilityForBuilding(String buildingId) =>
+      buildingViabilities.putIfAbsent(
+        buildingId,
+        () => BuildingViabilityState.fresh(
+          buildingId,
+          maximum: towerOperationsConfig.buildingViability.maximumViability,
+          initial: towerOperationsConfig.buildingViability.initialViability,
+        ),
+      );
+
+  int buildingLevelForViability(String buildingId) {
+    final territory = territoryBuildingForId(buildingId);
+    if (territory != null) return territory.level;
+    return switch (buildingId) {
+      'fablab' || 'atelier' => atelierLevel,
+      'cuisine' => cuisineLevel,
+      'recycler' => recyclerLevel,
+      'generator' => 1,
+      'market' => marketLevel,
+      'securityTower' => securityTowerLevel,
+      'campHeart' => _lastKnownCampHeartLevel,
+      _ => 1,
+    };
+  }
+
+  ForageBiome buildingBiomeForViability(String buildingId) =>
+      territoryBuildingForId(buildingId)?.biome ?? ForageBiome.plaineRiche;
+
+  int structuralProtectionSlotsFor(String buildingId) => math.max(
+        0,
+        buildingLevelForViability(buildingId) *
+            towerOperationsConfig.buildingViability.slotsPerLevel,
+      );
+
+  bool isBuildingOperational(String buildingId) =>
+      !viabilityForBuilding(buildingId).isDisabled;
+
+  bool isBuildingDegraded(String buildingId) =>
+      viabilityForBuilding(buildingId).isDegraded(
+        towerOperationsConfig.buildingViability.degradedThreshold,
+      );
+
+  double buildingCraftDurationMultiplier(String buildingId) =>
+      isBuildingDegraded(buildingId)
+          ? 1 +
+              towerOperationsConfig.buildingViability.degradedCraftTimePercent /
+                  100
+          : 1;
+
+  Map<String, int> buildingCraftCosts(
+      String buildingId, Map<String, int> costs) {
+    if (!isBuildingDegraded(buildingId)) return Map<String, int>.from(costs);
+    final factor = 1 +
+        towerOperationsConfig.buildingViability.degradedCraftCostPercent / 100;
+    return costs.map((key, value) => MapEntry(key, (value * factor).ceil()));
+  }
+
+  double buildingProductionMultiplier(String buildingId) =>
+      isBuildingDegraded(buildingId)
+          ? 1 -
+              towerOperationsConfig
+                      .buildingViability.degradedProductionPercent /
+                  100
+          : 1;
+
+  Zone0ActionResult restartBuildingByPayment(String buildingId) {
+    final viability = viabilityForBuilding(buildingId);
+    if (!viability.isDisabled) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ce bâtiment fonctionne déjà.');
+    }
+    final config = towerOperationsConfig.buildingViability;
+    final costs = <String, int>{
+      'Organique': config.restartOrganicCost,
+      'Minéral': config.restartMineralCost
+    };
+    if (!hasResources(costs) || bioBatteries < config.restartBioBatteryCost) {
+      return const Zone0ActionResult(
+          success: false,
+          message:
+              'Ressources insuffisantes pour remettre ce bâtiment en marche.');
+    }
+    if (!removeResources(costs)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Transaction indisponible.');
+    }
+    bioBatteries -= config.restartBioBatteryCost;
+    viability.restoreToMinimum(config.restartViability);
+    _reportBuildingViability(buildingId, 'fonctionne de nouveau.');
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Bâtiment remis en marche.');
+  }
+
+  Zone0ActionResult restartBuildingByMiniGame(String buildingId) {
+    final viability = viabilityForBuilding(buildingId);
+    if (!viability.isDisabled) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ce bâtiment fonctionne déjà.');
+    }
+    viability.restoreToMinimum(
+        towerOperationsConfig.buildingViability.restartViability);
+    _reportBuildingViability(
+        buildingId, 'fonctionne de nouveau après diagnostic.');
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true,
+        message: 'Diagnostic réussi : bâtiment remis en marche.');
+  }
+
+  Zone0ActionResult repairBuilding(String buildingId) {
+    final viability = viabilityForBuilding(buildingId);
+    final config = towerOperationsConfig.buildingViability;
+    if (viability.current >= viability.maximum) {
+      return const Zone0ActionResult(
+          success: false, message: 'La Viabilité est déjà maximale.');
+    }
+    final costs = <String, int>{
+      'Organique': config.repairOrganicCost,
+      'Minéral': config.repairMineralCost
+    };
+    if (!hasResources(costs) || !removeResources(costs)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ressources insuffisantes pour réparer.');
+    }
+    viability.restore(config.repairGain);
+    if (viability.current >= viability.maximum) {
+      _reportBuildingViability(buildingId, 'est entièrement réparé.');
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '+${config.repairGain}% de Viabilité.');
+  }
+
+  int structuralProtectionReductionPercent(
+    String buildingId,
+    TowerWeatherType weather,
+  ) {
+    final state = viabilityForBuilding(buildingId);
+    final matching = state.installedStructuralProtections
+        .where(
+          (item) => switch (item) {
+            StructuralProtectionType.ventilationTermite =>
+              weather == TowerWeatherType.heatWave,
+            StructuralProtectionType.chloroCanaux =>
+              weather == TowerWeatherType.heavyRain,
+            StructuralProtectionType.filtration =>
+              weather == TowerWeatherType.toxicCloud,
+          },
+        )
+        .length;
+    final reductions =
+        towerOperationsConfig.buildingViability.protectionReductionPercents;
+    if (reductions.isEmpty) return 0;
+    var total = 0;
+    for (var index = 0; index < matching; index++) {
+      total +=
+          reductions[index < reductions.length ? index : reductions.length - 1];
+    }
+    return total.clamp(
+        0, towerOperationsConfig.buildingViability.protectionCapPercent);
+  }
+
+  Zone0ActionResult installStructuralProtection(
+    String buildingId,
+    StructuralProtectionType type,
+  ) {
+    final state = viabilityForBuilding(buildingId);
+    if (state.installedStructuralProtections.length >=
+        structuralProtectionSlotsFor(buildingId)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Aucun emplacement d’installation disponible.');
+    }
+    final item = switch (type) {
+      StructuralProtectionType.ventilationTermite => 'Ventilation Termite',
+      StructuralProtectionType.chloroCanaux => 'Chloro-canaux',
+      StructuralProtectionType.filtration => 'Installation filtrante',
+    };
+    if (resourceAmount(item) < 1 || removeResource(item, 1) <= 0) {
+      return Zone0ActionResult(
+          success: false, message: '$item requis dans l’inventaire.');
+    }
+    state.installedStructuralProtections.add(type);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(success: true, message: '$item installé.');
+  }
+
+  Zone0ActionResult removeStructuralProtection(
+    String buildingId,
+    StructuralProtectionType type,
+  ) {
+    final state = viabilityForBuilding(buildingId);
+    if (!state.installedStructuralProtections.remove(type)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Installation introuvable.');
+    }
+    final item = switch (type) {
+      StructuralProtectionType.ventilationTermite => 'Ventilation Termite',
+      StructuralProtectionType.chloroCanaux => 'Chloro-canaux',
+      StructuralProtectionType.filtration => 'Installation filtrante',
+    };
+    final result = addResources(<String, int>{item: 1});
+    if (result.pending.isNotEmpty) {
+      state.installedStructuralProtections.add(type);
+      return const Zone0ActionResult(
+          success: false, message: 'Inventaire plein : retrait impossible.');
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$item retiré et replacé dans l’inventaire.');
+  }
+
+  void _applyWeatherViabilityDamage(GlobalWeatherEvent event) {
+    if (event.type == TowerWeatherType.calm) return;
+    final candidates = <String>{
+      if (isFablabBuilt) 'fablab',
+      if (atelierLevel > 0) 'atelier',
+      if (cuisineLevel > 0) 'cuisine',
+      if (recyclerLevel > 0) 'recycler',
+      if (isMarketBuilt) 'market',
+      if (isSecurityTowerBuilt) 'securityTower',
+      'generator',
+      'campHeart',
+      ...activePTibugTerritories.map((building) => building.id),
+    };
+    final config = towerOperationsConfig.buildingViability;
+    for (final buildingId in candidates) {
+      if (constructionProjects[buildingId]?.isInProgress == true) continue;
+      final state = viabilityForBuilding(buildingId);
+      if (state.lastDamageEventId == event.id) continue;
+      final impact = event.affectedBiomes
+          .where((item) => item.biome == buildingBiomeForViability(buildingId))
+          .firstOrNull;
+      state.lastDamageEventId = event.id;
+      if (impact == null || !impact.isAffected) continue;
+      final raw = config.damageFor(event.type, event.intensity) *
+          impact.localImpactMultiplier;
+      final reduced = raw *
+          (1 -
+              structuralProtectionReductionPercent(buildingId, event.type) /
+                  100);
+      final damage = reduced.ceil();
+      if (damage <= 0) continue;
+      final previous = state.current;
+      state.current = math.max(0, state.current - damage);
+      state.lastViabilityUpdateAt = DateTime.now();
+      if (state.current == 0) {
+        state.restartRequired = true;
+        _reportBuildingViability(buildingId,
+            'est hors service après ${_weatherTypeLabel(event.type)}.');
+      } else if (previous >= config.degradedThreshold &&
+          state.current < config.degradedThreshold) {
+        state.viabilityWarningShown = true;
+        _reportBuildingViability(
+            buildingId, 'est endommagé et fonctionne en mode dégradé.');
+      }
+    }
+  }
+
+  void _reportBuildingViability(String buildingId, String message) {
+    reports.add(PtipoteMissionReport.system(
+      message: '${buildingViabilityLabel(buildingId)} $message',
+      sourceBuildingId: buildingId,
+      mailbox: Zone0MessageMailbox.companions,
+      subject: 'Viabilité du bâtiment',
+      concerned: buildingViabilityLabel(buildingId),
+      summary: message,
+    ));
+  }
+
+  String buildingViabilityLabel(String buildingId) => switch (buildingId) {
+        'fablab' => 'Fablab',
+        'atelier' => 'Atelier',
+        'cuisine' => 'Cuisine',
+        'recycler' => 'Recycleur',
+        'generator' => 'Bio-générateur',
+        'market' => 'Marché',
+        'securityTower' => 'Tour',
+        'campHeart' => 'Cœur du camp',
+        _ => territoryBuildingForId(buildingId)?.kind ==
+                PTibugTerritoryKind.nursery
+            ? 'Nurserie'
+            : territoryBuildingForId(buildingId) != null
+                ? 'Refuge P’TIBUG'
+                : 'Bâtiment',
+      };
+
+  void _migrateBuildingViability() {
+    final ids = <String>{
+      if (isFablabBuilt) 'fablab',
+      if (atelierLevel > 0) 'atelier',
+      if (cuisineLevel > 0) 'cuisine',
+      if (recyclerLevel > 0) 'recycler',
+      if (isMarketBuilt) 'market',
+      if (isSecurityTowerBuilt) 'securityTower',
+      'generator',
+      'campHeart',
+      ...activePTibugTerritories.map((building) => building.id),
+    };
+    for (final id in ids) {
+      viabilityForBuilding(id);
+    }
+  }
 
   PTibugTerritoryBuilding get plaineNurseryTerritory =>
       pTibugTerritoryBuildings.putIfAbsent(
@@ -389,24 +705,26 @@ class Zone0GameState extends ChangeNotifier {
       .where((order) => order.status == WorkshopOrderStatus.active)
       .toList();
 
-  int get activeManualWorkshopOrders => activeWorkshopOrders
-      .where(
-        (order) =>
-            order.area == WorkshopOrderArea.workshop &&
-            order.assignedPtipoteId == null,
-      )
-      .length +
+  int get activeManualWorkshopOrders =>
+      activeWorkshopOrders
+          .where(
+            (order) =>
+                order.area == WorkshopOrderArea.workshop &&
+                order.assignedPtipoteId == null,
+          )
+          .length +
       activePTibugModuleCraftOrders
           .where((order) => order.assignedPtipoteId == null)
           .length;
 
-  int get activePtipoteWorkshopOrders => activeWorkshopOrders
-      .where(
-        (order) =>
-            order.area == WorkshopOrderArea.workshop &&
-            order.assignedPtipoteId != null,
-      )
-      .length +
+  int get activePtipoteWorkshopOrders =>
+      activeWorkshopOrders
+          .where(
+            (order) =>
+                order.area == WorkshopOrderArea.workshop &&
+                order.assignedPtipoteId != null,
+          )
+          .length +
       activePTibugModuleCraftOrders
           .where((order) => order.assignedPtipoteId != null)
           .length;
@@ -427,7 +745,8 @@ class Zone0GameState extends ChangeNotifier {
 
   int get kitchenSlots => workshopConfig.slotsForLevel(cuisineLevel);
 
-  bool isAssignedToWorkshop(String figurineId) => activeWorkshopOrders.any(
+  bool isAssignedToWorkshop(String figurineId) =>
+      activeWorkshopOrders.any(
         (order) => order.assignedPtipoteId == figurineId,
       ) ||
       activePTibugModuleCraftOrders.any(
@@ -462,7 +781,8 @@ class Zone0GameState extends ChangeNotifier {
       : 0;
 
   double get sourcierConfidencePaymentMultiplier =>
-      1 + (sourcierConfidence.clamp(0, 100) / 100) *
+      1 +
+      (sourcierConfidence.clamp(0, 100) / 100) *
           (marketConfig.confidenceMaxPaymentBonusPercent / 100);
 
   bool isEquipmentResource(String resource) {
@@ -471,9 +791,8 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
-  int marketStackLimitFor(String resource) => isEquipmentResource(resource)
-      ? 1
-      : marketConfig.stackQuantityLimit;
+  int marketStackLimitFor(String resource) =>
+      isEquipmentResource(resource) ? 1 : marketConfig.stackQuantityLimit;
 
   int get globalStockCapacity {
     return fablabConfig.baseGlobalStockCapacity +
@@ -552,6 +871,10 @@ class Zone0GameState extends ChangeNotifier {
 
   bool resolveGenerator({required int heartLevel, DateTime? now}) {
     final current = now ?? DateTime.now();
+    if (!isBuildingOperational('generator')) {
+      generatorCycleStartedAt = null;
+      return false;
+    }
     if (!_generatorCanRun) {
       generatorCycleStartedAt = null;
       return false;
@@ -575,7 +898,13 @@ class Zone0GameState extends ChangeNotifier {
         possibleCycles * campGeneratorConfig.organicCostPerCycle;
     generatorMineral -=
         possibleCycles * campGeneratorConfig.mineralCostPerCycle;
-    final produced = possibleCycles * campGeneratorConfig.bioBatteriesPerCycle;
+    final produced = math.max(
+      0,
+      (possibleCycles *
+              campGeneratorConfig.bioBatteriesPerCycle *
+              buildingProductionMultiplier('generator'))
+          .floor(),
+    );
     bioBatteries += produced;
     generatorTotalProduced += produced;
     generatorCycleStartedAt = _generatorCanRun
@@ -1615,6 +1944,11 @@ class Zone0GameState extends ChangeNotifier {
     PtipoteFigurine? figurine,
   }) {
     resolveWorkshopOrder();
+    if (!isBuildingOperational('atelier')) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Atelier hors service : remise en marche requise.');
+    }
     if (recipe.craftSection != CraftSection.atelier) {
       return const Zone0ActionResult(
         success: false,
@@ -1661,9 +1995,11 @@ class Zone0GameState extends ChangeNotifier {
         message: 'P’TIPOTE occupé.',
       );
     }
-    final totalCosts = recipe.ingredients.map(
-      (key, value) => MapEntry(key, value * quantity),
-    );
+    final totalCosts = buildingCraftCosts(
+        'atelier',
+        recipe.ingredients.map(
+          (key, value) => MapEntry(key, value * quantity),
+        ));
     if (!hasResources(totalCosts)) {
       return Zone0ActionResult(
         success: false,
@@ -1690,7 +2026,9 @@ class Zone0GameState extends ChangeNotifier {
     final speedBonus = craftSpeedBonus(figurine, atelierLevel);
     final unitSeconds = math.max(
       1,
-      (Duration(minutes: recipe.durationMinutes).inSeconds * (1 - speedBonus))
+      (Duration(minutes: recipe.durationMinutes).inSeconds *
+              (1 - speedBonus) *
+              buildingCraftDurationMultiplier('atelier'))
           .round(),
     );
     final now = DateTime.now();
@@ -1723,6 +2061,11 @@ class Zone0GameState extends ChangeNotifier {
     PtipoteFigurine? figurine,
   }) {
     resolveWorkshopOrder();
+    if (!isBuildingOperational('cuisine')) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Cuisine hors service : remise en marche requise.');
+    }
     if (recipe.craftSection != CraftSection.cuisine) {
       return const Zone0ActionResult(
         success: false,
@@ -1770,9 +2113,11 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Quantité invalide.',
       );
     }
-    final totalCosts = recipe.ingredients.map(
-      (key, value) => MapEntry(key, value * quantity),
-    );
+    final totalCosts = buildingCraftCosts(
+        'cuisine',
+        recipe.ingredients.map(
+          (key, value) => MapEntry(key, value * quantity),
+        ));
     final output = <String, int>{
       recipe.resultItem: recipe.resultAmount * quantity,
     };
@@ -1800,7 +2145,9 @@ class Zone0GameState extends ChangeNotifier {
     final speedBonus = craftSpeedBonus(figurine, cuisineLevel);
     final unitSeconds = math.max(
       1,
-      (Duration(minutes: recipe.durationMinutes).inSeconds * (1 - speedBonus))
+      (Duration(minutes: recipe.durationMinutes).inSeconds *
+              (1 - speedBonus) *
+              buildingCraftDurationMultiplier('cuisine'))
           .round(),
     );
     final now = DateTime.now();
@@ -1838,6 +2185,10 @@ class Zone0GameState extends ChangeNotifier {
 
   bool _resolveWorkshopOrder(WorkshopCraftOrder order, {DateTime? now}) {
     if (order.status != WorkshopOrderStatus.active) return false;
+    final buildingId =
+        order.area == WorkshopOrderArea.kitchen ? 'cuisine' : 'atelier';
+    // Une panne suspend le craft sans perdre ni ingrédients ni progression.
+    if (!isBuildingOperational(buildingId)) return false;
     final current = now ?? DateTime.now();
     if (current.isBefore(order.nextCompletionTime)) return false;
     final ingredients = _orderIngredients(order);
@@ -2016,7 +2367,8 @@ class Zone0GameState extends ChangeNotifier {
     }
     final moved = removeResource(
       resource,
-      math.min(amount, math.min(resourceAmount(resource), marketStackLimitFor(resource))),
+      math.min(amount,
+          math.min(resourceAmount(resource), marketStackLimitFor(resource))),
     );
     if (moved <= 0) {
       return const Zone0ActionResult(
@@ -2081,10 +2433,13 @@ class Zone0GameState extends ChangeNotifier {
 
   Zone0ActionResult sellMarketRequest(MarketCustomerRequest request) {
     if (!marketRequests.contains(request) || !request.isOpen) {
-      return const Zone0ActionResult(success: false, message: 'Demande indisponible.');
+      return const Zone0ActionResult(
+          success: false, message: 'Demande indisponible.');
     }
-    if (!_consumeMarketStock(request.requestedItemId, request.requestedQuantity)) {
-      return const Zone0ActionResult(success: false, message: 'Stock du Marché insuffisant.');
+    if (!_consumeMarketStock(
+        request.requestedItemId, request.requestedQuantity)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Stock du Marché insuffisant.');
     }
     bioBatteries += request.rewardBioBattery;
     campWellbeing = math.min(100, campWellbeing + request.rewardWellbeing);
@@ -2094,7 +2449,8 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: 'Vente réalisée : ${request.requestedQuantity} ${request.requestedItemId} · +${request.rewardBioBattery} bio-batterie(s).',
+      message:
+          'Vente réalisée : ${request.requestedQuantity} ${request.requestedItemId} · +${request.rewardBioBattery} bio-batterie(s).',
     );
   }
 
@@ -2189,7 +2545,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool resolveMarket({DateTime? now}) {
-    if (!isMarketBuilt) return false;
+    if (!isMarketBuilt || !isBuildingOperational('market')) return false;
     final current = now ?? DateTime.now();
     var changed = _resolveMerchantSchedule(current);
     // Older builds kept requests but did not always create their Book entry.
@@ -2224,8 +2580,11 @@ class Zone0GameState extends ChangeNotifier {
     marketRequests.removeWhere((request) =>
         !request.isOpen && request.customerReturnTime.isBefore(historyCutoff));
     final beforeLog = marketRequestLog.length;
-    marketRequestLog.removeWhere((entry) => entry.createdAt.isBefore(historyCutoff));
-    changed = changed || beforeRequests != marketRequests.length || beforeLog != marketRequestLog.length;
+    marketRequestLog
+        .removeWhere((entry) => entry.createdAt.isBefore(historyCutoff));
+    changed = changed ||
+        beforeRequests != marketRequests.length ||
+        beforeLog != marketRequestLog.length;
     if (marketAssignedPtipoteId != null) {
       marketLastWorkTickAt ??= current;
       final ticks = current.difference(marketLastWorkTickAt!).inMinutes ~/
@@ -2278,7 +2637,8 @@ class Zone0GameState extends ChangeNotifier {
     // An empty sales stock must not dismiss the P'TIPOTE automatically. They
     // remain at the Market to handle resident requests and are removed only
     // manually or when their vitality reaches the rest threshold.
-    for (final request in marketRequests.where((item) => item.isOpen).toList()) {
+    for (final request
+        in marketRequests.where((item) => item.isOpen).toList()) {
       if (!current.isBefore(request.customerReturnTime)) {
         if (marketAssignedPtipoteId != null &&
             marketStockAmount(request.requestedItemId) >=
@@ -2308,22 +2668,21 @@ class Zone0GameState extends ChangeNotifier {
     final item = entries[_random.nextInt(entries.length)];
     final isResource = item == 'Organique' || item == 'Minéral';
     final request = MarketCustomerRequest(
-        id: 'request-${now.microsecondsSinceEpoch}-${marketRequests.length}',
-        requestedItemId: item,
-        requestedQuantity:
-            isResource ? lisiereForageConfig.inventoryStackLimit : 1,
-        rewardBioBattery: math.max(
-          1,
-          (marketConfig.saleValues[item] ?? 1) ~/
-              marketConfig.valuePerBioBattery,
-        ),
-        rewardWellbeing: 1,
-        createdAt: now,
-        customerReturnTime: now.add(_randomMarketReturnDelay()),
-        distributorEligibleAt: now.add(
-          Duration(minutes: marketConfig.distributorResponseDelayMinutes),
-        ),
-        status: MarketRequestStatus.noted,
+      id: 'request-${now.microsecondsSinceEpoch}-${marketRequests.length}',
+      requestedItemId: item,
+      requestedQuantity:
+          isResource ? lisiereForageConfig.inventoryStackLimit : 1,
+      rewardBioBattery: math.max(
+        1,
+        (marketConfig.saleValues[item] ?? 1) ~/ marketConfig.valuePerBioBattery,
+      ),
+      rewardWellbeing: 1,
+      createdAt: now,
+      customerReturnTime: now.add(_randomMarketReturnDelay()),
+      distributorEligibleAt: now.add(
+        Duration(minutes: marketConfig.distributorResponseDelayMinutes),
+      ),
+      status: MarketRequestStatus.noted,
     );
     marketRequests.add(request);
     _ensureMarketRequestLog(request);
@@ -2334,7 +2693,9 @@ class Zone0GameState extends ChangeNotifier {
     required DateTime completedAt,
   }) {
     _ensureMarketRequestLog(request);
-    final entry = marketRequestLog.where((item) => item.requestId == request.id).firstOrNull;
+    final entry = marketRequestLog
+        .where((item) => item.requestId == request.id)
+        .firstOrNull;
     if (entry == null) return;
     entry
       ..status = request.status
@@ -2366,46 +2727,62 @@ class Zone0GameState extends ChangeNotifier {
             ),
       );
 
-  Zone0ActionResult depositMarketDistributorMaterial(String resource, int amount) {
+  Zone0ActionResult depositMarketDistributorMaterial(
+      String resource, int amount) {
     if (marketLevel < 2 || marketDistributor.isBuilt || amount <= 0) {
-      return const Zone0ActionResult(success: false, message: 'Dépôt impossible.');
+      return const Zone0ActionResult(
+          success: false, message: 'Dépôt impossible.');
     }
     final required = marketConfig.distributorConstructionCost[resource] ?? 0;
-    final missing = math.max(0, required - (marketDistributor.constructionDeposits[resource] ?? 0));
+    final missing = math.max(
+        0, required - (marketDistributor.constructionDeposits[resource] ?? 0));
     final moved = removeResource(resource, math.min(amount, missing));
-    if (moved <= 0) return const Zone0ActionResult(success: false, message: 'Aucune ressource à déposer.');
+    if (moved <= 0)
+      return const Zone0ActionResult(
+          success: false, message: 'Aucune ressource à déposer.');
     marketDistributor.constructionDeposits[resource] =
         (marketDistributor.constructionDeposits[resource] ?? 0) + moved;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return Zone0ActionResult(success: true, message: '$moved $resource déposé(s).');
+    return Zone0ActionResult(
+        success: true, message: '$moved $resource déposé(s).');
   }
 
-  bool get isMarketDistributorReadyToBuild => marketConfig.distributorConstructionCost.entries
-      .every((entry) => (marketDistributor.constructionDeposits[entry.key] ?? 0) >= entry.value);
+  bool get isMarketDistributorReadyToBuild =>
+      marketConfig.distributorConstructionCost.entries.every((entry) =>
+          (marketDistributor.constructionDeposits[entry.key] ?? 0) >=
+          entry.value);
 
   Zone0ActionResult startMarketDistributorConstruction() {
-    if (marketLevel < 2 || marketDistributor.isBuilt || marketDistributor.constructionStartedAt != null) {
-      return const Zone0ActionResult(success: false, message: 'Travaux indisponibles.');
+    if (marketLevel < 2 ||
+        marketDistributor.isBuilt ||
+        marketDistributor.constructionStartedAt != null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Travaux indisponibles.');
     }
     if (!isMarketDistributorReadyToBuild) {
-      return const Zone0ActionResult(success: false, message: 'Matériaux de construction incomplets.');
+      return const Zone0ActionResult(
+          success: false, message: 'Matériaux de construction incomplets.');
     }
     marketDistributor.constructionStartedAt = DateTime.now();
-    marketDistributor.constructionEndsAt = marketDistributor.constructionStartedAt!.add(
+    marketDistributor.constructionEndsAt =
+        marketDistributor.constructionStartedAt!.add(
       Duration(minutes: marketConfig.distributorConstructionMinutes),
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return const Zone0ActionResult(success: true, message: 'Travaux du Distributeur commencés.');
+    return const Zone0ActionResult(
+        success: true, message: 'Travaux du Distributeur commencés.');
   }
 
   Zone0ActionResult openBioBatteryForMarketDistributor() {
     if (!marketDistributor.isBuilt || bioBatteries <= 0) {
-      return const Zone0ActionResult(success: false, message: 'Bio-batterie indisponible.');
+      return const Zone0ActionResult(
+          success: false, message: 'Bio-batterie indisponible.');
     }
     if (marketDistributor.energy >= marketConfig.distributorEnergyCapacity) {
-      return const Zone0ActionResult(success: false, message: 'Réserve d’énergie pleine.');
+      return const Zone0ActionResult(
+          success: false, message: 'Réserve d’énergie pleine.');
     }
     bioBatteries -= 1;
     marketDistributor.energy = math.min(
@@ -2414,18 +2791,25 @@ class Zone0GameState extends ChangeNotifier {
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return Zone0ActionResult(success: true, message: 'Énergie du Distributeur rechargée.');
+    return Zone0ActionResult(
+        success: true, message: 'Énergie du Distributeur rechargée.');
   }
 
   Zone0ActionResult transferToMarketDistributor(String resource, int amount) {
     if (!marketDistributor.isBuilt || !marketDistributor.accepts(resource)) {
-      return const Zone0ActionResult(success: false, message: 'Produit incompatible avec le Distributeur.');
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Produit incompatible avec le Distributeur.');
     }
     if (marketDistributor.stock.length >= marketDistributorSlotLimit) {
-      return const Zone0ActionResult(success: false, message: 'Emplacements du Distributeur occupés.');
+      return const Zone0ActionResult(
+          success: false, message: 'Emplacements du Distributeur occupés.');
     }
-    final moved = removeResource(resource, math.min(amount, marketConfig.stackQuantityLimit));
-    if (moved <= 0) return const Zone0ActionResult(success: false, message: 'Stock insuffisant.');
+    final moved = removeResource(
+        resource, math.min(amount, marketConfig.stackQuantityLimit));
+    if (moved <= 0)
+      return const Zone0ActionResult(
+          success: false, message: 'Stock insuffisant.');
     marketDistributor.stock.add(Zone0InventoryStack(
       id: 'distributor-${DateTime.now().microsecondsSinceEpoch}-${marketDistributor.stock.length}',
       resource: resource,
@@ -2433,36 +2817,48 @@ class Zone0GameState extends ChangeNotifier {
     ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return Zone0ActionResult(success: true, message: '$moved $resource placé(s) dans le Distributeur.');
+    return Zone0ActionResult(
+        success: true,
+        message: '$moved $resource placé(s) dans le Distributeur.');
   }
 
   Zone0ActionResult repairMarketDistributor() {
     if (!marketDistributor.isBroken || marketDistributor.repairEndsAt != null) {
-      return const Zone0ActionResult(success: false, message: 'Aucune réparation à lancer.');
+      return const Zone0ActionResult(
+          success: false, message: 'Aucune réparation à lancer.');
     }
-    if (!hasResources(marketConfig.distributorRepairCost) || !removeResources(marketConfig.distributorRepairCost)) {
-      return Zone0ActionResult(success: false, message: missingResourcesLabel(marketConfig.distributorRepairCost));
+    if (!hasResources(marketConfig.distributorRepairCost) ||
+        !removeResources(marketConfig.distributorRepairCost)) {
+      return Zone0ActionResult(
+          success: false,
+          message: missingResourcesLabel(marketConfig.distributorRepairCost));
     }
     marketDistributor.repairEndsAt = DateTime.now().add(
-      Duration(minutes: marketConfig.distributorRepairMinutesForLevel(marketDistributor.level)),
+      Duration(
+          minutes: marketConfig
+              .distributorRepairMinutesForLevel(marketDistributor.level)),
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return const Zone0ActionResult(success: true, message: 'Réparation du Distributeur lancée.');
+    return const Zone0ActionResult(
+        success: true, message: 'Réparation du Distributeur lancée.');
   }
 
   bool _resolveMarketDistributor(DateTime current) {
     var changed = false;
-    if (marketDistributor.constructionEndsAt != null && !current.isBefore(marketDistributor.constructionEndsAt!)) {
+    if (marketDistributor.constructionEndsAt != null &&
+        !current.isBefore(marketDistributor.constructionEndsAt!)) {
       marketDistributor
         ..isBuilt = true
         ..level = 1
         ..constructionStartedAt = null
         ..constructionEndsAt = null;
-      reports.add(PtipoteMissionReport.system(message: 'Le Distributeur automatique est opérationnel.'));
+      reports.add(PtipoteMissionReport.system(
+          message: 'Le Distributeur automatique est opérationnel.'));
       changed = true;
     }
-    if (marketDistributor.repairEndsAt != null && !current.isBefore(marketDistributor.repairEndsAt!)) {
+    if (marketDistributor.repairEndsAt != null &&
+        !current.isBefore(marketDistributor.repairEndsAt!)) {
       marketDistributor
         ..isBroken = false
         ..repairEndsAt = null;
@@ -2471,19 +2867,33 @@ class Zone0GameState extends ChangeNotifier {
     if (!marketDistributor.isOperational) return changed;
     marketDistributor.lastEnergyTickAt ??= current;
     final elapsed = current.difference(marketDistributor.lastEnergyTickAt!);
-    final units = elapsed.inMinutes / (24 * 60) * marketConfig.distributorEnergyPerDayForLevel(marketDistributor.level);
+    final units = elapsed.inMinutes /
+        (24 * 60) *
+        marketConfig.distributorEnergyPerDayForLevel(marketDistributor.level);
     if (units >= 1) {
       final used = units.floor();
       marketDistributor.energy = math.max(0, marketDistributor.energy - used);
-      marketDistributor.lastEnergyTickAt = marketDistributor.lastEnergyTickAt!.add(
-        Duration(minutes: (used * 24 * 60 / math.max(1, marketConfig.distributorEnergyPerDayForLevel(marketDistributor.level))).round()),
+      marketDistributor.lastEnergyTickAt =
+          marketDistributor.lastEnergyTickAt!.add(
+        Duration(
+            minutes: (used *
+                    24 *
+                    60 /
+                    math.max(
+                        1,
+                        marketConfig.distributorEnergyPerDayForLevel(
+                            marketDistributor.level)))
+                .round()),
       );
       changed = true;
     }
     if (marketDistributor.energy <= 0) return changed;
-    for (final request in marketRequests.where((item) => item.isOpen).toList()) {
+    for (final request
+        in marketRequests.where((item) => item.isOpen).toList()) {
       if (current.isBefore(request.distributorEligibleAt)) continue;
-      final stack = marketDistributor.stock.where((item) => item.resource == request.requestedItemId).firstOrNull;
+      final stack = marketDistributor.stock
+          .where((item) => item.resource == request.requestedItemId)
+          .firstOrNull;
       if (stack == null || stack.amount < request.requestedQuantity) continue;
       stack.amount -= request.requestedQuantity;
       if (stack.amount <= 0) marketDistributor.stock.remove(stack);
@@ -2491,9 +2901,14 @@ class Zone0GameState extends ChangeNotifier {
       request.status = MarketRequestStatus.completed;
       _recordMarketRequestOutcome(request, completedAt: current);
       changed = true;
-      if (_random.nextInt(math.max(1, marketConfig.distributorBreakDenominatorForLevel(marketDistributor.level))) == 0) {
+      if (_random.nextInt(math.max(
+              1,
+              marketConfig.distributorBreakDenominatorForLevel(
+                  marketDistributor.level))) ==
+          0) {
         marketDistributor.isBroken = true;
-        reports.add(PtipoteMissionReport.system(message: 'Le Distributeur automatique est en panne.'));
+        reports.add(PtipoteMissionReport.system(
+            message: 'Le Distributeur automatique est en panne.'));
         break;
       }
     }
@@ -2502,13 +2917,18 @@ class Zone0GameState extends ChangeNotifier {
 
   bool _resolveMarketContracts(DateTime current) {
     var changed = false;
-    for (final contract in marketContracts.where((item) => item.status == MarketContractStatus.accepted).toList()) {
+    for (final contract in marketContracts
+        .where((item) => item.status == MarketContractStatus.accepted)
+        .toList()) {
       if (!current.isBefore(contract.expiresAt)) {
         contract.status = MarketContractStatus.failed;
-        sourcierConfidence = math.max(0, sourcierConfidence - marketConfig.confidenceFailurePenalty);
+        sourcierConfidence = math.max(
+            0, sourcierConfidence - marketConfig.confidenceFailurePenalty);
         changed = true;
-      } else if (contract.autoDeliverAllowed && marketAssignedPtipoteId != null &&
-          contract.requestedItems.entries.every((entry) => marketStockAmount(entry.key) >= entry.value)) {
+      } else if (contract.autoDeliverAllowed &&
+          marketAssignedPtipoteId != null &&
+          contract.requestedItems.entries
+              .every((entry) => marketStockAmount(entry.key) >= entry.value)) {
         _deliverMarketContract(contract);
         changed = true;
       }
@@ -2517,8 +2937,10 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult acceptMarketContract(MarketSourcierContract contract) {
-    if (!marketContracts.contains(contract) || contract.status != MarketContractStatus.offered) {
-      return const Zone0ActionResult(success: false, message: 'Contrat indisponible.');
+    if (!marketContracts.contains(contract) ||
+        contract.status != MarketContractStatus.offered) {
+      return const Zone0ActionResult(
+          success: false, message: 'Contrat indisponible.');
     }
     contract
       ..status = MarketContractStatus.accepted
@@ -2530,24 +2952,33 @@ class Zone0GameState extends ChangeNotifier {
 
   Zone0ActionResult deliverMarketContract(MarketSourcierContract contract) {
     if (contract.status != MarketContractStatus.accepted) {
-      return const Zone0ActionResult(success: false, message: 'Contrat non accepté.');
+      return const Zone0ActionResult(
+          success: false, message: 'Contrat non accepté.');
     }
     if (!_deliverMarketContract(contract)) {
-      return const Zone0ActionResult(success: false, message: 'Marchandises insuffisantes dans le Marché.');
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Marchandises insuffisantes dans le Marché.');
     }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return const Zone0ActionResult(success: true, message: 'Contrat livré au Sourcier.');
+    return const Zone0ActionResult(
+        success: true, message: 'Contrat livré au Sourcier.');
   }
 
   bool _deliverMarketContract(MarketSourcierContract contract) {
-    if (!contract.requestedItems.entries.every((entry) => marketStockAmount(entry.key) >= entry.value)) return false;
+    if (!contract.requestedItems.entries
+        .every((entry) => marketStockAmount(entry.key) >= entry.value))
+      return false;
     for (final entry in contract.requestedItems.entries) {
       if (!_consumeMarketStock(entry.key, entry.value)) return false;
     }
-    final payment = (contract.rewardBioBatteries * sourcierConfidencePaymentMultiplier).floor();
+    final payment =
+        (contract.rewardBioBatteries * sourcierConfidencePaymentMultiplier)
+            .floor();
     bioBatteries += payment;
-    sourcierConfidence = math.min(100, sourcierConfidence + contract.confidenceReward);
+    sourcierConfidence =
+        math.min(100, sourcierConfidence + contract.confidenceReward);
     contract
       ..status = MarketContractStatus.completed
       ..deliveredAt = DateTime.now();
@@ -3198,7 +3629,8 @@ class Zone0GameState extends ChangeNotifier {
       );
       changed = true;
     }
-    if (!isRecyclerUnlocked(campHeartLevel)) return changed;
+    if (!isRecyclerUnlocked(campHeartLevel) ||
+        !isBuildingOperational('recycler')) return changed;
     if (recyclerLevel == 0) {
       recyclerLevel = wasteRecyclerConfig.initialRecyclerLevel;
       changed = true;
@@ -3995,7 +4427,8 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: 'Fabrication de ${type.displayName} lancée${figurine == null ? ' manuellement' : ' avec ${figurine.displayName}'}.',
+      message:
+          'Fabrication de ${type.displayName} lancée${figurine == null ? ' manuellement' : ' avec ${figurine.displayName}'}.',
     );
   }
 
@@ -4423,6 +4856,14 @@ class Zone0GameState extends ChangeNotifier {
         changed = true;
         continue;
       }
+      if (building != null && !isBuildingOperational(building.id)) {
+        bug
+          ..inactiveReason =
+              '${building.kind == PTibugTerritoryKind.nursery ? 'Nurserie' : 'Refuge'} hors service'
+          ..nextProductionAt = null;
+        changed = true;
+        continue;
+      }
       final capacity = _pTibugCapacity(bug);
       // Also pause saves written by older builds: their full-stock marker may
       // coexist with an overdue cycle timestamp, especially after capacity
@@ -4524,6 +4965,17 @@ class Zone0GameState extends ChangeNotifier {
     var changed = false;
     for (final building in activePTibugTerritories) {
       if (isTerritoryUnderConstruction(building)) continue;
+      if (!isBuildingOperational(building.id)) {
+        for (final bug in pTibugsForTerritory(building.id)) {
+          bug
+            ..inactiveReason =
+                '${building.kind == PTibugTerritoryKind.nursery ? 'Nurserie' : 'Refuge'} hors service'
+            ..nextProductionAt = null;
+        }
+        building.lastConsumptionAt = current;
+        changed = true;
+        continue;
+      }
       final previous = building.lastConsumptionAt ?? current;
       final elapsedHours = math.max(0, current.difference(previous).inHours);
       final residents = pTibugsForTerritory(building.id);
@@ -4683,17 +5135,22 @@ class Zone0GameState extends ChangeNotifier {
     final territory = pTibugConfig.territory;
     double perDay(int amount, int everyHours) =>
         amount * 24 / math.max(1, everyHours);
-    final organic = perDay(territory.organicAmount, territory.organicEveryHours) *
-        pTibugConfig.weather.multiplierForPenalty(
-          _pTibugEffectFor(bug, 'Réduction Organique %'),
-        );
-    final mineral = perDay(territory.mineralAmount, territory.mineralEveryHours);
-    final energy = pTibugConfig.progression.baseEnergyPerDayForLevel(bug.level) *
+    final organic =
+        perDay(territory.organicAmount, territory.organicEveryHours) *
+            pTibugConfig.weather.multiplierForPenalty(
+              _pTibugEffectFor(bug, 'Réduction Organique %'),
+            );
+    final mineral =
+        perDay(territory.mineralAmount, territory.mineralEveryHours);
+    final energy = pTibugConfig.progression
+                .baseEnergyPerDayForLevel(bug.level) *
             pTibugConfig.weather.multiplierForPenalty(
               _pTibugEffectFor(bug, 'Réduction énergie %'),
             ) +
-        ((bug.equippedModules.isNotEmpty || bug.equippedModuleInstanceIds.isNotEmpty)
-            ? perDay(territory.moduleEnergyAmount, territory.moduleEnergyEveryHours)
+        ((bug.equippedModules.isNotEmpty ||
+                bug.equippedModuleInstanceIds.isNotEmpty)
+            ? perDay(
+                territory.moduleEnergyAmount, territory.moduleEnergyEveryHours)
             : 0);
     return <String, double>{
       'Organique': organic,
@@ -4850,7 +5307,10 @@ class Zone0GameState extends ChangeNotifier {
     final weather = pTibugWeatherFor(bug);
     final protected =
         weather != null && _hasPTibugWeatherProtection(bug, weather);
-    final multiplier = biomassPTibugMultiplierFor(bug.refugeBiome) *
+    final multiplier = buildingProductionMultiplier(
+          bug.assignedBuildingId ?? plaineNurseryTerritoryId,
+        ) *
+        biomassPTibugMultiplierFor(bug.refugeBiome) *
         (weather == null || protected
             ? 1
             : pTibugConfig.weather.multiplierForPenalty(
@@ -4874,11 +5334,12 @@ class Zone0GameState extends ChangeNotifier {
   int pTibugWeatherMalusPercentFor(PTibug bug) {
     final event = activeGlobalWeatherEvent;
     if (event == null || !event.isBiomeAffected(bug.refugeBiome)) return 0;
-    final base = towerOperationsConfig.globalWeather.intensities[event.intensity]!
-        .ptibugMalusPercent;
+    final base = towerOperationsConfig
+        .globalWeather.intensities[event.intensity]!.ptibugMalusPercent;
     return (base * event.impactFor(bug.refugeBiome).localImpactMultiplier)
         .round()
-        .clamp(0, towerOperationsConfig.globalWeather.maximumPTibugMalusPercent);
+        .clamp(
+            0, towerOperationsConfig.globalWeather.maximumPTibugMalusPercent);
   }
 
   bool _hasPTibugWeatherProtection(PTibug bug, TowerWeatherType weather) =>
@@ -5826,17 +6287,25 @@ class Zone0GameState extends ChangeNotifier {
             marketData['assignedPtipoteName'] as String?;
         marketValueRemainder = _readInt(marketData['valueRemainder']);
         marketBioBatteriesEarned = _readInt(marketData['bioBatteriesEarned']);
-        sourcierConfidence = _readInt(marketData['sourcierConfidence']).clamp(0, 100);
+        sourcierConfidence =
+            _readInt(marketData['sourcierConfidence']).clamp(0, 100);
         firstFreeShopClaimed = marketData['firstFreeShopClaimed'] == true;
         activeMarketLicenses
           ..clear()
-          ..addAll((marketData['activeLicenses'] as List? ?? const <dynamic>[]).map((value) => '$value'));
+          ..addAll((marketData['activeLicenses'] as List? ?? const <dynamic>[])
+              .map((value) => '$value'));
         marketShops
           ..clear()
-          ..addAll((marketData['shops'] as List? ?? const <dynamic>[]).whereType<Map>().map(MarketShop.fromFirebase).where((shop) => shop.id.isNotEmpty));
+          ..addAll((marketData['shops'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(MarketShop.fromFirebase)
+              .where((shop) => shop.id.isNotEmpty));
         marketContracts
           ..clear()
-          ..addAll((marketData['contracts'] as List? ?? const <dynamic>[]).whereType<Map>().map(MarketSourcierContract.fromFirebase).where((contract) => contract.contractId.isNotEmpty));
+          ..addAll((marketData['contracts'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(MarketSourcierContract.fromFirebase)
+              .where((contract) => contract.contractId.isNotEmpty));
         final distributorData = marketData['distributor'];
         if (distributorData is Map) {
           final restored = MarketDistributorState.fromFirebase(distributorData);
@@ -6233,6 +6702,19 @@ class Zone0GameState extends ChangeNotifier {
 
       final buildingsData = data['buildings'];
       if (buildingsData is Map) {
+        final viabilityData = buildingsData['viability'];
+        if (viabilityData is Map) {
+          buildingViabilities
+            ..clear()
+            ..addEntries(
+              viabilityData.entries.whereType<MapEntry>().map(
+                    (entry) => MapEntry(
+                      '${entry.key}',
+                      BuildingViabilityState.fromFirebase(entry.value as Map),
+                    ),
+                  ),
+            );
+        }
         final fablabData = buildingsData['fablab'];
         if (fablabData is Map) {
           fablabLevel = _readInt(
@@ -6311,6 +6793,7 @@ class Zone0GameState extends ChangeNotifier {
         alcoveCapacity,
         housingConfig.alcovesForHouseLevel(houseLevel),
       );
+      _migrateBuildingViability();
       refugeSafety = _readInt(
         data['campSecurity'],
       ).clamp(0, securityTowerConfig.maxSecurity);
@@ -6884,34 +7367,48 @@ class Zone0GameState extends ChangeNotifier {
         ? 'Filtre'
         : category == 'structure' && marketLevel >= 3
             ? 'Ventilation Termite'
-            : _random.nextBool() ? 'Organique' : 'Minéral';
+            : _random.nextBool()
+                ? 'Organique'
+                : 'Minéral';
     final quantity = item == 'Organique' || item == 'Minéral' ? 10 : 1;
     marketContracts.add(MarketSourcierContract(
       contractId: 'contract-${now.microsecondsSinceEpoch}',
       marketLevelRequired: marketLevel,
       category: category,
       requestedItems: <String, int>{item: quantity},
-      rewardBioBatteries: math.max(1, ((marketConfig.saleValues[item] ?? 1) * quantity / marketConfig.valuePerBioBattery).ceil()),
+      rewardBioBatteries: math.max(
+          1,
+          ((marketConfig.saleValues[item] ?? 1) *
+                  quantity /
+                  marketConfig.valuePerBioBattery)
+              .ceil()),
       confidenceReward: marketConfig.confidenceSuccessGain,
       confidencePenalty: marketConfig.confidenceFailurePenalty,
       offeredAt: now,
       expiresAt: now.add(const Duration(hours: 12)),
-      assignedLicense: activeMarketLicenses.contains(category) ? category : null,
+      assignedLicense:
+          activeMarketLicenses.contains(category) ? category : null,
     ));
   }
 
   Zone0ActionResult claimFirstMarketShop(String specialization) {
     if (marketLevel < 3 || firstFreeShopClaimed || marketShops.isNotEmpty) {
-      return const Zone0ActionResult(success: false, message: 'Magasin offert indisponible.');
+      return const Zone0ActionResult(
+          success: false, message: 'Magasin offert indisponible.');
     }
-    if (!const <String>{'restaurant', 'general', 'ameublement'}.contains(specialization)) {
-      return const Zone0ActionResult(success: false, message: 'Spécialisation invalide.');
+    if (!const <String>{'restaurant', 'general', 'ameublement'}
+        .contains(specialization)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Spécialisation invalide.');
     }
     firstFreeShopClaimed = true;
-    marketShops.add(MarketShop(id: 'shop-${DateTime.now().microsecondsSinceEpoch}', specialization: specialization));
+    marketShops.add(MarketShop(
+        id: 'shop-${DateTime.now().microsecondsSinceEpoch}',
+        specialization: specialization));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return const Zone0ActionResult(success: true, message: 'Premier magasin spécialisé construit.');
+    return const Zone0ActionResult(
+        success: true, message: 'Premier magasin spécialisé construit.');
   }
 
   Zone0ActionResult setMarketLicense(String category) {
@@ -6922,7 +7419,9 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     const categories = <String>{'materials', 'atelier', 'structure', 'ptibug'};
-    if (!categories.contains(category)) return const Zone0ActionResult(success: false, message: 'Licence inconnue.');
+    if (!categories.contains(category))
+      return const Zone0ActionResult(
+          success: false, message: 'Licence inconnue.');
     final replacing = activeMarketLicenses.isNotEmpty &&
         activeMarketLicenses.length >=
             marketConfig.licenseSlotsForLevel(marketLevel);
@@ -6932,13 +7431,16 @@ class Zone0GameState extends ChangeNotifier {
             ? marketConfig.licenseCostBioBatteries +
                 marketConfig.licenseChangeCostBioBatteries
             : marketConfig.licenseCostBioBatteries;
-    if (bioBatteries < cost) return const Zone0ActionResult(success: false, message: 'Bio-batteries insuffisantes.');
+    if (bioBatteries < cost)
+      return const Zone0ActionResult(
+          success: false, message: 'Bio-batteries insuffisantes.');
     if (replacing) activeMarketLicenses.remove(activeMarketLicenses.first);
     bioBatteries -= cost;
     activeMarketLicenses.add(category);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return Zone0ActionResult(success: true, message: 'Licence $category active.');
+    return Zone0ActionResult(
+        success: true, message: 'Licence $category active.');
   }
 
   void _generateMerchantOffers() {
@@ -7329,6 +7831,11 @@ class Zone0GameState extends ChangeNotifier {
       startsAt: current,
       intensity: GlobalWeatherIntensity.calm,
     )..status = GlobalWeatherEventStatus.active;
+    // Les anciennes sauvegardes n'ont pas de Viabilité : marquer l'événement
+    // transitoire sans dégâts évite d'appliquer rétroactivement la météo.
+    for (final state in buildingViabilities.values) {
+      state.lastDamageEventId ??= activeGlobalWeatherEvent!.id;
+    }
     nextGlobalWeatherEvent ??= _newGlobalWeatherEvent(
       startsAt: activeGlobalWeatherEvent!.endsAt,
     );
@@ -7338,6 +7845,7 @@ class Zone0GameState extends ChangeNotifier {
       final promoted = nextGlobalWeatherEvent!;
       promoted.status = GlobalWeatherEventStatus.active;
       activeGlobalWeatherEvent = promoted;
+      _applyWeatherViabilityDamage(promoted);
       _notifyGlobalWeatherStarted(promoted);
       nextGlobalWeatherEvent = _newGlobalWeatherEvent(
         startsAt: promoted.endsAt,
@@ -7356,9 +7864,8 @@ class Zone0GameState extends ChangeNotifier {
 
   void _migrateGlobalWeatherIfNeeded(DateTime now) {
     if (activeGlobalWeatherEvent != null) return;
-    final legacy = weatherAlerts
-        .where((alert) => alert.endsAt.isAfter(now))
-        .firstOrNull;
+    final legacy =
+        weatherAlerts.where((alert) => alert.endsAt.isAfter(now)).firstOrNull;
     if (legacy == null) return;
     activeGlobalWeatherEvent = _newGlobalWeatherEvent(
       startsAt: legacy.startsAt,
@@ -7386,18 +7893,20 @@ class Zone0GameState extends ChangeNotifier {
         (selectedIntensity == GlobalWeatherIntensity.calm
             ? TowerWeatherType.calm
             : _weightedWeatherConfig().type);
-    final eventEndsAt = endsAt ??
-        startsAt.add(Duration(minutes: settings.cycleMinutes));
+    final eventEndsAt =
+        endsAt ?? startsAt.add(Duration(minutes: settings.cycleMinutes));
     return GlobalWeatherEvent(
       id: id ?? 'global-weather-${startsAt.microsecondsSinceEpoch}',
       type: selectedType,
       intensity: selectedIntensity,
       plannedAt: startsAt,
-      announcedAt: startsAt.subtract(Duration(minutes: settings.forecastMinutes)),
+      announcedAt:
+          startsAt.subtract(Duration(minutes: settings.forecastMinutes)),
       startsAt: startsAt,
       endsAt: eventEndsAt,
       status: status,
-      affectedBiomes: _globalWeatherBiomeImpacts(selectedType, selectedIntensity),
+      affectedBiomes:
+          _globalWeatherBiomeImpacts(selectedType, selectedIntensity),
       seed: _random.nextInt(1 << 31),
     );
   }
@@ -7413,8 +7922,8 @@ class Zone0GameState extends ChangeNotifier {
       return globalWeatherConsecutiveSevereEvents <
           settings.allowConsecutiveSevereEvents + 1;
     }).toList();
-    final total = choices.fold<int>(0, (sum, item) =>
-        sum + math.max(0, settings.intensities[item]!.weight));
+    final total = choices.fold<int>(0,
+        (sum, item) => sum + math.max(0, settings.intensities[item]!.weight));
     if (total <= 0) return GlobalWeatherIntensity.calm;
     var roll = _random.nextInt(total);
     for (final item in choices) {
@@ -7440,13 +7949,21 @@ class Zone0GameState extends ChangeNotifier {
       final sensitivity = settings.biomeSensitivities[biome.name]?[type];
       return sensitivity != null && !sensitivity.immune;
     }).toList()
-      ..sort((a, b) =>
-          (settings.biomeSensitivities[b.name]?[type]?.chancePercent ?? 0)
-              .compareTo(settings.biomeSensitivities[a.name]?[type]?.chancePercent ?? 0));
+      ..sort((a, b) => (settings
+                  .biomeSensitivities[b.name]?[type]?.chancePercent ??
+              0)
+          .compareTo(
+              settings.biomeSensitivities[a.name]?[type]?.chancePercent ?? 0));
     final count = math.min(
       eligible.length,
-      math.max(requested.minimumAffectedBiomes,
-          requested.minimumAffectedBiomes + _random.nextInt(math.max(1, requested.maximumAffectedBiomes - requested.minimumAffectedBiomes + 1))),
+      math.max(
+          requested.minimumAffectedBiomes,
+          requested.minimumAffectedBiomes +
+              _random.nextInt(math.max(
+                  1,
+                  requested.maximumAffectedBiomes -
+                      requested.minimumAffectedBiomes +
+                      1))),
     );
     final affected = eligible.take(count).toSet();
     return <GlobalWeatherBiomeImpact>[
@@ -7457,7 +7974,9 @@ class Zone0GameState extends ChangeNotifier {
           final multiplier = sensitivity?.impactMultiplier ?? 0;
           final level = multiplier >= 1.25
               ? 'high'
-              : multiplier <= 0.75 ? 'low' : 'medium';
+              : multiplier <= 0.75
+                  ? 'low'
+                  : 'medium';
           return GlobalWeatherBiomeImpact(
             biome: biome,
             isAffected: active,
@@ -7495,31 +8014,36 @@ class Zone0GameState extends ChangeNotifier {
       return;
     }
     reports.add(PtipoteMissionReport.system(
-      message: '${_weatherTypeLabel(event.type)} ${_weatherIntensityLabel(event.intensity)} active.',
+      message:
+          '${_weatherTypeLabel(event.type)} ${_weatherIntensityLabel(event.intensity)} active.',
       sourceBuildingId: 'securityTower',
       mailbox: Zone0MessageMailbox.companions,
       subject: 'Météo active',
       concerned: 'Zone 0',
-      summary: 'Biomes touchés : ${event.affectedBiomes.where((item) => item.isAffected).map((item) => lisiereForageConfig.biomes[item.biome]!.label).join(', ')}. Consulte la Tour.',
+      summary:
+          'Biomes touchés : ${event.affectedBiomes.where((item) => item.isAffected).map((item) => lisiereForageConfig.biomes[item.biome]!.label).join(', ')}. Consulte la Tour.',
     ));
     globalWeatherConsecutiveAdverseEvents += 1;
-    globalWeatherConsecutiveSevereEvents = event.intensity == GlobalWeatherIntensity.severe
-        ? globalWeatherConsecutiveSevereEvents + 1 : 0;
+    globalWeatherConsecutiveSevereEvents =
+        event.intensity == GlobalWeatherIntensity.severe
+            ? globalWeatherConsecutiveSevereEvents + 1
+            : 0;
   }
 
   String _weatherTypeLabel(TowerWeatherType type) => switch (type) {
-    TowerWeatherType.calm => 'Temps calme',
-    TowerWeatherType.toxicCloud => 'Nuage toxique',
-    TowerWeatherType.heatWave => 'Forte chaleur',
-    TowerWeatherType.heavyRain => 'Pluie intense',
-  };
+        TowerWeatherType.calm => 'Temps calme',
+        TowerWeatherType.toxicCloud => 'Nuage toxique',
+        TowerWeatherType.heatWave => 'Forte chaleur',
+        TowerWeatherType.heavyRain => 'Pluie intense',
+      };
 
-  String _weatherIntensityLabel(GlobalWeatherIntensity intensity) => switch (intensity) {
-    GlobalWeatherIntensity.calm => 'Calme',
-    GlobalWeatherIntensity.moderate => 'Modérée',
-    GlobalWeatherIntensity.strong => 'Forte',
-    GlobalWeatherIntensity.severe => 'Sévère',
-  };
+  String _weatherIntensityLabel(GlobalWeatherIntensity intensity) =>
+      switch (intensity) {
+        GlobalWeatherIntensity.calm => 'Calme',
+        GlobalWeatherIntensity.moderate => 'Modérée',
+        GlobalWeatherIntensity.strong => 'Forte',
+        GlobalWeatherIntensity.severe => 'Sévère',
+      };
 
   Zone0ActionResult triggerManualWeatherAlert(TowerWeatherType type) {
     if (!isSecurityTowerBuilt) {
@@ -7545,6 +8069,7 @@ class Zone0GameState extends ChangeNotifier {
       status: GlobalWeatherEventStatus.active,
       id: 'manual-global-${current.microsecondsSinceEpoch}',
     );
+    _applyWeatherViabilityDamage(activeGlobalWeatherEvent!);
     nextGlobalWeatherEvent = _newGlobalWeatherEvent(
       startsAt: activeGlobalWeatherEvent!.endsAt,
     );
@@ -7628,9 +8153,10 @@ class Zone0GameState extends ChangeNotifier {
       id: 'weather-${now.microsecondsSinceEpoch}',
       type: config.type,
       startsAt: startsAt ?? now.add(Duration(minutes: config.warningMinutes)),
-      endsAt: endsAt ?? now.add(
-        Duration(minutes: config.warningMinutes + config.durationMinutes),
-      ),
+      endsAt: endsAt ??
+          now.add(
+            Duration(minutes: config.warningMinutes + config.durationMinutes),
+          ),
       manual: manual,
       globalWeatherEventId: globalWeatherEventId,
       requestedItem: requestedItem,
@@ -8936,11 +9462,10 @@ class Zone0GameState extends ChangeNotifier {
         'workshopOrders':
             workshopOrders.map((order) => order.toFirebase()).toList(),
         'market': <String, dynamic>{
-          'stock': marketStock
-              .map((item) => item.toFirebase())
-              .toList(),
+          'stock': marketStock.map((item) => item.toFirebase()).toList(),
           'requests': marketRequests.map((item) => item.toFirebase()).toList(),
-          'requestLog': marketRequestLog.map((item) => item.toFirebase()).toList(),
+          'requestLog':
+              marketRequestLog.map((item) => item.toFirebase()).toList(),
           'nextSaleAt': marketNextSaleAt == null
               ? null
               : Timestamp.fromDate(marketNextSaleAt!),
@@ -8958,7 +9483,8 @@ class Zone0GameState extends ChangeNotifier {
           'firstFreeShopClaimed': firstFreeShopClaimed,
           'activeLicenses': activeMarketLicenses.toList(),
           'shops': marketShops.map((item) => item.toFirebase()).toList(),
-          'contracts': marketContracts.map((item) => item.toFirebase()).toList(),
+          'contracts':
+              marketContracts.map((item) => item.toFirebase()).toList(),
           'distributor': marketDistributor.toFirebase(),
           'merchantAvailableUntil': merchantAvailableUntil == null
               ? null
@@ -9155,6 +9681,9 @@ class Zone0GameState extends ChangeNotifier {
             'capacity': housingCapacity,
             'thanks': communityConstructionThanks?.toFirebase(),
           },
+          'viability': buildingViabilities.map(
+            (key, value) => MapEntry(key, value.toFirebase()),
+          ),
           'projects': constructionProjects.map(
             (key, value) => MapEntry(key, value.toFirebase()),
           ),
@@ -9416,7 +9945,8 @@ class MarketDistributorState {
   final List<Zone0InventoryStack> stock = <Zone0InventoryStack>[];
 
   bool get isOperational => isBuilt && !isBroken && repairEndsAt == null;
-  bool accepts(String resource) => resource == 'Organique' || resource == 'Minéral';
+  bool accepts(String resource) =>
+      resource == 'Organique' || resource == 'Minéral';
 
   factory MarketDistributorState.fromFirebase(Map<dynamic, dynamic> data) {
     final result = MarketDistributorState()
@@ -9424,19 +9954,24 @@ class MarketDistributorState {
       ..level = Zone0GameState.instance._readInt(data['level'])
       ..energy = Zone0GameState.instance._readInt(data['energy'])
       ..isBroken = data['isBroken'] == true
-      ..lastEnergyTickAt = Zone0GameState.instance._readDate(data['lastEnergyTickAt'])
-      ..constructionStartedAt = Zone0GameState.instance._readDate(data['constructionStartedAt'])
-      ..constructionEndsAt = Zone0GameState.instance._readDate(data['constructionEndsAt'])
+      ..lastEnergyTickAt =
+          Zone0GameState.instance._readDate(data['lastEnergyTickAt'])
+      ..constructionStartedAt =
+          Zone0GameState.instance._readDate(data['constructionStartedAt'])
+      ..constructionEndsAt =
+          Zone0GameState.instance._readDate(data['constructionEndsAt'])
       ..repairEndsAt = Zone0GameState.instance._readDate(data['repairEndsAt']);
     final deposits = data['constructionDeposits'];
     if (deposits is Map) {
       for (final entry in deposits.entries) {
-        result.constructionDeposits['${entry.key}'] = Zone0GameState.instance._readInt(entry.value);
+        result.constructionDeposits['${entry.key}'] =
+            Zone0GameState.instance._readInt(entry.value);
       }
     }
-    result.stock.addAll((data['stock'] as List? ?? const <dynamic>[]).whereType<Map>().map(
-      (item) => Zone0InventoryStack.fromFirebase(item),
-    ));
+    result.stock.addAll(
+        (data['stock'] as List? ?? const <dynamic>[]).whereType<Map>().map(
+              (item) => Zone0InventoryStack.fromFirebase(item),
+            ));
     return result;
   }
 
@@ -9445,10 +9980,17 @@ class MarketDistributorState {
         'level': level,
         'energy': energy,
         'isBroken': isBroken,
-        'lastEnergyTickAt': lastEnergyTickAt == null ? null : Timestamp.fromDate(lastEnergyTickAt!),
-        'constructionStartedAt': constructionStartedAt == null ? null : Timestamp.fromDate(constructionStartedAt!),
-        'constructionEndsAt': constructionEndsAt == null ? null : Timestamp.fromDate(constructionEndsAt!),
-        'repairEndsAt': repairEndsAt == null ? null : Timestamp.fromDate(repairEndsAt!),
+        'lastEnergyTickAt': lastEnergyTickAt == null
+            ? null
+            : Timestamp.fromDate(lastEnergyTickAt!),
+        'constructionStartedAt': constructionStartedAt == null
+            ? null
+            : Timestamp.fromDate(constructionStartedAt!),
+        'constructionEndsAt': constructionEndsAt == null
+            ? null
+            : Timestamp.fromDate(constructionEndsAt!),
+        'repairEndsAt':
+            repairEndsAt == null ? null : Timestamp.fromDate(repairEndsAt!),
         'constructionDeposits': constructionDeposits,
         'stock': stock.map((item) => item.toFirebase()).toList(),
       };
@@ -9460,10 +10002,15 @@ class MarketShop {
   final String specialization;
   final int level;
   factory MarketShop.fromFirebase(Map<dynamic, dynamic> data) => MarketShop(
-    id: '${data['id'] ?? ''}', specialization: '${data['specialization'] ?? 'general'}',
-    level: Zone0GameState.instance._readInt(data['level'], fallback: 1),
-  );
-  Map<String, dynamic> toFirebase() => <String, dynamic>{'id': id, 'specialization': specialization, 'level': level};
+        id: '${data['id'] ?? ''}',
+        specialization: '${data['specialization'] ?? 'general'}',
+        level: Zone0GameState.instance._readInt(data['level'], fallback: 1),
+      );
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'specialization': specialization,
+        'level': level
+      };
 }
 
 class MarketSourcierContract {
@@ -9497,33 +10044,53 @@ class MarketSourcierContract {
   DateTime? deliveredAt;
   final String? assignedLicense;
   final bool autoDeliverAllowed;
-  factory MarketSourcierContract.fromFirebase(Map<dynamic, dynamic> data) => MarketSourcierContract(
-    contractId: '${data['contractId'] ?? ''}',
-    marketLevelRequired: Zone0GameState.instance._readInt(data['marketLevelRequired'], fallback: 1),
-    category: '${data['category'] ?? 'materials'}',
-    requestedItems: (data['requestedItems'] as Map? ?? const <dynamic, dynamic>{}).map(
-      (key, value) => MapEntry('$key', Zone0GameState.instance._readInt(value)),
-    ),
-    rewardBioBatteries: Zone0GameState.instance._readInt(data['rewardBioBatteries']),
-    confidenceReward: Zone0GameState.instance._readInt(data['confidenceReward']),
-    confidencePenalty: Zone0GameState.instance._readInt(data['confidencePenalty']),
-    offeredAt: Zone0GameState.instance._readDate(data['offeredAt']) ?? DateTime.now(),
-    expiresAt: Zone0GameState.instance._readDate(data['expiresAt']) ?? DateTime.now(),
-    status: ForageMission._enumByName(MarketContractStatus.values, '${data['status'] ?? ''}', MarketContractStatus.offered),
-    acceptedAt: Zone0GameState.instance._readDate(data['acceptedAt']),
-    deliveredAt: Zone0GameState.instance._readDate(data['deliveredAt']),
-    assignedLicense: data['assignedLicense'] as String?,
-    autoDeliverAllowed: data['autoDeliverAllowed'] != false,
-  );
+  factory MarketSourcierContract.fromFirebase(Map<dynamic, dynamic> data) =>
+      MarketSourcierContract(
+        contractId: '${data['contractId'] ?? ''}',
+        marketLevelRequired: Zone0GameState.instance
+            ._readInt(data['marketLevelRequired'], fallback: 1),
+        category: '${data['category'] ?? 'materials'}',
+        requestedItems:
+            (data['requestedItems'] as Map? ?? const <dynamic, dynamic>{}).map(
+          (key, value) =>
+              MapEntry('$key', Zone0GameState.instance._readInt(value)),
+        ),
+        rewardBioBatteries:
+            Zone0GameState.instance._readInt(data['rewardBioBatteries']),
+        confidenceReward:
+            Zone0GameState.instance._readInt(data['confidenceReward']),
+        confidencePenalty:
+            Zone0GameState.instance._readInt(data['confidencePenalty']),
+        offeredAt: Zone0GameState.instance._readDate(data['offeredAt']) ??
+            DateTime.now(),
+        expiresAt: Zone0GameState.instance._readDate(data['expiresAt']) ??
+            DateTime.now(),
+        status: ForageMission._enumByName(MarketContractStatus.values,
+            '${data['status'] ?? ''}', MarketContractStatus.offered),
+        acceptedAt: Zone0GameState.instance._readDate(data['acceptedAt']),
+        deliveredAt: Zone0GameState.instance._readDate(data['deliveredAt']),
+        assignedLicense: data['assignedLicense'] as String?,
+        autoDeliverAllowed: data['autoDeliverAllowed'] != false,
+      );
   Map<String, dynamic> toFirebase() => <String, dynamic>{
-    'contractId': contractId, 'source': 'sourcier', 'marketLevelRequired': marketLevelRequired,
-    'category': category, 'requestedItems': requestedItems, 'rewardBioBatteries': rewardBioBatteries,
-    'confidenceReward': confidenceReward, 'confidencePenalty': confidencePenalty,
-    'offeredAt': Timestamp.fromDate(offeredAt), 'acceptedAt': acceptedAt == null ? null : Timestamp.fromDate(acceptedAt!),
-    'expiresAt': Timestamp.fromDate(expiresAt), 'status': status.name,
-    'assignedLicense': assignedLicense, 'autoDeliverAllowed': autoDeliverAllowed,
-    'deliveredAt': deliveredAt == null ? null : Timestamp.fromDate(deliveredAt!),
-  };
+        'contractId': contractId,
+        'source': 'sourcier',
+        'marketLevelRequired': marketLevelRequired,
+        'category': category,
+        'requestedItems': requestedItems,
+        'rewardBioBatteries': rewardBioBatteries,
+        'confidenceReward': confidenceReward,
+        'confidencePenalty': confidencePenalty,
+        'offeredAt': Timestamp.fromDate(offeredAt),
+        'acceptedAt':
+            acceptedAt == null ? null : Timestamp.fromDate(acceptedAt!),
+        'expiresAt': Timestamp.fromDate(expiresAt),
+        'status': status.name,
+        'assignedLicense': assignedLicense,
+        'autoDeliverAllowed': autoDeliverAllowed,
+        'deliveredAt':
+            deliveredAt == null ? null : Timestamp.fromDate(deliveredAt!),
+      };
 }
 
 class MarketCustomerRequest {
@@ -9581,7 +10148,10 @@ class MarketCustomerRequest {
   final String? customerName;
   final DateTime distributorEligibleAt;
 
-  bool get isOpen => status == MarketRequestStatus.noted || status == MarketRequestStatus.ready || status == MarketRequestStatus.waitingCustomer;
+  bool get isOpen =>
+      status == MarketRequestStatus.noted ||
+      status == MarketRequestStatus.ready ||
+      status == MarketRequestStatus.waitingCustomer;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'id': id,
@@ -9624,14 +10194,19 @@ class MarketRequestLogEntry {
   factory MarketRequestLogEntry.fromFirebase(Map<dynamic, dynamic> data) =>
       MarketRequestLogEntry(
         requestId: '${data['requestId'] ?? ''}',
-        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ?? DateTime.now(),
-        deadline: Zone0GameState.instance._readDate(data['deadline']) ?? DateTime.now(),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        deadline: Zone0GameState.instance._readDate(data['deadline']) ??
+            DateTime.now(),
         requestedItemId: '${data['requestedItemId'] ?? ''}',
-        requestedQuantity: Zone0GameState.instance._readInt(data['requestedQuantity']),
+        requestedQuantity:
+            Zone0GameState.instance._readInt(data['requestedQuantity']),
         customerName: data['customerName'] as String?,
-        status: ForageMission._enumByName(MarketRequestStatus.values, '${data['status'] ?? ''}', MarketRequestStatus.noted),
+        status: ForageMission._enumByName(MarketRequestStatus.values,
+            '${data['status'] ?? ''}', MarketRequestStatus.noted),
         resolvedAt: Zone0GameState.instance._readDate(data['resolvedAt']),
-        rewardBioBatteries: Zone0GameState.instance._readInt(data['rewardBioBatteries']),
+        rewardBioBatteries:
+            Zone0GameState.instance._readInt(data['rewardBioBatteries']),
       );
 
   final String requestId;
@@ -9652,7 +10227,8 @@ class MarketRequestLogEntry {
         'requestedQuantity': requestedQuantity,
         'customerName': customerName,
         'status': status.name,
-        'resolvedAt': resolvedAt == null ? null : Timestamp.fromDate(resolvedAt!),
+        'resolvedAt':
+            resolvedAt == null ? null : Timestamp.fromDate(resolvedAt!),
         'rewardBioBatteries': rewardBioBatteries,
       };
 }
@@ -9947,6 +10523,108 @@ class ConstructionProject {
         'completedAt':
             completedAt == null ? null : Timestamp.fromDate(completedAt!),
         'notificationCreated': notificationCreated,
+      };
+}
+
+enum StructuralProtectionType { ventilationTermite, chloroCanaux, filtration }
+
+class BuildingViabilityState {
+  BuildingViabilityState({
+    required this.buildingId,
+    required this.current,
+    required this.maximum,
+    this.lastViabilityUpdateAt,
+    this.lastDamageEventId,
+    this.viabilityWarningShown = false,
+    this.restartRequired = false,
+    List<StructuralProtectionType>? installedStructuralProtections,
+  }) : installedStructuralProtections =
+            installedStructuralProtections ?? <StructuralProtectionType>[];
+
+  factory BuildingViabilityState.fresh(
+    String buildingId, {
+    required int maximum,
+    required int initial,
+  }) =>
+      BuildingViabilityState(
+        buildingId: buildingId,
+        current: initial.clamp(0, maximum),
+        maximum: maximum,
+      );
+
+  factory BuildingViabilityState.fromFirebase(Map<dynamic, dynamic> data) {
+    final maximum = Zone0GameState.instance
+        ._readInt(
+          data['maxViability'],
+          fallback: 100,
+        )
+        .clamp(1, 1000);
+    return BuildingViabilityState(
+      buildingId: '${data['buildingId'] ?? ''}',
+      current: Zone0GameState.instance
+          ._readInt(
+            data['currentViability'],
+            fallback: maximum,
+          )
+          .clamp(0, maximum),
+      maximum: maximum,
+      lastViabilityUpdateAt: Zone0GameState.instance._readDate(
+        data['lastViabilityUpdateAt'],
+      ),
+      lastDamageEventId: data['lastDamageEventId'] as String?,
+      viabilityWarningShown: data['viabilityWarningShown'] == true,
+      restartRequired: data['restartRequired'] == true,
+      installedStructuralProtections:
+          (data['installedStructuralProtections'] as List? ?? const [])
+              .map(
+                (value) => ForageMission._enumByName(
+                  StructuralProtectionType.values,
+                  '$value',
+                  StructuralProtectionType.ventilationTermite,
+                ),
+              )
+              .toList(),
+    );
+  }
+
+  final String buildingId;
+  int current;
+  int maximum;
+  DateTime? lastViabilityUpdateAt;
+  String? lastDamageEventId;
+  bool viabilityWarningShown;
+  bool restartRequired;
+  final List<StructuralProtectionType> installedStructuralProtections;
+
+  bool get isDisabled => current <= 0 || restartRequired;
+  bool isDegraded(int threshold) => !isDisabled && current < threshold;
+
+  void restoreToMinimum(int amount) {
+    current = amount.clamp(1, maximum);
+    restartRequired = false;
+    viabilityWarningShown = current < maximum;
+    lastViabilityUpdateAt = DateTime.now();
+  }
+
+  void restore(int amount) {
+    current = (current + amount).clamp(0, maximum);
+    if (current > 0) restartRequired = false;
+    lastViabilityUpdateAt = DateTime.now();
+  }
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'buildingId': buildingId,
+        'currentViability': current,
+        'maxViability': maximum,
+        'lastViabilityUpdateAt': lastViabilityUpdateAt == null
+            ? null
+            : Timestamp.fromDate(lastViabilityUpdateAt!),
+        'lastDamageEventId': lastDamageEventId,
+        'isDisabledByViability': isDisabled,
+        'viabilityWarningShown': viabilityWarningShown,
+        'restartRequired': restartRequired,
+        'installedStructuralProtections':
+            installedStructuralProtections.map((item) => item.name).toList(),
       };
 }
 
@@ -10882,7 +11560,11 @@ class GlobalWeatherEvent {
   String? preparationMissionId;
 
   bool isBiomeAffected(ForageBiome biome) =>
-      affectedBiomes.where((item) => item.biome == biome).firstOrNull?.isAffected ?? false;
+      affectedBiomes
+          .where((item) => item.biome == biome)
+          .firstOrNull
+          ?.isAffected ??
+      false;
   GlobalWeatherBiomeImpact impactFor(ForageBiome biome) =>
       affectedBiomes.where((item) => item.biome == biome).firstOrNull ??
       GlobalWeatherBiomeImpact(biome: biome, isAffected: false);
@@ -10890,14 +11572,24 @@ class GlobalWeatherEvent {
   factory GlobalWeatherEvent.fromFirebase(Map<dynamic, dynamic> data) =>
       GlobalWeatherEvent(
         id: '${data['id'] ?? ''}',
-        type: ForageMission._enumByName(TowerWeatherType.values, '${data['type'] ?? ''}', TowerWeatherType.calm),
-        intensity: ForageMission._enumByName(GlobalWeatherIntensity.values, '${data['intensity'] ?? ''}', GlobalWeatherIntensity.calm),
-        plannedAt: Zone0GameState.instance._readDate(data['plannedAt']) ?? DateTime.now(),
-        announcedAt: Zone0GameState.instance._readDate(data['announcedAt']) ?? DateTime.now(),
-        startsAt: Zone0GameState.instance._readDate(data['startsAt']) ?? DateTime.now(),
-        endsAt: Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
-        status: ForageMission._enumByName(GlobalWeatherEventStatus.values, '${data['status'] ?? ''}', GlobalWeatherEventStatus.planned),
-        affectedBiomes: (data['affectedBiomes'] as List? ?? const <dynamic>[]).whereType<Map>().map(GlobalWeatherBiomeImpact.fromFirebase).toList(),
+        type: ForageMission._enumByName(TowerWeatherType.values,
+            '${data['type'] ?? ''}', TowerWeatherType.calm),
+        intensity: ForageMission._enumByName(GlobalWeatherIntensity.values,
+            '${data['intensity'] ?? ''}', GlobalWeatherIntensity.calm),
+        plannedAt: Zone0GameState.instance._readDate(data['plannedAt']) ??
+            DateTime.now(),
+        announcedAt: Zone0GameState.instance._readDate(data['announcedAt']) ??
+            DateTime.now(),
+        startsAt: Zone0GameState.instance._readDate(data['startsAt']) ??
+            DateTime.now(),
+        endsAt:
+            Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
+        status: ForageMission._enumByName(GlobalWeatherEventStatus.values,
+            '${data['status'] ?? ''}', GlobalWeatherEventStatus.planned),
+        affectedBiomes: (data['affectedBiomes'] as List? ?? const <dynamic>[])
+            .whereType<Map>()
+            .map(GlobalWeatherBiomeImpact.fromFirebase)
+            .toList(),
         seed: Zone0GameState.instance._readInt(data['seed']),
         consequencesResolved: data['consequencesResolved'] == true,
         preparationMissionId: data['preparationMissionId'] as String?,
@@ -10912,7 +11604,8 @@ class GlobalWeatherEvent {
         'startsAt': Timestamp.fromDate(startsAt),
         'endsAt': Timestamp.fromDate(endsAt),
         'status': status.name,
-        'affectedBiomes': affectedBiomes.map((item) => item.toFirebase()).toList(),
+        'affectedBiomes':
+            affectedBiomes.map((item) => item.toFirebase()).toList(),
         'seed': seed,
         'consequencesResolved': consequencesResolved,
         'preparationMissionId': preparationMissionId,

@@ -1393,6 +1393,7 @@ function renderTowerEditor() {
   const operations = zone0Settings.towerOperations || {};
   const {
     weatherEvents = [],
+    buildingViability = {},
     manualWeatherTriggerId: _manualWeatherTriggerId,
     manualWeatherTriggerType: _manualWeatherTriggerType,
     ...operationsWithoutWeather
@@ -1404,6 +1405,7 @@ function renderTowerEditor() {
   el.securityTowerConfigList.innerHTML = [
     configCard("Tour de sécurité", "tower", zone0Settings.tower, [], { open: true, meta: "Construction, emplacements et sécurité" }),
     configCard("Rondes, exploration et météo", "towerOperations", operationsWithoutWeather, [], { meta: "Sécurité locale, marchand et calendrier météo" }),
+    configCard("Viabilité des bâtiments", "towerOperations", buildingViability, ["buildingViability"], { open: true, meta: "Dégâts météo, mode dégradé, réparation et protections structurelles" }),
     ...weatherEvents.map((weather, index) => configCard(
       weather.label || `Intempérie ${index + 1}`,
       "towerOperations",

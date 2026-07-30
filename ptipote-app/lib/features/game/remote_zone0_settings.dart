@@ -1290,6 +1290,10 @@ TowerOperationsConfig _towerOperations(Object? value) {
     raw['globalWeather'],
     base.globalWeather,
   );
+  final buildingViability = _buildingViability(
+    raw['buildingViability'],
+    base.buildingViability,
+  );
   return TowerOperationsConfig(
     biomeRevealSecurityThreshold: _int(
       raw['biomeRevealSecurityThreshold'],
@@ -1379,6 +1383,7 @@ TowerOperationsConfig _towerOperations(Object? value) {
         .where((type) => type.name == raw['manualWeatherTriggerType'])
         .firstOrNull,
     globalWeather: globalWeather,
+    buildingViability: buildingViability,
     wellbeingBands: List<SecurityWellbeingBand>.generate(
       base.wellbeingBands.length,
       (index) {
@@ -1433,6 +1438,54 @@ TowerOperationsConfig _towerOperations(Object? value) {
   );
 }
 
+BuildingViabilityConfig _buildingViability(
+  Object? value,
+  BuildingViabilityConfig base,
+) {
+  final raw = _map(value);
+  if (raw == null) return base;
+  final damage = _map(raw['damageByWeatherAndIntensity']);
+  return BuildingViabilityConfig(
+    maximumViability: _int(raw['maximumViability'], base.maximumViability),
+    initialViability: _int(raw['initialViability'], base.initialViability),
+    degradedThreshold: _int(raw['degradedThreshold'], base.degradedThreshold),
+    restartViability: _int(raw['restartViability'], base.restartViability),
+    degradedCraftTimePercent:
+        _int(raw['degradedCraftTimePercent'], base.degradedCraftTimePercent),
+    degradedCraftCostPercent:
+        _int(raw['degradedCraftCostPercent'], base.degradedCraftCostPercent),
+    degradedProductionPercent:
+        _int(raw['degradedProductionPercent'], base.degradedProductionPercent),
+    repairGain: _int(raw['repairGain'], base.repairGain),
+    repairOrganicCost: _int(raw['repairOrganicCost'], base.repairOrganicCost),
+    repairMineralCost: _int(raw['repairMineralCost'], base.repairMineralCost),
+    restartOrganicCost:
+        _int(raw['restartOrganicCost'], base.restartOrganicCost),
+    restartMineralCost:
+        _int(raw['restartMineralCost'], base.restartMineralCost),
+    restartBioBatteryCost:
+        _int(raw['restartBioBatteryCost'], base.restartBioBatteryCost),
+    slotsPerLevel: _int(raw['slotsPerLevel'], base.slotsPerLevel),
+    protectionCapPercent:
+        _int(raw['protectionCapPercent'], base.protectionCapPercent),
+    protectionReductionPercents: (raw['protectionReductionPercents'] as List? ??
+            base.protectionReductionPercents)
+        .map((entry) => _int(entry, 0))
+        .toList(),
+    damageByWeatherAndIntensity: <TowerWeatherType,
+        Map<GlobalWeatherIntensity, int>>{
+      for (final type in TowerWeatherType.values)
+        type: <GlobalWeatherIntensity, int>{
+          for (final intensity in GlobalWeatherIntensity.values)
+            intensity: _int(
+              _map(damage?[type.name])?[intensity.name],
+              base.damageFor(type, intensity),
+            ),
+        },
+    },
+  );
+}
+
 GlobalWeatherConfig _globalWeather(Object? value, GlobalWeatherConfig base) {
   final raw = _map(value);
   if (raw == null) return base;
@@ -1441,13 +1494,19 @@ GlobalWeatherConfig _globalWeather(Object? value, GlobalWeatherConfig base) {
   return GlobalWeatherConfig(
     cycleMinutes: _int(raw['cycleMinutes'], base.cycleMinutes),
     forecastMinutes: _int(raw['forecastMinutes'], base.forecastMinutes),
-    maximumConsecutiveAdverseEvents: _int(raw['maximumConsecutiveAdverseEvents'], base.maximumConsecutiveAdverseEvents),
-    allowConsecutiveSevereEvents: _int(raw['allowConsecutiveSevereEvents'], base.allowConsecutiveSevereEvents),
-    forcedCalmChancePercent: _int(raw['forcedCalmChancePercent'], base.forcedCalmChancePercent),
-    maximumPTibugMalusPercent: _int(raw['maximumPTibugMalusPercent'], base.maximumPTibugMalusPercent),
+    maximumConsecutiveAdverseEvents: _int(
+        raw['maximumConsecutiveAdverseEvents'],
+        base.maximumConsecutiveAdverseEvents),
+    allowConsecutiveSevereEvents: _int(
+        raw['allowConsecutiveSevereEvents'], base.allowConsecutiveSevereEvents),
+    forcedCalmChancePercent:
+        _int(raw['forcedCalmChancePercent'], base.forcedCalmChancePercent),
+    maximumPTibugMalusPercent:
+        _int(raw['maximumPTibugMalusPercent'], base.maximumPTibugMalusPercent),
     localImpactMultipliers: <String, double>{
       for (final entry in base.localImpactMultipliers.entries)
-        entry.key: _double(_map(raw['localImpactMultipliers'])?[entry.key], entry.value),
+        entry.key: _double(
+            _map(raw['localImpactMultipliers'])?[entry.key], entry.value),
     },
     intensities: <GlobalWeatherIntensity, GlobalWeatherIntensityConfig>{
       for (final intensity in GlobalWeatherIntensity.values)
@@ -1456,23 +1515,32 @@ GlobalWeatherConfig _globalWeather(Object? value, GlobalWeatherConfig base) {
           final item = _map(intensities?[intensity.name]);
           return GlobalWeatherIntensityConfig(
             weight: _int(item?['weight'], fallback.weight),
-            ptibugMalusPercent: _int(item?['ptibugMalusPercent'], fallback.ptibugMalusPercent),
-            minimumAffectedBiomes: _int(item?['minimumAffectedBiomes'], fallback.minimumAffectedBiomes),
-            maximumAffectedBiomes: _int(item?['maximumAffectedBiomes'], fallback.maximumAffectedBiomes),
+            ptibugMalusPercent:
+                _int(item?['ptibugMalusPercent'], fallback.ptibugMalusPercent),
+            minimumAffectedBiomes: _int(
+                item?['minimumAffectedBiomes'], fallback.minimumAffectedBiomes),
+            maximumAffectedBiomes: _int(
+                item?['maximumAffectedBiomes'], fallback.maximumAffectedBiomes),
           );
         }(),
     },
-    biomeSensitivities: <String, Map<TowerWeatherType, GlobalWeatherBiomeSensitivity>>{
+    biomeSensitivities: <String,
+        Map<TowerWeatherType, GlobalWeatherBiomeSensitivity>>{
       for (final biomeEntry in base.biomeSensitivities.entries)
         biomeEntry.key: <TowerWeatherType, GlobalWeatherBiomeSensitivity>{
           for (final typeEntry in biomeEntry.value.entries)
             typeEntry.key: () {
               final fallback = typeEntry.value;
-              final item = _map(_map(sensitivities?[biomeEntry.key])?[typeEntry.key.name]);
+              final item = _map(
+                  _map(sensitivities?[biomeEntry.key])?[typeEntry.key.name]);
               return GlobalWeatherBiomeSensitivity(
-                chancePercent: _int(item?['chancePercent'], fallback.chancePercent),
-                impactMultiplier: _double(item?['impactMultiplier'], fallback.impactMultiplier),
-                immune: item?['immune'] is bool ? item!['immune'] as bool : fallback.immune,
+                chancePercent:
+                    _int(item?['chancePercent'], fallback.chancePercent),
+                impactMultiplier: _double(
+                    item?['impactMultiplier'], fallback.impactMultiplier),
+                immune: item?['immune'] is bool
+                    ? item!['immune'] as bool
+                    : fallback.immune,
                 reason: _string(item?['reason'], fallback.reason),
               );
             }(),
@@ -1726,7 +1794,8 @@ MarketConfig _market(Object? value) {
       b.distributorDailyEnergyByLevel,
     ),
     distributorSlotsByLevel: _levelMap(
-      raw['distributorSlotsByLevel'], b.distributorSlotsByLevel,
+      raw['distributorSlotsByLevel'],
+      b.distributorSlotsByLevel,
     ),
     distributorBreakDenominatorByLevel: _levelMap(
       raw['distributorBreakDenominatorByLevel'],
@@ -1737,13 +1806,16 @@ MarketConfig _market(Object? value) {
       b.distributorRepairMinutesByLevel,
     ),
     distributorRepairCost: _resourceMap(
-      raw['distributorRepairCost'], b.distributorRepairCost,
+      raw['distributorRepairCost'],
+      b.distributorRepairCost,
     ),
     confidenceSuccessGain: _int(
-      raw['confidenceSuccessGain'], b.confidenceSuccessGain,
+      raw['confidenceSuccessGain'],
+      b.confidenceSuccessGain,
     ),
     confidenceFailurePenalty: _int(
-      raw['confidenceFailurePenalty'], b.confidenceFailurePenalty,
+      raw['confidenceFailurePenalty'],
+      b.confidenceFailurePenalty,
     ),
     confidenceMaxPaymentBonusPercent: _double(
       raw['confidenceMaxPaymentBonusPercent'],
@@ -1751,29 +1823,36 @@ MarketConfig _market(Object? value) {
     ),
     maxActiveLicenses: _int(raw['maxActiveLicenses'], b.maxActiveLicenses),
     licenseCostBioBatteries: _int(
-      raw['licenseCostBioBatteries'], b.licenseCostBioBatteries,
+      raw['licenseCostBioBatteries'],
+      b.licenseCostBioBatteries,
     ),
     licenseChangeCostBioBatteries: _int(
-      raw['licenseChangeCostBioBatteries'], b.licenseChangeCostBioBatteries,
+      raw['licenseChangeCostBioBatteries'],
+      b.licenseChangeCostBioBatteries,
     ),
     licenseDirectedRatioPercent: _int(
-      raw['licenseDirectedRatioPercent'], b.licenseDirectedRatioPercent,
+      raw['licenseDirectedRatioPercent'],
+      b.licenseDirectedRatioPercent,
     ),
     shopSlots: _int(raw['shopSlots'], b.shopSlots),
     maxConstructibleShops: _int(
-      raw['maxConstructibleShops'], b.maxConstructibleShops,
+      raw['maxConstructibleShops'],
+      b.maxConstructibleShops,
     ),
     firstShopFree: raw['firstShopFree'] is bool
         ? raw['firstShopFree'] as bool
         : b.firstShopFree,
     residentsPerHourlyRequest: _int(
-      raw['residentsPerHourlyRequest'], b.residentsPerHourlyRequest,
+      raw['residentsPerHourlyRequest'],
+      b.residentsPerHourlyRequest,
     ),
     requestJitterMinPercent: _int(
-      raw['requestJitterMinPercent'], b.requestJitterMinPercent,
+      raw['requestJitterMinPercent'],
+      b.requestJitterMinPercent,
     ),
     requestJitterMaxPercent: _int(
-      raw['requestJitterMaxPercent'], b.requestJitterMaxPercent,
+      raw['requestJitterMaxPercent'],
+      b.requestJitterMaxPercent,
     ),
     distributorResponseDelayMinutes: _int(
       raw['distributorResponseDelayMinutes'],
