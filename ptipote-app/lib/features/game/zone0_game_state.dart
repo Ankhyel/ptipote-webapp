@@ -190,6 +190,7 @@ class Zone0GameState extends ChangeNotifier {
       <String, CommunityProjectProgress>{};
   final Set<String> resolvedWeatherStockLossEventIds = <String>{};
   WeatherStockIncident? lastWeatherStockIncident;
+  int protectedBatteryChestLevel = 0;
   CommunityConstructionThanks? communityConstructionThanks;
   int plaineNurseryLevel = 0;
   PTibugCreationOrder? pTibugCreationOrder;
@@ -1012,10 +1013,46 @@ class Zone0GameState extends ChangeNotifier {
           communityThanksWellbeingBonus)
       .clamp(0, 100);
 
+  int get protectedBatteryChestCapacity =>
+      campHeartConfig.communityProjects.protectedBatteryCapacity +
+      protectedBatteryChestLevel *
+          campHeartConfig.communityProjects.protectedBatteryCapacityPerUpgrade;
+
+  int? get protectedBatteryChestNextUpgradeCost {
+    final config = campHeartConfig.communityProjects;
+    if (protectedBatteryChestLevel >= config.protectedBatteryUpgradeMaxLevel) {
+      return null;
+    }
+    final costs = config.protectedBatteryUpgradeMineralCosts;
+    return costs.isEmpty
+        ? 30
+        : costs[math.min(protectedBatteryChestLevel, costs.length - 1)];
+  }
+
+  Zone0ActionResult upgradeProtectedBatteryChest() {
+    final cost = protectedBatteryChestNextUpgradeCost;
+    if (cost == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Coffre au niveau maximal.');
+    }
+    if (resourceAmount('Minéral') < cost ||
+        removeResource('Minéral', cost) <= 0) {
+      return Zone0ActionResult(
+          success: false, message: '$cost Minéral requis.');
+    }
+    protectedBatteryChestLevel += 1;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            'Coffre amélioré : $protectedBatteryChestCapacity Bio-batteries protégées.');
+  }
+
   int get protectedBioBatteryCount => math
       .min(
         bioBatteries,
-        campHeartConfig.communityProjects.protectedBatteryCapacity,
+        protectedBatteryChestCapacity,
       )
       .toInt();
   int get exposedBioBatteryCount =>
@@ -7166,6 +7203,12 @@ class Zone0GameState extends ChangeNotifier {
             houseData['alcoveCapacity'],
             fallback: alcoveCapacity,
           ).clamp(1, 8);
+          protectedBatteryChestLevel = _readInt(
+            houseData['protectedBatteryChestLevel'],
+          ).clamp(
+              0,
+              campHeartConfig
+                  .communityProjects.protectedBatteryUpgradeMaxLevel);
         }
         final housingData = buildingsData['housing'];
         if (housingData is Map) {
@@ -10108,6 +10151,7 @@ class Zone0GameState extends ChangeNotifier {
             'currentLevel': houseLevel,
             'maxLevel': housingConfig.houseMaxLevel,
             'alcoveCapacity': alcoveCapacity,
+            'protectedBatteryChestLevel': protectedBatteryChestLevel,
             'isVisible': true,
           },
           'housing': <String, dynamic>{

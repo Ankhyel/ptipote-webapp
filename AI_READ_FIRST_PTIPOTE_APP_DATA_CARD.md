@@ -1583,6 +1583,13 @@ Le Dashboard expose `towerOperations.buildingViability` : seuils, dégâts par m
 - La consommation de Vigueur/Biomasse des missions est maintenant exprimée par heure de mission : le coût d’intensité et de type est multiplié par les heures théoriques, puis pondéré une seule fois par l’avancement réel à la résolution. L’estimation avant départ utilise la même durée et le même calcul.
 - La carte de niveau du Marché masque « Prochaine vente : stock vide » lorsqu’aucune vente n’est planifiée.
 
+### Installations et coffre de la Maison
+
+- Les installations structurelles utilisent les objets déjà fabriqués dans l’inventaire global : Ventilation Termite, Chloro-canaux et Installation filtrante. Dans les améliorations, elles sont choisies depuis des emplacements visuels « + » ; toucher un emplacement vide affiche uniquement les installations réellement disponibles en stock, puis l’objet est consommé et le bonus est appliqué. Toucher une installation posée la retire et la restitue à l’inventaire, sans duplication.
+- La carte de Viabilité, incluant les emplacements d’installation, est présente dans les améliorations du Fablab, de la Maison et de la Nurserie ; les cartes de Refuge réutilisent le même composant et la même sauvegarde `buildings.viability`.
+- Le coffre de la Maison ne crée pas une seconde monnaie : il protège une partie du même total HUD de Bio-batteries. Sa capacité est de 50 au niveau 0, puis augmente de 20 par amélioration, jusqu’à quatre améliorations. Les coûts par défaut sont 30, 35, 40 et 50 Minéral ; ils sont configurables dans `campHeart.communityProjects`. Le niveau est sauvegardé dans `buildings.house.protectedBatteryChestLevel`.
+- L’icône coffre de la Maison ouvre le détail protégées/exposées et l’amélioration. Le tableau P’TIPOTES affiche également ce raccourci, ainsi que l’activité actuelle (mission, ronde, craft, repos), faim, sommeil, énergie et l’accès au renommage existant.
+
 # Habitants et maisons météo V1
 
 La couche sociale reste volontairement minimale. `Zone0Resident` conserve une identité stable, un nom, une maison éventuelle, un bonheur de base et des modificateurs temporaires ; `ResidentHouse` garde sa capacité, ses habitants, sa Viabilité, ses protections et le dernier événement météo résolu. Les deux listes sont persistées dans `users/{uid}/game/zone0.buildings.housing`.

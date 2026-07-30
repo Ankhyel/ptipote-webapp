@@ -8,6 +8,9 @@
     "residentContributionCapEnabled": false,
     "residentContributionCap": 0,
     "protectedBatteryCapacity": 50,
+    "protectedBatteryCapacityPerUpgrade": 20,
+    "protectedBatteryUpgradeMaxLevel": 4,
+    "protectedBatteryUpgradeMineralCosts": [30, 35, 40, 50],
     "stockLossPercentByIntensity": {"moderate": 5, "strong": 10, "severe": 20},
     "projects": [
       {"id":"solarReflector","label":"Réflecteur solaire","weatherType":"heatWave","tier":1,"requiredCoreLevel":1,"prerequisiteId":null,"materialCosts":{"Organique":20,"Minéral":10},"requiredContributionPoints":100,"globalProtectionPercent":10,"description":"Réduit les dégâts de Forte chaleur."},

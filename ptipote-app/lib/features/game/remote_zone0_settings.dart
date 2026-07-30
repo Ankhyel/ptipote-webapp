@@ -1032,6 +1032,20 @@ CommunityProjectsConfig _communityProjects(Object? value) {
     projects: definitions,
     protectedBatteryCapacity: _int(
         raw['protectedBatteryCapacity'], fallback.protectedBatteryCapacity),
+    protectedBatteryCapacityPerUpgrade: _int(
+      raw['protectedBatteryCapacityPerUpgrade'],
+      fallback.protectedBatteryCapacityPerUpgrade,
+    ),
+    protectedBatteryUpgradeMaxLevel: _int(
+      raw['protectedBatteryUpgradeMaxLevel'],
+      fallback.protectedBatteryUpgradeMaxLevel,
+    ),
+    protectedBatteryUpgradeMineralCosts:
+        raw['protectedBatteryUpgradeMineralCosts'] is List
+            ? (raw['protectedBatteryUpgradeMineralCosts'] as List)
+                .map((value) => _int(value, 0))
+                .toList()
+            : fallback.protectedBatteryUpgradeMineralCosts,
     stockLossPercentByIntensity: <String, int>{
       for (final entry in fallback.stockLossPercentByIntensity.entries)
         entry.key: _int(stockLoss?[entry.key], entry.value),

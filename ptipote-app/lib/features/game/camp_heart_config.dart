@@ -35,6 +35,9 @@ class CommunityProjectsConfig {
       required this.residentContributionCap,
       required this.projects,
       required this.protectedBatteryCapacity,
+      required this.protectedBatteryCapacityPerUpgrade,
+      required this.protectedBatteryUpgradeMaxLevel,
+      required this.protectedBatteryUpgradeMineralCosts,
       required this.stockLossPercentByIntensity});
   final int choicesPerCoreLevel;
   final int maximumActiveProjects;
@@ -45,6 +48,9 @@ class CommunityProjectsConfig {
   final int residentContributionCap;
   final List<CommunityProjectDefinition> projects;
   final int protectedBatteryCapacity;
+  final int protectedBatteryCapacityPerUpgrade;
+  final int protectedBatteryUpgradeMaxLevel;
+  final List<int> protectedBatteryUpgradeMineralCosts;
   final Map<String, int> stockLossPercentByIntensity;
 }
 
@@ -106,6 +112,9 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
     residentContributionCapEnabled: false,
     residentContributionCap: 0,
     protectedBatteryCapacity: 50,
+    protectedBatteryCapacityPerUpgrade: 20,
+    protectedBatteryUpgradeMaxLevel: 4,
+    protectedBatteryUpgradeMineralCosts: <int>[30, 35, 40, 50],
     stockLossPercentByIntensity: <String, int>{
       'moderate': 5,
       'strong': 10,

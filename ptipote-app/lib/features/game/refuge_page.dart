@@ -1855,6 +1855,7 @@ class _MaisonPageState extends State<_MaisonPage>
                                 onInventory: _openInventory,
                                 onMessages: _openMessages,
                                 onDashboard: _openPtipoteDashboard,
+                                onBatteryChest: _openBatteryChest,
                               ),
                             ],
                           );
@@ -1921,17 +1922,29 @@ class _MaisonPageState extends State<_MaisonPage>
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 10),
-                ...figurines.map(
-                  (figurine) => ListTile(
-                    leading: const Icon(Icons.pets_outlined),
-                    title: Text(figurine.displayName),
-                    subtitle: Text(_ptipoteActivityLabel(figurine)),
-                    trailing: Text(
-                      _ptipoteActivityCountdown(figurine),
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                ),
+                _BatteryChestDashboardCard(
+                    gameState: _gameState, onOpen: _openBatteryChest),
+                const SizedBox(height: 10),
+                ...figurines.map((figurine) => ListTile(
+                      leading: const Icon(Icons.pets_outlined),
+                      title: Text(figurine.displayName),
+                      subtitle: Text(
+                          '${_ptipoteActivityLabel(figurine)}\nFaim ${_gameState.hungerFor(figurine)} · Sommeil ${_gameState.restFor(figurine)} · Énergie ${_gameState.vitalityFor(figurine)}'),
+                      isThreeLine: true,
+                      trailing: Wrap(
+                          spacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: <Widget>[
+                            Text(_ptipoteActivityCountdown(figurine),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800)),
+                            IconButton(
+                                icon: const Icon(Icons.edit_outlined),
+                                tooltip: 'Renommer',
+                                onPressed: () =>
+                                    _renameFromDashboard(figurine)),
+                          ]),
+                    )),
               ],
             ),
           );
@@ -1939,6 +1952,43 @@ class _MaisonPageState extends State<_MaisonPage>
       ),
     );
   }
+
+  Future<void> _renameFromDashboard(PtipoteFigurine figurine) async {
+    final controller = TextEditingController(text: figurine.displayName);
+    final value = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: Text('Renommer ${figurine.displayName}'),
+              content: TextField(
+                  controller: controller, autofocus: true, maxLength: 24),
+              actions: <Widget>[
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Annuler')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, controller.text),
+                    child: const Text('Enregistrer'))
+              ],
+            ));
+    if (!mounted || value == null || value.trim().isEmpty) return;
+    try {
+      await _figurineService.renameMyFigurine(
+          figurine: figurine, nickname: value);
+    } catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
+
+  void _openBatteryChest() => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+            child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: _BatteryChestDashboardCard(gameState: _gameState))),
+      );
 
   String _ptipoteActivityLabel(PtipoteFigurine figurine) {
     final tower = _gameState.towerMissions
@@ -2382,6 +2432,8 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
                 'Niveau ${state.houseLevel} · ${state.alcoveCapacity} alcoves actives',
               ),
               const SizedBox(height: 12),
+              _BuildingViabilityCard(gameState: state, buildingId: 'house'),
+              const SizedBox(height: 12),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -2725,18 +2777,67 @@ class _NotificationBadge extends StatelessWidget {
   }
 }
 
+class _BatteryChestDashboardCard extends StatelessWidget {
+  const _BatteryChestDashboardCard({required this.gameState, this.onOpen});
+  final Zone0GameState gameState;
+  final VoidCallback? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final nextCost = gameState.protectedBatteryChestNextUpgradeCost;
+    return Card(
+        child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Row(children: <Widget>[
+                    Icon(Icons.lock_outline),
+                    SizedBox(width: 8),
+                    Text('Coffre à Bio-batteries',
+                        style: TextStyle(fontWeight: FontWeight.w900))
+                  ]),
+                  const SizedBox(height: 6),
+                  Text(
+                      'Protégées : ${gameState.protectedBioBatteryCount}/${gameState.protectedBatteryChestCapacity} · Exposées : ${gameState.exposedBioBatteryCount} · Total : ${gameState.bioBatteries}'),
+                  Text(
+                      'Niveau ${gameState.protectedBatteryChestLevel}/${campHeartConfig.communityProjects.protectedBatteryUpgradeMaxLevel} · +${campHeartConfig.communityProjects.protectedBatteryCapacityPerUpgrade} par amélioration.'),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, children: <Widget>[
+                    if (onOpen != null)
+                      OutlinedButton(
+                          onPressed: onOpen,
+                          child: const Text('Ouvrir le coffre')),
+                    FilledButton(
+                        onPressed: nextCost == null
+                            ? null
+                            : () => ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(gameState
+                                        .upgradeProtectedBatteryChest()
+                                        .message))),
+                        child: Text(nextCost == null
+                            ? 'Niveau maximal'
+                            : 'Améliorer ($nextCost Minéral)')),
+                  ]),
+                ])));
+  }
+}
+
 class _MaisonUtilityButtons extends StatelessWidget {
   const _MaisonUtilityButtons({
     required this.unreadCount,
     required this.onInventory,
     required this.onMessages,
     required this.onDashboard,
+    required this.onBatteryChest,
   });
 
   final int unreadCount;
   final VoidCallback onInventory;
   final VoidCallback onMessages;
   final VoidCallback onDashboard;
+  final VoidCallback onBatteryChest;
 
   @override
   Widget build(BuildContext context) {
@@ -2756,6 +2857,12 @@ class _MaisonUtilityButtons extends StatelessWidget {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              _RoundUtilityButton(
+                icon: Icons.lock_outline,
+                tooltip: 'Coffre à Bio-batteries',
+                onTap: onBatteryChest,
+              ),
+              const SizedBox(height: 10),
               _RoundUtilityButton(
                 icon: Icons.inventory_2_outlined,
                 tooltip: 'Inventaire',
@@ -5956,32 +6063,11 @@ class _BuildingViabilityCard extends StatelessWidget {
             const SizedBox(height: 8),
             const Text(
                 'Chaque niveau du bâtiment ouvre un emplacement. Les réductions de dégâts sont plafonnées à 70 %.'),
-            for (final type in StructuralProtectionType.values)
-              ListTile(
-                title: Text(switch (type) {
-                  StructuralProtectionType.ventilationTermite =>
-                    'Ventilation Termite',
-                  StructuralProtectionType.chloroCanaux => 'Chloro-canaux',
-                  StructuralProtectionType.filtration =>
-                    'Installation filtrante'
-                }),
-                subtitle: Text(switch (type) {
-                  StructuralProtectionType.ventilationTermite =>
-                    'Réduit les dégâts de Forte chaleur.',
-                  StructuralProtectionType.chloroCanaux =>
-                    'Réduit les dégâts de Pluie intense.',
-                  StructuralProtectionType.filtration =>
-                    'Réduit les dégâts de Nuage toxique.'
-                }),
-                trailing: FilledButton(
-                  onPressed: () => _showMessage(
-                      context,
-                      gameState
-                          .installStructuralProtection(buildingId, type)
-                          .message),
-                  child: const Text('Installer'),
-                ),
-              ),
+            _StructuralInstallationSlots(
+              gameState: gameState,
+              buildingId: buildingId,
+              onMessage: (message) => _showMessage(context, message),
+            ),
           ],
         ),
       );
@@ -5989,6 +6075,89 @@ class _BuildingViabilityCard extends StatelessWidget {
   void _showMessage(BuildContext context, String message) =>
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
+}
+
+class _StructuralInstallationSlots extends StatelessWidget {
+  const _StructuralInstallationSlots(
+      {required this.gameState,
+      required this.buildingId,
+      required this.onMessage});
+  final Zone0GameState gameState;
+  final String buildingId;
+  final ValueChanged<String> onMessage;
+
+  String _label(StructuralProtectionType type) => switch (type) {
+        StructuralProtectionType.ventilationTermite => 'Ventilation Termite',
+        StructuralProtectionType.chloroCanaux => 'Chloro-canaux',
+        StructuralProtectionType.filtration => 'Installation filtrante',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final state = gameState.viabilityForBuilding(buildingId);
+    final slots = gameState.structuralProtectionSlotsFor(buildingId);
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 1.25,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10),
+      itemCount: slots,
+      itemBuilder: (context, index) {
+        final installed = index < state.installedStructuralProtections.length
+            ? state.installedStructuralProtections[index]
+            : null;
+        return InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () async {
+            if (installed != null) {
+              onMessage(gameState
+                  .removeStructuralProtection(buildingId, installed)
+                  .message);
+              return;
+            }
+            final type = await showModalBottomSheet<StructuralProtectionType>(
+              context: context,
+              showDragHandle: true,
+              builder: (context) => SafeArea(
+                  child: ListView(
+                      shrinkWrap: true,
+                      children: StructuralProtectionType.values
+                          .map((type) => ListTile(
+                                enabled:
+                                    gameState.resourceAmount(_label(type)) > 0,
+                                title: Text(_label(type)),
+                                subtitle: Text(
+                                    'Stock : ${gameState.resourceAmount(_label(type))}'),
+                                trailing: const Icon(Icons.add_circle_outline),
+                                onTap: () => Navigator.pop(context, type),
+                              ))
+                          .toList())),
+            );
+            if (type != null)
+              onMessage(gameState
+                  .installStructuralProtection(buildingId, type)
+                  .message);
+          },
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+                border: Border.all(color: Theme.of(context).dividerColor),
+                borderRadius: BorderRadius.circular(14)),
+            child: Center(
+                child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(installed == null ? '+' : _label(installed),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: installed == null ? 30 : 13)))),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _PTibugTerritoryStockSummary extends StatelessWidget {
@@ -7159,7 +7328,7 @@ class _CommunityProjectsCard extends StatelessWidget {
               leading: const Icon(Icons.lock_outline),
               title: const Text('Coffre à Bio-batteries'),
               subtitle: Text(
-                  '${gameState.protectedBioBatteryCount}/${config.protectedBatteryCapacity} protégées · ${gameState.exposedBioBatteryCount} exposée(s). Total HUD inchangé : ${gameState.bioBatteries}.'),
+                  '${gameState.protectedBioBatteryCount}/${gameState.protectedBatteryChestCapacity} protégées · ${gameState.exposedBioBatteryCount} exposée(s). Total HUD inchangé : ${gameState.bioBatteries}.'),
             ),
             if (incident != null)
               Text(
@@ -10644,7 +10813,16 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
-            child: _moduleCapacityUpgradeCard(),
+            child: Column(
+              children: <Widget>[
+                _moduleCapacityUpgradeCard(),
+                const SizedBox(height: 10),
+                _BuildingViabilityCard(
+                  gameState: widget.gameState,
+                  buildingId: Zone0GameState.plaineNurseryTerritoryId,
+                ),
+              ],
+            ),
           ),
           Expanded(
             child: _BuildingUpgradeTab(
