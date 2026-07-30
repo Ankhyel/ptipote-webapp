@@ -36,7 +36,7 @@
   },
   "progression": {
     "maximumLevel": 6,
-    "xpRequiredByLevel": {"1": 10, "2": 20, "3": 30, "4": 40, "5": 50},
+    "xpRequiredByLevel": {"1": 100, "2": 200, "3": 300, "4": 400, "5": 500},
     "yieldBonusPerLevel": 0.1,
     "baseEnergyPerDay": 3,
     "energyReductionPerLevel": 1,

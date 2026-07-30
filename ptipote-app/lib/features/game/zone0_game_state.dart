@@ -195,6 +195,7 @@ class Zone0GameState extends ChangeNotifier {
   int generatorTotalProduced = 0;
   DateTime? generatorCycleStartedAt;
   DateTime? marketNextSaleAt;
+  DateTime? marketNextRequestAt;
   DateTime? marketLastWorkTickAt;
   DateTime? lastManualTowerRechargeAt;
   DateTime? merchantAvailableUntil;
@@ -2187,6 +2188,19 @@ class Zone0GameState extends ChangeNotifier {
     if (!isMarketBuilt) return false;
     final current = now ?? DateTime.now();
     var changed = _resolveMerchantSchedule(current);
+    marketNextRequestAt ??= current.add(
+      marketConfig.residentRequestInterval(currentPopulation, _random),
+    );
+    var requestGuard = 0;
+    while (marketNextRequestAt != null &&
+        !current.isBefore(marketNextRequestAt!) &&
+        requestGuard++ < 48) {
+      _createMarketRequest(marketNextRequestAt!);
+      marketNextRequestAt = marketNextRequestAt!.add(
+        marketConfig.residentRequestInterval(currentPopulation, _random),
+      );
+      changed = true;
+    }
     final historyCutoff = current.subtract(const Duration(hours: 24));
     final beforeRequests = marketRequests.length;
     marketRequests.removeWhere((request) =>
@@ -2234,14 +2248,6 @@ class Zone0GameState extends ChangeNotifier {
         bioBatteries += earned;
         marketBioBatteriesEarned += earned;
         marketValueRemainder %= marketConfig.valuePerBioBattery;
-      }
-      if (marketAssignedPtipoteId != null &&
-          _random.nextDouble() < marketConfig.requestChance &&
-          marketRequests
-                  .where((item) => item.status != MarketRequestStatus.completed)
-                  .length <
-              marketConfig.maxRequestsForLevel(marketLevel)) {
-        _createMarketRequest(current);
       }
       marketNextSaleAt = marketStock.isEmpty
           ? null
@@ -2296,6 +2302,9 @@ class Zone0GameState extends ChangeNotifier {
         rewardWellbeing: 1,
         createdAt: now,
         customerReturnTime: now.add(_randomMarketReturnDelay()),
+        distributorEligibleAt: now.add(
+          Duration(minutes: marketConfig.distributorResponseDelayMinutes),
+        ),
         status: MarketRequestStatus.noted,
       );
     marketRequests.add(request);
@@ -2453,6 +2462,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (marketDistributor.energy <= 0) return changed;
     for (final request in marketRequests.where((item) => item.isOpen).toList()) {
+      if (current.isBefore(request.distributorEligibleAt)) continue;
       final stack = marketDistributor.stock.where((item) => item.resource == request.requestedItemId).firstOrNull;
       if (stack == null || stack.amount < request.requestedQuantity) continue;
       stack.amount -= request.requestedQuantity;
@@ -4649,6 +4659,29 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  Map<String, double> pTibugDailyConsumptionFor(PTibug bug) {
+    final territory = pTibugConfig.territory;
+    double perDay(int amount, int everyHours) =>
+        amount * 24 / math.max(1, everyHours);
+    final organic = perDay(territory.organicAmount, territory.organicEveryHours) *
+        pTibugConfig.weather.multiplierForPenalty(
+          _pTibugEffectFor(bug, 'Réduction Organique %'),
+        );
+    final mineral = perDay(territory.mineralAmount, territory.mineralEveryHours);
+    final energy = pTibugConfig.progression.baseEnergyPerDayForLevel(bug.level) *
+            pTibugConfig.weather.multiplierForPenalty(
+              _pTibugEffectFor(bug, 'Réduction énergie %'),
+            ) +
+        ((bug.equippedModules.isNotEmpty || bug.equippedModuleInstanceIds.isNotEmpty)
+            ? perDay(territory.moduleEnergyAmount, territory.moduleEnergyEveryHours)
+            : 0);
+    return <String, double>{
+      'Organique': organic,
+      'Minéral': mineral,
+      'Énergie': energy,
+    };
+  }
+
   int get pTibugActiveSlots => pTibugConfig.slotsForLevel(plaineNurseryLevel);
 
   List<PTibugModuleCraftOrder> get activePTibugModuleCraftOrders =>
@@ -5760,6 +5793,7 @@ class Zone0GameState extends ChangeNotifier {
               .whereType<Map>()
               .map(MarketRequestLogEntry.fromFirebase));
         marketNextSaleAt = _readDate(marketData['nextSaleAt']);
+        marketNextRequestAt = _readDate(marketData['nextRequestAt']);
         marketLastWorkTickAt = _readDate(marketData['lastWorkTickAt']);
         marketAssignedPtipoteId = marketData['assignedPtipoteId'] as String?;
         marketAssignedPtipoteName =
@@ -6801,9 +6835,13 @@ class Zone0GameState extends ChangeNotifier {
         item.status == MarketContractStatus.offered ||
         item.status == MarketContractStatus.accepted);
     if (openOffers.isNotEmpty || marketLevel < 1) return;
-    final category = activeMarketLicenses.isEmpty
-        ? 'materials'
-        : activeMarketLicenses.elementAt(_random.nextInt(activeMarketLicenses.length));
+    final useLicense = activeMarketLicenses.isNotEmpty &&
+        _random.nextInt(100) < marketConfig.licenseDirectedRatioPercent;
+    final category = useLicense
+        ? activeMarketLicenses.elementAt(
+            _random.nextInt(activeMarketLicenses.length),
+          )
+        : 'materials';
     final item = category == 'atelier' && marketLevel >= 2
         ? 'Filtre'
         : category == 'structure' && marketLevel >= 3
@@ -6839,12 +6877,23 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult setMarketLicense(String category) {
+    if (marketConfig.licenseSlotsForLevel(marketLevel) <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Licences disponibles à partir du Marché niveau 2.',
+      );
+    }
     const categories = <String>{'materials', 'atelier', 'structure', 'ptibug'};
     if (!categories.contains(category)) return const Zone0ActionResult(success: false, message: 'Licence inconnue.');
-    final replacing = activeMarketLicenses.isNotEmpty && activeMarketLicenses.length >= marketConfig.maxActiveLicenses;
+    final replacing = activeMarketLicenses.isNotEmpty &&
+        activeMarketLicenses.length >=
+            marketConfig.licenseSlotsForLevel(marketLevel);
     final cost = activeMarketLicenses.contains(category)
         ? 0
-        : replacing ? marketConfig.licenseChangeCostBioBatteries : marketConfig.licenseCostBioBatteries;
+        : replacing
+            ? marketConfig.licenseCostBioBatteries +
+                marketConfig.licenseChangeCostBioBatteries
+            : marketConfig.licenseCostBioBatteries;
     if (bioBatteries < cost) return const Zone0ActionResult(success: false, message: 'Bio-batteries insuffisantes.');
     if (replacing) activeMarketLicenses.remove(activeMarketLicenses.first);
     bioBatteries -= cost;
@@ -8542,6 +8591,7 @@ class Zone0GameState extends ChangeNotifier {
     required int rest,
     required String moodLabel,
   }) {
+    final fatigue = math.max(0, ptipoteStatsConfig.maxRest - rest);
     final notes = <String>[];
     if (vitality <= ptipoteStatsConfig.minVitalityBeforeAutoRest) {
       notes.add(
@@ -8556,7 +8606,7 @@ class Zone0GameState extends ChangeNotifier {
       notes.add('$figurineName aimerait manger.');
     }
     notes.add(
-      'Énergie : $vitality/${ptipoteStatsConfig.maxVitality} · faim : $hunger/${ptipoteStatsConfig.baseHunger} · sommeil : $rest/${ptipoteStatsConfig.maxRest} · bonheur : $moodLabel.',
+      'Énergie : $vitality/${ptipoteStatsConfig.maxVitality} · faim : $hunger/${ptipoteStatsConfig.baseHunger} · fatigue : $fatigue/${ptipoteStatsConfig.maxRest} · repos : $rest/${ptipoteStatsConfig.maxRest} · bonheur : $moodLabel.',
     );
     return notes.join(' ');
   }
@@ -8652,6 +8702,9 @@ class Zone0GameState extends ChangeNotifier {
           'nextSaleAt': marketNextSaleAt == null
               ? null
               : Timestamp.fromDate(marketNextSaleAt!),
+          'nextRequestAt': marketNextRequestAt == null
+              ? null
+              : Timestamp.fromDate(marketNextRequestAt!),
           'lastWorkTickAt': marketLastWorkTickAt == null
               ? null
               : Timestamp.fromDate(marketLastWorkTickAt!),
@@ -9236,8 +9289,9 @@ class MarketCustomerRequest {
     required this.createdAt,
     required this.customerReturnTime,
     required this.status,
+    DateTime? distributorEligibleAt,
     this.customerName,
-  });
+  }) : distributorEligibleAt = distributorEligibleAt ?? createdAt;
 
   factory MarketCustomerRequest.fromFirebase(
     Map<dynamic, dynamic> data,
@@ -9264,6 +9318,9 @@ class MarketCustomerRequest {
           MarketRequestStatus.noted,
         ),
         customerName: data['customerName'] as String?,
+        distributorEligibleAt: Zone0GameState.instance._readDate(
+          data['distributorEligibleAt'],
+        ),
       );
 
   final String id;
@@ -9275,6 +9332,7 @@ class MarketCustomerRequest {
   DateTime customerReturnTime;
   MarketRequestStatus status;
   final String? customerName;
+  final DateTime distributorEligibleAt;
 
   bool get isOpen => status == MarketRequestStatus.noted || status == MarketRequestStatus.ready || status == MarketRequestStatus.waitingCustomer;
 
@@ -9288,6 +9346,7 @@ class MarketCustomerRequest {
         'customerReturnTime': Timestamp.fromDate(customerReturnTime),
         'status': status.name,
         'customerName': customerName,
+        'distributorEligibleAt': Timestamp.fromDate(distributorEligibleAt),
       };
 }
 

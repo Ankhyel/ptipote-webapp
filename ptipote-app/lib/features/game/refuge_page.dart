@@ -5976,7 +5976,9 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
   Future<void> _showDetails(BuildContext context) => showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
-        builder: (_) => SafeArea(
+        builder: (_) {
+          final consumption = gameState.pTibugDailyConsumptionFor(bug);
+          return SafeArea(
             child: Padding(
           padding: const EdgeInsets.all(18),
           child: Column(
@@ -5994,13 +5996,20 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                     'Production : ${gameState.pTibugProductionFor(bug).entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
                 Text(
                     'Stock matériel : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
+                const SizedBox(height: 8),
+                const Text('Consommation réelle sur 24 h',
+                    style: TextStyle(fontWeight: FontWeight.w900)),
+                Text('Organique : ${consumption['Organique']!.toStringAsFixed(1)}'),
+                Text('Minéral : ${consumption['Minéral']!.toStringAsFixed(1)}'),
+                Text('Énergie : ${consumption['Énergie']!.toStringAsFixed(1)}'),
                 if (_hasSmartSensor(bug))
                   Text(
                       'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
                 Text(
                     'État : ${bug.inactiveReason ?? (bug.assignedBuildingId == null ? 'Inactif' : 'Actif')}'),
               ]),
-        )),
+        ));
+        },
       );
 
   void _message(BuildContext context, String message) =>
@@ -9036,6 +9045,19 @@ class _MarketPageState extends State<MarketPage> {
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 6),
+                        Text('Confiance : ${widget.gameState.sourcierConfidence}/100'),
+                        const SizedBox(height: 4),
+                        LinearProgressIndicator(
+                          value: widget.gameState.sourcierConfidence / 100,
+                        ),
+                        if (widget.gameState.marketLevel >= 2) ...<Widget>[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _showSourcierLicenses,
+                            icon: const Icon(Icons.workspace_premium_outlined),
+                            label: Text('Licences commerciales (${widget.gameState.activeMarketLicenses.length}/${marketConfig.licenseSlotsForLevel(widget.gameState.marketLevel)})'),
+                          ),
+                        ],
                         if (!widget.gameState.isMerchantAvailable) ...<Widget>[
                           Text(
                             _merchantArrivalLabel(widget.gameState),
@@ -9239,6 +9261,9 @@ class _MarketPageState extends State<MarketPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                _sourcierContractsSection(),
+                if (widget.gameState.marketContracts.isNotEmpty)
+                  const SizedBox(height: 10),
                 if (widget.gameState.marketLevel >= 2)
                   Card(
                     child: Padding(
@@ -9294,19 +9319,6 @@ class _MarketPageState extends State<MarketPage> {
                       ),
                     ),
                   ),
-                if (widget.gameState.marketContracts.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 10),
-                  const Text('Contrats du Sourcier', style: TextStyle(fontWeight: FontWeight.w900)),
-                  ...widget.gameState.marketContracts.where((contract) => contract.status == MarketContractStatus.offered || contract.status == MarketContractStatus.accepted).map((contract) => Card(
-                    child: ListTile(
-                      title: Text(contract.requestedItems.entries.map((entry) => '${entry.value} ${entry.key}').join(', ')),
-                      subtitle: Text('Confiance ${widget.gameState.sourcierConfidence}/100 · paiement ${contract.rewardBioBatteries} à ${(widget.gameState.sourcierConfidencePaymentMultiplier * 100).round()} %'),
-                      trailing: contract.status == MarketContractStatus.offered
-                          ? FilledButton(onPressed: () => _message(widget.gameState.acceptMarketContract(contract).message), child: const Text('Accepter'))
-                          : FilledButton(onPressed: () => _message(widget.gameState.deliverMarketContract(contract).message), child: const Text('Livrer')),
-                    ),
-                  )),
-                ],
                 Text(
                   'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
                   style: const TextStyle(fontWeight: FontWeight.w900),
@@ -9329,37 +9341,6 @@ class _MarketPageState extends State<MarketPage> {
                         onTap: () => _editMarketSlot(stack),
                       );
                     },
-                  ),
-                ),
-                const Divider(),
-                const Text(
-                  'Demandes des habitants',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-                if (widget.gameState.marketAssignedPtipoteId == null)
-                  const Text(
-                    'Un P’TIPOTE doit être présent pour noter et livrer les demandes.',
-                  ),
-                ...widget.gameState.marketRequests.map(
-                  (request) => ListTile(
-                    title: Text(
-                      '${request.requestedQuantity} ${request.requestedItemId}',
-                    ),
-                    subtitle: Text(
-                      request.status == MarketRequestStatus.completed
-                          ? 'Livrée'
-                          : request.status == MarketRequestStatus.expired
-                              ? 'Demande expirée sans pénalité'
-                              : 'Temps restant : ${request.customerReturnTime.difference(DateTime.now()).inMinutes.clamp(0, 999)} min',
-                    ),
-                    trailing: request.isOpen
-                        ? FilledButton(
-                            onPressed: widget.gameState.marketStockAmount(request.requestedItemId) >= request.requestedQuantity
-                                ? () => _message(widget.gameState.sellMarketRequest(request).message)
-                                : null,
-                            child: const Text('Vendre'),
-                          )
-                        : Text('+${request.rewardBioBattery} 🔋'),
                   ),
                 ),
                 ],
@@ -9417,6 +9398,93 @@ class _MarketPageState extends State<MarketPage> {
       ),
     );
   }
+
+  Widget _sourcierContractsSection() {
+    final contracts = widget.gameState.marketContracts
+        .where((contract) =>
+            contract.status == MarketContractStatus.offered ||
+            contract.status == MarketContractStatus.accepted)
+        .toList();
+    if (contracts.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Text('Contrats du Sourcier', style: TextStyle(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        ...contracts.map((contract) => Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  contract.requestedItems.entries
+                      .map((entry) => '${entry.value} ${entry.key}')
+                      .join(', '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text('Paiement de base : ${contract.rewardBioBatteries} bio-batterie(s)'),
+                Text('Confiance : ${widget.gameState.sourcierConfidence}/100 · paiement prévu ${(contract.rewardBioBatteries * widget.gameState.sourcierConfidencePaymentMultiplier).floor()}'),
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: contract.status == MarketContractStatus.offered
+                      ? () => _message(widget.gameState.acceptMarketContract(contract).message)
+                      : () => _message(widget.gameState.deliverMarketContract(contract).message),
+                  child: Text(contract.status == MarketContractStatus.offered ? 'Accepter' : 'Livrer'),
+                ),
+              ],
+            ),
+          ),
+        )),
+      ],
+    );
+  }
+
+  Future<void> _showSourcierLicenses() => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) {
+          final slots = marketConfig.licenseSlotsForLevel(widget.gameState.marketLevel);
+          const names = <String, String>{
+            'materials': 'Matériaux',
+            'atelier': 'Fournitures',
+            'structure': 'Meubles et structures',
+            'ptibug': 'P’TIBUG',
+          };
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+              children: <Widget>[
+                Text('Licences du Sourcier', style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 6),
+                Text('$slots slot${slots > 1 ? 's' : ''} disponible${slots > 1 ? 's' : ''} · 80 % des futurs contrats sont orientés par les licences.'),
+                const SizedBox(height: 8),
+                ...names.entries.map((entry) {
+                  final active = widget.gameState.activeMarketLicenses.contains(entry.key);
+                  final full = widget.gameState.activeMarketLicenses.length >= slots;
+                  final cost = active ? 0 : full
+                      ? marketConfig.licenseCostBioBatteries + marketConfig.licenseChangeCostBioBatteries
+                      : marketConfig.licenseCostBioBatteries;
+                  return ListTile(
+                    title: Text(entry.value),
+                    subtitle: Text(active ? 'Active' : full ? 'Remplace une licence · $cost bio-batteries' : '$cost bio-batteries'),
+                    trailing: active ? const Icon(Icons.check_circle) : const Icon(Icons.add_circle_outline),
+                    onTap: active ? null : () {
+                      final result = widget.gameState.setMarketLicense(entry.key);
+                      _message(result.message);
+                      if (result.success) Navigator.of(sheetContext).pop();
+                    },
+                  );
+                }),
+              ],
+            ),
+          );
+        },
+      );
 
   void _message(String value) => ScaffoldMessenger.of(
         context,
@@ -10938,12 +11006,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   ),
                 const Divider(height: 30),
                 const Text(
-                  'Équipement historique',
+                  'Équipements disponibles',
                   style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Les Données et Modules des anciennes sauvegardes restent utilisables.',
                 ),
                 const SizedBox(height: 8),
                 ...availableTraits.map(

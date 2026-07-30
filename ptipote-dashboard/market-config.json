@@ -36,7 +36,11 @@
   "confidenceFailurePenalty": 2,
   "confidenceMaxPaymentBonusPercent": 30,
   "maxActiveLicenses": 2,
-  "licenseCostBioBatteries": 5,
-  "licenseChangeCostBioBatteries": 3,
-  "licenseDirectedRatioPercent": 80
+  "licenseCostBioBatteries": 30,
+  "licenseChangeCostBioBatteries": 10,
+  "licenseDirectedRatioPercent": 80,
+  "residentsPerHourlyRequest": 3,
+  "requestJitterMinPercent": 10,
+  "requestJitterMaxPercent": 30,
+  "distributorResponseDelayMinutes": 1
 }

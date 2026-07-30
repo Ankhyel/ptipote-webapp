@@ -1713,6 +1713,19 @@ MarketConfig _market(Object? value) {
     firstShopFree: raw['firstShopFree'] is bool
         ? raw['firstShopFree'] as bool
         : b.firstShopFree,
+    residentsPerHourlyRequest: _int(
+      raw['residentsPerHourlyRequest'], b.residentsPerHourlyRequest,
+    ),
+    requestJitterMinPercent: _int(
+      raw['requestJitterMinPercent'], b.requestJitterMinPercent,
+    ),
+    requestJitterMaxPercent: _int(
+      raw['requestJitterMaxPercent'], b.requestJitterMaxPercent,
+    ),
+    distributorResponseDelayMinutes: _int(
+      raw['distributorResponseDelayMinutes'],
+      b.distributorResponseDelayMinutes,
+    ),
   );
 }
 

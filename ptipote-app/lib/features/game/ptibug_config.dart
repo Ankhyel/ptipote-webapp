@@ -599,7 +599,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'pollinisateur': PTibugTraitDefinition(
       id: 'pollinisateur',
       displayName: 'Pollinisateur',
-      description: 'Améliore la collecte organique.',
+      description: '+1 / +2 / +3 Organique par cycle aux niveaux I / II / III.',
       effects: <String, int>{'Organique': 1},
       gradeMultipliers: <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
@@ -634,7 +634,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'mineur': PTibugTraitDefinition(
       id: 'mineur',
       displayName: 'Mineur',
-      description: 'Améliore la collecte minérale.',
+      description: '+1 / +2 / +3 Minéral par cycle aux niveaux I / II / III.',
       effects: <String, int>{'Minéral': 1},
       gradeMultipliers: <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
@@ -667,7 +667,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'decomposeur': PTibugTraitDefinition(
       id: 'decomposeur',
       displayName: 'Décomposeur',
-      description: 'Transforme les matières en organique et mycélium.',
+      description: '+1 / +2 / +3 Organique par cycle ; chance croissante de Mycélium.',
       effects: <String, int>{'Organique': 1, 'Mycélium': 1},
       gradeMultipliers: <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
@@ -700,7 +700,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'recuperateur': PTibugTraitDefinition(
       id: 'recuperateur',
       displayName: 'Récupérateur',
-      description: 'Ramène davantage de déchets exploitables.',
+      description: '+1 / +2 / +3 Déchets exploitables par cycle.',
       effects: <String, int>{'Déchets': 1},
       gradeMultipliers: <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
@@ -734,7 +734,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       id: 'capteurIntelligent',
       displayName: 'Capteur intelligent',
       description:
-          'Veille localement sur les Cellules du biome, avec une production matérielle réduite.',
+          'Production matérielle -50 % ; 5 % / 10 % / 15 % de chance de Cellule par cycle.',
       effects: const <String, int>{'Chance Cellule': 5, 'Malus matériel %': 50},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
@@ -767,7 +767,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'filtreur': PTibugTraitDefinition(
       id: 'filtreur',
       displayName: 'Filtreur',
-      description: 'Annule le malus de production du Nuage toxique.',
+      description: 'Annule 100 % du malus de production du Nuage toxique.',
       effects: const <String, int>{'Protection Nuage toxique': 1},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
@@ -801,7 +801,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       id: 'econome',
       displayName: 'Économe',
       description:
-          'Réduit les consommations organiques et énergétiques du P’TIBUG.',
+          '-20 % Organique et -10 % Énergie par niveau, jusqu’à -60 % / -30 %.',
       effects: const <String, int>{
         'Réduction Organique %': 20,
         'Réduction énergie %': 10
@@ -837,7 +837,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'stabilisateur': PTibugTraitDefinition(
       id: 'stabilisateur',
       displayName: 'Stabilisateur',
-      description: 'Accélère la régénération de Vigueur du biome local.',
+      description: '+5 % / +10 % / +15 % de régénération de Vigueur du biome local.',
       effects: const <String, int>{'Régénération Vigueur %': 5},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
@@ -1199,7 +1199,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
   ),
   progression: const PTibugProgressionConfig(
     maximumLevel: 6,
-    xpRequiredByLevel: <int, int>{1: 10, 2: 20, 3: 30, 4: 40, 5: 50},
+    xpRequiredByLevel: <int, int>{1: 100, 2: 200, 3: 300, 4: 400, 5: 500},
     yieldBonusPerLevel: .10,
     baseEnergyPerDay: 3,
     energyReductionPerLevel: 1,

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 class MarketConfig {
   const MarketConfig({
     required this.constructionCost,
@@ -40,6 +42,10 @@ class MarketConfig {
     required this.shopSlots,
     required this.maxConstructibleShops,
     required this.firstShopFree,
+    required this.residentsPerHourlyRequest,
+    required this.requestJitterMinPercent,
+    required this.requestJitterMaxPercent,
+    required this.distributorResponseDelayMinutes,
   });
 
   final Map<String, int> constructionCost;
@@ -82,6 +88,10 @@ class MarketConfig {
   final int shopSlots;
   final int maxConstructibleShops;
   final bool firstShopFree;
+  final int residentsPerHourlyRequest;
+  final int requestJitterMinPercent;
+  final int requestJitterMaxPercent;
+  final int distributorResponseDelayMinutes;
 
   int slotsForLevel(int level) =>
       manualSlotsByLevel[level.clamp(0, maximumLevel)] ??
@@ -108,6 +118,22 @@ class MarketConfig {
   int maxRequestsForLevel(int level) =>
       maxActiveRequests +
       (level.clamp(1, 99) - 1) * maxActiveRequestsBonusPerLevel;
+
+  int licenseSlotsForLevel(int level) => level >= 4 ? 2 : level >= 2 ? 1 : 0;
+
+  Duration residentRequestInterval(int population, math.Random random) {
+    final requestsPerHour = math.max(1, population ~/ math.max(1, residentsPerHourlyRequest));
+    final baseMinutes = 60 / requestsPerHour;
+    final min = requestJitterMinPercent.clamp(0, 100) / 100;
+    final max = requestJitterMaxPercent.clamp(requestJitterMinPercent, 100) / 100;
+    final amplitude = min + random.nextDouble() * (max - min);
+    // Alternate around the target interval instead of only delaying every
+    // request: the population target therefore remains meaningful over time.
+    final signedJitter = random.nextBool() ? amplitude : -amplitude;
+    return Duration(
+      minutes: math.max(1, (baseMinutes * (1 + signedJitter)).round()),
+    );
+  }
 }
 
 const MarketConfig defaultMarketConfig = MarketConfig(
@@ -155,12 +181,16 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   confidenceFailurePenalty: 2,
   confidenceMaxPaymentBonusPercent: 30,
   maxActiveLicenses: 2,
-  licenseCostBioBatteries: 5,
-  licenseChangeCostBioBatteries: 3,
+  licenseCostBioBatteries: 30,
+  licenseChangeCostBioBatteries: 10,
   licenseDirectedRatioPercent: 80,
   shopSlots: 6,
   maxConstructibleShops: 2,
   firstShopFree: true,
+  residentsPerHourlyRequest: 3,
+  requestJitterMinPercent: 10,
+  requestJitterMaxPercent: 30,
+  distributorResponseDelayMinutes: 1,
 );
 
 MarketConfig marketConfig = defaultMarketConfig;
