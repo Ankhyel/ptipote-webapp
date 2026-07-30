@@ -550,18 +550,12 @@ class KernelPage extends StatelessWidget {
       campHeartState.campHeartLevel,
     );
     final requests = gameState.refugeRequests(campHeartState.campHeartLevel);
-    final weatherMissions = gameState.weatherKernelMissions(
-      campHeartState.campHeartLevel,
-    );
     final mainCount = mainMission?.status == KernelMissionStatus.active ? 1 : 0;
     final requestCount = requests
         .where((mission) => mission.status == KernelMissionStatus.active)
         .length;
-    final weatherCount = weatherMissions
-        .where((mission) => mission.status == KernelMissionStatus.active)
-        .length;
     return DefaultTabController(
-      length: 5,
+      length: 4,
       initialIndex: initialTabIndex,
       child: Scaffold(
         appBar: AppBar(
@@ -599,9 +593,6 @@ class KernelPage extends StatelessWidget {
                 child: _KernelTabLabel(label: 'Demandes', count: requestCount),
               ),
               const Tab(text: 'Plans'),
-              Tab(
-                child: _KernelTabLabel(label: 'Météo', count: weatherCount),
-              ),
             ],
           ),
         ),
@@ -615,11 +606,6 @@ class KernelPage extends StatelessWidget {
               _KernelMainMissionTab(mission: mainMission, gameState: gameState),
               _KernelRequestsTab(missions: requests, gameState: gameState),
               _KernelPlansTab(gameState: gameState),
-              _KernelRequestsTab(
-                missions: weatherMissions,
-                gameState: gameState,
-                emptyMessage: 'Aucune mission météo annoncée par la Tour.',
-              ),
             ],
           ),
         ),
@@ -736,12 +722,10 @@ class _KernelRequestsTab extends StatelessWidget {
   const _KernelRequestsTab({
     required this.missions,
     required this.gameState,
-    this.emptyMessage = 'Aucune demande du refuge.',
   });
 
   final List<KernelMissionProgress> missions;
   final Zone0GameState gameState;
-  final String emptyMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -749,7 +733,7 @@ class _KernelRequestsTab extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       children: <Widget>[
         if (missions.isEmpty)
-          _KernelEmptyState(message: emptyMessage)
+          const _KernelEmptyState(message: 'Aucune demande du refuge.')
         else
           ...missions.map(
             (mission) =>
@@ -5585,6 +5569,19 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
       );
     }
     final residents = gameState.pTibugsForTerritory(activeBuilding.id);
+    final weather = gameState.activeGlobalWeatherEvent;
+    final isWeatherAffected = weather != null && weather.isBiomeAffected(biome);
+    final exposedPTibugs = residents
+        .where((bug) => gameState.pTibugWeatherMalusPercentFor(bug) > 0)
+        .length;
+    final weatherLabel = weather == null
+        ? null
+        : switch (weather.type) {
+            TowerWeatherType.calm => '🌤️ Temps calme',
+            TowerWeatherType.toxicCloud => '☁️ Nuage toxique',
+            TowerWeatherType.heatWave => '☀️ Forte chaleur',
+            TowerWeatherType.heavyRain => '🌧️ Pluie intense',
+          };
     final capacity = gameState.pTibugTerritoryCapacity(activeBuilding);
     final consumption =
         gameState.pTibugTerritoryDailyConsumption(activeBuilding);
@@ -5631,6 +5628,14 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
               ),
               Text(
                   '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
+              if (weatherLabel != null)
+                Text(
+                  isWeatherAffected
+                      ? '$weatherLabel · malus local P’TIBUG jusqu’à -${residents.isEmpty ? 0 : residents.map(gameState.pTibugWeatherMalusPercentFor).reduce(math.max)}% · $exposedPTibugs/${residents.length} non protégé(s)'
+                      : '$weatherLabel · ce biome n’est pas touché.',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700),
+                ),
               const SizedBox(height: 8),
               _BuildingViabilityCard(
                 gameState: gameState,
@@ -6450,7 +6455,7 @@ class _ForageEstimateCard extends StatelessWidget {
               'Vigueur : ${biomassState.icon} ${biomassState.label} · $biomass%${missionType == ForageMissionType.harvest ? ' · rendement x${gameState.biomassResourceMultiplierFor(biome).toStringAsFixed(2)}' : ''}',
             ),
             Text(
-              'Coût de Vigueur estimé : -${gameState.biomassMissionConsumptionFor(intensity, missionType)}% · après mission ${math.max(0, biomass - gameState.biomassMissionConsumptionFor(intensity, missionType))}%',
+              'Coût de Vigueur estimé : -${gameState.biomassMissionConsumptionFor(intensity, missionType, theoreticalHours: durationConfig.theoreticalHours)}% · après mission ${math.max(0, biomass - gameState.biomassMissionConsumptionFor(intensity, missionType, theoreticalHours: durationConfig.theoreticalHours))}%',
             ),
             Text('Cellules de données : $cellChanceLabel'),
             Text(
@@ -8525,7 +8530,6 @@ class _TowerWeatherTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final active = gameState.activeGlobalWeatherEvent;
-    final next = gameState.nextGlobalWeatherEvent;
     String label(TowerWeatherType type) => switch (type) {
           TowerWeatherType.calm => '🌤️ Temps calme',
           TowerWeatherType.toxicCloud => '☁️ Nuage toxique',
@@ -8569,48 +8573,57 @@ class _TowerWeatherTab extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Text('Prochaine météo',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 6),
-                  if (next == null)
-                    const Text('Prévisions en cours.')
-                  else if (next.status == GlobalWeatherEventStatus.planned)
-                    const Text(
-                        'Prévisions en cours : la Tour annoncera l’événement deux heures avant son arrivée.')
-                  else ...<Widget>[
-                    Text('${label(next.type)} · ${intensity(next.intensity)}'),
-                    Text('Arrivée : ${_countdownLabel(next.startsAt)}'),
-                    Text(next.type == TowerWeatherType.calm
-                        ? 'Aucun biome lourdement touché.'
-                        : 'Impacts prévus : ${biomes(next)}'),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => KernelPage(
-                            gameState: gameState,
-                            campHeartState: _RefugePageState._campHeartState,
-                            initialTabIndex: 4,
-                          ),
-                        ),
-                      ),
-                      child: const Text('Voir le Kernel'),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
+          if (active != null) ...<Widget>[
+            const SizedBox(height: 10),
+            _WeatherPreparationCard(gameState: gameState, event: active),
+          ],
         ],
       ),
     );
+  }
+}
+
+class _WeatherPreparationCard extends StatelessWidget {
+  const _WeatherPreparationCard({required this.gameState, required this.event});
+  final Zone0GameState gameState;
+  final GlobalWeatherEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final structural = switch (event.type) {
+      TowerWeatherType.heatWave => 'Ventilation Termite',
+      TowerWeatherType.heavyRain => 'Chloro-canaux',
+      TowerWeatherType.toxicCloud => 'Installation filtrante',
+      TowerWeatherType.calm => 'Aucune structure nécessaire',
+    };
+    final module = switch (event.type) {
+      TowerWeatherType.heatWave => 'Réflecteur',
+      TowerWeatherType.heavyRain => 'Étanchéité',
+      TowerWeatherType.toxicCloud => 'Filtreur (Trait P’TIBUG)',
+      TowerWeatherType.calm => 'Aucun module requis',
+    };
+    final projects = campHeartConfig.communityProjects.projects
+        .where((project) => project.weatherType == event.type.name)
+        .map((project) => project.label)
+        .join(' → ');
+    final requests =
+        marketConfig.weatherRequestItems[event.type.name] ?? const <String>[];
+    return Card(
+        child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Préparations recommandées',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  Text('Bâtiments : $structural.'),
+                  if (projects.isNotEmpty)
+                    Text('Grands chantiers : $projects.'),
+                  Text('P’TIBUG : $module.'),
+                  if (requests.isNotEmpty)
+                    Text(
+                        'Demandes possibles au Marché : ${requests.join(', ')}.'),
+                ])));
   }
 }
 
@@ -9415,11 +9428,10 @@ class _MarketPageState extends State<MarketPage> {
                               ? 'Mode automatique'
                               : 'Aidé par ${widget.gameState.marketAssignedPtipoteName}',
                         ),
-                        Text(
-                          widget.gameState.marketSaleRemaining() == null
-                              ? 'Prochaine vente : stock vide'
-                              : 'Prochaine vente : ${widget.gameState.marketSaleRemaining()!.inMinutes}m ${widget.gameState.marketSaleRemaining()!.inSeconds.remainder(60).toString().padLeft(2, '0')}s',
-                        ),
+                        if (widget.gameState.marketSaleRemaining() != null)
+                          Text(
+                            'Prochaine vente : ${widget.gameState.marketSaleRemaining()!.inMinutes}m ${widget.gameState.marketSaleRemaining()!.inSeconds.remainder(60).toString().padLeft(2, '0')}s',
+                          ),
                         Wrap(
                           spacing: 8,
                           children: <Widget>[

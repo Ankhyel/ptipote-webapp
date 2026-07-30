@@ -1575,6 +1575,14 @@ Une panne peut être remise en marche par le diagnostic prototype (mini-jeu V1) 
 
 Le Dashboard expose `towerOperations.buildingViability` : seuils, dégâts par météo/intensité, réparation, remise en marche, slots et protections. Fichiers métier : `tower_operations_config.dart`, `remote_zone0_settings.dart`, `zone0_game_state.dart`; interface : `refuge_page.dart`; configuration : `tower-operations-config.json`.
 
+### Ajustements météo, Kernel et Biomasse
+
+- La Tour ne montre plus de carte « prochaine météo » ni de compte à rebours redondant : la carte de l’événement actif reste la source de durée. Elle liste désormais les protections pertinentes pour cet événement : installation structurelle de bâtiment, branche de grands chantiers du Cœur, contre-mesure P’TIBUG et produits que les habitants peuvent demander au Marché.
+- Les anciennes missions météo du Kernel sont retirées de la configuration et des missions calculées. L’onglet **Météo** du Kernel disparaît ; les préparations météo sont visibles dans la Tour, le Cœur et le Marché.
+- Chaque carte de biome territoriale affiche de nouveau la météo active. Si le biome est touché, elle indique le malus P’TIBUG maximal calculé pour le biome et le nombre de P’TIBUG non protégés ; si le biome est hors zone, aucun malus n’est annoncé. Le calcul reste celui de `pTibugWeatherMalusPercentFor`, donc aucune seconde formule d’interface n’est créée.
+- La consommation de Vigueur/Biomasse des missions est maintenant exprimée par heure de mission : le coût d’intensité et de type est multiplié par les heures théoriques, puis pondéré une seule fois par l’avancement réel à la résolution. L’estimation avant départ utilise la même durée et le même calcul.
+- La carte de niveau du Marché masque « Prochaine vente : stock vide » lorsqu’aucune vente n’est planifiée.
+
 # Habitants et maisons météo V1
 
 La couche sociale reste volontairement minimale. `Zone0Resident` conserve une identité stable, un nom, une maison éventuelle, un bonheur de base et des modificateurs temporaires ; `ResidentHouse` garde sa capacité, ses habitants, sa Viabilité, ses protections et le dernier événement météo résolu. Les deux listes sont persistées dans `users/{uid}/game/zone0.buildings.housing`.

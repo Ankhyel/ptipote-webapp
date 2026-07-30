@@ -1360,23 +1360,7 @@ class Zone0GameState extends ChangeNotifier {
                     : KernelMissionStatus.locked,
           ),
         );
-    final weatherMissions = weatherAlerts
-        .where((alert) => alert.endsAt.isAfter(DateTime.now()))
-        .map(_weatherMissionForAlert)
-        .whereType<KernelMissionConfig>()
-        .where((mission) => !dismissedKernelMissionIds.contains(mission.id))
-        .map(
-          (mission) => KernelMissionProgress(
-            config: mission,
-            progress: _kernelMissionProgress(mission),
-            status: completedKernelMissionIds.contains(mission.id)
-                ? KernelMissionStatus.completed
-                : _kernelMissionPrerequisiteMessage(mission) == null
-                    ? KernelMissionStatus.active
-                    : KernelMissionStatus.locked,
-          ),
-        );
-    return <KernelMissionProgress>[...persistentMissions, ...weatherMissions];
+    return persistentMissions.toList(growable: false);
   }
 
   KernelMissionProgress? mainKernelMission(int campHeartLevel) {
@@ -1405,59 +1389,11 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
   }
 
-  List<KernelMissionProgress> weatherKernelMissions(int campHeartLevel) {
-    return kernelMissionsForCampHeartLevel(campHeartLevel)
-        .where((mission) => mission.config.type == KernelMissionType.weather)
-        .toList();
-  }
-
-  KernelMissionConfig? _weatherMissionForAlert(WeatherAlert alert) {
-    final template = kernelConfig.missions
-        .where(
-          (mission) =>
-              mission.type == KernelMissionType.weather &&
-              mission.weatherType == alert.type.name,
-        )
-        .firstOrNull;
-    if (template == null) return null;
-    return KernelMissionConfig(
-      id: '${template.id}-${alert.id}',
-      type: template.type,
-      title: template.title,
-      description: template.description,
-      conditionType: template.conditionType,
-      requiredAmount: template.requiredAmount,
-      populationReward: template.populationReward,
-      bioBatteryReward: template.bioBatteryReward,
-      xpReward: template.xpReward,
-      mailMessage: template.mailMessage,
-      requiredBuildingLevels: template.requiredBuildingLevels,
-      requiredKernelTrustLevel: template.requiredKernelTrustLevel,
-      requiredBreederLevel: template.requiredBreederLevel,
-      requiredBuilderLevel: template.requiredBuilderLevel,
-      requiredRestorerLevel: template.requiredRestorerLevel,
-      requestedItem: alert.requestedItem ?? template.requestedItem,
-      requestedAmount: alert.requestedAmount > 0
-          ? alert.requestedAmount
-          : template.requestedAmount,
-      resourceRewards: template.resourceRewards,
-      rewardPatternId: template.rewardPatternId,
-      weatherType: template.weatherType,
-      weatherDemandOptions: template.weatherDemandOptions,
-    );
-  }
-
   KernelMissionConfig? _kernelMissionById(String missionId) {
     final staticMission = kernelConfig.missions
         .where((mission) => mission.id == missionId)
         .firstOrNull;
-    if (staticMission != null) return staticMission;
-    return weatherAlerts
-        .where((alert) => alert.endsAt.isAfter(DateTime.now()))
-        .map(_weatherMissionForAlert)
-        .whereType<KernelMissionConfig>()
-        .where((mission) => mission.id == missionId)
-        .firstOrNull;
+    return staticMission;
   }
 
   int activeKernelMissionCount(int campHeartLevel) =>
@@ -8986,17 +8922,6 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     removeResource(mission.requestedItem!, mission.requestedAmount);
-    if (mission.type == KernelMissionType.weather) {
-      final alert = weatherAlerts
-          .where(
-            (item) =>
-                item.type.name == mission.weatherType &&
-                _weatherMissionForAlert(item)?.id == mission.id &&
-                item.endsAt.isAfter(DateTime.now()),
-          )
-          .firstOrNull;
-      if (alert != null) alert.preparationCompleted = true;
-    }
     _completeKernelMission(mission);
     refreshKernelMissions();
     notifyListeners();
@@ -9209,6 +9134,7 @@ class Zone0GameState extends ChangeNotifier {
       biome: mission.biome,
       intensity: mission.intensity,
       missionType: mission.type,
+      theoreticalHours: duration.theoreticalHours,
       completionRatio: rewardRatio,
       completedAt: completedAt,
     );
@@ -9423,12 +9349,14 @@ class Zone0GameState extends ChangeNotifier {
 
   int biomassMissionConsumptionFor(
     ForageIntensity intensity,
-    ForageMissionType type,
-  ) {
+    ForageMissionType type, {
+    int theoreticalHours = 1,
+  }) {
     final base = biomassMissionConsumption(intensity);
     final multiplier =
         lisiereForageConfig.missionTypes[type]?.vigorMultiplier ?? 1;
-    return math.max(0, (base * multiplier).round());
+    return math.max(
+        0, (base * multiplier * math.max(0, theoreticalHours)).round());
   }
 
   Map<String, int> biomassRevitalizeCost(ForageBiome biome) {
@@ -9558,10 +9486,15 @@ class Zone0GameState extends ChangeNotifier {
     required ForageBiome biome,
     required ForageIntensity intensity,
     ForageMissionType missionType = ForageMissionType.harvest,
+    required int theoreticalHours,
     required double completionRatio,
     required DateTime completedAt,
   }) {
-    final base = biomassMissionConsumptionFor(intensity, missionType);
+    final base = biomassMissionConsumptionFor(
+      intensity,
+      missionType,
+      theoreticalHours: theoreticalHours,
+    );
     if (base <= 0) return;
     final consumed = math.max(1, (base * completionRatio).ceil());
     final state = biomeSecurity.putIfAbsent(
