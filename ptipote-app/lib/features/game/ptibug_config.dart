@@ -150,6 +150,101 @@ class PTibugSpeciesConfig {
   final int creationMinutes;
 }
 
+/// Les trois opérations partagent une cuve, ses réserves et son calcul hors
+/// ligne. Leur résultat final reste toutefois distinct et explicitement validé.
+enum PTibugCultivationOperationType { cultivation, traitInfusion, evolution }
+
+/// Réglages partagés par les Armatures et les cuves de Cultivation. Les coûts
+/// de l'ancienne création restent ceux de l'Armature : les nutriments de cuve
+/// sont une consommation continue distincte, jamais prélevée deux fois.
+class PTibugCultivationConfig {
+  const PTibugCultivationConfig({
+    required this.armatureMinutes,
+    required this.activeHours,
+    required this.tankSlotsPerNurseryLevel,
+    required this.tankConstructionCost,
+    required this.tankConstructionBioBatteries,
+    required this.tankConstructionMinutes,
+    required this.targetAutonomyHours,
+    required this.energyPerActiveHour,
+    required this.organicPerActiveHour,
+    required this.mineralPerActiveHour,
+    required this.criticalAutonomyMinutes,
+    required this.tapBonusMinutes,
+    required this.tapMaximumPerDay,
+    required this.tapMinimumDelayHours,
+    required this.traitInfusionHours,
+    required this.evolutionHours,
+    required this.traitMaterialCostCoefficient,
+    required this.traitEnergyCostCoefficient,
+    required this.evolutionMaterialCostCoefficient,
+    required this.evolutionEnergyCostCoefficient,
+    required this.traitTapBonusMinutes,
+    required this.evolutionTapBonusMinutes,
+    required this.evolutionDataCost,
+  });
+
+  final int armatureMinutes;
+  final int activeHours;
+  final int tankSlotsPerNurseryLevel;
+  final Map<String, int> tankConstructionCost;
+  final int tankConstructionBioBatteries;
+  final int tankConstructionMinutes;
+  final int targetAutonomyHours;
+  final Map<PTibugSpecies, double> energyPerActiveHour;
+  final Map<PTibugSpecies, double> organicPerActiveHour;
+  final Map<PTibugSpecies, double> mineralPerActiveHour;
+  final int criticalAutonomyMinutes;
+  final int tapBonusMinutes;
+  final int tapMaximumPerDay;
+  final int tapMinimumDelayHours;
+  final int traitInfusionHours;
+  final int evolutionHours;
+  final double traitMaterialCostCoefficient;
+  final double traitEnergyCostCoefficient;
+  final double evolutionMaterialCostCoefficient;
+  final double evolutionEnergyCostCoefficient;
+  final int traitTapBonusMinutes;
+  final int evolutionTapBonusMinutes;
+  final Map<PTibugDataFamily, int> evolutionDataCost;
+
+  int get activeSecondsRequired => activeHours * Duration.secondsPerHour;
+  int activeSecondsFor(PTibugCultivationOperationType type) => switch (type) {
+        PTibugCultivationOperationType.cultivation => activeSecondsRequired,
+        PTibugCultivationOperationType.traitInfusion =>
+          traitInfusionHours * Duration.secondsPerHour,
+        PTibugCultivationOperationType.evolution =>
+          evolutionHours * Duration.secondsPerHour,
+      };
+  double materialCoefficientFor(PTibugCultivationOperationType type) =>
+      switch (type) {
+        PTibugCultivationOperationType.cultivation => 1,
+        PTibugCultivationOperationType.traitInfusion =>
+          traitMaterialCostCoefficient,
+        PTibugCultivationOperationType.evolution =>
+          evolutionMaterialCostCoefficient,
+      };
+  double energyCoefficientFor(PTibugCultivationOperationType type) =>
+      switch (type) {
+        PTibugCultivationOperationType.cultivation => 1,
+        PTibugCultivationOperationType.traitInfusion =>
+          traitEnergyCostCoefficient,
+        PTibugCultivationOperationType.evolution =>
+          evolutionEnergyCostCoefficient,
+      };
+  int tapBonusFor(PTibugCultivationOperationType type) => switch (type) {
+        PTibugCultivationOperationType.cultivation => tapBonusMinutes,
+        PTibugCultivationOperationType.traitInfusion => traitTapBonusMinutes,
+        PTibugCultivationOperationType.evolution => evolutionTapBonusMinutes,
+      };
+  double organicCapacityFor(PTibugSpecies species) =>
+      (organicPerActiveHour[species] ?? 0) * targetAutonomyHours;
+  double mineralCapacityFor(PTibugSpecies species) =>
+      (mineralPerActiveHour[species] ?? 0) * targetAutonomyHours;
+  double energyCapacityFor(PTibugSpecies species) =>
+      (energyPerActiveHour[species] ?? 0) * targetAutonomyHours;
+}
+
 /// A Pattern is the Kernel knowledge required before the Nurserie can create
 /// a species. The creation recipe itself stays on [PTibugSpeciesConfig].
 class PTibugPatternConfig {
@@ -279,6 +374,8 @@ class PTibugConfig {
     required this.progression,
     required this.moduleCapacity,
     required this.weather,
+    required this.cultivation,
+    required this.valuation,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -319,6 +416,8 @@ class PTibugConfig {
   final PTibugProgressionConfig progression;
   final PTibugModuleCapacityConfig moduleCapacity;
   final PTibugWeatherConfig weather;
+  final PTibugCultivationConfig cultivation;
+  final PTibugValuationConfig valuation;
 
   int slotsForLevel(int level) => territory.nurseryCapacityForLevel(level);
   int moduleSlotsForLevel(int level) =>
@@ -406,6 +505,39 @@ class PTibugProgressionConfig {
         (level.clamp(1, maximumLevel).toInt() - 1) * energyReductionPerLevel;
     return reduced < minimumEnergyPerDay ? minimumEnergyPerDay : reduced;
   }
+}
+
+/// Valeurs commerciales P’TIBUG, séparées des coûts de production afin que le
+/// Dashboard puisse équilibrer le Marché sans modifier les recettes.
+class PTibugValuationConfig {
+  const PTibugValuationConfig({
+    required this.configVersion,
+    required this.minimumNameLength,
+    required this.maximumNameLength,
+    required this.baseValueBySpecies,
+    required this.cumulativeLevelValues,
+    required this.traitRankValues,
+    required this.moduleValues,
+    required this.customerRequestCoefficient,
+    required this.sourcierContractCoefficient,
+    required this.minimumPayment,
+  });
+
+  final int configVersion;
+  final int minimumNameLength;
+  final int maximumNameLength;
+  final Map<PTibugSpecies, int> baseValueBySpecies;
+  final Map<int, int> cumulativeLevelValues;
+  final Map<int, int> traitRankValues;
+  final Map<PTibugModuleType, int> moduleValues;
+  final double customerRequestCoefficient;
+  final double sourcierContractCoefficient;
+  final int minimumPayment;
+
+  int baseValueFor(PTibugSpecies species) => baseValueBySpecies[species] ?? 0;
+  int levelValueFor(int level) => cumulativeLevelValues[level] ?? 0;
+  int traitValueFor(int rank) => traitRankValues[rank.clamp(1, 3)] ?? 0;
+  int moduleValueFor(PTibugModuleType type) => moduleValues[type] ?? 0;
 }
 
 class PTibugModuleCapacityConfig {
@@ -667,7 +799,8 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'decomposeur': PTibugTraitDefinition(
       id: 'decomposeur',
       displayName: 'Décomposeur',
-      description: '+1 / +2 / +3 Organique par cycle ; chance croissante de Mycélium.',
+      description:
+          '+1 / +2 / +3 Organique par cycle ; chance croissante de Mycélium.',
       effects: <String, int>{'Organique': 1, 'Mycélium': 1},
       gradeMultipliers: <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
@@ -837,7 +970,8 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     'stabilisateur': PTibugTraitDefinition(
       id: 'stabilisateur',
       displayName: 'Stabilisateur',
-      description: '+5 % / +10 % / +15 % de régénération de Vigueur du biome local.',
+      description:
+          '+5 % / +10 % / +15 % de régénération de Vigueur du biome local.',
       effects: const <String, int>{'Régénération Vigueur %': 5},
       gradeMultipliers: const <PTibugTraitGrade, int>{
         PTibugTraitGrade.commun: 1,
@@ -1251,6 +1385,70 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     stabilizerMaximumPercent: 30,
     economyOrganicReductionPercentByLevel: <int, int>{1: 20, 2: 40, 3: 60},
     economyEnergyReductionPercentByLevel: <int, int>{1: 10, 2: 20, 3: 30},
+  ),
+  cultivation: const PTibugCultivationConfig(
+    armatureMinutes: 180,
+    activeHours: 24,
+    tankSlotsPerNurseryLevel: 1,
+    tankConstructionCost: <String, int>{'Organique': 10, 'Minéral': 5},
+    tankConstructionBioBatteries: 1,
+    tankConstructionMinutes: 1,
+    targetAutonomyHours: 8,
+    energyPerActiveHour: <PTibugSpecies, double>{
+      PTibugSpecies.hyme: 1,
+      PTibugSpecies.scarabe: 1,
+      PTibugSpecies.arac: 1,
+    },
+    // Hyme is organic-heavy, Scarabé mineral-heavy and Arac balanced.
+    organicPerActiveHour: <PTibugSpecies, double>{
+      PTibugSpecies.hyme: 3,
+      PTibugSpecies.scarabe: 1,
+      PTibugSpecies.arac: 2,
+    },
+    mineralPerActiveHour: <PTibugSpecies, double>{
+      PTibugSpecies.hyme: 1,
+      PTibugSpecies.scarabe: 3,
+      PTibugSpecies.arac: 2,
+    },
+    criticalAutonomyMinutes: 60,
+    tapBonusMinutes: 60,
+    tapMaximumPerDay: 3,
+    tapMinimumDelayHours: 4,
+    traitInfusionHours: 6,
+    evolutionHours: 12,
+    traitMaterialCostCoefficient: .30,
+    traitEnergyCostCoefficient: .30,
+    evolutionMaterialCostCoefficient: .50,
+    evolutionEnergyCostCoefficient: .50,
+    traitTapBonusMinutes: 30,
+    evolutionTapBonusMinutes: 30,
+    evolutionDataCost: <PTibugDataFamily, int>{
+      PTibugDataFamily.organique: 3,
+      PTibugDataFamily.biomimetisme: 2,
+      PTibugDataFamily.comportementInsectoide: 2,
+    },
+  ),
+  valuation: const PTibugValuationConfig(
+    configVersion: 1,
+    minimumNameLength: 1,
+    maximumNameLength: 20,
+    baseValueBySpecies: <PTibugSpecies, int>{
+      PTibugSpecies.scarabe: 20,
+      PTibugSpecies.hyme: 22,
+      PTibugSpecies.arac: 24,
+    },
+    cumulativeLevelValues: <int, int>{1: 0, 2: 5, 3: 12, 4: 20, 5: 30, 6: 42},
+    traitRankValues: <int, int>{1: 8, 2: 15, 3: 25},
+    moduleValues: <PTibugModuleType, int>{
+      PTibugModuleType.ailes: 5,
+      PTibugModuleType.pinces: 5,
+      PTibugModuleType.reservoir: 5,
+      PTibugModuleType.reflecteur: 4,
+      PTibugModuleType.etancheite: 4,
+    },
+    customerRequestCoefficient: 1,
+    sourcierContractCoefficient: 1.2,
+    minimumPayment: 1,
   ),
 );
 

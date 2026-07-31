@@ -513,6 +513,8 @@ PTibugConfig _ptibug(Object? value) {
   final rawProgression = _map(raw['progression']);
   final rawModuleCapacity = _map(raw['moduleCapacity']);
   final rawWeather = _map(raw['weather']);
+  final rawCultivation = _map(raw['cultivation']);
+  final rawValuation = _map(raw['valuation']);
   return PTibugConfig(
     nurseryRequirements: _resourceMap(
       raw['nurseryRequirements'],
@@ -745,6 +747,122 @@ PTibugConfig _ptibug(Object? value) {
           base.moduleCraftMinutes[type] ?? 1,
         ),
     },
+    cultivation: PTibugCultivationConfig(
+      armatureMinutes: _int(
+          rawCultivation?['armatureMinutes'], base.cultivation.armatureMinutes),
+      activeHours:
+          _int(rawCultivation?['activeHours'], base.cultivation.activeHours),
+      tankSlotsPerNurseryLevel: _int(
+          rawCultivation?['tankSlotsPerNurseryLevel'],
+          base.cultivation.tankSlotsPerNurseryLevel),
+      tankConstructionCost: _resourceMap(
+          rawCultivation?['tankConstructionCost'],
+          base.cultivation.tankConstructionCost),
+      tankConstructionBioBatteries: _int(
+          rawCultivation?['tankConstructionBioBatteries'],
+          base.cultivation.tankConstructionBioBatteries),
+      tankConstructionMinutes: _int(rawCultivation?['tankConstructionMinutes'],
+          base.cultivation.tankConstructionMinutes),
+      targetAutonomyHours: _int(rawCultivation?['targetAutonomyHours'],
+          base.cultivation.targetAutonomyHours),
+      energyPerActiveHour: <PTibugSpecies, double>{
+        for (final species in PTibugSpecies.values)
+          species: _double(
+              _map(rawCultivation?['energyPerActiveHour'])?[species.name],
+              base.cultivation.energyPerActiveHour[species] ?? 1),
+      },
+      organicPerActiveHour: <PTibugSpecies, double>{
+        for (final species in PTibugSpecies.values)
+          species: _double(
+              _map(rawCultivation?['organicPerActiveHour'])?[species.name],
+              base.cultivation.organicPerActiveHour[species] ?? 0),
+      },
+      mineralPerActiveHour: <PTibugSpecies, double>{
+        for (final species in PTibugSpecies.values)
+          species: _double(
+              _map(rawCultivation?['mineralPerActiveHour'])?[species.name],
+              base.cultivation.mineralPerActiveHour[species] ?? 0),
+      },
+      criticalAutonomyMinutes: _int(rawCultivation?['criticalAutonomyMinutes'],
+          base.cultivation.criticalAutonomyMinutes),
+      tapBonusMinutes: _int(
+          rawCultivation?['tapBonusMinutes'], base.cultivation.tapBonusMinutes),
+      tapMaximumPerDay: _int(rawCultivation?['tapMaximumPerDay'],
+          base.cultivation.tapMaximumPerDay),
+      tapMinimumDelayHours: _int(rawCultivation?['tapMinimumDelayHours'],
+          base.cultivation.tapMinimumDelayHours),
+      traitInfusionHours: _int(rawCultivation?['traitInfusionHours'],
+          base.cultivation.traitInfusionHours),
+      evolutionHours: _int(
+          rawCultivation?['evolutionHours'], base.cultivation.evolutionHours),
+      traitMaterialCostCoefficient: _double(
+          rawCultivation?['traitMaterialCostCoefficient'],
+          base.cultivation.traitMaterialCostCoefficient),
+      traitEnergyCostCoefficient: _double(
+          rawCultivation?['traitEnergyCostCoefficient'],
+          base.cultivation.traitEnergyCostCoefficient),
+      evolutionMaterialCostCoefficient: _double(
+          rawCultivation?['evolutionMaterialCostCoefficient'],
+          base.cultivation.evolutionMaterialCostCoefficient),
+      evolutionEnergyCostCoefficient: _double(
+          rawCultivation?['evolutionEnergyCostCoefficient'],
+          base.cultivation.evolutionEnergyCostCoefficient),
+      traitTapBonusMinutes: _int(rawCultivation?['traitTapBonusMinutes'],
+          base.cultivation.traitTapBonusMinutes),
+      evolutionTapBonusMinutes: _int(
+          rawCultivation?['evolutionTapBonusMinutes'],
+          base.cultivation.evolutionTapBonusMinutes),
+      evolutionDataCost: _dataFamilyMap(rawCultivation?['evolutionDataCost'],
+          base.cultivation.evolutionDataCost),
+    ),
+    valuation: PTibugValuationConfig(
+      configVersion: _int(
+        rawValuation?['configVersion'],
+        base.valuation.configVersion,
+      ),
+      minimumNameLength: _int(
+        rawValuation?['minimumNameLength'],
+        base.valuation.minimumNameLength,
+      ),
+      maximumNameLength: _int(
+        rawValuation?['maximumNameLength'],
+        base.valuation.maximumNameLength,
+      ),
+      baseValueBySpecies: <PTibugSpecies, int>{
+        for (final species in PTibugSpecies.values)
+          species: _int(
+            _map(rawValuation?['baseValueBySpecies'])?[species.name],
+            base.valuation.baseValueFor(species),
+          ),
+      },
+      cumulativeLevelValues: _levelMap(
+        rawValuation?['cumulativeLevelValues'],
+        base.valuation.cumulativeLevelValues,
+      ),
+      traitRankValues: _levelMap(
+        rawValuation?['traitRankValues'],
+        base.valuation.traitRankValues,
+      ),
+      moduleValues: <PTibugModuleType, int>{
+        for (final type in PTibugModuleType.values)
+          type: _int(
+            _map(rawValuation?['moduleValues'])?[type.name],
+            base.valuation.moduleValueFor(type),
+          ),
+      },
+      customerRequestCoefficient: _double(
+        rawValuation?['customerRequestCoefficient'],
+        base.valuation.customerRequestCoefficient,
+      ),
+      sourcierContractCoefficient: _double(
+        rawValuation?['sourcierContractCoefficient'],
+        base.valuation.sourcierContractCoefficient,
+      ),
+      minimumPayment: _int(
+        rawValuation?['minimumPayment'],
+        base.valuation.minimumPayment,
+      ),
+    ),
     nurseryReserveCapacity: _int(
       raw['nurseryReserveCapacity'],
       base.nurseryReserveCapacity,
@@ -829,18 +947,29 @@ PTibugConfig _ptibug(Object? value) {
           base.progression.energyReductionPerLevel),
       minimumEnergyPerDay: _int(rawProgression?['minimumEnergyPerDay'],
           base.progression.minimumEnergyPerDay),
-      renewalLevel:
-          _int(rawProgression?['renewalLevel'], base.progression.renewalLevel),
-      renewalMaterialCost: _resourceMap(rawProgression?['renewalMaterialCost'],
+      renewalLevel: _int(
+          rawProgression?['evolutionLevel'] ?? rawProgression?['renewalLevel'],
+          base.progression.renewalLevel),
+      renewalMaterialCost: _resourceMap(
+          rawProgression?['evolutionMaterialCost'] ??
+              rawProgression?['renewalMaterialCost'],
           base.progression.renewalMaterialCost),
-      renewalEnergyCost: _int(rawProgression?['renewalEnergyCost'],
+      renewalEnergyCost: _int(
+          rawProgression?['evolutionEnergyCost'] ??
+              rawProgression?['renewalEnergyCost'],
           base.progression.renewalEnergyCost),
-      renewalBioBatteryCost: _int(rawProgression?['renewalBioBatteryCost'],
+      renewalBioBatteryCost: _int(
+          rawProgression?['evolutionBioBatteryCost'] ??
+              rawProgression?['renewalBioBatteryCost'],
           base.progression.renewalBioBatteryCost),
-      renewalDurationMinutes: _int(rawProgression?['renewalDurationMinutes'],
+      renewalDurationMinutes: _int(
+          rawProgression?['evolutionDurationMinutes'] ??
+              rawProgression?['renewalDurationMinutes'],
           base.progression.renewalDurationMinutes),
       maximumRenewals: _int(
-          rawProgression?['maximumRenewals'], base.progression.maximumRenewals),
+          rawProgression?['maximumEvolutions'] ??
+              rawProgression?['maximumRenewals'],
+          base.progression.maximumRenewals),
     ),
     moduleCapacity: PTibugModuleCapacityConfig(
       initialCapacity: _int(rawModuleCapacity?['initialCapacity'],
@@ -1938,21 +2067,44 @@ MarketConfig _market(Object? value) {
       raw['requestBasePerHourByLevel'],
       b.requestBasePerHourByLevel,
     ),
-    requestMinimumSpacingMinutes: _int(raw['requestMinimumSpacingMinutes'], b.requestMinimumSpacingMinutes),
-    economicActivityWellbeingMaxPercent: _int(raw['economicActivityWellbeingMaxPercent'], b.economicActivityWellbeingMaxPercent),
-    economicActivityHeartLevelPercent: _int(raw['economicActivityHeartLevelPercent'], b.economicActivityHeartLevelPercent),
-    economicActivityHeartLevelCapPercent: _int(raw['economicActivityHeartLevelCapPercent'], b.economicActivityHeartLevelCapPercent),
-    economicActivityMarketLevelPercent: _int(raw['economicActivityMarketLevelPercent'], b.economicActivityMarketLevelPercent),
-    economicActivityMarketLevelCapPercent: _int(raw['economicActivityMarketLevelCapPercent'], b.economicActivityMarketLevelCapPercent),
-    economicActivityWeatherPercent: _resourceMap(raw['economicActivityWeatherPercent'], b.economicActivityWeatherPercent),
-    requestCategoryWeights: _resourceMap(raw['requestCategoryWeights'], b.requestCategoryWeights),
-    requestPriceBioPiles: _resourceMap(raw['requestPriceBioPiles'], b.requestPriceBioPiles),
-    specializedShopGainBonusPercent: _int(raw['specializedShopGainBonusPercent'], b.specializedShopGainBonusPercent),
-    baseStorePricePenaltyPercent: _int(raw['baseStorePricePenaltyPercent'], b.baseStorePricePenaltyPercent),
-    shopConstructionCost: _resourceMap(raw['shopConstructionCost'], b.shopConstructionCost),
-    shopConstructionBioBatteries: _int(raw['shopConstructionBioBatteries'], b.shopConstructionBioBatteries),
-    shopUpgradeCostMultiplier: _int(raw['shopUpgradeCostMultiplier'], b.shopUpgradeCostMultiplier),
-    distributorConstructionBioBatteries: _int(raw['distributorConstructionBioBatteries'], b.distributorConstructionBioBatteries),
+    requestMinimumSpacingMinutes: _int(
+        raw['requestMinimumSpacingMinutes'], b.requestMinimumSpacingMinutes),
+    economicActivityWellbeingMaxPercent: _int(
+        raw['economicActivityWellbeingMaxPercent'],
+        b.economicActivityWellbeingMaxPercent),
+    economicActivityHeartLevelPercent: _int(
+        raw['economicActivityHeartLevelPercent'],
+        b.economicActivityHeartLevelPercent),
+    economicActivityHeartLevelCapPercent: _int(
+        raw['economicActivityHeartLevelCapPercent'],
+        b.economicActivityHeartLevelCapPercent),
+    economicActivityMarketLevelPercent: _int(
+        raw['economicActivityMarketLevelPercent'],
+        b.economicActivityMarketLevelPercent),
+    economicActivityMarketLevelCapPercent: _int(
+        raw['economicActivityMarketLevelCapPercent'],
+        b.economicActivityMarketLevelCapPercent),
+    economicActivityWeatherPercent: _resourceMap(
+        raw['economicActivityWeatherPercent'],
+        b.economicActivityWeatherPercent),
+    requestCategoryWeights:
+        _resourceMap(raw['requestCategoryWeights'], b.requestCategoryWeights),
+    requestPriceBioPiles:
+        _resourceMap(raw['requestPriceBioPiles'], b.requestPriceBioPiles),
+    specializedShopGainBonusPercent: _int(
+        raw['specializedShopGainBonusPercent'],
+        b.specializedShopGainBonusPercent),
+    baseStorePricePenaltyPercent: _int(
+        raw['baseStorePricePenaltyPercent'], b.baseStorePricePenaltyPercent),
+    shopConstructionCost:
+        _resourceMap(raw['shopConstructionCost'], b.shopConstructionCost),
+    shopConstructionBioBatteries: _int(
+        raw['shopConstructionBioBatteries'], b.shopConstructionBioBatteries),
+    shopUpgradeCostMultiplier:
+        _int(raw['shopUpgradeCostMultiplier'], b.shopUpgradeCostMultiplier),
+    distributorConstructionBioBatteries: _int(
+        raw['distributorConstructionBioBatteries'],
+        b.distributorConstructionBioBatteries),
   );
 }
 

@@ -3,6 +3,8 @@ import 'package:ptipote_app/features/game/ptibug_config.dart';
 import 'package:ptipote_app/features/game/kernel_progress_config.dart';
 import 'package:ptipote_app/features/game/tower_operations_config.dart';
 import 'package:ptipote_app/features/game/lisiere_forage_config.dart';
+import 'package:ptipote_app/features/game/craft_config.dart';
+import 'package:ptipote_app/features/game/ptibug_valuation_service.dart';
 
 void main() {
   test('un trait separe les bonus de production des effets systemiques', () {
@@ -67,6 +69,23 @@ void main() {
       'minerale': 3,
     });
     expect(plans['solar-light']!.dataRequirements['energie'], 8);
+    expect(plans['energy-core']!.dataRequirements, <String, int>{
+      'energie': 20,
+      'organique': 20,
+      'minerale': 10,
+      'mycelienne': 15,
+      'biomimetisme': 15,
+    });
+  });
+
+  test('le cœur d’énergie est un craft Atelier non empilable', () {
+    final recipe = defaultCraftConfig.recipes
+        .firstWhere((recipe) => recipe.id == 'energyCore');
+
+    expect(recipe.craftSection, CraftSection.atelier);
+    expect(recipe.bioBatteryCost, 300);
+    expect(recipe.ingredients, <String, int>{'Organique': 10, 'Minéral': 10});
+    expect(recipe.stackLimit, 1);
   });
 
   test('la gestion territoriale applique une capacité par niveau configurable',
@@ -157,5 +176,65 @@ void main() {
     expect(territory.refugeBioBatteriesForLevel(1), 1);
     expect(territory.refugeRequirementsForLevel(2)['Organique'], 30);
     expect(territory.refugeUpgradeBioBatteriesByLevel[4], 8);
+  });
+
+  test('la Cultivation possède une autonomie et des ratios par espèce', () {
+    final cultivation = defaultPTibugConfig.cultivation;
+
+    expect(cultivation.armatureMinutes, 180);
+    expect(cultivation.activeHours, 24);
+    expect(cultivation.activeSecondsRequired, 24 * 60 * 60);
+    expect(cultivation.tankSlotsPerNurseryLevel, 1);
+    expect(cultivation.targetAutonomyHours, 8);
+    expect(cultivation.organicPerActiveHour[PTibugSpecies.hyme],
+        greaterThan(cultivation.mineralPerActiveHour[PTibugSpecies.hyme]!));
+    expect(cultivation.mineralPerActiveHour[PTibugSpecies.scarabe],
+        greaterThan(cultivation.organicPerActiveHour[PTibugSpecies.scarabe]!));
+    expect(cultivation.organicPerActiveHour[PTibugSpecies.arac],
+        cultivation.mineralPerActiveHour[PTibugSpecies.arac]);
+    expect(cultivation.tapBonusMinutes, 60);
+    expect(cultivation.tapMaximumPerDay, 3);
+    expect(cultivation.tapMinimumDelayHours, 4);
+  });
+
+  test('Infusion et Évolution utilisent les réglages de cuve V2', () {
+    final cultivation = defaultPTibugConfig.cultivation;
+
+    expect(cultivation.traitInfusionHours, 6);
+    expect(cultivation.evolutionHours, 12);
+    expect(cultivation.traitMaterialCostCoefficient, .30);
+    expect(cultivation.evolutionMaterialCostCoefficient, .50);
+    expect(
+      cultivation.activeSecondsFor(
+        PTibugCultivationOperationType.traitInfusion,
+      ),
+      const Duration(hours: 6).inSeconds,
+    );
+    expect(
+      cultivation.tapBonusFor(PTibugCultivationOperationType.evolution),
+      30,
+    );
+    expect(cultivation.evolutionDataCost[PTibugDataFamily.organique], 3);
+  });
+
+  test('la valeur P’TIBUG additionne espèces, niveaux, Traits et Modules', () {
+    final service = PTibugValuationService(defaultPTibugConfig.valuation);
+    final value = service.evaluate(const PTibugValuationInput(
+      species: PTibugSpecies.hyme,
+      level: 3,
+      traitRanks: <int>[3, 1],
+      modules: <PTibugModuleType>[
+        PTibugModuleType.ailes,
+        PTibugModuleType.ailes,
+      ],
+    ));
+
+    expect(value.baseValue, 22);
+    expect(value.levelValue, 12);
+    expect(value.traitValue, 33);
+    expect(value.moduleValue, 10);
+    expect(value.total, 77);
+    expect(service.paymentFor(value, sourcierContract: false), 77);
+    expect(service.paymentFor(value, sourcierContract: true), 92);
   });
 }

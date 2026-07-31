@@ -37,6 +37,7 @@ class CraftRecipe {
     this.durationMinutes = 1,
     this.isEquipment = false,
     this.energyCost = 0,
+    this.bioBatteryCost = 0,
     this.stackLimit = 1,
   });
 
@@ -59,6 +60,7 @@ class CraftRecipe {
   final int durationMinutes;
   final bool isEquipment;
   final int energyCost;
+  final int bioBatteryCost;
   final int stackLimit;
 }
 
@@ -226,6 +228,27 @@ const defaultCraftConfig = CraftConfig(
       vitalityRestore: 0,
       durationMinutes: 8,
       isEquipment: true,
+      stackLimit: 1,
+    ),
+    CraftRecipe(
+      id: 'energyCore',
+      displayName: 'Cœur d’énergie',
+      craftSection: CraftSection.atelier,
+      ingredients: <String, int>{'Organique': 10, 'Minéral': 10},
+      contextIngredients: <String, int>{},
+      cuisineLevel: 0,
+      atelierLevel: 1,
+      kernelTrustLevel: 1,
+      breederLevel: 1,
+      builderLevel: 1,
+      restorerLevel: 1,
+      resultItem: 'Cœur d’énergie',
+      resultAmount: 1,
+      isConsumable: false,
+      hungerRestore: 0,
+      vitalityRestore: 0,
+      durationMinutes: 15,
+      bioBatteryCost: 300,
       stackLimit: 1,
     ),
   ],

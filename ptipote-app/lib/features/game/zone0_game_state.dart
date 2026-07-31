@@ -19,6 +19,7 @@ import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
+import 'ptibug_valuation_service.dart';
 import 'remote_game_config_service.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
@@ -79,6 +80,7 @@ class Zone0GameState extends ChangeNotifier {
   final List<TowerMission> towerMissions = <TowerMission>[];
   final List<WorkshopCraftOrder> workshopOrders = <WorkshopCraftOrder>[];
   final List<PTibug> pTibugs = <PTibug>[];
+  final List<PTibug> soldPTibugArchive = <PTibug>[];
   final List<PTibugTraitData> pTibugTraitData = <PTibugTraitData>[];
   final Set<PTibugModuleType> unlockedPTibugModules = <PTibugModuleType>{};
   final Set<PTibugSpecies> activePTibugPatterns = <PTibugSpecies>{};
@@ -197,16 +199,30 @@ class Zone0GameState extends ChangeNotifier {
   int protectedBatteryChestLevel = 0;
   CommunityConstructionThanks? communityConstructionThanks;
   int plaineNurseryLevel = 0;
+
+  /// Legacy direct craft. Existing orders complete once after migration; all
+  /// new creations go through an Armature then a cultivation tank.
   PTibugCreationOrder? pTibugCreationOrder;
+  final List<PTibugArmature> pTibugArmatures = <PTibugArmature>[];
+  final List<PTibugCultivationTank> pTibugCultivationTanks =
+      <PTibugCultivationTank>[];
+  final List<PTibugCultivationOperation> pTibugCultivationOperations =
+      <PTibugCultivationOperation>[];
+  bool firstCultivationTankGranted = false;
   int securityTowerLevel = 0;
   int marketLevel = 0;
   int currentPopulation = kernelConfig.startingPopulation;
   int kernelTrustLevel = 1;
   int kernelTrustXp = 0;
   int bioBatteries = kernelConfig.startingBioBatteries;
+
   /// Monnaie fine du Marché. Dix bio-piles sont automatiquement compactées
   /// en une bio-batterie, sans modifier les coûts existants en batteries.
   int bioPiles = 0;
+  bool energyCorePatternDiscovered = false;
+  bool energyCoreWarning600Shown = false;
+  bool energyCoreWarning699Shown = false;
+  int storedEnergyCores = 0;
   int energyUnits = 0;
   int recyclerLevel = 0;
   int recyclerWasteTank = 0;
@@ -370,7 +386,7 @@ class Zone0GameState extends ChangeNotifier {
     _reportBuildingViability(buildingId, 'fonctionne de nouveau.');
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return const Zone0ActionResult(
+    return Zone0ActionResult(
         success: true, message: 'Bâtiment remis en marche.');
   }
 
@@ -1070,6 +1086,77 @@ class Zone0GameState extends ChangeNotifier {
   int get exposedBioBatteryCount =>
       math.max(0, bioBatteries - protectedBioBatteryCount).toInt();
 
+  static const int energyCoreCapacity = 300;
+  static const int maximumBioBatteryStorage = 999;
+
+  /// Every chest level from level 2 onward holds one sealed Energy Core.
+  int get energyCoreStorageSlots => math.max(0, protectedBatteryChestLevel - 1);
+
+  int get availableEnergyCoreStorageSlots =>
+      math.max(0, energyCoreStorageSlots - storedEnergyCores);
+
+  void _resolveEnergyCoreMilestones() {
+    if (bioBatteries >= 600 && !energyCorePatternDiscovered) {
+      energyCorePatternDiscovered = true;
+      discoveredKernelPlanIds.add('energy-core');
+      reports.add(PtipoteMissionReport.system(
+        message:
+            'La masse d’énergie accumulée révèle le Pattern Cœur d’énergie. Investis 20 Données Énergie, 20 Organiques, 10 Minérales, 15 Mycéliennes et 15 Biomimétisme.',
+        sourceBuildingId: 'kernel',
+        mailbox: Zone0MessageMailbox.kernel,
+        subject: 'Nouveau Pattern énergétique',
+        concerned: 'Joueur',
+        summary: 'Le Cœur d’énergie est disponible dans les Plans du Kernel.',
+      ));
+    }
+    if (bioBatteries >= 600 && !energyCoreWarning600Shown) {
+      energyCoreWarning600Shown = true;
+    }
+    if (bioBatteries >= 699 && !energyCoreWarning699Shown) {
+      energyCoreWarning699Shown = true;
+    }
+  }
+
+  Zone0ActionResult storeEnergyCore() {
+    if (availableEnergyCoreStorageSlots <= 0 ||
+        resourceAmount('Cœur d’énergie') <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucun emplacement de coffre libre ou aucun Cœur disponible.',
+      );
+    }
+    if (removeResource('Cœur d’énergie', 1) <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cœur indisponible.');
+    }
+    storedEnergyCores += 1;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Cœur d’énergie rangé dans le coffre.');
+  }
+
+  Zone0ActionResult unsealStoredEnergyCore() {
+    if (storedEnergyCores <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun Cœur scellé dans le coffre.');
+    }
+    if (bioBatteries + energyCoreCapacity > maximumBioBatteryStorage) {
+      return const Zone0ActionResult(
+        success: false,
+        message:
+            'Stock insuffisant : ouvre ce Cœur à 699 Bio-batteries ou moins.',
+      );
+    }
+    storedEnergyCores -= 1;
+    bioBatteries += energyCoreCapacity;
+    _resolveEnergyCoreMilestones();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Cœur descellé : +300 Bio-batteries.');
+  }
+
   int get communityProjectChoiceLimit => (_lastKnownCampHeartLevel *
           campHeartConfig.communityProjects.choicesPerCoreLevel)
       .toInt();
@@ -1245,7 +1332,8 @@ class Zone0GameState extends ChangeNotifier {
 
   /// La boutique principale est conservée sur les champs historiques afin de
   /// migrer les sauvegardes sans perdre son stock ni son Distributeur.
-  int get marketShopLimit => marketConfig.specializedShopSlotsForLevel(marketLevel);
+  int get marketShopLimit =>
+      marketConfig.specializedShopSlotsForLevel(marketLevel);
   int get marketShopCount =>
       1 + marketShops.where((shop) => !shop.isPrimary).length;
 
@@ -1257,7 +1345,9 @@ class Zone0GameState extends ChangeNotifier {
       : marketShopById(shopId)?.stockSlots ?? 0;
 
   List<Zone0InventoryStack>? marketStockForShop(String shopId) =>
-      shopId == primaryMarketShopId ? marketStock : marketShopById(shopId)?.stock;
+      shopId == primaryMarketShopId
+          ? marketStock
+          : marketShopById(shopId)?.stock;
 
   /// Le premier distributeur historique appartient désormais à la boutique
   /// principale. Les boutiques ajoutées enregistrent leur propre machine.
@@ -1284,7 +1374,10 @@ class Zone0GameState extends ChangeNotifier {
 
   bool marketShopAccepts(String shopId, String resource) =>
       shopId == primaryMarketShopId
-          ? MarketShop(id: primaryMarketShopId, specialization: primaryMarketShopSpecialization, level: primaryMarketShopLevel)
+          ? MarketShop(
+                  id: primaryMarketShopId,
+                  specialization: primaryMarketShopSpecialization,
+                  level: primaryMarketShopLevel)
               .accepts(resource)
           : (marketShopById(shopId)?.accepts(resource) ?? false);
 
@@ -1306,7 +1399,9 @@ class Zone0GameState extends ChangeNotifier {
   int _marketPTibugAmount(String resource) {
     final species = _marketPTibugSpecies(resource);
     if (species == null) return 0;
-    return pTibugs.where((bug) => bug.species == species && _isBasicMarketPTibug(bug)).length;
+    return pTibugs
+        .where((bug) => bug.species == species && _isBasicMarketPTibug(bug))
+        .length;
   }
 
   bool _consumeMarketPTibugs(String resource, int amount) {
@@ -1317,7 +1412,34 @@ class Zone0GameState extends ChangeNotifier {
         .take(amount)
         .toList(growable: false);
     if (candidates.length < amount) return false;
-    pTibugs.removeWhere((bug) => candidates.contains(bug));
+    final now = DateTime.now();
+    for (final bug in candidates) {
+      final valuation = pTibugValuationFor(bug);
+      bug
+        ..lifecycleStatus = PTibugLifecycleStatus.sold
+        ..updatedAt = now;
+      pTibugCapsules.add(PTibugCapsule(
+        id: 'certified-ptibug-${now.microsecondsSinceEpoch}-${bug.id}',
+        sourcePtibugId: bug.id,
+        species: bug.species,
+        styleVariant: bug.styleVariant,
+        displayName: bug.displayName,
+        level: bug.level,
+        xp: bug.xp,
+        baseValueSnapshot: valuation.baseValue,
+        levelValueSnapshot: valuation.levelValue,
+        traitValueSnapshot: valuation.traitValue,
+        moduleValueSnapshot: valuation.moduleValue,
+        estimatedValueSnapshot: valuation.total,
+        valuationConfigVersion: valuation.configVersion,
+        certificationId: 'cert-${bug.id}-${now.microsecondsSinceEpoch}',
+        status: CertifiedPTibugCapsuleStatus.sold,
+        soldAt: now,
+        createdAt: now,
+      ));
+      soldPTibugArchive.add(bug);
+    }
+    pTibugs.removeWhere(candidates.contains);
     return true;
   }
 
@@ -1451,6 +1573,7 @@ class Zone0GameState extends ChangeNotifier {
           .floor(),
     );
     bioBatteries += produced;
+    _resolveEnergyCoreMilestones();
     generatorTotalProduced += produced;
     generatorCycleStartedAt = _generatorCanRun
         ? generatorCycleStartedAt!.add(
@@ -2470,6 +2593,13 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Quantité invalide.',
       );
     }
+    final bioBatteryCost = recipe.bioBatteryCost * quantity;
+    if (bioBatteries < bioBatteryCost) {
+      return Zone0ActionResult(
+        success: false,
+        message: '$bioBatteryCost Bio-batteries requises.',
+      );
+    }
     if (figurine != null && isBusy(figurine)) {
       return const Zone0ActionResult(
         success: false,
@@ -2501,6 +2631,7 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Ressources indisponibles.',
       );
     }
+    bioBatteries -= bioBatteryCost;
     if (figurine == null) {
       energyUnits -= 1;
     }
@@ -2896,7 +3027,8 @@ class Zone0GameState extends ChangeNotifier {
         bioBatteries < marketConfig.shopConstructionBioBatteries) {
       return Zone0ActionResult(
         success: false,
-        message: '${missingResourcesLabel(marketConfig.shopConstructionCost)} · ${marketConfig.shopConstructionBioBatteries} bio-batteries requises.',
+        message:
+            '${missingResourcesLabel(marketConfig.shopConstructionCost)} · ${marketConfig.shopConstructionBioBatteries} bio-batteries requises.',
       );
     }
     removeResources(marketConfig.shopConstructionCost);
@@ -2941,10 +3073,12 @@ class Zone0GameState extends ChangeNotifier {
     }
     final moved = removeResource(
       resource,
-      math.min(amount, math.min(resourceAmount(resource), marketConfig.stackQuantityLimit)),
+      math.min(amount,
+          math.min(resourceAmount(resource), marketConfig.stackQuantityLimit)),
     );
     if (moved <= 0) {
-      return const Zone0ActionResult(success: false, message: 'Stock insuffisant.');
+      return const Zone0ActionResult(
+          success: false, message: 'Stock insuffisant.');
     }
     stock.add(Zone0InventoryStack(
       id: 'shop-$shopId-${DateTime.now().microsecondsSinceEpoch}-${stock.length}',
@@ -2953,10 +3087,12 @@ class Zone0GameState extends ChangeNotifier {
     ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return Zone0ActionResult(success: true, message: '$moved $resource placé(s) dans ce magasin.');
+    return Zone0ActionResult(
+        success: true, message: '$moved $resource placé(s) dans ce magasin.');
   }
 
-  Zone0ActionResult returnMarketShopStock(String shopId, Zone0InventoryStack stack) {
+  Zone0ActionResult returnMarketShopStock(
+      String shopId, Zone0InventoryStack stack) {
     final stock = marketStockForShop(shopId);
     if (stock == null || !stock.contains(stack)) {
       return const Zone0ActionResult(success: false, message: 'Stock absent.');
@@ -2967,7 +3103,9 @@ class Zone0GameState extends ChangeNotifier {
     if (stack.amount <= 0) stock.remove(stack);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return Zone0ActionResult(success: returned > 0, message: '$returned ${stack.resource} rendu à la Maison.');
+    return Zone0ActionResult(
+        success: returned > 0,
+        message: '$returned ${stack.resource} rendu à la Maison.');
   }
 
   int marketStockAmount(String resource) => marketStock
@@ -2975,12 +3113,13 @@ class Zone0GameState extends ChangeNotifier {
       .fold(0, (sum, stack) => sum + stack.amount);
 
   int marketShopStockAmount(String shopId, String resource) {
-    if (_marketPTibugSpecies(resource) != null && marketShopAccepts(shopId, resource)) {
+    if (_marketPTibugSpecies(resource) != null &&
+        marketShopAccepts(shopId, resource)) {
       return _marketPTibugAmount(resource);
     }
     return (marketStockForShop(shopId) ?? const <Zone0InventoryStack>[])
-          .where((stack) => stack.resource == resource)
-          .fold(0, (sum, stack) => sum + stack.amount);
+        .where((stack) => stack.resource == resource)
+        .fold(0, (sum, stack) => sum + stack.amount);
   }
 
   /// Uses an already started pile first, then the next matching one. This is
@@ -3007,11 +3146,14 @@ class Zone0GameState extends ChangeNotifier {
       if (!marketShopAccepts(shopId, resource)) return false;
       return _consumeMarketPTibugs(resource, amount);
     }
-    if (shopId == primaryMarketShopId) return _consumeMarketStock(resource, amount);
+    if (shopId == primaryMarketShopId)
+      return _consumeMarketStock(resource, amount);
     final stock = marketStockForShop(shopId);
-    if (stock == null || marketShopStockAmount(shopId, resource) < amount) return false;
+    if (stock == null || marketShopStockAmount(shopId, resource) < amount)
+      return false;
     var remaining = amount;
-    for (final stack in stock.where((stack) => stack.resource == resource).toList()) {
+    for (final stack
+        in stock.where((stack) => stack.resource == resource).toList()) {
       final used = math.min(remaining, stack.amount);
       stack.amount -= used;
       remaining -= used;
@@ -3131,7 +3273,8 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: '$name rentre du Marché · +$xp XP · énergie $vitality/${ptipoteStatsConfig.maxVitality} · faim $hunger/${ptipoteStatsConfig.baseHunger} · repos $rest/${ptipoteStatsConfig.maxRest}.',
+      message:
+          '$name rentre du Marché · +$xp XP · énergie $vitality/${ptipoteStatsConfig.maxVitality} · faim $hunger/${ptipoteStatsConfig.baseHunger} · repos $rest/${ptipoteStatsConfig.maxRest}.',
     );
   }
 
@@ -3202,12 +3345,14 @@ class Zone0GameState extends ChangeNotifier {
         changed = true;
       }
       marketLastXpTickAt ??= current;
-      final xpPeriods = current.difference(marketLastXpTickAt!).inMinutes ~/ 120;
+      final xpPeriods =
+          current.difference(marketLastXpTickAt!).inMinutes ~/ 120;
       if (xpPeriods > 0 && marketAssignedPtipoteId != null) {
         final xpGain = xpPeriods * math.max(1, marketLevel).toInt();
         addMissionXp(marketAssignedPtipoteId!, xpGain);
         marketXpEarnedThisAssignment += xpGain;
-        marketLastXpTickAt = marketLastXpTickAt!.add(Duration(hours: 2 * xpPeriods));
+        marketLastXpTickAt =
+            marketLastXpTickAt!.add(Duration(hours: 2 * xpPeriods));
         changed = true;
       }
     }
@@ -3216,8 +3361,10 @@ class Zone0GameState extends ChangeNotifier {
     // Le P’TIPOTE du Point info conserve une fenêtre de trois minutes : le
     // joueur peut donc répondre immédiatement et le Distributeur en une minute.
     if (marketAssignedPtipoteId != null) {
-      for (final request in marketRequests.where((item) => item.isOpen).toList()) {
-        if (current.isBefore(request.createdAt.add(const Duration(minutes: 3)))) {
+      for (final request
+          in marketRequests.where((item) => item.isOpen).toList()) {
+        if (current
+            .isBefore(request.createdAt.add(const Duration(minutes: 3)))) {
           continue;
         }
         final result = sellMarketRequest(
@@ -3247,7 +3394,8 @@ class Zone0GameState extends ChangeNotifier {
 
   void _createMarketRequest(DateTime now) {
     final entries = marketConfig.saleValues.keys
-        .where((item) => marketShopAccepts(primaryMarketShopId, item) ||
+        .where((item) =>
+            marketShopAccepts(primaryMarketShopId, item) ||
             marketShops.any((shop) => !shop.isPrimary && shop.accepts(item)))
         .toSet()
         .toList();
@@ -3312,7 +3460,8 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int get marketEconomicActivityPercent {
-    final wellbeing = (campWellbeing.clamp(0, 100) / 100 *
+    final wellbeing = (campWellbeing.clamp(0, 100) /
+            100 *
             marketConfig.economicActivityWellbeingMaxPercent)
         .round();
     final heart = math.min(
@@ -3334,11 +3483,13 @@ class Zone0GameState extends ChangeNotifier {
   Duration _marketRequestInterval() {
     final basePerHour = marketConfig.requestBasePerHourForLevel(marketLevel);
     if (basePerHour <= 0) return const Duration(hours: 1);
-    final boostedPerHour = basePerHour * (1 + marketEconomicActivityPercent / 100);
+    final boostedPerHour =
+        basePerHour * (1 + marketEconomicActivityPercent / 100);
     final rawMinutes = 60 / boostedPerHour;
     final jitterMin = marketConfig.requestJitterMinPercent / 100;
     final jitterMax = marketConfig.requestJitterMaxPercent / 100;
-    final amplitude = jitterMin + _random.nextDouble() * (jitterMax - jitterMin);
+    final amplitude =
+        jitterMin + _random.nextDouble() * (jitterMax - jitterMin);
     final signedJitter = _random.nextBool() ? amplitude : -amplitude;
     return Duration(
       minutes: math.max(
@@ -3351,13 +3502,17 @@ class Zone0GameState extends ChangeNotifier {
   String _pickMarketRequestItem(List<String> entries) {
     final byCategory = <String, List<String>>{};
     for (final item in entries) {
-      byCategory.putIfAbsent(_marketItemCategory(item), () => <String>[]).add(item);
+      byCategory
+          .putIfAbsent(_marketItemCategory(item), () => <String>[])
+          .add(item);
     }
     final availableWeights = <String, int>{
       for (final entry in marketConfig.requestCategoryWeights.entries)
-        if ((byCategory[entry.key] ?? const <String>[]).isNotEmpty) entry.key: entry.value,
+        if ((byCategory[entry.key] ?? const <String>[]).isNotEmpty)
+          entry.key: entry.value,
     };
-    final total = availableWeights.values.fold<int>(0, (sum, value) => sum + value);
+    final total =
+        availableWeights.values.fold<int>(0, (sum, value) => sum + value);
     if (total <= 0) return entries[_random.nextInt(entries.length)];
     var pick = _random.nextInt(total);
     for (final entry in availableWeights.entries) {
@@ -3371,7 +3526,8 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   String _marketItemCategory(String item) {
-    if (craftConfig.recipes.any((recipe) => recipe.resultItem == item && recipe.isConsumable)) {
+    if (craftConfig.recipes
+        .any((recipe) => recipe.resultItem == item && recipe.isConsumable)) {
       return 'food';
     }
     if (item.contains('Tenue')) return 'clothing';
@@ -3380,12 +3536,21 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int _marketPriceInBioPiles(String item, {required String shopId}) {
-    final base = math.max(1, marketConfig.requestPriceBioPiles[item] ??
-        (marketConfig.saleValues[item] ?? 1) * marketConfig.valuePerBioBattery);
+    final base = math.max(
+        1,
+        marketConfig.requestPriceBioPiles[item] ??
+            (marketConfig.saleValues[item] ?? 1) *
+                marketConfig.valuePerBioBattery);
     if (shopId == primaryMarketShopId) {
-      return math.max(1, (base * (100 - marketConfig.baseStorePricePenaltyPercent) / 100).round());
+      return math.max(
+          1,
+          (base * (100 - marketConfig.baseStorePricePenaltyPercent) / 100)
+              .round());
     }
-    return math.max(1, (base * (100 + marketConfig.specializedShopGainBonusPercent) / 100).round());
+    return math.max(
+        1,
+        (base * (100 + marketConfig.specializedShopGainBonusPercent) / 100)
+            .round());
   }
 
   void _creditMarketBioPiles(int amount) {
@@ -3395,6 +3560,7 @@ class Zone0GameState extends ChangeNotifier {
       bioPiles -= converted * 10;
       bioBatteries += converted;
       marketBioBatteriesEarned += converted;
+      _resolveEnergyCoreMilestones();
     }
   }
 
@@ -3445,7 +3611,8 @@ class Zone0GameState extends ChangeNotifier {
 
   void _recordDistributorIncident(String message, DateTime at) {
     marketRequestLog.add(MarketRequestLogEntry(
-      requestId: 'distributor-${at.microsecondsSinceEpoch}-${marketRequestLog.length}',
+      requestId:
+          'distributor-${at.microsecondsSinceEpoch}-${marketRequestLog.length}',
       createdAt: at,
       deadline: at,
       requestedItemId: message,
@@ -3470,9 +3637,12 @@ class Zone0GameState extends ChangeNotifier {
       );
 
   Zone0ActionResult depositMarketDistributorMaterial(
-      String resource, int amount, {String shopId = primaryMarketShopId}) {
+      String resource, int amount,
+      {String shopId = primaryMarketShopId}) {
     if (shopId == primaryMarketShopId && !primaryMarketShopChosen) {
-      return const Zone0ActionResult(success: false, message: 'Choisissez d’abord le type de la boutique.');
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Choisissez d’abord le type de la boutique.');
     }
     final distributor = _ensureMarketDistributorForShop(shopId);
     if (distributor.isBuilt || amount <= 0) {
@@ -3497,8 +3667,8 @@ class Zone0GameState extends ChangeNotifier {
   bool isMarketDistributorReadyToBuildFor(String shopId) {
     final distributor = marketDistributorForShop(shopId);
     return distributor != null &&
-      marketConfig.distributorConstructionCost.entries.every((entry) =>
-          (distributor.constructionDeposits[entry.key] ?? 0) >= entry.value);
+        marketConfig.distributorConstructionCost.entries.every((entry) =>
+            (distributor.constructionDeposits[entry.key] ?? 0) >= entry.value);
   }
 
   bool get isMarketDistributorReadyToBuild =>
@@ -3507,7 +3677,9 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult startMarketDistributorConstruction(
       {String shopId = primaryMarketShopId}) {
     if (shopId == primaryMarketShopId && !primaryMarketShopChosen) {
-      return const Zone0ActionResult(success: false, message: 'Choisissez d’abord le type de la boutique.');
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Choisissez d’abord le type de la boutique.');
     }
     final distributor = _ensureMarketDistributorForShop(shopId);
     if (distributor.isBuilt || distributor.constructionStartedAt != null) {
@@ -3521,12 +3693,12 @@ class Zone0GameState extends ChangeNotifier {
     if (bioBatteries < marketConfig.distributorConstructionBioBatteries) {
       return Zone0ActionResult(
           success: false,
-          message: '${marketConfig.distributorConstructionBioBatteries} bio-batteries requises.');
+          message:
+              '${marketConfig.distributorConstructionBioBatteries} bio-batteries requises.');
     }
     bioBatteries -= marketConfig.distributorConstructionBioBatteries;
     distributor.constructionStartedAt = DateTime.now();
-    distributor.constructionEndsAt =
-        distributor.constructionStartedAt!.add(
+    distributor.constructionEndsAt = distributor.constructionStartedAt!.add(
       Duration(minutes: marketConfig.distributorConstructionMinutes),
     );
     notifyListeners();
@@ -3577,7 +3749,9 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult transferToMarketDistributor(String resource, int amount,
       {String shopId = primaryMarketShopId}) {
     final distributor = marketDistributorForShop(shopId);
-    if (distributor == null || !distributor.isBuilt || !distributor.accepts(resource)) {
+    if (distributor == null ||
+        !distributor.isBuilt ||
+        !distributor.accepts(resource)) {
       return const Zone0ActionResult(
           success: false,
           message: 'Produit incompatible avec le Distributeur.');
@@ -3640,8 +3814,9 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Aucune réparation à lancer.');
     }
-    if (!byPtipote && (!hasResources(marketConfig.distributorRepairCost) ||
-        !removeResources(marketConfig.distributorRepairCost))) {
+    if (!byPtipote &&
+        (!hasResources(marketConfig.distributorRepairCost) ||
+            !removeResources(marketConfig.distributorRepairCost))) {
       return Zone0ActionResult(
           success: false,
           message: missingResourcesLabel(marketConfig.distributorRepairCost));
@@ -3667,9 +3842,10 @@ class Zone0GameState extends ChangeNotifier {
     // Le joueur peut remplacer une réparation P’TIPOTE par une intervention
     // courte. La même machine ne peut jamais lancer deux réparations.
     distributor.repairEndsAt = DateTime.now().add(
-      Duration(minutes: byPtipote
-          ? marketConfig.distributorRepairMinutesForLevel(distributor.level)
-          : 1),
+      Duration(
+          minutes: byPtipote
+              ? marketConfig.distributorRepairMinutesForLevel(distributor.level)
+              : 1),
     );
     distributor.repairStartedBy = byPtipote ? 'ptipote' : 'player';
     _recordDistributorIncident(
@@ -3687,7 +3863,9 @@ class Zone0GameState extends ChangeNotifier {
     for (final shop in marketShops.where((shop) => !shop.isPrimary)) {
       final distributor = shop.distributor;
       if (distributor != null) {
-        changed = _resolveMarketDistributorForShop(shop.id, distributor, current) || changed;
+        changed =
+            _resolveMarketDistributorForShop(shop.id, distributor, current) ||
+                changed;
       }
     }
     return changed;
@@ -3709,8 +3887,8 @@ class Zone0GameState extends ChangeNotifier {
         ..level = 1
         ..constructionStartedAt = null
         ..constructionEndsAt = null;
-      reports.add(PtipoteMissionReport.system(
-          message: '$shopLabel est opérationnel.'));
+      reports.add(
+          PtipoteMissionReport.system(message: '$shopLabel est opérationnel.'));
       changed = true;
     }
     if (distributor.repairEndsAt != null &&
@@ -3725,7 +3903,8 @@ class Zone0GameState extends ChangeNotifier {
       distributor.repairStartedBy = null;
       changed = true;
     }
-    if (distributor.isBroken && distributor.repairEndsAt == null &&
+    if (distributor.isBroken &&
+        distributor.repairEndsAt == null &&
         marketAssignedPtipoteId != null) {
       _repairDistributor(distributor, byPtipote: true, shopLabel: shopLabel);
       return true;
@@ -3763,7 +3942,8 @@ class Zone0GameState extends ChangeNotifier {
               distributor.accepts(stack.resource) && stack.amount > 0)
           .firstOrNull;
       if (source != null) {
-        final transferred = math.min(source.amount, marketConfig.stackQuantityLimit);
+        final transferred =
+            math.min(source.amount, marketConfig.stackQuantityLimit);
         source.amount -= transferred;
         if (source.amount <= 0) sourceStock.remove(source);
         distributor.stock.add(Zone0InventoryStack(
@@ -3775,7 +3955,8 @@ class Zone0GameState extends ChangeNotifier {
       }
     }
     for (final request in marketRequests
-        .where((item) => item.isOpen && item.shopId == shopId).toList()) {
+        .where((item) => item.isOpen && item.shopId == shopId)
+        .toList()) {
       if (current.isBefore(request.distributorEligibleAt)) continue;
       final stack = distributor.stock
           .where((item) => item.resource == request.requestedItemId)
@@ -3793,13 +3974,14 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
       if (_random.nextInt(math.max(
               1,
-              marketConfig.distributorBreakDenominatorForLevel(
-                  distributor.level))) ==
+              marketConfig
+                  .distributorBreakDenominatorForLevel(distributor.level))) ==
           0) {
         distributor.isBroken = true;
-        _recordDistributorIncident('$shopLabel en panne après une vente.', current);
-        reports.add(PtipoteMissionReport.system(
-            message: '$shopLabel est en panne.'));
+        _recordDistributorIncident(
+            '$shopLabel en panne après une vente.', current);
+        reports.add(
+            PtipoteMissionReport.system(message: '$shopLabel est en panne.'));
         break;
       }
     }
@@ -3818,10 +4000,11 @@ class Zone0GameState extends ChangeNotifier {
         changed = true;
       } else if (contract.autoDeliverAllowed &&
           marketAssignedPtipoteId != null &&
-          contract.requestedItems.entries
-              .every((entry) => (_marketPTibugSpecies(entry.key) != null
+          contract.requestedItems.entries.every((entry) =>
+              (_marketPTibugSpecies(entry.key) != null
                   ? _marketPTibugAmount(entry.key)
-                  : marketStockAmount(entry.key)) >= entry.value)) {
+                  : marketStockAmount(entry.key)) >=
+              entry.value)) {
         _deliverMarketContract(contract);
         changed = true;
       }
@@ -3863,8 +4046,8 @@ class Zone0GameState extends ChangeNotifier {
     if (!contract.requestedItems.entries.every((entry) =>
         (_marketPTibugSpecies(entry.key) != null
             ? _marketPTibugAmount(entry.key)
-            : marketStockAmount(entry.key)) >= entry.value))
-      return false;
+            : marketStockAmount(entry.key)) >=
+        entry.value)) return false;
     for (final entry in contract.requestedItems.entries) {
       final isPTibug = _marketPTibugSpecies(entry.key) != null;
       if (isPTibug) {
@@ -3879,6 +4062,7 @@ class Zone0GameState extends ChangeNotifier {
         (contract.rewardBioBatteries * sourcierConfidencePaymentMultiplier)
             .floor();
     bioBatteries += payment;
+    _resolveEnergyCoreMilestones();
     sourcierConfidence =
         math.min(100, sourcierConfidence + contract.confidenceReward);
     contract
@@ -5165,6 +5349,9 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  /// Starts the first stage of a new P'TIBUG: the Armature. The old direct
+  /// order is retained only to resolve a craft that was already running when
+  /// the cultivation migration was installed.
   Zone0ActionResult startPTibugCreation(PTibugSpecies species) {
     if (!isPlaineNurseryBuilt) {
       return const Zone0ActionResult(
@@ -5180,10 +5367,11 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Pattern P’TIBUG non actif.',
       );
     }
-    if (pTibugCreationOrder?.isActive == true) {
+    if (pTibugCreationOrder?.isActive == true ||
+        pTibugArmatures.any((item) => item.isCrafting)) {
       return const Zone0ActionResult(
         success: false,
-        message: 'La Nurserie crée déjà un P’TIBUG.',
+        message: 'La Nurserie fabrique déjà une Armature.',
       );
     }
     final config = pTibugConfig.species[species]!;
@@ -5199,16 +5387,817 @@ class Zone0GameState extends ChangeNotifier {
     energyUnits -= config.creationEnergyCost;
     bioBatteries -= config.creationBioBatteryCost;
     final now = DateTime.now();
-    pTibugCreationOrder = PTibugCreationOrder(
+    pTibugArmatures.add(PTibugArmature(
+      id: 'ptibug-armature-${now.microsecondsSinceEpoch}',
       species: species,
       startedAt: now,
-      endsAt: now.add(Duration(minutes: config.creationMinutes)),
-    );
+      completesAt:
+          now.add(Duration(minutes: pTibugConfig.cultivation.armatureMinutes)),
+      materialCosts: Map<String, int>.from(config.creationCost),
+      createdAt: now,
+    ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: 'Création ${config.displayName} lancée.',
+      message: 'Armature ${config.displayName} lancée.',
+    );
+  }
+
+  int get cultivationTankSlotCount => math.max(
+        0,
+        plaineNurseryLevel * pTibugConfig.cultivation.tankSlotsPerNurseryLevel,
+      );
+
+  List<PTibugCultivationTank> get builtCultivationTanks =>
+      pTibugCultivationTanks.where((tank) => tank.isBuilt).toList()
+        ..sort((first, second) => first.slotIndex.compareTo(second.slotIndex));
+
+  PTibugCultivationTank? cultivationTankForId(String id) =>
+      pTibugCultivationTanks.where((tank) => tank.id == id).firstOrNull;
+
+  PTibugCultivationOperation? cultivationOperationForTank(String tankId) =>
+      pTibugCultivationOperations
+          .where((operation) =>
+              operation.tankId == tankId &&
+              operation.status != PTibugCultivationOperationStatus.cancelled)
+          .firstOrNull;
+
+  void _ensureCultivationTankSlots() {
+    for (var index = 0; index < cultivationTankSlotCount; index++) {
+      if (pTibugCultivationTanks.any((tank) => tank.slotIndex == index))
+        continue;
+      pTibugCultivationTanks.add(PTibugCultivationTank(
+        id: 'ptibug-tank-$index',
+        slotIndex: index,
+      ));
+    }
+    if (!firstCultivationTankGranted && cultivationTankSlotCount > 0) {
+      final first = cultivationTankForId('ptibug-tank-0');
+      if (first != null) {
+        first
+          ..isBuilt = true
+          ..status = PTibugCultivationTankStatus.available;
+      }
+      firstCultivationTankGranted = true;
+    }
+  }
+
+  Zone0ActionResult depositCultivationTankConstruction({
+    required String tankId,
+    required Map<String, int> resources,
+    int bioBatteriesAmount = 0,
+  }) {
+    _ensureCultivationTankSlots();
+    final tank = cultivationTankForId(tankId);
+    if (tank == null ||
+        tank.isBuilt ||
+        tank.status == PTibugCultivationTankStatus.underConstruction) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Cette cuve ne peut pas recevoir de travaux.');
+    }
+    final config = pTibugConfig.cultivation;
+    final requested = <String, int>{
+      for (final entry in resources.entries)
+        entry.key: math.max(
+            0,
+            math.min(
+                entry.value,
+                math.max(
+                    0,
+                    (config.tankConstructionCost[entry.key] ?? 0) -
+                        (tank.constructionDeposits[entry.key] ?? 0)))),
+    };
+    final requestedBatteries = math.max(
+      0,
+      math.min(
+        bioBatteriesAmount,
+        math.max(
+          0,
+          config.tankConstructionBioBatteries -
+              (tank.constructionDeposits['Bio-batteries'] ?? 0),
+        ),
+      ),
+    );
+    if (requested.values.every((amount) => amount == 0) &&
+        requestedBatteries <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucune ressource à déposer.');
+    }
+    if (!hasResources(requested) || bioBatteries < requestedBatteries) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Ressources ou Bio-batteries insuffisantes.');
+    }
+    if (!removeResources(requested))
+      return const Zone0ActionResult(
+          success: false, message: 'Ressources insuffisantes.');
+    bioBatteries -= requestedBatteries;
+    for (final entry in requested.entries) {
+      tank.constructionDeposits[entry.key] =
+          (tank.constructionDeposits[entry.key] ?? 0) + entry.value;
+    }
+    tank.constructionDeposits['Bio-batteries'] =
+        (tank.constructionDeposits['Bio-batteries'] ?? 0) + requestedBatteries;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Matériaux déposés dans la cuve.');
+  }
+
+  bool cultivationTankConstructionReady(PTibugCultivationTank tank) {
+    final config = pTibugConfig.cultivation;
+    return config.tankConstructionCost.entries.every((entry) =>
+            (tank.constructionDeposits[entry.key] ?? 0) >= entry.value) &&
+        (tank.constructionDeposits['Bio-batteries'] ?? 0) >=
+            config.tankConstructionBioBatteries;
+  }
+
+  Zone0ActionResult startCultivationTankConstruction(String tankId) {
+    final tank = cultivationTankForId(tankId);
+    if (tank == null ||
+        !cultivationTankConstructionReady(tank) ||
+        tank.isBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Dépôt de construction incomplet.');
+    }
+    final now = DateTime.now();
+    tank
+      ..status = PTibugCultivationTankStatus.underConstruction
+      ..constructionStartedAt = now
+      ..constructionEndsAt = now.add(
+          Duration(minutes: pTibugConfig.cultivation.tankConstructionMinutes));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Construction de la cuve lancée.');
+  }
+
+  Zone0ActionResult addCultivationTankResources({
+    required String tankId,
+    required String resource,
+    required int amount,
+  }) {
+    final tank = cultivationTankForId(tankId);
+    final operation =
+        tank == null ? null : cultivationOperationForTank(tank.id);
+    if (tank == null || !tank.isBuilt || amount <= 0 || resource == 'Énergie') {
+      return const Zone0ActionResult(
+          success: false, message: 'Ajout impossible.');
+    }
+    final species = operation?.species ?? PTibugSpecies.arac;
+    final capacity = operation == null
+        ? resource == 'Organique'
+            ? pTibugConfig.cultivation.organicCapacityFor(species)
+            : pTibugConfig.cultivation.mineralCapacityFor(species)
+        : _cultivationRateFor(operation, resource) *
+            pTibugConfig.cultivation.targetAutonomyHours;
+    final stored =
+        resource == 'Organique' ? tank.organicStored : tank.mineralStored;
+    final added = math.min(amount, math.max(0, (capacity - stored).floor()));
+    if (added <= 0 || resourceAmount(resource) < added) {
+      return const Zone0ActionResult(
+          success: false, message: 'Stock insuffisant ou cuve pleine.');
+    }
+    if (!removeResources(<String, int>{resource: added})) {
+      return const Zone0ActionResult(
+          success: false, message: 'Stock insuffisant.');
+    }
+    if (resource == 'Organique')
+      tank.organicStored += added;
+    else
+      tank.mineralStored += added;
+    _resumeCultivationIfReady(tank);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$added $resource ajoutés à la cuve.');
+  }
+
+  Zone0ActionResult openBioBatteryForCultivationTank(String tankId) {
+    final tank = cultivationTankForId(tankId);
+    if (tank == null || !tank.isBuilt || bioBatteries <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Bio-batterie ou cuve indisponible.');
+    }
+    final operation = cultivationOperationForTank(tank.id);
+    final capacity = operation == null
+        ? pTibugConfig.cultivation.energyCapacityFor(PTibugSpecies.arac)
+        : _cultivationRateFor(operation, 'Énergie') *
+            pTibugConfig.cultivation.targetAutonomyHours;
+    final gain =
+        math.min(10, math.max(0, (capacity - tank.energyStored).floor()));
+    if (gain <= 0)
+      return const Zone0ActionResult(
+          success: false, message: 'Réserve d’énergie pleine.');
+    bioBatteries -= 1;
+    tank.energyStored += gain;
+    _resumeCultivationIfReady(tank);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$gain Énergies ajoutées à la cuve.');
+  }
+
+  Zone0ActionResult startPTibugCultivation(
+      {required String armatureId, required String tankId}) {
+    _ensureCultivationTankSlots();
+    final armature =
+        pTibugArmatures.where((item) => item.id == armatureId).firstOrNull;
+    final tank = cultivationTankForId(tankId);
+    if (armature == null ||
+        !armature.isCompleted ||
+        tank == null ||
+        !tank.isBuilt ||
+        tank.currentOperationId != null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Armature ou cuve indisponible.');
+    }
+    final now = DateTime.now();
+    final operation = PTibugCultivationOperation(
+      id: 'ptibug-cultivation-${now.microsecondsSinceEpoch}',
+      tankId: tankId,
+      type: PTibugCultivationOperationType.cultivation,
+      armatureId: armatureId,
+      species: armature.species,
+      startedAt: now,
+      lastCalculatedAt: now,
+      activeSecondsRequired: pTibugConfig.cultivation.activeSecondsRequired,
+    );
+    pTibugCultivationOperations.add(operation);
+    tank
+      ..currentOperationId = operation.id
+      ..status = PTibugCultivationTankStatus.pausedMissingResources;
+    _resumeCultivationIfReady(tank);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Cultivation placée en cuve.');
+  }
+
+  PTibugCultivationOperation? cultivationOperationForPTibug(String ptibugId) =>
+      pTibugCultivationOperations
+          .where((operation) =>
+              operation.targetPtibugId == ptibugId &&
+              operation.status != PTibugCultivationOperationStatus.cancelled)
+          .firstOrNull;
+
+  bool isPTibugInCultivation(PTibug bug) =>
+      cultivationOperationForPTibug(bug.id) != null;
+
+  double _cultivationRateFor(
+    PTibugCultivationOperation operation,
+    String resource,
+  ) {
+    final config = pTibugConfig.cultivation;
+    final base = switch (resource) {
+      'Organique' => config.organicPerActiveHour[operation.species] ?? 0,
+      'Minéral' => config.mineralPerActiveHour[operation.species] ?? 0,
+      _ => config.energyPerActiveHour[operation.species] ?? 0,
+    };
+    final coefficient = resource == 'Énergie'
+        ? config.energyCoefficientFor(operation.type)
+        : config.materialCoefficientFor(operation.type);
+    // Coefficients describe the *total* operation cost relative to a full
+    // 24 h Cultivation. Rates are scaled to the shorter 6 h / 12 h windows,
+    // so a full reservoir still represents roughly eight active hours.
+    final operationHours =
+        operation.activeSecondsRequired / Duration.secondsPerHour;
+    final rateMultiplier = operationHours <= 0
+        ? coefficient
+        : coefficient * config.activeHours / operationHours;
+    return base * rateMultiplier;
+  }
+
+  Map<String, double> cultivationOperationTotalCosts(
+    PTibugCultivationOperation operation,
+  ) {
+    final hours = operation.activeSecondsRequired / Duration.secondsPerHour;
+    return <String, double>{
+      'Organique': _cultivationRateFor(operation, 'Organique') * hours,
+      'Minéral': _cultivationRateFor(operation, 'Minéral') * hours,
+      'Énergie': _cultivationRateFor(operation, 'Énergie') * hours,
+    };
+  }
+
+  String? _ptibugTankEligibility(PTibug bug) {
+    if (!pTibugs.contains(bug)) return 'P’TIBUG introuvable.';
+    if (isPTibugInCultivation(bug)) return 'Ce P’TIBUG est déjà en cuve.';
+    if (bug.inactiveReason == 'En mission') {
+      return 'Ce P’TIBUG est actuellement en mission.';
+    }
+    return null;
+  }
+
+  void _placePTibugInCultivation(PTibug bug) {
+    bug
+      ..assignedSlotIndex = null
+      ..assignedBuildingId = null
+      ..nextProductionAt = null
+      ..inactiveReason = 'En cuve';
+  }
+
+  Zone0ActionResult startPTibugTraitInfusion({
+    required PTibug bug,
+    required String traitId,
+    required String tankId,
+  }) {
+    _ensureCultivationTankSlots();
+    final tank = cultivationTankForId(tankId);
+    final definition = pTibugConfig.traitDefinitionFor(traitId);
+    final eligibility = _ptibugTankEligibility(bug);
+    final targetLevel = nextPTibugTraitLevelFor(bug, traitId);
+    final progress = pTibugPatternProgress['ptibug-trait-$traitId'];
+    if (tank == null || !tank.isBuilt || tank.currentOperationId != null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cuve indisponible.');
+    }
+    if (eligibility != null) {
+      return Zone0ActionResult(success: false, message: eligibility);
+    }
+    if (definition == null || targetLevel == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ce Trait ne peut pas être infusé.');
+    }
+    if (!isPTibugPatternActive('ptibug-trait-$traitId') ||
+        (progress?.masteryLevel ?? 0) < targetLevel) {
+      return Zone0ActionResult(
+        success: false,
+        message: 'Le Pattern doit atteindre la maîtrise $targetLevel.',
+      );
+    }
+    final dataCost = definition.dataCostForLevel(targetLevel);
+    if (!_hasPTibugData(dataCost)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cellules de données insuffisantes.');
+    }
+    final now = DateTime.now();
+    final previousAssignmentId = bug.assignedBuildingId;
+    _consumePTibugData(dataCost);
+    final operation = PTibugCultivationOperation(
+      id: 'ptibug-trait-${now.microsecondsSinceEpoch}',
+      tankId: tankId,
+      type: PTibugCultivationOperationType.traitInfusion,
+      species: bug.species,
+      startedAt: now,
+      lastCalculatedAt: now,
+      activeSecondsRequired: pTibugConfig.cultivation
+          .activeSecondsFor(PTibugCultivationOperationType.traitInfusion),
+      targetPtibugId: bug.id,
+      targetTraitId: traitId,
+      targetTraitRank: targetLevel,
+      reservedDataCells: Map<PTibugDataFamily, int>.from(dataCost),
+      previousAssignmentId: previousAssignmentId,
+    );
+    _placePTibugInCultivation(bug);
+    pTibugCultivationOperations.add(operation);
+    tank
+      ..currentOperationId = operation.id
+      ..status = PTibugCultivationTankStatus.pausedMissingResources;
+    _resumeCultivationIfReady(tank);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '${definition.displayName} rang $targetLevel placé en infusion.',
+    );
+  }
+
+  bool canEvolvePTibug(PTibug bug) {
+    final config = pTibugConfig.progression;
+    return !bug.isRenewed &&
+        bug.renewalCount < config.maximumRenewals &&
+        bug.level >= config.renewalLevel &&
+        bug.biologicalTraitLevel >= 3 &&
+        bug.storedAmount == 0 &&
+        bug.storedDataCells.isEmpty &&
+        !isPTibugInCultivation(bug);
+  }
+
+  Zone0ActionResult startPTibugEvolution({
+    required PTibug bug,
+    required String tankId,
+  }) {
+    _ensureCultivationTankSlots();
+    final tank = cultivationTankForId(tankId);
+    if (tank == null || !tank.isBuilt || tank.currentOperationId != null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cuve indisponible.');
+    }
+    if (!canEvolvePTibug(bug)) {
+      return const Zone0ActionResult(
+        success: false,
+        message:
+            'Évolution indisponible : niveau 3, Trait I rang III et stocks vides requis.',
+      );
+    }
+    final dataCost = pTibugConfig.cultivation.evolutionDataCost;
+    if (!_hasPTibugData(dataCost)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cellules de données insuffisantes.');
+    }
+    final now = DateTime.now();
+    final previousAssignmentId = bug.assignedBuildingId;
+    _consumePTibugData(dataCost);
+    final operation = PTibugCultivationOperation(
+      id: 'ptibug-evolution-${now.microsecondsSinceEpoch}',
+      tankId: tankId,
+      type: PTibugCultivationOperationType.evolution,
+      species: bug.species,
+      startedAt: now,
+      lastCalculatedAt: now,
+      activeSecondsRequired: pTibugConfig.cultivation
+          .activeSecondsFor(PTibugCultivationOperationType.evolution),
+      targetPtibugId: bug.id,
+      targetEvolutionLevel: 1,
+      reservedDataCells: Map<PTibugDataFamily, int>.from(dataCost),
+      previousAssignmentId: previousAssignmentId,
+    );
+    _placePTibugInCultivation(bug);
+    pTibugCultivationOperations.add(operation);
+    tank
+      ..currentOperationId = operation.id
+      ..status = PTibugCultivationTankStatus.pausedMissingResources;
+    _resumeCultivationIfReady(tank);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Évolution placée en cuve.');
+  }
+
+  void _resumeCultivationIfReady(PTibugCultivationTank tank) {
+    final operation = cultivationOperationForTank(tank.id);
+    if (operation == null || operation.isCompleted) return;
+    final ready = tank.organicStored >=
+            _cultivationRateFor(operation, 'Organique') / 3600 &&
+        tank.mineralStored >=
+            _cultivationRateFor(operation, 'Minéral') / 3600 &&
+        tank.energyStored >= _cultivationRateFor(operation, 'Énergie') / 3600;
+    if (!ready) return;
+    final resumed = operation.status ==
+        PTibugCultivationOperationStatus.pausedMissingResources;
+    operation
+      ..status = PTibugCultivationOperationStatus.active
+      ..pauseReason = null
+      ..lastCalculatedAt = DateTime.now();
+    tank.status = PTibugCultivationTankStatus.active;
+    if (resumed) {
+      reports.add(PtipoteMissionReport.system(
+        message:
+            'Cuve ${tank.slotIndex + 1} : ${_cultivationOperationLabel(operation)} a repris.',
+        sourceBuildingId: 'plaineNursery',
+        mailbox: Zone0MessageMailbox.companions,
+        subject: '${_cultivationOperationLabel(operation)} reprise',
+      ));
+    }
+  }
+
+  double cultivationTankAutonomyHours(
+      PTibugCultivationTank tank, String resource) {
+    final operation = cultivationOperationForTank(tank.id);
+    if (operation == null) return 0;
+    final rate = _cultivationRateFor(operation, resource);
+    final stored = switch (resource) {
+      'Organique' => tank.organicStored,
+      'Minéral' => tank.mineralStored,
+      _ => tank.energyStored,
+    };
+    return rate <= 0 ? double.infinity : stored / rate;
+  }
+
+  String _cultivationOperationLabel(PTibugCultivationOperation operation) =>
+      switch (operation.type) {
+        PTibugCultivationOperationType.cultivation => 'Cultivation',
+        PTibugCultivationOperationType.traitInfusion => 'Infusion de Trait',
+        PTibugCultivationOperationType.evolution => 'Évolution',
+      };
+
+  String _cultivationCompletionMessage(
+    PTibugCultivationOperation operation,
+    PTibugCultivationTank tank,
+  ) =>
+      switch (operation.type) {
+        PTibugCultivationOperationType.cultivation =>
+          'Cuve ${tank.slotIndex + 1} : votre P’TIBUG est prêt.',
+        PTibugCultivationOperationType.traitInfusion =>
+          'Cuve ${tank.slotIndex + 1} : le Trait ${pTibugConfig.traitDefinitionFor(operation.targetTraitId ?? '')?.displayName ?? ''} est prêt à être appliqué.',
+        PTibugCultivationOperationType.evolution =>
+          'Cuve ${tank.slotIndex + 1} : l’Évolution de votre P’TIBUG est terminée.',
+      };
+
+  void _resolveCultivation(DateTime current) {
+    _ensureCultivationTankSlots();
+    var changed = false;
+    for (final armature in pTibugArmatures.where((item) => item.isCrafting)) {
+      if (armature.completesAt.isAfter(current)) continue;
+      armature
+        ..status = PTibugArmatureStatus.completed
+        ..updatedAt = current;
+      reports.add(PtipoteMissionReport.system(
+        message:
+            'Armature ${pTibugConfig.species[armature.species]!.displayName} terminée : place-la dans une cuve.',
+        sourceBuildingId: 'plaineNursery',
+        mailbox: Zone0MessageMailbox.companions,
+        subject: 'Armature prête',
+      ));
+      changed = true;
+    }
+    for (final tank in pTibugCultivationTanks) {
+      if (tank.status == PTibugCultivationTankStatus.underConstruction &&
+          tank.constructionEndsAt != null &&
+          !tank.constructionEndsAt!.isAfter(current)) {
+        tank
+          ..isBuilt = true
+          ..status = PTibugCultivationTankStatus.available
+          ..constructionEndsAt = null;
+        reports.add(PtipoteMissionReport.system(
+          message: 'Cuve ${tank.slotIndex + 1} construite dans la Nurserie.',
+          sourceBuildingId: 'plaineNursery',
+          mailbox: Zone0MessageMailbox.companions,
+          subject: 'Cuve prête',
+        ));
+        changed = true;
+      }
+      final operation = cultivationOperationForTank(tank.id);
+      if (operation == null ||
+          operation.status != PTibugCultivationOperationStatus.active) continue;
+      final elapsed =
+          math.max(0, current.difference(operation.lastCalculatedAt).inSeconds);
+      if (elapsed == 0) continue;
+      final organicRate = _cultivationRateFor(operation, 'Organique') / 3600;
+      final mineralRate = _cultivationRateFor(operation, 'Minéral') / 3600;
+      final energyRate = _cultivationRateFor(operation, 'Énergie') / 3600;
+      final availability = <double>[
+        operation.activeSecondsRemaining.toDouble(),
+        elapsed.toDouble(),
+        organicRate <= 0 ? double.infinity : tank.organicStored / organicRate,
+        mineralRate <= 0 ? double.infinity : tank.mineralStored / mineralRate,
+        energyRate <= 0 ? double.infinity : tank.energyStored / energyRate,
+      ].reduce(math.min);
+      final activeSeconds = math.max(0, availability.floor());
+      if (activeSeconds > 0) {
+        tank
+          ..organicStored =
+              math.max(0, tank.organicStored - organicRate * activeSeconds)
+          ..mineralStored =
+              math.max(0, tank.mineralStored - mineralRate * activeSeconds)
+          ..energyStored =
+              math.max(0, tank.energyStored - energyRate * activeSeconds);
+        operation
+          ..activeSecondsCompleted = math.min(operation.activeSecondsRequired,
+              operation.activeSecondsCompleted + activeSeconds)
+          ..lastCalculatedAt =
+              operation.lastCalculatedAt.add(Duration(seconds: activeSeconds));
+        changed = true;
+      }
+      if (operation.activeSecondsCompleted >= operation.activeSecondsRequired) {
+        operation
+          ..status = PTibugCultivationOperationStatus.completed
+          ..completedAt = current;
+        tank.status = PTibugCultivationTankStatus.completed;
+        reports.add(PtipoteMissionReport.system(
+          message: _cultivationCompletionMessage(operation, tank),
+          sourceBuildingId: 'plaineNursery',
+          mailbox: Zone0MessageMailbox.companions,
+          subject: '${_cultivationOperationLabel(operation)} terminée',
+        ));
+        changed = true;
+        continue;
+      }
+      if (activeSeconds < elapsed) {
+        final reasons = <String>[
+          if (organicRate > 0 && tank.organicStored <= 0.0001) 'Organique',
+          if (mineralRate > 0 && tank.mineralStored <= 0.0001) 'Minéral',
+          if (energyRate > 0 && tank.energyStored <= 0.0001) 'Énergie',
+        ];
+        operation
+          ..status = PTibugCultivationOperationStatus.pausedMissingResources
+          ..pauseReason =
+              reasons.isEmpty ? 'Ressources insuffisantes' : reasons.join(', ');
+        tank.status = PTibugCultivationTankStatus.pausedMissingResources;
+        reports.add(PtipoteMissionReport.system(
+          message:
+              'Cuve ${tank.slotIndex + 1} : ${_cultivationOperationLabel(operation)} en pause, ${operation.pauseReason} insuffisant.',
+          sourceBuildingId: 'plaineNursery',
+          mailbox: Zone0MessageMailbox.companions,
+          subject: '${_cultivationOperationLabel(operation)} en pause',
+        ));
+        changed = true;
+      }
+    }
+    if (changed) unawaited(saveRuntimeToFirebase());
+  }
+
+  Zone0ActionResult applyCultivationTap(String tankId, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final tank = cultivationTankForId(tankId);
+    final operation =
+        tank == null ? null : cultivationOperationForTank(tank.id);
+    if (tank == null ||
+        operation == null ||
+        operation.status != PTibugCultivationOperationStatus.active) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Aucune Cultivation active dans cette cuve.');
+    }
+    final config = pTibugConfig.cultivation;
+    operation.tapSessions
+        .removeWhere((time) => current.difference(time).inHours >= 24);
+    if (operation.tapSessions.length >= config.tapMaximumPerDay ||
+        (operation.tapSessions.isNotEmpty &&
+            current.difference(operation.tapSessions.last).inHours <
+                config.tapMinimumDelayHours)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Prochaine séance de tapotement indisponible.');
+    }
+    final bonus = math.min(config.tapBonusFor(operation.type) * 60,
+        operation.activeSecondsRemaining);
+    operation
+      ..tapSessions.add(current)
+      ..bonusSecondsApplied += bonus
+      ..activeSecondsCompleted += bonus;
+    if (operation.activeSecondsCompleted >= operation.activeSecondsRequired) {
+      operation
+        ..status = PTibugCultivationOperationStatus.completed
+        ..completedAt = current;
+      tank.status = PTibugCultivationTankStatus.completed;
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            'Tapotement réussi : +${bonus ~/ 60} min de ${_cultivationOperationLabel(operation)}.');
+  }
+
+  Zone0ActionResult openCultivationTank(String tankId) {
+    final tank = cultivationTankForId(tankId);
+    final operation =
+        tank == null ? null : cultivationOperationForTank(tank.id);
+    if (tank == null || operation == null || !operation.isCompleted) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Cette cuve n’est pas prête à être finalisée.');
+    }
+    if (operation.type != PTibugCultivationOperationType.cultivation) {
+      return _completePTibugTankOperation(tank, operation);
+    }
+    final armature = pTibugArmatures
+        .where((item) => item.id == operation.armatureId)
+        .firstOrNull;
+    if (armature == null || operation.resultPtibugId != null) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Cette cuve n’est pas prête à être ouverte.');
+    }
+    final config = pTibugConfig.species[operation.species]!;
+    final id = 'ptibug-${DateTime.now().microsecondsSinceEpoch}';
+    final temporaryName =
+        '${config.displayName} ${id.substring(id.length - 4)}';
+    pTibugs.add(PTibug(
+      id: id,
+      displayName: temporaryName,
+      defaultDisplayName: temporaryName,
+      species: operation.species,
+      styleVariant: config.styles[_random.nextInt(config.styles.length)],
+      createdAt: DateTime.now(),
+    ));
+    operation.resultPtibugId = id;
+    pTibugArmatures.remove(armature);
+    pTibugCultivationOperations.remove(operation);
+    tank
+      ..currentOperationId = null
+      ..status = PTibugCultivationTankStatus.available;
+    emitKernelProgressEvent(KernelProgressEventType.ptibugCreated);
+    refreshKernelMissions();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$temporaryName rejoint la Collection.');
+  }
+
+  Zone0ActionResult _completePTibugTankOperation(
+    PTibugCultivationTank tank,
+    PTibugCultivationOperation operation,
+  ) {
+    final bug = pTibugs
+        .where((item) => item.id == operation.targetPtibugId)
+        .firstOrNull;
+    if (bug == null || operation.resultAppliedAt != null) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Résultat de cuve déjà appliqué ou indisponible.');
+    }
+    final now = DateTime.now();
+    switch (operation.type) {
+      case PTibugCultivationOperationType.traitInfusion:
+        final traitId = operation.targetTraitId;
+        final targetRank = operation.targetTraitRank;
+        final definition =
+            traitId == null ? null : pTibugConfig.traitDefinitionFor(traitId);
+        if (traitId == null || targetRank == null || definition == null) {
+          return const Zone0ActionResult(
+              success: false, message: 'Trait d’infusion invalide.');
+        }
+        if (bug.biologicalTraitId == null || bug.biologicalTraitId == traitId) {
+          bug
+            ..biologicalTraitId = traitId
+            ..biologicalTraitLevel = targetRank;
+        } else if (bug.secondTraitId == null || bug.secondTraitId == traitId) {
+          bug
+            ..secondTraitId = traitId
+            ..secondTraitLevel = targetRank;
+        } else {
+          return const Zone0ActionResult(
+              success: false, message: 'Les deux Traits sont déjà distincts.');
+        }
+        emitKernelProgressEvent(KernelProgressEventType.ptibugTraitEquipped);
+        reports.add(PtipoteMissionReport.system(
+          message:
+              '${bug.displayName} reçoit ${definition.displayName} rang $targetRank.',
+          sourceBuildingId: 'plaineNursery',
+          mailbox: Zone0MessageMailbox.companions,
+          subject: 'Infusion terminée',
+          concerned: bug.displayName,
+        ));
+        break;
+      case PTibugCultivationOperationType.evolution:
+        bug
+          ..isRenewed = true
+          ..renewedAt = now
+          ..renewalCount = math.max(1, bug.renewalCount + 1);
+        reports.add(PtipoteMissionReport.system(
+          message:
+              '${bug.displayName} a achevé son Évolution. Le second Trait est désormais accessible au niveau 4.',
+          sourceBuildingId: 'plaineNursery',
+          mailbox: Zone0MessageMailbox.companions,
+          subject: 'Évolution terminée',
+          concerned: bug.displayName,
+        ));
+        break;
+      case PTibugCultivationOperationType.cultivation:
+        return const Zone0ActionResult(
+            success: false, message: 'Utilise l’ouverture de Cultivation.');
+    }
+    operation.resultAppliedAt = now;
+    pTibugCultivationOperations.remove(operation);
+    tank
+      ..currentOperationId = null
+      ..status = PTibugCultivationTankStatus.available;
+    bug
+      ..inactiveReason = 'En attente de réaffectation'
+      ..nextProductionAt = null;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: operation.type == PTibugCultivationOperationType.evolution
+          ? 'Évolution achevée : ${bug.displayName} est disponible.'
+          : 'Infusion achevée : ${bug.displayName} est disponible.',
+    );
+  }
+
+  Zone0ActionResult cancelPTibugCultivation(String tankId) {
+    final tank = cultivationTankForId(tankId);
+    final operation =
+        tank == null ? null : cultivationOperationForTank(tank.id);
+    final armature = operation == null
+        ? null
+        : pTibugArmatures
+            .where((item) => item.id == operation.armatureId)
+            .firstOrNull;
+    if (tank == null || operation == null || operation.isCompleted) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucune Cultivation annulable dans cette cuve.',
+      );
+    }
+    operation.status = PTibugCultivationOperationStatus.cancelled;
+    if (armature != null) armature.status = PTibugArmatureStatus.completed;
+    final bug = pTibugs
+        .where((item) => item.id == operation.targetPtibugId)
+        .firstOrNull;
+    if (bug != null) {
+      for (final entry in operation.reservedDataCells.entries) {
+        pTibugDataReserve[entry.key] =
+            (pTibugDataReserve[entry.key] ?? 0) + entry.value;
+      }
+      bug
+        ..inactiveReason = 'En attente de réaffectation'
+        ..nextProductionAt = null;
+    }
+    tank
+      ..currentOperationId = null
+      ..status = PTibugCultivationTankStatus.available;
+    pTibugCultivationOperations.remove(operation);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          '${_cultivationOperationLabel(operation)} annulée : les réserves et Cellules non consommées sont restituées.',
     );
   }
 
@@ -5240,12 +6229,14 @@ class Zone0GameState extends ChangeNotifier {
       pTibugModuleInstances.add(instance);
       reports.add(
         PtipoteMissionReport.system(
-          message: 'Le module ${order.moduleType.displayName} est prêt.${order.assignedPtipoteId == null ? '' : ' ${order.assignedPtipoteName} gagne 10 XP.'}',
+          message:
+              'Le module ${order.moduleType.displayName} est prêt.${order.assignedPtipoteId == null ? '' : ' ${order.assignedPtipoteName} gagne 10 XP.'}',
           sourceBuildingId: 'fablab',
           mailbox: Zone0MessageMailbox.fablab,
           subject: 'Fin de craft',
           concerned: order.assignedPtipoteName ?? 'Le joueur',
-          summary: 'Module P’TIBUG ${order.moduleType.displayName} créé${order.assignedPtipoteId == null ? '.' : ' · +10 XP.'}',
+          summary:
+              'Module P’TIBUG ${order.moduleType.displayName} créé${order.assignedPtipoteId == null ? '.' : ' · +10 XP.'}',
         ),
       );
       if (order.assignedPtipoteId != null) {
@@ -5366,135 +6357,30 @@ class Zone0GameState extends ChangeNotifier {
         : null;
   }
 
+  /// Legacy entry point intentionally kept for old integrations: traits are
+  /// no longer applied instantly and must always go through a cultivation tank.
+  @Deprecated('Utiliser startPTibugTraitInfusion.')
   Zone0ActionResult applyPTibugPermanentTrait({
     required PTibug bug,
     required String traitId,
   }) {
-    if (!pTibugs.contains(bug) ||
-        !isPlaineNurseryBuilt ||
-        bug.assignedBuildingId != plaineNurseryTerritoryId) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Le P’TIBUG doit être présent dans la Nurserie.',
-      );
-    }
-    final definition = pTibugConfig.traitDefinitionFor(traitId);
-    final targetLevel = nextPTibugTraitLevelFor(bug, traitId);
-    if (targetLevel == null) {
-      final message = bug.biologicalTraitId == traitId
-          ? 'Ce Trait est déjà au niveau maximum.'
-          : 'Ce second Trait exige un Renouvellement et un niveau compatible.';
-      return Zone0ActionResult(success: false, message: message);
-    }
-    final patternId = 'ptibug-trait-$traitId';
-    final progress = pTibugPatternProgress[patternId];
-    if (definition == null ||
-        progress == null ||
-        !definition.isActive ||
-        !isPTibugPatternActive(patternId) ||
-        progress.masteryLevel < targetLevel) {
-      return Zone0ActionResult(
-        success: false,
-        message: 'Le Pattern doit atteindre la maîtrise $targetLevel.',
-      );
-    }
-    // Only the target level is paid. Previous transformations are never paid
-    // again when a P'TIBUG evolves from Trait I to Trait II or III.
-    final dataCost = definition.dataCostForLevel(targetLevel);
-    final materialCost = definition.materialCostForLevel(targetLevel);
-    final energyCost = definition.energyCostForLevel(targetLevel);
-    if (dataCost.isEmpty || materialCost.isEmpty) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Coût de Trait à configurer dans le Dashboard.',
-      );
-    }
-    if (!_hasPTibugData(dataCost) ||
-        !hasResources(materialCost) ||
-        energyUnits < energyCost) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Données, matériaux ou énergie insuffisants.',
-      );
-    }
-    if (!removeResources(materialCost)) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Matériaux insuffisants.',
-      );
-    }
-    _consumePTibugData(dataCost);
-    energyUnits -= energyCost;
-    if (bug.biologicalTraitId == null || bug.biologicalTraitId == traitId) {
-      bug
-        ..biologicalTraitId = traitId
-        ..biologicalTraitLevel = targetLevel;
-    } else {
-      bug
-        ..secondTraitId = traitId
-        ..secondTraitLevel = targetLevel;
-    }
-    emitKernelProgressEvent(KernelProgressEventType.ptibugTraitEquipped);
-    reports.add(
-      PtipoteMissionReport.system(
-        message: '${_pTibugBiologicalName(bug)} reçoit un Trait permanent.',
-        sourceBuildingId: 'plaineNursery',
-        mailbox: Zone0MessageMailbox.companions,
-        subject: 'Trait P’TIBUG',
-        concerned: bug.displayName,
-        summary:
-            'Trait ${definition.displayName} niveau $targetLevel appliqué.',
-      ),
-    );
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
-    return Zone0ActionResult(
-      success: true,
-      message: 'Trait ${definition.displayName} niveau $targetLevel appliqué.',
+    return const Zone0ActionResult(
+      success: false,
+      message:
+          'L’infusion d’un Trait doit désormais être lancée dans une cuve.',
     );
   }
 
-  bool canRenewPTibug(PTibug bug) {
-    final config = pTibugConfig.progression;
-    return !bug.isRenewed &&
-        bug.renewalCount < config.maximumRenewals &&
-        bug.level >= config.renewalLevel &&
-        bug.biologicalTraitLevel >= 3 &&
-        bug.assignedBuildingId == plaineNurseryTerritoryId &&
-        bug.storedAmount == 0 &&
-        bug.storedDataCells.isEmpty;
-  }
+  /// Compatibility alias for saves and integrations that still use the former
+  /// technical name. The player-facing system is now always Évolution.
+  bool canRenewPTibug(PTibug bug) => canEvolvePTibug(bug);
 
   Zone0ActionResult renewPTibug(PTibug bug) {
-    final config = pTibugConfig.progression;
-    if (!canRenewPTibug(bug)) {
-      return const Zone0ActionResult(
-          success: false,
-          message:
-              'Renouvellement indisponible : niveau 3, Trait I niveau III, Nurserie et stocks vides requis.');
-    }
-    if (!hasResources(config.renewalMaterialCost) ||
-        energyUnits < config.renewalEnergyCost ||
-        bioBatteries < config.renewalBioBatteryCost) {
-      return const Zone0ActionResult(
-          success: false, message: 'Coût de Renouvellement insuffisant.');
-    }
-    if (!removeResources(config.renewalMaterialCost)) {
-      return const Zone0ActionResult(
-          success: false, message: 'Matériaux insuffisants.');
-    }
-    energyUnits -= config.renewalEnergyCost;
-    bioBatteries -= config.renewalBioBatteryCost;
-    bug
-      ..isRenewed = true
-      ..renewedAt = DateTime.now()
-      ..renewalCount += 1;
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-        success: true,
-        message:
-            'Renouvellement accompli. Le second Trait est désormais accessible au niveau 4.');
+      success: false,
+      message:
+          'L’Évolution doit désormais être lancée dans une cuve de la Nurserie.',
+    );
   }
 
   Zone0ActionResult upgradePTibugModuleCapacity() {
@@ -5541,6 +6427,10 @@ class Zone0GameState extends ChangeNotifier {
     final equippedModules = pTibugModuleInstances
         .where((item) => item.equippedPTibugId == bug.id)
         .toList();
+    if (isPTibugInCultivation(bug)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Module indisponible : P’TIBUG en cuve.');
+    }
     if (instance == null ||
         instance.isEquipped ||
         !pTibugs.contains(bug) ||
@@ -5565,6 +6455,10 @@ class Zone0GameState extends ChangeNotifier {
     required PTibug bug,
     required String moduleInstanceId,
   }) {
+    if (isPTibugInCultivation(bug)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Module indisponible : P’TIBUG en cuve.');
+    }
     final instance = pTibugModuleInstances
         .where((item) => item.id == moduleInstanceId)
         .firstOrNull;
@@ -5631,49 +6525,10 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult encapsulatePTibug(PTibug bug) {
-    final hasEquippedModuleInstances =
-        pTibugModuleInstances.any((item) => item.equippedPTibugId == bug.id);
-    if (!pTibugs.contains(bug) ||
-        bug.assignedSlotIndex != null ||
-        bug.storedResources.isNotEmpty ||
-        bug.equippedModules.isNotEmpty ||
-        bug.equippedModuleInstanceIds.isNotEmpty ||
-        hasEquippedModuleInstances) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Récolte le stock et retire les Modules avant encapsulation.',
-      );
-    }
-    if (energyUnits < pTibugConfig.capsuleEnergyCost) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Énergie insuffisante pour encapsuler ce P’TIBUG.',
-      );
-    }
-    energyUnits -= pTibugConfig.capsuleEnergyCost;
-    pTibugs.remove(bug);
-    pTibugCapsules.add(
-      PTibugCapsule(
-        id: 'ptibug-capsule-${DateTime.now().microsecondsSinceEpoch}',
-        species: bug.species,
-        styleVariant: bug.styleVariant,
-        displayName: _pTibugBiologicalName(bug),
-        biologicalTraitId: bug.biologicalTraitId,
-        biologicalTraitLevel: bug.biologicalTraitLevel,
-        level: bug.level,
-        xp: bug.xp,
-        originRefugeId: 'zone0-refuge',
-        creatorPlayerId: 'zone0-player',
-        certificationId:
-            'cert-${bug.id}-${DateTime.now().microsecondsSinceEpoch}',
-        createdAt: DateTime.now(),
-      ),
-    );
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-      success: true,
-      message: 'Capsule P’TIBUG créée.',
+      success: false,
+      message:
+          'Les Capsules P’TIBUG certifiées sont créées uniquement lors d’une vente validée.',
     );
   }
 
@@ -5716,6 +6571,8 @@ class Zone0GameState extends ChangeNotifier {
   bool resolvePTibugProduction({DateTime? now}) {
     final current = now ?? DateTime.now();
     var changed = false;
+    _resolveEnergyCoreMilestones();
+    _resolveCultivation(current);
     if (_resolvePTibugTerritoryConsumption(current)) {
       changed = true;
     }
@@ -6073,7 +6930,208 @@ class Zone0GameState extends ChangeNotifier {
   PTibugModuleCraftOrder? get activePTibugModuleCraftOrder =>
       activePTibugModuleCraftOrders.firstOrNull;
 
-  String pTibugBiologicalNameFor(PTibug bug) => _pTibugBiologicalName(bug);
+  /// Personal identity is always preferred in player-facing cards.
+  String pTibugBiologicalNameFor(PTibug bug) => bug.displayName;
+
+  String pTibugSpeciesNameFor(PTibug bug) => _pTibugBiologicalName(bug);
+
+  PTibugValuationBreakdown pTibugValuationFor(PTibug bug) {
+    final instanceModules = pTibugModuleInstances
+        .where((item) => item.equippedPTibugId == bug.id)
+        .map((item) => item.type)
+        .toList();
+    final modules = instanceModules.isEmpty
+        ? List<PTibugModuleType>.from(bug.equippedModules)
+        : instanceModules;
+    final traits = <int>[
+      if (bug.biologicalTraitId != null && bug.biologicalTraitLevel > 0)
+        bug.biologicalTraitLevel,
+      if (bug.secondTraitId != null && bug.secondTraitLevel > 0)
+        bug.secondTraitLevel,
+    ];
+    return PTibugValuationService(pTibugConfig.valuation).evaluate(
+      PTibugValuationInput(
+        species: bug.species,
+        level: bug.level,
+        traitRanks: traits,
+        modules: modules,
+      ),
+    );
+  }
+
+  int pTibugEstimatedValueFor(PTibug bug) => pTibugValuationFor(bug).total;
+
+  Zone0ActionResult renamePTibug(PTibug bug, String rawName) {
+    final name = rawName.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final config = pTibugConfig.valuation;
+    if (!pTibugs.contains(bug) ||
+        bug.lifecycleStatus != PTibugLifecycleStatus.active) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIBUG indisponible.');
+    }
+    if (name.length < config.minimumNameLength ||
+        name.length > config.maximumNameLength ||
+        !RegExp(r"^[\p{L}\p{N} '\-]+$", unicode: true).hasMatch(name)) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Le nom doit contenir entre ${config.minimumNameLength} et ${config.maximumNameLength} caractères.',
+      );
+    }
+    if (bug.displayName != name) {
+      bug.nameHistory.add(bug.displayName);
+      bug
+        ..displayName = name
+        ..renamedAt = DateTime.now()
+        ..renameCount += 1
+        ..updatedAt = DateTime.now();
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return Zone0ActionResult(success: true, message: '$name est enregistré.');
+  }
+
+  String? pTibugCertificationBlocker(PTibug bug) {
+    if (!pTibugs.contains(bug) ||
+        bug.lifecycleStatus != PTibugLifecycleStatus.active) {
+      return 'Ce P’TIBUG n’est plus disponible.';
+    }
+    if (bug.reservedForSaleId != null) return 'Ce P’TIBUG est déjà réservé.';
+    if (isPTibugInCultivation(bug))
+      return 'Le P’TIBUG est actuellement en cuve.';
+    if (bug.assignedBuildingId != null)
+      return 'Retire le P’TIBUG de son bâtiment avant certification.';
+    if (bug.storedAmount > 0 || bug.storedDataCells.isNotEmpty) {
+      return 'Récolte sa production et ses Cellules avant certification.';
+    }
+    return null;
+  }
+
+  Zone0ActionResult sellCertifiedPTibug(
+    PTibug bug, {
+    required String source,
+    String? requestId,
+    String? contractId,
+    bool sourcierContract = false,
+    double bonusMultiplier = 1,
+  }) {
+    final blocker = pTibugCertificationBlocker(bug);
+    if (blocker != null)
+      return Zone0ActionResult(success: false, message: blocker);
+    final modules = pTibugModuleInstances
+        .where((item) => item.equippedPTibugId == bug.id)
+        .toList(growable: false);
+    final includedModules = modules.isEmpty
+        ? List<PTibugModuleType>.from(bug.equippedModules)
+        : modules.map((item) => item.type).toList(growable: false);
+    final valuation = pTibugValuationFor(bug);
+    final payment = PTibugValuationService(pTibugConfig.valuation).paymentFor(
+      valuation,
+      sourcierContract: sourcierContract,
+      bonusMultiplier: bonusMultiplier,
+    );
+    final now = DateTime.now();
+    final capsule = PTibugCapsule(
+      id: 'certified-ptibug-${now.microsecondsSinceEpoch}',
+      sourcePtibugId: bug.id,
+      species: bug.species,
+      styleVariant: bug.styleVariant,
+      displayName: bug.displayName,
+      biologicalTraitId: bug.biologicalTraitId,
+      biologicalTraitLevel: bug.biologicalTraitLevel,
+      secondTraitId: bug.secondTraitId,
+      secondTraitLevel: bug.secondTraitLevel,
+      isEvolved: bug.isRenewed,
+      moduleSnapshots: includedModules.map((item) => item.name).toList(),
+      level: bug.level,
+      xp: bug.xp,
+      baseValueSnapshot: valuation.baseValue,
+      levelValueSnapshot: valuation.levelValue,
+      traitValueSnapshot: valuation.traitValue,
+      moduleValueSnapshot: valuation.moduleValue,
+      estimatedValueSnapshot: valuation.total,
+      valuationConfigVersion: valuation.configVersion,
+      certificationId: 'cert-${bug.id}-${now.microsecondsSinceEpoch}',
+      linkedRequestId: requestId,
+      linkedContractId: contractId,
+      finalSalePrice: payment,
+      soldAt: now,
+      status: CertifiedPTibugCapsuleStatus.sold,
+      createdAt: now,
+    );
+    // Atomic in-memory mutation: validation above is complete before any owned
+    // object is removed. The transaction is then persisted as one save.
+    pTibugModuleInstances
+        .removeWhere((item) => item.equippedPTibugId == bug.id);
+    bug
+      ..equippedModules.clear()
+      ..equippedModuleInstanceIds.clear()
+      ..lifecycleStatus = PTibugLifecycleStatus.sold
+      ..updatedAt = now
+      ..reservedForSaleId = null;
+    pTibugs.remove(bug);
+    soldPTibugArchive.add(bug);
+    pTibugCapsules.add(capsule);
+    bioBatteries += payment;
+    _resolveEnergyCoreMilestones();
+    reports.add(PtipoteMissionReport.system(
+      message: '${bug.displayName} est vendu sous Capsule P’TIBUG certifiée.',
+      sourceBuildingId: 'market',
+      mailbox: Zone0MessageMailbox.companions,
+      subject: 'Capsule P’TIBUG certifiée',
+      concerned: bug.displayName,
+      summary:
+          '$source · valeur ${valuation.total} · paiement $payment Bio-batteries.',
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Capsule certifiée vendue : +$payment Bio-batteries.',
+    );
+  }
+
+  List<MarketSourcierContract> eligiblePTibugContractsFor(PTibug bug) {
+    final resource = switch (bug.species) {
+      PTibugSpecies.scarabe => 'P’TIBUG Scarabé',
+      PTibugSpecies.hyme => 'P’TIBUG Hyme',
+      PTibugSpecies.arac => 'P’TIBUG Arac',
+    };
+    return marketContracts
+        .where((contract) =>
+            contract.status == MarketContractStatus.accepted &&
+            contract.requestedItems.length == 1 &&
+            contract.requestedItems[resource] == 1)
+        .toList(growable: false);
+  }
+
+  Zone0ActionResult deliverCertifiedPTibugContract(
+    PTibug bug,
+    MarketSourcierContract contract,
+  ) {
+    if (!eligiblePTibugContractsFor(bug).contains(contract)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce contrat n’est pas compatible avec ce P’TIBUG.',
+      );
+    }
+    final result = sellCertifiedPTibug(
+      bug,
+      source: 'Contrat du Sourcier',
+      contractId: contract.contractId,
+      sourcierContract: true,
+      bonusMultiplier: sourcierConfidencePaymentMultiplier,
+    );
+    if (!result.success) return result;
+    contract
+      ..status = MarketContractStatus.completed
+      ..deliveredAt = DateTime.now();
+    sourcierConfidence =
+        math.min(100, sourcierConfidence + contract.confidenceReward);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return result;
+  }
 
   int pTibugCapacityFor(PTibug bug) => _pTibugCapacity(bug);
 
@@ -6380,6 +7438,11 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult assignPTibugToTerritory(PTibug bug, String territoryId) {
+    if (isPTibugInCultivation(bug)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Ce P’TIBUG est indisponible : il est en cuve.');
+    }
     final building = territoryBuildingForId(territoryId);
     if (building == null || !building.isBuilt) {
       return const Zone0ActionResult(
@@ -6412,6 +7475,11 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult setPTibugInactive(PTibug bug) {
+    if (isPTibugInCultivation(bug)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Ce P’TIBUG est indisponible : il est en cuve.');
+    }
     bug.assignedSlotIndex = null;
     bug
       ..assignedBuildingId = null
@@ -6616,6 +7684,10 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult equipPTibugModule(PTibug bug, PTibugModuleType module) {
+    if (isPTibugInCultivation(bug)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Module indisponible : P’TIBUG en cuve.');
+    }
     if (!unlockedPTibugModules.contains(module) ||
         bug.hasModule(module) ||
         bug.equippedModules.length >= maxModulesPerPTibug) {
@@ -7189,7 +8261,8 @@ class Zone0GameState extends ChangeNotifier {
         marketNextRequestAt = _readDate(marketData['nextRequestAt']);
         marketLastWorkTickAt = _readDate(marketData['lastWorkTickAt']);
         marketLastXpTickAt = _readDate(marketData['lastXpTickAt']);
-        marketXpEarnedThisAssignment = _readInt(marketData['xpEarnedThisAssignment']);
+        marketXpEarnedThisAssignment =
+            _readInt(marketData['xpEarnedThisAssignment']);
         marketAssignedPtipoteId = marketData['assignedPtipoteId'] as String?;
         marketAssignedPtipoteName =
             marketData['assignedPtipoteName'] as String?;
@@ -7216,7 +8289,8 @@ class Zone0GameState extends ChangeNotifier {
               .map(MarketShop.fromFirebase)
               .where((shop) => shop.id.isNotEmpty));
         MarketDistributorState? migratedPrimaryDistributor;
-        final migratedPrimary = marketShops.where((shop) => shop.isPrimary).firstOrNull;
+        final migratedPrimary =
+            marketShops.where((shop) => shop.isPrimary).firstOrNull;
         if (migratedPrimary != null) {
           primaryMarketShopSpecialization = migratedPrimary.specialization;
           primaryMarketShopChosen = true;
@@ -7230,8 +8304,7 @@ class Zone0GameState extends ChangeNotifier {
           // le stock historique et ne restent plus cachées dans un doublon.
           marketStock.addAll(legacy.stock);
           migratedPrimaryDistributor = legacy.distributor;
-          marketShops
-            ..clear();
+          marketShops..clear();
         }
         marketContracts
           ..clear()
@@ -7377,11 +8450,18 @@ class Zone0GameState extends ChangeNotifier {
           kernelData['currentPopulation'],
           fallback: kernelConfig.startingPopulation,
         );
-      bioBatteries = _readInt(
-        kernelData['bioBatteries'],
-        fallback: kernelConfig.startingBioBatteries,
-      );
-      bioPiles = _readInt(kernelData['bioPiles']);
+        bioBatteries = _readInt(
+          kernelData['bioBatteries'],
+          fallback: kernelConfig.startingBioBatteries,
+        );
+        bioPiles = _readInt(kernelData['bioPiles']);
+        energyCorePatternDiscovered =
+            kernelData['energyCorePatternDiscovered'] == true;
+        energyCoreWarning600Shown =
+            kernelData['energyCoreWarning600Shown'] == true;
+        energyCoreWarning699Shown =
+            kernelData['energyCoreWarning699Shown'] == true;
+        storedEnergyCores = _readInt(kernelData['storedEnergyCores']);
         energyUnits = _readInt(kernelData['energyUnits']);
         campWellbeing = _readInt(
           kernelData['campWellbeing'],
@@ -7542,6 +8622,11 @@ class Zone0GameState extends ChangeNotifier {
                 .whereType<Map>()
                 .map(PTibug.fromFirebase),
           );
+        soldPTibugArchive
+          ..clear()
+          ..addAll((ptibugData['soldArchive'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(PTibug.fromFirebase));
         pTibugTerritoryBuildings
           ..clear()
           ..addEntries(
@@ -7658,6 +8743,28 @@ class Zone0GameState extends ChangeNotifier {
         pTibugCreationOrder = creationData is Map
             ? PTibugCreationOrder.fromFirebase(creationData)
             : null;
+        pTibugArmatures
+          ..clear()
+          ..addAll((ptibugData['armatures'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(PTibugArmature.fromFirebase));
+        pTibugCultivationTanks
+          ..clear()
+          ..addAll(
+              (ptibugData['cultivationTanks'] as List? ?? const <dynamic>[])
+                  .whereType<Map>()
+                  .map(PTibugCultivationTank.fromFirebase));
+        pTibugCultivationOperations
+          ..clear()
+          ..addAll((ptibugData['cultivationOperations'] as List? ??
+                  const <dynamic>[])
+              .whereType<Map>()
+              .map(PTibugCultivationOperation.fromFirebase));
+        firstCultivationTankGranted =
+            ptibugData['firstCultivationTankGranted'] == true;
+        // Exactly one free tank for old and new saves. Existing direct orders
+        // remain untouched and are resolved once by the compatibility flow.
+        _ensureCultivationTankSlots();
       }
 
       final buildingsData = data['buildings'];
@@ -7816,11 +8923,14 @@ class Zone0GameState extends ChangeNotifier {
       final discoveredSourcierPatterns =
           _refreshPTibugResearchPatternDiscoveries();
       final refreshedMerchantOffers = _refreshMerchantOffersForCurrentRules();
+      final hadEnergyCorePattern = energyCorePatternDiscovered;
       _loadedFromFirebase = true;
+      _resolveEnergyCoreMilestones();
       resolveConstructionProjects();
       if (migratedPTibugState ||
           discoveredSourcierPatterns ||
-          refreshedMerchantOffers) {
+          refreshedMerchantOffers ||
+          hadEnergyCorePattern != energyCorePatternDiscovered) {
         unawaited(saveRuntimeToFirebase());
       }
     });
@@ -7831,6 +8941,26 @@ class Zone0GameState extends ChangeNotifier {
   bool _migratePTibugScientificState() {
     var changed = false;
     final now = DateTime.now();
+
+    // Older P’TIBUGs sometimes used their species as their only visible name.
+    // Give those entries one stable temporary identity once, never on every
+    // launch, while preserving player-created names verbatim.
+    for (final bug in pTibugs) {
+      final speciesName = pTibugConfig.species[bug.species]?.displayName;
+      if (speciesName != null && bug.displayName == speciesName) {
+        final suffix =
+            bug.id.length <= 4 ? bug.id : bug.id.substring(bug.id.length - 4);
+        bug
+          ..defaultDisplayName = '$speciesName $suffix'
+          ..displayName = '$speciesName $suffix'
+          ..updatedAt = now;
+        changed = true;
+      }
+      if (bug.defaultDisplayName.trim().isEmpty) {
+        bug.defaultDisplayName = bug.displayName;
+        changed = true;
+      }
+    }
 
     // Éclaireur is the historical name of Capteur intelligent. Keep every
     // acquired level, owner and Pattern investment; this is a rename, never a
@@ -8378,9 +9508,9 @@ class Zone0GameState extends ChangeNotifier {
                     'P’TIBUG Hyme',
                     'P’TIBUG Arac',
                   ][_random.nextInt(3)]
-            : _random.nextBool()
-                ? 'Organique'
-                : 'Minéral';
+                : _random.nextBool()
+                    ? 'Organique'
+                    : 'Minéral';
     final quantity = item == 'Organique' || item == 'Minéral' ? 10 : 1;
     marketContracts.add(MarketSourcierContract(
       contractId: 'contract-${now.microsecondsSinceEpoch}',
@@ -8405,7 +9535,9 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult claimFirstMarketShop(String specialization) {
-    if (marketLevel < 2 || firstFreeShopClaimed || marketShopCount >= marketShopLimit) {
+    if (marketLevel < 2 ||
+        firstFreeShopClaimed ||
+        marketShopCount >= marketShopLimit) {
       return const Zone0ActionResult(
           success: false, message: 'Magasin offert indisponible.');
     }
@@ -8438,7 +9570,8 @@ class Zone0GameState extends ChangeNotifier {
         bioBatteries < marketConfig.shopConstructionBioBatteries) {
       return Zone0ActionResult(
         success: false,
-        message: '${missingResourcesLabel(marketConfig.shopConstructionCost)} · ${marketConfig.shopConstructionBioBatteries} bio-batteries requises.',
+        message:
+            '${missingResourcesLabel(marketConfig.shopConstructionCost)} · ${marketConfig.shopConstructionBioBatteries} bio-batteries requises.',
       );
     }
     removeResources(marketConfig.shopConstructionCost);
@@ -8456,22 +9589,28 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult upgradeMarketShop(String shopId) {
     if (shopId == primaryMarketShopId) {
       if (primaryMarketShopLevel >= 2) {
-        return const Zone0ActionResult(success: false, message: 'Niveau maximal atteint.');
+        return const Zone0ActionResult(
+            success: false, message: 'Niveau maximal atteint.');
       }
       final costs = marketConfig.shopConstructionCost.map(
-        (resource, amount) => MapEntry(resource, amount * marketConfig.shopUpgradeCostMultiplier),
+        (resource, amount) =>
+            MapEntry(resource, amount * marketConfig.shopUpgradeCostMultiplier),
       );
-      final batteries = marketConfig.shopConstructionBioBatteries * marketConfig.shopUpgradeCostMultiplier;
+      final batteries = marketConfig.shopConstructionBioBatteries *
+          marketConfig.shopUpgradeCostMultiplier;
       if (!hasResources(costs) || bioBatteries < batteries) {
-        return Zone0ActionResult(success: false,
-            message: '${missingResourcesLabel(costs)} · $batteries bio-batteries requises.');
+        return Zone0ActionResult(
+            success: false,
+            message:
+                '${missingResourcesLabel(costs)} · $batteries bio-batteries requises.');
       }
       removeResources(costs);
       bioBatteries -= batteries;
       primaryMarketShopLevel = 2;
       notifyListeners();
       unawaited(saveRuntimeToFirebase());
-      return const Zone0ActionResult(success: true, message: 'Boutique principale améliorée.');
+      return const Zone0ActionResult(
+          success: true, message: 'Boutique principale améliorée.');
     }
     final shop = marketShopById(shopId);
     if (shop == null || shop.level >= 2) {
@@ -8479,13 +9618,16 @@ class Zone0GameState extends ChangeNotifier {
           success: false, message: 'Amélioration indisponible.');
     }
     final costs = marketConfig.shopConstructionCost.map(
-      (resource, amount) => MapEntry(resource, amount * marketConfig.shopUpgradeCostMultiplier),
+      (resource, amount) =>
+          MapEntry(resource, amount * marketConfig.shopUpgradeCostMultiplier),
     );
-    final batteries = marketConfig.shopConstructionBioBatteries * marketConfig.shopUpgradeCostMultiplier;
+    final batteries = marketConfig.shopConstructionBioBatteries *
+        marketConfig.shopUpgradeCostMultiplier;
     if (!hasResources(costs) || bioBatteries < batteries) {
       return Zone0ActionResult(
           success: false,
-          message: '${missingResourcesLabel(costs)} · $batteries bio-batteries requises.');
+          message:
+              '${missingResourcesLabel(costs)} · $batteries bio-batteries requises.');
     }
     removeResources(costs);
     bioBatteries -= batteries;
@@ -9590,6 +10732,7 @@ class Zone0GameState extends ChangeNotifier {
   void _completeKernelMission(KernelMissionConfig mission) {
     if (!completedKernelMissionIds.add(mission.id)) return;
     bioBatteries += mission.bioBatteryReward;
+    _resolveEnergyCoreMilestones();
     if (mission.resourceRewards.isNotEmpty) {
       addResources(mission.resourceRewards);
     }
@@ -10609,6 +11752,10 @@ class Zone0GameState extends ChangeNotifier {
           'currentPopulation': currentPopulation,
           'bioBatteries': bioBatteries,
           'bioPiles': bioPiles,
+          'energyCorePatternDiscovered': energyCorePatternDiscovered,
+          'energyCoreWarning600Shown': energyCoreWarning600Shown,
+          'energyCoreWarning699Shown': energyCoreWarning699Shown,
+          'storedEnergyCores': storedEnergyCores,
           'energyUnits': energyUnits,
           'campWellbeing': campWellbeing,
           'mealsPrepared': mealsPrepared,
@@ -10669,7 +11816,17 @@ class Zone0GameState extends ChangeNotifier {
               activePTibugPatterns.map((item) => item.name).toList(),
           'starterChoiceMade': starterPTibugChoiceMade,
           'creation': pTibugCreationOrder?.toFirebase(),
+          'armatures':
+              pTibugArmatures.map((item) => item.toFirebase()).toList(),
+          'cultivationTanks':
+              pTibugCultivationTanks.map((item) => item.toFirebase()).toList(),
+          'cultivationOperations': pTibugCultivationOperations
+              .map((item) => item.toFirebase())
+              .toList(),
+          'firstCultivationTankGranted': firstCultivationTankGranted,
           'items': pTibugs.map((item) => item.toFirebase()).toList(),
+          'soldArchive':
+              soldPTibugArchive.map((item) => item.toFirebase()).toList(),
           'territoryBuildings': pTibugTerritoryBuildings.values
               .map((item) => item.toFirebase())
               .toList(),
@@ -11188,7 +12345,8 @@ class MarketShop {
             resource.contains('Lumière') ||
             resource.contains('Cartouche'),
         'equipment' => craftConfig.recipes.any(
-            (recipe) => recipe.resultItem == resource &&
+            (recipe) =>
+                recipe.resultItem == resource &&
                 !recipe.isConsumable &&
                 !resource.contains('Meuble') &&
                 !resource.contains('Ventilation') &&
@@ -11272,7 +12430,8 @@ class MarketSourcierContract {
         ),
         rewardBioBatteries: Zone0GameState.instance._readInt(
           data['rewardBioPiles'],
-          fallback: Zone0GameState.instance._readInt(data['rewardBioBatteries']) * 10,
+          fallback:
+              Zone0GameState.instance._readInt(data['rewardBioBatteries']) * 10,
         ),
         confidenceReward:
             Zone0GameState.instance._readInt(data['confidenceReward']),
@@ -11337,7 +12496,8 @@ class MarketCustomerRequest {
         ),
         rewardBioPiles: Zone0GameState.instance._readInt(
           data['rewardBioPiles'],
-          fallback: Zone0GameState.instance._readInt(data['rewardBioBattery']) * 10,
+          fallback:
+              Zone0GameState.instance._readInt(data['rewardBioBattery']) * 10,
         ),
         rewardWellbeing:
             Zone0GameState.instance._readInt(data['rewardWellbeing']),
@@ -11437,7 +12597,8 @@ class MarketRequestLogEntry {
         resolvedAt: Zone0GameState.instance._readDate(data['resolvedAt']),
         rewardBioBatteries: Zone0GameState.instance._readInt(
           data['rewardBioPiles'],
-          fallback: Zone0GameState.instance._readInt(data['rewardBioBatteries']) * 10,
+          fallback:
+              Zone0GameState.instance._readInt(data['rewardBioBatteries']) * 10,
         ),
         responder: data['responder'] == null
             ? null
@@ -11456,6 +12617,7 @@ class MarketRequestLogEntry {
   final String? customerName;
   MarketRequestStatus status;
   DateTime? resolvedAt;
+
   /// Nom historique conservé pour ne pas casser les anciennes sauvegardes :
   /// la valeur est désormais exprimée en bio-piles.
   int rewardBioBatteries;
@@ -12233,6 +13395,8 @@ class PTibugTerritoryBuilding {
       };
 }
 
+enum PTibugLifecycleStatus { active, sold, archived }
+
 class PTibug {
   PTibug({
     required this.id,
@@ -12240,6 +13404,13 @@ class PTibug {
     required this.species,
     required this.styleVariant,
     required this.createdAt,
+    String? defaultDisplayName,
+    this.renamedAt,
+    this.renameCount = 0,
+    List<String>? nameHistory,
+    this.updatedAt,
+    this.lifecycleStatus = PTibugLifecycleStatus.active,
+    this.reservedForSaleId,
     this.assignedSlotIndex,
     this.assignedBuildingId,
     Map<String, int>? storedResources,
@@ -12261,12 +13432,21 @@ class PTibug {
     this.inactiveReason,
     this.stockFullNotified = false,
     this.nextProductionAt,
-  })  : storedResources = storedResources ?? <String, int>{},
+  })  : defaultDisplayName = defaultDisplayName ?? displayName,
+        nameHistory = nameHistory ?? <String>[],
+        storedResources = storedResources ?? <String, int>{},
         storedDataCells = storedDataCells ?? <PTibugDataCell>[],
         equippedModules = equippedModules ?? <PTibugModuleType>[],
         equippedModuleInstanceIds = equippedModuleInstanceIds ?? <String>[];
   final String id;
   String displayName;
+  String defaultDisplayName;
+  DateTime? renamedAt;
+  int renameCount;
+  final List<String> nameHistory;
+  DateTime? updatedAt;
+  PTibugLifecycleStatus lifecycleStatus;
+  String? reservedForSaleId;
   final PTibugSpecies species;
   final String styleVariant;
   final DateTime createdAt;
@@ -12304,6 +13484,20 @@ class PTibug {
   factory PTibug.fromFirebase(Map<dynamic, dynamic> data) => PTibug(
         id: '${data['id'] ?? ''}',
         displayName: '${data['displayName'] ?? 'P’TIBUG'}',
+        defaultDisplayName:
+            '${data['defaultDisplayName'] ?? data['displayName'] ?? 'P’TIBUG'}',
+        renamedAt: Zone0GameState.instance._readDate(data['renamedAt']),
+        renameCount: Zone0GameState.instance._readInt(data['renameCount']),
+        nameHistory: (data['nameHistory'] as List? ?? const <dynamic>[])
+            .map((value) => '$value')
+            .toList(),
+        updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+        lifecycleStatus: ForageMission._enumByName(
+          PTibugLifecycleStatus.values,
+          '${data['lifecycleStatus'] ?? ''}',
+          PTibugLifecycleStatus.active,
+        ),
+        reservedForSaleId: data['reservedForSaleId'] as String?,
         species: ForageMission._enumByName(
           PTibugSpecies.values,
           '${data['species'] ?? ''}',
@@ -12374,6 +13568,13 @@ class PTibug {
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'id': id,
         'displayName': displayName,
+        'defaultDisplayName': defaultDisplayName,
+        'renamedAt': renamedAt == null ? null : Timestamp.fromDate(renamedAt!),
+        'renameCount': renameCount,
+        'nameHistory': nameHistory,
+        'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
+        'lifecycleStatus': lifecycleStatus.name,
+        'reservedForSaleId': reservedForSaleId,
         'species': species.name,
         'styleVariant': styleVariant,
         'createdAt': Timestamp.fromDate(createdAt),
@@ -12652,6 +13853,8 @@ class PTibugModuleCraftOrder {
       };
 }
 
+enum CertifiedPTibugCapsuleStatus { certified, sold, archived }
+
 class PTibugCapsule {
   const PTibugCapsule({
     required this.id,
@@ -12666,6 +13869,22 @@ class PTibugCapsule {
     this.originRefugeId,
     this.creatorPlayerId,
     this.certificationId,
+    this.sourcePtibugId,
+    this.secondTraitId,
+    this.secondTraitLevel = 0,
+    this.isEvolved = false,
+    this.moduleSnapshots = const <String>[],
+    this.baseValueSnapshot = 0,
+    this.levelValueSnapshot = 0,
+    this.traitValueSnapshot = 0,
+    this.moduleValueSnapshot = 0,
+    this.estimatedValueSnapshot = 0,
+    this.valuationConfigVersion = 1,
+    this.linkedRequestId,
+    this.linkedContractId,
+    this.finalSalePrice,
+    this.soldAt,
+    this.status = CertifiedPTibugCapsuleStatus.certified,
   });
 
   final String id;
@@ -12679,6 +13898,22 @@ class PTibugCapsule {
   final String? originRefugeId;
   final String? creatorPlayerId;
   final String? certificationId;
+  final String? sourcePtibugId;
+  final String? secondTraitId;
+  final int secondTraitLevel;
+  final bool isEvolved;
+  final List<String> moduleSnapshots;
+  final int baseValueSnapshot;
+  final int levelValueSnapshot;
+  final int traitValueSnapshot;
+  final int moduleValueSnapshot;
+  final int estimatedValueSnapshot;
+  final int valuationConfigVersion;
+  final String? linkedRequestId;
+  final String? linkedContractId;
+  final int? finalSalePrice;
+  final DateTime? soldAt;
+  final CertifiedPTibugCapsuleStatus status;
   final DateTime createdAt;
 
   factory PTibugCapsule.fromFirebase(Map<dynamic, dynamic> data) =>
@@ -12700,6 +13935,35 @@ class PTibugCapsule {
         originRefugeId: data['originRefugeId'] as String?,
         creatorPlayerId: data['creatorPlayerId'] as String?,
         certificationId: data['certificationId'] as String?,
+        sourcePtibugId: data['sourcePtibugId'] as String?,
+        secondTraitId: data['secondTraitId'] as String?,
+        secondTraitLevel:
+            Zone0GameState.instance._readInt(data['secondTraitLevel']),
+        isEvolved: data['isEvolved'] == true,
+        moduleSnapshots: (data['moduleSnapshots'] as List? ?? const <dynamic>[])
+            .map((value) => '$value')
+            .toList(),
+        baseValueSnapshot:
+            Zone0GameState.instance._readInt(data['baseValueSnapshot']),
+        levelValueSnapshot:
+            Zone0GameState.instance._readInt(data['levelValueSnapshot']),
+        traitValueSnapshot:
+            Zone0GameState.instance._readInt(data['traitValueSnapshot']),
+        moduleValueSnapshot:
+            Zone0GameState.instance._readInt(data['moduleValueSnapshot']),
+        estimatedValueSnapshot:
+            Zone0GameState.instance._readInt(data['estimatedValueSnapshot']),
+        valuationConfigVersion: Zone0GameState.instance
+            ._readInt(data['valuationConfigVersion'], fallback: 1),
+        linkedRequestId: data['linkedRequestId'] as String?,
+        linkedContractId: data['linkedContractId'] as String?,
+        finalSalePrice: data['finalSalePrice'] as int?,
+        soldAt: Zone0GameState.instance._readDate(data['soldAt']),
+        status: ForageMission._enumByName(
+          CertifiedPTibugCapsuleStatus.values,
+          '${data['status'] ?? ''}',
+          CertifiedPTibugCapsuleStatus.certified,
+        ),
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
             DateTime.now(),
       );
@@ -12716,6 +13980,22 @@ class PTibugCapsule {
         'originRefugeId': originRefugeId,
         'creatorPlayerId': creatorPlayerId,
         'certificationId': certificationId,
+        'sourcePtibugId': sourcePtibugId,
+        'secondTraitId': secondTraitId,
+        'secondTraitLevel': secondTraitLevel,
+        'isEvolved': isEvolved,
+        'moduleSnapshots': moduleSnapshots,
+        'baseValueSnapshot': baseValueSnapshot,
+        'levelValueSnapshot': levelValueSnapshot,
+        'traitValueSnapshot': traitValueSnapshot,
+        'moduleValueSnapshot': moduleValueSnapshot,
+        'estimatedValueSnapshot': estimatedValueSnapshot,
+        'valuationConfigVersion': valuationConfigVersion,
+        'linkedRequestId': linkedRequestId,
+        'linkedContractId': linkedContractId,
+        'finalSalePrice': finalSalePrice,
+        'soldAt': soldAt == null ? null : Timestamp.fromDate(soldAt!),
+        'status': status.name,
         'createdAt': Timestamp.fromDate(createdAt),
       };
 
@@ -12731,6 +14011,22 @@ class PTibugCapsule {
     String? originRefugeId,
     String? creatorPlayerId,
     String? certificationId,
+    String? sourcePtibugId,
+    String? secondTraitId,
+    int? secondTraitLevel,
+    bool? isEvolved,
+    List<String>? moduleSnapshots,
+    int? baseValueSnapshot,
+    int? levelValueSnapshot,
+    int? traitValueSnapshot,
+    int? moduleValueSnapshot,
+    int? estimatedValueSnapshot,
+    int? valuationConfigVersion,
+    String? linkedRequestId,
+    String? linkedContractId,
+    int? finalSalePrice,
+    DateTime? soldAt,
+    CertifiedPTibugCapsuleStatus? status,
     DateTime? createdAt,
   }) =>
       PTibugCapsule(
@@ -12745,6 +14041,24 @@ class PTibugCapsule {
         originRefugeId: originRefugeId ?? this.originRefugeId,
         creatorPlayerId: creatorPlayerId ?? this.creatorPlayerId,
         certificationId: certificationId ?? this.certificationId,
+        sourcePtibugId: sourcePtibugId ?? this.sourcePtibugId,
+        secondTraitId: secondTraitId ?? this.secondTraitId,
+        secondTraitLevel: secondTraitLevel ?? this.secondTraitLevel,
+        isEvolved: isEvolved ?? this.isEvolved,
+        moduleSnapshots: moduleSnapshots ?? this.moduleSnapshots,
+        baseValueSnapshot: baseValueSnapshot ?? this.baseValueSnapshot,
+        levelValueSnapshot: levelValueSnapshot ?? this.levelValueSnapshot,
+        traitValueSnapshot: traitValueSnapshot ?? this.traitValueSnapshot,
+        moduleValueSnapshot: moduleValueSnapshot ?? this.moduleValueSnapshot,
+        estimatedValueSnapshot:
+            estimatedValueSnapshot ?? this.estimatedValueSnapshot,
+        valuationConfigVersion:
+            valuationConfigVersion ?? this.valuationConfigVersion,
+        linkedRequestId: linkedRequestId ?? this.linkedRequestId,
+        linkedContractId: linkedContractId ?? this.linkedContractId,
+        finalSalePrice: finalSalePrice ?? this.finalSalePrice,
+        soldAt: soldAt ?? this.soldAt,
+        status: status ?? this.status,
         createdAt: createdAt ?? this.createdAt,
       );
 }
@@ -12778,6 +14092,293 @@ class PTibugTraitData {
         'type': definitionId,
         'grade': grade.name,
         'definitionId': definitionId,
+      };
+}
+
+enum PTibugArmatureStatus { crafting, completed, cancelled }
+
+class PTibugArmature {
+  PTibugArmature({
+    required this.id,
+    required this.species,
+    required this.startedAt,
+    required this.completesAt,
+    required this.materialCosts,
+    required this.createdAt,
+    this.status = PTibugArmatureStatus.crafting,
+    this.updatedAt,
+  });
+
+  final String id;
+  final PTibugSpecies species;
+  final DateTime startedAt;
+  final DateTime completesAt;
+  final Map<String, int> materialCosts;
+  final DateTime createdAt;
+  PTibugArmatureStatus status;
+  DateTime? updatedAt;
+  bool get isCrafting => status == PTibugArmatureStatus.crafting;
+  bool get isCompleted => status == PTibugArmatureStatus.completed;
+
+  factory PTibugArmature.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugArmature(
+        id: '${data['id'] ?? ''}',
+        species: ForageMission._enumByName(
+          PTibugSpecies.values,
+          '${data['species'] ?? ''}',
+          PTibugSpecies.scarabe,
+        ),
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']) ??
+            DateTime.now(),
+        completesAt: Zone0GameState.instance._readDate(data['completesAt']) ??
+            DateTime.now(),
+        materialCosts: Map<String, int>.fromEntries(
+          (data['materialCosts'] as Map? ?? const <dynamic, dynamic>{})
+              .entries
+              .map((entry) => MapEntry('${entry.key}',
+                  Zone0GameState.instance._readInt(entry.value))),
+        ),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        status: ForageMission._enumByName(
+          PTibugArmatureStatus.values,
+          '${data['status'] ?? ''}',
+          PTibugArmatureStatus.crafting,
+        ),
+        updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'species': species.name,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'completesAt': Timestamp.fromDate(completesAt),
+        'materialCosts': materialCosts,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'status': status.name,
+        'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
+      };
+}
+
+enum PTibugCultivationTankStatus {
+  unbuilt,
+  underConstruction,
+  available,
+  active,
+  pausedMissingResources,
+  completed,
+}
+
+class PTibugCultivationTank {
+  PTibugCultivationTank({
+    required this.id,
+    required this.slotIndex,
+    this.isBuilt = false,
+    this.status = PTibugCultivationTankStatus.unbuilt,
+    this.organicStored = 0,
+    this.mineralStored = 0,
+    this.energyStored = 0,
+    Map<String, int>? constructionDeposits,
+    this.constructionStartedAt,
+    this.constructionEndsAt,
+    this.currentOperationId,
+  }) : constructionDeposits = constructionDeposits ?? <String, int>{};
+
+  final String id;
+  final int slotIndex;
+  bool isBuilt;
+  PTibugCultivationTankStatus status;
+  double organicStored;
+  double mineralStored;
+  double energyStored;
+  final Map<String, int> constructionDeposits;
+  DateTime? constructionStartedAt;
+  DateTime? constructionEndsAt;
+  String? currentOperationId;
+
+  factory PTibugCultivationTank.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugCultivationTank(
+        id: '${data['id'] ?? ''}',
+        slotIndex: Zone0GameState.instance._readInt(data['slotIndex']),
+        isBuilt: data['isBuilt'] == true,
+        status: ForageMission._enumByName(
+          PTibugCultivationTankStatus.values,
+          '${data['status'] ?? ''}',
+          PTibugCultivationTankStatus.unbuilt,
+        ),
+        organicStored:
+            Zone0GameState.instance._readDouble(data['organicStored']),
+        mineralStored:
+            Zone0GameState.instance._readDouble(data['mineralStored']),
+        energyStored: Zone0GameState.instance._readDouble(data['energyStored']),
+        constructionDeposits: Map<String, int>.fromEntries(
+          (data['constructionDeposits'] as Map? ?? const <dynamic, dynamic>{})
+              .entries
+              .map((entry) => MapEntry('${entry.key}',
+                  Zone0GameState.instance._readInt(entry.value))),
+        ),
+        constructionStartedAt:
+            Zone0GameState.instance._readDate(data['constructionStartedAt']),
+        constructionEndsAt:
+            Zone0GameState.instance._readDate(data['constructionEndsAt']),
+        currentOperationId: data['currentOperationId']?.toString(),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'slotIndex': slotIndex,
+        'isBuilt': isBuilt,
+        'status': status.name,
+        'organicStored': organicStored,
+        'mineralStored': mineralStored,
+        'energyStored': energyStored,
+        'constructionDeposits': constructionDeposits,
+        'constructionStartedAt': constructionStartedAt == null
+            ? null
+            : Timestamp.fromDate(constructionStartedAt!),
+        'constructionEndsAt': constructionEndsAt == null
+            ? null
+            : Timestamp.fromDate(constructionEndsAt!),
+        'currentOperationId': currentOperationId,
+      };
+}
+
+enum PTibugCultivationOperationStatus {
+  active,
+  pausedMissingResources,
+  completed,
+  cancelled
+}
+
+class PTibugCultivationOperation {
+  PTibugCultivationOperation({
+    required this.id,
+    required this.tankId,
+    required this.type,
+    required this.species,
+    required this.startedAt,
+    required this.lastCalculatedAt,
+    required this.activeSecondsRequired,
+    this.armatureId,
+    this.targetPtibugId,
+    this.targetTraitId,
+    this.targetTraitRank,
+    this.targetEvolutionLevel,
+    Map<PTibugDataFamily, int>? reservedDataCells,
+    this.previousAssignmentId,
+    this.activeSecondsCompleted = 0,
+    this.bonusSecondsApplied = 0,
+    this.status = PTibugCultivationOperationStatus.pausedMissingResources,
+    this.pauseReason,
+    List<DateTime>? tapSessions,
+  })  : reservedDataCells = reservedDataCells ?? <PTibugDataFamily, int>{},
+        tapSessions = tapSessions ?? <DateTime>[];
+
+  final String id;
+  final String tankId;
+  final PTibugCultivationOperationType type;
+  final String? armatureId;
+  final String? targetPtibugId;
+  final String? targetTraitId;
+  final int? targetTraitRank;
+  final int? targetEvolutionLevel;
+  final Map<PTibugDataFamily, int> reservedDataCells;
+  final String? previousAssignmentId;
+  final PTibugSpecies species;
+  final DateTime startedAt;
+  DateTime lastCalculatedAt;
+  final int activeSecondsRequired;
+  int activeSecondsCompleted;
+  int bonusSecondsApplied;
+  PTibugCultivationOperationStatus status;
+  String? pauseReason;
+  final List<DateTime> tapSessions;
+  DateTime? completedAt;
+  String? resultPtibugId;
+  DateTime? resultAppliedAt;
+
+  int get activeSecondsRemaining =>
+      math.max(0, activeSecondsRequired - activeSecondsCompleted);
+  bool get isCompleted => status == PTibugCultivationOperationStatus.completed;
+
+  factory PTibugCultivationOperation.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugCultivationOperation(
+        id: '${data['id'] ?? ''}',
+        tankId: '${data['tankId'] ?? ''}',
+        type: ForageMission._enumByName(
+          PTibugCultivationOperationType.values,
+          '${data['type'] ?? ''}',
+          PTibugCultivationOperationType.cultivation,
+        ),
+        species: ForageMission._enumByName(PTibugSpecies.values,
+            '${data['species'] ?? ''}', PTibugSpecies.scarabe),
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']) ??
+            DateTime.now(),
+        lastCalculatedAt:
+            Zone0GameState.instance._readDate(data['lastCalculatedAt']) ??
+                DateTime.now(),
+        activeSecondsRequired:
+            Zone0GameState.instance._readInt(data['activeSecondsRequired']),
+        activeSecondsCompleted:
+            Zone0GameState.instance._readInt(data['activeSecondsCompleted']),
+        armatureId: data['armatureId']?.toString(),
+        targetPtibugId: data['targetPtibugId']?.toString(),
+        targetTraitId: data['targetTraitId']?.toString(),
+        targetTraitRank: data['targetTraitRank'] as int?,
+        targetEvolutionLevel: data['targetEvolutionLevel'] as int?,
+        reservedDataCells: <PTibugDataFamily, int>{
+          for (final family in PTibugDataFamily.values)
+            family: Zone0GameState.instance._readInt(
+              (data['reservedDataCells'] as Map?)?[family.name],
+            ),
+        }..removeWhere((_, value) => value <= 0),
+        previousAssignmentId: data['previousAssignmentId']?.toString(),
+        bonusSecondsApplied:
+            Zone0GameState.instance._readInt(data['bonusSecondsApplied']),
+        status: ForageMission._enumByName(
+            PTibugCultivationOperationStatus.values,
+            '${data['status'] ?? ''}',
+            PTibugCultivationOperationStatus.pausedMissingResources),
+        pauseReason: data['pauseReason']?.toString(),
+        tapSessions: (data['tapSessions'] as List? ?? const <dynamic>[])
+            .map(Zone0GameState.instance._readDate)
+            .whereType<DateTime>()
+            .toList(),
+      )
+        ..completedAt = Zone0GameState.instance._readDate(data['completedAt'])
+        ..resultPtibugId = data['resultPtibugId']?.toString()
+        ..resultAppliedAt =
+            Zone0GameState.instance._readDate(data['resultAppliedAt']);
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'tankId': tankId,
+        'type': type.name,
+        'armatureId': armatureId,
+        'targetPtibugId': targetPtibugId,
+        'targetTraitId': targetTraitId,
+        'targetTraitRank': targetTraitRank,
+        'targetEvolutionLevel': targetEvolutionLevel,
+        'reservedDataCells': <String, int>{
+          for (final entry in reservedDataCells.entries)
+            entry.key.name: entry.value,
+        },
+        'previousAssignmentId': previousAssignmentId,
+        'species': species.name,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'lastCalculatedAt': Timestamp.fromDate(lastCalculatedAt),
+        'activeSecondsRequired': activeSecondsRequired,
+        'activeSecondsCompleted': activeSecondsCompleted,
+        'bonusSecondsApplied': bonusSecondsApplied,
+        'status': status.name,
+        'pauseReason': pauseReason,
+        'tapSessions': tapSessions.map(Timestamp.fromDate).toList(),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
+        'resultPtibugId': resultPtibugId,
+        'resultAppliedAt': resultAppliedAt == null
+            ? null
+            : Timestamp.fromDate(resultAppliedAt!),
       };
 }
 

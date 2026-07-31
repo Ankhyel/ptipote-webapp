@@ -243,6 +243,30 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       },
     ),
     KernelTechnologyPlanConfig(
+      id: 'energy-core',
+      title: 'Cœur d’énergie',
+      description:
+          'Un cœur scellé pour stocker l’énergie excédentaire du refuge.',
+      category: KernelPlanCategory.workshop,
+      iconName: 'battery',
+      origin: 'La masse d’énergie accumulée révèle une structure stable.',
+      kernelText:
+          'La saturation approche : condenser l’énergie évite toute perte.',
+      discoveryEvent: null,
+      discoveryThreshold: 0,
+      requiredTrustLevel: 1,
+      requiredAxis: null,
+      requiredAxisLevel: 1,
+      workshopRecipeId: 'energyCore',
+      dataRequirements: <String, int>{
+        'energie': 20,
+        'organique': 20,
+        'minerale': 10,
+        'mycelienne': 15,
+        'biomimetisme': 15,
+      },
+    ),
+    KernelTechnologyPlanConfig(
       id: 'simple-furniture',
       title: 'Meuble simple',
       description: 'Un premier équipement utile pour organiser le refuge.',
