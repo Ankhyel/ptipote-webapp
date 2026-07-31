@@ -254,6 +254,8 @@ class Zone0GameState extends ChangeNotifier {
   int merchantVisitsToday = 0;
   String? marketAssignedPtipoteId;
   String? marketAssignedPtipoteName;
+  final Set<String> marketRestockEnabledItems = <String>{};
+  final Map<String, int> marketRestockMinimums = <String, int>{};
   int marketValueRemainder = 0;
   int marketBioBatteriesEarned = 0;
   final Set<String> towerAssignedIds = <String>{};
@@ -1363,6 +1365,8 @@ class Zone0GameState extends ChangeNotifier {
     return shop.distributor ??= MarketDistributorState()
       ..type = switch (shop.specialization) {
         'restaurant' => MarketDistributorType.food,
+        // Le type est un libellé historique ; l'acceptation utilise toujours
+        // la spécialisation réelle de la boutique ci-dessous.
         _ => MarketDistributorType.general,
       };
   }
@@ -3041,6 +3045,79 @@ class Zone0GameState extends ChangeNotifier {
         success: true, message: 'Première boutique configurée.');
   }
 
+  /// Réinitialisation explicitement demandée par le joueur. Les stocks sont
+  /// d'abord rendus à la Maison, puis toutes les boutiques et machines sont
+  /// supprimées afin de recommencer avec le premier emplacement propre.
+  Zone0ActionResult resetMarketShops() {
+    final returned = <String, int>{};
+    void collect(Iterable<Zone0InventoryStack> stacks) {
+      for (final stack in stacks) {
+        returned.update(
+          stack.resource,
+          (amount) => amount + stack.amount,
+          ifAbsent: () => stack.amount,
+        );
+      }
+    }
+
+    collect(marketStock);
+    collect(marketDistributor.stock);
+    for (final shop in marketShops) {
+      collect(shop.stock);
+      collect(shop.distributor?.stock ?? const <Zone0InventoryStack>[]);
+    }
+    final result = returned.isEmpty ? null : addResources(returned);
+    marketStock.clear();
+    marketShops.clear();
+    primaryMarketShopSpecialization = 'general';
+    primaryMarketShopChosen = false;
+    primaryMarketShopLevel = 1;
+    firstFreeShopClaimed = false;
+    marketDistributor
+      ..isBuilt = false
+      ..level = 0
+      ..energy = 0
+      ..isBroken = false
+      ..lastEnergyTickAt = null
+      ..constructionStartedAt = null
+      ..constructionEndsAt = null
+      ..repairEndsAt = null
+      ..repairStartedBy = null;
+    marketDistributor.stock.clear();
+    marketDistributor.constructionDeposits.clear();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    final pending = result?.pending.values.fold<int>(0, (a, b) => a + b) ?? 0;
+    return Zone0ActionResult(
+      success: true,
+      message: pending == 0
+          ? 'Boutiques réinitialisées : les stocks sont revenus à la Maison.'
+          : 'Boutiques réinitialisées. $pending objet(s) n’ont pas pu revenir faute de place.',
+    );
+  }
+
+  Zone0ActionResult setMarketRestockRule(
+    String resource, {
+    required bool enabled,
+    required int minimumToKeep,
+  }) {
+    if (!marketConfig.saleValues.containsKey(resource)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Produit invalide.');
+    }
+    if (enabled) {
+      marketRestockEnabledItems.add(resource);
+      marketRestockMinimums[resource] = math.max(0, minimumToKeep);
+    } else {
+      marketRestockEnabledItems.remove(resource);
+      marketRestockMinimums.remove(resource);
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Ordre de réapprovisionnement enregistré.');
+  }
+
   Zone0ActionResult returnMarketStock(Zone0InventoryStack stack) {
     if (!marketStock.contains(stack)) {
       return const Zone0ActionResult(success: false, message: 'Stock absent.');
@@ -3751,7 +3828,7 @@ class Zone0GameState extends ChangeNotifier {
     final distributor = marketDistributorForShop(shopId);
     if (distributor == null ||
         !distributor.isBuilt ||
-        !distributor.accepts(resource)) {
+        !marketShopAccepts(shopId, resource)) {
       return const Zone0ActionResult(
           success: false,
           message: 'Produit incompatible avec le Distributeur.');
@@ -3939,7 +4016,7 @@ class Zone0GameState extends ChangeNotifier {
         distributor.stock.length < distributorSlotsForShop(shopId)) {
       final source = sourceStock
           .where((stack) =>
-              distributor.accepts(stack.resource) && stack.amount > 0)
+              marketShopAccepts(shopId, stack.resource) && stack.amount > 0)
           .firstOrNull;
       if (source != null) {
         final transferred =
@@ -8266,6 +8343,16 @@ class Zone0GameState extends ChangeNotifier {
         marketAssignedPtipoteId = marketData['assignedPtipoteId'] as String?;
         marketAssignedPtipoteName =
             marketData['assignedPtipoteName'] as String?;
+        marketRestockEnabledItems
+          ..clear()
+          ..addAll(
+              (marketData['restockEnabledItems'] as List? ?? const <dynamic>[])
+                  .map((value) => '$value'));
+        marketRestockMinimums
+          ..clear()
+          ..addAll((marketData['restockMinimums'] as Map? ??
+                  const <dynamic, dynamic>{})
+              .map((key, value) => MapEntry('$key', _readInt(value))));
         marketValueRemainder = _readInt(marketData['valueRemainder']);
         marketBioBatteriesEarned = _readInt(marketData['bioBatteriesEarned']);
         sourcierConfidence =
@@ -11713,6 +11800,8 @@ class Zone0GameState extends ChangeNotifier {
           'xpEarnedThisAssignment': marketXpEarnedThisAssignment,
           'assignedPtipoteId': marketAssignedPtipoteId,
           'assignedPtipoteName': marketAssignedPtipoteName,
+          'restockEnabledItems': marketRestockEnabledItems.toList(),
+          'restockMinimums': marketRestockMinimums,
           'valueRemainder': marketValueRemainder,
           'bioBatteriesEarned': marketBioBatteriesEarned,
           'sourcierConfidence': sourcierConfidence,

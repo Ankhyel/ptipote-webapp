@@ -465,6 +465,7 @@ class _CampHud extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Expanded(
+          flex: 2,
           child: _HudChip(
             icon: Icons.battery_charging_full_outlined,
             color: const Color(0xFF2878C9),
@@ -10038,6 +10039,11 @@ class _MarketPageState extends State<MarketPage> {
                             ),
                           ],
                         ),
+                        TextButton.icon(
+                          onPressed: _confirmMarketShopReset,
+                          icon: const Icon(Icons.restart_alt_outlined),
+                          label: const Text('Réinitialiser mes boutiques'),
+                        ),
                         if (widget.gameState.marketAssignedPtipoteId != null)
                           if (figurines
                                   .where((figurine) =>
@@ -10048,12 +10054,26 @@ class _MarketPageState extends State<MarketPage> {
                             Card(
                               margin: const EdgeInsets.only(top: 10),
                               child: ListTile(
-                                leading: const Icon(Icons.person_outline),
+                                leading: SizedBox(
+                                  width: 46,
+                                  child: PtipoteImage(
+                                    type: assigned.type,
+                                    species: assigned.species,
+                                    height: 46,
+                                  ),
+                                ),
                                 title: Text(assigned.displayName,
                                     style: const TextStyle(
                                         fontWeight: FontWeight.w900)),
                                 subtitle: Text(
-                                    'Âge de vie : ${_ptipoteAgeLabel(assigned)} · Point info'),
+                                  'Niv. ${assigned.level} · faim ${widget.gameState.hungerFor(assigned)} · repos ${widget.gameState.restFor(assigned)}',
+                                ),
+                                trailing: assigned.levelValue >= 2
+                                    ? OutlinedButton(
+                                        onPressed: _showMarketRestockRules,
+                                        child: const Text('Réappro'),
+                                      )
+                                    : null,
                               ),
                             )
                           else
@@ -10343,192 +10363,169 @@ class _MarketPageState extends State<MarketPage> {
                   _sourcierContractsSection(),
                   if (widget.gameState.marketContracts.isNotEmpty)
                     const SizedBox(height: 10),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          const Text(
-                              'Boutique principale · Distributeur automatique',
-                              style: TextStyle(fontWeight: FontWeight.w900)),
-                          if (!widget
-                              .gameState.marketDistributor.isBuilt) ...<Widget>[
-                            const SizedBox(height: 8),
+                  // Compatibilité de rendu : le Distributeur principal est
+                  // désormais affiché dans la carte de sa boutique unique.
+                  if (widget.gameState.marketShopCount == 0)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
                             const Text(
-                              'Type de Distributeur',
-                              style: TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                            const SizedBox(height: 4),
-                            SegmentedButton<MarketDistributorType>(
-                              segments: MarketDistributorType.values
-                                  .map(
-                                    (type) =>
-                                        ButtonSegment<MarketDistributorType>(
-                                      value: type,
-                                      label: Text(type.label),
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                              selected: <MarketDistributorType>{
-                                widget.gameState.marketDistributor.type,
-                              },
-                              onSelectionChanged: (selection) => _message(
-                                widget.gameState
-                                    .setMarketDistributorType(
-                                      selection.first,
+                                'Boutique principale · Distributeur automatique',
+                                style: TextStyle(fontWeight: FontWeight.w900)),
+                            if (!widget.gameState.marketDistributor
+                                .isBuilt) ...<Widget>[
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Type de Distributeur',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                              const SizedBox(height: 4),
+                              SegmentedButton<MarketDistributorType>(
+                                segments: MarketDistributorType.values
+                                    .map(
+                                      (type) =>
+                                          ButtonSegment<MarketDistributorType>(
+                                        value: type,
+                                        label: Text(type.label),
+                                      ),
                                     )
-                                    .message,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(widget.gameState.marketDistributor.type
-                                .stockDescription),
-                            const SizedBox(height: 8),
-                            Text(widget
-                                    .gameState.isMarketDistributorReadyToBuild
-                                ? 'Matériaux complets · prêt à démarrer'
-                                : 'Construction : ${marketConfig.distributorConstructionCost.entries.map((entry) => '${entry.key} ${widget.gameState.marketDistributor.constructionDeposits[entry.key] ?? 0}/${entry.value}').join(' · ')}'),
-                            ...marketConfig.distributorConstructionCost.keys
-                                .map(
-                              (resource) => Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: <Widget>[
-                                  Text(resource,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w800)),
-                                  ...const <int>[1, 5, 10]
-                                      .map((amount) => OutlinedButton(
-                                            onPressed: () {
-                                              final result = widget.gameState
-                                                  .depositMarketDistributorMaterial(
-                                                      resource, amount);
-                                              if (result.success)
-                                                _recordConstructionAction(
-                                                    result.message);
-                                            },
-                                            child: Text('+$amount'),
-                                          )),
-                                ],
-                              ),
-                            ),
-                            FilledButton(
-                              onPressed: widget
-                                      .gameState.isMarketDistributorReadyToBuild
-                                  ? () => _message(widget.gameState
-                                      .startMarketDistributorConstruction()
-                                      .message)
-                                  : null,
-                              child: const Text('Commencer les travaux'),
-                            ),
-                          ] else ...<Widget>[
-                            Text(
-                                'Niveau ${widget.gameState.marketDistributor.level} · ${widget.gameState.marketDistributor.isBroken ? 'En panne' : widget.gameState.marketDistributor.energy <= 0 ? 'Sans Énergie' : 'Opérationnel'}'),
-                            if (widget
-                                    .gameState.marketDistributor.repairEndsAt !=
-                                null) ...<Widget>[
-                              const SizedBox(height: 4),
-                              Text(
-                                  'Réparation par ${widget.gameState.marketDistributor.repairStartedBy == 'ptipote' ? 'le P’TIPOTE' : 'le joueur'} · ${_countdownLabel(widget.gameState.marketDistributor.repairEndsAt!)}'),
-                              const SizedBox(height: 4),
-                              LinearProgressIndicator(
-                                  value: _repairProgress(widget.gameState
-                                      .marketDistributor.repairEndsAt!)),
-                            ],
-                            Text(
-                              'Type : ${widget.gameState.marketDistributor.type.label}',
-                            ),
-                            Text(widget.gameState.marketDistributor.type
-                                .stockDescription),
-                            Text(
-                                'Énergie : ${widget.gameState.marketDistributor.energy}/${marketConfig.distributorEnergyCapacity}'),
-                            Row(children: <Widget>[
-                              Expanded(
-                                  child: OutlinedButton(
-                                onPressed: () => _message(widget.gameState
-                                    .openBioBatteryForMarketDistributor()
-                                    .message),
-                                child: const Text('Ouvrir une Bio-batterie'),
-                              )),
-                              if (widget.gameState.marketDistributor
-                                  .isBroken) ...<Widget>[
-                                const SizedBox(width: 8),
-                                Expanded(
-                                    child: FilledButton(
-                                  onPressed: () => _message(widget.gameState
-                                      .repairMarketDistributor()
-                                      .message),
-                                  child: const Text('Réparer'),
-                                )),
-                              ],
-                            ]),
-                            const SizedBox(height: 10),
-                            Text(
-                              'Stock du Distributeur (${widget.gameState.marketDistributor.stock.length}/${widget.gameState.marketDistributorSlotLimit})',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            GridView.count(
-                              crossAxisCount: 3,
-                              mainAxisSpacing: 8,
-                              crossAxisSpacing: 8,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              children: List<Widget>.generate(
-                                widget.gameState.marketDistributorSlotLimit,
-                                (index) {
-                                  final stack = index <
-                                          widget.gameState.marketDistributor
-                                              .stock.length
-                                      ? widget.gameState.marketDistributor
-                                          .stock[index]
-                                      : null;
-                                  return _MarketStockSlot(
-                                    stack: stack,
-                                    onTap: () =>
-                                        _editMarketDistributorSlot(stack),
-                                  );
+                                    .toList(growable: false),
+                                selected: <MarketDistributorType>{
+                                  widget.gameState.marketDistributor.type,
                                 },
+                                onSelectionChanged: (selection) => _message(
+                                  widget.gameState
+                                      .setMarketDistributorType(
+                                        selection.first,
+                                      )
+                                      .message,
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 4),
+                              Text(widget.gameState.marketDistributor.type
+                                  .stockDescription),
+                              const SizedBox(height: 8),
+                              Text(widget
+                                      .gameState.isMarketDistributorReadyToBuild
+                                  ? 'Matériaux complets · prêt à démarrer'
+                                  : 'Construction : ${marketConfig.distributorConstructionCost.entries.map((entry) => '${entry.key} ${widget.gameState.marketDistributor.constructionDeposits[entry.key] ?? 0}/${entry.value}').join(' · ')}'),
+                              ...marketConfig.distributorConstructionCost.keys
+                                  .map(
+                                (resource) => Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: <Widget>[
+                                    Text(resource,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800)),
+                                    ...const <int>[1, 5, 10]
+                                        .map((amount) => OutlinedButton(
+                                              onPressed: () {
+                                                final result = widget.gameState
+                                                    .depositMarketDistributorMaterial(
+                                                        resource, amount);
+                                                if (result.success)
+                                                  _recordConstructionAction(
+                                                      result.message);
+                                              },
+                                              child: Text('+$amount'),
+                                            )),
+                                  ],
+                                ),
+                              ),
+                              FilledButton(
+                                onPressed: widget.gameState
+                                        .isMarketDistributorReadyToBuild
+                                    ? () => _message(widget.gameState
+                                        .startMarketDistributorConstruction()
+                                        .message)
+                                    : null,
+                                child: const Text('Commencer les travaux'),
+                              ),
+                            ] else ...<Widget>[
+                              Text(
+                                  'Niveau ${widget.gameState.marketDistributor.level} · ${widget.gameState.marketDistributor.isBroken ? 'En panne' : widget.gameState.marketDistributor.energy <= 0 ? 'Sans Énergie' : 'Opérationnel'}'),
+                              if (widget.gameState.marketDistributor
+                                      .repairEndsAt !=
+                                  null) ...<Widget>[
+                                const SizedBox(height: 4),
+                                Text(
+                                    'Réparation par ${widget.gameState.marketDistributor.repairStartedBy == 'ptipote' ? 'le P’TIPOTE' : 'le joueur'} · ${_countdownLabel(widget.gameState.marketDistributor.repairEndsAt!)}'),
+                                const SizedBox(height: 4),
+                                LinearProgressIndicator(
+                                    value: _repairProgress(widget.gameState
+                                        .marketDistributor.repairEndsAt!)),
+                              ],
+                              Text(
+                                'Type : ${widget.gameState.marketDistributor.type.label}',
+                              ),
+                              Text(widget.gameState.marketDistributor.type
+                                  .stockDescription),
+                              Text(
+                                  'Énergie : ${widget.gameState.marketDistributor.energy}/${marketConfig.distributorEnergyCapacity}'),
+                              Row(children: <Widget>[
+                                Expanded(
+                                    child: OutlinedButton(
+                                  onPressed: () => _message(widget.gameState
+                                      .openBioBatteryForMarketDistributor()
+                                      .message),
+                                  child: const Text('Ouvrir une Bio-batterie'),
+                                )),
+                                if (widget.gameState.marketDistributor
+                                    .isBroken) ...<Widget>[
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                      child: FilledButton(
+                                    onPressed: () => _message(widget.gameState
+                                        .repairMarketDistributor()
+                                        .message),
+                                    child: const Text('Réparer'),
+                                  )),
+                                ],
+                              ]),
+                              const SizedBox(height: 10),
+                              Text(
+                                'Stock du Distributeur (${widget.gameState.marketDistributor.stock.length}/${widget.gameState.marketDistributorSlotLimit})',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              GridView.count(
+                                crossAxisCount: 3,
+                                mainAxisSpacing: 8,
+                                crossAxisSpacing: 8,
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                children: List<Widget>.generate(
+                                  widget.gameState.marketDistributorSlotLimit,
+                                  (index) {
+                                    final stack = index <
+                                            widget.gameState.marketDistributor
+                                                .stock.length
+                                        ? widget.gameState.marketDistributor
+                                            .stock[index]
+                                        : null;
+                                    return _MarketStockSlot(
+                                      stack: stack,
+                                      onTap: () =>
+                                          _editMarketDistributorSlot(stack),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
-                  ),
                   const SizedBox(height: 12),
                   _activeMarketRequestsSection(),
                   const SizedBox(height: 12),
                   _marketShopsSection(),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Boutique principale · Stock (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 8),
-                  GridView.count(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: List<Widget>.generate(
-                      widget.gameState.marketSlotLimit,
-                      (index) {
-                        final stack =
-                            index < widget.gameState.marketStock.length
-                                ? widget.gameState.marketStock[index]
-                                : null;
-                        return _MarketStockSlot(
-                          stack: stack,
-                          onTap: () => _editMarketSlot(stack),
-                        );
-                      },
-                    ),
-                  ),
                 ],
               ],
             );
@@ -10547,6 +10544,99 @@ class _MarketPageState extends State<MarketPage> {
   String _ptipoteAgeLabel(PtipoteFigurine figurine) {
     final days = DateTime.now().difference(figurine.createdAt).inDays;
     return days <= 0 ? 'moins d’un jour' : '$days jour${days > 1 ? 's' : ''}';
+  }
+
+  Future<void> _confirmMarketShopReset() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Réinitialiser les boutiques ?'),
+        content: const Text(
+          'Les boutiques et distributeurs actuels seront supprimés. Leurs stocks seront d’abord rendus à la Maison dans la limite de capacité.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Réinitialiser'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      _message(widget.gameState.resetMarketShops().message);
+    }
+  }
+
+  Future<void> _showMarketRestockRules() async {
+    final resources = marketConfig.saleValues.keys.toList()..sort();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
+          children: <Widget>[
+            const Text('Ordres de réapprovisionnement',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            const Text(
+              'Active les produits autorisés. Le nombre indique le minimum que la Maison doit conserver avant un futur réapprovisionnement automatique.',
+            ),
+            const SizedBox(height: 12),
+            ...resources.map((resource) {
+              final enabled =
+                  widget.gameState.marketRestockEnabledItems.contains(resource);
+              final minimum =
+                  widget.gameState.marketRestockMinimums[resource] ?? 0;
+              return Card(
+                child: ListTile(
+                  leading: Checkbox(
+                    value: enabled,
+                    onChanged: (value) {
+                      widget.gameState.setMarketRestockRule(resource,
+                          enabled: value ?? false, minimumToKeep: minimum);
+                      (sheetContext as Element).markNeedsBuild();
+                    },
+                  ),
+                  title: Text(resource),
+                  subtitle: Text(
+                      'Maison : ${widget.gameState.resourceAmount(resource)}'),
+                  trailing: SizedBox(
+                    width: 118,
+                    child: Row(children: <Widget>[
+                      IconButton(
+                        onPressed: minimum <= 0
+                            ? null
+                            : () {
+                                widget.gameState.setMarketRestockRule(resource,
+                                    enabled: true, minimumToKeep: minimum - 1);
+                                (sheetContext as Element).markNeedsBuild();
+                              },
+                        icon: const Icon(Icons.remove_circle_outline),
+                      ),
+                      Text('$minimum'),
+                      IconButton(
+                        onPressed: () {
+                          widget.gameState.setMarketRestockRule(resource,
+                              enabled: true, minimumToKeep: minimum + 1);
+                          (sheetContext as Element).markNeedsBuild();
+                        },
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                    ]),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
   }
 
   /// The selling view only shows live requests. The completed/expired history
@@ -10697,6 +10787,8 @@ class _MarketPageState extends State<MarketPage> {
                   : const Text('Max.'),
             ),
             _marketShopStockGrid(Zone0GameState.primaryMarketShopId),
+            const SizedBox(height: 8),
+            _shopDistributorCard(Zone0GameState.primaryMarketShopId),
             if (!widget.gameState.primaryMarketShopChosen)
               FilledButton.icon(
                 onPressed: _showPrimaryShopPicker,
@@ -11412,7 +11504,7 @@ class _MarketPageState extends State<MarketPage> {
     final resources = marketConfig.saleValues.keys
         .where(
           (resource) =>
-              distributor.accepts(resource) &&
+              widget.gameState.marketShopAccepts(shopId, resource) &&
               (widget.gameState.resourceAmount(resource) > 0 ||
                   resource == initialResource),
         )

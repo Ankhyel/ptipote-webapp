@@ -266,7 +266,7 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   },
   specializedShopGainBonusPercent: 30,
   baseStorePricePenaltyPercent: 50,
-  shopConstructionCost: <String, int>{'Organique': 15, 'Minéral': 30},
+  shopConstructionCost: <String, int>{'Organique': 20, 'Minéral': 30},
   shopConstructionBioBatteries: 10,
   shopUpgradeCostMultiplier: 2,
   distributorConstructionBioBatteries: 5,
