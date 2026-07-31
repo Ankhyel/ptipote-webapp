@@ -944,6 +944,10 @@ function prettyPath(path) {
     requestPriceBioPiles: "Prix des demandes en bio-piles",
     specializedShopGainBonusPercent: "Bonus de gain d’un magasin spécialisé (%)",
     baseStorePricePenaltyPercent: "Malus de prix du premier magasin (%)",
+    shopConstructionCost: "Coût de construction d’un magasin",
+    shopConstructionBioBatteries: "Bio-batteries pour construire un magasin",
+    shopUpgradeCostMultiplier: "Multiplicateur de coût d’amélioration magasin",
+    distributorConstructionBioBatteries: "Bio-batteries pour construire un Distributeur",
   };
   return path.map((key) => labels[key] || String(key).replace(/([A-Z])/g, " $1")).join(" / ");
 }

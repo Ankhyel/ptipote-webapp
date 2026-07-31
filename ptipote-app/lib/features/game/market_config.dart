@@ -56,6 +56,10 @@ class MarketConfig {
     required this.requestPriceBioPiles,
     required this.specializedShopGainBonusPercent,
     required this.baseStorePricePenaltyPercent,
+    required this.shopConstructionCost,
+    required this.shopConstructionBioBatteries,
+    required this.shopUpgradeCostMultiplier,
+    required this.distributorConstructionBioBatteries,
   });
 
   final Map<String, int> constructionCost;
@@ -112,6 +116,10 @@ class MarketConfig {
   final Map<String, int> requestPriceBioPiles;
   final int specializedShopGainBonusPercent;
   final int baseStorePricePenaltyPercent;
+  final Map<String, int> shopConstructionCost;
+  final int shopConstructionBioBatteries;
+  final int shopUpgradeCostMultiplier;
+  final int distributorConstructionBioBatteries;
 
   int slotsForLevel(int level) =>
       manualSlotsByLevel[level.clamp(0, maximumLevel)] ??
@@ -184,13 +192,16 @@ const MarketConfig defaultMarketConfig = MarketConfig(
     'Meuble simple': 2,
     'Ventilation Termite': 3,
     'Lumière solaire': 3,
+    'P’TIBUG Scarabé': 20,
+    'P’TIBUG Hyme': 20,
+    'P’TIBUG Arac': 20,
   },
   maxActiveRequestsBonusPerLevel: 1,
   maximumLevel: 4,
   manualSlotsByLevel: <int, int>{1: 3, 2: 6, 3: 6, 4: 6},
   allowDuplicateStacks: true,
   stackQuantityLimit: 10,
-  distributorConstructionCost: <String, int>{'Organique': 20, 'Minéral': 10},
+  distributorConstructionCost: <String, int>{'Organique': 10, 'Minéral': 20},
   distributorConstructionMinutes: 1,
   distributorEnergyCapacity: 100,
   distributorEnergyPerBioBattery: 10,
@@ -249,9 +260,16 @@ const MarketConfig defaultMarketConfig = MarketConfig(
     'Meuble simple': 30,
     'Ventilation Termite': 50,
     'Lumière solaire': 50,
+    'P’TIBUG Scarabé': 100,
+    'P’TIBUG Hyme': 100,
+    'P’TIBUG Arac': 100,
   },
   specializedShopGainBonusPercent: 30,
   baseStorePricePenaltyPercent: 50,
+  shopConstructionCost: <String, int>{'Organique': 15, 'Minéral': 30},
+  shopConstructionBioBatteries: 10,
+  shopUpgradeCostMultiplier: 2,
+  distributorConstructionBioBatteries: 5,
 );
 
 MarketConfig marketConfig = defaultMarketConfig;

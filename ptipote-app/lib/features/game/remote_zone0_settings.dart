@@ -1949,6 +1949,10 @@ MarketConfig _market(Object? value) {
     requestPriceBioPiles: _resourceMap(raw['requestPriceBioPiles'], b.requestPriceBioPiles),
     specializedShopGainBonusPercent: _int(raw['specializedShopGainBonusPercent'], b.specializedShopGainBonusPercent),
     baseStorePricePenaltyPercent: _int(raw['baseStorePricePenaltyPercent'], b.baseStorePricePenaltyPercent),
+    shopConstructionCost: _resourceMap(raw['shopConstructionCost'], b.shopConstructionCost),
+    shopConstructionBioBatteries: _int(raw['shopConstructionBioBatteries'], b.shopConstructionBioBatteries),
+    shopUpgradeCostMultiplier: _int(raw['shopUpgradeCostMultiplier'], b.shopUpgradeCostMultiplier),
+    distributorConstructionBioBatteries: _int(raw['distributorConstructionBioBatteries'], b.distributorConstructionBioBatteries),
   );
 }
 

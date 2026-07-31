@@ -114,6 +114,9 @@ class Zone0GameState extends ChangeNotifier {
   final List<MarketSourcierContract> marketContracts =
       <MarketSourcierContract>[];
   final List<MarketShop> marketShops = <MarketShop>[];
+  String primaryMarketShopSpecialization = 'general';
+  bool primaryMarketShopChosen = false;
+  int primaryMarketShopLevel = 1;
   final Set<String> activeMarketLicenses = <String>{};
   final MarketDistributorState marketDistributor = MarketDistributorState();
   int sourcierConfidence = 0;
@@ -225,6 +228,8 @@ class Zone0GameState extends ChangeNotifier {
   DateTime? marketNextSaleAt;
   DateTime? marketNextRequestAt;
   DateTime? marketLastWorkTickAt;
+  DateTime? marketLastXpTickAt;
+  int marketXpEarnedThisAssignment = 0;
   DateTime? lastManualTowerRechargeAt;
   DateTime? merchantAvailableUntil;
   DateTime? merchantNextArrivalAt;
@@ -1241,20 +1246,80 @@ class Zone0GameState extends ChangeNotifier {
   /// La boutique principale est conservée sur les champs historiques afin de
   /// migrer les sauvegardes sans perdre son stock ni son Distributeur.
   int get marketShopLimit => marketConfig.specializedShopSlotsForLevel(marketLevel);
-  int get marketShopCount => 1 + marketShops.length;
+  int get marketShopCount =>
+      1 + marketShops.where((shop) => !shop.isPrimary).length;
 
   MarketShop? marketShopById(String id) =>
       marketShops.where((shop) => shop.id == id).firstOrNull;
 
   int marketShopStockLimit(String shopId) => shopId == primaryMarketShopId
-      ? 3
+      ? (primaryMarketShopLevel >= 2 ? 6 : 3)
       : marketShopById(shopId)?.stockSlots ?? 0;
 
   List<Zone0InventoryStack>? marketStockForShop(String shopId) =>
       shopId == primaryMarketShopId ? marketStock : marketShopById(shopId)?.stock;
 
+  /// Le premier distributeur historique appartient désormais à la boutique
+  /// principale. Les boutiques ajoutées enregistrent leur propre machine.
+  MarketDistributorState? marketDistributorForShop(String shopId) =>
+      shopId == primaryMarketShopId
+          ? marketDistributor
+          : marketShopById(shopId)?.distributor;
+
+  MarketDistributorState _ensureMarketDistributorForShop(String shopId) {
+    if (shopId == primaryMarketShopId) return marketDistributor;
+    final shop = marketShopById(shopId);
+    if (shop == null) throw StateError('Boutique introuvable.');
+    return shop.distributor ??= MarketDistributorState()
+      ..type = switch (shop.specialization) {
+        'restaurant' => MarketDistributorType.food,
+        _ => MarketDistributorType.general,
+      };
+  }
+
+  /// Prépare l'état de construction sans fabriquer le distributeur. Cette
+  /// étape permet d'afficher les dépôts progressifs de chaque magasin.
+  MarketDistributorState prepareMarketDistributorForShop(String shopId) =>
+      _ensureMarketDistributorForShop(shopId);
+
   bool marketShopAccepts(String shopId, String resource) =>
-      shopId == primaryMarketShopId || (marketShopById(shopId)?.accepts(resource) ?? false);
+      shopId == primaryMarketShopId
+          ? MarketShop(id: primaryMarketShopId, specialization: primaryMarketShopSpecialization, level: primaryMarketShopLevel)
+              .accepts(resource)
+          : (marketShopById(shopId)?.accepts(resource) ?? false);
+
+  PTibugSpecies? _marketPTibugSpecies(String resource) => switch (resource) {
+        'P’TIBUG Scarabé' => PTibugSpecies.scarabe,
+        'P’TIBUG Hyme' => PTibugSpecies.hyme,
+        'P’TIBUG Arac' => PTibugSpecies.arac,
+        _ => null,
+      };
+
+  bool _isBasicMarketPTibug(PTibug bug) =>
+      bug.biologicalTraitId == null &&
+      bug.secondTraitId == null &&
+      bug.traitDataId == null &&
+      !bug.isRenewed &&
+      bug.equippedModules.isEmpty &&
+      bug.equippedModuleInstanceIds.isEmpty;
+
+  int _marketPTibugAmount(String resource) {
+    final species = _marketPTibugSpecies(resource);
+    if (species == null) return 0;
+    return pTibugs.where((bug) => bug.species == species && _isBasicMarketPTibug(bug)).length;
+  }
+
+  bool _consumeMarketPTibugs(String resource, int amount) {
+    final species = _marketPTibugSpecies(resource);
+    if (species == null) return false;
+    final candidates = pTibugs
+        .where((bug) => bug.species == species && _isBasicMarketPTibug(bug))
+        .take(amount)
+        .toList(growable: false);
+    if (candidates.length < amount) return false;
+    pTibugs.removeWhere((bug) => candidates.contains(bug));
+    return true;
+  }
 
   int get marketDistributorSlotLimit => marketDistributor.isBuilt
       ? marketConfig.distributorSlotsForLevel(marketDistributor.level)
@@ -2653,6 +2718,10 @@ class Zone0GameState extends ChangeNotifier {
                 workshopConfig.vitalityCostPerUnit;
     if (order.completedQuantity >= order.requestedQuantity || tired) {
       order.status = WorkshopOrderStatus.completed;
+      final craftXp = order.assignedPtipoteId == null
+          ? 0
+          : 5 + (order.requestedQuantity > 1 ? 5 : 0);
+      if (craftXp > 0) addMissionXp(order.assignedPtipoteId!, craftXp);
       if (tired) {
         manualRestingIds.add(order.assignedPtipoteId!);
         final remaining = order.requestedQuantity - order.completedQuantity;
@@ -2666,7 +2735,7 @@ class Zone0GameState extends ChangeNotifier {
         PtipoteMissionReport.system(
           message: tired
               ? '${order.assignedPtipoteName} rentre fatigué de ${order.area == WorkshopOrderArea.kitchen ? 'la Cuisine' : 'l’Atelier'}.'
-              : 'Commande ${order.area == WorkshopOrderArea.kitchen ? 'Cuisine' : 'Atelier'} terminée : $displayName.',
+              : 'Commande ${order.area == WorkshopOrderArea.kitchen ? 'Cuisine' : 'Atelier'} terminée : $displayName.${craftXp == 0 ? '' : ' +$craftXp XP pour ${order.assignedPtipoteName}.'}',
           sourceBuildingId:
               order.area == WorkshopOrderArea.kitchen ? 'cuisine' : 'atelier',
           mailbox: Zone0MessageMailbox.fablab,
@@ -2674,7 +2743,7 @@ class Zone0GameState extends ChangeNotifier {
           concerned: order.assignedPtipoteName ?? 'Joueur',
           summary: tired
               ? '$displayName arrêté : P’TIPOTE fatigué.'
-              : '$displayName × ${order.completedQuantity} terminé.',
+              : '$displayName × ${order.completedQuantity} terminé.${craftXp == 0 ? '' : ' +$craftXp XP.'}',
         ),
       );
       if (order.area == WorkshopOrderArea.kitchen &&
@@ -2775,6 +2844,12 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Objet non vendable.',
       );
     }
+    if (!marketShopAccepts(primaryMarketShopId, resource)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce produit ne correspond pas à la boutique principale.',
+      );
+    }
     if (marketStock.length >= marketSlotLimit) {
       return const Zone0ActionResult(
         success: false,
@@ -2805,6 +2880,33 @@ class Zone0GameState extends ChangeNotifier {
       success: true,
       message: '$moved $resource placé au Marché.',
     );
+  }
+
+  Zone0ActionResult choosePrimaryMarketShop(String specialization) {
+    if (!const <String>{'restaurant', 'home', 'equipment', 'ptibug'}
+        .contains(specialization)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Spécialisation invalide.');
+    }
+    if (primaryMarketShopChosen) {
+      return const Zone0ActionResult(
+          success: false, message: 'La première boutique existe déjà.');
+    }
+    if (!hasResources(marketConfig.shopConstructionCost) ||
+        bioBatteries < marketConfig.shopConstructionBioBatteries) {
+      return Zone0ActionResult(
+        success: false,
+        message: '${missingResourcesLabel(marketConfig.shopConstructionCost)} · ${marketConfig.shopConstructionBioBatteries} bio-batteries requises.',
+      );
+    }
+    removeResources(marketConfig.shopConstructionCost);
+    bioBatteries -= marketConfig.shopConstructionBioBatteries;
+    primaryMarketShopSpecialization = specialization;
+    primaryMarketShopChosen = true;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Première boutique configurée.');
   }
 
   Zone0ActionResult returnMarketStock(Zone0InventoryStack stack) {
@@ -2872,6 +2974,15 @@ class Zone0GameState extends ChangeNotifier {
       .where((stack) => stack.resource == resource)
       .fold(0, (sum, stack) => sum + stack.amount);
 
+  int marketShopStockAmount(String shopId, String resource) {
+    if (_marketPTibugSpecies(resource) != null && marketShopAccepts(shopId, resource)) {
+      return _marketPTibugAmount(resource);
+    }
+    return (marketStockForShop(shopId) ?? const <Zone0InventoryStack>[])
+          .where((stack) => stack.resource == resource)
+          .fold(0, (sum, stack) => sum + stack.amount);
+  }
+
   /// Uses an already started pile first, then the next matching one. This is
   /// the single stock transition used by manual sales, automation and contracts.
   bool _consumeMarketStock(String resource, int amount) {
@@ -2891,16 +3002,53 @@ class Zone0GameState extends ChangeNotifier {
     return remaining == 0;
   }
 
+  bool _consumeMarketShopStock(String shopId, String resource, int amount) {
+    if (_marketPTibugSpecies(resource) != null) {
+      if (!marketShopAccepts(shopId, resource)) return false;
+      return _consumeMarketPTibugs(resource, amount);
+    }
+    if (shopId == primaryMarketShopId) return _consumeMarketStock(resource, amount);
+    final stock = marketStockForShop(shopId);
+    if (stock == null || marketShopStockAmount(shopId, resource) < amount) return false;
+    var remaining = amount;
+    for (final stack in stock.where((stack) => stack.resource == resource).toList()) {
+      final used = math.min(remaining, stack.amount);
+      stack.amount -= used;
+      remaining -= used;
+      if (stack.amount <= 0) stock.remove(stack);
+      if (remaining <= 0) break;
+    }
+    return remaining == 0;
+  }
+
+  /// Le Point info n'est pas attaché à une seule boutique : il peut préparer
+  /// une demande depuis n'importe quel stock compatible du Marché.
+  bool _consumeAnyMarketShopStock(String resource, int amount) {
+    final shopIds = <String>[
+      ...marketShops.where((shop) => !shop.isPrimary).map((shop) => shop.id),
+      primaryMarketShopId,
+    ];
+    for (final shopId in shopIds) {
+      if (_consumeMarketShopStock(shopId, resource, amount)) return true;
+    }
+    return false;
+  }
+
   Zone0ActionResult sellMarketRequest(
     MarketCustomerRequest request, {
     MarketRequestResponder responder = MarketRequestResponder.player,
+    bool allowAnyShop = false,
   }) {
     if (!marketRequests.contains(request) || !request.isOpen) {
       return const Zone0ActionResult(
           success: false, message: 'Demande indisponible.');
     }
-    if (!_consumeMarketStock(
-        request.requestedItemId, request.requestedQuantity)) {
+    final sold = allowAnyShop
+        ? _consumeAnyMarketShopStock(
+            request.requestedItemId, request.requestedQuantity)
+        : _consumeMarketShopStock(
+            request.shopId, request.requestedItemId, request.requestedQuantity);
+    if (!sold) {
       return const Zone0ActionResult(
           success: false, message: 'Stock du Marché insuffisant.');
     }
@@ -2949,6 +3097,8 @@ class Zone0GameState extends ChangeNotifier {
     marketAssignedPtipoteId = figurine.id;
     marketAssignedPtipoteName = figurine.displayName;
     marketLastWorkTickAt = DateTime.now();
+    marketLastXpTickAt = marketLastWorkTickAt;
+    marketXpEarnedThisAssignment = 0;
     vitalityOverrides.putIfAbsent(figurine.id, () => vitalityFor(figurine));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -2968,14 +3118,20 @@ class Zone0GameState extends ChangeNotifier {
     }
     if (tired) manualRestingIds.add(id);
     final name = marketAssignedPtipoteName ?? 'Le P’TIPOTE';
+    final xp = marketXpEarnedThisAssignment;
+    final vitality = vitalityOverrides[id] ?? ptipoteStatsConfig.maxVitality;
+    final hunger = hungerOverrides[id] ?? ptipoteStatsConfig.baseHunger;
+    final rest = restOverrides[id] ?? ptipoteStatsConfig.maxRest;
     marketAssignedPtipoteId = null;
     marketAssignedPtipoteName = null;
     marketLastWorkTickAt = null;
+    marketLastXpTickAt = null;
+    marketXpEarnedThisAssignment = 0;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: '$name rentre à la Maison.',
+      message: '$name rentre du Marché · +$xp XP · énergie $vitality/${ptipoteStatsConfig.maxVitality} · faim $hunger/${ptipoteStatsConfig.baseHunger} · repos $rest/${ptipoteStatsConfig.maxRest}.',
     );
   }
 
@@ -3045,9 +3201,33 @@ class Zone0GameState extends ChangeNotifier {
         }
         changed = true;
       }
+      marketLastXpTickAt ??= current;
+      final xpPeriods = current.difference(marketLastXpTickAt!).inMinutes ~/ 120;
+      if (xpPeriods > 0 && marketAssignedPtipoteId != null) {
+        final xpGain = xpPeriods * math.max(1, marketLevel).toInt();
+        addMissionXp(marketAssignedPtipoteId!, xpGain);
+        marketXpEarnedThisAssignment += xpGain;
+        marketLastXpTickAt = marketLastXpTickAt!.add(Duration(hours: 2 * xpPeriods));
+        changed = true;
+      }
     }
     // Le stock n'est jamais consommé de lui-même. Les demandes ouvertes sont
     // le seul chemin de vente, y compris pour le Distributeur.
+    // Le P’TIPOTE du Point info conserve une fenêtre de trois minutes : le
+    // joueur peut donc répondre immédiatement et le Distributeur en une minute.
+    if (marketAssignedPtipoteId != null) {
+      for (final request in marketRequests.where((item) => item.isOpen).toList()) {
+        if (current.isBefore(request.createdAt.add(const Duration(minutes: 3)))) {
+          continue;
+        }
+        final result = sellMarketRequest(
+          request,
+          responder: MarketRequestResponder.ptipote,
+          allowAnyShop: true,
+        );
+        changed = changed || result.success;
+      }
+    }
     for (final request
         in marketRequests.where((item) => item.isOpen).toList()) {
       if (!current.isBefore(request.customerReturnTime)) {
@@ -3066,7 +3246,12 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   void _createMarketRequest(DateTime now) {
-    final entries = marketConfig.saleValues.keys.toSet().toList();
+    final entries = marketConfig.saleValues.keys
+        .where((item) => marketShopAccepts(primaryMarketShopId, item) ||
+            marketShops.any((shop) => !shop.isPrimary && shop.accepts(item)))
+        .toSet()
+        .toList();
+    if (entries.isEmpty) return;
     final weather = _marketWeatherRequestType();
     final weatherItems = weather == null
         ? const <String>[]
@@ -3090,6 +3275,13 @@ class Zone0GameState extends ChangeNotifier {
     final item = useWeather && eligibleWeatherItems.isNotEmpty
         ? eligibleWeatherItems[_random.nextInt(eligibleWeatherItems.length)]
         : _pickMarketRequestItem(entries);
+    // Une boutique spécialisée est servie avant la boutique principale :
+    // celle-ci reste généraliste, mais ne doit pas absorber toutes les
+    // demandes dès qu'un commerce spécialisé existe.
+    final specialist = marketShops
+        .where((shop) => !shop.isPrimary && shop.accepts(item))
+        .firstOrNull;
+    final shopId = specialist?.id ?? primaryMarketShopId;
     final isResource = item == 'Organique' || item == 'Minéral';
     final activeResidents = residents
         .where((resident) => resident.isActive)
@@ -3099,7 +3291,7 @@ class Zone0GameState extends ChangeNotifier {
       requestedItemId: item,
       requestedQuantity:
           isResource ? lisiereForageConfig.inventoryStackLimit : 1,
-      rewardBioPiles: _marketPriceInBioPiles(item),
+      rewardBioPiles: _marketPriceInBioPiles(item, shopId: shopId),
       rewardWellbeing: 1,
       createdAt: now,
       customerReturnTime: now.add(_randomMarketReturnDelay()),
@@ -3113,6 +3305,7 @@ class Zone0GameState extends ChangeNotifier {
               .displayName,
       weatherType:
           useWeather && eligibleWeatherItems.isNotEmpty ? weather.name : null,
+      shopId: shopId,
     );
     marketRequests.add(request);
     _ensureMarketRequestLog(request);
@@ -3186,9 +3379,14 @@ class Zone0GameState extends ChangeNotifier {
     return 'materials';
   }
 
-  int _marketPriceInBioPiles(String item) =>
-      math.max(1, marketConfig.requestPriceBioPiles[item] ??
-          (marketConfig.saleValues[item] ?? 1) * marketConfig.valuePerBioBattery);
+  int _marketPriceInBioPiles(String item, {required String shopId}) {
+    final base = math.max(1, marketConfig.requestPriceBioPiles[item] ??
+        (marketConfig.saleValues[item] ?? 1) * marketConfig.valuePerBioBattery);
+    if (shopId == primaryMarketShopId) {
+      return math.max(1, (base * (100 - marketConfig.baseStorePricePenaltyPercent) / 100).round());
+    }
+    return math.max(1, (base * (100 + marketConfig.specializedShopGainBonusPercent) / 100).round());
+  }
 
   void _creditMarketBioPiles(int amount) {
     bioPiles += math.max(0, amount);
@@ -3245,6 +3443,20 @@ class Zone0GameState extends ChangeNotifier {
     marketRequestLog.add(MarketRequestLogEntry.fromRequest(request));
   }
 
+  void _recordDistributorIncident(String message, DateTime at) {
+    marketRequestLog.add(MarketRequestLogEntry(
+      requestId: 'distributor-${at.microsecondsSinceEpoch}-${marketRequestLog.length}',
+      createdAt: at,
+      deadline: at,
+      requestedItemId: message,
+      requestedQuantity: 0,
+      customerName: null,
+      status: MarketRequestStatus.completed,
+      resolvedAt: at,
+      responder: MarketRequestResponder.distributor,
+    ));
+  }
+
   Duration _randomMarketReturnDelay() => Duration(
         minutes: marketConfig.requestMinReturnMinutes +
             _random.nextInt(
@@ -3258,45 +3470,63 @@ class Zone0GameState extends ChangeNotifier {
       );
 
   Zone0ActionResult depositMarketDistributorMaterial(
-      String resource, int amount) {
-    if (marketLevel < 2 || marketDistributor.isBuilt || amount <= 0) {
+      String resource, int amount, {String shopId = primaryMarketShopId}) {
+    if (shopId == primaryMarketShopId && !primaryMarketShopChosen) {
+      return const Zone0ActionResult(success: false, message: 'Choisissez d’abord le type de la boutique.');
+    }
+    final distributor = _ensureMarketDistributorForShop(shopId);
+    if (distributor.isBuilt || amount <= 0) {
       return const Zone0ActionResult(
           success: false, message: 'Dépôt impossible.');
     }
     final required = marketConfig.distributorConstructionCost[resource] ?? 0;
     final missing = math.max(
-        0, required - (marketDistributor.constructionDeposits[resource] ?? 0));
+        0, required - (distributor.constructionDeposits[resource] ?? 0));
     final moved = removeResource(resource, math.min(amount, missing));
     if (moved <= 0)
       return const Zone0ActionResult(
           success: false, message: 'Aucune ressource à déposer.');
-    marketDistributor.constructionDeposits[resource] =
-        (marketDistributor.constructionDeposits[resource] ?? 0) + moved;
+    distributor.constructionDeposits[resource] =
+        (distributor.constructionDeposits[resource] ?? 0) + moved;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
         success: true, message: '$moved $resource déposé(s).');
   }
 
-  bool get isMarketDistributorReadyToBuild =>
+  bool isMarketDistributorReadyToBuildFor(String shopId) {
+    final distributor = marketDistributorForShop(shopId);
+    return distributor != null &&
       marketConfig.distributorConstructionCost.entries.every((entry) =>
-          (marketDistributor.constructionDeposits[entry.key] ?? 0) >=
-          entry.value);
+          (distributor.constructionDeposits[entry.key] ?? 0) >= entry.value);
+  }
 
-  Zone0ActionResult startMarketDistributorConstruction() {
-    if (marketLevel < 2 ||
-        marketDistributor.isBuilt ||
-        marketDistributor.constructionStartedAt != null) {
+  bool get isMarketDistributorReadyToBuild =>
+      isMarketDistributorReadyToBuildFor(primaryMarketShopId);
+
+  Zone0ActionResult startMarketDistributorConstruction(
+      {String shopId = primaryMarketShopId}) {
+    if (shopId == primaryMarketShopId && !primaryMarketShopChosen) {
+      return const Zone0ActionResult(success: false, message: 'Choisissez d’abord le type de la boutique.');
+    }
+    final distributor = _ensureMarketDistributorForShop(shopId);
+    if (distributor.isBuilt || distributor.constructionStartedAt != null) {
       return const Zone0ActionResult(
           success: false, message: 'Travaux indisponibles.');
     }
-    if (!isMarketDistributorReadyToBuild) {
+    if (!isMarketDistributorReadyToBuildFor(shopId)) {
       return const Zone0ActionResult(
           success: false, message: 'Matériaux de construction incomplets.');
     }
-    marketDistributor.constructionStartedAt = DateTime.now();
-    marketDistributor.constructionEndsAt =
-        marketDistributor.constructionStartedAt!.add(
+    if (bioBatteries < marketConfig.distributorConstructionBioBatteries) {
+      return Zone0ActionResult(
+          success: false,
+          message: '${marketConfig.distributorConstructionBioBatteries} bio-batteries requises.');
+    }
+    bioBatteries -= marketConfig.distributorConstructionBioBatteries;
+    distributor.constructionStartedAt = DateTime.now();
+    distributor.constructionEndsAt =
+        distributor.constructionStartedAt!.add(
       Duration(minutes: marketConfig.distributorConstructionMinutes),
     );
     notifyListeners();
@@ -3305,19 +3535,21 @@ class Zone0GameState extends ChangeNotifier {
         success: true, message: 'Travaux du Distributeur commencés.');
   }
 
-  Zone0ActionResult openBioBatteryForMarketDistributor() {
-    if (!marketDistributor.isBuilt || bioBatteries <= 0) {
+  Zone0ActionResult openBioBatteryForMarketDistributor(
+      {String shopId = primaryMarketShopId}) {
+    final distributor = marketDistributorForShop(shopId);
+    if (distributor == null || !distributor.isBuilt || bioBatteries <= 0) {
       return const Zone0ActionResult(
           success: false, message: 'Bio-batterie indisponible.');
     }
-    if (marketDistributor.energy >= marketConfig.distributorEnergyCapacity) {
+    if (distributor.energy >= marketConfig.distributorEnergyCapacity) {
       return const Zone0ActionResult(
           success: false, message: 'Réserve d’énergie pleine.');
     }
     bioBatteries -= 1;
-    marketDistributor.energy = math.min(
+    distributor.energy = math.min(
       marketConfig.distributorEnergyCapacity,
-      marketDistributor.energy + marketConfig.distributorEnergyPerBioBattery,
+      distributor.energy + marketConfig.distributorEnergyPerBioBattery,
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -3342,13 +3574,16 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
-  Zone0ActionResult transferToMarketDistributor(String resource, int amount) {
-    if (!marketDistributor.isBuilt || !marketDistributor.accepts(resource)) {
+  Zone0ActionResult transferToMarketDistributor(String resource, int amount,
+      {String shopId = primaryMarketShopId}) {
+    final distributor = marketDistributorForShop(shopId);
+    if (distributor == null || !distributor.isBuilt || !distributor.accepts(resource)) {
       return const Zone0ActionResult(
           success: false,
           message: 'Produit incompatible avec le Distributeur.');
     }
-    if (marketDistributor.stock.length >= marketDistributorSlotLimit) {
+    final slotLimit = distributorSlotsForShop(shopId);
+    if (distributor.stock.length >= slotLimit) {
       return const Zone0ActionResult(
           success: false, message: 'Emplacements du Distributeur occupés.');
     }
@@ -3357,8 +3592,8 @@ class Zone0GameState extends ChangeNotifier {
     if (moved <= 0)
       return const Zone0ActionResult(
           success: false, message: 'Stock insuffisant.');
-    marketDistributor.stock.add(Zone0InventoryStack(
-      id: 'distributor-${DateTime.now().microsecondsSinceEpoch}-${marketDistributor.stock.length}',
+    distributor.stock.add(Zone0InventoryStack(
+      id: 'distributor-${shopId}-${DateTime.now().microsecondsSinceEpoch}-${distributor.stock.length}',
       resource: resource,
       amount: moved,
     ));
@@ -3369,14 +3604,25 @@ class Zone0GameState extends ChangeNotifier {
         message: '$moved $resource placé(s) dans le Distributeur.');
   }
 
-  Zone0ActionResult returnMarketDistributorStock(Zone0InventoryStack stack) {
-    if (!marketDistributor.stock.contains(stack)) {
+  int distributorSlotsForShop(String shopId) {
+    final distributor = marketDistributorForShop(shopId);
+    if (distributor == null || !distributor.isBuilt) return 0;
+    return shopId == primaryMarketShopId
+        ? marketDistributorSlotLimit
+        : math.min(marketShopById(shopId)?.distributorSlots ?? 0,
+            marketConfig.distributorSlotsForLevel(distributor.level));
+  }
+
+  Zone0ActionResult returnMarketDistributorStock(Zone0InventoryStack stack,
+      {String shopId = primaryMarketShopId}) {
+    final distributor = marketDistributorForShop(shopId);
+    if (distributor == null || !distributor.stock.contains(stack)) {
       return const Zone0ActionResult(success: false, message: 'Stock absent.');
     }
     final result = addResources(<String, int>{stack.resource: stack.amount});
     final returned = stack.amount - (result.pending[stack.resource] ?? 0);
     stack.amount -= returned;
-    if (stack.amount <= 0) marketDistributor.stock.remove(stack);
+    if (stack.amount <= 0) distributor.stock.remove(stack);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -3385,21 +3631,27 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
-  Zone0ActionResult repairMarketDistributor() {
-    if (!marketDistributor.isBroken || marketDistributor.repairEndsAt != null) {
+  Zone0ActionResult repairMarketDistributor({
+    bool byPtipote = false,
+    String shopId = primaryMarketShopId,
+  }) {
+    final distributor = marketDistributorForShop(shopId);
+    if (distributor == null || !distributor.isBroken) {
       return const Zone0ActionResult(
           success: false, message: 'Aucune réparation à lancer.');
     }
-    if (!hasResources(marketConfig.distributorRepairCost) ||
-        !removeResources(marketConfig.distributorRepairCost)) {
+    if (!byPtipote && (!hasResources(marketConfig.distributorRepairCost) ||
+        !removeResources(marketConfig.distributorRepairCost))) {
       return Zone0ActionResult(
           success: false,
           message: missingResourcesLabel(marketConfig.distributorRepairCost));
     }
-    marketDistributor.repairEndsAt = DateTime.now().add(
-      Duration(
-          minutes: marketConfig
-              .distributorRepairMinutesForLevel(marketDistributor.level)),
+    _repairDistributor(
+      distributor,
+      byPtipote: byPtipote,
+      shopLabel: shopId == primaryMarketShopId
+          ? 'Distributeur de la boutique principale'
+          : 'Distributeur du magasin',
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -3407,37 +3659,87 @@ class Zone0GameState extends ChangeNotifier {
         success: true, message: 'Réparation du Distributeur lancée.');
   }
 
+  void _repairDistributor(
+    MarketDistributorState distributor, {
+    required bool byPtipote,
+    required String shopLabel,
+  }) {
+    // Le joueur peut remplacer une réparation P’TIPOTE par une intervention
+    // courte. La même machine ne peut jamais lancer deux réparations.
+    distributor.repairEndsAt = DateTime.now().add(
+      Duration(minutes: byPtipote
+          ? marketConfig.distributorRepairMinutesForLevel(distributor.level)
+          : 1),
+    );
+    distributor.repairStartedBy = byPtipote ? 'ptipote' : 'player';
+    _recordDistributorIncident(
+      '$shopLabel : réparation lancée par ${byPtipote ? 'le P’TIPOTE' : 'le joueur'}.',
+      DateTime.now(),
+    );
+  }
+
   bool _resolveMarketDistributor(DateTime current) {
+    var changed = _resolveMarketDistributorForShop(
+      primaryMarketShopId,
+      marketDistributor,
+      current,
+    );
+    for (final shop in marketShops.where((shop) => !shop.isPrimary)) {
+      final distributor = shop.distributor;
+      if (distributor != null) {
+        changed = _resolveMarketDistributorForShop(shop.id, distributor, current) || changed;
+      }
+    }
+    return changed;
+  }
+
+  bool _resolveMarketDistributorForShop(
+    String shopId,
+    MarketDistributorState distributor,
+    DateTime current,
+  ) {
+    final shopLabel = shopId == primaryMarketShopId
+        ? 'Distributeur de la boutique principale'
+        : 'Distributeur du magasin';
     var changed = false;
-    if (marketDistributor.constructionEndsAt != null &&
-        !current.isBefore(marketDistributor.constructionEndsAt!)) {
-      marketDistributor
+    if (distributor.constructionEndsAt != null &&
+        !current.isBefore(distributor.constructionEndsAt!)) {
+      distributor
         ..isBuilt = true
         ..level = 1
         ..constructionStartedAt = null
         ..constructionEndsAt = null;
       reports.add(PtipoteMissionReport.system(
-          message: 'Le Distributeur automatique est opérationnel.'));
+          message: '$shopLabel est opérationnel.'));
       changed = true;
     }
-    if (marketDistributor.repairEndsAt != null &&
-        !current.isBefore(marketDistributor.repairEndsAt!)) {
-      marketDistributor
+    if (distributor.repairEndsAt != null &&
+        !current.isBefore(distributor.repairEndsAt!)) {
+      distributor
         ..isBroken = false
         ..repairEndsAt = null;
+      _recordDistributorIncident(
+        '$shopLabel réparé par ${distributor.repairStartedBy == 'ptipote' ? 'le P’TIPOTE' : 'le joueur'}.',
+        current,
+      );
+      distributor.repairStartedBy = null;
       changed = true;
     }
-    if (!marketDistributor.isOperational) return changed;
-    marketDistributor.lastEnergyTickAt ??= current;
-    final elapsed = current.difference(marketDistributor.lastEnergyTickAt!);
+    if (distributor.isBroken && distributor.repairEndsAt == null &&
+        marketAssignedPtipoteId != null) {
+      _repairDistributor(distributor, byPtipote: true, shopLabel: shopLabel);
+      return true;
+    }
+    if (!distributor.isOperational) return changed;
+    distributor.lastEnergyTickAt ??= current;
+    final elapsed = current.difference(distributor.lastEnergyTickAt!);
     final units = elapsed.inMinutes /
         (24 * 60) *
-        marketConfig.distributorEnergyPerDayForLevel(marketDistributor.level);
+        marketConfig.distributorEnergyPerDayForLevel(distributor.level);
     if (units >= 1) {
       final used = units.floor();
-      marketDistributor.energy = math.max(0, marketDistributor.energy - used);
-      marketDistributor.lastEnergyTickAt =
-          marketDistributor.lastEnergyTickAt!.add(
+      distributor.energy = math.max(0, distributor.energy - used);
+      distributor.lastEnergyTickAt = distributor.lastEnergyTickAt!.add(
         Duration(
             minutes: (used *
                     24 *
@@ -3445,41 +3747,42 @@ class Zone0GameState extends ChangeNotifier {
                     math.max(
                         1,
                         marketConfig.distributorEnergyPerDayForLevel(
-                            marketDistributor.level)))
+                            distributor.level)))
                 .round()),
       );
       changed = true;
     }
-    if (marketDistributor.energy <= 0) return changed;
+    if (distributor.energy <= 0) return changed;
     // Le P’TIPOTE du Point info approvisionne le Distributeur depuis le stock
     // de sa boutique principale ; aucune ressource ne vient de la Maison.
+    final sourceStock = marketStockForShop(shopId) ?? <Zone0InventoryStack>[];
     if (marketAssignedPtipoteId != null &&
-        marketDistributor.stock.length < marketDistributorSlotLimit) {
-      final source = marketStock
+        distributor.stock.length < distributorSlotsForShop(shopId)) {
+      final source = sourceStock
           .where((stack) =>
-              marketDistributor.accepts(stack.resource) && stack.amount > 0)
+              distributor.accepts(stack.resource) && stack.amount > 0)
           .firstOrNull;
       if (source != null) {
         final transferred = math.min(source.amount, marketConfig.stackQuantityLimit);
         source.amount -= transferred;
-        if (source.amount <= 0) marketStock.remove(source);
-        marketDistributor.stock.add(Zone0InventoryStack(
-          id: 'distributor-refill-${DateTime.now().microsecondsSinceEpoch}',
+        if (source.amount <= 0) sourceStock.remove(source);
+        distributor.stock.add(Zone0InventoryStack(
+          id: 'distributor-refill-$shopId-${DateTime.now().microsecondsSinceEpoch}',
           resource: source.resource,
           amount: transferred,
         ));
         changed = true;
       }
     }
-    for (final request
-        in marketRequests.where((item) => item.isOpen).toList()) {
+    for (final request in marketRequests
+        .where((item) => item.isOpen && item.shopId == shopId).toList()) {
       if (current.isBefore(request.distributorEligibleAt)) continue;
-      final stack = marketDistributor.stock
+      final stack = distributor.stock
           .where((item) => item.resource == request.requestedItemId)
           .firstOrNull;
       if (stack == null || stack.amount < request.requestedQuantity) continue;
       stack.amount -= request.requestedQuantity;
-      if (stack.amount <= 0) marketDistributor.stock.remove(stack);
+      if (stack.amount <= 0) distributor.stock.remove(stack);
       _creditMarketBioPiles(request.rewardBioPiles);
       request.status = MarketRequestStatus.completed;
       _recordMarketRequestOutcome(
@@ -3491,11 +3794,12 @@ class Zone0GameState extends ChangeNotifier {
       if (_random.nextInt(math.max(
               1,
               marketConfig.distributorBreakDenominatorForLevel(
-                  marketDistributor.level))) ==
+                  distributor.level))) ==
           0) {
-        marketDistributor.isBroken = true;
+        distributor.isBroken = true;
+        _recordDistributorIncident('$shopLabel en panne après une vente.', current);
         reports.add(PtipoteMissionReport.system(
-            message: 'Le Distributeur automatique est en panne.'));
+            message: '$shopLabel est en panne.'));
         break;
       }
     }
@@ -3515,7 +3819,9 @@ class Zone0GameState extends ChangeNotifier {
       } else if (contract.autoDeliverAllowed &&
           marketAssignedPtipoteId != null &&
           contract.requestedItems.entries
-              .every((entry) => marketStockAmount(entry.key) >= entry.value)) {
+              .every((entry) => (_marketPTibugSpecies(entry.key) != null
+                  ? _marketPTibugAmount(entry.key)
+                  : marketStockAmount(entry.key)) >= entry.value)) {
         _deliverMarketContract(contract);
         changed = true;
       }
@@ -3554,11 +3860,20 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool _deliverMarketContract(MarketSourcierContract contract) {
-    if (!contract.requestedItems.entries
-        .every((entry) => marketStockAmount(entry.key) >= entry.value))
+    if (!contract.requestedItems.entries.every((entry) =>
+        (_marketPTibugSpecies(entry.key) != null
+            ? _marketPTibugAmount(entry.key)
+            : marketStockAmount(entry.key)) >= entry.value))
       return false;
     for (final entry in contract.requestedItems.entries) {
-      if (!_consumeMarketStock(entry.key, entry.value)) return false;
+      final isPTibug = _marketPTibugSpecies(entry.key) != null;
+      if (isPTibug) {
+        if (!_consumeMarketPTibugs(entry.key, entry.value)) {
+          return false;
+        }
+      } else if (!_consumeMarketStock(entry.key, entry.value)) {
+        return false;
+      }
     }
     final payment =
         (contract.rewardBioBatteries * sourcierConfidencePaymentMultiplier)
@@ -4925,14 +5240,17 @@ class Zone0GameState extends ChangeNotifier {
       pTibugModuleInstances.add(instance);
       reports.add(
         PtipoteMissionReport.system(
-          message: 'Le module ${order.moduleType.displayName} est prêt.',
+          message: 'Le module ${order.moduleType.displayName} est prêt.${order.assignedPtipoteId == null ? '' : ' ${order.assignedPtipoteName} gagne 10 XP.'}',
           sourceBuildingId: 'fablab',
           mailbox: Zone0MessageMailbox.fablab,
           subject: 'Fin de craft',
-          concerned: 'Le joueur',
-          summary: 'Module P’TIBUG ${order.moduleType.displayName} créé.',
+          concerned: order.assignedPtipoteName ?? 'Le joueur',
+          summary: 'Module P’TIBUG ${order.moduleType.displayName} créé${order.assignedPtipoteId == null ? '.' : ' · +10 XP.'}',
         ),
       );
+      if (order.assignedPtipoteId != null) {
+        addMissionXp(order.assignedPtipoteId!, 10);
+      }
       changed = true;
     }
     return changed;
@@ -6870,6 +7188,8 @@ class Zone0GameState extends ChangeNotifier {
         marketNextSaleAt = _readDate(marketData['nextSaleAt']);
         marketNextRequestAt = _readDate(marketData['nextRequestAt']);
         marketLastWorkTickAt = _readDate(marketData['lastWorkTickAt']);
+        marketLastXpTickAt = _readDate(marketData['lastXpTickAt']);
+        marketXpEarnedThisAssignment = _readInt(marketData['xpEarnedThisAssignment']);
         marketAssignedPtipoteId = marketData['assignedPtipoteId'] as String?;
         marketAssignedPtipoteName =
             marketData['assignedPtipoteName'] as String?;
@@ -6878,6 +7198,13 @@ class Zone0GameState extends ChangeNotifier {
         sourcierConfidence =
             _readInt(marketData['sourcierConfidence']).clamp(0, 100);
         firstFreeShopClaimed = marketData['firstFreeShopClaimed'] == true;
+        primaryMarketShopSpecialization =
+            '${marketData['primaryShopSpecialization'] ?? 'general'}';
+        primaryMarketShopChosen = marketData['primaryShopChosen'] == true;
+        primaryMarketShopLevel = _readInt(
+          marketData['primaryShopLevel'],
+          fallback: 1,
+        ).clamp(1, 2);
         activeMarketLicenses
           ..clear()
           ..addAll((marketData['activeLicenses'] as List? ?? const <dynamic>[])
@@ -6888,6 +7215,24 @@ class Zone0GameState extends ChangeNotifier {
               .whereType<Map>()
               .map(MarketShop.fromFirebase)
               .where((shop) => shop.id.isNotEmpty));
+        MarketDistributorState? migratedPrimaryDistributor;
+        final migratedPrimary = marketShops.where((shop) => shop.isPrimary).firstOrNull;
+        if (migratedPrimary != null) {
+          primaryMarketShopSpecialization = migratedPrimary.specialization;
+          primaryMarketShopChosen = true;
+        } else if (!primaryMarketShopChosen && marketShops.length == 1) {
+          final legacy = marketShops.single;
+          primaryMarketShopSpecialization = legacy.specialization;
+          primaryMarketShopChosen = true;
+          primaryMarketShopLevel = legacy.level.clamp(1, 2);
+          // Migration explicitement validée : la première boutique héritée
+          // devient réellement la boutique principale. Ses piles rejoignent
+          // le stock historique et ne restent plus cachées dans un doublon.
+          marketStock.addAll(legacy.stock);
+          migratedPrimaryDistributor = legacy.distributor;
+          marketShops
+            ..clear();
+        }
         marketContracts
           ..clear()
           ..addAll((marketData['contracts'] as List? ?? const <dynamic>[])
@@ -6905,13 +7250,39 @@ class Zone0GameState extends ChangeNotifier {
             ..lastEnergyTickAt = restored.lastEnergyTickAt
             ..constructionStartedAt = restored.constructionStartedAt
             ..constructionEndsAt = restored.constructionEndsAt
-            ..repairEndsAt = restored.repairEndsAt;
+            ..repairEndsAt = restored.repairEndsAt
+            ..repairStartedBy = restored.repairStartedBy;
           marketDistributor.constructionDeposits
             ..clear()
             ..addAll(restored.constructionDeposits);
           marketDistributor.stock
             ..clear()
             ..addAll(restored.stock);
+        }
+        if (migratedPrimaryDistributor != null) {
+          final legacy = migratedPrimaryDistributor;
+          if (!marketDistributor.isBuilt && legacy.isBuilt) {
+            marketDistributor
+              ..isBuilt = true
+              ..level = legacy.level
+              ..energy = legacy.energy
+              ..isBroken = legacy.isBroken
+              ..lastEnergyTickAt = legacy.lastEnergyTickAt
+              ..constructionStartedAt = legacy.constructionStartedAt
+              ..constructionEndsAt = legacy.constructionEndsAt
+              ..repairEndsAt = legacy.repairEndsAt
+              ..repairStartedBy = legacy.repairStartedBy
+              ..type = legacy.type;
+          }
+          // Des piles sont fusionnées sans suppression : chaque produit reste
+          // vendable après la transformation de l'ancienne boutique.
+          marketDistributor.stock.addAll(legacy.stock);
+          legacy.constructionDeposits.forEach((resource, amount) {
+            marketDistributor.constructionDeposits[resource] = math.max(
+              marketDistributor.constructionDeposits[resource] ?? 0,
+              amount,
+            );
+          });
         }
         merchantAvailableUntil = _readDate(
           marketData['merchantAvailableUntil'],
@@ -8001,6 +8372,12 @@ class Zone0GameState extends ChangeNotifier {
         ? 'Filtre'
         : category == 'structure' && marketLevel >= 3
             ? 'Ventilation Termite'
+            : category == 'ptibug'
+                ? <String>[
+                    'P’TIBUG Scarabé',
+                    'P’TIBUG Hyme',
+                    'P’TIBUG Arac',
+                  ][_random.nextInt(3)]
             : _random.nextBool()
                 ? 'Organique'
                 : 'Minéral';
@@ -8019,7 +8396,9 @@ class Zone0GameState extends ChangeNotifier {
       confidenceReward: marketConfig.confidenceSuccessGain,
       confidencePenalty: marketConfig.confidenceFailurePenalty,
       offeredAt: now,
-      expiresAt: now.add(const Duration(hours: 12)),
+      // Le Sourcier laisse davantage de temps à la Nurserie pour un P’TIBUG
+      // de base. Les commandes Trait et Module seront ajoutées séparément.
+      expiresAt: now.add(Duration(hours: category == 'ptibug' ? 48 : 12)),
       assignedLicense:
           activeMarketLicenses.contains(category) ? category : null,
     ));
@@ -8030,7 +8409,7 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Magasin offert indisponible.');
     }
-    if (!const <String>{'restaurant', 'general', 'ameublement'}
+    if (!const <String>{'restaurant', 'home', 'equipment', 'ptibug'}
         .contains(specialization)) {
       return const Zone0ActionResult(
           success: false, message: 'Spécialisation invalide.');
@@ -8050,11 +8429,20 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Aucun emplacement de magasin libre.');
     }
-    if (!const <String>{'restaurant', 'general', 'ameublement'}
+    if (!const <String>{'restaurant', 'home', 'equipment', 'ptibug'}
         .contains(specialization)) {
       return const Zone0ActionResult(
           success: false, message: 'Spécialisation invalide.');
     }
+    if (!hasResources(marketConfig.shopConstructionCost) ||
+        bioBatteries < marketConfig.shopConstructionBioBatteries) {
+      return Zone0ActionResult(
+        success: false,
+        message: '${missingResourcesLabel(marketConfig.shopConstructionCost)} · ${marketConfig.shopConstructionBioBatteries} bio-batteries requises.',
+      );
+    }
+    removeResources(marketConfig.shopConstructionCost);
+    bioBatteries -= marketConfig.shopConstructionBioBatteries;
     marketShops.add(MarketShop(
       id: 'shop-${DateTime.now().microsecondsSinceEpoch}',
       specialization: specialization,
@@ -8066,11 +8454,41 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult upgradeMarketShop(String shopId) {
+    if (shopId == primaryMarketShopId) {
+      if (primaryMarketShopLevel >= 2) {
+        return const Zone0ActionResult(success: false, message: 'Niveau maximal atteint.');
+      }
+      final costs = marketConfig.shopConstructionCost.map(
+        (resource, amount) => MapEntry(resource, amount * marketConfig.shopUpgradeCostMultiplier),
+      );
+      final batteries = marketConfig.shopConstructionBioBatteries * marketConfig.shopUpgradeCostMultiplier;
+      if (!hasResources(costs) || bioBatteries < batteries) {
+        return Zone0ActionResult(success: false,
+            message: '${missingResourcesLabel(costs)} · $batteries bio-batteries requises.');
+      }
+      removeResources(costs);
+      bioBatteries -= batteries;
+      primaryMarketShopLevel = 2;
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+      return const Zone0ActionResult(success: true, message: 'Boutique principale améliorée.');
+    }
     final shop = marketShopById(shopId);
     if (shop == null || shop.level >= 2) {
       return const Zone0ActionResult(
           success: false, message: 'Amélioration indisponible.');
     }
+    final costs = marketConfig.shopConstructionCost.map(
+      (resource, amount) => MapEntry(resource, amount * marketConfig.shopUpgradeCostMultiplier),
+    );
+    final batteries = marketConfig.shopConstructionBioBatteries * marketConfig.shopUpgradeCostMultiplier;
+    if (!hasResources(costs) || bioBatteries < batteries) {
+      return Zone0ActionResult(
+          success: false,
+          message: '${missingResourcesLabel(costs)} · $batteries bio-batteries requises.');
+    }
+    removeResources(costs);
+    bioBatteries -= batteries;
     shop.level = 2;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -10146,12 +10564,19 @@ class Zone0GameState extends ChangeNotifier {
           'lastWorkTickAt': marketLastWorkTickAt == null
               ? null
               : Timestamp.fromDate(marketLastWorkTickAt!),
+          'lastXpTickAt': marketLastXpTickAt == null
+              ? null
+              : Timestamp.fromDate(marketLastXpTickAt!),
+          'xpEarnedThisAssignment': marketXpEarnedThisAssignment,
           'assignedPtipoteId': marketAssignedPtipoteId,
           'assignedPtipoteName': marketAssignedPtipoteName,
           'valueRemainder': marketValueRemainder,
           'bioBatteriesEarned': marketBioBatteriesEarned,
           'sourcierConfidence': sourcierConfidence,
           'firstFreeShopClaimed': firstFreeShopClaimed,
+          'primaryShopSpecialization': primaryMarketShopSpecialization,
+          'primaryShopChosen': primaryMarketShopChosen,
+          'primaryShopLevel': primaryMarketShopLevel,
           'activeLicenses': activeMarketLicenses.toList(),
           'shops': marketShops.map((item) => item.toFirebase()).toList(),
           'contracts':
@@ -10654,6 +11079,7 @@ class MarketDistributorState {
   DateTime? constructionStartedAt;
   DateTime? constructionEndsAt;
   DateTime? repairEndsAt;
+  String? repairStartedBy;
   final Map<String, int> constructionDeposits = <String, int>{};
   final List<Zone0InventoryStack> stock = <Zone0InventoryStack>[];
 
@@ -10698,7 +11124,8 @@ class MarketDistributorState {
           Zone0GameState.instance._readDate(data['constructionStartedAt'])
       ..constructionEndsAt =
           Zone0GameState.instance._readDate(data['constructionEndsAt'])
-      ..repairEndsAt = Zone0GameState.instance._readDate(data['repairEndsAt']);
+      ..repairEndsAt = Zone0GameState.instance._readDate(data['repairEndsAt'])
+      ..repairStartedBy = data['repairStartedBy'] as String?;
     final deposits = data['constructionDeposits'];
     if (deposits is Map) {
       for (final entry in deposits.entries) {
@@ -10730,6 +11157,7 @@ class MarketDistributorState {
             : Timestamp.fromDate(constructionEndsAt!),
         'repairEndsAt':
             repairEndsAt == null ? null : Timestamp.fromDate(repairEndsAt!),
+        'repairStartedBy': repairStartedBy,
         'constructionDeposits': constructionDeposits,
         'stock': stock.map((item) => item.toFirebase()).toList(),
       };
@@ -10742,22 +11170,36 @@ class MarketShop {
     this.level = 1,
     List<Zone0InventoryStack>? stock,
     this.distributor,
+    this.isPrimary = false,
   }) : stock = stock ?? <Zone0InventoryStack>[];
   final String id;
   final String specialization;
   int level;
   final List<Zone0InventoryStack> stock;
   MarketDistributorState? distributor;
+  final bool isPrimary;
 
   bool accepts(String resource) => switch (specialization) {
         'restaurant' => craftConfig.recipes.any(
             (recipe) => recipe.resultItem == resource && recipe.isConsumable,
           ),
-        'ameublement' => resource.contains('Meuble') ||
+        'home' || 'ameublement' => resource.contains('Meuble') ||
             resource.contains('Ventilation') ||
             resource.contains('Lumière') ||
             resource.contains('Cartouche'),
-        _ => true,
+        'equipment' => craftConfig.recipes.any(
+            (recipe) => recipe.resultItem == resource &&
+                !recipe.isConsumable &&
+                !resource.contains('Meuble') &&
+                !resource.contains('Ventilation') &&
+                !resource.contains('Lumière') &&
+                !resource.contains('Cartouche'),
+          ),
+        'ptibug' => resource.startsWith('P’TIBUG '),
+        // Compatibilité de lecture des anciennes sauvegardes : ce type ne
+        // peut plus être choisi, mais son stock reste utilisable.
+        'general' => true,
+        _ => false,
       };
 
   int get stockSlots => level >= 2 ? 6 : 3;
@@ -10774,6 +11216,7 @@ class MarketShop {
         distributor: data['distributor'] is Map
             ? MarketDistributorState.fromFirebase(data['distributor'] as Map)
             : null,
+        isPrimary: data['isPrimary'] == true,
       );
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'id': id,
@@ -10781,6 +11224,7 @@ class MarketShop {
         'level': level,
         'stock': stock.map((item) => item.toFirebase()).toList(),
         'distributor': distributor?.toFirebase(),
+        'isPrimary': isPrimary,
       };
 }
 

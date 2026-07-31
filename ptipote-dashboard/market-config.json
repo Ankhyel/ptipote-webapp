@@ -14,9 +14,9 @@
   "maxActiveRequests": 3,
   "requestMinReturnMinutes": 10,
   "requestMaxReturnMinutes": 20,
-  "saleValues": {"Organique": 10, "Minéral": 10, "Repas simple": 2, "Filtre": 1, "Cartouche de filtration": 2, "Tenue ombragée": 2, "Meuble simple": 2, "Ventilation Termite": 3, "Lumière solaire": 3},
+  "saleValues": {"Organique": 10, "Minéral": 10, "Repas simple": 2, "Filtre": 1, "Cartouche de filtration": 2, "Tenue ombragée": 2, "Meuble simple": 2, "Ventilation Termite": 3, "Lumière solaire": 3, "P’TIBUG Scarabé": 20, "P’TIBUG Hyme": 20, "P’TIBUG Arac": 20},
   "maxActiveRequestsBonusPerLevel": 1,
-  "distributorConstructionCost": {"Organique": 20, "Minéral": 10},
+  "distributorConstructionCost": {"Organique": 10, "Minéral": 20},
   "distributorConstructionMinutes": 1,
   "distributorEnergyCapacity": 100,
   "distributorEnergyPerBioBattery": 10,
@@ -54,7 +54,11 @@
   "economicActivityMarketLevelCapPercent": 20,
   "economicActivityWeatherPercent": {"calm": 10, "moderate": 5, "strong": 3, "severe": 0},
   "requestCategoryWeights": {"food": 60, "materials": 20, "clothing": 15, "furniture": 5},
-  "requestPriceBioPiles": {"Boisson tonique": 2, "Repas simple": 5, "Organique": 10, "Minéral": 10, "Tenue ombragée": 20, "Filtre": 7, "Cartouche de filtration": 13, "Meuble simple": 30, "Ventilation Termite": 50, "Lumière solaire": 50},
+  "requestPriceBioPiles": {"Boisson tonique": 2, "Repas simple": 5, "Organique": 10, "Minéral": 10, "Tenue ombragée": 20, "Filtre": 7, "Cartouche de filtration": 13, "Meuble simple": 30, "Ventilation Termite": 50, "Lumière solaire": 50, "P’TIBUG Scarabé": 100, "P’TIBUG Hyme": 100, "P’TIBUG Arac": 100},
   "specializedShopGainBonusPercent": 30,
   "baseStorePricePenaltyPercent": 50
+  ,"shopConstructionCost": {"Organique": 15, "Minéral": 30}
+  ,"shopConstructionBioBatteries": 10
+  ,"shopUpgradeCostMultiplier": 2
+  ,"distributorConstructionBioBatteries": 5
 }
