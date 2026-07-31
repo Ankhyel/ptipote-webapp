@@ -415,11 +415,12 @@ class _CampHud extends StatelessWidget {
         Expanded(
           child: _HudChip(
             icon: Icons.battery_charging_full_outlined,
-            label: '${gameState.bioBatteries}',
+            label: '🔵 ${gameState.bioBatteries} · 🟡 ${gameState.bioPiles}',
+            color: const Color(0xFF2878C9),
             onTap: () => _showHudInfo(
               context,
-              'Bio-batteries',
-              'La ressource énergétique du refuge. Le Générateur, le Marché et certaines récompenses peuvent en produire.',
+              'Bio-batteries et bio-piles',
+              'Les bio-batteries (bleu) alimentent le refuge. Les bio-piles (jaune) sont la monnaie fine du Marché : 10 bio-piles sont automatiquement converties en 1 bio-batterie.',
             ),
           ),
         ),
@@ -9812,6 +9813,23 @@ class _MarketPageState extends State<MarketPage> {
                         Text(
                           'Population ${widget.gameState.currentPopulation} · Bien-être ${widget.gameState.campWellbeing}%',
                         ),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => _showMarketActivityDetails(context),
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                const Icon(Icons.insights_outlined, size: 18),
+                                const SizedBox(width: 5),
+                                Text('Activité économique : ${widget.gameState.marketEconomicActivityPercent}%'),
+                                const SizedBox(width: 3),
+                                const Icon(Icons.info_outline, size: 16),
+                              ],
+                            ),
+                          ),
+                        ),
                         Text(
                           'Bio-batteries gagnées : ${widget.gameState.marketBioBatteriesEarned}',
                         ),
@@ -10144,7 +10162,7 @@ class _MarketPageState extends State<MarketPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            const Text('Distributeur automatique',
+                            const Text('Boutique principale · Distributeur automatique',
                                 style: TextStyle(fontWeight: FontWeight.w900)),
                             if (!widget.gameState.marketDistributor
                                 .isBuilt) ...<Widget>[
@@ -10288,7 +10306,7 @@ class _MarketPageState extends State<MarketPage> {
                   _marketShopsSection(),
                   const SizedBox(height: 12),
                   Text(
-                    'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
+                    'Boutique principale · Stock (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 8),
@@ -10408,7 +10426,7 @@ class _MarketPageState extends State<MarketPage> {
                             )
                         : null,
                     child: Text(canSell
-                        ? 'Vendre · +${request.rewardBioBattery} bio-batterie(s)'
+                        ? 'Vendre · +${request.rewardBioPiles} bio-pile(s)'
                         : 'Stock insuffisant'),
                   ),
                 ],
@@ -10426,13 +10444,10 @@ class _MarketPageState extends State<MarketPage> {
       'general': 'Fournitures',
       'ameublement': 'Meubles et structures',
     };
-    final slots = marketConfig.specializedShopSlotsForLevel(
-      widget.gameState.marketLevel,
-    );
+    final slots = widget.gameState.marketShopLimit;
     final shops = widget.gameState.marketShops;
     final availableFirstShop = widget.gameState.marketLevel >= 2 &&
-        !widget.gameState.firstFreeShopClaimed &&
-        shops.isEmpty;
+        !widget.gameState.firstFreeShopClaimed;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -10440,37 +10455,49 @@ class _MarketPageState extends State<MarketPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             const Text(
-              'Magasins spécialisés',
+              'Boutiques du Marché',
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 4),
-            Text('${shops.length}/$slots emplacement(s) construit(s).'),
+            Text('${widget.gameState.marketShopCount}/$slots boutique(s) construite(s).'),
             const SizedBox(height: 10),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.storefront_outlined),
+              title: const Text('Boutique principale · généraliste', style: TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text('Niveau 1 · ${widget.gameState.marketStock.length}/3 piles · prix -${marketConfig.baseStorePricePenaltyPercent}%'),
+            ),
+            const Divider(),
+            ...shops.map((shop) => Column(
+              children: <Widget>[
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.storefront_outlined),
+                  title: Text(labels[shop.specialization] ?? 'Magasin', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text('Niveau ${shop.level} · ${shop.stock.length}/${shop.stockSlots} piles · gain +${marketConfig.specializedShopGainBonusPercent}%'),
+                  trailing: shop.level < 2 ? TextButton(
+                    onPressed: () => _message(widget.gameState.upgradeMarketShop(shop.id).message),
+                    child: const Text('Améliorer'),
+                  ) : const Text('Max.'),
+                ),
+                const Divider(),
+              ],
+            )),
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: List<Widget>.generate(slots, (index) {
-                final shop = index < shops.length ? shops[index] : null;
-                if (shop != null) {
-                  return Chip(
-                    avatar: const Icon(Icons.storefront_outlined, size: 18),
-                    label: Text(labels[shop.specialization] ?? 'Magasin'),
-                  );
-                }
-                if (index == 0 && availableFirstShop) {
+              children: List<Widget>.generate(math.max(0, slots - widget.gameState.marketShopCount), (index) {
+                if (availableFirstShop && index == 0) {
                   return OutlinedButton.icon(
                     onPressed: () => _showFirstShopPicker(),
                     icon: const Icon(Icons.add_business_outlined),
                     label: const Text('Construire le premier magasin'),
                   );
                 }
-                return Chip(
-                  avatar: const Icon(Icons.add, size: 18),
-                  label: Text(
-                    widget.gameState.marketLevel < 3
-                        ? 'Débloqué au Marché niv. 2'
-                        : 'Emplacement à débloquer',
-                  ),
+                return OutlinedButton.icon(
+                  onPressed: () => _showAdditionalShopPicker(),
+                  icon: const Icon(Icons.add_business_outlined),
+                  label: const Text('Construire un magasin'),
                 );
               }),
             ),
@@ -10479,6 +10506,29 @@ class _MarketPageState extends State<MarketPage> {
       ),
     );
   }
+
+  Future<void> _showAdditionalShopPicker() => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+              const Text('Nouveau magasin', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              for (final entry in const <String, String>{'restaurant': 'Restaurant', 'general': 'Fournitures', 'ameublement': 'Meubles et structures'}.entries)
+                ListTile(
+                  leading: const Icon(Icons.storefront_outlined),
+                  title: Text(entry.value),
+                  onTap: () {
+                    final result = widget.gameState.buildMarketShop(entry.key);
+                    _message(result.message);
+                    if (result.success) Navigator.of(sheetContext).pop();
+                  },
+                ),
+            ]),
+          ),
+        ),
+      );
 
   Future<void> _showFirstShopPicker() => showModalBottomSheet<void>(
         context: context,
@@ -10564,11 +10614,50 @@ class _MarketPageState extends State<MarketPage> {
                     '${entry.requestedQuantity} ${entry.requestedItemId} · $status'),
                 subtitle: Text(
                   '$created · délai $deadlineMinutes min · ${entry.customerName ?? 'Habitant non identifié'}'
-                  '${entry.status == MarketRequestStatus.completed ? ' · gain +${entry.rewardBioBatteries} 🔋' : ''}',
+                  '${entry.status == MarketRequestStatus.completed ? ' · ${entry.responder?.label ?? 'Vente'} · gain +${entry.rewardBioBatteries} bio-pile(s) 🟡' : ''}',
                 ),
               );
             }),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showMarketActivityDetails(BuildContext context) {
+    final config = marketConfig;
+    final wellbeing = (widget.gameState.campWellbeing.clamp(0, 100) / 100 *
+            config.economicActivityWellbeingMaxPercent)
+        .round();
+    final heart = math.min(config.economicActivityHeartLevelCapPercent,
+        widget.campHeartLevel * config.economicActivityHeartLevelPercent);
+    final market = math.min(config.economicActivityMarketLevelCapPercent,
+        widget.gameState.marketLevel * config.economicActivityMarketLevelPercent);
+    final weather = widget.gameState.activeGlobalWeatherEvent == null
+        ? 0
+        : config.economicActivityWeatherPercent[
+                widget.gameState.activeGlobalWeatherEvent!.intensity.name] ??
+            0;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Activité économique', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 10),
+              Text('Bien-être : +$wellbeing% / ${config.economicActivityWellbeingMaxPercent}%'),
+              Text('Cœur du camp : +$heart% / ${config.economicActivityHeartLevelCapPercent}%'),
+              Text('Marché : +$market% / ${config.economicActivityMarketLevelCapPercent}%'),
+              Text('Météo : +$weather%'),
+              const SizedBox(height: 8),
+              Text('Total : ${widget.gameState.marketEconomicActivityPercent}% · à 100 %, la fréquence des demandes est doublée.'),
+            ],
+          ),
         ),
       ),
     );

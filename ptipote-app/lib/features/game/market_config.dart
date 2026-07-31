@@ -44,6 +44,18 @@ class MarketConfig {
     required this.weatherRequestRatioPercent,
     required this.weatherRequestPopulationDivisor,
     required this.weatherRequestItems,
+    required this.requestBasePerHourByLevel,
+    required this.requestMinimumSpacingMinutes,
+    required this.economicActivityWellbeingMaxPercent,
+    required this.economicActivityHeartLevelPercent,
+    required this.economicActivityHeartLevelCapPercent,
+    required this.economicActivityMarketLevelPercent,
+    required this.economicActivityMarketLevelCapPercent,
+    required this.economicActivityWeatherPercent,
+    required this.requestCategoryWeights,
+    required this.requestPriceBioPiles,
+    required this.specializedShopGainBonusPercent,
+    required this.baseStorePricePenaltyPercent,
   });
 
   final Map<String, int> constructionCost;
@@ -88,6 +100,18 @@ class MarketConfig {
   final int weatherRequestRatioPercent;
   final int weatherRequestPopulationDivisor;
   final Map<String, List<String>> weatherRequestItems;
+  final Map<int, int> requestBasePerHourByLevel;
+  final int requestMinimumSpacingMinutes;
+  final int economicActivityWellbeingMaxPercent;
+  final int economicActivityHeartLevelPercent;
+  final int economicActivityHeartLevelCapPercent;
+  final int economicActivityMarketLevelPercent;
+  final int economicActivityMarketLevelCapPercent;
+  final Map<String, int> economicActivityWeatherPercent;
+  final Map<String, int> requestCategoryWeights;
+  final Map<String, int> requestPriceBioPiles;
+  final int specializedShopGainBonusPercent;
+  final int baseStorePricePenaltyPercent;
 
   int slotsForLevel(int level) =>
       manualSlotsByLevel[level.clamp(0, maximumLevel)] ??
@@ -117,6 +141,9 @@ class MarketConfig {
 
   int specializedShopSlotsForLevel(int level) =>
       specializedShopSlotsByMarketLevel[level.clamp(1, maximumLevel)] ?? 0;
+
+  int requestBasePerHourForLevel(int level) =>
+      requestBasePerHourByLevel[level.clamp(1, maximumLevel)] ?? 0;
 
   Duration residentRequestInterval(int population, math.Random random) {
     final requestsPerHour =
@@ -179,7 +206,7 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   licenseCostBioBatteries: 30,
   licenseChangeCostBioBatteries: 10,
   licenseDirectedRatioPercent: 80,
-  specializedShopSlotsByMarketLevel: <int, int>{1: 0, 2: 3, 3: 5, 4: 7},
+  specializedShopSlotsByMarketLevel: <int, int>{1: 1, 2: 3, 3: 5, 4: 7},
   firstShopFree: true,
   residentsPerHourlyRequest: 3,
   requestJitterMinPercent: 10,
@@ -192,6 +219,39 @@ const MarketConfig defaultMarketConfig = MarketConfig(
     'heavyRain': <String>['Ventilation Termite'],
     'toxicCloud': <String>['Cartouche de filtration', 'Filtre'],
   },
+  requestBasePerHourByLevel: <int, int>{1: 2, 2: 4, 3: 6, 4: 10},
+  requestMinimumSpacingMinutes: 2,
+  economicActivityWellbeingMaxPercent: 30,
+  economicActivityHeartLevelPercent: 10,
+  economicActivityHeartLevelCapPercent: 40,
+  economicActivityMarketLevelPercent: 5,
+  economicActivityMarketLevelCapPercent: 20,
+  economicActivityWeatherPercent: <String, int>{
+    'calm': 10,
+    'moderate': 5,
+    'strong': 3,
+    'severe': 0,
+  },
+  requestCategoryWeights: <String, int>{
+    'food': 60,
+    'materials': 20,
+    'clothing': 15,
+    'furniture': 5,
+  },
+  requestPriceBioPiles: <String, int>{
+    'Boisson tonique': 2,
+    'Repas simple': 5,
+    'Organique': 10,
+    'Minéral': 10,
+    'Tenue ombragée': 20,
+    'Filtre': 7,
+    'Cartouche de filtration': 13,
+    'Meuble simple': 30,
+    'Ventilation Termite': 50,
+    'Lumière solaire': 50,
+  },
+  specializedShopGainBonusPercent: 30,
+  baseStorePricePenaltyPercent: 50,
 );
 
 MarketConfig marketConfig = defaultMarketConfig;

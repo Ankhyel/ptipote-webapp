@@ -932,6 +932,18 @@ function prettyPath(path) {
     requestChance: "Chance de créer une demande client",
     maxActiveRequests: "Demandes clients maximum",
     maxActiveRequestsBonusPerLevel: "Demandes supplémentaires par niveau de Marché",
+    requestBasePerHourByLevel: "Demandes de base par heure et par niveau",
+    requestMinimumSpacingMinutes: "Écart minimal entre les demandes (min)",
+    economicActivityWellbeingMaxPercent: "Activité économique : bonus maximum de bien-être",
+    economicActivityHeartLevelPercent: "Activité économique par niveau du Cœur",
+    economicActivityHeartLevelCapPercent: "Plafond Cœur de l’activité économique",
+    economicActivityMarketLevelPercent: "Activité économique par niveau du Marché",
+    economicActivityMarketLevelCapPercent: "Plafond Marché de l’activité économique",
+    economicActivityWeatherPercent: "Activité économique selon la météo",
+    requestCategoryWeights: "Poids des catégories de demandes",
+    requestPriceBioPiles: "Prix des demandes en bio-piles",
+    specializedShopGainBonusPercent: "Bonus de gain d’un magasin spécialisé (%)",
+    baseStorePricePenaltyPercent: "Malus de prix du premier magasin (%)",
   };
   return path.map((key) => labels[key] || String(key).replace(/([A-Z])/g, " $1")).join(" / ");
 }

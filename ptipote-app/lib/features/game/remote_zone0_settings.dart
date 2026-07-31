@@ -1934,6 +1934,21 @@ MarketConfig _market(Object? value) {
             .map((item) => '$item')
             .toList(),
     },
+    requestBasePerHourByLevel: _levelMap(
+      raw['requestBasePerHourByLevel'],
+      b.requestBasePerHourByLevel,
+    ),
+    requestMinimumSpacingMinutes: _int(raw['requestMinimumSpacingMinutes'], b.requestMinimumSpacingMinutes),
+    economicActivityWellbeingMaxPercent: _int(raw['economicActivityWellbeingMaxPercent'], b.economicActivityWellbeingMaxPercent),
+    economicActivityHeartLevelPercent: _int(raw['economicActivityHeartLevelPercent'], b.economicActivityHeartLevelPercent),
+    economicActivityHeartLevelCapPercent: _int(raw['economicActivityHeartLevelCapPercent'], b.economicActivityHeartLevelCapPercent),
+    economicActivityMarketLevelPercent: _int(raw['economicActivityMarketLevelPercent'], b.economicActivityMarketLevelPercent),
+    economicActivityMarketLevelCapPercent: _int(raw['economicActivityMarketLevelCapPercent'], b.economicActivityMarketLevelCapPercent),
+    economicActivityWeatherPercent: _resourceMap(raw['economicActivityWeatherPercent'], b.economicActivityWeatherPercent),
+    requestCategoryWeights: _resourceMap(raw['requestCategoryWeights'], b.requestCategoryWeights),
+    requestPriceBioPiles: _resourceMap(raw['requestPriceBioPiles'], b.requestPriceBioPiles),
+    specializedShopGainBonusPercent: _int(raw['specializedShopGainBonusPercent'], b.specializedShopGainBonusPercent),
+    baseStorePricePenaltyPercent: _int(raw['baseStorePricePenaltyPercent'], b.baseStorePricePenaltyPercent),
   );
 }
 

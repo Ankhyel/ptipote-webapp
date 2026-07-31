@@ -40,6 +40,7 @@ String _ptibugDataFamilyLabel(PTibugDataFamily family) => switch (family) {
     };
 
 class Zone0GameState extends ChangeNotifier {
+  static const String primaryMarketShopId = 'market-main';
   Zone0GameState._() {
     RemoteGameConfigService.instance.addListener(_onRemoteConfigChanged);
   }
@@ -200,6 +201,9 @@ class Zone0GameState extends ChangeNotifier {
   int kernelTrustLevel = 1;
   int kernelTrustXp = 0;
   int bioBatteries = kernelConfig.startingBioBatteries;
+  /// Monnaie fine du Marché. Dix bio-piles sont automatiquement compactées
+  /// en une bio-batterie, sans modifier les coûts existants en batteries.
+  int bioPiles = 0;
   int energyUnits = 0;
   int recyclerLevel = 0;
   int recyclerWasteTank = 0;
@@ -1230,7 +1234,27 @@ class Zone0GameState extends ChangeNotifier {
   bool isAssignedToMarket(String figurineId) =>
       marketAssignedPtipoteId == figurineId;
 
-  int get marketSlotLimit => marketConfig.slotsForLevel(marketLevel);
+  /// Le stock n'augmente plus avec le niveau global du Marché : la boutique
+  /// principale commence avec trois piles et s'améliore séparément plus tard.
+  int get marketSlotLimit => 3;
+
+  /// La boutique principale est conservée sur les champs historiques afin de
+  /// migrer les sauvegardes sans perdre son stock ni son Distributeur.
+  int get marketShopLimit => marketConfig.specializedShopSlotsForLevel(marketLevel);
+  int get marketShopCount => 1 + marketShops.length;
+
+  MarketShop? marketShopById(String id) =>
+      marketShops.where((shop) => shop.id == id).firstOrNull;
+
+  int marketShopStockLimit(String shopId) => shopId == primaryMarketShopId
+      ? 3
+      : marketShopById(shopId)?.stockSlots ?? 0;
+
+  List<Zone0InventoryStack>? marketStockForShop(String shopId) =>
+      shopId == primaryMarketShopId ? marketStock : marketShopById(shopId)?.stock;
+
+  bool marketShopAccepts(String shopId, String resource) =>
+      shopId == primaryMarketShopId || (marketShopById(shopId)?.accepts(resource) ?? false);
 
   int get marketDistributorSlotLimit => marketDistributor.isBuilt
       ? marketConfig.distributorSlotsForLevel(marketDistributor.level)
@@ -2799,6 +2823,51 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  Zone0ActionResult transferToMarketShop(
+    String shopId,
+    String resource,
+    int amount,
+  ) {
+    final stock = marketStockForShop(shopId);
+    if (stock == null || !marketShopAccepts(shopId, resource)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Produit incompatible avec ce magasin.');
+    }
+    if (stock.length >= marketShopStockLimit(shopId)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Stock du magasin complet.');
+    }
+    final moved = removeResource(
+      resource,
+      math.min(amount, math.min(resourceAmount(resource), marketConfig.stackQuantityLimit)),
+    );
+    if (moved <= 0) {
+      return const Zone0ActionResult(success: false, message: 'Stock insuffisant.');
+    }
+    stock.add(Zone0InventoryStack(
+      id: 'shop-$shopId-${DateTime.now().microsecondsSinceEpoch}-${stock.length}',
+      resource: resource,
+      amount: moved,
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(success: true, message: '$moved $resource placé(s) dans ce magasin.');
+  }
+
+  Zone0ActionResult returnMarketShopStock(String shopId, Zone0InventoryStack stack) {
+    final stock = marketStockForShop(shopId);
+    if (stock == null || !stock.contains(stack)) {
+      return const Zone0ActionResult(success: false, message: 'Stock absent.');
+    }
+    final result = addResources(<String, int>{stack.resource: stack.amount});
+    final returned = stack.amount - (result.pending[stack.resource] ?? 0);
+    stack.amount -= returned;
+    if (stack.amount <= 0) stock.remove(stack);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(success: returned > 0, message: '$returned ${stack.resource} rendu à la Maison.');
+  }
+
   int marketStockAmount(String resource) => marketStock
       .where((stack) => stack.resource == resource)
       .fold(0, (sum, stack) => sum + stack.amount);
@@ -2822,7 +2891,10 @@ class Zone0GameState extends ChangeNotifier {
     return remaining == 0;
   }
 
-  Zone0ActionResult sellMarketRequest(MarketCustomerRequest request) {
+  Zone0ActionResult sellMarketRequest(
+    MarketCustomerRequest request, {
+    MarketRequestResponder responder = MarketRequestResponder.player,
+  }) {
     if (!marketRequests.contains(request) || !request.isOpen) {
       return const Zone0ActionResult(
           success: false, message: 'Demande indisponible.');
@@ -2832,16 +2904,20 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Stock du Marché insuffisant.');
     }
-    bioBatteries += request.rewardBioBattery;
+    _creditMarketBioPiles(request.rewardBioPiles);
     campWellbeing = math.min(100, campWellbeing + request.rewardWellbeing);
     request.status = MarketRequestStatus.completed;
-    _recordMarketRequestOutcome(request, completedAt: DateTime.now());
+    _recordMarketRequestOutcome(
+      request,
+      completedAt: DateTime.now(),
+      responder: responder,
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
       message:
-          'Vente réalisée : ${request.requestedQuantity} ${request.requestedItemId} · +${request.rewardBioBattery} bio-batterie(s).',
+          'Vente réalisée : ${request.requestedQuantity} ${request.requestedItemId} · +${request.rewardBioPiles} bio-pile(s).',
     );
   }
 
@@ -2936,9 +3012,7 @@ class Zone0GameState extends ChangeNotifier {
         requestGuard++ < 48) {
       final createdAt = marketNextRequestAt!;
       _createMarketRequest(createdAt);
-      marketNextRequestAt = createdAt.add(
-        marketConfig.residentRequestInterval(currentPopulation, _random),
-      );
+      marketNextRequestAt = createdAt.add(_marketRequestInterval());
       changed = true;
     }
     final historyCutoff = current.subtract(const Duration(hours: 24));
@@ -2992,10 +3066,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   void _createMarketRequest(DateTime now) {
-    final entries = marketConfig.saleValues.keys.where((item) {
-      if (marketLevel <= 1) return item == 'Organique' || item == 'Minéral';
-      return true;
-    }).toList();
+    final entries = marketConfig.saleValues.keys.toSet().toList();
     final weather = _marketWeatherRequestType();
     final weatherItems = weather == null
         ? const <String>[]
@@ -3018,7 +3089,7 @@ class Zone0GameState extends ChangeNotifier {
         weatherItems.where(entries.contains).toList(growable: false);
     final item = useWeather && eligibleWeatherItems.isNotEmpty
         ? eligibleWeatherItems[_random.nextInt(eligibleWeatherItems.length)]
-        : entries[_random.nextInt(entries.length)];
+        : _pickMarketRequestItem(entries);
     final isResource = item == 'Organique' || item == 'Minéral';
     final activeResidents = residents
         .where((resident) => resident.isActive)
@@ -3028,10 +3099,7 @@ class Zone0GameState extends ChangeNotifier {
       requestedItemId: item,
       requestedQuantity:
           isResource ? lisiereForageConfig.inventoryStackLimit : 1,
-      rewardBioBattery: math.max(
-        1,
-        (marketConfig.saleValues[item] ?? 1) ~/ marketConfig.valuePerBioBattery,
-      ),
+      rewardBioPiles: _marketPriceInBioPiles(item),
       rewardWellbeing: 1,
       createdAt: now,
       customerReturnTime: now.add(_randomMarketReturnDelay()),
@@ -3048,6 +3116,88 @@ class Zone0GameState extends ChangeNotifier {
     );
     marketRequests.add(request);
     _ensureMarketRequestLog(request);
+  }
+
+  int get marketEconomicActivityPercent {
+    final wellbeing = (campWellbeing.clamp(0, 100) / 100 *
+            marketConfig.economicActivityWellbeingMaxPercent)
+        .round();
+    final heart = math.min(
+      marketConfig.economicActivityHeartLevelCapPercent,
+      _lastKnownCampHeartLevel * marketConfig.economicActivityHeartLevelPercent,
+    );
+    final market = math.min(
+      marketConfig.economicActivityMarketLevelCapPercent,
+      marketLevel * marketConfig.economicActivityMarketLevelPercent,
+    );
+    final weather = activeGlobalWeatherEvent == null
+        ? 0
+        : marketConfig.economicActivityWeatherPercent[
+                activeGlobalWeatherEvent!.intensity.name] ??
+            0;
+    return (wellbeing + heart + market + weather).clamp(0, 100);
+  }
+
+  Duration _marketRequestInterval() {
+    final basePerHour = marketConfig.requestBasePerHourForLevel(marketLevel);
+    if (basePerHour <= 0) return const Duration(hours: 1);
+    final boostedPerHour = basePerHour * (1 + marketEconomicActivityPercent / 100);
+    final rawMinutes = 60 / boostedPerHour;
+    final jitterMin = marketConfig.requestJitterMinPercent / 100;
+    final jitterMax = marketConfig.requestJitterMaxPercent / 100;
+    final amplitude = jitterMin + _random.nextDouble() * (jitterMax - jitterMin);
+    final signedJitter = _random.nextBool() ? amplitude : -amplitude;
+    return Duration(
+      minutes: math.max(
+        marketConfig.requestMinimumSpacingMinutes,
+        (rawMinutes * (1 + signedJitter)).round(),
+      ),
+    );
+  }
+
+  String _pickMarketRequestItem(List<String> entries) {
+    final byCategory = <String, List<String>>{};
+    for (final item in entries) {
+      byCategory.putIfAbsent(_marketItemCategory(item), () => <String>[]).add(item);
+    }
+    final availableWeights = <String, int>{
+      for (final entry in marketConfig.requestCategoryWeights.entries)
+        if ((byCategory[entry.key] ?? const <String>[]).isNotEmpty) entry.key: entry.value,
+    };
+    final total = availableWeights.values.fold<int>(0, (sum, value) => sum + value);
+    if (total <= 0) return entries[_random.nextInt(entries.length)];
+    var pick = _random.nextInt(total);
+    for (final entry in availableWeights.entries) {
+      pick -= entry.value;
+      if (pick < 0) {
+        final items = byCategory[entry.key]!;
+        return items[_random.nextInt(items.length)];
+      }
+    }
+    return entries.first;
+  }
+
+  String _marketItemCategory(String item) {
+    if (craftConfig.recipes.any((recipe) => recipe.resultItem == item && recipe.isConsumable)) {
+      return 'food';
+    }
+    if (item.contains('Tenue')) return 'clothing';
+    if (item.contains('Meuble')) return 'furniture';
+    return 'materials';
+  }
+
+  int _marketPriceInBioPiles(String item) =>
+      math.max(1, marketConfig.requestPriceBioPiles[item] ??
+          (marketConfig.saleValues[item] ?? 1) * marketConfig.valuePerBioBattery);
+
+  void _creditMarketBioPiles(int amount) {
+    bioPiles += math.max(0, amount);
+    final converted = bioPiles ~/ 10;
+    if (converted > 0) {
+      bioPiles -= converted * 10;
+      bioBatteries += converted;
+      marketBioBatteriesEarned += converted;
+    }
   }
 
   TowerWeatherType? _marketWeatherRequestType() {
@@ -3069,6 +3219,7 @@ class Zone0GameState extends ChangeNotifier {
   void _recordMarketRequestOutcome(
     MarketCustomerRequest request, {
     required DateTime completedAt,
+    MarketRequestResponder? responder,
   }) {
     _ensureMarketRequestLog(request);
     final entry = marketRequestLog
@@ -3079,8 +3230,9 @@ class Zone0GameState extends ChangeNotifier {
       ..status = request.status
       ..resolvedAt = completedAt
       ..rewardBioBatteries = request.status == MarketRequestStatus.completed
-          ? request.rewardBioBattery
-          : 0;
+          ? request.rewardBioPiles
+          : 0
+      ..responder = responder;
   }
 
   void _ensureMarketRequestLog(MarketCustomerRequest request) {
@@ -3299,6 +3451,26 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
     }
     if (marketDistributor.energy <= 0) return changed;
+    // Le P’TIPOTE du Point info approvisionne le Distributeur depuis le stock
+    // de sa boutique principale ; aucune ressource ne vient de la Maison.
+    if (marketAssignedPtipoteId != null &&
+        marketDistributor.stock.length < marketDistributorSlotLimit) {
+      final source = marketStock
+          .where((stack) =>
+              marketDistributor.accepts(stack.resource) && stack.amount > 0)
+          .firstOrNull;
+      if (source != null) {
+        final transferred = math.min(source.amount, marketConfig.stackQuantityLimit);
+        source.amount -= transferred;
+        if (source.amount <= 0) marketStock.remove(source);
+        marketDistributor.stock.add(Zone0InventoryStack(
+          id: 'distributor-refill-${DateTime.now().microsecondsSinceEpoch}',
+          resource: source.resource,
+          amount: transferred,
+        ));
+        changed = true;
+      }
+    }
     for (final request
         in marketRequests.where((item) => item.isOpen).toList()) {
       if (current.isBefore(request.distributorEligibleAt)) continue;
@@ -3308,9 +3480,13 @@ class Zone0GameState extends ChangeNotifier {
       if (stack == null || stack.amount < request.requestedQuantity) continue;
       stack.amount -= request.requestedQuantity;
       if (stack.amount <= 0) marketDistributor.stock.remove(stack);
-      bioBatteries += request.rewardBioBattery;
+      _creditMarketBioPiles(request.rewardBioPiles);
       request.status = MarketRequestStatus.completed;
-      _recordMarketRequestOutcome(request, completedAt: current);
+      _recordMarketRequestOutcome(
+        request,
+        completedAt: current,
+        responder: MarketRequestResponder.distributor,
+      );
       changed = true;
       if (_random.nextInt(math.max(
               1,
@@ -6830,10 +7006,11 @@ class Zone0GameState extends ChangeNotifier {
           kernelData['currentPopulation'],
           fallback: kernelConfig.startingPopulation,
         );
-        bioBatteries = _readInt(
-          kernelData['bioBatteries'],
-          fallback: kernelConfig.startingBioBatteries,
-        );
+      bioBatteries = _readInt(
+        kernelData['bioBatteries'],
+        fallback: kernelConfig.startingBioBatteries,
+      );
+      bioPiles = _readInt(kernelData['bioPiles']);
         energyUnits = _readInt(kernelData['energyUnits']);
         campWellbeing = _readInt(
           kernelData['campWellbeing'],
@@ -7849,7 +8026,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult claimFirstMarketShop(String specialization) {
-    if (marketLevel < 2 || firstFreeShopClaimed || marketShops.isNotEmpty) {
+    if (marketLevel < 2 || firstFreeShopClaimed || marketShopCount >= marketShopLimit) {
       return const Zone0ActionResult(
           success: false, message: 'Magasin offert indisponible.');
     }
@@ -7866,6 +8043,41 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
         success: true, message: 'Premier magasin spécialisé construit.');
+  }
+
+  Zone0ActionResult buildMarketShop(String specialization) {
+    if (marketLevel < 2 || marketShopCount >= marketShopLimit) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun emplacement de magasin libre.');
+    }
+    if (!const <String>{'restaurant', 'general', 'ameublement'}
+        .contains(specialization)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Spécialisation invalide.');
+    }
+    marketShops.add(MarketShop(
+      id: 'shop-${DateTime.now().microsecondsSinceEpoch}',
+      specialization: specialization,
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Nouveau magasin construit.');
+  }
+
+  Zone0ActionResult upgradeMarketShop(String shopId) {
+    final shop = marketShopById(shopId);
+    if (shop == null || shop.level >= 2) {
+      return const Zone0ActionResult(
+          success: false, message: 'Amélioration indisponible.');
+    }
+    shop.level = 2;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Magasin amélioré : 6 piles et 2 emplacements de Distributeur.',
+    );
   }
 
   Zone0ActionResult setMarketLicense(String category) {
@@ -9971,6 +10183,7 @@ class Zone0GameState extends ChangeNotifier {
         'kernel': <String, dynamic>{
           'currentPopulation': currentPopulation,
           'bioBatteries': bioBatteries,
+          'bioPiles': bioPiles,
           'energyUnits': energyUnits,
           'campWellbeing': campWellbeing,
           'mealsPrepared': mealsPrepared,
@@ -10393,6 +10606,16 @@ enum MarketRequestStatus {
   expired,
 }
 
+enum MarketRequestResponder { player, ptipote, distributor }
+
+extension MarketRequestResponderLabel on MarketRequestResponder {
+  String get label => switch (this) {
+        MarketRequestResponder.player => 'Joueur',
+        MarketRequestResponder.ptipote => 'P’TIPOTE',
+        MarketRequestResponder.distributor => 'Distributeur',
+      };
+}
+
 enum MarketContractStatus {
   offered,
   accepted,
@@ -10513,19 +10736,51 @@ class MarketDistributorState {
 }
 
 class MarketShop {
-  MarketShop({required this.id, required this.specialization, this.level = 1});
+  MarketShop({
+    required this.id,
+    required this.specialization,
+    this.level = 1,
+    List<Zone0InventoryStack>? stock,
+    this.distributor,
+  }) : stock = stock ?? <Zone0InventoryStack>[];
   final String id;
   final String specialization;
-  final int level;
+  int level;
+  final List<Zone0InventoryStack> stock;
+  MarketDistributorState? distributor;
+
+  bool accepts(String resource) => switch (specialization) {
+        'restaurant' => craftConfig.recipes.any(
+            (recipe) => recipe.resultItem == resource && recipe.isConsumable,
+          ),
+        'ameublement' => resource.contains('Meuble') ||
+            resource.contains('Ventilation') ||
+            resource.contains('Lumière') ||
+            resource.contains('Cartouche'),
+        _ => true,
+      };
+
+  int get stockSlots => level >= 2 ? 6 : 3;
+  int get distributorSlots => level >= 2 ? 2 : 1;
+
   factory MarketShop.fromFirebase(Map<dynamic, dynamic> data) => MarketShop(
         id: '${data['id'] ?? ''}',
         specialization: '${data['specialization'] ?? 'general'}',
         level: Zone0GameState.instance._readInt(data['level'], fallback: 1),
+        stock: (data['stock'] as List? ?? const <dynamic>[])
+            .whereType<Map>()
+            .map(Zone0InventoryStack.fromFirebase)
+            .toList(),
+        distributor: data['distributor'] is Map
+            ? MarketDistributorState.fromFirebase(data['distributor'] as Map)
+            : null,
       );
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'id': id,
         'specialization': specialization,
-        'level': level
+        'level': level,
+        'stock': stock.map((item) => item.toFirebase()).toList(),
+        'distributor': distributor?.toFirebase(),
       };
 }
 
@@ -10571,8 +10826,10 @@ class MarketSourcierContract {
           (key, value) =>
               MapEntry('$key', Zone0GameState.instance._readInt(value)),
         ),
-        rewardBioBatteries:
-            Zone0GameState.instance._readInt(data['rewardBioBatteries']),
+        rewardBioBatteries: Zone0GameState.instance._readInt(
+          data['rewardBioPiles'],
+          fallback: Zone0GameState.instance._readInt(data['rewardBioBatteries']) * 10,
+        ),
         confidenceReward:
             Zone0GameState.instance._readInt(data['confidenceReward']),
         confidencePenalty:
@@ -10614,12 +10871,13 @@ class MarketCustomerRequest {
     required this.id,
     required this.requestedItemId,
     required this.requestedQuantity,
-    required this.rewardBioBattery,
+    required this.rewardBioPiles,
     required this.rewardWellbeing,
     required this.createdAt,
     required this.customerReturnTime,
     required this.status,
     DateTime? distributorEligibleAt,
+    this.shopId = Zone0GameState.primaryMarketShopId,
     this.customerName,
     this.weatherType,
   }) : distributorEligibleAt = distributorEligibleAt ?? createdAt;
@@ -10633,8 +10891,9 @@ class MarketCustomerRequest {
         requestedQuantity: Zone0GameState.instance._readInt(
           data['requestedQuantity'],
         ),
-        rewardBioBattery: Zone0GameState.instance._readInt(
-          data['rewardBioBattery'],
+        rewardBioPiles: Zone0GameState.instance._readInt(
+          data['rewardBioPiles'],
+          fallback: Zone0GameState.instance._readInt(data['rewardBioBattery']) * 10,
         ),
         rewardWellbeing:
             Zone0GameState.instance._readInt(data['rewardWellbeing']),
@@ -10653,12 +10912,14 @@ class MarketCustomerRequest {
         distributorEligibleAt: Zone0GameState.instance._readDate(
           data['distributorEligibleAt'],
         ),
+        shopId: '${data['shopId'] ?? Zone0GameState.primaryMarketShopId}',
       );
 
   final String id;
   final String requestedItemId;
   final int requestedQuantity;
-  final int rewardBioBattery;
+  final int rewardBioPiles;
+  int get rewardBioBattery => rewardBioPiles ~/ 10;
   final int rewardWellbeing;
   final DateTime createdAt;
   DateTime customerReturnTime;
@@ -10666,6 +10927,7 @@ class MarketCustomerRequest {
   final String? customerName;
   final String? weatherType;
   final DateTime distributorEligibleAt;
+  final String shopId;
 
   bool get isOpen =>
       status == MarketRequestStatus.noted ||
@@ -10676,7 +10938,9 @@ class MarketCustomerRequest {
         'id': id,
         'requestedItemId': requestedItemId,
         'requestedQuantity': requestedQuantity,
+        // Keep the old field for a safe read by previous app versions.
         'rewardBioBattery': rewardBioBattery,
+        'rewardBioPiles': rewardBioPiles,
         'rewardWellbeing': rewardWellbeing,
         'createdAt': Timestamp.fromDate(createdAt),
         'customerReturnTime': Timestamp.fromDate(customerReturnTime),
@@ -10684,6 +10948,7 @@ class MarketCustomerRequest {
         'customerName': customerName,
         'weatherType': weatherType,
         'distributorEligibleAt': Timestamp.fromDate(distributorEligibleAt),
+        'shopId': shopId,
       };
 }
 
@@ -10698,6 +10963,7 @@ class MarketRequestLogEntry {
     required this.status,
     this.resolvedAt,
     this.rewardBioBatteries = 0,
+    this.responder,
   });
 
   factory MarketRequestLogEntry.fromRequest(MarketCustomerRequest request) =>
@@ -10725,8 +10991,17 @@ class MarketRequestLogEntry {
         status: ForageMission._enumByName(MarketRequestStatus.values,
             '${data['status'] ?? ''}', MarketRequestStatus.noted),
         resolvedAt: Zone0GameState.instance._readDate(data['resolvedAt']),
-        rewardBioBatteries:
-            Zone0GameState.instance._readInt(data['rewardBioBatteries']),
+        rewardBioBatteries: Zone0GameState.instance._readInt(
+          data['rewardBioPiles'],
+          fallback: Zone0GameState.instance._readInt(data['rewardBioBatteries']) * 10,
+        ),
+        responder: data['responder'] == null
+            ? null
+            : ForageMission._enumByName(
+                MarketRequestResponder.values,
+                '${data['responder']}',
+                MarketRequestResponder.player,
+              ),
       );
 
   final String requestId;
@@ -10737,7 +11012,10 @@ class MarketRequestLogEntry {
   final String? customerName;
   MarketRequestStatus status;
   DateTime? resolvedAt;
+  /// Nom historique conservé pour ne pas casser les anciennes sauvegardes :
+  /// la valeur est désormais exprimée en bio-piles.
   int rewardBioBatteries;
+  MarketRequestResponder? responder;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'requestId': requestId,
@@ -10749,7 +11027,9 @@ class MarketRequestLogEntry {
         'status': status.name,
         'resolvedAt':
             resolvedAt == null ? null : Timestamp.fromDate(resolvedAt!),
-        'rewardBioBatteries': rewardBioBatteries,
+        'rewardBioBatteries': rewardBioBatteries ~/ 10,
+        'rewardBioPiles': rewardBioBatteries,
+        'responder': responder?.name,
       };
 }
 
