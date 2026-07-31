@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../services/figurine_service.dart';
 import '../../services/notification_service.dart';
 import '../figurines/ptipote_figurine.dart';
+import '../figurines/ptipote_image.dart';
 import '../nfc/nfc_page.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'camp_heart_config.dart';
@@ -1921,30 +1922,29 @@ class _MaisonPageState extends State<_MaisonPage>
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
-                const SizedBox(height: 10),
-                _BatteryChestDashboardCard(
-                    gameState: _gameState, onOpen: _openBatteryChest),
-                const SizedBox(height: 10),
-                ...figurines.map((figurine) => ListTile(
-                      leading: const Icon(Icons.pets_outlined),
-                      title: Text(figurine.displayName),
-                      subtitle: Text(
-                          '${_ptipoteActivityLabel(figurine)}\nFaim ${_gameState.hungerFor(figurine)} · Sommeil ${_gameState.restFor(figurine)} · Énergie ${_gameState.vitalityFor(figurine)}'),
-                      isThreeLine: true,
-                      trailing: Wrap(
-                          spacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: <Widget>[
-                            Text(_ptipoteActivityCountdown(figurine),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800)),
-                            IconButton(
-                                icon: const Icon(Icons.edit_outlined),
-                                tooltip: 'Renommer',
-                                onPressed: () =>
-                                    _renameFromDashboard(figurine)),
-                          ]),
-                    )),
+                const SizedBox(height: 14),
+                if (figurines.isEmpty)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(18),
+                      child: Text('Aucun P’TIPOTE dans la Maison.'),
+                    ),
+                  )
+                else
+                  ...figurines.map(
+                    (figurine) => Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: _PtipoteDashboardCard(
+                        figurine: figurine,
+                        hunger: _gameState.hungerFor(figurine),
+                        rest: _gameState.restFor(figurine),
+                        energy: _gameState.vitalityFor(figurine),
+                        activity: _ptipoteActivityLabel(figurine),
+                        countdown: _ptipoteActivityCountdown(figurine),
+                        onRename: () => _renameFromDashboard(figurine),
+                      ),
+                    ),
+                  ),
               ],
             ),
           );
@@ -2777,10 +2777,213 @@ class _NotificationBadge extends StatelessWidget {
   }
 }
 
+class _PtipoteDashboardCard extends StatelessWidget {
+  const _PtipoteDashboardCard({
+    required this.figurine,
+    required this.hunger,
+    required this.rest,
+    required this.energy,
+    required this.activity,
+    required this.countdown,
+    required this.onRename,
+  });
+
+  final PtipoteFigurine figurine;
+  final int hunger;
+  final int rest;
+  final int energy;
+  final String activity;
+  final String countdown;
+  final VoidCallback onRename;
+
+  @override
+  Widget build(BuildContext context) {
+    final xpRequired = math.max(1, figurine.xpRequiredForNextLevel);
+    final xpProgress = (figurine.xpValue / xpRequired).clamp(0.0, 1.0);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: 132,
+                  child: PtipoteImage(
+                    type: figurine.type,
+                    species: figurine.species,
+                    height: 132,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    children: <Widget>[
+                      _PtipoteIdentityField(
+                        label: 'Espèce',
+                        value: figurine.species,
+                      ),
+                      const SizedBox(height: 8),
+                      _PtipoteIdentityField(
+                        label: 'Type',
+                        value: figurine.type,
+                      ),
+                      const SizedBox(height: 8),
+                      _PtipoteIdentityField(
+                        label: 'Surnom',
+                        value: figurine.displayName,
+                        trailing: IconButton(
+                          tooltip: 'Modifier le surnom',
+                          onPressed: figurine.canRename ? onRename : null,
+                          icon: const Icon(Icons.edit, size: 18),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _PtipoteIdentityField(
+              label: 'Éleveur',
+              value: figurine.ownerName,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Niveau ${figurine.levelValue}',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 7),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: xpProgress,
+                minHeight: 11,
+                backgroundColor: const Color(0xFFE8D9BD),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              '${figurine.xpValue} / $xpRequired XP',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const Divider(height: 28),
+            Row(
+              children: <Widget>[
+                const Icon(Icons.pets_outlined),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    activity,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                if (countdown.isNotEmpty)
+                  Text(
+                    countdown,
+                    style: TextStyle(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                _PtipoteStatusChip(
+                    icon: Icons.restaurant_outlined, label: 'Faim $hunger'),
+                _PtipoteStatusChip(
+                    icon: Icons.bedtime_outlined, label: 'Sommeil $rest'),
+                _PtipoteStatusChip(
+                    icon: Icons.bolt_outlined, label: 'Énergie $energy'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PtipoteIdentityField extends StatelessWidget {
+  const _PtipoteIdentityField({
+    required this.label,
+    required this.value,
+    this.trailing,
+  });
+
+  final String label;
+  final String value;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFE0D1B5)),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  Text(
+                    value,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 17),
+                  ),
+                ],
+              ),
+            ),
+            if (trailing != null) trailing!,
+          ],
+        ),
+      );
+}
+
+class _PtipoteStatusChip extends StatelessWidget {
+  const _PtipoteStatusChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF4),
+          border: Border.all(color: const Color(0xFFE0D1B5)),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 16),
+            const SizedBox(width: 5),
+            Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ],
+        ),
+      );
+}
+
 class _BatteryChestDashboardCard extends StatelessWidget {
-  const _BatteryChestDashboardCard({required this.gameState, this.onOpen});
+  const _BatteryChestDashboardCard({required this.gameState});
   final Zone0GameState gameState;
-  final VoidCallback? onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -2800,26 +3003,46 @@ class _BatteryChestDashboardCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                       'Protégées : ${gameState.protectedBioBatteryCount}/${gameState.protectedBatteryChestCapacity} · Exposées : ${gameState.exposedBioBatteryCount} · Total : ${gameState.bioBatteries}'),
+                  const SizedBox(height: 7),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: (gameState.protectedBioBatteryCount /
+                              math.max(
+                                1,
+                                gameState.protectedBatteryChestCapacity,
+                              ))
+                          .clamp(0.0, 1.0),
+                      minHeight: 10,
+                      backgroundColor: const Color(0xFFE8D9BD),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Remplissage du coffre protégé',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                  ),
                   Text(
                       'Niveau ${gameState.protectedBatteryChestLevel}/${campHeartConfig.communityProjects.protectedBatteryUpgradeMaxLevel} · +${campHeartConfig.communityProjects.protectedBatteryCapacityPerUpgrade} par amélioration.'),
                   const SizedBox(height: 8),
-                  Wrap(spacing: 8, children: <Widget>[
-                    if (onOpen != null)
-                      OutlinedButton(
-                          onPressed: onOpen,
-                          child: const Text('Ouvrir le coffre')),
-                    FilledButton(
-                        onPressed: nextCost == null
-                            ? null
-                            : () => ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(gameState
-                                        .upgradeProtectedBatteryChest()
-                                        .message))),
-                        child: Text(nextCost == null
-                            ? 'Niveau maximal'
-                            : 'Améliorer ($nextCost Minéral)')),
-                  ]),
+                  FilledButton(
+                    onPressed: nextCost == null
+                        ? null
+                        : () => ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  gameState
+                                      .upgradeProtectedBatteryChest()
+                                      .message,
+                                ),
+                              ),
+                            ),
+                    child: Text(
+                      nextCost == null
+                          ? 'Niveau maximal'
+                          : 'Améliorer ($nextCost Minéral)',
+                    ),
+                  ),
                 ])));
   }
 }
@@ -9597,10 +9820,6 @@ class _MarketPageState extends State<MarketPage> {
                               ? 'Mode automatique'
                               : 'Aidé par ${widget.gameState.marketAssignedPtipoteName}',
                         ),
-                        if (widget.gameState.marketSaleRemaining() != null)
-                          Text(
-                            'Prochaine vente : ${widget.gameState.marketSaleRemaining()!.inMinutes}m ${widget.gameState.marketSaleRemaining()!.inSeconds.remainder(60).toString().padLeft(2, '0')}s',
-                          ),
                         Wrap(
                           spacing: 8,
                           children: <Widget>[
@@ -9623,7 +9842,7 @@ class _MarketPageState extends State<MarketPage> {
                                 builder: (_) => const _BuildingInformationTab(
                                   title: 'Marché',
                                   description:
-                                      'Le Marché vend automatiquement le stock confié. Un P’TIPOTE accélère les ventes et peut traiter les demandes des habitants.',
+                                      'Chaque vente répond à une demande habitant visible dans cette page. Le stock ne déclenche jamais de vente seul. Le Point info accueille un P’TIPOTE pour soutenir les futurs magasins spécialisés.',
                                 ),
                               ),
                               icon: const Icon(Icons.info_outline),
@@ -9644,7 +9863,7 @@ class _MarketPageState extends State<MarketPage> {
                                 context: context,
                                 gameState: widget.gameState,
                                 figurines: figurines,
-                                title: 'Affecter au Marché',
+                                title: 'Affecter au Point info',
                               );
                               if (figurine == null || !context.mounted) {
                                 return;
@@ -9656,7 +9875,7 @@ class _MarketPageState extends State<MarketPage> {
                               );
                             },
                             icon: const Icon(Icons.person_add_alt_1),
-                            label: const Text('Affecter un P’TIPOTE'),
+                            label: const Text('Affecter au Point info'),
                           ),
                       ],
                     ),
@@ -9929,6 +10148,37 @@ class _MarketPageState extends State<MarketPage> {
                                 style: TextStyle(fontWeight: FontWeight.w900)),
                             if (!widget.gameState.marketDistributor
                                 .isBuilt) ...<Widget>[
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Type de Distributeur',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                              const SizedBox(height: 4),
+                              SegmentedButton<MarketDistributorType>(
+                                segments: MarketDistributorType.values
+                                    .map(
+                                      (type) =>
+                                          ButtonSegment<MarketDistributorType>(
+                                        value: type,
+                                        label: Text(type.label),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                                selected: <MarketDistributorType>{
+                                  widget.gameState.marketDistributor.type,
+                                },
+                                onSelectionChanged: (selection) => _message(
+                                  widget.gameState
+                                      .setMarketDistributorType(
+                                        selection.first,
+                                      )
+                                      .message,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(widget.gameState.marketDistributor.type
+                                  .stockDescription),
+                              const SizedBox(height: 8),
                               Text(widget
                                       .gameState.isMarketDistributorReadyToBuild
                                   ? 'Matériaux complets · prêt à démarrer'
@@ -9970,6 +10220,11 @@ class _MarketPageState extends State<MarketPage> {
                               Text(
                                   'Niveau ${widget.gameState.marketDistributor.level} · ${widget.gameState.marketDistributor.isBroken ? 'En panne' : widget.gameState.marketDistributor.energy <= 0 ? 'Sans Énergie' : 'Opérationnel'}'),
                               Text(
+                                'Type : ${widget.gameState.marketDistributor.type.label}',
+                              ),
+                              Text(widget.gameState.marketDistributor.type
+                                  .stockDescription),
+                              Text(
                                   'Énergie : ${widget.gameState.marketDistributor.energy}/${marketConfig.distributorEnergyCapacity}'),
                               Row(children: <Widget>[
                                 Expanded(
@@ -9991,6 +10246,37 @@ class _MarketPageState extends State<MarketPage> {
                                   )),
                                 ],
                               ]),
+                              const SizedBox(height: 10),
+                              Text(
+                                'Stock du Distributeur (${widget.gameState.marketDistributor.stock.length}/${widget.gameState.marketDistributorSlotLimit})',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              GridView.count(
+                                crossAxisCount: 3,
+                                mainAxisSpacing: 8,
+                                crossAxisSpacing: 8,
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                children: List<Widget>.generate(
+                                  widget.gameState.marketDistributorSlotLimit,
+                                  (index) {
+                                    final stack = index <
+                                            widget.gameState.marketDistributor
+                                                .stock.length
+                                        ? widget.gameState.marketDistributor
+                                            .stock[index]
+                                        : null;
+                                    return _MarketStockSlot(
+                                      stack: stack,
+                                      onTap: () =>
+                                          _editMarketDistributorSlot(stack),
+                                    );
+                                  },
+                                ),
+                              ),
                             ],
                           ],
                         ),
@@ -9998,6 +10284,8 @@ class _MarketPageState extends State<MarketPage> {
                     ),
                   const SizedBox(height: 12),
                   _activeMarketRequestsSection(),
+                  const SizedBox(height: 12),
+                  _marketShopsSection(),
                   const SizedBox(height: 12),
                   Text(
                     'Stock de vente (${widget.gameState.marketStock.length}/${widget.gameState.marketSlotLimit})',
@@ -10131,6 +10419,108 @@ class _MarketPageState extends State<MarketPage> {
       ],
     );
   }
+
+  Widget _marketShopsSection() {
+    const labels = <String, String>{
+      'restaurant': 'Restaurant',
+      'general': 'Fournitures',
+      'ameublement': 'Meubles et structures',
+    };
+    final slots = marketConfig.specializedShopSlotsForLevel(
+      widget.gameState.marketLevel,
+    );
+    final shops = widget.gameState.marketShops;
+    final availableFirstShop = widget.gameState.marketLevel >= 2 &&
+        !widget.gameState.firstFreeShopClaimed &&
+        shops.isEmpty;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              'Magasins spécialisés',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text('${shops.length}/$slots emplacement(s) construit(s).'),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List<Widget>.generate(slots, (index) {
+                final shop = index < shops.length ? shops[index] : null;
+                if (shop != null) {
+                  return Chip(
+                    avatar: const Icon(Icons.storefront_outlined, size: 18),
+                    label: Text(labels[shop.specialization] ?? 'Magasin'),
+                  );
+                }
+                if (index == 0 && availableFirstShop) {
+                  return OutlinedButton.icon(
+                    onPressed: () => _showFirstShopPicker(),
+                    icon: const Icon(Icons.add_business_outlined),
+                    label: const Text('Construire le premier magasin'),
+                  );
+                }
+                return Chip(
+                  avatar: const Icon(Icons.add, size: 18),
+                  label: Text(
+                    widget.gameState.marketLevel < 3
+                        ? 'Débloqué au Marché niv. 2'
+                        : 'Emplacement à débloquer',
+                  ),
+                );
+              }),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showFirstShopPicker() => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Premier magasin spécialisé',
+                  style: Theme.of(sheetContext)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 6),
+                const Text('Choisissez la spécialisation du magasin offert.'),
+                const SizedBox(height: 8),
+                for (final entry in const <String, String>{
+                  'restaurant': 'Restaurant',
+                  'general': 'Fournitures',
+                  'ameublement': 'Meubles et structures',
+                }.entries)
+                  ListTile(
+                    leading: const Icon(Icons.storefront_outlined),
+                    title: Text(entry.value),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      final result =
+                          widget.gameState.claimFirstMarketShop(entry.key);
+                      _message(result.message);
+                      if (result.success) Navigator.of(sheetContext).pop();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   Widget _marketRequestBook() {
     final entries = widget.gameState.marketRequestLog.reversed.toList();
@@ -10370,6 +10760,91 @@ class _MarketPageState extends State<MarketPage> {
                 onPressed: () {
                   _message(
                     widget.gameState.returnMarketStock(initialStack!).message,
+                  );
+                  Navigator.of(sheetContext).pop();
+                },
+                icon: const Icon(Icons.undo_outlined),
+                label: const Text('Rendre à la Maison'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editMarketDistributorSlot(
+    Zone0InventoryStack? initialStack,
+  ) async {
+    final initialResource = initialStack?.resource;
+    final distributor = widget.gameState.marketDistributor;
+    final resources = marketConfig.saleValues.keys
+        .where(
+          (resource) =>
+              distributor.accepts(resource) &&
+              (widget.gameState.resourceAmount(resource) > 0 ||
+                  resource == initialResource),
+        )
+        .toList(growable: false);
+    if (resources.isEmpty) {
+      _message('Aucun produit compatible dans le stock Maison.');
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          children: <Widget>[
+            Text(
+              initialResource ?? 'Ajouter au Distributeur',
+              style: Theme.of(sheetContext)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+                'Type ${distributor.type.label} · ${distributor.type.stockDescription}'),
+            const SizedBox(height: 8),
+            ...resources.map(
+              (resource) => ListTile(
+                leading: Icon(_resourceIcon(resource)),
+                title: Text(resource),
+                subtitle: Text(
+                  'Maison : ${widget.gameState.resourceAmount(resource)} · '
+                  '${widget.gameState.isEquipmentResource(resource) ? 'équipement : 1 par case' : '10 par case'}',
+                ),
+                trailing: Wrap(
+                  spacing: 2,
+                  children: <int>[1, 5, 10]
+                      .map(
+                        (amount) => TextButton(
+                          onPressed: () {
+                            final result = widget.gameState
+                                .transferToMarketDistributor(resource, amount);
+                            _message(result.message);
+                            if (result.success) {
+                              Navigator.of(sheetContext).pop();
+                            }
+                          },
+                          child: Text('+$amount'),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ),
+            if (initialStack != null) ...<Widget>[
+              const Divider(),
+              OutlinedButton.icon(
+                onPressed: () {
+                  _message(
+                    widget.gameState
+                        .returnMarketDistributorStock(initialStack)
+                        .message,
                   );
                   Navigator.of(sheetContext).pop();
                 },

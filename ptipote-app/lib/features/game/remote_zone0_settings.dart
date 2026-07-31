@@ -1805,15 +1805,7 @@ MarketConfig _market(Object? value) {
     ),
     requiredPopulation: _int(raw['requiredPopulation'], b.requiredPopulation),
     saleSlotsPerLevel: _int(raw['saleSlotsPerLevel'], b.saleSlotsPerLevel),
-    baseSaleIntervalMinutes: _int(
-      raw['baseSaleIntervalMinutes'],
-      b.baseSaleIntervalMinutes,
-    ),
     valuePerBioBattery: _int(raw['valuePerBioBattery'], b.valuePerBioBattery),
-    ptipoteIntervalMultiplier: _double(
-      raw['ptipoteIntervalMultiplier'],
-      b.ptipoteIntervalMultiplier,
-    ),
     vitalityCostPerTick: _int(
       raw['vitalityCostPerTick'],
       b.vitalityCostPerTick,
@@ -1833,17 +1825,9 @@ MarketConfig _market(Object? value) {
       b.requestMaxReturnMinutes,
     ),
     saleValues: _resourceMap(raw['saleValues'], b.saleValues),
-    saleIntervalReductionPerLevel: _double(
-      raw['saleIntervalReductionPerLevel'],
-      b.saleIntervalReductionPerLevel,
-    ),
     maxActiveRequestsBonusPerLevel: _int(
       raw['maxActiveRequestsBonusPerLevel'],
       b.maxActiveRequestsBonusPerLevel,
-    ),
-    saleIntervalPopulationImpactPercent: _int(
-      raw['saleIntervalPopulationImpactPercent'],
-      b.saleIntervalPopulationImpactPercent,
     ),
     maximumLevel: _int(raw['maximumLevel'], b.maximumLevel),
     manualSlotsByLevel: _levelMap(
@@ -1915,10 +1899,9 @@ MarketConfig _market(Object? value) {
       raw['licenseDirectedRatioPercent'],
       b.licenseDirectedRatioPercent,
     ),
-    shopSlots: _int(raw['shopSlots'], b.shopSlots),
-    maxConstructibleShops: _int(
-      raw['maxConstructibleShops'],
-      b.maxConstructibleShops,
+    specializedShopSlotsByMarketLevel: _levelMap(
+      raw['specializedShopSlotsByMarketLevel'],
+      b.specializedShopSlotsByMarketLevel,
     ),
     firstShopFree: raw['firstShopFree'] is bool
         ? raw['firstShopFree'] as bool

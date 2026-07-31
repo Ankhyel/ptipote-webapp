@@ -6,9 +6,7 @@ class MarketConfig {
     required this.requiredCampHeartLevel,
     required this.requiredPopulation,
     required this.saleSlotsPerLevel,
-    required this.baseSaleIntervalMinutes,
     required this.valuePerBioBattery,
-    required this.ptipoteIntervalMultiplier,
     required this.vitalityCostPerTick,
     required this.vitalityTickMinutes,
     required this.requestChance,
@@ -16,9 +14,7 @@ class MarketConfig {
     required this.requestMinReturnMinutes,
     required this.requestMaxReturnMinutes,
     required this.saleValues,
-    required this.saleIntervalReductionPerLevel,
     required this.maxActiveRequestsBonusPerLevel,
-    required this.saleIntervalPopulationImpactPercent,
     required this.maximumLevel,
     required this.manualSlotsByLevel,
     required this.allowDuplicateStacks,
@@ -39,8 +35,7 @@ class MarketConfig {
     required this.licenseCostBioBatteries,
     required this.licenseChangeCostBioBatteries,
     required this.licenseDirectedRatioPercent,
-    required this.shopSlots,
-    required this.maxConstructibleShops,
+    required this.specializedShopSlotsByMarketLevel,
     required this.firstShopFree,
     required this.residentsPerHourlyRequest,
     required this.requestJitterMinPercent,
@@ -55,9 +50,7 @@ class MarketConfig {
   final int requiredCampHeartLevel;
   final int requiredPopulation;
   final int saleSlotsPerLevel;
-  final int baseSaleIntervalMinutes;
   final int valuePerBioBattery;
-  final double ptipoteIntervalMultiplier;
   final int vitalityCostPerTick;
   final int vitalityTickMinutes;
   final double requestChance;
@@ -65,9 +58,7 @@ class MarketConfig {
   final int requestMinReturnMinutes;
   final int requestMaxReturnMinutes;
   final Map<String, int> saleValues;
-  final double saleIntervalReductionPerLevel;
   final int maxActiveRequestsBonusPerLevel;
-  final int saleIntervalPopulationImpactPercent;
   final int maximumLevel;
   final Map<int, int> manualSlotsByLevel;
   final bool allowDuplicateStacks;
@@ -88,8 +79,7 @@ class MarketConfig {
   final int licenseCostBioBatteries;
   final int licenseChangeCostBioBatteries;
   final int licenseDirectedRatioPercent;
-  final int shopSlots;
-  final int maxConstructibleShops;
+  final Map<int, int> specializedShopSlotsByMarketLevel;
   final bool firstShopFree;
   final int residentsPerHourlyRequest;
   final int requestJitterMinPercent;
@@ -115,12 +105,6 @@ class MarketConfig {
   int distributorRepairMinutesForLevel(int level) =>
       distributorRepairMinutesByLevel[level.clamp(1, 3)] ?? 30;
 
-  double saleIntervalMultiplierForLevel(int level) =>
-      (1 - (level.clamp(1, 99) - 1) * saleIntervalReductionPerLevel).clamp(
-        0.5,
-        1.0,
-      );
-
   int maxRequestsForLevel(int level) =>
       maxActiveRequests +
       (level.clamp(1, 99) - 1) * maxActiveRequestsBonusPerLevel;
@@ -130,6 +114,9 @@ class MarketConfig {
       : level >= 2
           ? 1
           : 0;
+
+  int specializedShopSlotsForLevel(int level) =>
+      specializedShopSlotsByMarketLevel[level.clamp(1, maximumLevel)] ?? 0;
 
   Duration residentRequestInterval(int population, math.Random random) {
     final requestsPerHour =
@@ -153,9 +140,7 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   requiredCampHeartLevel: 1,
   requiredPopulation: 5,
   saleSlotsPerLevel: 3,
-  baseSaleIntervalMinutes: 10,
   valuePerBioBattery: 5,
-  ptipoteIntervalMultiplier: 0.9,
   vitalityCostPerTick: 5,
   vitalityTickMinutes: 20,
   requestChance: 0.35,
@@ -173,9 +158,7 @@ const MarketConfig defaultMarketConfig = MarketConfig(
     'Ventilation Termite': 3,
     'Lumière solaire': 3,
   },
-  saleIntervalReductionPerLevel: 0.10,
   maxActiveRequestsBonusPerLevel: 1,
-  saleIntervalPopulationImpactPercent: 100,
   maximumLevel: 4,
   manualSlotsByLevel: <int, int>{1: 3, 2: 6, 3: 6, 4: 6},
   allowDuplicateStacks: true,
@@ -196,8 +179,7 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   licenseCostBioBatteries: 30,
   licenseChangeCostBioBatteries: 10,
   licenseDirectedRatioPercent: 80,
-  shopSlots: 6,
-  maxConstructibleShops: 2,
+  specializedShopSlotsByMarketLevel: <int, int>{1: 0, 2: 3, 3: 5, 4: 7},
   firstShopFree: true,
   residentsPerHourlyRequest: 3,
   requestJitterMinPercent: 10,
