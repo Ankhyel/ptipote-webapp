@@ -1666,3 +1666,9 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 - `ptibug.valuation` pilote la version, les règles de nom, les valeurs de base, les paliers, les rangs de Traits, les Modules, les coefficients Marché/Sourcier et le minimum de paiement. Les transactions gardent le snapshot de ces quatre composantes et de la version employée.
 - Une vente crée une **Capsule P’TIBUG certifiée** : identité, espèce, niveau, Évolution, Traits, Modules, valorisation et paiement sont archivés. La mutation retire atomiquement le P’TIBUG de la collection active, retire ses Modules équipés, crédite les Bio-batteries et laisse le P’TIBUG dans `soldArchive` pour la traçabilité. Une créature vendue ne redevient pas active.
 - Les Capsules sont préparées uniquement en réponse à une demande ou un contrat ; l’ancien bouton d’encapsulation libre n’est plus proposé dans la fiche. Les contrats historiques d’espèces de base sont migrés vers un archivage certifié sans recréditer les anciennes ventes.
+
+### Administration Dashboard — comptes de test
+
+- Le Dashboard admin liste les documents `users/{uid}` lisibles et affiche les niveaux des bâtiments principaux.
+- **Remettre à zéro** demande une confirmation, supprime la progression et les bâtiments du document utilisateur, puis restaure seulement l’identité et le rôle nécessaires à la reconnexion.
+- Les sous-collections Firestore, dont `users/{uid}/figurines`, ne sont pas supprimées : les P’TIPOTES sont conservés. Cette action reste réservée aux administrateurs/devs.

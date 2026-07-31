@@ -9,9 +9,11 @@ import {
 import {
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getCountFromServer,
   getDoc,
+  getDocs,
   getFirestore,
   query,
   serverTimestamp,
@@ -99,6 +101,9 @@ const ids = [
   "authDetail",
   "authButton",
   "refreshButton",
+  "refreshAccountsButton",
+  "accountsStatus",
+  "accountsList",
   "notice",
   "usersCount",
   "usersHint",
@@ -291,6 +296,66 @@ async function loadStats(role) {
   }
 
   setLoading(false);
+}
+
+const BUILDING_LEVELS = [
+  ["campHeartLevel", "Cœur"],
+  ["atelierLevel", "Atelier"],
+  ["cuisineLevel", "Cuisine"],
+  ["marketLevel", "Marché"],
+  ["securityTowerLevel", "Tour"],
+  ["plaineNurseryLevel", "Nurserie"],
+  ["recyclerLevel", "Recycleur"],
+  ["generatorLevel", "Bio-générateur"],
+];
+
+function accountBuildingLabel(data) {
+  const levels = BUILDING_LEVELS
+    .map(([key, label]) => `${label} niv. ${Number(data?.[key] || 0)}`);
+  const runtime = data?.runtime || data?.zone0 || {};
+  if (runtime.market?.marketLevel) levels.push(`Marché niv. ${runtime.market.marketLevel}`);
+  return levels.join(" · ");
+}
+
+async function loadAccounts(role) {
+  if (!role || !auth.currentUser) {
+    el.accountsList.innerHTML = "";
+    el.accountsStatus.textContent = "Connexion admin/dev requise.";
+    return;
+  }
+  el.accountsStatus.textContent = "Lecture des comptes…";
+  const snapshot = await getDocs(collection(db, "users"));
+  const accounts = snapshot.docs.sort((a, b) => a.id.localeCompare(b.id));
+  el.accountsList.innerHTML = accounts.length ? accounts.map((snapshot) => {
+    const data = snapshot.data();
+    const name = data.displayName || data.email || data.nickname || snapshot.id;
+    return `<article class="config-card"><div class="panel-head"><div><strong>${escapeHtml(name)}</strong><small>${escapeHtml(snapshot.id)}</small></div><button class="ghost danger-reset" type="button" data-user-id="${escapeHtml(snapshot.id)}" data-user-name="${escapeHtml(name)}">Remettre à zéro</button></div><p>${escapeHtml(accountBuildingLabel(data))}</p><small>La progression et les bâtiments seront supprimés. Les P’TIPOTES restent dans leurs sous-collections.</small></article>`;
+  }).join("") : '<div class="empty-state">Aucun compte lisible.</div>';
+  el.accountsList.querySelectorAll(".danger-reset").forEach((button) => {
+    button.addEventListener("click", () => resetAccount(button.dataset.userId, button.dataset.userName));
+  });
+  el.accountsStatus.textContent = `${accounts.length} compte(s) chargé(s).`;
+}
+
+async function resetAccount(uid, name) {
+  if (!uid || !currentDashboardRole) return;
+  const confirmed = window.confirm(`Remettre à zéro ${name} ?\n\nLes bâtiments, ressources et progression seront supprimés. Les P’TIPOTES conservés dans users/${uid}/figurines ne seront pas touchés.`);
+  if (!confirmed) return;
+  // L'identité et le rôle restent nécessaires pour que l'utilisateur puisse
+  // toujours se reconnecter (notamment un administrateur qui se reset lui-même).
+  const accountRef = doc(db, "users", uid);
+  const before = await getDoc(accountRef);
+  const data = before.data() || {};
+  const identity = Object.fromEntries(
+    ["role", "email", "displayName", "photoURL", "createdAt"]
+      .filter((key) => data[key] !== undefined)
+      .map((key) => [key, data[key]]),
+  );
+  await deleteDoc(accountRef);
+  if (Object.keys(identity).length) await setDoc(accountRef, identity);
+  setNotice("Compte réinitialisé", `${name} repartira avec une progression vierge ; les P’TIPOTES sont conservés.`, false);
+  await loadAccounts(currentDashboardRole);
+  await loadStats(currentDashboardRole);
 }
 
 function setLoading(isLoading) {
@@ -1544,6 +1609,7 @@ onAuthStateChanged(auth, (user) => {
       currentDashboardRole = role;
       el.authDetail.textContent = role ? `${user.email || user.uid} - ${role}` : user.email || user.uid;
       loadStats(role);
+      loadAccounts(role);
       loadPtipoteStatsConfig();
       loadZone0Settings();
     })
@@ -1563,6 +1629,12 @@ el.authButton.addEventListener("click", () => {
 
 el.refreshButton.addEventListener("click", () => {
   loadStats(currentDashboardRole);
+});
+
+el.refreshAccountsButton.addEventListener("click", () => {
+  loadAccounts(currentDashboardRole).catch((error) => {
+    el.accountsStatus.textContent = `Lecture impossible : ${readableFirebaseError(error)}`;
+  });
 });
 
 el.resetPtipoteStatsButton.addEventListener("click", () => {
