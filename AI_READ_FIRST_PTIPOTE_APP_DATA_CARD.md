@@ -1672,3 +1672,10 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 - Le Dashboard admin liste les documents `users/{uid}` lisibles et affiche les niveaux des bâtiments principaux.
 - **Remettre à zéro** demande une confirmation, supprime la progression et les bâtiments du document utilisateur, puis restaure seulement l’identité et le rôle nécessaires à la reconnexion.
 - Les sous-collections Firestore, dont `users/{uid}/figurines`, ne sont pas supprimées : les P’TIPOTES sont conservés. Cette action reste réservée aux administrateurs/devs.
+
+### Marché et Capsules — ajustements V1
+
+- Une Bio-batterie vaut désormais **100 Bio-piles**. Le HUD affiche les batteries en bleu et le reliquat de piles en jaune.
+- Le P’TIPOTE du Point info propose toujours **Faire rentrer** et, dès le niveau 2, **Gestion appro**. Les distributeurs se remplissent depuis le stock de leur magasin avant toute vente automatique ; le P’TIPOTE ne répond qu’ensuite.
+- Le premier magasin spécialisé consomme les mêmes coûts que les suivants : 20 Organique, 30 Minéral et 10 Bio-batteries. Les distributeurs gardent leur dépôt progressif sans fermer la fenêtre après chaque ajout.
+- La mise en Capsule est libre depuis la Nurserie : 1 Bio-batterie et 10 Minéral, avec prévisualisation. Elle conserve l’identité et les Traits ; la vente reste liée à une demande ou un contrat.

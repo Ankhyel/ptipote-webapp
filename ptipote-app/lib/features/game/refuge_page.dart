@@ -473,7 +473,7 @@ class _CampHud extends StatelessWidget {
             onTap: () => _showHudInfo(
               context,
               'Bio-batteries et bio-piles',
-              'Les bio-batteries (bleu) alimentent le refuge. Les bio-piles (jaune) sont la monnaie fine du Marché : 10 bio-piles sont automatiquement converties en 1 bio-batterie.',
+              'Les bio-batteries (bleu) alimentent le refuge. Les bio-piles (jaune) sont la monnaie fine du Marché : 100 bio-piles sont automatiquement converties en 1 bio-batterie.',
             ),
           ),
         ),
@@ -10068,12 +10068,25 @@ class _MarketPageState extends State<MarketPage> {
                                 subtitle: Text(
                                   'Niv. ${assigned.level} · faim ${widget.gameState.hungerFor(assigned)} · repos ${widget.gameState.restFor(assigned)}',
                                 ),
-                                trailing: assigned.levelValue >= 2
-                                    ? OutlinedButton(
+                                trailing: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: <Widget>[
+                                    if (assigned.levelValue >= 2)
+                                      OutlinedButton(
                                         onPressed: _showMarketRestockRules,
-                                        child: const Text('Réappro'),
-                                      )
-                                    : null,
+                                        child: const Text('Gestion appro'),
+                                      ),
+                                    TextButton(
+                                      onPressed: () => _message(
+                                        widget.gameState
+                                            .removeFromMarket()
+                                            .message,
+                                      ),
+                                      child: const Text('Faire rentrer'),
+                                    ),
+                                  ],
+                                ),
                               ),
                             )
                           else
@@ -11059,59 +11072,65 @@ class _MarketPageState extends State<MarketPage> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (sheetContext) {
-        final distributor =
-            widget.gameState.prepareMarketDistributorForShop(shopId);
-        final ready =
-            widget.gameState.isMarketDistributorReadyToBuildFor(shopId);
-        return SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-            children: <Widget>[
-              const Text('Construire le distributeur',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 6),
-              Text(
-                  'Coût : ${marketConfig.distributorConstructionBioBatteries} bio-batteries.'),
-              ...marketConfig.distributorConstructionCost.entries
-                  .map((entry) => Wrap(
-                        spacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: <Widget>[
-                          Text(
-                              '${entry.key} : ${distributor.constructionDeposits[entry.key] ?? 0}/${entry.value}'),
-                          ...const <int>[1, 5, 10]
-                              .map((amount) => OutlinedButton(
-                                    onPressed: () {
-                                      final result = widget.gameState
-                                          .depositMarketDistributorMaterial(
-                                              entry.key, amount,
-                                              shopId: shopId);
-                                      _message(result.message);
-                                      if (result.success)
-                                        Navigator.of(sheetContext).pop();
-                                    },
-                                    child: Text('+$amount'),
-                                  )),
-                        ],
-                      )),
-              const SizedBox(height: 10),
-              FilledButton(
-                onPressed: ready
-                    ? () {
-                        final result = widget.gameState
-                            .startMarketDistributorConstruction(shopId: shopId);
-                        _message(result.message);
-                        if (result.success) Navigator.of(sheetContext).pop();
-                      }
-                    : null,
-                child: const Text('Commencer les travaux'),
-              ),
-            ],
-          ),
-        );
-      },
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final distributor =
+              widget.gameState.prepareMarketDistributorForShop(shopId);
+          final ready =
+              widget.gameState.isMarketDistributorReadyToBuildFor(shopId);
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+              children: <Widget>[
+                const Text('Construire le distributeur',
+                    style:
+                        TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 6),
+                Text(
+                    'Coût : ${marketConfig.distributorConstructionBioBatteries} bio-batteries.'),
+                ...marketConfig.distributorConstructionCost.entries
+                    .map((entry) => Wrap(
+                          spacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: <Widget>[
+                            Text(
+                                '${entry.key} : ${distributor.constructionDeposits[entry.key] ?? 0}/${entry.value}'),
+                            ...const <int>[
+                              1,
+                              5,
+                              10
+                            ].map((amount) => OutlinedButton(
+                                  onPressed: () {
+                                    final result = widget.gameState
+                                        .depositMarketDistributorMaterial(
+                                            entry.key, amount,
+                                            shopId: shopId);
+                                    _message(result.message);
+                                    if (result.success) setSheetState(() {});
+                                  },
+                                  child: Text('+$amount'),
+                                )),
+                          ],
+                        )),
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: ready
+                      ? () {
+                          final result = widget.gameState
+                              .startMarketDistributorConstruction(
+                                  shopId: shopId);
+                          _message(result.message);
+                          if (result.success) Navigator.of(sheetContext).pop();
+                        }
+                      : null,
+                  child: const Text('Commencer les travaux'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -12347,6 +12366,22 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                 ? const SizedBox.shrink()
                 : _cultivationTankCard(tank);
           }),
+          const SizedBox(height: 12),
+          ExpansionTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: const Text('Mise en Capsule'),
+            subtitle: const Text('1 Bio-batterie · 10 Minéral'),
+            children: widget.gameState.pTibugs
+                .where((bug) => !widget.gameState.isPTibugInCultivation(bug))
+                .map((bug) => ListTile(
+                      title: Text(bug.displayName),
+                      subtitle: Text(
+                          '${pTibugConfig.species[bug.species]!.displayName} · niv. ${bug.level}'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _showPTibugCapsuleSheet(bug, context),
+                    ))
+                .toList(),
+          ),
         ],
       );
 
@@ -13249,15 +13284,14 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                             style: TextStyle(
                                 color: Theme.of(context).colorScheme.error),
                           ),
-                        if (widget.gameState
-                            .eligiblePTibugContractsFor(bug)
-                            .isNotEmpty)
-                          OutlinedButton.icon(
-                            onPressed: () =>
-                                _choosePTibugContractSale(bug, sheetContext),
-                            icon: const Icon(Icons.verified_outlined),
-                            label: const Text('Prévisualiser la Capsule'),
+                        OutlinedButton.icon(
+                          onPressed: () => _showPTibugCapsuleSheet(
+                            bug,
+                            sheetContext,
                           ),
+                          icon: const Icon(Icons.inventory_2_outlined),
+                          label: const Text('Prévisualiser la Capsule'),
+                        ),
                       ],
                     ),
                   ),
@@ -13354,7 +13388,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Les Capsules P’TIBUG certifiées sont préparées uniquement pour une demande habitante ou un contrat du Sourcier.',
+                  'La mise en Capsule est disponible à tout moment depuis la Nurserie. Une vente reste liée à une demande ou un contrat.',
                 ),
               ],
             ),
@@ -13433,6 +13467,52 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     if (result.success && sheetContext.mounted)
       Navigator.of(sheetContext).pop();
     _message(result.message);
+  }
+
+  Future<void> _showPTibugCapsuleSheet(
+    PTibug bug,
+    BuildContext sheetContext,
+  ) async {
+    final valuation = widget.gameState.pTibugValuationFor(bug);
+    final blocker = widget.gameState.pTibugCertificationBlocker(bug);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            const Text('Mise en Capsule',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            Text(
+                '${bug.displayName} · valeur indicative ${valuation.total} Bio-batteries'),
+            const Text('Coût : 1 Bio-batterie · 10 Minéral.'),
+            if (blocker != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(blocker,
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error)),
+              ),
+            const SizedBox(height: 10),
+            FilledButton(
+              onPressed: blocker == null
+                  ? () {
+                      final result = widget.gameState.encapsulatePTibug(bug);
+                      Navigator.of(context).pop();
+                      if (result.success && sheetContext.mounted) {
+                        Navigator.of(sheetContext).pop();
+                      }
+                      _message(result.message);
+                    }
+                  : null,
+              child: const Text('Mettre en Capsule'),
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 
   PTibugTraitData? _traitFor(PTibug bug) => widget.gameState.pTibugTraitData

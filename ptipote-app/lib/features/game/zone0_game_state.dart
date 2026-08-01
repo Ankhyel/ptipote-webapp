@@ -216,7 +216,7 @@ class Zone0GameState extends ChangeNotifier {
   int kernelTrustXp = 0;
   int bioBatteries = kernelConfig.startingBioBatteries;
 
-  /// Monnaie fine du Marché. Dix bio-piles sont automatiquement compactées
+  /// Monnaie fine du Marché. Cent bio-piles sont automatiquement compactées
   /// en une bio-batterie, sans modifier les coûts existants en batteries.
   int bioPiles = 0;
   bool energyCorePatternDiscovered = false;
@@ -3435,6 +3435,9 @@ class Zone0GameState extends ChangeNotifier {
     }
     // Le stock n'est jamais consommé de lui-même. Les demandes ouvertes sont
     // le seul chemin de vente, y compris pour le Distributeur.
+    // La machine a toujours priorité : elle se remplit depuis son magasin et
+    // répond après une minute avant que le P’TIPOTE prenne le relais.
+    changed = _resolveMarketDistributor(current) || changed;
     // Le P’TIPOTE du Point info conserve une fenêtre de trois minutes : le
     // joueur peut donc répondre immédiatement et le Distributeur en une minute.
     if (marketAssignedPtipoteId != null) {
@@ -3460,7 +3463,6 @@ class Zone0GameState extends ChangeNotifier {
         changed = true;
       }
     }
-    changed = _resolveMarketDistributor(current) || changed;
     changed = _resolveMarketContracts(current) || changed;
     if (changed) {
       notifyListeners();
@@ -3632,9 +3634,9 @@ class Zone0GameState extends ChangeNotifier {
 
   void _creditMarketBioPiles(int amount) {
     bioPiles += math.max(0, amount);
-    final converted = bioPiles ~/ 10;
+    final converted = bioPiles ~/ 100;
     if (converted > 0) {
-      bioPiles -= converted * 10;
+      bioPiles -= converted * 100;
       bioBatteries += converted;
       marketBioBatteriesEarned += converted;
       _resolveEnergyCoreMilestones();
@@ -6602,10 +6604,56 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult encapsulatePTibug(PTibug bug) {
+    final blocker = pTibugCertificationBlocker(bug);
+    if (blocker != null) {
+      return Zone0ActionResult(success: false, message: blocker);
+    }
+    const mineralCost = 10;
+    if (bioBatteries < pTibugConfig.capsuleEnergyCost ||
+        resourceAmount('Minéral') < mineralCost) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Coût : ${pTibugConfig.capsuleEnergyCost} bio-batterie et $mineralCost Minéral.',
+      );
+    }
+    final now = DateTime.now();
+    final valuation = pTibugValuationFor(bug);
+    bioBatteries -= pTibugConfig.capsuleEnergyCost;
+    removeResource('Minéral', mineralCost);
+    pTibugCapsules.add(PTibugCapsule(
+      id: 'capsule-${now.microsecondsSinceEpoch}',
+      sourcePtibugId: bug.id,
+      species: bug.species,
+      styleVariant: bug.styleVariant,
+      displayName: bug.displayName,
+      biologicalTraitId: bug.biologicalTraitId,
+      biologicalTraitLevel: bug.biologicalTraitLevel,
+      secondTraitId: bug.secondTraitId,
+      secondTraitLevel: bug.secondTraitLevel,
+      isEvolved: bug.isRenewed,
+      moduleSnapshots: bug.equippedModules.map((item) => item.name).toList(),
+      level: bug.level,
+      xp: bug.xp,
+      baseValueSnapshot: valuation.baseValue,
+      levelValueSnapshot: valuation.levelValue,
+      traitValueSnapshot: valuation.traitValue,
+      moduleValueSnapshot: valuation.moduleValue,
+      estimatedValueSnapshot: valuation.total,
+      valuationConfigVersion: valuation.configVersion,
+      certificationId: 'capsule-${bug.id}-${now.microsecondsSinceEpoch}',
+      createdAt: now,
+    ));
+    for (final module in pTibugModuleInstances
+        .where((item) => item.equippedPTibugId == bug.id)) {
+      module.equippedPTibugId = null;
+    }
+    pTibugs.remove(bug);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-      success: false,
-      message:
-          'Les Capsules P’TIBUG certifiées sont créées uniquement lors d’une vente validée.',
+      success: true,
+      message: 'P’TIBUG placé en Capsule.',
     );
   }
 
@@ -6637,6 +6685,9 @@ class Zone0GameState extends ChangeNotifier {
         xp: capsule.xp,
         biologicalTraitId: capsule.biologicalTraitId,
         biologicalTraitLevel: capsule.biologicalTraitLevel,
+        secondTraitId: capsule.secondTraitId,
+        secondTraitLevel: capsule.secondTraitLevel,
+        isRenewed: capsule.isEvolved,
       ),
     );
     notifyListeners();
@@ -9599,17 +9650,21 @@ class Zone0GameState extends ChangeNotifier {
                     ? 'Organique'
                     : 'Minéral';
     final quantity = item == 'Organique' || item == 'Minéral' ? 10 : 1;
+    final ptibugSpecies = _marketPTibugSpecies(item);
+    final basePayment = ptibugSpecies == null
+        ? ((marketConfig.saleValues[item] ?? 1) *
+                quantity /
+                marketConfig.valuePerBioBattery)
+            .ceil()
+        : (pTibugConfig.valuation.baseValueFor(ptibugSpecies) *
+                pTibugConfig.valuation.sourcierContractCoefficient)
+            .ceil();
     marketContracts.add(MarketSourcierContract(
       contractId: 'contract-${now.microsecondsSinceEpoch}',
       marketLevelRequired: marketLevel,
       category: category,
       requestedItems: <String, int>{item: quantity},
-      rewardBioBatteries: math.max(
-          1,
-          ((marketConfig.saleValues[item] ?? 1) *
-                  quantity /
-                  marketConfig.valuePerBioBattery)
-              .ceil()),
+      rewardBioBatteries: math.max(1, basePayment),
       confidenceReward: marketConfig.confidenceSuccessGain,
       confidencePenalty: marketConfig.confidenceFailurePenalty,
       offeredAt: now,
@@ -9633,6 +9688,16 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Spécialisation invalide.');
     }
+    if (!hasResources(marketConfig.shopConstructionCost) ||
+        bioBatteries < marketConfig.shopConstructionBioBatteries) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            '${missingResourcesLabel(marketConfig.shopConstructionCost)} · ${marketConfig.shopConstructionBioBatteries} bio-batteries requises.',
+      );
+    }
+    removeResources(marketConfig.shopConstructionCost);
+    bioBatteries -= marketConfig.shopConstructionBioBatteries;
     firstFreeShopClaimed = true;
     marketShops.add(MarketShop(
         id: 'shop-${DateTime.now().microsecondsSinceEpoch}',
@@ -12520,7 +12585,8 @@ class MarketSourcierContract {
         rewardBioBatteries: Zone0GameState.instance._readInt(
           data['rewardBioPiles'],
           fallback:
-              Zone0GameState.instance._readInt(data['rewardBioBatteries']) * 10,
+              Zone0GameState.instance._readInt(data['rewardBioBatteries']) *
+                  100,
         ),
         confidenceReward:
             Zone0GameState.instance._readInt(data['confidenceReward']),
@@ -12586,7 +12652,7 @@ class MarketCustomerRequest {
         rewardBioPiles: Zone0GameState.instance._readInt(
           data['rewardBioPiles'],
           fallback:
-              Zone0GameState.instance._readInt(data['rewardBioBattery']) * 10,
+              Zone0GameState.instance._readInt(data['rewardBioBattery']) * 100,
         ),
         rewardWellbeing:
             Zone0GameState.instance._readInt(data['rewardWellbeing']),
@@ -12612,7 +12678,7 @@ class MarketCustomerRequest {
   final String requestedItemId;
   final int requestedQuantity;
   final int rewardBioPiles;
-  int get rewardBioBattery => rewardBioPiles ~/ 10;
+  int get rewardBioBattery => rewardBioPiles ~/ 100;
   final int rewardWellbeing;
   final DateTime createdAt;
   DateTime customerReturnTime;
@@ -12687,7 +12753,8 @@ class MarketRequestLogEntry {
         rewardBioBatteries: Zone0GameState.instance._readInt(
           data['rewardBioPiles'],
           fallback:
-              Zone0GameState.instance._readInt(data['rewardBioBatteries']) * 10,
+              Zone0GameState.instance._readInt(data['rewardBioBatteries']) *
+                  100,
         ),
         responder: data['responder'] == null
             ? null
@@ -12722,7 +12789,7 @@ class MarketRequestLogEntry {
         'status': status.name,
         'resolvedAt':
             resolvedAt == null ? null : Timestamp.fromDate(resolvedAt!),
-        'rewardBioBatteries': rewardBioBatteries ~/ 10,
+        'rewardBioBatteries': rewardBioBatteries ~/ 100,
         'rewardBioPiles': rewardBioBatteries,
         'responder': responder?.name,
       };
