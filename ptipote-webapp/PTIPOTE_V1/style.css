@@ -74,22 +74,23 @@ body {
     var(--bg);
   color: var(--text);
   font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 .page {
-  width: min(980px, 100% - 24px);
-  margin: 18px auto 42px;
+  width: min(760px, 100% - 32px);
+  margin: 28px auto 56px;
 }
 
 .themeCard,
 .shopCard {
-  width: 50px;
-  height: 50px;
+  width: 56px;
+  height: 56px;
   display: grid;
   place-items: center;
   padding: 0;
   text-decoration: none;
-  border-radius: 12px;
+  border-radius: 17px;
 }
 
 .themeCard {
@@ -127,13 +128,14 @@ body {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 28px;
+  border-radius: 30px;
   background: var(--surface);
   display: grid;
-  grid-template-columns: minmax(180px, 42%) 1fr;
+  grid-template-columns: minmax(250px, 43%) 1fr;
   align-items: center;
-  gap: 16px;
-  padding: 72px 28px 28px;
+  gap: 28px;
+  min-height: 390px;
+  padding: 34px;
   box-shadow: 0 8px 18px rgba(84, 60, 30, 0.08);
 }
 
@@ -154,10 +156,10 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  width: min(100%, 300px);
+  width: min(100%, 310px);
   margin: 0 auto;
   aspect-ratio: 1 / 1;
-  padding: 0;
+  padding: 14px;
   border-radius: 999px;
 }
 
@@ -170,26 +172,26 @@ body {
   object-fit: contain;
   object-position: top center;
   border-radius: 0;
-  transform: scale(1.5) translateZ(0);
+  transform: translateZ(0);
   -webkit-user-drag: none;
-  -webkit-transform: scale(1.5) translateZ(0);
+  -webkit-transform: translateZ(0);
   backface-visibility: hidden;
 }
 
 .rarityBadge {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
+  left: 12px;
+  bottom: 12px;
   z-index: 2;
-  width: 62px;
-  height: 62px;
+  width: 78px;
+  height: 60px;
   display: grid;
   place-items: center;
   padding: 7px;
   border: 2px solid #d2bd93;
-  border-radius: 24px;
+  border-radius: 25px;
   color: #2f281f;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1.05;
   text-align: center;
@@ -234,16 +236,16 @@ body {
   position: relative;
   z-index: 1;
   margin: 0;
-  font-size: clamp(30px, 8vw, 46px);
+  font-size: clamp(36px, 7vw, 58px);
   line-height: 1.05;
 }
 
 .heroType {
   position: relative;
   z-index: 1;
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   color: var(--soft-text);
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 600;
 }
 
@@ -261,8 +263,8 @@ body {
 .heroActions {
   position: absolute;
   z-index: 3;
-  top: 16px;
-  left: 16px;
+  top: 24px;
+  right: 24px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -280,17 +282,17 @@ body {
 .status.err { color: var(--status-err); }
 
 .grid {
-  margin-top: 12px;
+  margin-top: 18px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 14px;
 }
 
 .infoCard {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 22px;
-  padding: 13px 14px;
+  border-radius: 20px;
+  padding: 18px 20px;
   box-shadow: 0 8px 18px rgba(84, 60, 30, 0.08);
 }
 
@@ -300,7 +302,7 @@ body {
 }
 
 .levelValue {
-  font-size: 34px;
+  font-size: 42px;
   line-height: 1;
   font-weight: 900;
 }
@@ -327,13 +329,13 @@ body {
 }
 
 .label {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--muted);
-  margin-bottom: 5px;
+  margin-bottom: 7px;
 }
 
 .value {
-  font-size: 17px;
+  font-size: 21px;
   font-weight: 700;
   word-break: break-word;
 }
@@ -350,7 +352,7 @@ body {
 .xpBarTrack {
   width: calc(100% - 36px);
   margin-inline: 18px;
-  height: 12px;
+  height: 16px;
   border-radius: 999px;
   border: 1px solid var(--xp-track-line);
   background: var(--xp-track-bg);
@@ -366,7 +368,7 @@ body {
 
 .xpText {
   margin-top: 8px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--xp-text);
 }
@@ -392,9 +394,9 @@ body {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 18px;
-  padding: 10px 12px;
+  padding: 14px 12px;
   color: var(--text);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   background: #e9dcc7;
   cursor: pointer;
@@ -531,15 +533,15 @@ body {
 
 @media (max-width: 720px) {
   .page {
-    width: min(100% - 14px, 560px);
-    margin: 10px auto 24px;
+    width: min(100% - 20px, 560px);
+    margin: 16px auto 34px;
   }
 
   .themeCard,
   .shopCard {
-    width: 44px;
-    height: 44px;
-    border-radius: 11px;
+    width: 48px;
+    height: 48px;
+    border-radius: 15px;
   }
 
   .themeCard {
@@ -552,16 +554,17 @@ body {
 
   .hero {
     gap: 10px;
-    padding: 68px 18px 18px;
-    border-radius: 16px;
+    min-height: 360px;
+    padding: 28px 18px 22px;
+    border-radius: 22px;
     grid-template-columns: minmax(154px, 45%) 1fr;
   }
 
   .heroMedia {
     aspect-ratio: 1 / 1;
-    width: min(42vw, 220px);
+    width: min(43vw, 220px);
     border-radius: 999px;
-    padding: 0;
+    padding: 8px;
   }
 
   .hero h1 {
@@ -579,6 +582,8 @@ body {
 
   .heroActions {
     gap: 6px;
+    top: 16px;
+    right: 16px;
   }
 
   .status {
@@ -593,23 +598,23 @@ body {
   }
 
   .infoCard {
-    border-radius: 12px;
-    padding: 10px;
+    border-radius: 16px;
+    padding: 16px;
   }
 
   .label {
-    font-size: 11px;
-    margin-bottom: 4px;
+    font-size: 14px;
+    margin-bottom: 6px;
   }
 
   .value {
-    font-size: 16px;
+    font-size: 20px;
   }
 
   .xpBarTrack {
     width: calc(100% - 24px);
     margin-inline: 12px;
-    height: 10px;
+    height: 13px;
   }
 
   .xpText {
