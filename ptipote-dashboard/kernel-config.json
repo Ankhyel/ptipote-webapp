@@ -43,7 +43,7 @@
     {
       "id": "plaine-forage-runs",
       "type": "refugeRequest",
-      "title": "Explorer plusieurs fois la Plaine",
+      "title": "Explorer plusieurs fois la Savane tropicale",
       "conditionType": "plaineMissionsCompleted",
       "requiredAmount": 3,
       "populationReward": 1,

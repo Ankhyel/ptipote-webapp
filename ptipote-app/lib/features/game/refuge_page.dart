@@ -296,7 +296,7 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
           targetId: 'plaineNursery',
           title: 'Nurserie P’TIBUG',
           description:
-              'Installe des P’TIBUG dans la Plaine pour produire lentement des ressources.',
+              'Installe des P’TIBUG dans la Savane tropicale pour produire lentement des ressources.',
           campHeartLevel: _campHeartState.campHeartLevel,
           campHeartState: _campHeartState,
         ),
@@ -2270,6 +2270,13 @@ class _MaisonNurseryTab extends StatelessWidget {
   }
 }
 
+const List<List<int>> _rhythmTapPatterns = <List<int>>[
+  <int>[0, 600, 1200],
+  <int>[0, 550, 1100, 1650],
+  <int>[0, 450, 900, 1500, 2050],
+  <int>[0, 600, 1100, 1700, 2200, 2750],
+];
+
 class _EggHatchDialog extends StatefulWidget {
   const _EggHatchDialog({
     this.figurine,
@@ -2288,11 +2295,6 @@ class _EggHatchDialog extends StatefulWidget {
 }
 
 class _EggHatchDialogState extends State<_EggHatchDialog> {
-  static const _rhythmOffsets = <List<int>>[
-    <int>[0, 550, 1100, 1650],
-    <int>[0, 450, 900, 1500, 2050],
-    <int>[0, 600, 1100, 1700, 2200, 2750],
-  ];
   static const _tapTolerance = Duration(milliseconds: 1250);
   final List<Timer> _previewTimers = <Timer>[];
   final List<DateTime> _tapTimes = <DateTime>[];
@@ -2331,9 +2333,11 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
       _isPulsing = false;
       _feedback = null;
     });
-    for (var beat = 0; beat < _rhythmOffsets[_stage].length; beat += 1) {
+    for (var beat = 0;
+        beat < _rhythmTapPatterns[_stage + 1].length;
+        beat += 1) {
       _previewTimers.add(
-        Timer(Duration(milliseconds: _rhythmOffsets[_stage][beat]), () {
+        Timer(Duration(milliseconds: _rhythmTapPatterns[_stage + 1][beat]), () {
           _showPreviewBeat(beat);
         }),
       );
@@ -2359,8 +2363,8 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
     if (_tapTimes.isNotEmpty) {
       final beatIndex = _tapTimes.length;
       final expectedGap = Duration(
-        milliseconds: _rhythmOffsets[_stage][beatIndex] -
-            _rhythmOffsets[_stage][beatIndex - 1],
+        milliseconds: _rhythmTapPatterns[_stage + 1][beatIndex] -
+            _rhythmTapPatterns[_stage + 1][beatIndex - 1],
       );
       final actualGap = now.difference(_tapTimes.last);
       final drift = (actualGap - expectedGap).abs();
@@ -2377,8 +2381,8 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
     }
     _tapTimes.add(now);
     setState(() => _taps = _tapTimes.length);
-    if (_taps < _rhythmOffsets[_stage].length) return;
-    if (_stage == _rhythmOffsets.length - 1) {
+    if (_taps < _rhythmTapPatterns[_stage + 1].length) return;
+    if (_stage == _rhythmTapPatterns.length - 2) {
       for (final timer in _previewTimers) {
         timer.cancel();
       }
@@ -2430,7 +2434,8 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
               ] else ...[
                 const Text('Observe les pulsations, puis tape en rythme.'),
                 const SizedBox(height: 8),
-                Text('$_taps / ${_rhythmOffsets[_stage].length} tapotements'),
+                Text(
+                    '$_taps / ${_rhythmTapPatterns[_stage + 1].length} tapotements'),
                 if (_feedback != null) ...<Widget>[
                   const SizedBox(height: 6),
                   Text(_feedback!, textAlign: TextAlign.center),
@@ -2464,6 +2469,148 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
                   child: const Text('Plus tard'),
                 ),
               ],
+      );
+}
+
+/// Shared rhythmic tap challenge used by eggs and active P’TIBUG tanks.
+class _RhythmTapDialog extends StatefulWidget {
+  const _RhythmTapDialog({
+    required this.tapCount,
+    required this.title,
+    required this.onValidated,
+  });
+
+  final int tapCount;
+  final String title;
+  final VoidCallback onValidated;
+
+  @override
+  State<_RhythmTapDialog> createState() => _RhythmTapDialogState();
+}
+
+class _RhythmTapDialogState extends State<_RhythmTapDialog> {
+  static const _tapTolerance = Duration(milliseconds: 1250);
+  final List<Timer> _previewTimers = <Timer>[];
+  final List<DateTime> _tapTimes = <DateTime>[];
+  int _previewBeat = -1;
+  bool _isPulsing = false;
+  bool _validated = false;
+  String? _feedback;
+
+  List<int> get _rhythm =>
+      _rhythmTapPatterns[(widget.tapCount.clamp(3, 6) - 3) as int];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _playPreview());
+  }
+
+  @override
+  void dispose() {
+    for (final timer in _previewTimers) {
+      timer.cancel();
+    }
+    super.dispose();
+  }
+
+  void _playPreview() {
+    if (_validated) return;
+    for (final timer in _previewTimers) {
+      timer.cancel();
+    }
+    _previewTimers.clear();
+    setState(() {
+      _previewBeat = -1;
+      _isPulsing = false;
+      _feedback = null;
+    });
+    for (var beat = 0; beat < _rhythm.length; beat += 1) {
+      _previewTimers.add(Timer(Duration(milliseconds: _rhythm[beat]), () {
+        if (!mounted) return;
+        setState(() {
+          _previewBeat = beat;
+          _isPulsing = true;
+        });
+        Timer(const Duration(milliseconds: 90), () {
+          if (mounted && _previewBeat == beat) {
+            setState(() => _isPulsing = false);
+          }
+        });
+      }));
+    }
+  }
+
+  void _tap() {
+    if (_validated) return;
+    final now = DateTime.now();
+    if (_tapTimes.isNotEmpty) {
+      final index = _tapTimes.length;
+      final expectedGap = Duration(
+        milliseconds: _rhythm[index] - _rhythm[index - 1],
+      );
+      if ((now.difference(_tapTimes.last) - expectedGap).abs() >
+          _tapTolerance) {
+        setState(() {
+          _tapTimes.clear();
+          _feedback = 'Le rythme ne correspond pas encore. Réessaie.';
+        });
+        _playPreview();
+        return;
+      }
+    }
+    _tapTimes.add(now);
+    if (_tapTimes.length < _rhythm.length) {
+      setState(() {});
+      return;
+    }
+    widget.onValidated();
+    setState(() => _validated = true);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(_validated ? 'Rythme validé' : widget.title),
+        content: GestureDetector(
+          onTap: _tap,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              AnimatedScale(
+                duration: const Duration(milliseconds: 180),
+                scale: _isPulsing ? 1.22 : 1,
+                child: Icon(
+                  _validated ? Icons.auto_awesome : Icons.water_drop_outlined,
+                  size: 84,
+                  color: _validated ? Colors.amber : null,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(_validated
+                  ? 'Le bonus de temps a été appliqué à la cuve.'
+                  : 'Observe les pulsations, puis tape en rythme.'),
+              const SizedBox(height: 8),
+              if (!_validated)
+                Text('${_tapTimes.length} / ${_rhythm.length} tapotements'),
+              if (_feedback != null) ...<Widget>[
+                const SizedBox(height: 6),
+                Text(_feedback!, textAlign: TextAlign.center),
+              ],
+              if (!_validated)
+                TextButton.icon(
+                  onPressed: _playPreview,
+                  icon: const Icon(Icons.replay),
+                  label: const Text('Revoir le rythme'),
+                ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(_validated ? 'Fermer' : 'Plus tard'),
+          ),
+        ],
       );
 }
 
@@ -5826,6 +5973,18 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
     _scrollController.jumpTo(next);
   }
 
+  Future<void> _openCollectionDetail(PTibug bug) => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PTibugNurseryPage(
+            gameState: widget.gameState,
+            campHeartLevel: widget.campHeartState.campHeartLevel,
+            campHeartState: widget.campHeartState,
+            initialTabIndex: 1,
+            initialPTibugDetailId: bug.id,
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final gameState = widget.gameState;
@@ -5876,6 +6035,7 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
                     building: gameState.plaineNurseryTerritory,
                     campHeartState: campHeartState,
                     onDragUpdate: _autoScrollForDrag,
+                    onShowDetails: _openCollectionDetail,
                   ),
                 ),
               ],
@@ -5900,6 +6060,7 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
                           .territoryBuildingForId('refuge-${biome.name}'),
                       campHeartState: campHeartState,
                       onDragUpdate: _autoScrollForDrag,
+                      onShowDetails: _openCollectionDetail,
                     ),
                   ),
                 ],
@@ -5973,6 +6134,7 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
     required this.building,
     required this.campHeartState,
     this.onDragUpdate,
+    this.onShowDetails,
   });
 
   final Zone0GameState gameState;
@@ -5980,6 +6142,7 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
   final PTibugTerritoryBuilding? building;
   final CampHeartState campHeartState;
   final ValueChanged<DragUpdateDetails>? onDragUpdate;
+  final ValueChanged<PTibug>? onShowDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -6002,7 +6165,7 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                       '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
                   const SizedBox(height: 8),
                   const Text(
-                      'La Plaine accueille uniquement la Nurserie principale.'),
+                      'La Savane tropicale accueille uniquement la Nurserie principale.'),
                 ]),
           ),
         );
@@ -6253,7 +6416,8 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                           gameState: gameState,
                           bug: bug,
                           building: activeBuilding,
-                          onDragUpdate: onDragUpdate))
+                          onDragUpdate: onDragUpdate,
+                          onShowDetails: onShowDetails))
                       .toList(),
                 ),
               ],
@@ -6627,11 +6791,13 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
       {required this.gameState,
       required this.bug,
       required this.building,
-      this.onDragUpdate});
+      this.onDragUpdate,
+      this.onShowDetails});
   final Zone0GameState gameState;
   final PTibug bug;
   final PTibugTerritoryBuilding? building;
   final ValueChanged<DragUpdateDetails>? onDragUpdate;
+  final ValueChanged<PTibug>? onShowDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -6656,7 +6822,7 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 InkWell(
-                  onTap: () => _showDetails(context),
+                  onTap: () => onShowDetails?.call(bug),
                   child: Row(children: <Widget>[
                     CircleAvatar(
                       child: Icon(_territorySpeciesIcon(bug.species)),
@@ -6693,8 +6859,12 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                   child: const Text('Récolter'),
                 ),
                 TextButton(
-                  onPressed: () => _showAssign(context),
-                  child: const Text('Affecter'),
+                  onPressed: gameState.isPTibugInCultivation(bug)
+                      ? () => _exitCultivation(context)
+                      : () => _showAssign(context),
+                  child: Text(gameState.isPTibugInCultivation(bug)
+                      ? 'Sortir de cuve'
+                      : 'Affecter'),
                 ),
               ],
             ),
@@ -6732,7 +6902,7 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                   return ListTile(
                     enabled: available,
                     title: Text(destination.kind == PTibugTerritoryKind.nursery
-                        ? 'Nurserie · Plaine'
+                        ? 'Nurserie · Savane tropicale'
                         : 'Refuge · ${lisiereForageConfig.biomes[destination.biome]!.label}'),
                     subtitle: Text('$current/$capacity emplacement(s)'),
                     onTap: !available
@@ -6760,47 +6930,12 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
         },
       );
 
-  Future<void> _showDetails(BuildContext context) => showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (_) {
-          final consumption = gameState.pTibugDailyConsumptionFor(bug);
-          return SafeArea(
-              child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(bug.displayName,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w900, fontSize: 20)),
-                  Text(
-                      '${pTibugConfig.species[bug.species]!.displayName} · niveau ${bug.level}'),
-                  Text(
-                      'Biome : ${lisiereForageConfig.biomes[bug.refugeBiome]!.label}'),
-                  Text(
-                      'Production : ${gameState.pTibugProductionFor(bug).entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
-                  Text(
-                      'Stock matériel : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
-                  const SizedBox(height: 8),
-                  const Text('Consommation réelle sur 24 h',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
-                  Text(
-                      'Organique : ${consumption['Organique']!.toStringAsFixed(1)}'),
-                  Text(
-                      'Minéral : ${consumption['Minéral']!.toStringAsFixed(1)}'),
-                  Text(
-                      'Énergie : ${consumption['Énergie']!.toStringAsFixed(1)}'),
-                  if (_hasSmartSensor(bug))
-                    Text(
-                        'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}'),
-                  Text(
-                      'État : ${bug.inactiveReason ?? (bug.assignedBuildingId == null ? 'Inactif' : 'Actif')}'),
-                ]),
-          ));
-        },
-      );
+  void _exitCultivation(BuildContext context) {
+    final operation = gameState.cultivationOperationForPTibug(bug.id);
+    if (operation == null) return;
+    _message(
+        context, gameState.cancelPTibugCultivation(operation.tankId).message);
+  }
 
   void _message(BuildContext context, String message) =>
       ScaffoldMessenger.of(context)
@@ -6878,7 +7013,7 @@ class _BiomeBuildingsTab extends StatelessWidget {
                           targetId: 'plaineNursery',
                           title: 'Construire la Nurserie P’TIBUG',
                           description:
-                              'La Nurserie a besoin d’une Plaine végétalisée et de matériaux réservés.',
+                              'La Nurserie a besoin d’une Savane tropicale végétalisée et de matériaux réservés.',
                           campHeartLevel: campHeartLevel,
                           campHeartState: campHeartState,
                           footer: campHeartLevel < 2
@@ -12006,10 +12141,14 @@ class PTibugNurseryPage extends StatefulWidget {
     required this.gameState,
     required this.campHeartLevel,
     required this.campHeartState,
+    this.initialTabIndex = 0,
+    this.initialPTibugDetailId,
   });
   final Zone0GameState gameState;
   final int campHeartLevel;
   final CampHeartState campHeartState;
+  final int initialTabIndex;
+  final String? initialPTibugDetailId;
 
   @override
   State<PTibugNurseryPage> createState() => _PTibugNurseryPageState();
@@ -12018,6 +12157,7 @@ class PTibugNurseryPage extends StatefulWidget {
 class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   Timer? _timer;
   bool _starterChoiceDialogVisible = false;
+  bool _initialDetailShown = false;
 
   @override
   void initState() {
@@ -12029,7 +12169,19 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showStarterChoiceIfNeeded();
+      _showInitialPTibugDetail();
     });
+  }
+
+  void _showInitialPTibugDetail() {
+    if (_initialDetailShown || !mounted) return;
+    final id = widget.initialPTibugDetailId;
+    if (id == null) return;
+    final bug =
+        widget.gameState.pTibugs.where((item) => item.id == id).firstOrNull;
+    if (bug == null) return;
+    _initialDetailShown = true;
+    _showPTibugLoadout(bug);
   }
 
   @override
@@ -12134,6 +12286,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 5,
+      initialIndex: widget.initialTabIndex,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Nurserie P’TIBUG'),
@@ -12742,9 +12895,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                     child: const Text('Ouvrir une Bio-batterie')),
                 if (operation.status == PTibugCultivationOperationStatus.active)
                   FilledButton(
-                      onPressed: () => _message(widget.gameState
-                          .applyCultivationTap(tank.id)
-                          .message),
+                      onPressed: () =>
+                          _showCultivationRhythmTap(tank, operation),
                       child: Text(
                           'Tapoter (+${pTibugConfig.cultivation.tapBonusFor(operation.type)} min)')),
                 if (operation.isCompleted)
@@ -12762,6 +12914,24 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             ],
           ]),
     ));
+  }
+
+  Future<void> _showCultivationRhythmTap(
+    PTibugCultivationTank tank,
+    PTibugCultivationOperation operation,
+  ) async {
+    final patternIndex = (operation.tapSessions.length + tank.slotIndex) %
+        _rhythmTapPatterns.length;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _RhythmTapDialog(
+        tapCount: _rhythmTapPatterns[patternIndex].length,
+        title: 'Tapoter la cuve en rythme',
+        onValidated: () => _message(
+          widget.gameState.applyCultivationTap(tank.id).message,
+        ),
+      ),
+    );
   }
 
   Future<void> _showCultivationTankConstructionSheet(
@@ -13030,7 +13200,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                             ? 'En cuve · ${_cultivationStatusFor(bug)}'
                             : bug.assignedBuildingId == null
                                 ? 'Inactif · ${bug.inactiveReason ?? 'en attente d’affectation'}'
-                                : '${widget.gameState.territoryBuildingForId(bug.assignedBuildingId)?.kind == PTibugTerritoryKind.nursery ? 'Nurserie de la Plaine' : 'Refuge'} · ${bug.inactiveReason ?? (bug.nextProductionAt == null ? 'cycle en attente' : 'prochain cycle ${_countdownLabel(bug.nextProductionAt!)}')}',
+                                : '${widget.gameState.territoryBuildingForId(bug.assignedBuildingId)?.kind == PTibugTerritoryKind.nursery ? 'Nurserie de la Savane tropicale' : 'Refuge'} · ${bug.inactiveReason ?? (bug.nextProductionAt == null ? 'cycle en attente' : 'prochain cycle ${_countdownLabel(bug.nextProductionAt!)}')}',
                       ),
                       const SizedBox(height: 8),
                       OutlinedButton.icon(
@@ -13048,10 +13218,14 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       const SizedBox(height: 8),
                       FilledButton.icon(
                         onPressed: widget.gameState.isPTibugInCultivation(bug)
-                            ? null
+                            ? () => _exitPTibugCultivation(bug)
                             : () => _showTerritoryAssignment(bug),
-                        icon: const Icon(Icons.swap_horiz_outlined),
-                        label: const Text('Affecter'),
+                        icon: Icon(widget.gameState.isPTibugInCultivation(bug)
+                            ? Icons.logout_outlined
+                            : Icons.swap_horiz_outlined),
+                        label: Text(widget.gameState.isPTibugInCultivation(bug)
+                            ? 'Sortir de cuve'
+                            : 'Affecter'),
                       ),
                     ],
                   ),
@@ -13061,6 +13235,13 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           ),
         ],
       );
+
+  void _exitPTibugCultivation(PTibug bug) {
+    final operation = widget.gameState.cultivationOperationForPTibug(bug.id);
+    if (operation == null) return;
+    _message(
+        widget.gameState.cancelPTibugCultivation(operation.tankId).message);
+  }
 
   Future<void> _showTerritoryAssignment(PTibug bug) =>
       showModalBottomSheet<void>(
@@ -13083,7 +13264,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   return ListTile(
                     enabled: used < capacity,
                     title: Text(building.kind == PTibugTerritoryKind.nursery
-                        ? 'Nurserie · Plaine'
+                        ? 'Nurserie · Savane tropicale'
                         : 'Refuge · ${lisiereForageConfig.biomes[building.biome]!.label}'),
                     subtitle: Text('$used/$capacity emplacement(s) occupé(s)'),
                     onTap: used >= capacity

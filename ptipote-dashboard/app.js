@@ -953,7 +953,7 @@ function prettyPath(path) {
     requiredRestorerLevel: "Niveau Régénérateur requis",
     discoverWhenRequirementsMet: "Découvrir dès que les prérequis sont atteints",
     requiredBuildingLevels: "Bâtiments requis",
-    plaineNursery: "Nurserie de Plaine requise",
+    plaineNursery: "Nurserie de Savane tropicale requise",
     house: "Maison requise",
     fablab: "Fablab requis",
     cuisine: "Cuisine requise",

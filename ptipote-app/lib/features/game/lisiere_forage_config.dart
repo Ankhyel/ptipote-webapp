@@ -226,7 +226,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
   },
   biomes: <ForageBiome, ForageBiomeConfig>{
     ForageBiome.colline: ForageBiomeConfig(
-      label: 'Colline',
+      label: 'Hauts-Refuges',
       tendency: 'mixte',
       baseRewards: <String, int>{'Organique': 4, 'Minéral': 3},
       baseRiskPercent: 45,
@@ -238,21 +238,21 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       ],
     ),
     ForageBiome.plaineRiche: ForageBiomeConfig(
-      label: 'Plaine',
+      label: 'Savane tropicale',
       tendency: 'départ / restauration',
       baseRewards: <String, int>{'Organique': 2, 'Minéral': 1},
       baseRiskPercent: 30,
       wasteBaseGain: 2,
       wasteHoursPerLevelRegeneration: 1,
       restorationLevel: 0,
-      restorationStage: 'Plaine desséchée',
+      restorationStage: 'Savane tropicale desséchée',
       hazards: <ForageHazard>[
         ForageHazard.climatDifficile,
         ForageHazard.droneErrant
       ],
     ),
     ForageBiome.bassinMineral: ForageBiomeConfig(
-      label: 'Bassin minéral',
+      label: 'Semi-désert / Garrigue tropicale',
       tendency: 'Minéral',
       baseRewards: <String, int>{'Organique': 1, 'Minéral': 5},
       baseRiskPercent: 35,
@@ -264,7 +264,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       ],
     ),
     ForageBiome.sousBois: ForageBiomeConfig(
-      label: 'Sous-bois',
+      label: 'Forêt humide relictuelle',
       tendency: 'Organique / transformation',
       baseRewards: <String, int>{'Organique': 5, 'Minéral': 1},
       baseRiskPercent: 40,

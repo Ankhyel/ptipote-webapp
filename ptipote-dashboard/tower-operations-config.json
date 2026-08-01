@@ -52,7 +52,7 @@
       "severe": {"weight": 5, "ptibugMalusPercent": 30, "minimumAffectedBiomes": 4, "maximumAffectedBiomes": 4}
     },
     "biomeSensitivities": {
-      "plaineRiche": {"heatWave": {"chancePercent": 90, "impactMultiplier": 1.0, "reason": "Plaine exposée à la chaleur."}, "heavyRain": {"chancePercent": 80, "impactMultiplier": 1.0, "reason": "Plaine sensible au ruissellement."}, "toxicCloud": {"chancePercent": 45, "impactMultiplier": 1.0}},
+      "plaineRiche": {"heatWave": {"chancePercent": 90, "impactMultiplier": 1.0, "reason": "Savane tropicale exposée à la chaleur."}, "heavyRain": {"chancePercent": 80, "impactMultiplier": 1.0, "reason": "Savane tropicale sensible au ruissellement."}, "toxicCloud": {"chancePercent": 45, "impactMultiplier": 1.0}},
       "colline": {"heatWave": {"chancePercent": 65, "impactMultiplier": 0.8}, "heavyRain": {"chancePercent": 80, "impactMultiplier": 1.2, "reason": "Ruissellement des hauteurs."}, "toxicCloud": {"chancePercent": 20, "impactMultiplier": 0.5, "reason": "Zone ventilée."}},
       "bassinMineral": {"heatWave": {"chancePercent": 85, "impactMultiplier": 1.3}, "heavyRain": {"chancePercent": 35, "impactMultiplier": 0.5}, "toxicCloud": {"chancePercent": 70, "impactMultiplier": 1.3, "reason": "Bassin confiné."}},
       "sousBois": {"heatWave": {"chancePercent": 45, "impactMultiplier": 0.5}, "heavyRain": {"chancePercent": 90, "impactMultiplier": 1.3}, "toxicCloud": {"chancePercent": 65, "impactMultiplier": 1.0}}

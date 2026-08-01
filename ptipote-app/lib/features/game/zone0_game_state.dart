@@ -6087,12 +6087,21 @@ class Zone0GameState extends ChangeNotifier {
     return null;
   }
 
-  void _placePTibugInCultivation(PTibug bug) {
+  bool _placePTibugInCultivation(PTibug bug) {
+    // A P’TIBUG entering a tank must never leave a hidden local reserve behind.
+    // The regular collector keeps any material inventory overflow on the bug,
+    // so this remains lossless when the global inventory is full.
+    final harvested =
+        bug.storedResources.isNotEmpty || bug.storedDataCells.isNotEmpty;
+    if (harvested) {
+      collectPTibugProductionFor(bug);
+    }
     bug
       ..assignedSlotIndex = null
       ..assignedBuildingId = null
       ..nextProductionAt = null
       ..inactiveReason = 'En cuve';
+    return harvested;
   }
 
   Zone0ActionResult startPTibugTraitInfusion({
@@ -6147,7 +6156,7 @@ class Zone0GameState extends ChangeNotifier {
       reservedDataCells: Map<PTibugDataFamily, int>.from(dataCost),
       previousAssignmentId: previousAssignmentId,
     );
-    _placePTibugInCultivation(bug);
+    final harvested = _placePTibugInCultivation(bug);
     pTibugCultivationOperations.add(operation);
     tank
       ..currentOperationId = operation.id
@@ -6157,7 +6166,8 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: '${definition.displayName} rang $targetLevel placé en infusion.',
+      message:
+          '${definition.displayName} rang $targetLevel placé en infusion.${harvested ? ' Production récoltée.' : ''}',
     );
   }
 
@@ -6167,8 +6177,6 @@ class Zone0GameState extends ChangeNotifier {
         bug.renewalCount < config.maximumRenewals &&
         bug.level >= config.renewalLevel &&
         bug.biologicalTraitLevel >= 3 &&
-        bug.storedAmount == 0 &&
-        bug.storedDataCells.isEmpty &&
         !isPTibugInCultivation(bug);
   }
 
@@ -6186,7 +6194,7 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
         success: false,
         message:
-            'Évolution indisponible : niveau 3, Trait I rang III et stocks vides requis.',
+            'Évolution indisponible : niveau 3 et Trait I rang III requis.',
       );
     }
     final dataCost = pTibugConfig.cultivation.evolutionDataCost;
@@ -6211,7 +6219,7 @@ class Zone0GameState extends ChangeNotifier {
       reservedDataCells: Map<PTibugDataFamily, int>.from(dataCost),
       previousAssignmentId: previousAssignmentId,
     );
-    _placePTibugInCultivation(bug);
+    final harvested = _placePTibugInCultivation(bug);
     pTibugCultivationOperations.add(operation);
     tank
       ..currentOperationId = operation.id
@@ -6219,8 +6227,11 @@ class Zone0GameState extends ChangeNotifier {
     _resumeCultivationIfReady(tank);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
-    return const Zone0ActionResult(
-        success: true, message: 'Évolution placée en cuve.');
+    return Zone0ActionResult(
+      success: true,
+      message:
+          'Évolution placée en cuve.${harvested ? ' Production récoltée.' : ''}',
+    );
   }
 
   void _resumeCultivationIfReady(PTibugCultivationTank tank) {

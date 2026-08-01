@@ -191,16 +191,16 @@ const KernelConfig defaultKernelConfig = KernelConfig(
     KernelMissionConfig(
       id: 'plaine-forage-runs',
       type: KernelMissionType.refugeRequest,
-      title: 'Explorer plusieurs fois la Plaine',
+      title: 'Explorer plusieurs fois la Savane tropicale',
       description:
-          'La Plaine doit être reconnue avant d’accueillir plus de passages.',
+          'La Savane tropicale doit être reconnue avant d’accueillir plus de passages.',
       conditionType: KernelMissionConditionType.plaineMissionsCompleted,
       requiredAmount: 3,
       populationReward: 1,
       bioBatteryReward: 0,
       xpReward: 0,
       mailMessage:
-          'Un habitant rejoint le refuge après les reconnaissances en Plaine.',
+          'Un habitant rejoint le refuge après les reconnaissances en Savane tropicale.',
     ),
   ],
   plans: <KernelPlanConfig>[

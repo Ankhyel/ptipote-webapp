@@ -219,8 +219,8 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
         'Lisière proche de base',
         '1 P’TIPOTE actif confortable',
         'Visiteurs ponctuels',
-        'Colline',
-        'Plaine riche',
+        'Hauts-Refuges',
+        'Savane tropicale',
       ],
       effects: <String>[
         'Début de végétalisation',
@@ -241,8 +241,8 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
       unlocks: <String>[
         'Atelier simple',
         'Tour',
-        'Bassin minéral',
-        'Sous-bois',
+        'Semi-désert / Garrigue tropicale',
+        'Forêt humide relictuelle',
         'Refuge PTIBUG',
         '2 P’TIPOTES actifs confortables',
         'Premiers habitants permanents',

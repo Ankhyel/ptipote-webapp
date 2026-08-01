@@ -337,7 +337,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 - Intensites: `doux` x0.75 gains / x0.75 Vitalite / -5% risque; `normal` x1; `intensif` x1.35 gains / x1.25 Vitalite / +10% risque.
 - Couts Vitalite par duree: 1h `15`, 2h `25`, 6h `55`, 10h `80` avant multiplicateur intensite.
 - Gains XP mission: 1h `10`, 2h `18`, 6h `45`, 10h `75`, multiplies par intensite (`doux` x0.85, `normal` x1, `intensif` x1.2) et bonus XP enveloppe.
-- Risques biome: Colline `10%`, Plaine riche `8%`, Bassin mineral `14%`, Sous-bois `12%`.
+- Risques biome : Hauts-Refuges `10%`, Savane tropicale `8%`, Semi-désert / Garrigue tropicale `14%`, Forêt humide relictuelle `12%`.
 - Inventaire V1: `10` slots, stack max `10`.
 
 ### 3. Dashboard
@@ -739,7 +739,7 @@ Le bouton `Caliner` a un cooldown par P'TIPOTE de `3 heures`; pendant le cooldow
 ### 1. Fichiers crees ou modifies
 
 - `ptipote-app/lib/features/game/security_tower_config.dart`: configuration V1 de la Tour, cout, slots, gain/decroissance de securite et ticks.
-- `ptipote-app/lib/features/game/lisiere_forage_config.dart`: valeurs V1 des biomes, formule de risque minimum, coefficient de reduction securite, dangers possibles et champs futurs de restauration de la Plaine.
+- `ptipote-app/lib/features/game/lisiere_forage_config.dart`: valeurs V1 des biomes, formule de risque minimum, coefficient de reduction securite, dangers possibles et champs futurs de restauration de la Savane tropicale.
 - `ptipote-app/lib/features/game/zone0_game_state.dart`: etat de construction Tour, affectation P'TIPOTE, securite du camp, persistence Firebase, rapports enrichis.
 - `ptipote-app/lib/features/game/refuge_page.dart`: hotspot Tour, construction, page d'affectation, estimation Lisiere et rapport de mission enrichis.
 - `ptipote-dashboard/lisiere-forage-config.json`: valeurs dashboard des biomes et formule de risque.
@@ -1484,7 +1484,7 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - L’interface Lisière et les cartes de biomes de la Tour affichent l’état visuel configuré : 🌿 Luxuriante (80–100 %), 🌱 Stable (50–79 %), 🍂 Fragile (20–49 %), 🪨 Épuisée (0–19 %), avec barre et pourcentage dans la Lisière.
 - La production P’TIBUG applique la Biomasse après l’espèce, le bonus de biome, les Traits et les Modules. Le P’TIBUG contient désormais `refugeBiome` : tous les P’TIBUG existants sont migrés vers la Plaine, qui représente la Nurserie principale. Les futurs Refuges P’TIBUG n’auront qu’à modifier ce biome de Refuge ; ils ne créent ni n’améliorent de P’TIBUG.
 - Le Dashboard Lisière expose une carte `Biomasse` : maximum, consommation par intensité, seuils de rendement de mission et P’TIBUG, récupération, Revigorer, et états/pictogrammes. Les valeurs Dart restent le fallback versionné.
-- Le rythme `wasteHoursPerLevelRegeneration` est éditable dans chaque carte de biome du Dashboard Lisière. V1 : Plaine +1/h, Bassin minéral +1/2 h, Sous-bois +1/2 h, Colline +1/3 h. Une mission consomme les Déchets puis redémarre le cycle au moment de son retour.
+- Le rythme `wasteHoursPerLevelRegeneration` est éditable dans chaque carte de biome du Dashboard Lisière. V1 : Savane tropicale +1/h, Semi-désert / Garrigue tropicale +1/2 h, Forêt humide relictuelle +1/2 h, Hauts-Refuges +1/3 h. Une mission consomme les Déchets puis redémarre le cycle au moment de son retour.
 
 ### Plans Kernel et recettes Atelier
 
@@ -1713,3 +1713,23 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 - Une Armature associée à une opération de cuve garde sa carte visible, mais son action devient **En cours de cultivation** et ne peut plus être sélectionnée une seconde fois.
 - La Plaine utilise désormais le même volet déroulant que les autres biomes dans Lisière → P’TIBUG. Dans Nurserie → Données, les Traits, Modules, Capsules et Données de Traits sont des sections repliables pour éviter les listes trop longues.
 - La feuille ouverte depuis une Maison du Cœur du Camp contraint sa hauteur et utilise des cartes à largeur complète pour les installations : les libellés ne sont plus compressés verticalement.
+
+### Noms territoriaux canoniques
+
+- Les libellés historiques de la Lisière ne sont plus affichés. Les correspondances sont : `colline` → **Hauts-Refuges**, `plaineRiche` → **Savane tropicale**, `bassinMineral` → **Semi-désert / Garrigue tropicale** et `sousBois` → **Forêt humide relictuelle**.
+- Les identifiants techniques historiques restent volontairement inchangés dans les sauvegardes, les missions et les clés Dashboard afin de préserver les parties existantes. Seuls leurs libellés visibles, les objectifs Kernel, les messages météo et les réglages publiés sont harmonisés.
+- Les tables de Cellules restent liées aux identifiants canoniques P’TIBUG ; les Cellules de mission et de Capteur intelligent affichent donc le même biome territorial que les cartes P’TIBUG et le Dashboard.
+
+### Fiche détaillée P’TIBUG depuis la Lisière
+
+- Toucher le portrait ou le nom d’un P’TIBUG dans une carte territoriale ouvre désormais la fiche complète de la **Collection** de la Nurserie, directement sur l’onglet Collection. La vue courte propre à la Lisière a été retirée pour qu’il n’existe qu’une seule modale de détail, avec certification, calcul, Traits, Modules et actions compatibles.
+
+### Entrée et sortie de cuve P’TIBUG
+
+- Un P’TIBUG existant envoyé en cuve pour une Infusion ou une Évolution récolte d’abord automatiquement ses ressources et Cellules prêtes via la même transaction que le bouton Récolter ; en cas d’inventaire matériel plein, le reliquat reste sauvegardé sur lui.
+- Tant qu’il est en cuve, il est désaffecté, ne produit ni ne consomme localement et le bouton **Affecter** est remplacé par **Sortir de cuve** dans la Collection comme dans Lisière → P’TIBUG. Cette action annule l’opération en cours, restitue les réserves/Cellules non consommées et rend le P’TIBUG de nouveau affectable.
+
+### Tapotement rythmé des cuves
+
+- Le bouton **Tapoter** d’une cuve active ouvre désormais le même défi de rythme visuel que l’Œuf de Co-training : pulsations à observer, tolérance temporelle identique, remise à zéro et possibilité de rejouer le rythme.
+- Une séance de cuve demande une séquence de **3 à 6 tapotements**, choisie de manière stable selon la cuve et la séance courante. Le bonus de temps n’est appliqué qu’après validation complète de la séquence ; les limites journalières et délais minimums restent vérifiés par `applyCultivationTap`.

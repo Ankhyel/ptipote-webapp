@@ -274,11 +274,11 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
         TowerWeatherType.heatWave: GlobalWeatherBiomeSensitivity(
             chancePercent: 90,
             impactMultiplier: 1.0,
-            reason: 'Plaine exposée à la chaleur.'),
+            reason: 'Savane tropicale exposée à la chaleur.'),
         TowerWeatherType.heavyRain: GlobalWeatherBiomeSensitivity(
             chancePercent: 80,
             impactMultiplier: 1.0,
-            reason: 'Plaine sensible au ruissellement.'),
+            reason: 'Savane tropicale sensible au ruissellement.'),
         TowerWeatherType.toxicCloud: GlobalWeatherBiomeSensitivity(
             chancePercent: 45, impactMultiplier: 1.0),
       },

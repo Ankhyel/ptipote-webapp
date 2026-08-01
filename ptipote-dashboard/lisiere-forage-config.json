@@ -87,7 +87,7 @@
   "biomes": [
     {
       "id": "colline",
-      "label": "Colline",
+      "label": "Hauts-Refuges",
       "baseRiskPercent": 45,
       "rewards": { "Organique": 4, "Minéral": 3 },
       "wasteBaseGain": 3,
@@ -96,18 +96,18 @@
     },
     {
       "id": "plaineRiche",
-      "label": "Plaine",
+      "label": "Savane tropicale",
       "baseRiskPercent": 30,
       "rewards": { "Organique": 2, "Minéral": 1 },
       "wasteBaseGain": 2,
       "wasteHoursPerLevelRegeneration": 1,
       "restorationLevel": 0,
-      "restorationStage": "Plaine desséchée",
+      "restorationStage": "Savane tropicale desséchée",
       "hazards": ["climatDifficile", "droneErrant"]
     },
     {
       "id": "bassinMineral",
-      "label": "Bassin minéral",
+      "label": "Semi-désert / Garrigue tropicale",
       "baseRiskPercent": 35,
       "rewards": { "Organique": 1, "Minéral": 5 },
       "wasteBaseGain": 3,
@@ -116,7 +116,7 @@
     },
     {
       "id": "sousBois",
-      "label": "Sous-bois",
+      "label": "Forêt humide relictuelle",
       "baseRiskPercent": 40,
       "rewards": { "Organique": 5, "Minéral": 1 },
       "wasteBaseGain": 4,
