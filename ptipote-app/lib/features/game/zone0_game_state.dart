@@ -245,7 +245,9 @@ class Zone0GameState extends ChangeNotifier {
   DateTime? marketNextRequestAt;
   DateTime? marketLastWorkTickAt;
   DateTime? marketLastXpTickAt;
+  DateTime? marketAssignedAt;
   int marketXpEarnedThisAssignment = 0;
+  int marketBioPilesEarnedThisAssignment = 0;
   DateTime? lastManualTowerRechargeAt;
   DateTime? merchantAvailableUntil;
   DateTime? merchantNextArrivalAt;
@@ -3272,6 +3274,9 @@ class Zone0GameState extends ChangeNotifier {
           success: false, message: 'Stock du Marché insuffisant.');
     }
     _creditMarketBioPiles(request.rewardBioPiles);
+    if (responder == MarketRequestResponder.ptipote) {
+      marketBioPilesEarnedThisAssignment += request.rewardBioPiles;
+    }
     campWellbeing = math.min(100, campWellbeing + request.rewardWellbeing);
     request.status = MarketRequestStatus.completed;
     _recordMarketRequestOutcome(
@@ -3317,7 +3322,9 @@ class Zone0GameState extends ChangeNotifier {
     marketAssignedPtipoteName = figurine.displayName;
     marketLastWorkTickAt = DateTime.now();
     marketLastXpTickAt = marketLastWorkTickAt;
+    marketAssignedAt = marketLastWorkTickAt;
     marketXpEarnedThisAssignment = 0;
+    marketBioPilesEarnedThisAssignment = 0;
     vitalityOverrides.putIfAbsent(figurine.id, () => vitalityFor(figurine));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -3341,17 +3348,28 @@ class Zone0GameState extends ChangeNotifier {
     final vitality = vitalityOverrides[id] ?? ptipoteStatsConfig.maxVitality;
     final hunger = hungerOverrides[id] ?? ptipoteStatsConfig.baseHunger;
     final rest = restOverrides[id] ?? ptipoteStatsConfig.maxRest;
+    final elapsed =
+        DateTime.now().difference(marketAssignedAt ?? DateTime.now());
+    final minutes = math.max(0, elapsed.inMinutes);
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+    final durationLabel = hours > 0
+        ? '$hours h ${remainingMinutes.toString().padLeft(2, '0')} min'
+        : '$remainingMinutes min';
+    final earnedPiles = marketBioPilesEarnedThisAssignment;
     marketAssignedPtipoteId = null;
     marketAssignedPtipoteName = null;
     marketLastWorkTickAt = null;
     marketLastXpTickAt = null;
+    marketAssignedAt = null;
     marketXpEarnedThisAssignment = 0;
+    marketBioPilesEarnedThisAssignment = 0;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
       message:
-          '$name rentre du Marché · +$xp XP · énergie $vitality/${ptipoteStatsConfig.maxVitality} · faim $hunger/${ptipoteStatsConfig.baseHunger} · repos $rest/${ptipoteStatsConfig.maxRest}.',
+          '$name rentre du Marché après $durationLabel · +$earnedPiles bio-pile(s) · +$xp XP · énergie $vitality/${ptipoteStatsConfig.maxVitality} · faim $hunger/${ptipoteStatsConfig.baseHunger} · repos $rest/${ptipoteStatsConfig.maxRest}.',
     );
   }
 
@@ -8389,8 +8407,11 @@ class Zone0GameState extends ChangeNotifier {
         marketNextRequestAt = _readDate(marketData['nextRequestAt']);
         marketLastWorkTickAt = _readDate(marketData['lastWorkTickAt']);
         marketLastXpTickAt = _readDate(marketData['lastXpTickAt']);
+        marketAssignedAt = _readDate(marketData['assignedAt']);
         marketXpEarnedThisAssignment =
             _readInt(marketData['xpEarnedThisAssignment']);
+        marketBioPilesEarnedThisAssignment =
+            _readInt(marketData['bioPilesEarnedThisAssignment']);
         marketAssignedPtipoteId = marketData['assignedPtipoteId'] as String?;
         marketAssignedPtipoteName =
             marketData['assignedPtipoteName'] as String?;
@@ -9651,14 +9672,15 @@ class Zone0GameState extends ChangeNotifier {
                     : 'Minéral';
     final quantity = item == 'Organique' || item == 'Minéral' ? 10 : 1;
     final ptibugSpecies = _marketPTibugSpecies(item);
+    // Le contrat part de la même valeur qu'une Capsule prévisualisée dans la
+    // Nurserie. La confiance est appliquée ensuite, à la livraison, sans
+    // modifier la valeur de base affichée.
     final basePayment = ptibugSpecies == null
         ? ((marketConfig.saleValues[item] ?? 1) *
                 quantity /
                 marketConfig.valuePerBioBattery)
             .ceil()
-        : (pTibugConfig.valuation.baseValueFor(ptibugSpecies) *
-                pTibugConfig.valuation.sourcierContractCoefficient)
-            .ceil();
+        : pTibugConfig.valuation.baseValueFor(ptibugSpecies) + 5;
     marketContracts.add(MarketSourcierContract(
       contractId: 'contract-${now.microsecondsSinceEpoch}',
       marketLevelRequired: marketLevel,
@@ -11862,7 +11884,11 @@ class Zone0GameState extends ChangeNotifier {
           'lastXpTickAt': marketLastXpTickAt == null
               ? null
               : Timestamp.fromDate(marketLastXpTickAt!),
+          'assignedAt': marketAssignedAt == null
+              ? null
+              : Timestamp.fromDate(marketAssignedAt!),
           'xpEarnedThisAssignment': marketXpEarnedThisAssignment,
+          'bioPilesEarnedThisAssignment': marketBioPilesEarnedThisAssignment,
           'assignedPtipoteId': marketAssignedPtipoteId,
           'assignedPtipoteName': marketAssignedPtipoteName,
           'restockEnabledItems': marketRestockEnabledItems.toList(),
@@ -12584,9 +12610,14 @@ class MarketSourcierContract {
         ),
         rewardBioBatteries: Zone0GameState.instance._readInt(
           data['rewardBioPiles'],
-          fallback:
-              Zone0GameState.instance._readInt(data['rewardBioBatteries']) *
-                  100,
+          fallback: () {
+            final saved =
+                Zone0GameState.instance._readInt(data['rewardBioBatteries']);
+            // Une version de transition a multiplié les contrats en cours
+            // par 100. Ces seules valeurs sont ramenées à leur montant
+            // original ; les nouveaux contrats ne passent jamais ici.
+            return saved >= 100 && saved % 100 == 0 ? saved ~/ 100 : saved;
+          }(),
         ),
         confidenceReward:
             Zone0GameState.instance._readInt(data['confidenceReward']),

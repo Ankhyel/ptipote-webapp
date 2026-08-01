@@ -1642,7 +1642,7 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 
 ### Énergie, Bio-piles et Cœurs d’énergie
 
-- Le HUD utilise un unique pictogramme de batterie. Les Bio-batteries (unités, dizaines et centaines) sont bleues ; les Bio-piles (fraction fine) sont jaunes. Dix Bio-piles se convertissent automatiquement en une Bio-batterie. Quand il n’existe aucune Bio-batterie entière, le HUD affiche uniquement la quantité de Bio-piles, sans préfixe `0,`.
+- Le HUD utilise un unique pictogramme de batterie. Les Bio-batteries (unités, dizaines et centaines) sont bleues ; les Bio-piles (fraction fine) sont jaunes. Cent Bio-piles se convertissent automatiquement en une Bio-batterie. Quand il n’existe aucune Bio-batterie entière, le HUD affiche uniquement la quantité de Bio-piles, sans préfixe `0,`.
 - À 600 Bio-batteries, `Zone0GameState._resolveEnergyCoreMilestones()` découvre une seule fois le Pattern **Cœur d’énergie** et place un rapport dans la boîte Kernel. Le Plan demande 20 Données Énergie, 20 Organiques, 10 Minérales, 15 Mycéliennes et 15 Biomimétismes avant activation.
 - Une fois le Plan activé, l’Atelier fabrique un `Cœur d’énergie` en 15 minutes à partir de 300 Bio-batteries, 10 Organiques et 10 Minéraux. Le Cœur est un objet d’inventaire non empilable et occupe donc une place.
 - Les alertes refermables sous le HUD apparaissent à 600 puis 699 Bio-batteries. Un Cœur contient 300 Bio-batteries ; son descellage est volontairement refusé au-dessus de 699, afin que le total ne dépasse jamais le plafond de 999.
@@ -1679,3 +1679,10 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 - Le P’TIPOTE du Point info propose toujours **Faire rentrer** et, dès le niveau 2, **Gestion appro**. Les distributeurs se remplissent depuis le stock de leur magasin avant toute vente automatique ; le P’TIPOTE ne répond qu’ensuite.
 - Le premier magasin spécialisé consomme les mêmes coûts que les suivants : 20 Organique, 30 Minéral et 10 Bio-batteries. Les distributeurs gardent leur dépôt progressif sans fermer la fenêtre après chaque ajout.
 - La mise en Capsule est libre depuis la Nurserie : 1 Bio-batterie et 10 Minéral, avec prévisualisation. Elle conserve l’identité et les Traits ; la vente reste liée à une demande ou un contrat.
+- Les contrats P’TIBUG du Sourcier reprennent la valeur de référence affichée dans la Nurserie ; la confiance ajoute son bonus uniquement au paiement final. Les contrats gonflés par la migration transitoire `×100` sont corrigés à la lecture.
+- Les longues listes utilisent des sections repliables : Patterns, Armatures, Cuves et Capsules dans la Nurserie ; chaque biome dans Lisière → P’TIBUG ; Équipements, Structures, Meubles et Modules dans l’Atelier. Le gros accès à la Nurserie reste au-dessus de la Plaine.
+- Au retour du Marché, le rapport du P’TIPOTE indique désormais sa durée de présence, les Bio-piles gagnées par ses propres ventes et l’XP acquise.
+
+### Cœur du Camp — habitants par maison
+
+- Dans l’onglet **Habitation**, les habitants actifs sont affichés directement dans la carte de la maison qu’ils occupent, avec leur nom et leur niveau de bonheur. La liste distincte ne conserve que les habitants actifs sans logement, afin de rendre immédiatement visible la répartition réelle des foyers.
