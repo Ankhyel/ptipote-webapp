@@ -1686,3 +1686,9 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 ### Cœur du Camp — habitants par maison
 
 - Dans l’onglet **Habitation**, les habitants actifs sont affichés directement dans la carte de la maison qu’ils occupent, avec leur nom et leur niveau de bonheur. La liste distincte ne conserve que les habitants actifs sans logement, afin de rendre immédiatement visible la répartition réelle des foyers.
+
+### Navigation P’TIBUG — ajustements d’interface
+
+- Une Armature associée à une opération de cuve garde sa carte visible, mais son action devient **En cours de cultivation** et ne peut plus être sélectionnée une seconde fois.
+- La Plaine utilise désormais le même volet déroulant que les autres biomes dans Lisière → P’TIBUG. Dans Nurserie → Données, les Traits, Modules, Capsules et Données de Traits sont des sections repliables pour éviter les listes trop longues.
+- La feuille ouverte depuis une Maison du Cœur du Camp contraint sa hauteur et utilise des cartes à largeur complète pour les installations : les libellés ne sont plus compressés verticalement.

@@ -5860,12 +5860,26 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
         ),
         const SizedBox(height: 12),
         if (plaine != null)
-          _PTibugTerritoryBiomeCard(
-            gameState: gameState,
-            biome: plaine,
-            building: gameState.plaineNurseryTerritory,
-            campHeartState: campHeartState,
-            onDragUpdate: _autoScrollForDrag,
+          Card(
+            child: ExpansionTile(
+              initiallyExpanded: true,
+              leading: const Icon(Icons.landscape_outlined),
+              title: Text(lisiereForageConfig.biomes[plaine]!.label),
+              subtitle: Text(
+                  '${gameState.biomassVisualStateFor(plaine).label} · ${gameState.biomassFor(plaine).round()}%'),
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: _PTibugTerritoryBiomeCard(
+                    gameState: gameState,
+                    biome: plaine,
+                    building: gameState.plaineNurseryTerritory,
+                    campHeartState: campHeartState,
+                    onDragUpdate: _autoScrollForDrag,
+                  ),
+                ),
+              ],
+            ),
           ),
         ...otherBiomes.map(
           (biome) => Padding(
@@ -7455,36 +7469,65 @@ class _CampHousingTab extends StatelessWidget {
                     onTap: () => showModalBottomSheet<void>(
                       context: context,
                       showDragHandle: true,
-                      builder: (_) => ListView(
-                        shrinkWrap: true,
-                        padding: const EdgeInsets.all(20),
-                        children: <Widget>[
-                          Text(
-                              '${house.displayName} · protections ${house.installedStructuralProtections.length}/${housingConfig.houseProtectionSlots}',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w900, fontSize: 18)),
-                          const SizedBox(height: 8),
-                          for (final type in StructuralProtectionType.values)
-                            ListTile(
-                              title: Text(switch (type) {
-                                StructuralProtectionType.ventilationTermite =>
-                                  'Ventilation Termite',
-                                StructuralProtectionType.chloroCanaux =>
-                                  'Chloro-canaux',
-                                StructuralProtectionType.filtration =>
-                                  'Installation filtrante'
-                              }),
-                              trailing: FilledButton(
-                                onPressed: () {
-                                  final result = gameState
-                                      .installHouseProtection(house.id, type);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(result.message)));
-                                },
-                                child: const Text('Installer'),
+                      builder: (sheetContext) => SafeArea(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight:
+                                MediaQuery.sizeOf(sheetContext).height * .72,
+                          ),
+                          child: ListView(
+                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                            children: <Widget>[
+                              Text(
+                                '${house.displayName} · protections ${house.installedStructuralProtections.length}/${housingConfig.houseProtectionSlots}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900, fontSize: 18),
                               ),
-                            ),
-                        ],
+                              const SizedBox(height: 12),
+                              for (final type
+                                  in StructuralProtectionType.values)
+                                Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: <Widget>[
+                                        Text(
+                                          switch (type) {
+                                            StructuralProtectionType
+                                                  .ventilationTermite =>
+                                              'Ventilation Termite',
+                                            StructuralProtectionType
+                                                  .chloroCanaux =>
+                                              'Chloro-canaux',
+                                            StructuralProtectionType
+                                                  .filtration =>
+                                              'Installation filtrante',
+                                          },
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w800),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        FilledButton(
+                                          onPressed: () {
+                                            final result = gameState
+                                                .installHouseProtection(
+                                                    house.id, type);
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(SnackBar(
+                                                    content:
+                                                        Text(result.message)));
+                                          },
+                                          child: const Text('Installer'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -12375,15 +12418,27 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                         'Une Armature terminée pourra être placée dans une cuve.')),
               ...widget.gameState.pTibugArmatures
                   .where((item) => item.isCompleted)
-                  .map((armature) => Card(
-                        child: ListTile(
-                          leading: CircleAvatar(
-                              child: Icon(_speciesIcon(armature.species))),
-                          title: Text(
-                              '${pTibugConfig.species[armature.species]!.displayName} · Armature prête'),
-                          subtitle: Text(
-                              'Fabriquée le ${armature.createdAt.day}/${armature.createdAt.month}'),
-                          trailing: PopupMenuButton<String>(
+                  .map((armature) {
+                final cultivationInProgress = widget
+                    .gameState.pTibugCultivationOperations
+                    .any((operation) =>
+                        operation.armatureId == armature.id &&
+                        operation.status !=
+                            PTibugCultivationOperationStatus.cancelled);
+                return Card(
+                  child: ListTile(
+                    leading: CircleAvatar(
+                        child: Icon(_speciesIcon(armature.species))),
+                    title: Text(
+                        '${pTibugConfig.species[armature.species]!.displayName} · Armature prête'),
+                    subtitle: Text(
+                        'Fabriquée le ${armature.createdAt.day}/${armature.createdAt.month}'),
+                    trailing: cultivationInProgress
+                        ? const OutlinedButton(
+                            onPressed: null,
+                            child: Text('En cours de cultivation'),
+                          )
+                        : PopupMenuButton<String>(
                             onSelected: (tankId) => _message(widget.gameState
                                 .startPTibugCultivation(
                                     armatureId: armature.id, tankId: tankId)
@@ -12410,8 +12465,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                               ),
                             ),
                           ),
-                        ),
-                      )),
+                  ),
+                );
+              }),
             ],
           ),
           const SizedBox(height: 18),
@@ -12839,191 +12895,206 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       padding: const EdgeInsets.all(16),
       children: <Widget>[
         _KernelDataCellsCard(gameState: widget.gameState),
-        const SizedBox(height: 18),
-        const SizedBox(height: 18),
-        const Text(
-          'Traits biologiques permanents',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Un seul Trait peut transformer durablement chaque P’TIBUG.',
-        ),
-        const SizedBox(height: 10),
-        ...pTibugConfig.activeTraitDefinitions.map((definition) {
-          final patternId = 'ptibug-trait-${definition.id}';
-          final active = widget.gameState.isPTibugPatternActive(patternId);
-          final progress = widget.gameState.pTibugPatternProgress[patternId];
-          final masteryLevel = ((progress?.masteryLevel ?? 0).clamp(
-            0,
-            definition.maxLevel,
-          ));
-          final candidates = widget.gameState.pTibugs.where((bug) {
-            final targetLevel = widget.gameState.nextPTibugTraitLevelFor(
-              bug,
-              definition.id,
-            );
-            return targetLevel != null && targetLevel <= masteryLevel;
-          }).toList();
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Row(
+        const SizedBox(height: 12),
+        ExpansionTile(
+          leading: const Icon(Icons.auto_awesome_outlined),
+          title: const Text('Traits biologiques permanents'),
+          subtitle: const Text('Infusion, maîtrise et compatibilités'),
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Text(
+                  'Un seul Trait peut transformer durablement chaque P’TIBUG.'),
+            ),
+            ...pTibugConfig.activeTraitDefinitions.map((definition) {
+              final patternId = 'ptibug-trait-${definition.id}';
+              final active = widget.gameState.isPTibugPatternActive(patternId);
+              final progress =
+                  widget.gameState.pTibugPatternProgress[patternId];
+              final masteryLevel = ((progress?.masteryLevel ?? 0).clamp(
+                0,
+                definition.maxLevel,
+              ));
+              final candidates = widget.gameState.pTibugs.where((bug) {
+                final targetLevel = widget.gameState.nextPTibugTraitLevelFor(
+                  bug,
+                  definition.id,
+                );
+                return targetLevel != null && targetLevel <= masteryLevel;
+              }).toList();
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      const Icon(Icons.auto_awesome),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          '${definition.displayName} · maîtrise $masteryLevel/${definition.maxLevel}',
-                          style: const TextStyle(fontWeight: FontWeight.w900),
+                      Row(
+                        children: <Widget>[
+                          const Icon(Icons.auto_awesome),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '${definition.displayName} · maîtrise $masteryLevel/${definition.maxLevel}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(definition.description),
+                      const SizedBox(height: 8),
+                      Text(
+                        active
+                            ? 'Chaque rang est infusé dans une cuve. Les Cellules du rang cible sont réservées au lancement ; Organique, Minéral et Énergie sont consommés progressivement.'
+                            : 'Pattern à découvrir et maîtriser dans le Kernel.',
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: active && candidates.isNotEmpty
+                            ? () => _pickPTibugForPermanentTrait(definition.id)
+                            : null,
+                        icon: const Icon(Icons.biotech_outlined),
+                        label: Text(
+                          candidates.isEmpty
+                              ? 'Aucun P’TIBUG compatible'
+                              : 'Appliquer à un P’TIBUG',
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(definition.description),
-                  const SizedBox(height: 8),
-                  Text(
-                    active
-                        ? 'Chaque rang est infusé dans une cuve. Les Cellules du rang cible sont réservées au lancement ; Organique, Minéral et Énergie sont consommés progressivement.'
-                        : 'Pattern à découvrir et maîtriser dans le Kernel.',
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: active && candidates.isNotEmpty
-                        ? () => _pickPTibugForPermanentTrait(definition.id)
-                        : null,
-                    icon: const Icon(Icons.biotech_outlined),
-                    label: Text(
-                      candidates.isEmpty
-                          ? 'Aucun P’TIBUG compatible'
-                          : 'Appliquer à un P’TIBUG',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
-        const SizedBox(height: 18),
-        const Text(
-          'Modules fabriqués',
-          style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              );
+            }),
+          ],
         ),
-        if (moduleInstances.isEmpty)
-          const Card(child: ListTile(title: Text('Aucun Module fabriqué.'))),
-        ...moduleInstances.map((instance) {
-          final owner = widget.gameState.pTibugs
-              .where((bug) => bug.id == instance.equippedPTibugId)
-              .firstOrNull;
-          return Card(
-            child: ListTile(
-              leading: Icon(_moduleIcon(instance.type)),
-              title: Text(
-                  '${_moduleTitle(instance.type)} niveau ${instance.qualityLevel}'),
-              subtitle: Text(
-                owner == null
-                    ? 'Disponible'
-                    : 'Équipé par ${widget.gameState.pTibugBiologicalNameFor(owner)}',
-              ),
-              trailing: owner == null
-                  ? TextButton(
-                      onPressed: () => _pickPTibugForModule(instance.id),
-                      child: const Text('Équiper'),
-                    )
-                  : TextButton(
-                      onPressed: () => _message(
-                        widget.gameState
-                            .unequipPTibugModuleInstance(
-                              bug: owner,
-                              moduleInstanceId: instance.id,
-                            )
-                            .message,
-                      ),
-                      child: const Text('Retirer'),
-                    ),
-            ),
-          );
-        }),
-        if (_firstFusionPair() case final pair?)
-          OutlinedButton.icon(
-            onPressed: () => _message(
-              widget.gameState
-                  .fusePTibugModuleInstances(
-                      firstId: pair.$1.id, secondId: pair.$2.id)
-                  .message,
-            ),
-            icon: const Icon(Icons.merge_type_outlined),
-            label: Text(
-              'Fusionner 2 ${_moduleTitle(pair.$1.type)} niveau ${pair.$1.qualityLevel}',
-            ),
-          ),
-        const SizedBox(height: 18),
-        const Text('Capsules P’TIBUG',
-            style: TextStyle(fontWeight: FontWeight.w900)),
-        if (capsules.isEmpty)
-          const Card(
-              child: ListTile(title: Text('Aucune Capsule disponible.'))),
-        ...capsules.map(
-          (capsule) => Card(
-            child: ListTile(
-              leading: const Icon(Icons.inventory_2_outlined),
-              title: Text(capsule.displayName),
-              subtitle: Text('Niveau ${capsule.level} · origine conservée'),
-              trailing: TextButton(
+        const SizedBox(height: 12),
+        ExpansionTile(
+          leading: const Icon(Icons.extension_outlined),
+          title: const Text('Modules fabriqués'),
+          children: <Widget>[
+            if (moduleInstances.isEmpty)
+              const Card(
+                  child: ListTile(title: Text('Aucun Module fabriqué.'))),
+            ...moduleInstances.map((instance) {
+              final owner = widget.gameState.pTibugs
+                  .where((bug) => bug.id == instance.equippedPTibugId)
+                  .firstOrNull;
+              return Card(
+                child: ListTile(
+                  leading: Icon(_moduleIcon(instance.type)),
+                  title: Text(
+                      '${_moduleTitle(instance.type)} niveau ${instance.qualityLevel}'),
+                  subtitle: Text(
+                    owner == null
+                        ? 'Disponible'
+                        : 'Équipé par ${widget.gameState.pTibugBiologicalNameFor(owner)}',
+                  ),
+                  trailing: owner == null
+                      ? TextButton(
+                          onPressed: () => _pickPTibugForModule(instance.id),
+                          child: const Text('Équiper'),
+                        )
+                      : TextButton(
+                          onPressed: () => _message(
+                            widget.gameState
+                                .unequipPTibugModuleInstance(
+                                  bug: owner,
+                                  moduleInstanceId: instance.id,
+                                )
+                                .message,
+                          ),
+                          child: const Text('Retirer'),
+                        ),
+                ),
+              );
+            }),
+            if (_firstFusionPair() case final pair?)
+              OutlinedButton.icon(
                 onPressed: () => _message(
-                  widget.gameState.decapsulatePTibug(capsule.id).message,
+                  widget.gameState
+                      .fusePTibugModuleInstances(
+                          firstId: pair.$1.id, secondId: pair.$2.id)
+                      .message,
                 ),
-                child: const Text('Décapsuler'),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 18),
-        const Text(
-          'Données de traits',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Les Données attribuées restent visibles ici. Deux Données identiques non équipées peuvent être fusionnées.',
-        ),
-        const SizedBox(height: 10),
-        if (traits.isEmpty)
-          const Card(child: ListTile(title: Text('Aucune Donnée disponible.'))),
-        ...traits.map((trait) {
-          final owner = widget.gameState.pTibugs
-              .where((bug) => bug.traitDataId == trait.id)
-              .firstOrNull;
-          return Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: _traitColor(
-                  trait.grade,
-                  trait,
-                ).withValues(alpha: 0.16),
-                child: Icon(
-                  Icons.auto_awesome,
-                  color: _traitColor(trait.grade, trait),
+                icon: const Icon(Icons.merge_type_outlined),
+                label: Text(
+                  'Fusionner 2 ${_moduleTitle(pair.$1.type)} niveau ${pair.$1.qualityLevel}',
                 ),
               ),
-              title: Text(
-                '${_traitTitle(trait)} · ${_traitGradeTitle(trait.grade)}',
+          ],
+        ),
+        const SizedBox(height: 12),
+        ExpansionTile(
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: const Text('Capsules P’TIBUG'),
+          children: <Widget>[
+            if (capsules.isEmpty)
+              const Card(
+                  child: ListTile(title: Text('Aucune Capsule disponible.'))),
+            ...capsules.map(
+              (capsule) => Card(
+                child: ListTile(
+                  leading: const Icon(Icons.inventory_2_outlined),
+                  title: Text(capsule.displayName),
+                  subtitle: Text('Niveau ${capsule.level} · origine conservée'),
+                  trailing: TextButton(
+                    onPressed: () => _message(
+                      widget.gameState.decapsulatePTibug(capsule.id).message,
+                    ),
+                    child: const Text('Décapsuler'),
+                  ),
+                ),
               ),
-              subtitle: Text(
-                owner == null
-                    ? _traitDescription(trait)
-                    : '${_traitDescription(trait)}\nÉquipée par ${owner.displayName}',
-              ),
-              isThreeLine: owner != null,
             ),
-          );
-        }),
-        const SizedBox(height: 8),
-        ..._fusionActions(),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ExpansionTile(
+          leading: const Icon(Icons.data_object_outlined),
+          title: const Text('Données de traits'),
+          subtitle: const Text('Données attribuées et fusions'),
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Text(
+                  'Les Données attribuées restent visibles ici. Deux Données identiques non équipées peuvent être fusionnées.'),
+            ),
+            if (traits.isEmpty)
+              const Card(
+                  child: ListTile(title: Text('Aucune Donnée disponible.'))),
+            ...traits.map((trait) {
+              final owner = widget.gameState.pTibugs
+                  .where((bug) => bug.traitDataId == trait.id)
+                  .firstOrNull;
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: _traitColor(
+                      trait.grade,
+                      trait,
+                    ).withValues(alpha: 0.16),
+                    child: Icon(
+                      Icons.auto_awesome,
+                      color: _traitColor(trait.grade, trait),
+                    ),
+                  ),
+                  title: Text(
+                    '${_traitTitle(trait)} · ${_traitGradeTitle(trait.grade)}',
+                  ),
+                  subtitle: Text(
+                    owner == null
+                        ? _traitDescription(trait)
+                        : '${_traitDescription(trait)}\nÉquipée par ${owner.displayName}',
+                  ),
+                  isThreeLine: owner != null,
+                ),
+              );
+            }),
+            const SizedBox(height: 8),
+            ..._fusionActions(),
+          ],
+        ),
       ],
     );
   }
