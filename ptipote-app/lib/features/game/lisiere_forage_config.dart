@@ -378,14 +378,17 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
     ForageMissionType.harvest: ForageMissionTypeConfig(
       label: 'Récolte',
       vigorMultiplier: 1,
-      cellChanceMultiplier: .25,
+      // Les Cellules restent une trouvaille occasionnelle pendant une
+      // Récolte : moitié moins de chances que le réglage précédent.
+      cellChanceMultiplier: .125,
       maximumCellsMultiplier: 1,
       wastePerHour: 1,
     ),
     ForageMissionType.research: ForageMissionTypeConfig(
       label: 'Recherche',
       vigorMultiplier: .20,
-      cellChanceMultiplier: 1,
+      // La Recherche est la voie active d'acquisition des Cellules.
+      cellChanceMultiplier: 1.5,
       maximumCellsMultiplier: 1,
       wastePerHour: 2,
     ),

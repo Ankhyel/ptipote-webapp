@@ -10877,6 +10877,26 @@ class _MarketPageState extends State<MarketPage> {
             Text(
                 '${widget.gameState.marketShopCount}/$slots boutique(s) construite(s).'),
             const SizedBox(height: 10),
+            if (widget.gameState.marketShopConstructionOrder case final order?)
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.construction_outlined),
+                  title: Text(order.isInProgress
+                      ? (order.targetShopId == null
+                          ? 'Magasin en construction'
+                          : 'Amélioration en cours')
+                      : (order.targetShopId == null
+                          ? 'Magasin à préparer'
+                          : 'Amélioration à préparer')),
+                  subtitle: Text(order.isInProgress
+                      ? 'Fin : ${order.endsAt == null ? 'prochainement' : _countdownLabel(order.endsAt!)}'
+                      : 'Dépôts : Organique ${order.deposits['Organique'] ?? 0}/${order.requirements['Organique'] ?? 0} · Minéral ${order.deposits['Minéral'] ?? 0}/${order.requirements['Minéral'] ?? 0} · Bio-batteries ${order.depositedBioBatteries}/${order.requiredBioBatteries}'),
+                  trailing: TextButton(
+                    onPressed: _showMarketShopConstructionSheet,
+                    child: const Text('Ouvrir'),
+                  ),
+                ),
+              ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.storefront_outlined),
@@ -10887,9 +10907,13 @@ class _MarketPageState extends State<MarketPage> {
                   'Niveau ${widget.gameState.primaryMarketShopLevel} · ${widget.gameState.marketStock.length}/${widget.gameState.marketShopStockLimit(Zone0GameState.primaryMarketShopId)} piles · prix -${marketConfig.baseStorePricePenaltyPercent}%'),
               trailing: widget.gameState.primaryMarketShopLevel < 2
                   ? TextButton(
-                      onPressed: () => _message(widget.gameState
-                          .upgradeMarketShop(Zone0GameState.primaryMarketShopId)
-                          .message),
+                      onPressed: () {
+                        final result = widget.gameState
+                            .prepareMarketShopUpgrade(
+                                Zone0GameState.primaryMarketShopId);
+                        _message(result.message);
+                        if (result.success) _showMarketShopConstructionSheet();
+                      },
                       child: const Text('Améliorer'),
                     )
                   : const Text('Max.'),
@@ -10915,9 +10939,14 @@ class _MarketPageState extends State<MarketPage> {
                           'Niveau ${shop.level} · ${shop.stock.length}/${shop.stockSlots} piles · gain +${marketConfig.specializedShopGainBonusPercent}%'),
                       trailing: shop.level < 2
                           ? TextButton(
-                              onPressed: () => _message(widget.gameState
-                                  .upgradeMarketShop(shop.id)
-                                  .message),
+                              onPressed: () {
+                                final result = widget.gameState
+                                    .prepareMarketShopUpgrade(shop.id);
+                                _message(result.message);
+                                if (result.success) {
+                                  _showMarketShopConstructionSheet();
+                                }
+                              },
                               child: const Text('Améliorer'),
                             )
                           : const Text('Max.'),
@@ -11094,10 +11123,14 @@ class _MarketPageState extends State<MarketPage> {
                 ListTile(
                   title: Text(entry.value),
                   onTap: () {
-                    final result =
-                        widget.gameState.choosePrimaryMarketShop(entry.key);
+                    final result = widget.gameState
+                        .prepareMarketShopConstruction(entry.key,
+                            primary: true);
                     _message(result.message);
-                    if (result.success) Navigator.of(sheetContext).pop();
+                    if (result.success) {
+                      Navigator.of(sheetContext).pop();
+                      _showMarketShopConstructionSheet();
+                    }
                   },
                 ),
             ]),
@@ -11163,6 +11196,94 @@ class _MarketPageState extends State<MarketPage> {
     );
   }
 
+  Future<void> _showMarketShopConstructionSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final order = widget.gameState.marketShopConstructionOrder;
+          if (order == null) return const SizedBox.shrink();
+          final title = order.targetShopId != null
+              ? 'Améliorer le magasin'
+              : order.isPrimary
+                  ? 'Construire la boutique principale'
+                  : 'Construire un magasin';
+          final ready = widget.gameState.isMarketShopConstructionReady;
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+              children: <Widget>[
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 6),
+                Text('Type : ${order.specialization}'),
+                const SizedBox(height: 14),
+                ...order.requirements.entries
+                    .map((entry) => _ConstructionMaterialProgress(
+                          resource: entry.key,
+                          deposited: order.deposits[entry.key] ?? 0,
+                          required: entry.value,
+                          enabled: !order.isInProgress,
+                          onDeposit: (amount) {
+                            final result = widget.gameState
+                                .depositMarketShopConstruction(
+                                    entry.key, amount);
+                            _message(result.message);
+                            if (result.success) setSheetState(() {});
+                          },
+                          onWithdraw: () {
+                            final result = widget.gameState
+                                .withdrawMarketShopConstruction(entry.key);
+                            _message(result.message);
+                            if (result.success) setSheetState(() {});
+                          },
+                        )),
+                _ConstructionMaterialProgress(
+                  resource: 'Bio-batteries',
+                  deposited: order.depositedBioBatteries,
+                  required: order.requiredBioBatteries,
+                  enabled: !order.isInProgress,
+                  onDeposit: (amount) {
+                    final result = widget.gameState
+                        .depositMarketShopConstructionBatteries(amount);
+                    _message(result.message);
+                    if (result.success) setSheetState(() {});
+                  },
+                  onWithdraw: () {
+                    final result = widget.gameState
+                        .withdrawMarketShopConstructionBatteries();
+                    _message(result.message);
+                    if (result.success) setSheetState(() {});
+                  },
+                ),
+                FilledButton.icon(
+                  onPressed: !order.isInProgress && ready
+                      ? () {
+                          final result =
+                              widget.gameState.startMarketShopConstruction();
+                          _message(result.message);
+                          if (result.success) setSheetState(() {});
+                        }
+                      : null,
+                  icon: const Icon(Icons.construction_outlined),
+                  label: Text(order.isInProgress
+                      ? 'Travaux en cours'
+                      : 'Commencer les travaux'),
+                ),
+                TextButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    child: const Text('Fermer')),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _showDistributorBuildSheet(String shopId) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -11181,34 +11302,52 @@ class _MarketPageState extends State<MarketPage> {
                 const Text('Construire le distributeur',
                     style:
                         TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 6),
-                Text(
-                    'Coût : ${marketConfig.distributorConstructionBioBatteries} bio-batteries.'),
                 ...marketConfig.distributorConstructionCost.entries
-                    .map((entry) => Wrap(
-                          spacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: <Widget>[
-                            Text(
-                                '${entry.key} : ${distributor.constructionDeposits[entry.key] ?? 0}/${entry.value}'),
-                            ...const <int>[
-                              1,
-                              5,
-                              10
-                            ].map((amount) => OutlinedButton(
-                                  onPressed: () {
-                                    final result = widget.gameState
-                                        .depositMarketDistributorMaterial(
-                                            entry.key, amount,
-                                            shopId: shopId);
-                                    _message(result.message);
-                                    if (result.success) setSheetState(() {});
-                                  },
-                                  child: Text('+$amount'),
-                                )),
-                          ],
+                    .map((entry) => _ConstructionMaterialProgress(
+                          resource: entry.key,
+                          deposited:
+                              distributor.constructionDeposits[entry.key] ?? 0,
+                          required: entry.value,
+                          enabled: distributor.constructionStartedAt == null,
+                          onDeposit: (amount) {
+                            final result = widget.gameState
+                                .depositMarketDistributorMaterial(
+                                    entry.key, amount,
+                                    shopId: shopId);
+                            _message(result.message);
+                            if (result.success) setSheetState(() {});
+                          },
+                          onWithdraw: () {
+                            final result = widget.gameState
+                                .withdrawMarketDistributorConstructionMaterial(
+                                    entry.key,
+                                    shopId: shopId);
+                            _message(result.message);
+                            if (result.success) setSheetState(() {});
+                          },
                         )),
-                const SizedBox(height: 10),
+                _ConstructionMaterialProgress(
+                  resource: 'Bio-batteries',
+                  deposited:
+                      distributor.constructionDeposits['Bio-batteries'] ?? 0,
+                  required: marketConfig.distributorConstructionBioBatteries,
+                  enabled: distributor.constructionStartedAt == null,
+                  onDeposit: (amount) {
+                    final result = widget.gameState
+                        .depositMarketDistributorBioBatteries(amount,
+                            shopId: shopId);
+                    _message(result.message);
+                    if (result.success) setSheetState(() {});
+                  },
+                  onWithdraw: () {
+                    final result = widget.gameState
+                        .withdrawMarketDistributorConstructionMaterial(
+                            'Bio-batteries',
+                            shopId: shopId);
+                    _message(result.message);
+                    if (result.success) setSheetState(() {});
+                  },
+                ),
                 FilledButton(
                   onPressed: ready
                       ? () {
@@ -11248,9 +11387,14 @@ class _MarketPageState extends State<MarketPage> {
                   leading: const Icon(Icons.storefront_outlined),
                   title: Text(entry.value),
                   onTap: () {
-                    final result = widget.gameState.buildMarketShop(entry.key);
+                    final result = widget.gameState
+                        .prepareMarketShopConstruction(entry.key,
+                            primary: false);
                     _message(result.message);
-                    if (result.success) Navigator.of(sheetContext).pop();
+                    if (result.success) {
+                      Navigator.of(sheetContext).pop();
+                      _showMarketShopConstructionSheet();
+                    }
                   },
                 ),
             ]),
@@ -11289,10 +11433,14 @@ class _MarketPageState extends State<MarketPage> {
                     title: Text(entry.value),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
-                      final result =
-                          widget.gameState.claimFirstMarketShop(entry.key);
+                      final result = widget.gameState
+                          .prepareMarketShopConstruction(entry.key,
+                              primary: false);
                       _message(result.message);
-                      if (result.success) Navigator.of(sheetContext).pop();
+                      if (result.success) {
+                        Navigator.of(sheetContext).pop();
+                        _showMarketShopConstructionSheet();
+                      }
                     },
                   ),
               ],
@@ -11430,9 +11578,9 @@ class _MarketPageState extends State<MarketPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                        'Paiement de base : ${contract.rewardBioBatteries} bio-batterie(s)'),
+                        'Valeur certifiée de base : ${contract.rewardBioBatteries} bio-batterie(s)'),
                     Text(
-                        'Confiance : ${widget.gameState.sourcierConfidence}/100 · paiement prévu ${(contract.rewardBioBatteries * widget.gameState.sourcierConfidencePaymentMultiplier).floor()}'),
+                        'Bonus de confiance : ${widget.gameState.sourcierConfidence}/100 · paiement prévu ${(contract.rewardBioBatteries * widget.gameState.sourcierConfidencePaymentMultiplier).floor()}'),
                     const SizedBox(height: 10),
                     FilledButton(
                       onPressed: contract.status == MarketContractStatus.offered
@@ -12541,30 +12689,14 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                     PTibugCultivationTankStatus.underConstruction) ...<Widget>[
               Text(
                   'Construction : ${config.tankConstructionCost.entries.map((entry) => '${entry.key} ${tank.constructionDeposits[entry.key] ?? 0}/${entry.value}').join(' · ')} · Bio-batteries ${tank.constructionDeposits['Bio-batteries'] ?? 0}/${config.tankConstructionBioBatteries}'),
-              Wrap(spacing: 6, children: <Widget>[
-                ...<String>['Organique', 'Minéral'].map((resource) =>
-                    OutlinedButton(
-                        onPressed: () => _message(widget.gameState
-                            .depositCultivationTankConstruction(
-                                tankId: tank.id,
-                                resources: <String, int>{resource: 1}).message),
-                        child: Text('+$resource'))),
-                OutlinedButton(
-                    onPressed: () => _message(widget.gameState
-                        .depositCultivationTankConstruction(
-                            tankId: tank.id,
-                            resources: const <String, int>{},
-                            bioBatteriesAmount: 1)
-                        .message),
-                    child: const Text('+ Bio-batterie')),
-              ]),
-              FilledButton(
-                  onPressed: constructReady
-                      ? () => _message(widget.gameState
-                          .startCultivationTankConstruction(tank.id)
-                          .message)
-                      : null,
-                  child: const Text('Commencer les travaux')),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => _showCultivationTankConstructionSheet(tank),
+                icon: const Icon(Icons.construction_outlined),
+                label: Text(constructReady
+                    ? 'Commencer les travaux'
+                    : 'Préparer la construction'),
+              ),
             ] else if (tank.status ==
                 PTibugCultivationTankStatus.underConstruction)
               Text(
@@ -12630,6 +12762,98 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             ],
           ]),
     ));
+  }
+
+  Future<void> _showCultivationTankConstructionSheet(
+      PTibugCultivationTank tank) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final config = pTibugConfig.cultivation;
+          final ready = widget.gameState.cultivationTankConstructionReady(tank);
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+              children: <Widget>[
+                Text('Construire la cuve ${tank.slotIndex + 1}',
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 14),
+                ...config.tankConstructionCost.entries
+                    .map((entry) => _ConstructionMaterialProgress(
+                          resource: entry.key,
+                          deposited: tank.constructionDeposits[entry.key] ?? 0,
+                          required: entry.value,
+                          enabled: tank.status !=
+                              PTibugCultivationTankStatus.underConstruction,
+                          onDeposit: (amount) {
+                            final result = widget.gameState
+                                .depositCultivationTankConstruction(
+                                    tankId: tank.id,
+                                    resources: <String, int>{
+                                  entry.key: amount
+                                });
+                            _message(result.message);
+                            if (result.success) setSheetState(() {});
+                          },
+                          onWithdraw: () {
+                            final result = widget.gameState
+                                .withdrawCultivationTankConstruction(
+                                    tankId: tank.id, resource: entry.key);
+                            _message(result.message);
+                            if (result.success) setSheetState(() {});
+                          },
+                        )),
+                _ConstructionMaterialProgress(
+                  resource: 'Bio-batteries',
+                  deposited: tank.constructionDeposits['Bio-batteries'] ?? 0,
+                  required: config.tankConstructionBioBatteries,
+                  enabled: tank.status !=
+                      PTibugCultivationTankStatus.underConstruction,
+                  onDeposit: (amount) {
+                    final result = widget.gameState
+                        .depositCultivationTankConstruction(
+                            tankId: tank.id,
+                            resources: const <String, int>{},
+                            bioBatteriesAmount: amount);
+                    _message(result.message);
+                    if (result.success) setSheetState(() {});
+                  },
+                  onWithdraw: () {
+                    final result = widget.gameState
+                        .withdrawCultivationTankConstruction(
+                            tankId: tank.id, resource: 'Bio-batteries');
+                    _message(result.message);
+                    if (result.success) setSheetState(() {});
+                  },
+                ),
+                FilledButton.icon(
+                  onPressed: ready
+                      ? () {
+                          final result = widget.gameState
+                              .startCultivationTankConstruction(tank.id);
+                          _message(result.message);
+                          if (result.success) setSheetState(() {});
+                        }
+                      : null,
+                  icon: const Icon(Icons.construction_outlined),
+                  label: Text(tank.status ==
+                          PTibugCultivationTankStatus.underConstruction
+                      ? 'Travaux en cours'
+                      : 'Commencer les travaux'),
+                ),
+                TextButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    child: const Text('Fermer')),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _completeCultivationTank(
@@ -13574,7 +13798,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     final valuation = widget.gameState.pTibugValuationFor(bug);
     final payment = PTibugValuationService(pTibugConfig.valuation).paymentFor(
       valuation,
-      sourcierContract: true,
+      sourcierContract: false,
       bonusMultiplier: widget.gameState.sourcierConfidencePaymentMultiplier,
     );
     final confirmed = await showDialog<bool>(

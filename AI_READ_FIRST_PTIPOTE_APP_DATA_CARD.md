@@ -1683,6 +1683,27 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 - Les longues listes utilisent des sections repliables : Patterns, Armatures, Cuves et Capsules dans la Nurserie ; chaque biome dans Lisière → P’TIBUG ; Équipements, Structures, Meubles et Modules dans l’Atelier. Le gros accès à la Nurserie reste au-dessus de la Plaine.
 - Au retour du Marché, le rapport du P’TIPOTE indique désormais sa durée de présence, les Bio-piles gagnées par ses propres ventes et l’XP acquise.
 
+### Chantiers Marché et Nurserie — dépôt progressif
+
+- Le choix d’un type de magasin ne construit plus ni ne facture instantanément. Il crée un ordre sauvegardé : **20 Organique, 30 Minéral et 10 Bio-batteries** doivent être déposés, puis le joueur lance les travaux. La construction termine hors ligne et crée le magasin une seule fois.
+- Les feuilles de chantier Magasin, Distributeur et Cuve utilisent maintenant la même UX que le Fablab : jauge `déposé / requis`, actions **+1**, **+5**, **Max**, retour des matériaux et bouton **Commencer les travaux**. Les Bio-batteries sont elles aussi déposées avant le lancement ; aucune fenêtre ne se ferme après un ajout.
+
+### Contrats P’TIBUG du Sourcier — valeur certifiée
+
+- Un contrat de P’TIBUG de base part désormais de la valeur de certification de la Nurserie : Scarabé **20** Bio-batteries, Hyme **22**, Arac **24**. Le bonus de confiance du Sourcier est ensuite calculé et affiché séparément dans le paiement prévu.
+- Lors de la livraison d’un P’TIBUG certifié, la valeur réelle du P’TIBUG (espèce, niveau, Traits et Modules équipés) est recalculée par `PTibugValuationService`, puis seul le bonus de confiance est appliqué. Ainsi, une future commande demandant des Traits ou Modules spécifiques s’appuiera sur la même certification, sans barème concurrent.
+- Les contrats P’TIBUG ouverts provenant de l’ancienne conversion erronée sont relevés à la valeur minimale de leur espèce. Les contrats déjà terminés ne sont jamais modifiés.
+
+### Cellules de mission et seuil du Cœur d’énergie
+
+- En Mission **Récolte**, la chance de Cellule occasionnelle passe de 25 % à **12,5 %** des chances usuelles : le gain attendu de Cellules est divisé par deux. En Mission **Recherche**, cette chance passe de 100 % à **150 %** des chances usuelles.
+- Le Pattern **Cœur d’énergie** est découvert uniquement quand le stock atteint **600 Bio-batteries**. Il est exclu de la découverte générique des Plans Kernel. À la migration, un Pattern découvert avant 600 est retiré de la liste, avec restitution des Données déjà investies dans ce Plan ; à 600 ou plus, la découverte normale reste inchangée.
+
+### Prévision de production territoriale P’TIBUG
+
+- Les cartes de la Nurserie et des Refuges utilisent une prévision déterministe. Les ressources pondérées d’Arac sont sélectionnées de manière stable à partir de son identifiant pour l’affichage, sans consommer de hasard lors d’une reconstruction de widget.
+- Le cycle de production réel conserve son tirage pondéré et n’est exécuté qu’au moment de l’échéance de cycle sauvegardée. L’ouverture répétée de Lisière → P’TIBUG ne modifie donc ni le résumé affiché ni la production réellement stockée.
+
 ### Cœur du Camp — habitants par maison
 
 - Dans l’onglet **Habitation**, les habitants actifs sont affichés directement dans la carte de la maison qu’ils occupent, avec leur nom et leur niveau de bonheur. La liste distincte ne conserve que les habitants actifs sans logement, afin de rendre immédiatement visible la répartition réelle des foyers.
