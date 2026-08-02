@@ -25,7 +25,7 @@
   "distributorBreakDenominatorByLevel": {"1": 6, "2": 12, "3": 24},
   "distributorRepairMinutesByLevel": {"1": 30, "2": 20, "3": 10},
   "distributorRepairCost": {"Organique": 1, "Minéral": 1},
-  "specializedShopSlotsByMarketLevel": {"1": 1, "2": 3, "3": 5, "4": 7},
+  "specializedShopSlotsByMarketLevel": {"1": 1, "2": 2, "3": 4, "4": 4},
   "firstShopFree": true,
   "confidenceSuccessGain": 5,
   "confidenceFailurePenalty": 2,
@@ -56,7 +56,15 @@
   "requestCategoryWeights": {"food": 60, "materials": 20, "clothing": 15, "furniture": 5},
   "requestPriceBioPiles": {"Boisson tonique": 2, "Repas simple": 5, "Organique": 10, "Minéral": 10, "Tenue ombragée": 20, "Filtre": 7, "Cartouche de filtration": 13, "Meuble simple": 30, "Ventilation Termite": 50, "Lumière solaire": 50, "P’TIBUG Scarabé": 100, "P’TIBUG Hyme": 100, "P’TIBUG Arac": 100},
   "specializedShopGainBonusPercent": 30,
-  "baseStorePricePenaltyPercent": 50
+  "baseStorePricePenaltyPercent": 50,
+  "residentClaimVacancyDays": 7,
+  "residentClaimWarningHours": 24,
+  "requestBookLevel": 3,
+  "informationPointLevel": 3,
+  "distributorMarketLevels": {"1": 2, "2": 3, "3": 4},
+  "residentShopServiceCapacity": 6,
+  "residentShopReservePiles": 30,
+  "residentShopStockTarget": 6
   ,"shopConstructionCost": {"Organique": 15, "Minéral": 30}
   ,"shopConstructionBioBatteries": 10
   ,"shopUpgradeCostMultiplier": 2

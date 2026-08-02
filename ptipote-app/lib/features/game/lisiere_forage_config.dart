@@ -337,7 +337,9 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
           minimumPercent: 20, maximumPercent: 49, multiplier: .75),
       BiomassTierConfig(minimumPercent: 0, maximumPercent: 19, multiplier: .5),
     ],
-    recoveryHoursPerPoint: 1,
+    // Vigueur recoveries are intentionally slow: one point takes two hours
+    // at the healthy tier (half the former recovery rate).
+    recoveryHoursPerPoint: 2,
     recoveryTiers: <BiomassTierConfig>[
       BiomassTierConfig(minimumPercent: 50, maximumPercent: 100, multiplier: 1),
       BiomassTierConfig(minimumPercent: 30, maximumPercent: 49, multiplier: 2),

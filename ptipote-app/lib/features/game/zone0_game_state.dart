@@ -11,6 +11,7 @@ import '../figurines/ptipote_stats_config.dart';
 import 'building_construction_config.dart';
 import 'camp_heart_config.dart';
 import 'camp_generator_config.dart';
+import 'community_roles_config.dart';
 import 'housing_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
@@ -20,6 +21,7 @@ import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
 import 'ptibug_valuation_service.dart';
+import 'resident_economy_config.dart';
 import 'remote_game_config_service.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
@@ -116,6 +118,9 @@ class Zone0GameState extends ChangeNotifier {
   final List<MarketSourcierContract> marketContracts =
       <MarketSourcierContract>[];
   final List<MarketShop> marketShops = <MarketShop>[];
+  final List<MarketShopSlot> marketShopSlots = <MarketShopSlot>[];
+  final List<MarketRestockRule> marketRestockRules = <MarketRestockRule>[];
+  bool marketShopSlotsMigrationCompleted = false;
   MarketShopConstructionOrder? marketShopConstructionOrder;
   String primaryMarketShopSpecialization = 'general';
   bool primaryMarketShopChosen = false;
@@ -193,6 +198,40 @@ class Zone0GameState extends ChangeNotifier {
   /// métier, famille ou besoins individuels.
   final List<Zone0Resident> residents = <Zone0Resident>[];
   final List<ResidentHouse> residentHouses = <ResidentHouse>[];
+  final List<ResidentArrivalCandidate> residentArrivalCandidates =
+      <ResidentArrivalCandidate>[];
+  final List<ResidentVision> residentVisions = <ResidentVision>[];
+  final List<HouseholdRepairJob> householdRepairJobs = <HouseholdRepairJob>[];
+  DateTime? lastResidentArrivalResolutionAt;
+  DateTime? residentAutonomyGraceUntil;
+  final List<CommunityRoleAssignment> communityRoleAssignments =
+      <CommunityRoleAssignment>[];
+  final List<CommunityProductionBatch> communityProductionBatches =
+      <CommunityProductionBatch>[];
+  final List<ResidentEconomicTransaction> residentEconomicTransactions =
+      <ResidentEconomicTransaction>[];
+  final List<EconomicSettlementBatch> economicSettlementBatches =
+      <EconomicSettlementBatch>[];
+  final List<ResidentUncoveredNeed> residentUncoveredNeeds =
+      <ResidentUncoveredNeed>[];
+  bool residentPassionMigrationCompleted = false;
+  DateTime? lastCommunityRoleResolutionAt;
+  bool residentEconomyMigrationCompleted = false;
+  DateTime? lastResidentEconomyResolvedAt;
+  String lastEconomicSettlementDayKey = '';
+  bool residentPopulationMigrationCompleted = false;
+
+  /// V2 needs migration is kept separately from the V1 population bridge so
+  /// opening an old save cannot repeatedly reset meals or duplicate items.
+  bool residentNeedsMigrationCompleted = false;
+  DateTime? residentNeedsGraceUntil;
+  String lastResidentNeedsResolutionDayKey = '';
+  final Set<String> resolvedResidentWeatherEventIds = <String>{};
+  DateTime? lastDomesticEnergyDistributionAt;
+  // The generator data itself remains in the established campGenerator save
+  // block. This flag moves its ownership and UI to the player's House without
+  // resetting its stock, timer, upgrades, or production history.
+  bool bioGeneratorMovedToPlayerHouse = false;
   final Map<String, CommunityProjectProgress> communityProjects =
       <String, CommunityProjectProgress>{};
   final Set<String> resolvedWeatherStockLossEventIds = <String>{};
@@ -249,6 +288,8 @@ class Zone0GameState extends ChangeNotifier {
   DateTime? marketAssignedAt;
   int marketXpEarnedThisAssignment = 0;
   int marketBioPilesEarnedThisAssignment = 0;
+  int marketArticlesSoldThisAssignment = 0;
+  int marketDistributorsRepairedThisAssignment = 0;
   DateTime? lastManualTowerRechargeAt;
   DateTime? merchantAvailableUntil;
   DateTime? merchantNextArrivalAt;
@@ -317,7 +358,7 @@ class Zone0GameState extends ChangeNotifier {
       'fablab' || 'atelier' => atelierLevel,
       'cuisine' => cuisineLevel,
       'recycler' => recyclerLevel,
-      'generator' => 1,
+      'generator' || 'house' => houseLevel,
       'market' => marketLevel,
       'securityTower' => securityTowerLevel,
       'campHeart' => _lastKnownCampHeartLevel,
@@ -527,7 +568,7 @@ class Zone0GameState extends ChangeNotifier {
       if (recyclerLevel > 0) 'recycler',
       if (isMarketBuilt) 'market',
       if (isSecurityTowerBuilt) 'securityTower',
-      'generator',
+      'house',
       'campHeart',
       ...activePTibugTerritories.map((building) => building.id),
     };
@@ -567,17 +608,33 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   void _migrateResidentsAndHouses() {
-    final targetResidents = math.max(0, currentPopulation);
+    // Existing saves can already contain named residents. Only bridge the
+    // former aggregate value once and never manufacture a second population.
+    final targetResidents =
+        math.max(0, math.max(currentPopulation, residents.length));
     while (residents.length < targetResidents) {
       final index = residents.length;
       residents.add(Zone0Resident(
         id: 'resident-migrated-${index + 1}',
         displayName: _residentNameFor(index),
         createdAt: DateTime.now(),
+        internalPileBalance: housingConfig.residentInitialPileBalance,
+        sourceMigrationId: 'abstract-population-v1',
       ));
     }
+    // The old aggregate model did not necessarily persist actual homes. On
+    // its single migration, materialize only the minimum functional houses
+    // necessary to preserve the existing population. Later arrivals may be
+    // awaiting housing; they never create free homes automatically.
+    final requiredMigrationHouses = residentPopulationMigrationCompleted
+        ? housingUnits
+        : math.max(
+            housingUnits,
+            (targetResidents / housingConfig.residentsPerHousingUnit).ceil(),
+          );
+    housingUnits = math.max(housingUnits, requiredMigrationHouses);
     // Do not destroy identities when a temporary population value falls.
-    while (residentHouses.length < housingUnits) {
+    while (residentHouses.length < requiredMigrationHouses) {
       final index = residentHouses.length;
       residentHouses.add(ResidentHouse(
         id: 'house-${index + 1}',
@@ -588,23 +645,152 @@ class Zone0GameState extends ChangeNotifier {
     }
     for (final house in residentHouses) {
       house.capacity = housingConfig.residentsPerHousingUnit;
+      house.weatherProtectionSlots = housingConfig.houseProtectionSlots;
+      house.furnitureSlots = housingConfig.residentFurnitureSlots;
+      house.additionalGeneratorSlots = housingConfig.additionalGeneratorSlots;
+      house.baseGeneratorInstalled = true;
       house.residentIds.removeWhere(
         (id) => !residents.any((resident) => resident.id == id),
       );
     }
     for (final resident in residents) {
       final assigned = residentHouseForId(resident.houseId);
-      if (assigned != null && assigned.residentIds.contains(resident.id))
-        continue;
-      resident.houseId = null;
-      final house = residentHouses
-          .where((item) => item.residentIds.length < item.capacity)
-          .firstOrNull;
-      if (house != null) {
-        house.residentIds.add(resident.id);
-        resident.houseId = house.id;
+      if (assigned == null || !assigned.residentIds.contains(resident.id)) {
+        resident.houseId = null;
+        final house = residentHouses
+            .where((item) => item.residentIds.length < item.capacity)
+            .firstOrNull;
+        if (house != null) {
+          house.residentIds.add(resident.id);
+          resident.houseId = house.id;
+        }
       }
+      resident.status = resident.houseId == null
+          ? ResidentStatus.awaitingHousing
+          : ResidentStatus.active;
+      resident.currentHappiness = residentHappinessFor(resident);
+      resident.updatedAt = DateTime.now();
     }
+    currentPopulation = math.max(currentPopulation, residents.length);
+    housingCapacity = residentHouses.fold<int>(
+      0,
+      (total, house) => total + house.capacity,
+    );
+    residentPopulationMigrationCompleted = true;
+    bioGeneratorMovedToPlayerHouse = true;
+  }
+
+  /// Resident and household accounting is kept in piles. It intentionally
+  /// does not create physical Energy Cores or modify the player HUD.
+  String formatInternalPileBalance(int piles) {
+    final safe = math.max(0, piles);
+    final batteries = safe ~/ 100;
+    final remainingPiles = safe % 100;
+    if (batteries == 0) return '$remainingPiles bio-pile(s)';
+    if (remainingPiles == 0) return '$batteries bio-batterie(s)';
+    return '$batteries bio-batterie(s) · $remainingPiles bio-pile(s)';
+  }
+
+  /// Resolves physical household energy first, then shares only whole piles
+  /// between the active occupants. Per-house timestamps make a move safe: the
+  /// old house is settled before the resident list changes and no period can
+  /// be credited twice after an offline return.
+  bool resolveResidentDomesticGeneration({DateTime? now}) {
+    if (!residentEconomyConfig.enabled) return false;
+    final current = now ?? DateTime.now();
+    var changed = false;
+    for (final house in residentHouses) {
+      final previous = house.lastHouseholdEnergyResolvedAt ??
+          house.lastEnergyDistributionAt ??
+          lastDomesticEnergyDistributionAt;
+      if (previous == null) {
+        house.lastHouseholdEnergyResolvedAt = current;
+        house.lastEnergyDistributionAt = current;
+        continue;
+      }
+      final elapsedSeconds = current.difference(previous).inSeconds;
+      if (elapsedSeconds <= 0) continue;
+      final occupants = residents
+          .where(
+              (resident) => resident.isActive && resident.houseId == house.id)
+          .toList(growable: false);
+      if (house.baseGeneratorInstalled &&
+          (occupants.isNotEmpty ||
+              housingConfig.domesticGeneratorRunsWhenEmpty)) {
+        final baseHundredths =
+            housingConfig.domesticGeneratorPilesPerHour * 100;
+        final rateHundredths = baseHundredths +
+            (house.additionalGeneratorInstalled
+                ? (baseHundredths *
+                    residentEconomyConfig.secondGeneratorBonusPercent ~/
+                    100)
+                : 0);
+        final accumulated = house.energyProductionRemainder +
+            elapsedSeconds * math.max(0, rateHundredths);
+        final onePile = Duration.secondsPerHour * 100;
+        final generated = accumulated ~/ onePile;
+        house.energyProductionRemainder = (accumulated % onePile).toInt();
+        if (generated > 0) {
+          final cap = residentEconomyConfig.householdAccountCapPiles;
+          final accepted = math.max(
+              0, math.min(generated, cap - house.householdPileBalance));
+          house.householdPileBalance += accepted;
+          house.recentEnergyProducedPiles += accepted;
+          _recordResidentEconomicTransaction(ResidentEconomicTransaction(
+            id: 'energy-${house.id}-${previous.microsecondsSinceEpoch}',
+            type: ResidentEconomicTransactionType.householdEnergyProduction,
+            householdId: house.id,
+            grossAmountPiles: accepted,
+            status: ResidentEconomicTransactionStatus.completed,
+            createdAt: previous,
+            completedAt: current,
+            idempotencyKey:
+                'energy:${house.id}:${previous.microsecondsSinceEpoch}:${current.microsecondsSinceEpoch}',
+          ));
+          changed = accepted > 0 || changed;
+        }
+      }
+      house.lastHouseholdEnergyResolvedAt = current;
+      final distributionPrevious = house.lastEnergyDistributionAt ?? previous;
+      final interval = Duration(
+          minutes:
+              math.max(1, residentEconomyConfig.householdDistributionMinutes));
+      if (!current.isBefore(distributionPrevious.add(interval)) &&
+          occupants.isNotEmpty) {
+        final share = house.householdPileBalance ~/ occupants.length;
+        if (share > 0) {
+          final paid = share * occupants.length;
+          house.householdPileBalance -= paid;
+          for (final resident in occupants) {
+            resident.internalPileBalance = math.min(
+              residentEconomyConfig.personalAccountCapPiles,
+              resident.internalPileBalance + share,
+            );
+            resident.recentDomesticIncomePiles += share;
+            resident.updatedAt = current;
+          }
+          _recordResidentEconomicTransaction(ResidentEconomicTransaction(
+            id: 'distribution-${house.id}-${distributionPrevious.microsecondsSinceEpoch}',
+            type: ResidentEconomicTransactionType.householdEnergyDistribution,
+            householdId: house.id,
+            quantity: occupants.length,
+            grossAmountPiles: paid,
+            otherSharePiles: house.householdPileBalance,
+            participantResidentIds: occupants.map((item) => item.id).toList(),
+            status: ResidentEconomicTransactionStatus.completed,
+            createdAt: distributionPrevious,
+            completedAt: current,
+            idempotencyKey:
+                'distribution:${house.id}:${distributionPrevious.microsecondsSinceEpoch}',
+          ));
+          changed = true;
+        }
+        house.lastEnergyDistributionAt = current;
+      }
+      house.updatedAt = current;
+    }
+    lastDomesticEnergyDistributionAt = current;
+    return changed;
   }
 
   String _residentNameFor(int index) {
@@ -632,6 +818,725 @@ class Zone0GameState extends ChangeNotifier {
         : '${names[index % names.length]} ${cycle + 1}';
   }
 
+  List<ResidentArrivalCandidate> get activeResidentArrivalCandidates =>
+      residentArrivalCandidates
+          .where((candidate) => <ResidentArrivalStatus>{
+                ResidentArrivalStatus.available,
+                ResidentArrivalStatus.postponed,
+                ResidentArrivalStatus.acceptedPendingConditions,
+                ResidentArrivalStatus.acceptedReady,
+                ResidentArrivalStatus.arrivalScheduled,
+              }.contains(candidate.status))
+          .toList(growable: false);
+
+  int get availableResidentHousingPlaces => residentHouses.fold<int>(
+      0,
+      (total, house) =>
+          total +
+          math.max(
+              0,
+              house.capacity -
+                  house.residentIds.length -
+                  house.reservedArrivalCandidateIds.length));
+
+  bool _arrivalConditionsMet(ResidentArrivalCandidate candidate) {
+    if (availableResidentHousingPlaces < candidate.requiredHousingCapacity &&
+        candidate.reservedHouseId == null) return false;
+    for (final condition in candidate.requiredBuildingConditions) {
+      final met = switch (condition) {
+        'cuisine' => cuisineLevel > 0,
+        'fablab' => fablabLevel > 0,
+        'market' => marketLevel > 0,
+        'tower' => securityTowerLevel > 0,
+        'nursery' => plaineNurseryLevel > 0,
+        'lisiere' => true,
+        _ => true,
+      };
+      if (!met) return false;
+    }
+    for (final item in candidate.requiredItemConditions) {
+      if (resourceAmount(item) <= 0) return false;
+    }
+    return candidate.requiredProjectConditions.every((projectId) =>
+        communityProjects[projectId]?.status ==
+        CommunityProjectStatus.completed);
+  }
+
+  ResidentArrivalCandidate _generateResidentArrivalCandidate(DateTime now) {
+    final index = residents.length + residentArrivalCandidates.length;
+    final passions = ResidentPassion.values;
+    final missing = passions.where((passion) => !residents
+        .any((resident) => resident.primaryPassionId == passion.name));
+    final passion = missing.isNotEmpty
+        ? missing.elementAt(index % missing.length)
+        : passions[index % passions.length];
+    final desire =
+        ResidentDesireType.values[index % ResidentDesireType.values.length];
+    final profile = ResidentInteriorProfile
+        .values[index % ResidentInteriorProfile.values.length];
+    final building = switch (passion) {
+      ResidentPassion.cooking => 'cuisine',
+      ResidentPassion.crafting => 'fablab',
+      ResidentPassion.trading => 'market',
+      ResidentPassion.livingObservation => 'nursery',
+      ResidentPassion.watching => 'tower',
+    };
+    final name = _residentNameFor(index);
+    final id = 'arrival-${now.microsecondsSinceEpoch}-$index';
+    final contribution = switch (passion) {
+      ResidentPassion.cooking => 'Préparer lentement des repas à la Cuisine.',
+      ResidentPassion.crafting =>
+        'Fabriquer des fournitures simples au Fablab.',
+      ResidentPassion.trading => 'Tenir un rôle de distribution au Marché.',
+      ResidentPassion.livingObservation =>
+        'Observer la Lisière et soutenir le vivant.',
+      ResidentPassion.watching =>
+        'Participer à la veille météo et à la Sécurité.',
+    };
+    final candidate = ResidentArrivalCandidate(
+      id: id,
+      displayName: name,
+      originText: 'un refuge voisin',
+      departureReasonText:
+          'Son ancien point d’appui ne permet plus de poursuivre son activité.',
+      arrivalReasonText:
+          'Le développement du Cœur rend votre refuge visible et accueillant.',
+      shortStoryText:
+          '$name cherche une place où mettre sa passion au service du refuge.',
+      promisedContributionText: contribution,
+      promisedContributionType: passion.name,
+      primaryPassionId: passion.name,
+      primaryDesireId: desire.name,
+      interiorProfileId: profile.name,
+      accompanyingResidentCount: 0,
+      requiredHousingCapacity: 1,
+      requiredBuildingConditions: <String>[building],
+      requestedConditions: <String>[
+        'Une place de logement',
+        'Accès à $building'
+      ],
+      createdAt: now,
+      expiresAt: now.add(Duration(days: housingConfig.arrivalExpiryDays)),
+      idempotencyKey: 'arrival-candidate:$id',
+    );
+    residentArrivalCandidates.add(candidate);
+    reports.add(PtipoteMissionReport.system(
+      message: '$name souhaite rejoindre le refuge.',
+      subject: 'Nouvelle candidature',
+      concerned: 'Arrivées',
+    ));
+    return candidate;
+  }
+
+  Zone0ActionResult acceptResidentArrivalCandidate(String candidateId) {
+    final candidate = residentArrivalCandidates
+        .where((item) => item.id == candidateId)
+        .firstOrNull;
+    if (candidate == null ||
+        !<ResidentArrivalStatus>{
+          ResidentArrivalStatus.available,
+          ResidentArrivalStatus.postponed
+        }.contains(candidate.status)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Candidature indisponible.');
+    }
+    final house = residentHouses
+        .where((item) =>
+            item.capacity -
+                item.residentIds.length -
+                item.reservedArrivalCandidateIds.length >=
+            candidate.requiredHousingCapacity)
+        .firstOrNull;
+    if (house != null) {
+      house.reservedArrivalCandidateIds.add(candidate.id);
+      candidate.reservedHouseId = house.id;
+    }
+    candidate
+      ..acceptedAt = DateTime.now()
+      ..updatedAt = DateTime.now()
+      ..status = _arrivalConditionsMet(candidate) && house != null
+          ? ResidentArrivalStatus.arrivalScheduled
+          : ResidentArrivalStatus.acceptedPendingConditions;
+    if (candidate.status == ResidentArrivalStatus.arrivalScheduled) {
+      candidate.arrivalScheduledAt =
+          DateTime.now().add(Duration(hours: housingConfig.arrivalTravelHours));
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: candidate.status == ResidentArrivalStatus.arrivalScheduled
+            ? 'Candidature acceptée : arrivée programmée.'
+            : 'Candidature acceptée : conditions à préparer.');
+  }
+
+  Zone0ActionResult postponeResidentArrivalCandidate(String candidateId) {
+    final candidate = residentArrivalCandidates
+        .where((item) => item.id == candidateId)
+        .firstOrNull;
+    if (candidate == null ||
+        candidate.status != ResidentArrivalStatus.available) {
+      return const Zone0ActionResult(
+          success: false, message: 'Report indisponible.');
+    }
+    candidate
+      ..status = ResidentArrivalStatus.postponed
+      ..postponedAt = DateTime.now()
+      ..updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Candidature reportée.');
+  }
+
+  Zone0ActionResult rejectResidentArrivalCandidate(String candidateId) {
+    final candidate = residentArrivalCandidates
+        .where((item) => item.id == candidateId)
+        .firstOrNull;
+    if (candidate == null ||
+        candidate.status == ResidentArrivalStatus.arrived) {
+      return const Zone0ActionResult(
+          success: false, message: 'Refus indisponible.');
+    }
+    _releaseArrivalReservation(candidate);
+    candidate
+      ..status = ResidentArrivalStatus.rejected
+      ..updatedAt = DateTime.now();
+    reports.add(PtipoteMissionReport.system(
+        message: '${candidate.displayName} poursuit sa route.',
+        subject: 'Candidature refusée'));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Candidature refusée.');
+  }
+
+  void _releaseArrivalReservation(ResidentArrivalCandidate candidate) {
+    for (final house in residentHouses) {
+      house.reservedArrivalCandidateIds.remove(candidate.id);
+    }
+    candidate.reservedHouseId = null;
+  }
+
+  bool resolveResidentArrivals({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = false;
+    for (final candidate in activeResidentArrivalCandidates) {
+      if (candidate.expiresAt != null &&
+          current.isAfter(candidate.expiresAt!) &&
+          <ResidentArrivalStatus>{
+            ResidentArrivalStatus.available,
+            ResidentArrivalStatus.postponed
+          }.contains(candidate.status)) {
+        _releaseArrivalReservation(candidate);
+        candidate.status = ResidentArrivalStatus.expired;
+        changed = true;
+        continue;
+      }
+      if (candidate.status == ResidentArrivalStatus.acceptedPendingConditions &&
+          _arrivalConditionsMet(candidate)) {
+        final house = residentHouseForId(candidate.reservedHouseId) ??
+            residentHouses
+                .where((item) =>
+                    item.capacity -
+                        item.residentIds.length -
+                        item.reservedArrivalCandidateIds.length >=
+                    candidate.requiredHousingCapacity)
+                .firstOrNull;
+        if (house != null) {
+          if (!house.reservedArrivalCandidateIds.contains(candidate.id))
+            house.reservedArrivalCandidateIds.add(candidate.id);
+          candidate
+            ..reservedHouseId = house.id
+            ..status = ResidentArrivalStatus.arrivalScheduled
+            ..arrivalScheduledAt =
+                current.add(Duration(hours: housingConfig.arrivalTravelHours));
+          changed = true;
+        }
+      }
+      if (candidate.status == ResidentArrivalStatus.arrivalScheduled &&
+          candidate.arrivalScheduledAt != null &&
+          !current.isBefore(candidate.arrivalScheduledAt!)) {
+        changed = _finalizeResidentArrival(candidate, current) || changed;
+      }
+    }
+    final due = lastResidentArrivalResolutionAt == null ||
+        current.difference(lastResidentArrivalResolutionAt!).inHours >=
+            housingConfig.arrivalCandidateIntervalHours;
+    if (due &&
+        activeResidentArrivalCandidates.length <
+            housingConfig.arrivalActiveCandidateLimit &&
+        availableResidentHousingPlaces > 0 &&
+        _lastKnownCampHeartLevel > 0) {
+      _generateResidentArrivalCandidate(current);
+      changed = true;
+    }
+    lastResidentArrivalResolutionAt = current;
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
+  }
+
+  bool _finalizeResidentArrival(
+      ResidentArrivalCandidate candidate, DateTime now) {
+    if (candidate.status == ResidentArrivalStatus.arrived ||
+        !_arrivalConditionsMet(candidate)) return false;
+    final house = residentHouseForId(candidate.reservedHouseId);
+    final total = 1 + candidate.accompanyingCandidates.length;
+    if (house == null || house.capacity - house.residentIds.length < total)
+      return false;
+    final arrivals = <ResidentArrivalCompanion>[
+      ResidentArrivalCompanion(
+          id: candidate.id,
+          displayName: candidate.displayName,
+          primaryPassionId: candidate.primaryPassionId,
+          primaryDesireId: candidate.primaryDesireId,
+          interiorProfileId: candidate.interiorProfileId),
+      ...candidate.accompanyingCandidates,
+    ];
+    if (arrivals.length != candidate.requiredHousingCapacity) return false;
+    for (final entry in arrivals) {
+      final residentId = 'resident-arrival-${entry.id}';
+      if (residents.any((resident) => resident.id == residentId)) continue;
+      final resident = Zone0Resident(
+        id: residentId,
+        displayName: entry.displayName,
+        houseId: house.id,
+        baseHappiness: housingConfig.arrivalInitialHappiness,
+        internalPileBalance: housingConfig.arrivalInitialPileBalance,
+        createdAt: now,
+        arrivedAt: now,
+        sourceMigrationId: candidate.id,
+        primaryPassionId: entry.primaryPassionId,
+        primaryDesireId: entry.primaryDesireId,
+        interiorProfileId: entry.interiorProfileId,
+        contributionEligible: true,
+      );
+      residents.add(resident);
+      house.residentIds.add(resident.id);
+      _assignResidentVision(resident, now,
+          preferredProjectId: candidate.initialVisionProjectId);
+    }
+    _releaseArrivalReservation(candidate);
+    candidate
+      ..status = ResidentArrivalStatus.arrived
+      ..arrivedAt = now
+      ..updatedAt = now;
+    currentPopulation = residents.where((resident) => resident.isActive).length;
+    reports.add(PtipoteMissionReport.system(
+        message: '${candidate.displayName} s’installe à ${house.displayName}.',
+        subject: 'Arrivée au refuge',
+        concerned: 'Population'));
+    return true;
+  }
+
+  ResidentVision? residentVisionFor(String residentId) => residentVisions
+      .where((vision) =>
+          vision.residentId == residentId &&
+          <ResidentVisionStatus>{
+            ResidentVisionStatus.active,
+            ResidentVisionStatus.disappointed
+          }.contains(vision.status))
+      .firstOrNull;
+
+  Map<String, int> get residentVisionSupportCounts {
+    final result = <String, int>{};
+    for (final vision in residentVisions.where((vision) =>
+        <ResidentVisionStatus>{
+          ResidentVisionStatus.active,
+          ResidentVisionStatus.disappointed
+        }.contains(vision.status))) {
+      result.update(vision.projectId, (count) => count + 1, ifAbsent: () => 1);
+    }
+    return result;
+  }
+
+  List<CommunityProjectDefinition> _availableVisionProjects(
+          {int minimumTier = 0}) =>
+      campHeartConfig.communityProjects.projects
+          .where((definition) =>
+              definition.tier >= minimumTier &&
+              definition.requiredCoreLevel <= _lastKnownCampHeartLevel &&
+              communityProjects[definition.id]?.status !=
+                  CommunityProjectStatus.completed &&
+              (definition.prerequisiteId == null ||
+                  communityProjects[definition.prerequisiteId]?.status ==
+                      CommunityProjectStatus.completed))
+          .toList();
+
+  ResidentVision? _assignResidentVision(Zone0Resident resident, DateTime now,
+      {String? preferredProjectId, int minimumTier = 0}) {
+    if (residentVisionFor(resident.id) != null)
+      return residentVisionFor(resident.id);
+    final choices = _availableVisionProjects(minimumTier: minimumTier);
+    if (choices.isEmpty) return null;
+    final preferred = choices
+        .where((project) => project.id == preferredProjectId)
+        .firstOrNull;
+    final passion = resident.primaryPassionId;
+    final oriented = choices
+        .where((project) =>
+            (passion == ResidentPassion.watching.name &&
+                project.weatherType.isNotEmpty) ||
+            (passion == ResidentPassion.livingObservation.name &&
+                project.weatherType == 'toxicCloud') ||
+            (passion == ResidentPassion.trading.name &&
+                project.weatherType == 'heavyRain'))
+        .toList();
+    final pool = preferred == null
+        ? (oriented.isNotEmpty ? oriented : choices)
+        : <CommunityProjectDefinition>[preferred];
+    final project = pool[resident.id.hashCode.abs() % pool.length];
+    final vision = ResidentVision(
+      id: 'vision-${resident.id}-${project.id}',
+      residentId: resident.id,
+      projectId: project.id,
+      projectTier: project.tier,
+      branchId: project.weatherType,
+      selectedAt: now,
+    );
+    residentVisions.add(vision);
+    resident.currentVisionProjectId = project.id;
+    return vision;
+  }
+
+  bool _resolveResidentVisions({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = false;
+    for (final resident in residents.where((item) => item.isActive)) {
+      if (residentVisionFor(resident.id) == null) {
+        changed = _assignResidentVision(resident, current,
+                    preferredProjectId: resident.currentVisionProjectId) !=
+                null ||
+            changed;
+      }
+    }
+    for (final vision in residentVisions
+        .where((item) => item.status == ResidentVisionStatus.disappointed)) {
+      if (vision.disappointmentEndsAt != null &&
+          !current.isBefore(vision.disappointmentEndsAt!)) {
+        final resident =
+            residents.where((item) => item.id == vision.residentId).firstOrNull;
+        resident?.happinessModifiers
+            .remove('vision-disappointment-${vision.id}');
+        vision
+          ..status = ResidentVisionStatus.active
+          ..disappointedAt = null
+          ..disappointmentEndsAt = null;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  void _resolveVisionsForProjectSelection(
+      String selectedProjectId, DateTime now) {
+    for (final vision in residentVisions.where((vision) =>
+        vision.status == ResidentVisionStatus.active &&
+        vision.projectId != selectedProjectId)) {
+      final resident =
+          residents.where((item) => item.id == vision.residentId).firstOrNull;
+      if (resident == null || vision.disappointmentEndsAt != null) continue;
+      vision
+        ..status = ResidentVisionStatus.disappointed
+        ..disappointedAt = now
+        ..disappointmentEndsAt =
+            now.add(Duration(hours: housingConfig.visionDisappointmentHours));
+      resident.happinessModifiers['vision-disappointment-${vision.id}'] =
+          -housingConfig.visionDisappointmentPenalty;
+    }
+  }
+
+  void _resolveVisionsForCompletedProject(
+      CommunityProjectProgress project, DateTime now) {
+    for (final vision in residentVisions.where((vision) =>
+        vision.projectId == project.definition.id &&
+        <ResidentVisionStatus>{
+          ResidentVisionStatus.active,
+          ResidentVisionStatus.disappointed
+        }.contains(vision.status))) {
+      final resident =
+          residents.where((item) => item.id == vision.residentId).firstOrNull;
+      if (resident == null) continue;
+      resident.happinessModifiers.remove('vision-disappointment-${vision.id}');
+      final prior = residentVisions
+          .where((item) =>
+              item.residentId == resident.id &&
+              item.status == ResidentVisionStatus.fulfilled)
+          .fold<int>(0, (total, item) => total + item.persistentBonus);
+      vision
+        ..status = ResidentVisionStatus.fulfilled
+        ..fulfilledAt = now
+        ..persistentBonus = math.min(housingConfig.visionFulfilledBonus,
+            math.max(0, housingConfig.visionBonusCap - prior));
+      final total = prior + vision.persistentBonus;
+      resident.happinessModifiers['vision-fulfilled'] = total;
+      resident.currentVisionProjectId = null;
+      final sameBranch = _availableVisionProjects(
+              minimumTier: project.definition.tier + 1)
+          .where((item) => item.weatherType == project.definition.weatherType)
+          .toList();
+      final useSame = sameBranch.isNotEmpty &&
+          resident.id.hashCode.abs() % 100 <
+              housingConfig.visionSameBranchPercent;
+      _assignResidentVision(resident, now,
+          preferredProjectId: useSame ? sameBranch.first.id : null,
+          minimumTier: project.definition.tier + 1);
+    }
+  }
+
+  HouseholdRepairJob? householdRepairFor(String houseId) => householdRepairJobs
+      .where((job) =>
+          job.houseId == houseId &&
+          <HouseholdRepairStatus>{
+            HouseholdRepairStatus.active,
+            HouseholdRepairStatus.paused
+          }.contains(job.status))
+      .firstOrNull;
+
+  bool _payHouseholdCost(ResidentHouse house, int cost, DateTime now,
+      {required bool essential}) {
+    final reserve =
+        essential ? 0 : housingConfig.householdEmergencyReservePiles;
+    if (house.householdPileBalance - cost >= reserve) {
+      house.householdPileBalance -= cost;
+      house.recentHouseholdSpendingPiles += cost;
+      return true;
+    }
+    final fromHouse = math.max(0, house.householdPileBalance - reserve);
+    final remaining = cost - fromHouse;
+    final occupants = residents
+        .where((resident) => resident.isActive && resident.houseId == house.id)
+        .toList();
+    if (occupants.isEmpty) return false;
+    final share = (remaining / occupants.length).ceil();
+    final maxPercent = housingConfig.householdContributionMaxPercent / 100;
+    if (occupants.any((resident) =>
+        resident.internalPileBalance < share ||
+        share > resident.internalPileBalance * maxPercent)) return false;
+    house.householdPileBalance -= fromHouse;
+    for (final resident in occupants) {
+      resident
+        ..internalPileBalance -= share
+        ..recentSpendingPiles += share
+        ..updatedAt = now;
+    }
+    house.recentHouseholdSpendingPiles += cost;
+    return true;
+  }
+
+  bool _buyHouseholdFinishedItem(ResidentHouse house, String item, DateTime now,
+      {required bool essential}) {
+    final shopId = _marketShopWithStock(item, 1);
+    if (shopId == null) {
+      house.lastAutonomyDecision = '$item indisponible dans les magasins.';
+      return false;
+    }
+    final cost = residentEconomyConfig.priceFor(item);
+    if (!_payHouseholdCost(house, cost, now, essential: essential)) {
+      house.lastAutonomyDecision = 'Le foyer économise pour $item.';
+      return false;
+    }
+    if (!_consumeMarketShopStock(shopId, item, 1)) {
+      house.householdPileBalance += cost;
+      house.recentHouseholdSpendingPiles =
+          math.max(0, house.recentHouseholdSpendingPiles - cost);
+      return false;
+    }
+    final shop = marketShops.where((entry) => entry.id == shopId).firstOrNull;
+    final owner = residents
+        .where((resident) => resident.id == shop?.ownerResidentId)
+        .firstOrNull;
+    if (owner != null) {
+      owner.internalPileBalance += cost;
+    } else {
+      _creditMarketBioPiles(cost);
+    }
+    _recordResidentEconomicTransaction(ResidentEconomicTransaction(
+      id: 'household-$item-${house.id}-${now.microsecondsSinceEpoch}',
+      type: ResidentEconomicTransactionType.householdInstallationPurchase,
+      householdId: house.id,
+      buildingId: 'market',
+      itemDefinitionId: item,
+      quantity: 1,
+      grossAmountPiles: cost,
+      playerSharePiles: owner == null ? cost : 0,
+      merchantSharePiles: owner == null ? 0 : cost,
+      status: ResidentEconomicTransactionStatus.completed,
+      createdAt: now,
+      completedAt: now,
+      idempotencyKey:
+          'household-buy:${house.id}:$item:${now.microsecondsSinceEpoch}',
+    ));
+    return true;
+  }
+
+  bool _startAutonomousHouseholdRepair(ResidentHouse house, DateTime now) {
+    if (householdRepairFor(house.id) != null ||
+        house.currentViability >= house.maximumViability) return false;
+    const kit = 'Kit de réparation domestique';
+    if (!_buyHouseholdFinishedItem(house, kit, now, essential: true))
+      return false;
+    final job = HouseholdRepairJob(
+      id: 'repair-${house.id}-${now.microsecondsSinceEpoch}',
+      houseId: house.id,
+      startedAt: now,
+      endsAt: now.add(Duration(hours: housingConfig.autonomousRepairHours)),
+      viabilityGain: housingConfig.autonomousRepairGain,
+      isPlayerRepair: false,
+      reservedKitItemId: kit,
+    );
+    householdRepairJobs.add(job);
+    house
+      ..activeRepairJobId = job.id
+      ..isUnderRepair = true
+      ..lastAutonomyDecision = 'Réparation habitante en cours.';
+    return true;
+  }
+
+  bool _resolveHouseholdRepairs(DateTime now) {
+    var changed = false;
+    for (final job in householdRepairJobs
+        .where((job) => job.status == HouseholdRepairStatus.active)
+        .toList()) {
+      if (now.isBefore(job.endsAt)) continue;
+      final house = residentHouseForId(job.houseId);
+      if (house != null) {
+        house
+          ..currentViability = math.min(house.maximumViability,
+              house.currentViability + job.viabilityGain)
+          ..activeRepairJobId = null
+          ..isUnderRepair = false
+          ..lastAutonomyDecision =
+              'Réparation terminée : +${job.viabilityGain}% de Viabilité.'
+          ..updatedAt = now;
+        for (final resident
+            in residents.where((resident) => resident.houseId == house.id)) {
+          resident.currentHappiness = residentHappinessFor(resident);
+        }
+      }
+      job.status = HouseholdRepairStatus.completed;
+      if (job.isPlayerRepair &&
+          house != null &&
+          house.currentViability < house.maximumViability) {
+        final paused = householdRepairJobs
+            .where((other) =>
+                other.houseId == house.id &&
+                other.status == HouseholdRepairStatus.paused)
+            .firstOrNull;
+        if (paused != null) {
+          paused.status = HouseholdRepairStatus.active;
+          house
+            ..activeRepairJobId = paused.id
+            ..isUnderRepair = true;
+        }
+      }
+      changed = true;
+    }
+    return changed;
+  }
+
+  bool resolveHouseholdAutonomy({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = _resolveHouseholdRepairs(current);
+    if (residentAutonomyGraceUntil != null &&
+        current.isBefore(residentAutonomyGraceUntil!)) return changed;
+    for (final house
+        in residentHouses.where((house) => house.residentIds.isNotEmpty)) {
+      if (house.autonomyLockedUntil != null &&
+          current.isBefore(house.autonomyLockedUntil!)) continue;
+      final action = HouseholdAutonomyService.nextAction(this, house);
+      var completed = false;
+      if (action == HouseholdAutonomyAction.repair) {
+        completed = _startAutonomousHouseholdRepair(house, current);
+      } else if (action == HouseholdAutonomyAction.furniture &&
+          house.installedFurnitureItems.length < house.furnitureSlots) {
+        completed = _buyHouseholdFinishedItem(house, 'Meuble simple', current,
+            essential: true);
+        if (completed) house.installedFurnitureItems.add('Meuble simple');
+      } else if (action == HouseholdAutonomyAction.generator &&
+          !house.additionalGeneratorInstalled) {
+        completed = _buyHouseholdFinishedItem(
+            house, 'Second générateur domestique', current,
+            essential: false);
+        if (completed) house.additionalGeneratorInstalled = true;
+      } else if (action == HouseholdAutonomyAction.protection) {
+        final type = HouseholdAutonomyService.requiredProtection(
+            nextGlobalWeatherEvent?.type);
+        final item = HouseholdAutonomyService.protectionItem(type);
+        if (type != null &&
+            item != null &&
+            !house.installedStructuralProtections.contains(type) &&
+            house.installedStructuralProtections.length <
+                house.weatherProtectionSlots) {
+          completed =
+              _buyHouseholdFinishedItem(house, item, current, essential: true);
+          if (completed) house.installedStructuralProtections.add(type);
+        }
+      }
+      if (completed) {
+        house
+          ..autonomyLockedUntil = current.add(const Duration(hours: 1))
+          ..updatedAt = current;
+        for (final resident
+            in residents.where((resident) => resident.houseId == house.id)) {
+          _resolveResidentInteriorAndDesire(resident, current);
+        }
+        changed = true;
+      }
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
+  }
+
+  Zone0ActionResult moveResidentToHouse({
+    required String residentId,
+    String? targetHouseId,
+  }) {
+    final resident =
+        residents.where((item) => item.id == residentId).firstOrNull;
+    if (resident == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Habitant introuvable.');
+    }
+    final target = residentHouseForId(targetHouseId);
+    if (targetHouseId != null && target == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Maison introuvable.');
+    }
+    if (target != null &&
+        !target.residentIds.contains(resident.id) &&
+        target.residentIds.length >= target.capacity) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cette maison est complète.');
+    }
+    // Settle the old household before changing the membership so one hour of
+    // household energy can never be received from both homes.
+    resolveResidentDomesticGeneration();
+    for (final house in residentHouses) {
+      house.residentIds.remove(resident.id);
+    }
+    if (target != null) target.residentIds.add(resident.id);
+    resident.houseId = target?.id;
+    resident.status =
+        target == null ? ResidentStatus.awaitingHousing : ResidentStatus.active;
+    resident.currentHappiness = residentHappinessFor(resident);
+    resident.updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: target == null
+          ? '${resident.displayName} attend un logement.'
+          : '${resident.displayName} rejoint ${target.displayName}.',
+    );
+  }
+
   Zone0ActionResult repairResidentHouse(String houseId) {
     final house = residentHouseForId(houseId);
     if (house == null)
@@ -640,6 +1545,11 @@ class Zone0GameState extends ChangeNotifier {
     if (house.currentViability >= house.maximumViability) {
       return const Zone0ActionResult(
           success: false, message: 'La maison est déjà en bon état.');
+    }
+    final activeRepair = householdRepairFor(houseId);
+    if (activeRepair != null && !activeRepair.isPlayerRepair) {
+      activeRepair.status = HouseholdRepairStatus.paused;
+      house.isUnderRepair = false;
     }
     final costs = <String, int>{
       'Organique': housingConfig.houseRepairOrganicCost,
@@ -661,6 +1571,91 @@ class Zone0GameState extends ChangeNotifier {
             'Maison réparée : +${housingConfig.houseRepairGain}% de Viabilité.');
   }
 
+  /// Fast player intervention uses the established material cost path while
+  /// pausing (never discarding) a slower household repair.
+  Zone0ActionResult startPlayerHouseRepair(String houseId, {int gain = 10}) {
+    final house = residentHouseForId(houseId);
+    if (house == null || house.currentViability >= house.maximumViability) {
+      return const Zone0ActionResult(
+          success: false, message: 'Réparation indisponible.');
+    }
+    final active = householdRepairFor(houseId);
+    if (active != null && !active.isPlayerRepair)
+      active.status = HouseholdRepairStatus.paused;
+    final costs = <String, int>{
+      'Organique': housingConfig.houseRepairOrganicCost,
+      'Minéral': housingConfig.houseRepairMineralCost,
+    };
+    if (!hasResources(costs) || !removeResources(costs)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ressources insuffisantes.');
+    }
+    final now = DateTime.now();
+    final job = HouseholdRepairJob(
+      id: 'player-repair-$houseId-${now.microsecondsSinceEpoch}',
+      houseId: houseId,
+      startedAt: now,
+      endsAt: now.add(Duration(minutes: gain <= 10 ? 5 : 15)),
+      viabilityGain: gain.clamp(1, 100),
+      isPlayerRepair: true,
+    );
+    householdRepairJobs.add(job);
+    house
+      ..activeRepairJobId = job.id
+      ..isUnderRepair = true
+      ..lastAutonomyDecision = 'Intervention du joueur en cours.';
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: 'Réparation du joueur programmée (+${job.viabilityGain}%).');
+  }
+
+  Zone0ActionResult installResidentSecondGenerator(String houseId) {
+    final house = residentHouseForId(houseId);
+    if (house == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Maison introuvable.');
+    }
+    if (house.additionalGeneratorInstalled ||
+        house.additionalGeneratorSlots <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun emplacement énergétique disponible.');
+    }
+    final cost = residentEconomyConfig.secondGeneratorInstallationCostPiles;
+    if (house.householdPileBalance < cost) {
+      return Zone0ActionResult(
+        success: false,
+        message: 'Le foyer doit réunir $cost bio-pile(s).',
+      );
+    }
+    final now = DateTime.now();
+    house
+      ..householdPileBalance -= cost
+      ..recentHouseholdSpendingPiles += cost
+      ..additionalGeneratorInstalled = true
+      ..updatedAt = now;
+    _recordResidentEconomicTransaction(ResidentEconomicTransaction(
+      id: 'house-generator-$houseId-${now.microsecondsSinceEpoch}',
+      type: ResidentEconomicTransactionType.householdInstallationPurchase,
+      householdId: house.id,
+      itemDefinitionId: 'Second générateur domestique',
+      grossAmountPiles: cost,
+      playerSharePiles: cost,
+      status: ResidentEconomicTransactionStatus.completed,
+      createdAt: now,
+      completedAt: now,
+      idempotencyKey: 'house-generator:${house.id}',
+    ));
+    _creditMarketBioPiles(cost);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Second générateur domestique installé.',
+    );
+  }
+
   Zone0ActionResult installHouseProtection(
     String houseId,
     StructuralProtectionType type,
@@ -670,7 +1665,7 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Maison introuvable.');
     if (house.installedStructuralProtections.length >=
-        housingConfig.houseProtectionSlots) {
+        house.weatherProtectionSlots) {
       return const Zone0ActionResult(
           success: false,
           message: 'Aucun emplacement de protection disponible.');
@@ -758,6 +1753,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     project.status = CommunityProjectStatus.active;
     project.startedAt ??= DateTime.now();
+    _resolveVisionsForProjectSelection(definitionId, DateTime.now());
     _resolveCommunityDailyContribution(DateTime.now());
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -851,6 +1847,7 @@ class Zone0GameState extends ChangeNotifier {
     project
       ..status = CommunityProjectStatus.completed
       ..completedAt = DateTime.now();
+    _resolveVisionsForCompletedProject(project, project.completedAt!);
     reports.add(PtipoteMissionReport.system(
         message:
             '${project.definition.label} est terminé. Le camp résiste mieux aux intempéries.',
@@ -932,7 +1929,8 @@ class Zone0GameState extends ChangeNotifier {
         'atelier' => 'Atelier',
         'cuisine' => 'Cuisine',
         'recycler' => 'Recycleur',
-        'generator' => 'Bio-générateur',
+        'generator' => 'Bio-générateur (ancien rattachement)',
+        'house' => 'Maison du joueur',
         'market' => 'Marché',
         'securityTower' => 'Tour',
         'campHeart' => 'Cœur du camp',
@@ -945,6 +1943,21 @@ class Zone0GameState extends ChangeNotifier {
       };
 
   void _migrateBuildingViability() {
+    final legacyGenerator = buildingViabilities['generator'];
+    if (buildingViabilities['house'] == null && legacyGenerator != null) {
+      buildingViabilities['house'] = BuildingViabilityState(
+        buildingId: 'house',
+        current: legacyGenerator.current,
+        maximum: legacyGenerator.maximum,
+        lastViabilityUpdateAt: legacyGenerator.lastViabilityUpdateAt,
+        lastDamageEventId: legacyGenerator.lastDamageEventId,
+        viabilityWarningShown: legacyGenerator.viabilityWarningShown,
+        restartRequired: legacyGenerator.restartRequired,
+        installedStructuralProtections: List<StructuralProtectionType>.from(
+          legacyGenerator.installedStructuralProtections,
+        ),
+      );
+    }
     final ids = <String>{
       if (isFablabBuilt) 'fablab',
       if (atelierLevel > 0) 'atelier',
@@ -952,7 +1965,7 @@ class Zone0GameState extends ChangeNotifier {
       if (recyclerLevel > 0) 'recycler',
       if (isMarketBuilt) 'market',
       if (isSecurityTowerBuilt) 'securityTower',
-      'generator',
+      'house',
       'campHeart',
       ...activePTibugTerritories.map((building) => building.id),
     };
@@ -1009,8 +2022,11 @@ class Zone0GameState extends ChangeNotifier {
   int get securityWellbeingModifier =>
       towerOperationsConfig.wellbeingBandFor(refugeSafety).wellbeingModifier;
 
-  int get unhousedPopulation =>
-      math.max(0, currentPopulation - housingCapacity);
+  int get unhousedPopulation => residents.isEmpty
+      ? math.max(0, currentPopulation - housingCapacity)
+      : residents
+          .where((resident) => resident.isActive && resident.houseId == null)
+          .length;
 
   int get residentHappiness =>
       residents.where((resident) => resident.isActive).isEmpty
@@ -1022,24 +2038,1425 @@ class Zone0GameState extends ChangeNotifier {
                   residents.where((resident) => resident.isActive).length)
               .round();
 
+  String _residentDayKey(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+  ResidentDesireType _stableResidentDesire(Zone0Resident resident) =>
+      ResidentDesireType.values[
+          resident.id.codeUnits.fold<int>(0, (sum, unit) => sum + unit) %
+              ResidentDesireType.values.length];
+
+  ResidentInteriorProfile _stableResidentProfile(Zone0Resident resident) =>
+      ResidentInteriorProfile.values[
+          (resident.id.codeUnits.fold<int>(0, (sum, unit) => sum + unit) ~/ 3) %
+              ResidentInteriorProfile.values.length];
+
+  void _migrateResidentNeeds({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final dayKey = _residentDayKey(current);
+    for (final resident in residents) {
+      resident.primaryDesireId ??= _stableResidentDesire(resident).name;
+      resident.interiorProfileId ??= _stableResidentProfile(resident).name;
+      final needs = resident.needsState;
+      if (needs.currentDayKey.isEmpty) {
+        needs
+          ..currentDayKey = dayKey
+          ..mealsRequired = housingConfig.mealsRequiredPerDay
+          ..mealsConsumed = housingConfig.mealsRequiredPerDay
+          ..nutritionStatus = ResidentNutritionStatus.nourri
+          ..activeDesireId = resident.primaryDesireId
+          ..interiorProfileId = resident.interiorProfileId ?? 'simple'
+          ..lastResolvedAt = current
+          ..updatedAt = current;
+      }
+    }
+    if (!residentNeedsMigrationCompleted) {
+      residentNeedsMigrationCompleted = true;
+      residentNeedsGraceUntil = current.add(
+        Duration(hours: housingConfig.migrationGraceHours),
+      );
+      lastResidentNeedsResolutionDayKey = dayKey;
+    }
+  }
+
+  bool _isResidentFinishedItem(String item) =>
+      _residentItemCategory(item) != null;
+
+  String? _residentItemCategory(String item) {
+    switch (item.trim().toLowerCase()) {
+      case 'repas simple':
+        return 'meal';
+      case 'boisson tonique':
+        return 'drink';
+      case 'tenue ombragée':
+        return 'clothing';
+      case 'cartouche de filtration':
+      case 'filtre':
+        return 'toxicProtection';
+      case 'peau amphibienne':
+      case 'tenue étanche':
+        return 'rainProtection';
+      case 'meuble simple':
+        return 'furniture';
+      case 'ventilation termite':
+      case 'chloro-canaux':
+      case 'installation filtrante':
+        return 'technicalEquipment';
+      default:
+        return null;
+    }
+  }
+
+  bool _itemProtectsWeather(ResidentOwnedItem item, TowerWeatherType type) {
+    final name = item.itemDefinitionId.toLowerCase();
+    return switch (type) {
+      TowerWeatherType.heatWave => name == 'tenue ombragée',
+      TowerWeatherType.heavyRain =>
+        name == 'peau amphibienne' || name == 'tenue étanche',
+      TowerWeatherType.toxicCloud => name == 'cartouche de filtration' ||
+          name == 'filtre' ||
+          name == 'biofiltration personnelle',
+      TowerWeatherType.calm => false,
+    };
+  }
+
+  String _weatherProtectionLabel(TowerWeatherType type) => switch (type) {
+        TowerWeatherType.heatWave => 'protection chaleur',
+        TowerWeatherType.heavyRain => 'protection pluie',
+        TowerWeatherType.toxicCloud => 'protection nuage toxique',
+        TowerWeatherType.calm => 'aucune protection',
+      };
+
+  int _weatherProtectionPenalty(GlobalWeatherIntensity intensity) =>
+      switch (intensity) {
+        GlobalWeatherIntensity.moderate =>
+          housingConfig.weatherProtectionModeratePenalty,
+        GlobalWeatherIntensity.strong =>
+          housingConfig.weatherProtectionStrongPenalty,
+        GlobalWeatherIntensity.severe =>
+          housingConfig.weatherProtectionSeverePenalty,
+        GlobalWeatherIntensity.calm => 0,
+      };
+
+  /// Resolves a daily state only once per date. A migration grants the current
+  /// day, then normal days consume meals from the personal finished-goods bag.
+  bool resolveResidentNeeds({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    _migrateResidentNeeds(now: current);
+    final dayKey = _residentDayKey(current);
+    var changed = false;
+    for (final resident in residents.where((item) => item.isActive)) {
+      final needs = resident.needsState;
+      if (needs.currentDayKey != dayKey) {
+        needs
+          ..currentDayKey = dayKey
+          ..mealsRequired = housingConfig.mealsRequiredPerDay
+          ..mealsConsumed = 0
+          ..activeDesireId = resident.primaryDesireId
+          ..desireSatisfied = false
+          ..requiredWeatherProtectionTypes.clear()
+          ..missingWeatherProtectionTypes.clear();
+        changed = true;
+      }
+      if (residentNeedsGraceUntil == null ||
+          !current.isBefore(residentNeedsGraceUntil!)) {
+        final meals = resident.ownedItems
+            .where((item) => item.isUsable && item.category == 'meal')
+            .toList()
+          ..sort((a, b) => a.acquiredAt.compareTo(b.acquiredAt));
+        for (final meal in meals) {
+          while (
+              needs.mealsConsumed < needs.mealsRequired && meal.quantity > 0) {
+            meal.quantity -= 1;
+            meal.lastUsedAt = current;
+            needs.mealsConsumed += 1;
+            changed = true;
+          }
+        }
+      }
+      final previousNutritionStatus = needs.nutritionStatus;
+      final nutritionStatus = needs.mealsConsumed >= needs.mealsRequired
+          ? ResidentNutritionStatus.nourri
+          : needs.mealsConsumed == 1
+              ? ResidentNutritionStatus.partiellementNourri
+              : ResidentNutritionStatus.nonNourri;
+      needs.nutritionStatus = nutritionStatus;
+      final nutritionModifier = switch (needs.nutritionStatus) {
+        ResidentNutritionStatus.nourri => 0,
+        ResidentNutritionStatus.partiellementNourri =>
+          -housingConfig.partialNutritionHappinessPenalty,
+        ResidentNutritionStatus.nonNourri =>
+          -housingConfig.noNutritionHappinessPenalty,
+      };
+      if (previousNutritionStatus != nutritionStatus ||
+          resident.happinessModifiers['nutrition'] != nutritionModifier) {
+        changed = true;
+      }
+      resident.happinessModifiers['nutrition'] = nutritionModifier;
+      _resolveResidentInteriorAndDesire(resident, current);
+      needs
+        ..lastResolvedAt = current
+        ..updatedAt = current;
+      resident.updatedAt = current;
+    }
+    lastResidentNeedsResolutionDayKey = dayKey;
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
+  }
+
+  void _resolveResidentInteriorAndDesire(Zone0Resident resident, DateTime now) {
+    final needs = resident.needsState;
+    final house = residentHouseForId(resident.houseId);
+    final installed = house?.installedFurnitureItems ?? const <String>[];
+    final tags = <String>{};
+    for (final item in installed) {
+      switch (item.toLowerCase()) {
+        case 'meuble simple':
+          tags.addAll(<String>{'bed', 'functionalFurniture', 'decoration'});
+        case 'ventilation termite':
+        case 'chloro-canaux':
+        case 'installation filtrante':
+          tags.addAll(<String>{'technicalEquipment', 'tools'});
+      }
+    }
+    final profile = ResidentInteriorProfile.values.firstWhere(
+      (value) => value.name == (resident.interiorProfileId ?? 'simple'),
+      orElse: () => ResidentInteriorProfile.simple,
+    );
+    final satisfied = switch (profile) {
+      ResidentInteriorProfile.simple =>
+        tags.contains('bed') && tags.contains('functionalFurniture'),
+      ResidentInteriorProfile.technique => tags.contains('bed') &&
+          tags.contains('functionalFurniture') &&
+          tags.contains('technicalEquipment') &&
+          tags.contains('tools'),
+      ResidentInteriorProfile.esthete => tags.contains('bed') &&
+          installed.length >= 2 &&
+          tags.contains('decoration'),
+    };
+    needs
+      ..interiorProfileId = profile.name
+      ..interiorSatisfied = satisfied
+      ..houseViabilitySatisfied = house == null || house.currentViability >= 50;
+    resident.happinessModifiers['interior'] = satisfied
+        ? housingConfig.interiorSatisfiedHappinessBonus
+        : -housingConfig.interiorUnsatisfiedHappinessPenalty;
+    final desire = ResidentDesireType.values.firstWhere(
+      (value) => value.name == resident.primaryDesireId,
+      orElse: () => ResidentDesireType.sweetTooth,
+    );
+    final usable = resident.ownedItems.where((item) => item.isUsable).toList();
+    final desireSatisfied = switch (desire) {
+      ResidentDesireType.sweetTooth => usable.any((item) =>
+          item.category == 'sweetFood' || item.category == 'highEnergyFood'),
+      ResidentDesireType.fashion => usable
+              .where((item) => item.category == 'clothing')
+              .fold<int>(0, (sum, item) => sum + item.quantity) >=
+          housingConfig.clothingRequiredForFashionDesire,
+      ResidentDesireType.comfort => satisfied,
+      ResidentDesireType.tools =>
+        usable.any((item) => item.category == 'technicalEquipment') ||
+            tags.contains('technicalEquipment'),
+    };
+    needs.desireSatisfied = desireSatisfied;
+    resident.happinessModifiers['desire'] =
+        desireSatisfied ? housingConfig.desireSatisfiedHappinessBonus : 0;
+  }
+
+  Zone0ActionResult giveResidentFinishedItem({
+    required String residentId,
+    required String itemName,
+    int quantity = 1,
+    bool consumeFromPlayerInventory = true,
+  }) {
+    final resident =
+        residents.where((item) => item.id == residentId).firstOrNull;
+    final category = _residentItemCategory(itemName);
+    if (resident == null)
+      return const Zone0ActionResult(
+          success: false, message: 'Habitant introuvable.');
+    if (category == null || !_isResidentFinishedItem(itemName)) {
+      return const Zone0ActionResult(
+          success: false,
+          message:
+              'Seuls les produits finis peuvent être attribués à un habitant.');
+    }
+    final safeQuantity = math.max(1, quantity);
+    if (consumeFromPlayerInventory && resourceAmount(itemName) < safeQuantity) {
+      return const Zone0ActionResult(
+          success: false, message: 'Stock du refuge insuffisant.');
+    }
+    if (consumeFromPlayerInventory) removeResource(itemName, safeQuantity);
+    final existing = resident.ownedItems
+        .where((item) => item.itemDefinitionId == itemName && item.isUsable)
+        .firstOrNull;
+    if (existing != null) {
+      existing.quantity += safeQuantity;
+    } else {
+      final durable = category == 'clothing' || category.endsWith('Protection');
+      resident.ownedItems.add(ResidentOwnedItem(
+        id: 'resident-item-${resident.id}-${itemName.hashCode}-${DateTime.now().microsecondsSinceEpoch}',
+        itemDefinitionId: itemName,
+        category: category,
+        quantity: safeQuantity,
+        acquiredAt: DateTime.now(),
+        maxDurability:
+            durable ? housingConfig.defaultProtectionDurabilityEvents : null,
+        currentDurability:
+            durable ? housingConfig.defaultProtectionDurabilityEvents : null,
+      ));
+    }
+    resolveResidentNeeds();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '$itemName attribué à ${resident.displayName}.');
+  }
+
+  Zone0ActionResult installResidentHouseFurniture({
+    required String houseId,
+    required String itemName,
+  }) {
+    final house = residentHouseForId(houseId);
+    if (house == null)
+      return const Zone0ActionResult(
+          success: false, message: 'Maison introuvable.');
+    if (house.installedFurnitureItems.length >= house.furnitureSlots) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun emplacement de mobilier disponible.');
+    }
+    if (_residentItemCategory(itemName) != 'furniture' ||
+        removeResource(itemName, 1) < 1) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Meuble fini requis dans l’inventaire du refuge.');
+    }
+    house.installedFurnitureItems.add(itemName);
+    for (final resident
+        in residents.where((item) => item.houseId == house.id)) {
+      _resolveResidentInteriorAndDesire(resident, DateTime.now());
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '$itemName installé dans ${house.displayName}.');
+  }
+
+  void _prepareResidentWeatherNeeds(GlobalWeatherEvent event) {
+    if (event.type == TowerWeatherType.calm ||
+        !event.isBiomeAffected(ForageBiome.plaineRiche)) return;
+    final label = _weatherProtectionLabel(event.type);
+    for (final resident in residents.where((item) => item.isActive)) {
+      final needs = resident.needsState;
+      if (!needs.requiredWeatherProtectionTypes.contains(label)) {
+        needs.requiredWeatherProtectionTypes.add(label);
+      }
+      final protected = resident.ownedItems.any(
+          (item) => item.isUsable && _itemProtectsWeather(item, event.type));
+      if (protected) {
+        needs.missingWeatherProtectionTypes.remove(label);
+      } else if (!needs.missingWeatherProtectionTypes.contains(label)) {
+        needs.missingWeatherProtectionTypes.add(label);
+      }
+    }
+  }
+
+  void _resolveResidentWeatherImpact(GlobalWeatherEvent event) {
+    if (!resolvedResidentWeatherEventIds.add(event.id)) return;
+    if (event.type == TowerWeatherType.calm ||
+        !event.isBiomeAffected(ForageBiome.plaineRiche)) return;
+    final label = _weatherProtectionLabel(event.type);
+    for (final resident in residents.where((item) => item.isActive)) {
+      final candidates = resident.ownedItems
+          .where(
+              (item) => item.isUsable && _itemProtectsWeather(item, event.type))
+          .toList()
+        ..sort((a, b) => (a.currentDurability ?? 999999)
+            .compareTo(b.currentDurability ?? 999999));
+      final used = candidates.firstOrNull;
+      if (used == null) {
+        resident.needsState.missingWeatherProtectionTypes.add(label);
+        resident.happinessModifiers['weather-${event.id}'] =
+            -_weatherProtectionPenalty(event.intensity);
+      } else {
+        if (used.currentDurability != null) {
+          used.currentDurability = math.max(0, used.currentDurability! - 1);
+          if (used.currentDurability == 0)
+            used.status = ResidentOwnedItemStatus.broken;
+        }
+        used
+          ..equippedOrActive = true
+          ..lastUsedAt = DateTime.now();
+        resident.needsState.missingWeatherProtectionTypes.remove(label);
+      }
+      resident.needsState.updatedAt = DateTime.now();
+    }
+  }
+
+  void _clearResidentWeatherImpact(GlobalWeatherEvent event) {
+    for (final resident in residents) {
+      resident.happinessModifiers.remove('weather-${event.id}');
+      for (final item in resident.ownedItems) {
+        item.equippedOrActive = false;
+      }
+    }
+  }
+
+  ResidentPassion _residentPassionFor(Zone0Resident resident) =>
+      ResidentPassion.values.firstWhere(
+        (value) => value.name == resident.primaryPassionId,
+        orElse: () => ResidentPassion.cooking,
+      );
+
+  String residentPassionLabel(ResidentPassion passion) => switch (passion) {
+        ResidentPassion.cooking => 'Cuisiner',
+        ResidentPassion.crafting => 'Fabriquer',
+        ResidentPassion.trading => 'Commercer',
+        ResidentPassion.livingObservation => 'Observer le vivant',
+        ResidentPassion.watching => 'Veiller',
+      };
+
+  String communityRoleLabel(CommunityRoleType role) => switch (role) {
+        CommunityRoleType.kitchenCook => 'Cuisine communautaire',
+        CommunityRoleType.fablabMaker => 'Fabrication communautaire',
+        CommunityRoleType.marketCounter => 'Comptoir général',
+        CommunityRoleType.lisiereObserver => 'Observation en Lisière',
+        CommunityRoleType.securityWatch => 'Veille de sécurité',
+        CommunityRoleType.weatherWatch => 'Veille météo',
+      };
+
+  ResidentPassion _rolePassion(CommunityRoleType role) => switch (role) {
+        CommunityRoleType.kitchenCook => ResidentPassion.cooking,
+        CommunityRoleType.fablabMaker => ResidentPassion.crafting,
+        CommunityRoleType.marketCounter => ResidentPassion.trading,
+        CommunityRoleType.lisiereObserver => ResidentPassion.livingObservation,
+        CommunityRoleType.securityWatch ||
+        CommunityRoleType.weatherWatch =>
+          ResidentPassion.watching,
+      };
+
+  String _roleBuildingId(CommunityRoleType role) => switch (role) {
+        CommunityRoleType.kitchenCook => 'cuisine',
+        CommunityRoleType.fablabMaker => 'atelier',
+        CommunityRoleType.marketCounter => 'market',
+        CommunityRoleType.lisiereObserver => 'lisiere',
+        CommunityRoleType.securityWatch ||
+        CommunityRoleType.weatherWatch =>
+          'securityTower',
+      };
+
+  int communityRoleSlotCount(CommunityRoleType role) => switch (role) {
+        CommunityRoleType.kitchenCook => math.max(0, cuisineLevel),
+        CommunityRoleType.fablabMaker => math.max(0, atelierLevel),
+        CommunityRoleType.marketCounter => isMarketBuilt ? 1 : 0,
+        CommunityRoleType.lisiereObserver =>
+          isBiomeUnlocked(ForageBiome.plaineRiche) ? 1 : 0,
+        CommunityRoleType.securityWatch ||
+        CommunityRoleType.weatherWatch =>
+          securityTowerSlots,
+      };
+
+  CommunityRoleStatus _roleAvailability(CommunityRoleType role) {
+    final built = switch (role) {
+      CommunityRoleType.kitchenCook ||
+      CommunityRoleType.fablabMaker =>
+        isFablabBuilt,
+      CommunityRoleType.marketCounter => isMarketBuilt,
+      CommunityRoleType.lisiereObserver =>
+        isBiomeUnlocked(ForageBiome.plaineRiche),
+      CommunityRoleType.securityWatch ||
+      CommunityRoleType.weatherWatch =>
+        isSecurityTowerBuilt,
+    };
+    if (!built || communityRoleSlotCount(role) <= 0) {
+      return CommunityRoleStatus.awaitingBuilding;
+    }
+    final buildingId = _roleBuildingId(role);
+    if (buildingId != 'lisiere' && !isBuildingOperational(buildingId)) {
+      return CommunityRoleStatus.unavailable;
+    }
+    return CommunityRoleStatus.active;
+  }
+
+  CommunityRoleAssignment? communityRoleForResident(String residentId) =>
+      communityRoleAssignments
+          .where((assignment) =>
+              assignment.residentId == residentId &&
+              assignment.status != CommunityRoleStatus.archived)
+          .lastOrNull;
+
+  List<CommunityRoleType> compatibleCommunityRolesFor(Zone0Resident resident) {
+    final passion = _residentPassionFor(resident);
+    return CommunityRoleType.values
+        .where((role) =>
+            communityRolesConfig.allowNonPassionWork ||
+            _rolePassion(role) == passion)
+        .toList(growable: false);
+  }
+
+  Iterable<CommunityRoleAssignment> get activeCommunityRoles =>
+      communityRoleAssignments.where((assignment) => assignment.isActive);
+
+  void _migrateResidentPassionsAndRoles() {
+    if (!residentPassionMigrationCompleted) {
+      final missing = residents
+          .where((resident) =>
+              resident.primaryPassionId == null ||
+              resident.primaryPassionId!.isEmpty)
+          .toList();
+      // First pass deliberately diversifies small existing populations; a
+      // later weighted deterministic pass fills the rest without rerolls.
+      for (var index = 0; index < missing.length; index++) {
+        final resident = missing[index];
+        final passion = index < ResidentPassion.values.length
+            ? ResidentPassion.values[index]
+            : _weightedStablePassion(resident);
+        resident.primaryPassionId = passion.name;
+      }
+      for (final resident in residents) {
+        if (resident.primaryPassionId == 'protect' ||
+            resident.primaryPassionId == 'weatherStudy' ||
+            resident.primaryPassionId == 'weather') {
+          resident.primaryPassionId = ResidentPassion.watching.name;
+        }
+      }
+      residentPassionMigrationCompleted = true;
+    }
+    // Reject only conflicting legacy assignments; all other assignments retain
+    // their history and wait for their building if unavailable.
+    final seenSlots = <String>{};
+    for (final assignment in communityRoleAssignments
+        .where((item) => item.status != CommunityRoleStatus.archived)
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt))) {
+      final slotKey = '${assignment.buildingId}:${assignment.slotId}';
+      if (!seenSlots.add(slotKey) ||
+          communityRoleForResident(assignment.residentId)?.id !=
+              assignment.id) {
+        assignment.status = CommunityRoleStatus.awaitingBuilding;
+      }
+      assignment.lastResolvedAt ??= DateTime.now();
+      final resident = residents
+          .where((item) => item.id == assignment.residentId)
+          .firstOrNull;
+      if (resident != null) {
+        resident
+          ..activeCommunityRoleId = assignment.id
+          ..assignedBuildingId = assignment.buildingId;
+      }
+    }
+  }
+
+  ResidentPassion _weightedStablePassion(Zone0Resident resident) {
+    final weights = communityRolesConfig.passionWeights;
+    final total = ResidentPassion.values.fold<int>(
+      0,
+      (sum, passion) => sum + math.max(0, weights[passion.name] ?? 0),
+    );
+    if (total <= 0) return ResidentPassion.cooking;
+    var roll =
+        resident.id.codeUnits.fold<int>(0, (sum, unit) => sum + unit) % total;
+    for (final passion in ResidentPassion.values) {
+      roll -= math.max(0, weights[passion.name] ?? 0);
+      if (roll < 0) return passion;
+    }
+    return ResidentPassion.watching;
+  }
+
+  Zone0ActionResult assignResidentCommunityRole({
+    required String residentId,
+    required CommunityRoleType roleType,
+    String? requestedSlotId,
+  }) {
+    final resident =
+        residents.where((item) => item.id == residentId).firstOrNull;
+    if (resident == null)
+      return const Zone0ActionResult(
+          success: false, message: 'Habitant introuvable.');
+    final passion = _residentPassionFor(resident);
+    final requiredPassion = _rolePassion(roleType);
+    if (passion != requiredPassion &&
+        !communityRolesConfig.allowNonPassionWork) {
+      return Zone0ActionResult(
+          success: false,
+          message:
+              '${resident.displayName} est passionné par ${residentPassionLabel(passion)}.');
+    }
+    final availability = _roleAvailability(roleType);
+    final slots = communityRoleSlotCount(roleType);
+    if (slots <= 0)
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Aucun slot habitant disponible dans ce bâtiment.');
+    final buildingId = _roleBuildingId(roleType);
+    final usedSlots = communityRoleAssignments
+        .where((assignment) =>
+            assignment.buildingId == buildingId &&
+            assignment.status != CommunityRoleStatus.archived)
+        .map((assignment) => assignment.slotId)
+        .toSet();
+    final slotId = requestedSlotId ??
+        List<String>.generate(slots, (index) => 'resident-$index')
+            .where((slot) => !usedSlots.contains(slot))
+            .firstOrNull;
+    if (slotId == null || usedSlots.contains(slotId)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Tous les slots habitants sont occupés.');
+    }
+    final previous = communityRoleForResident(resident.id);
+    if (previous != null) {
+      previous
+        ..status = CommunityRoleStatus.archived
+        ..updatedAt = DateTime.now();
+    }
+    final now = DateTime.now();
+    final assignment = CommunityRoleAssignment(
+      id: 'community-role-${resident.id}-${now.microsecondsSinceEpoch}',
+      residentId: resident.id,
+      passion: requiredPassion,
+      roleType: roleType,
+      buildingId: buildingId,
+      slotId: slotId,
+      status: availability,
+      startedAt: now,
+      lastResolvedAt: now,
+      coverageCapacity: roleType == CommunityRoleType.kitchenCook
+          ? communityRolesConfig.cookingCoveragePerCycle
+          : 0,
+      previousAssignmentId: previous?.id,
+    );
+    communityRoleAssignments.add(assignment);
+    resident
+      ..assignedBuildingId = buildingId
+      ..activeCommunityRoleId = assignment.id;
+    if (roleType == CommunityRoleType.marketCounter) {
+      resident
+        ..eligibleForShopOwnership = true
+        ..commercialAssignmentStatus = 'counterAssigned';
+    }
+    resident.happinessModifiers['passion-role'] =
+        availability == CommunityRoleStatus.active
+            ? communityRolesConfig.passionHappinessBonus
+            : 0;
+    resident.updatedAt = now;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            '${resident.displayName} est affecté à ${communityRoleLabel(roleType)}.');
+  }
+
+  Zone0ActionResult removeResidentCommunityRole(String residentId) {
+    final assignment = communityRoleForResident(residentId);
+    final resident =
+        residents.where((item) => item.id == residentId).firstOrNull;
+    if (assignment == null || resident == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun rôle actif à retirer.');
+    }
+    assignment
+      ..status = CommunityRoleStatus.archived
+      ..updatedAt = DateTime.now();
+    resident
+      ..assignedBuildingId = null
+      ..activeCommunityRoleId = null
+      ..happinessModifiers['passion-role'] = 0
+      ..updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '${resident.displayName} quitte son rôle communautaire.');
+  }
+
+  int _effectiveResidentUnits(CommunityRoleAssignment assignment, int cycles) {
+    final accumulated = assignment.efficiencyRemainder +
+        cycles * communityRolesConfig.communityEfficiencyPercent;
+    assignment.efficiencyRemainder = accumulated % 100;
+    return accumulated ~/ 100;
+  }
+
+  void _giveCommunityMeal(Zone0Resident resident, DateTime now) {
+    // The kitchen distributes a physical finished meal and the recipient eats
+    // it immediately. A consumed history entry prevents it being consumed a
+    // second time during the next daily needs pass.
+    resident.ownedItems.add(ResidentOwnedItem(
+      id: 'community-meal-${resident.id}-${now.microsecondsSinceEpoch}',
+      itemDefinitionId: 'Repas simple',
+      category: 'meal',
+      quantity: 0,
+      acquiredAt: now,
+      sourceTransactionId: 'community-kitchen',
+      lastUsedAt: now,
+      status: ResidentOwnedItemStatus.consumed,
+    ));
+  }
+
+  bool resolveCommunityRoles({DateTime? now}) {
+    if (!communityRolesConfig.enabled) return false;
+    final current = now ?? DateTime.now();
+    _migrateResidentPassionsAndRoles();
+    var changed = false;
+    final intervalSeconds =
+        math.max(60, communityRolesConfig.roleIntervalMinutes * 60);
+    for (final assignment in communityRoleAssignments
+        .where((item) => item.status != CommunityRoleStatus.archived)) {
+      final resident = residents
+          .where((item) => item.id == assignment.residentId)
+          .firstOrNull;
+      if (resident == null || !resident.isActive) {
+        if (assignment.status != CommunityRoleStatus.paused) {
+          assignment.status = CommunityRoleStatus.paused;
+          assignment.updatedAt = current;
+          changed = true;
+        }
+        continue;
+      }
+      final availability = _roleAvailability(assignment.roleType);
+      if (availability != CommunityRoleStatus.active) {
+        if (assignment.status != availability ||
+            resident.happinessModifiers['passion-role'] != 0) {
+          changed = true;
+        }
+        assignment
+          ..status = availability
+          ..pausedAt = current
+          ..updatedAt = current;
+        resident.happinessModifiers['passion-role'] = 0;
+        continue;
+      }
+      if (assignment.status != CommunityRoleStatus.active ||
+          resident.happinessModifiers['passion-role'] !=
+              communityRolesConfig.passionHappinessBonus) {
+        changed = true;
+      }
+      assignment.status = CommunityRoleStatus.active;
+      resident.happinessModifiers['passion-role'] =
+          communityRolesConfig.passionHappinessBonus;
+      final previous = assignment.lastResolvedAt ?? current;
+      final elapsed = current.difference(previous).inSeconds;
+      final cycles = math.min(48, math.max(0, elapsed ~/ intervalSeconds));
+      if (cycles <= 0) continue;
+      final units = _effectiveResidentUnits(assignment, cycles);
+      assignment.lastResolvedAt =
+          previous.add(Duration(seconds: cycles * intervalSeconds));
+      changed = true;
+      if (units > 0) {
+        changed =
+            _resolveCommunityRoleUnits(assignment, resident, units, current) ||
+                changed;
+      }
+      assignment.updatedAt = current;
+    }
+    lastCommunityRoleResolutionAt = current;
+    if (changed) {
+      resolveResidentNeeds(now: current);
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
+  }
+
+  bool _resolveCommunityRoleUnits(
+    CommunityRoleAssignment assignment,
+    Zone0Resident resident,
+    int units,
+    DateTime now,
+  ) {
+    if (assignment.outputDayKey != _residentDayKey(now)) {
+      assignment
+        ..outputDayKey = _residentDayKey(now)
+        ..dailyOutput = 0;
+    }
+    switch (assignment.roleType) {
+      case CommunityRoleType.kitchenCook:
+        final recipe = craftConfig.simpleMealRecipe;
+        final inputs = <String, int>{
+          ...recipe.ingredients,
+          ...recipe.contextIngredients
+        };
+        var produced = 0;
+        for (var index = 0;
+            index < units &&
+                assignment.dailyOutput <
+                    communityRolesConfig.cookingMaximumMealsPerDay;
+            index++) {
+          if (!hasResources(inputs)) {
+            assignment.status = CommunityRoleStatus.awaitingResources;
+            break;
+          }
+          if (!hasInventoryCapacityFor(
+              <String, int>{recipe.resultItem: recipe.resultAmount})) {
+            assignment.status = CommunityRoleStatus.awaitingResources;
+            break;
+          }
+          if (!removeResources(inputs)) break;
+          addResources(<String, int>{recipe.resultItem: recipe.resultAmount});
+          _createCommunityProductionBatch(
+            itemDefinitionId: recipe.resultItem,
+            quantity: recipe.resultAmount,
+            producerResidentId: resident.id,
+            buildingId: assignment.buildingId,
+            inputs: inputs,
+            now: now,
+          );
+          assignment.dailyOutput += 1;
+          produced += 1;
+        }
+        return produced > 0;
+      case CommunityRoleType.fablabMaker:
+        final recipe = craftConfig.recipes.firstWhere(
+          (item) => item.id == 'filter',
+          orElse: () => craftConfig.simpleMealRecipe,
+        );
+        final inputs = <String, int>{
+          ...recipe.ingredients,
+          ...recipe.contextIngredients
+        };
+        var produced = 0;
+        for (var index = 0;
+            index < units &&
+                assignment.dailyOutput <
+                    communityRolesConfig.craftingMaximumOutputPerDay;
+            index++) {
+          if (!hasResources(inputs) ||
+              !hasInventoryCapacityFor(
+                  <String, int>{recipe.resultItem: recipe.resultAmount})) {
+            assignment.status = CommunityRoleStatus.awaitingResources;
+            break;
+          }
+          if (!removeResources(inputs)) break;
+          addResources(<String, int>{recipe.resultItem: recipe.resultAmount});
+          _createCommunityProductionBatch(
+            itemDefinitionId: recipe.resultItem,
+            quantity: recipe.resultAmount,
+            producerResidentId: resident.id,
+            buildingId: assignment.buildingId,
+            inputs: inputs,
+            now: now,
+          );
+          assignment.dailyOutput += recipe.resultAmount;
+          produced += recipe.resultAmount;
+        }
+        return produced > 0;
+      case CommunityRoleType.marketCounter:
+        return false;
+      case CommunityRoleType.lisiereObserver:
+        if (refugeSafety < communityRolesConfig.observationRequiresSecurity ||
+            (activeGlobalWeatherEvent
+                        ?.isBiomeAffected(ForageBiome.plaineRiche) ??
+                    false) &&
+                activeGlobalWeatherEvent?.type != TowerWeatherType.calm) {
+          assignment.status = CommunityRoleStatus.paused;
+          return false;
+        }
+        final organic = units * communityRolesConfig.observationOrganicPerCycle;
+        final mineral = units * communityRolesConfig.observationMineralPerCycle;
+        if (!hasInventoryCapacityFor(<String, int>{
+          if (organic > 0) 'Organique': organic,
+          if (mineral > 0) 'Minéral': mineral,
+        })) {
+          assignment.status = CommunityRoleStatus.awaitingResources;
+          return false;
+        }
+        addResources(<String, int>{
+          if (organic > 0) 'Organique': organic,
+          if (mineral > 0) 'Minéral': mineral,
+        });
+        assignment.dailyOutput += organic + mineral;
+        return organic + mineral > 0;
+      case CommunityRoleType.securityWatch:
+        final gain = units * communityRolesConfig.watchingSecurityPerInterval;
+        final before = refugeSafety;
+        refugeSafety =
+            math.min(securityTowerConfig.maxSecurity, refugeSafety + gain);
+        assignment.dailyOutput += refugeSafety - before;
+        return refugeSafety != before;
+      case CommunityRoleType.weatherWatch:
+        assignment.dailyOutput += units;
+        return true;
+    }
+  }
+
+  CommunityCoverage get communityCoverage =>
+      CommunityCoverageService.calculate(this);
+
+  Iterable<ResidentEconomicTransaction> economicHistoryForResident(
+          String residentId) =>
+      residentEconomicTransactions.where((transaction) =>
+          transaction.buyerResidentId == residentId ||
+          transaction.sellerResidentId == residentId ||
+          transaction.participantResidentIds.contains(residentId));
+
+  String residentEconomicStateLabel(Zone0Resident resident) {
+    if (resident.financialStrainScore >=
+        residentEconomyConfig.financialStrainCriticalThreshold) {
+      return 'Critique';
+    }
+    if (resident.financialStrainScore > 0) return 'En manque';
+    if (resident.internalPileBalance <
+        residentEconomyConfig.personalEmergencyReservePiles) {
+      return 'Limité';
+    }
+    return 'Stable';
+  }
+
+  void _recordResidentEconomicTransaction(
+      ResidentEconomicTransaction transaction) {
+    if (transaction.idempotencyKey.isNotEmpty &&
+        residentEconomicTransactions.any((existing) =>
+            existing.idempotencyKey == transaction.idempotencyKey)) {
+      return;
+    }
+    residentEconomicTransactions.add(transaction);
+    final historyLimit =
+        math.max(20, residentEconomyConfig.maxSettlementHistory * 8);
+    if (residentEconomicTransactions.length > historyLimit) {
+      residentEconomicTransactions.removeRange(
+          0, residentEconomicTransactions.length - historyLimit);
+    }
+  }
+
+  void _createCommunityProductionBatch({
+    required String itemDefinitionId,
+    required int quantity,
+    required String? producerResidentId,
+    required String buildingId,
+    required Map<String, int> inputs,
+    required DateTime now,
+  }) {
+    if (quantity <= 0) return;
+    communityProductionBatches.add(CommunityProductionBatch(
+      id: 'community-batch-${now.microsecondsSinceEpoch}-${communityProductionBatches.length}',
+      itemDefinitionId: itemDefinitionId,
+      outputQuantity: quantity,
+      producerResidentId: producerResidentId,
+      buildingId: buildingId,
+      inputSnapshot: Map<String, int>.from(inputs),
+      supplierContributions: inputs.entries
+          .where((entry) => entry.value > 0)
+          .map((entry) => SupplierContribution(
+                id: 'player-input-${now.microsecondsSinceEpoch}-${entry.key}',
+                sourceType: 'playerStock',
+                itemDefinitionId: entry.key,
+                quantity: entry.value,
+                contributionWeight: entry.value,
+                createdAt: now,
+              ))
+          .toList(),
+      producedAt: now,
+    ));
+  }
+
+  void _migrateResidentEconomy() {
+    if (residentEconomyMigrationCompleted) return;
+    for (final resident in residents) {
+      // A pre-economy save has no balance field. Existing numeric balances are
+      // preserved; only the legacy zero default receives the configurable
+      // neutral starting balance.
+      if (resident.internalPileBalance == 0) {
+        resident.internalPileBalance =
+            residentEconomyConfig.residentInitialPileBalance;
+      }
+    }
+    for (final house in residentHouses) {
+      if (house.householdPileBalance == 0) {
+        house.householdPileBalance =
+            residentEconomyConfig.householdInitialPileBalance;
+      }
+      house.lastHouseholdEnergyResolvedAt ??= house.lastEnergyDistributionAt;
+    }
+    residentEconomyMigrationCompleted = true;
+  }
+
+  ResidentUncoveredNeed _upsertResidentUncoveredNeed({
+    required Zone0Resident resident,
+    required String item,
+    required String category,
+    required int quantity,
+    required ResidentUncoveredNeedReason reason,
+    required int urgency,
+    required DateTime now,
+  }) {
+    final key = '${resident.id}:$item';
+    final existing = residentUncoveredNeeds
+        .where((need) => need.id == key && need.resolvedAt == null)
+        .firstOrNull;
+    if (existing != null) {
+      existing.reason = reason;
+      return existing;
+    }
+    final need = ResidentUncoveredNeed(
+      id: key,
+      residentId: resident.id,
+      itemDefinitionId: item,
+      category: category,
+      quantity: quantity,
+      budgetPiles: resident.internalPileBalance,
+      reason: reason,
+      urgency: urgency,
+      createdAt: now,
+    );
+    residentUncoveredNeeds.add(need);
+    return need;
+  }
+
+  void _resolveResidentUncoveredNeed(
+      String residentId, String item, DateTime now) {
+    for (final need in residentUncoveredNeeds.where((need) =>
+        need.residentId == residentId && need.itemDefinitionId == item)) {
+      need.resolvedAt ??= now;
+    }
+  }
+
+  bool _isFinishedResidentProduct(String item) =>
+      _residentItemCategory(item) != null;
+
+  int _residentUsableItemAmount(Zone0Resident resident, String item) =>
+      resident.ownedItems
+          .where((owned) => owned.itemDefinitionId == item && owned.isUsable)
+          .fold<int>(0, (total, owned) => total + owned.quantity);
+
+  String? _marketShopWithStock(String item, int quantity) {
+    final shops = marketShops.where((shop) => !shop.legacyExtraSlot).toList()
+      ..sort((a, b) {
+        final residentFirst =
+            (a.ownershipType == MarketShopOwnershipType.residentCommunity
+                    ? 0
+                    : 1)
+                .compareTo(
+                    b.ownershipType == MarketShopOwnershipType.residentCommunity
+                        ? 0
+                        : 1);
+        return residentFirst != 0 ? residentFirst : a.id.compareTo(b.id);
+      });
+    for (final shop in shops) {
+      if (shop.accepts(item) &&
+          marketShopStockAmount(shop.id, item) >= quantity) {
+        return shop.id;
+      }
+    }
+    if (primaryMarketShopChosen &&
+        marketShopAccepts(primaryMarketShopId, item) &&
+        marketShopStockAmount(primaryMarketShopId, item) >= quantity) {
+      return primaryMarketShopId;
+    }
+    return null;
+  }
+
+  Zone0ActionResult purchaseResidentFinishedItem({
+    required String residentId,
+    required String itemDefinitionId,
+    int quantity = 1,
+    bool essential = false,
+    String? sourceNeedId,
+  }) {
+    final resident =
+        residents.where((item) => item.id == residentId).firstOrNull;
+    final safeQuantity = math.max(1, quantity);
+    final current = DateTime.now();
+    if (resident == null || !resident.isActive) {
+      return const Zone0ActionResult(
+          success: false, message: 'Habitant indisponible.');
+    }
+    if (!_isFinishedResidentProduct(itemDefinitionId)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Les habitants achètent uniquement des produits finis.');
+    }
+    if (itemDefinitionId != 'Repas simple' &&
+        _residentUsableItemAmount(resident, itemDefinitionId) >= safeQuantity) {
+      return const Zone0ActionResult(
+          success: false, message: 'Produit déjà disponible.');
+    }
+    final price =
+        residentEconomyConfig.priceFor(itemDefinitionId) * safeQuantity;
+    final reserve =
+        essential && residentEconomyConfig.essentialPurchaseMayUseReserve
+            ? 0
+            : residentEconomyConfig.personalEmergencyReservePiles;
+    if (resident.internalPileBalance - price < reserve) {
+      _upsertResidentUncoveredNeed(
+        resident: resident,
+        item: itemDefinitionId,
+        category: _residentItemCategory(itemDefinitionId) ?? 'finished',
+        quantity: safeQuantity,
+        reason: ResidentUncoveredNeedReason.insufficientFunds,
+        urgency: essential ? 3 : 1,
+        now: current,
+      );
+      resident.financialStrainScore += essential ? 1 : 0;
+      return const Zone0ActionResult(
+          success: false, message: 'Solde personnel insuffisant.');
+    }
+    final batch = communityProductionBatches
+        .where((item) =>
+            item.itemDefinitionId == itemDefinitionId &&
+            item.remainingQuantity >= safeQuantity &&
+            item.isAvailable)
+        .firstOrNull;
+    final shopId = batch == null
+        ? _marketShopWithStock(itemDefinitionId, safeQuantity)
+        : null;
+    if (batch == null && shopId == null) {
+      _upsertResidentUncoveredNeed(
+        resident: resident,
+        item: itemDefinitionId,
+        category: _residentItemCategory(itemDefinitionId) ?? 'finished',
+        quantity: safeQuantity,
+        reason: ResidentUncoveredNeedReason.noStock,
+        urgency: essential ? 3 : 1,
+        now: current,
+      );
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun produit fini disponible.');
+    }
+    // All checks happen before the physical stock move. The remaining state
+    // changes are in-memory integer transitions and are committed together.
+    final consumed = batch != null
+        ? (resourceAmount(itemDefinitionId) >= safeQuantity &&
+            removeResource(itemDefinitionId, safeQuantity) == safeQuantity)
+        : _consumeMarketShopStock(shopId!, itemDefinitionId, safeQuantity);
+    if (!consumed) {
+      return const Zone0ActionResult(
+          success: false, message: 'Le stock a changé, achat annulé.');
+    }
+    resident.internalPileBalance -= price;
+    resident.recentSpendingPiles += price;
+    if (itemDefinitionId == 'Repas simple') {
+      _giveCommunityMeal(resident, current);
+      resident.needsState.mealsConsumed = math.min(
+          resident.needsState.mealsRequired,
+          resident.needsState.mealsConsumed + safeQuantity);
+    } else {
+      resident.ownedItems.add(ResidentOwnedItem(
+        id: 'resident-purchase-${resident.id}-${current.microsecondsSinceEpoch}',
+        itemDefinitionId: itemDefinitionId,
+        category: _residentItemCategory(itemDefinitionId) ?? 'finished',
+        quantity: safeQuantity,
+        acquiredAt: current,
+        currentDurability: _itemProtectsWeather(
+                    ResidentOwnedItem(
+                        id: '',
+                        itemDefinitionId: itemDefinitionId,
+                        category: '',
+                        quantity: 1,
+                        acquiredAt: current),
+                    TowerWeatherType.heatWave) ||
+                _itemProtectsWeather(
+                    ResidentOwnedItem(
+                        id: '',
+                        itemDefinitionId: itemDefinitionId,
+                        category: '',
+                        quantity: 1,
+                        acquiredAt: current),
+                    TowerWeatherType.heavyRain) ||
+                _itemProtectsWeather(
+                    ResidentOwnedItem(
+                        id: '',
+                        itemDefinitionId: itemDefinitionId,
+                        category: '',
+                        quantity: 1,
+                        acquiredAt: current),
+                    TowerWeatherType.toxicCloud)
+            ? housingConfig.defaultProtectionDurabilityEvents
+            : null,
+        maxDurability: housingConfig.defaultProtectionDurabilityEvents,
+      ));
+    }
+    var producer = 0;
+    var supplier = 0;
+    var merchant = 0;
+    var player = 0;
+    String? seller;
+    if (batch == null) {
+      final shop = marketShopById(shopId ?? '');
+      if (shop?.ownershipType == MarketShopOwnershipType.residentCommunity) {
+        merchant = price;
+        shop!.shopPileBalance += price;
+        _creditResidentPiles(shop.ownerResidentId, price);
+        seller = shop.ownerResidentId;
+      } else {
+        player = price;
+        _creditMarketBioPiles(player);
+      }
+    } else {
+      final parts = _splitResidentEconomicPayment(price, batch);
+      producer = parts.producer;
+      supplier = parts.supplier;
+      merchant = parts.merchant;
+      player = parts.player;
+      seller = batch.producerResidentId;
+      batch.remainingQuantity -= safeQuantity;
+      batch.updatedAt = current;
+      if (batch.remainingQuantity <= 0) {
+        batch.status = ResidentEconomicTransactionStatus.archived;
+      }
+      _creditResidentPiles(batch.producerResidentId, producer);
+      _creditSupplierContributions(batch.supplierContributions, supplier);
+      final merchantResident = _activeMerchantResident();
+      _creditResidentPiles(merchantResident?.id, merchant);
+      if (player > 0) _creditMarketBioPiles(player);
+    }
+    final transaction = ResidentEconomicTransaction(
+      id: 'resident-purchase-${resident.id}-${current.microsecondsSinceEpoch}',
+      type: batch == null && merchant > 0
+          ? ResidentEconomicTransactionType.residentSale
+          : batch == null
+              ? ResidentEconomicTransactionType.playerSaleToResident
+              : ResidentEconomicTransactionType.residentPurchase,
+      buyerResidentId: resident.id,
+      sellerResidentId: seller,
+      shopId: shopId,
+      itemDefinitionId: itemDefinitionId,
+      quantity: safeQuantity,
+      grossAmountPiles: price,
+      merchantSharePiles: merchant,
+      producerSharePiles: producer,
+      supplierSharePiles: supplier,
+      playerSharePiles: player,
+      sourceNeedId: sourceNeedId,
+      sourceProductionId: batch?.id,
+      status: ResidentEconomicTransactionStatus.completed,
+      createdAt: current,
+      completedAt: current,
+      idempotencyKey:
+          'purchase:${resident.id}:${itemDefinitionId}:${sourceNeedId ?? current.microsecondsSinceEpoch}',
+    );
+    _recordResidentEconomicTransaction(transaction);
+    _resolveResidentUncoveredNeed(resident.id, itemDefinitionId, current);
+    resident.financialStrainScore =
+        math.max(0, resident.financialStrainScore - 1);
+    resident.updatedAt = current;
+    resolveResidentNeeds(now: current);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '${resident.displayName} achète $itemDefinitionId.');
+  }
+
+  _ResidentPaymentParts _splitResidentEconomicPayment(
+      int total, CommunityProductionBatch batch) {
+    var producer = total * residentEconomyConfig.producerSharePercent ~/ 100;
+    var supplier = total * residentEconomyConfig.supplierSharePercent ~/ 100;
+    var merchant = total * residentEconomyConfig.merchantSharePercent ~/ 100;
+    var player = 0;
+    if (batch.producerResidentId == null) {
+      player += producer;
+      producer = 0;
+    }
+    if (batch.supplierContributions.isEmpty) {
+      player += supplier;
+      supplier = 0;
+    }
+    if (_activeMerchantResident() == null) {
+      if (residentEconomyConfig.absentMerchantShareRecipient == 'player') {
+        player += merchant;
+      } else if (batch.producerResidentId != null) {
+        producer += merchant;
+      } else {
+        player += merchant;
+      }
+      merchant = 0;
+    }
+    final assigned = producer + supplier + merchant + player;
+    final remainder = math.max(0, total - assigned);
+    if (merchant > 0) {
+      merchant += remainder;
+    } else if (batch.producerResidentId != null) {
+      producer += remainder;
+    } else {
+      player += remainder;
+    }
+    return _ResidentPaymentParts(producer, supplier, merchant, player);
+  }
+
+  Zone0Resident? _activeMerchantResident() {
+    final ownerId = marketShops
+        .where((shop) =>
+            shop.ownershipType == MarketShopOwnershipType.residentCommunity &&
+            shop.ownerResidentId != null)
+        .map((shop) => shop.ownerResidentId!)
+        .toList()
+      ..sort();
+    if (ownerId.isNotEmpty) {
+      return residents
+          .where((resident) => resident.id == ownerId.first)
+          .firstOrNull;
+    }
+    final role = activeCommunityRoles
+        .where((assignment) =>
+            assignment.roleType == CommunityRoleType.marketCounter)
+        .firstOrNull;
+    return role == null
+        ? null
+        : residents
+            .where((resident) => resident.id == role.residentId)
+            .firstOrNull;
+  }
+
+  void _creditResidentPiles(String? residentId, int amount) {
+    if (residentId == null || amount <= 0) return;
+    final resident =
+        residents.where((item) => item.id == residentId).firstOrNull;
+    if (resident == null) return;
+    resident.internalPileBalance = math.min(
+        residentEconomyConfig.personalAccountCapPiles,
+        resident.internalPileBalance + amount);
+  }
+
+  void _creditSupplierContributions(
+      List<SupplierContribution> contributions, int amount) {
+    if (amount <= 0) return;
+    final totalWeight = contributions.fold<int>(
+        0,
+        (total, contribution) =>
+            total + math.max(0, contribution.contributionWeight));
+    if (totalWeight <= 0) {
+      _creditMarketBioPiles(amount);
+      return;
+    }
+    var paid = 0;
+    for (final contribution in contributions) {
+      final share =
+          amount * math.max(0, contribution.contributionWeight) ~/ totalWeight;
+      paid += share;
+      if (contribution.residentId == null) {
+        _creditMarketBioPiles(share);
+      } else {
+        _creditResidentPiles(contribution.residentId, share);
+      }
+    }
+    if (paid < amount) _creditMarketBioPiles(amount - paid);
+  }
+
+  bool resolveResidentEconomy({DateTime? now}) {
+    if (!residentEconomyConfig.enabled) return false;
+    final current = now ?? DateTime.now();
+    _migrateResidentEconomy();
+    var changed = resolveResidentDomesticGeneration(now: current);
+    residentUncoveredNeeds.removeWhere((need) =>
+        need.resolvedAt != null &&
+        current.difference(need.resolvedAt!).inDays > 2);
+    for (final resident in residents.where((item) => item.isActive)) {
+      if (resident.needsState.mealsMissing > 0) {
+        final result = purchaseResidentFinishedItem(
+          residentId: resident.id,
+          itemDefinitionId: 'Repas simple',
+          quantity: 1,
+          essential: true,
+          sourceNeedId: 'meal:${resident.id}:${_residentDayKey(current)}',
+        );
+        changed = result.success || changed;
+        if (!result.success) {
+          _upsertResidentUncoveredNeed(
+            resident: resident,
+            item: 'Repas simple',
+            category: 'meal',
+            quantity: resident.needsState.mealsMissing,
+            reason: result.message.contains('Solde')
+                ? ResidentUncoveredNeedReason.insufficientFunds
+                : ResidentUncoveredNeedReason.noStock,
+            urgency: 3,
+            now: current,
+          );
+        }
+      }
+    }
+    _createEconomicSettlementBatch(current);
+    lastResidentEconomyResolvedAt = current;
+    return changed;
+  }
+
+  void _createEconomicSettlementBatch(DateTime current) {
+    final dayKey = _residentDayKey(current);
+    if (lastEconomicSettlementDayKey == dayKey) return;
+    final dayTransactions = residentEconomicTransactions
+        .where((item) =>
+            _residentDayKey(item.createdAt) == dayKey &&
+            item.status == ResidentEconomicTransactionStatus.completed &&
+            item.settlementBatchId == null)
+        .toList();
+    if (dayTransactions.isEmpty) return;
+    final batch = EconomicSettlementBatch(
+      id: 'settlement-$dayKey',
+      periodStart: DateTime(current.year, current.month, current.day),
+      periodEnd: current,
+      transactionIds: dayTransactions.map((item) => item.id).toList(),
+      totalGrossPiles:
+          dayTransactions.fold(0, (sum, item) => sum + item.grossAmountPiles),
+      totalMerchantPiles:
+          dayTransactions.fold(0, (sum, item) => sum + item.merchantSharePiles),
+      totalProducerPiles:
+          dayTransactions.fold(0, (sum, item) => sum + item.producerSharePiles),
+      totalSupplierPiles:
+          dayTransactions.fold(0, (sum, item) => sum + item.supplierSharePiles),
+      totalPlayerPiles:
+          dayTransactions.fold(0, (sum, item) => sum + item.playerSharePiles),
+      createdAt: current,
+      completedAt: current,
+      idempotencyKey: 'settlement:$dayKey',
+    );
+    if (economicSettlementBatches
+        .any((item) => item.idempotencyKey == batch.idempotencyKey)) {
+      return;
+    }
+    economicSettlementBatches.add(batch);
+    for (final transaction in dayTransactions) {
+      transaction.settlementBatchId = batch.id;
+    }
+    lastEconomicSettlementDayKey = dayKey;
+    if (economicSettlementBatches.length >
+        residentEconomyConfig.maxSettlementHistory) {
+      economicSettlementBatches.removeRange(
+          0,
+          economicSettlementBatches.length -
+              residentEconomyConfig.maxSettlementHistory);
+    }
+  }
+
+  /// A small, displayable forecast-quality support from residents assigned to
+  /// the Tower. It never changes the global two-hour weather announcement.
+  int get communityWeatherForecastSupport => activeCommunityRoles
+      .where(
+          (assignment) => assignment.roleType == CommunityRoleType.weatherWatch)
+      .fold<int>(0, (sum, assignment) => sum + assignment.dailyOutput);
+
+  bool canResidentRequestCertifiedPtibug(Zone0Resident resident) {
+    if (_residentPassionFor(resident) != ResidentPassion.livingObservation ||
+        resident.ownedCertifiedPtibugIds.length >=
+            communityRolesConfig.residentPtibugMaximum) {
+      return false;
+    }
+    return resident.dailyNeedsState['activePtibugRequestId'] == null;
+  }
+
   ResidentHouse? residentHouseForId(String? houseId) => houseId == null
       ? null
       : residentHouses.where((house) => house.id == houseId).firstOrNull;
 
   int residentHappinessFor(Zone0Resident resident) {
     final house = residentHouseForId(resident.houseId);
-    final homePenalty = house != null && house.currentViability < 50
-        ? housingConfig.houseViabilityDamageHappinessPercent
-        : 0;
-    final unhousedPenalty = resident.houseId == null
-        ? housingConfig.wellbeingPenaltyPerUnhousedResident
-        : 0;
-    return (resident.baseHappiness +
-            resident.temporaryHappinessModifier -
-            homePenalty -
-            unhousedPenalty)
-        .clamp(0, 100);
+    final finalValue = ResidentHappinessService.calculate(
+      resident: resident,
+      house: house,
+    );
+    resident.currentHappiness = finalValue;
+    return finalValue;
   }
+
+  Map<String, int> residentHappinessBreakdown(Zone0Resident resident) =>
+      ResidentHappinessService.breakdown(
+        resident: resident,
+        house: residentHouseForId(resident.houseId),
+      );
 
   int get displayedCampWellbeing => (residentHappiness +
           securityWellbeingModifier +
@@ -1362,10 +3779,128 @@ class Zone0GameState extends ChangeNotifier {
 
   /// La boutique principale est conservée sur les champs historiques afin de
   /// migrer les sauvegardes sans perdre son stock ni son Distributeur.
-  int get marketShopLimit =>
-      marketConfig.specializedShopSlotsForLevel(marketLevel);
+  int get marketShopLimit => marketConfig.shopSlotsForMarketLevel(marketLevel);
   int get marketShopCount =>
-      1 + marketShops.where((shop) => !shop.isPrimary).length;
+      (primaryMarketShopChosen ? 1 : 0) +
+      marketShops
+          .where((shop) => !shop.isPrimary && !shop.legacyExtraSlot)
+          .length;
+
+  bool get isMarketRequestBookUnlocked =>
+      marketLevel >= marketConfig.requestBookLevel;
+  bool get isMarketInformationPointUnlocked =>
+      marketLevel >= marketConfig.informationPointLevel;
+
+  List<MarketShopSlot> get unlockedMarketShopSlots => marketShopSlots
+      .where((slot) => slot.marketLevelRequired <= marketLevel)
+      .toList()
+    ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+
+  MarketShopSlot? _vacantMarketShopSlot() => unlockedMarketShopSlots
+      .where((slot) => slot.status == MarketShopSlotStatus.vacant)
+      .firstOrNull;
+
+  /// Pendant le préavis, une construction réelle du joueur est prioritaire :
+  /// elle réserve le slot et annule proprement la revendication annoncée.
+  MarketShopSlot? _playerBuildMarketShopSlot() => unlockedMarketShopSlots
+      .where((slot) =>
+          slot.status == MarketShopSlotStatus.vacant ||
+          slot.status == MarketShopSlotStatus.pendingResidentClaim ||
+          slot.status == MarketShopSlotStatus.reserved)
+      .firstOrNull;
+
+  int _marketSlotLevelRequirement(int index) {
+    for (var level = 1; level <= marketConfig.maximumLevel; level++) {
+      if (index < marketConfig.shopSlotsForMarketLevel(level)) return level;
+    }
+    return marketConfig.maximumLevel;
+  }
+
+  void _migrateMarketShopSlots(DateTime now) {
+    final required = marketConfig.shopSlotsForMarketLevel(marketLevel);
+    for (var index = 0; index < required; index++) {
+      final id = 'market-shop-slot-${index + 1}';
+      final existing =
+          marketShopSlots.where((slot) => slot.slotId == id).firstOrNull;
+      if (existing == null) {
+        marketShopSlots.add(MarketShopSlot(
+          slotId: id,
+          slotIndex: index,
+          marketLevelRequired: _marketSlotLevelRequirement(index),
+          status: MarketShopSlotStatus.vacant,
+          vacantSince: now,
+        ));
+      }
+    }
+    final orderedShops = <MarketShop>[
+      if (primaryMarketShopChosen)
+        MarketShop(
+          id: primaryMarketShopId,
+          specialization: primaryMarketShopSpecialization,
+          level: primaryMarketShopLevel,
+          isPrimary: true,
+        ),
+      ...marketShops.where((shop) => !shop.isPrimary),
+    ];
+    for (final slot in marketShopSlots) {
+      if (slot.marketLevelRequired > marketLevel) {
+        if (slot.status != MarketShopSlotStatus.playerOccupied &&
+            slot.status != MarketShopSlotStatus.residentOccupied) {
+          slot.status = MarketShopSlotStatus.locked;
+        }
+        continue;
+      }
+      final shop = orderedShops
+          .where((entry) => entry.slotId == slot.slotId)
+          .firstOrNull;
+      if (slot.shopId == primaryMarketShopId && primaryMarketShopChosen) {
+        slot
+          ..status = MarketShopSlotStatus.playerOccupied
+          ..vacantSince = null;
+        continue;
+      }
+      if (shop != null) {
+        slot
+          ..shopId = shop.id
+          ..status =
+              shop.ownershipType == MarketShopOwnershipType.residentCommunity
+                  ? MarketShopSlotStatus.residentOccupied
+                  : MarketShopSlotStatus.playerOccupied
+          ..vacantSince = null;
+        continue;
+      }
+      if (slot.shopId == null) {
+        final candidate = orderedShops
+            .where((entry) => entry.slotId == null && !entry.legacyExtraSlot)
+            .firstOrNull;
+        if (candidate != null) {
+          candidate.slotId = slot.slotId;
+          slot
+            ..shopId = candidate.id
+            ..status = candidate.ownershipType ==
+                    MarketShopOwnershipType.residentCommunity
+                ? MarketShopSlotStatus.residentOccupied
+                : MarketShopSlotStatus.playerOccupied
+            ..vacantSince = null;
+          continue;
+        }
+      }
+      if (slot.status != MarketShopSlotStatus.pendingResidentClaim &&
+          slot.status != MarketShopSlotStatus.reserved) {
+        slot
+          ..shopId = null
+          ..status = MarketShopSlotStatus.vacant
+          ..vacantSince ??= now;
+      }
+    }
+    final slottedIds =
+        marketShopSlots.map((slot) => slot.shopId).whereType<String>().toSet();
+    for (final shop in marketShops) {
+      if (!shop.isPrimary && !slottedIds.contains(shop.id))
+        shop.legacyExtraSlot = true;
+    }
+    marketShopSlotsMigrationCompleted = true;
+  }
 
   MarketShop? marketShopById(String id) =>
       marketShops.where((shop) => shop.id == id).firstOrNull;
@@ -1417,8 +3952,18 @@ class Zone0GameState extends ChangeNotifier {
         'P’TIBUG Scarabé' => PTibugSpecies.scarabe,
         'P’TIBUG Hyme' => PTibugSpecies.hyme,
         'P’TIBUG Arac' => PTibugSpecies.arac,
+        'Capsule P’TIBUG Scarabé' => PTibugSpecies.scarabe,
+        'Capsule P’TIBUG Hyme' => PTibugSpecies.hyme,
+        'Capsule P’TIBUG Arac' => PTibugSpecies.arac,
         _ => null,
       };
+
+  String marketItemForCertifiedCapsule(PTibugSpecies species) =>
+      'Capsule P’TIBUG ${switch (species) {
+        PTibugSpecies.scarabe => 'Scarabé',
+        PTibugSpecies.hyme => 'Hyme',
+        PTibugSpecies.arac => 'Arac'
+      }}';
 
   bool _isBasicMarketPTibug(PTibug bug) =>
       bug.biologicalTraitId == null &&
@@ -1431,19 +3976,52 @@ class Zone0GameState extends ChangeNotifier {
   int _marketPTibugAmount(String resource) {
     final species = _marketPTibugSpecies(resource);
     if (species == null) return 0;
-    return pTibugs
+    if (resource.startsWith('Capsule ')) {
+      return pTibugCapsules
+          .where((capsule) =>
+              capsule.species == species &&
+              capsule.status == CertifiedPTibugCapsuleStatus.certified)
+          .length;
+    }
+    final raw = pTibugs
         .where((bug) => bug.species == species && _isBasicMarketPTibug(bug))
         .length;
+    final capsules = pTibugCapsules
+        .where((capsule) =>
+            capsule.species == species &&
+            capsule.status == CertifiedPTibugCapsuleStatus.certified)
+        .length;
+    return raw + capsules;
   }
 
   bool _consumeMarketPTibugs(String resource, int amount) {
     final species = _marketPTibugSpecies(resource);
     if (species == null) return false;
+    if (resource.startsWith('Capsule ')) {
+      final capsules = pTibugCapsules
+          .where((capsule) =>
+              capsule.species == species &&
+              capsule.status == CertifiedPTibugCapsuleStatus.certified)
+          .take(amount)
+          .toList();
+      if (capsules.length < amount) return false;
+      pTibugCapsules.removeWhere(capsules.contains);
+      return true;
+    }
     final candidates = pTibugs
         .where((bug) => bug.species == species && _isBasicMarketPTibug(bug))
         .take(amount)
         .toList(growable: false);
-    if (candidates.length < amount) return false;
+    final missing = amount - candidates.length;
+    final capsules = missing <= 0
+        ? <PTibugCapsule>[]
+        : pTibugCapsules
+            .where((capsule) =>
+                capsule.species == species &&
+                capsule.status == CertifiedPTibugCapsuleStatus.certified)
+            .take(missing)
+            .toList();
+    if (candidates.length + capsules.length < amount) return false;
     final now = DateTime.now();
     for (final bug in candidates) {
       final valuation = pTibugValuationFor(bug);
@@ -1472,6 +4050,7 @@ class Zone0GameState extends ChangeNotifier {
       soldPTibugArchive.add(bug);
     }
     pTibugs.removeWhere(candidates.contains);
+    if (capsules.isNotEmpty) pTibugCapsules.removeWhere(capsules.contains);
     return true;
   }
 
@@ -1509,6 +4088,10 @@ class Zone0GameState extends ChangeNotifier {
 
   int generatorOrganicCapacity(int heartLevel) =>
       campGeneratorConfig.organicCapacity(heartLevel);
+
+  /// The Bio-générateur now belongs to the player's House. Its legacy
+  /// production curve still follows the already unlocked Camp Heart tier.
+  int get generatorDisplayLevel => math.max(1, _lastKnownCampHeartLevel);
 
   int generatorMineralCapacity(int heartLevel) =>
       campGeneratorConfig.mineralCapacity(heartLevel);
@@ -1570,7 +4153,7 @@ class Zone0GameState extends ChangeNotifier {
 
   bool resolveGenerator({required int heartLevel, DateTime? now}) {
     final current = now ?? DateTime.now();
-    if (!isBuildingOperational('generator')) {
+    if (!isBuildingOperational('house')) {
       generatorCycleStartedAt = null;
       return false;
     }
@@ -1601,7 +4184,7 @@ class Zone0GameState extends ChangeNotifier {
       0,
       (possibleCycles *
               campGeneratorConfig.bioBatteriesPerCycle *
-              buildingProductionMultiplier('generator'))
+              buildingProductionMultiplier('house'))
           .floor(),
     );
     bioBatteries += produced;
@@ -3058,7 +5641,7 @@ class Zone0GameState extends ChangeNotifier {
     String specialization, {
     required bool primary,
   }) {
-    if (!const <String>{'restaurant', 'home', 'equipment', 'ptibug'}
+    if (!const <String>{'restaurant', 'home', 'equipment'}
         .contains(specialization)) {
       return const Zone0ActionResult(
           success: false, message: 'Spécialisation invalide.');
@@ -3072,7 +5655,7 @@ class Zone0GameState extends ChangeNotifier {
         return const Zone0ActionResult(
             success: false, message: 'La boutique principale existe déjà.');
       }
-    } else if (marketLevel < 2 || marketShopCount >= marketShopLimit) {
+    } else if (marketLevel < 2 || _playerBuildMarketShopSlot() == null) {
       return const Zone0ActionResult(
           success: false, message: 'Aucun emplacement de magasin libre.');
     }
@@ -3081,6 +5664,17 @@ class Zone0GameState extends ChangeNotifier {
       specialization: specialization,
       isPrimary: primary,
     );
+    if (!primary) {
+      final slot = _playerBuildMarketShopSlot();
+      if (slot != null) {
+        slot
+          ..status = MarketShopSlotStatus.reserved
+          ..reservedByResidentId = null
+          ..claimCandidateResidentId = null
+          ..claimWarningStartedAt = null
+          ..claimFinalizationAt = null;
+      }
+    }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
@@ -3228,6 +5822,39 @@ class Zone0GameState extends ChangeNotifier {
         success: true, message: 'Travaux du magasin commencés.');
   }
 
+  Zone0ActionResult cancelMarketShopConstruction() {
+    final order = marketShopConstructionOrder;
+    if (order == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun chantier de magasin à arrêter.');
+    }
+    if (!hasInventoryCapacityFor(order.deposits)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Inventaire plein : remboursement impossible.');
+    }
+    final returned = addResources(order.deposits);
+    if (returned.hasPending) {
+      return const Zone0ActionResult(
+          success: false, message: 'Remboursement impossible.');
+    }
+    bioBatteries += order.depositedBioBatteries;
+    if (!order.isPrimary && order.targetShopId == null) {
+      for (final slot in marketShopSlots
+          .where((slot) => slot.status == MarketShopSlotStatus.reserved)) {
+        slot
+          ..status = MarketShopSlotStatus.vacant
+          ..vacantSince = DateTime.now();
+      }
+    }
+    marketShopConstructionOrder = null;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true,
+        message: 'Chantier arrêté : tous les dépôts sont rendus.');
+  }
+
   bool _resolveMarketShopConstruction(DateTime now) {
     final order = marketShopConstructionOrder;
     if (order == null || !order.isInProgress || order.endsAt!.isAfter(now)) {
@@ -3244,16 +5871,175 @@ class Zone0GameState extends ChangeNotifier {
       primaryMarketShopSpecialization = order.specialization;
       primaryMarketShopChosen = true;
     } else {
-      marketShops.add(MarketShop(
+      final slot = unlockedMarketShopSlots
+              .where((item) => item.status == MarketShopSlotStatus.reserved)
+              .firstOrNull ??
+          _vacantMarketShopSlot();
+      if (slot == null) return false;
+      final shop = MarketShop(
         id: 'shop-${now.microsecondsSinceEpoch}',
         specialization: order.specialization,
-      ));
+        slotId: slot.slotId,
+      );
+      marketShops.add(shop);
+      slot
+        ..shopId = shop.id
+        ..status = MarketShopSlotStatus.playerOccupied
+        ..vacantSince = null;
       firstFreeShopClaimed = true;
     }
+    _migrateMarketShopSlots(now);
     marketShopConstructionOrder = null;
     reports.add(PtipoteMissionReport.system(
         message: 'Les travaux du magasin sont terminés.'));
     return true;
+  }
+
+  String? _residentShopCategoryForNeed(ResidentUncoveredNeed need) =>
+      switch (need.category) {
+        'meal' || 'drink' || 'sweetFood' || 'highEnergyFood' => 'restaurant',
+        'clothing' ||
+        'heatProtection' ||
+        'rainProtection' ||
+        'toxicProtection' ||
+        'tools' ||
+        'technicalEquipment' =>
+          'equipment',
+        'furniture' ||
+        'decoration' ||
+        'householdInstallation' ||
+        'repairKit' =>
+          'home',
+        _ => null,
+      };
+
+  bool _marketCategoryViable(String category) {
+    final stockOrRecipe = marketConfig.saleValues.keys.any((item) =>
+        MarketShop(id: 'check', specialization: category).accepts(item));
+    return stockOrRecipe;
+  }
+
+  String? _chooseResidentShopCategory() {
+    const categories = <String>['restaurant', 'equipment', 'home'];
+    final covered = <String>{
+      if (primaryMarketShopChosen) primaryMarketShopSpecialization,
+      ...marketShops.map((shop) => shop.specialization),
+    };
+    final counts = <String, int>{
+      for (final category in categories) category: 0,
+    };
+    for (final need
+        in residentUncoveredNeeds.where((need) => need.resolvedAt == null)) {
+      final category = _residentShopCategoryForNeed(need);
+      if (category != null)
+        counts[category] = (counts[category] ?? 0) + need.quantity;
+    }
+    final viable = categories.where(_marketCategoryViable).toList();
+    if (viable.isEmpty) return null;
+    viable.sort((a, b) {
+      final missing =
+          (covered.contains(a) ? 0 : 1).compareTo(covered.contains(b) ? 0 : 1);
+      if (missing != 0) return -missing;
+      final demand = (counts[b] ?? 0).compareTo(counts[a] ?? 0);
+      return demand != 0 ? demand : a.compareTo(b);
+    });
+    return viable.first;
+  }
+
+  bool _resolveResidentShopClaims(DateTime current) {
+    if (marketLevel < 2) return false;
+    var changed = false;
+    for (final slot in unlockedMarketShopSlots) {
+      if (slot.status == MarketShopSlotStatus.pendingResidentClaim &&
+          slot.claimFinalizationAt != null &&
+          !current.isBefore(slot.claimFinalizationAt!)) {
+        final resident = residents
+            .where((entry) => entry.id == slot.claimCandidateResidentId)
+            .firstOrNull;
+        final category = _chooseResidentShopCategory();
+        final hasShop =
+            marketShops.any((shop) => shop.ownerResidentId == resident?.id);
+        if (resident == null ||
+            resident.primaryPassionId != ResidentPassion.trading.name ||
+            hasShop ||
+            category == null) {
+          slot
+            ..status = MarketShopSlotStatus.vacant
+            ..claimCandidateResidentId = null
+            ..claimWarningStartedAt = null
+            ..claimFinalizationAt = null
+            ..vacantSince = current;
+          changed = true;
+          continue;
+        }
+        final shop = MarketShop(
+          id: 'resident-shop-${slot.slotId}',
+          specialization: category,
+          slotId: slot.slotId,
+          ownershipType: MarketShopOwnershipType.residentCommunity,
+          ownerResidentId: resident.id,
+          managerResidentId: resident.id,
+          shopPileBalance: marketConfig.residentShopReservePiles,
+          serviceCapacity: marketConfig.residentShopServiceCapacity,
+          ownershipStartedAt: current,
+          ownershipLocked: true,
+        );
+        marketShops.add(shop);
+        slot
+          ..status = MarketShopSlotStatus.residentOccupied
+          ..shopId = shop.id
+          ..claimCandidateResidentId = null
+          ..claimWarningStartedAt = null
+          ..claimFinalizationAt = null
+          ..vacantSince = null;
+        final previousRole = communityRoleForResident(resident.id);
+        if (previousRole != null) {
+          previousRole
+            ..status = CommunityRoleStatus.archived
+            ..updatedAt = current;
+        }
+        resident
+          ..ownedShopId = shop.id
+          ..assignedBuildingId = 'market'
+          ..activeCommunityRoleId = null
+          ..commercialAssignmentStatus = 'shopOwner';
+        reports.add(PtipoteMissionReport.system(
+          message:
+              '${resident.displayName} ouvre un commerce $category au Marché.',
+        ));
+        changed = true;
+        continue;
+      }
+      if (slot.status != MarketShopSlotStatus.vacant ||
+          slot.vacantSince == null) continue;
+      if (current.difference(slot.vacantSince!).inDays <
+          marketConfig.residentClaimVacancyDays) continue;
+      final candidate = residents
+          .where((resident) =>
+              resident.isActive &&
+              resident.primaryPassionId == ResidentPassion.trading.name &&
+              resident.ownedShopId == null &&
+              (communityRoleForResident(resident.id) == null ||
+                  communityRoleForResident(resident.id)!.roleType ==
+                      CommunityRoleType.marketCounter))
+          .toList()
+        ..sort((a, b) => a.id.compareTo(b.id));
+      final category = _chooseResidentShopCategory();
+      if (candidate.isEmpty || category == null) continue;
+      slot
+        ..status = MarketShopSlotStatus.pendingResidentClaim
+        ..claimCandidateResidentId = candidate.first.id
+        ..claimWarningStartedAt = current
+        ..claimFinalizationAt = current.add(
+          Duration(hours: marketConfig.residentClaimWarningHours),
+        );
+      reports.add(PtipoteMissionReport.system(
+        message:
+            '${candidate.first.displayName} souhaite ouvrir un commerce $category dans ${marketConfig.residentClaimWarningHours} h.',
+      ));
+      changed = true;
+    }
+    return changed;
   }
 
   /// Réinitialisation explicitement demandée par le joueur. Les stocks sont
@@ -3290,7 +6076,8 @@ class Zone0GameState extends ChangeNotifier {
     }
     final result = returned.isEmpty ? null : addResources(returned);
     marketStock.clear();
-    marketShops.clear();
+    marketShops.removeWhere(
+        (shop) => shop.ownershipType == MarketShopOwnershipType.player);
     primaryMarketShopSpecialization = 'general';
     primaryMarketShopChosen = false;
     primaryMarketShopLevel = 1;
@@ -3308,6 +6095,18 @@ class Zone0GameState extends ChangeNotifier {
       ..repairStartedBy = null;
     marketDistributor.stock.clear();
     marketDistributor.constructionDeposits.clear();
+    for (final slot in marketShopSlots) {
+      final shop = marketShopById(slot.shopId ?? '');
+      if (shop == null &&
+          slot.status != MarketShopSlotStatus.residentOccupied) {
+        slot
+          ..shopId = null
+          ..status = slot.marketLevelRequired <= marketLevel
+              ? MarketShopSlotStatus.vacant
+              : MarketShopSlotStatus.locked
+          ..vacantSince = DateTime.now();
+      }
+    }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     final pending = result?.pending.values.fold<int>(0, (a, b) => a + b) ?? 0;
@@ -3331,14 +6130,130 @@ class Zone0GameState extends ChangeNotifier {
     if (enabled) {
       marketRestockEnabledItems.add(resource);
       marketRestockMinimums[resource] = math.max(0, minimumToKeep);
+      final existing = marketRestockRules
+          .where((rule) =>
+              rule.shopId == primaryMarketShopId &&
+              rule.itemDefinitionId == resource)
+          .firstOrNull;
+      if (existing == null) {
+        marketRestockRules.add(MarketRestockRule(
+          ruleId: 'restock-$primaryMarketShopId-$resource',
+          shopId: primaryMarketShopId,
+          itemDefinitionId: resource,
+          enabled: true,
+          reserveMinimum: math.max(0, minimumToKeep),
+          targetStock: marketConfig.residentShopStockTarget,
+          maximumTransfer: marketConfig.stackQuantityLimit,
+        ));
+      } else {
+        existing
+          ..enabled = true
+          ..reserveMinimum = math.max(0, minimumToKeep);
+      }
     } else {
       marketRestockEnabledItems.remove(resource);
       marketRestockMinimums.remove(resource);
+      for (final rule in marketRestockRules.where((rule) =>
+          rule.shopId == primaryMarketShopId &&
+          rule.itemDefinitionId == resource)) {
+        rule.enabled = false;
+      }
     }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
         success: true, message: 'Ordre de réapprovisionnement enregistré.');
+  }
+
+  Zone0ActionResult setMarketShopRestockRule({
+    required String shopId,
+    required String itemDefinitionId,
+    required bool enabled,
+    required int reserveMinimum,
+    required int targetStock,
+    required int maximumTransfer,
+    int priority = 0,
+  }) {
+    if (!isMarketInformationPointUnlocked) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Le Point Information est débloqué au niveau ${marketConfig.informationPointLevel}.',
+      );
+    }
+    if (!marketShopAccepts(shopId, itemDefinitionId)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Produit incompatible avec ce magasin.');
+    }
+    final rule = marketRestockRules
+        .where((item) =>
+            item.shopId == shopId && item.itemDefinitionId == itemDefinitionId)
+        .firstOrNull;
+    if (rule == null) {
+      marketRestockRules.add(MarketRestockRule(
+        ruleId: 'restock-$shopId-$itemDefinitionId',
+        shopId: shopId,
+        itemDefinitionId: itemDefinitionId,
+        enabled: enabled,
+        reserveMinimum: math.max(0, reserveMinimum),
+        targetStock: math.max(0, targetStock),
+        maximumTransfer: math.max(1, maximumTransfer),
+        priority: priority,
+      ));
+    } else {
+      rule
+        ..enabled = enabled
+        ..reserveMinimum = math.max(0, reserveMinimum)
+        ..targetStock = math.max(0, targetStock)
+        ..maximumTransfer = math.max(1, maximumTransfer)
+        ..priority = priority;
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Consigne de réapprovisionnement enregistrée.');
+  }
+
+  bool _resolveMarketInformationPoint(DateTime current) {
+    if (!isMarketInformationPointUnlocked || marketAssignedPtipoteId == null) {
+      return false;
+    }
+    var changed = false;
+    final rules = marketRestockRules.where((rule) => rule.enabled).toList()
+      ..sort((a, b) => b.priority.compareTo(a.priority));
+    for (final rule in rules) {
+      final stock = marketStockForShop(rule.shopId);
+      if (stock == null ||
+          !marketShopAccepts(rule.shopId, rule.itemDefinitionId)) {
+        rule.lastStatus = 'invalidShop';
+        continue;
+      }
+      final currentAmount = stock
+          .where((stack) => stack.resource == rule.itemDefinitionId)
+          .fold<int>(0, (sum, stack) => sum + stack.amount);
+      final needed = math.max(0, rule.targetStock - currentAmount);
+      final available = math.max(
+          0, resourceAmount(rule.itemDefinitionId) - rule.reserveMinimum);
+      final transfer =
+          math.min(needed, math.min(available, rule.maximumTransfer));
+      if (transfer <= 0 || stock.length >= marketShopStockLimit(rule.shopId)) {
+        rule.lastStatus = available <= 0 ? 'awaitingStock' : 'targetReached';
+        continue;
+      }
+      final moved = removeResource(rule.itemDefinitionId, transfer);
+      if (moved <= 0) {
+        rule.lastStatus = 'awaitingStock';
+        continue;
+      }
+      stock.add(Zone0InventoryStack(
+        id: 'point-info-${rule.ruleId}-${current.microsecondsSinceEpoch}',
+        resource: rule.itemDefinitionId,
+        amount: moved,
+      ));
+      rule.lastStatus = 'transferred';
+      changed = true;
+    }
+    return changed;
   }
 
   Zone0ActionResult returnMarketStock(Zone0InventoryStack stack) {
@@ -3497,6 +6412,7 @@ class Zone0GameState extends ChangeNotifier {
     _creditMarketBioPiles(request.rewardBioPiles);
     if (responder == MarketRequestResponder.ptipote) {
       marketBioPilesEarnedThisAssignment += request.rewardBioPiles;
+      marketArticlesSoldThisAssignment += request.requestedQuantity;
     }
     campWellbeing = math.min(100, campWellbeing + request.rewardWellbeing);
     request.status = MarketRequestStatus.completed;
@@ -3519,6 +6435,13 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
         success: false,
         message: 'Marché non construit.',
+      );
+    }
+    if (!isMarketInformationPointUnlocked) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Le Point Information est débloqué au niveau ${marketConfig.informationPointLevel} du Marché.',
       );
     }
     if (marketAssignedPtipoteId != null) {
@@ -3546,6 +6469,8 @@ class Zone0GameState extends ChangeNotifier {
     marketAssignedAt = marketLastWorkTickAt;
     marketXpEarnedThisAssignment = 0;
     marketBioPilesEarnedThisAssignment = 0;
+    marketArticlesSoldThisAssignment = 0;
+    marketDistributorsRepairedThisAssignment = 0;
     vitalityOverrides.putIfAbsent(figurine.id, () => vitalityFor(figurine));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -3578,6 +6503,8 @@ class Zone0GameState extends ChangeNotifier {
         ? '$hours h ${remainingMinutes.toString().padLeft(2, '0')} min'
         : '$remainingMinutes min';
     final earnedPiles = marketBioPilesEarnedThisAssignment;
+    final articles = marketArticlesSoldThisAssignment;
+    final repaired = marketDistributorsRepairedThisAssignment;
     marketAssignedPtipoteId = null;
     marketAssignedPtipoteName = null;
     marketLastWorkTickAt = null;
@@ -3585,19 +6512,30 @@ class Zone0GameState extends ChangeNotifier {
     marketAssignedAt = null;
     marketXpEarnedThisAssignment = 0;
     marketBioPilesEarnedThisAssignment = 0;
+    marketArticlesSoldThisAssignment = 0;
+    marketDistributorsRepairedThisAssignment = 0;
+    reports.add(PtipoteMissionReport.system(
+      message:
+          '$name rentre du Marché : +$xp XP, $articles article(s) vendu(s), $repaired distributeur(s) réparé(s).',
+      sourceBuildingId: 'market',
+      subject: 'Bilan du Marché',
+      concerned: name,
+    ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
       message:
-          '$name rentre du Marché après $durationLabel · +$earnedPiles bio-pile(s) · +$xp XP · énergie $vitality/${ptipoteStatsConfig.maxVitality} · faim $hunger/${ptipoteStatsConfig.baseHunger} · repos $rest/${ptipoteStatsConfig.maxRest}.',
+          '$name rentre du Marché après $durationLabel · +$earnedPiles bio-pile(s) · +$xp XP · $articles article(s) vendu(s) · $repaired distributeur(s) réparé(s) · énergie $vitality/${ptipoteStatsConfig.maxVitality} · faim $hunger/${ptipoteStatsConfig.baseHunger} · repos $rest/${ptipoteStatsConfig.maxRest}.',
     );
   }
 
   bool resolveMarket({DateTime? now}) {
     final current = now ?? DateTime.now();
+    _migrateMarketShopSlots(current);
     var changed = _resolveMarketShopConstruction(current);
     if (!isMarketBuilt || !isBuildingOperational('market')) return changed;
+    changed = _resolveResidentShopClaims(current) || changed;
     changed = _resolveMerchantSchedule(current) || changed;
     // Migration du cycle de vente V1 : aucun stock ne doit plus être vendu
     // sans demande habitant. La valeur est ensuite sauvegardée à null.
@@ -3641,7 +6579,7 @@ class Zone0GameState extends ChangeNotifier {
     changed = changed ||
         beforeRequests != marketRequests.length ||
         beforeLog != marketRequestLog.length;
-    if (marketAssignedPtipoteId != null) {
+    if (marketAssignedPtipoteId != null && isMarketInformationPointUnlocked) {
       marketLastWorkTickAt ??= current;
       final ticks = current.difference(marketLastWorkTickAt!).inMinutes ~/
           math.max(1, marketConfig.vitalityTickMinutes);
@@ -3678,6 +6616,7 @@ class Zone0GameState extends ChangeNotifier {
     // La machine a toujours priorité : elle se remplit depuis son magasin et
     // répond après une minute avant que le P’TIPOTE prenne le relais.
     changed = _resolveMarketDistributor(current) || changed;
+    changed = _resolveMarketInformationPoint(current) || changed;
     // Le P’TIPOTE du Point info conserve une fenêtre de trois minutes : le
     // joueur peut donc répondre immédiatement et le Distributeur en une minute.
     if (marketAssignedPtipoteId != null) {
@@ -3713,6 +6652,7 @@ class Zone0GameState extends ChangeNotifier {
 
   void _createMarketRequest(DateTime now) {
     final entries = marketConfig.saleValues.keys
+        .where((item) => _isFinishedResidentProduct(item))
         .where((item) =>
             marketShopAccepts(primaryMarketShopId, item) ||
             marketShops.any((shop) => !shop.isPrimary && shop.accepts(item)))
@@ -3749,15 +6689,13 @@ class Zone0GameState extends ChangeNotifier {
         .where((shop) => !shop.isPrimary && shop.accepts(item))
         .firstOrNull;
     final shopId = specialist?.id ?? primaryMarketShopId;
-    final isResource = item == 'Organique' || item == 'Minéral';
     final activeResidents = residents
         .where((resident) => resident.isActive)
         .toList(growable: false);
     final request = MarketCustomerRequest(
       id: 'request-${now.microsecondsSinceEpoch}-${marketRequests.length}',
       requestedItemId: item,
-      requestedQuantity:
-          isResource ? lisiereForageConfig.inventoryStackLimit : 1,
+      requestedQuantity: 1,
       rewardBioPiles: _marketPriceInBioPiles(item, shopId: shopId),
       rewardWellbeing: 1,
       createdAt: now,
@@ -3915,7 +6853,10 @@ class Zone0GameState extends ChangeNotifier {
       ..rewardBioBatteries = request.status == MarketRequestStatus.completed
           ? request.rewardBioPiles
           : 0
-      ..responder = responder;
+      ..responder = responder
+      ..responderDisplayName = responder == MarketRequestResponder.ptipote
+          ? marketAssignedPtipoteName
+          : null;
   }
 
   void _ensureMarketRequestLog(MarketCustomerRequest request) {
@@ -3958,6 +6899,13 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult depositMarketDistributorMaterial(
       String resource, int amount,
       {String shopId = primaryMarketShopId}) {
+    if (marketLevel < marketConfig.distributorMarketLevelFor(1)) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Le Distributeur niveau 1 est débloqué au niveau ${marketConfig.distributorMarketLevelFor(1)} du Marché.',
+      );
+    }
     if (shopId == primaryMarketShopId && !primaryMarketShopChosen) {
       return const Zone0ActionResult(
           success: false,
@@ -4051,6 +6999,13 @@ class Zone0GameState extends ChangeNotifier {
 
   Zone0ActionResult startMarketDistributorConstruction(
       {String shopId = primaryMarketShopId}) {
+    if (marketLevel < marketConfig.distributorMarketLevelFor(1)) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Le Distributeur niveau 1 est débloqué au niveau ${marketConfig.distributorMarketLevelFor(1)} du Marché.',
+      );
+    }
     if (shopId == primaryMarketShopId && !primaryMarketShopChosen) {
       return const Zone0ActionResult(
           success: false,
@@ -4202,6 +7157,43 @@ class Zone0GameState extends ChangeNotifier {
         success: true, message: 'Réparation du Distributeur lancée.');
   }
 
+  Zone0ActionResult upgradeMarketDistributor({
+    String shopId = primaryMarketShopId,
+  }) {
+    final distributor = marketDistributorForShop(shopId);
+    if (distributor == null ||
+        !distributor.isBuilt ||
+        distributor.upgradeEndsAt != null ||
+        distributor.level >= 3) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Amélioration du Distributeur indisponible.');
+    }
+    final target = distributor.level + 1;
+    if (marketLevel < marketConfig.distributorMarketLevelFor(target)) {
+      return Zone0ActionResult(
+          success: false,
+          message:
+              'Le Marché niveau ${marketConfig.distributorMarketLevelFor(target)} est requis.');
+    }
+    final cost = marketConfig.distributorConstructionCost
+        .map((resource, amount) => MapEntry(resource, amount * target));
+    if (!hasResources(cost) || !removeResources(cost)) {
+      return Zone0ActionResult(
+          success: false, message: missingResourcesLabel(cost));
+    }
+    distributor
+      ..upgradeTargetLevel = target
+      ..upgradeEndsAt = DateTime.now()
+          .add(Duration(minutes: marketConfig.distributorConstructionMinutes));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message:
+            'Amélioration indépendante du Distributeur vers le niveau $target lancée.');
+  }
+
   void _repairDistributor(
     MarketDistributorState distributor, {
     required bool byPtipote,
@@ -4216,6 +7208,7 @@ class Zone0GameState extends ChangeNotifier {
               : 1),
     );
     distributor.repairStartedBy = byPtipote ? 'ptipote' : 'player';
+    if (byPtipote) marketDistributorsRepairedThisAssignment += 1;
     _recordDistributorIncident(
       '$shopLabel : réparation lancée par ${byPtipote ? 'le P’TIPOTE' : 'le joueur'}.',
       DateTime.now(),
@@ -4257,6 +7250,17 @@ class Zone0GameState extends ChangeNotifier {
         ..constructionEndsAt = null;
       reports.add(
           PtipoteMissionReport.system(message: '$shopLabel est opérationnel.'));
+      changed = true;
+    }
+    if (distributor.upgradeEndsAt != null &&
+        !current.isBefore(distributor.upgradeEndsAt!)) {
+      distributor
+        ..level = distributor.upgradeTargetLevel ?? distributor.level
+        ..upgradeTargetLevel = null
+        ..upgradeEndsAt = null;
+      reports.add(PtipoteMissionReport.system(
+          message:
+              '$shopLabel : Distributeur amélioré au niveau ${distributor.level}.'));
       changed = true;
     }
     if (distributor.repairEndsAt != null &&
@@ -4304,6 +7308,7 @@ class Zone0GameState extends ChangeNotifier {
     // de sa boutique principale ; aucune ressource ne vient de la Maison.
     final sourceStock = marketStockForShop(shopId) ?? <Zone0InventoryStack>[];
     if (marketAssignedPtipoteId != null &&
+        isMarketInformationPointUnlocked &&
         distributor.stock.length < distributorSlotsForShop(shopId)) {
       final source = sourceStock
           .where((stack) =>
@@ -4371,7 +7376,7 @@ class Zone0GameState extends ChangeNotifier {
           contract.requestedItems.entries.every((entry) =>
               (_marketPTibugSpecies(entry.key) != null
                   ? _marketPTibugAmount(entry.key)
-                  : marketStockAmount(entry.key)) >=
+                  : _marketStockAmountAcrossCompatibleShops(entry.key)) >=
               entry.value)) {
         _deliverMarketContract(contract);
         changed = true;
@@ -4414,7 +7419,7 @@ class Zone0GameState extends ChangeNotifier {
     if (!contract.requestedItems.entries.every((entry) =>
         (_marketPTibugSpecies(entry.key) != null
             ? _marketPTibugAmount(entry.key)
-            : marketStockAmount(entry.key)) >=
+            : _marketStockAmountAcrossCompatibleShops(entry.key)) >=
         entry.value)) return false;
     for (final entry in contract.requestedItems.entries) {
       final isPTibug = _marketPTibugSpecies(entry.key) != null;
@@ -4422,7 +7427,7 @@ class Zone0GameState extends ChangeNotifier {
         if (!_consumeMarketPTibugs(entry.key, entry.value)) {
           return false;
         }
-      } else if (!_consumeMarketStock(entry.key, entry.value)) {
+      } else if (!_consumeAnyMarketShopStock(entry.key, entry.value)) {
         return false;
       }
     }
@@ -4437,6 +7442,38 @@ class Zone0GameState extends ChangeNotifier {
       ..status = MarketContractStatus.completed
       ..deliveredAt = DateTime.now();
     return true;
+  }
+
+  int _marketStockAmountAcrossCompatibleShops(String item) {
+    final shopIds = <String>[
+      primaryMarketShopId,
+      ...marketShops.map((shop) => shop.id)
+    ];
+    return shopIds.fold<int>(
+        0,
+        (total, shopId) =>
+            total +
+            (marketShopAccepts(shopId, item)
+                ? marketShopStockAmount(shopId, item)
+                : 0));
+  }
+
+  String sourcierRequiredShopLabel(String item) {
+    if (_marketPTibugSpecies(item) != null) return 'Magasin P’TIBUG';
+    if (const <String>{'Organique', 'Minéral', 'Déchets', 'Mycélium', 'Eau'}
+        .contains(item)) {
+      return 'Magasin du foyer';
+    }
+    final category = _residentItemCategory(item);
+    return switch (category) {
+      'meal' || 'drink' || 'sweetFood' || 'highEnergyFood' => 'Restaurant',
+      'furniture' ||
+      'decoration' ||
+      'householdInstallation' ||
+      'repairKit' =>
+        'Magasin du foyer',
+      _ => 'Magasin d’équipement',
+    };
   }
 
   bool isUnavailableForTower(PtipoteFigurine figurine) {
@@ -4605,6 +7642,24 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
     }
     if (resolveWeatherCycle()) {
+      changed = true;
+    }
+    if (resolveResidentNeeds()) {
+      changed = true;
+    }
+    if (resolveCommunityRoles()) {
+      changed = true;
+    }
+    if (resolveResidentEconomy()) {
+      changed = true;
+    }
+    if (resolveResidentArrivals()) {
+      changed = true;
+    }
+    if (_resolveResidentVisions()) {
+      changed = true;
+    }
+    if (resolveHouseholdAutonomy()) {
       changed = true;
     }
     if (_applyElapsedSimulation(figurines)) {
@@ -7416,6 +10471,22 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  /// Number of full operating days the local reserves can sustain. The lowest
+  /// required reserve is the limiting factor: a territory cannot keep running
+  /// when just one of its daily inputs is exhausted.
+  double pTibugTerritoryAutonomyDays(PTibugTerritoryBuilding building) {
+    final consumption = pTibugTerritoryDailyConsumption(building);
+    final days = <double>[
+      if (consumption.organicPerDay > 0)
+        building.resourceAmount('Organique') / consumption.organicPerDay,
+      if (consumption.mineralPerDay > 0)
+        building.resourceAmount('Minéral') / consumption.mineralPerDay,
+      if (consumption.energyPerDay > 0)
+        building.localEnergy / consumption.energyPerDay,
+    ];
+    return days.isEmpty ? double.infinity : days.reduce(math.min);
+  }
+
   int pTibugEstimatedValueFor(PTibug bug) => pTibugValuationFor(bug).total;
 
   Zone0ActionResult renamePTibug(PTibug bug, String rawName) {
@@ -8752,6 +11823,10 @@ class Zone0GameState extends ChangeNotifier {
             _readInt(marketData['xpEarnedThisAssignment']);
         marketBioPilesEarnedThisAssignment =
             _readInt(marketData['bioPilesEarnedThisAssignment']);
+        marketArticlesSoldThisAssignment =
+            _readInt(marketData['articlesSoldThisAssignment']);
+        marketDistributorsRepairedThisAssignment =
+            _readInt(marketData['distributorsRepairedThisAssignment']);
         marketAssignedPtipoteId = marketData['assignedPtipoteId'] as String?;
         marketAssignedPtipoteName =
             marketData['assignedPtipoteName'] as String?;
@@ -8791,6 +11866,20 @@ class Zone0GameState extends ChangeNotifier {
               .whereType<Map>()
               .map(MarketShop.fromFirebase)
               .where((shop) => shop.id.isNotEmpty));
+        marketShopSlots
+          ..clear()
+          ..addAll((marketData['shopSlots'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(MarketShopSlot.fromFirebase)
+              .where((slot) => slot.slotId.isNotEmpty));
+        marketRestockRules
+          ..clear()
+          ..addAll((marketData['restockRules'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(MarketRestockRule.fromFirebase)
+              .where((rule) => rule.ruleId.isNotEmpty));
+        marketShopSlotsMigrationCompleted =
+            marketData['shopSlotsMigrationCompleted'] == true;
         MarketDistributorState? migratedPrimaryDistributor;
         final migratedPrimary =
             marketShops.where((shop) => shop.isPrimary).firstOrNull;
@@ -8861,6 +11950,7 @@ class Zone0GameState extends ChangeNotifier {
             );
           });
         }
+        _migrateMarketShopSlots(DateTime.now());
         merchantAvailableUntil = _readDate(
           marketData['merchantAvailableUntil'],
         );
@@ -9374,6 +12464,94 @@ class Zone0GameState extends ChangeNotifier {
                   .whereType<Map>()
                   .map(ResidentHouse.fromFirebase),
             );
+          residentArrivalCandidates
+            ..clear()
+            ..addAll(
+              (housingData['arrivalCandidates'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map(ResidentArrivalCandidate.fromFirebase),
+            );
+          residentVisions
+            ..clear()
+            ..addAll((housingData['residentVisions'] as List? ?? const [])
+                .whereType<Map>()
+                .map(ResidentVision.fromFirebase)
+                .where((vision) => vision.id.isNotEmpty));
+          householdRepairJobs
+            ..clear()
+            ..addAll((housingData['householdRepairJobs'] as List? ?? const [])
+                .whereType<Map>()
+                .map(HouseholdRepairJob.fromFirebase)
+                .where((job) => job.id.isNotEmpty));
+          lastResidentArrivalResolutionAt =
+              _readDate(housingData['lastResidentArrivalResolutionAt']);
+          residentAutonomyGraceUntil =
+              _readDate(housingData['residentAutonomyGraceUntil']);
+          communityRoleAssignments
+            ..clear()
+            ..addAll(
+              (housingData['communityRoleAssignments'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map(CommunityRoleAssignment.fromFirebase)
+                  .where((assignment) => assignment.id.isNotEmpty),
+            );
+          communityProductionBatches
+            ..clear()
+            ..addAll(
+              (housingData['communityProductionBatches'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map(CommunityProductionBatch.fromFirebase)
+                  .where((batch) => batch.id.isNotEmpty),
+            );
+          residentEconomicTransactions
+            ..clear()
+            ..addAll(
+              (housingData['residentEconomicTransactions'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map(ResidentEconomicTransaction.fromFirebase)
+                  .where((transaction) => transaction.id.isNotEmpty),
+            );
+          economicSettlementBatches
+            ..clear()
+            ..addAll(
+              (housingData['economicSettlementBatches'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map(EconomicSettlementBatch.fromFirebase)
+                  .where((batch) => batch.id.isNotEmpty),
+            );
+          residentUncoveredNeeds
+            ..clear()
+            ..addAll(
+              (housingData['residentUncoveredNeeds'] as List? ?? const [])
+                  .whereType<Map>()
+                  .map(ResidentUncoveredNeed.fromFirebase)
+                  .where((need) => need.id.isNotEmpty),
+            );
+          residentPopulationMigrationCompleted =
+              housingData['residentPopulationMigrationCompleted'] == true;
+          residentNeedsMigrationCompleted =
+              housingData['residentNeedsMigrationCompleted'] == true;
+          residentNeedsGraceUntil =
+              _readDate(housingData['residentNeedsGraceUntil']);
+          lastResidentNeedsResolutionDayKey =
+              '${housingData['lastResidentNeedsResolutionDayKey'] ?? ''}';
+          resolvedResidentWeatherEventIds
+            ..clear()
+            ..addAll((housingData['resolvedResidentWeatherEventIds'] as List? ??
+                    const [])
+                .map((item) => '$item'));
+          residentPassionMigrationCompleted =
+              housingData['residentPassionMigrationCompleted'] == true;
+          lastCommunityRoleResolutionAt =
+              _readDate(housingData['lastCommunityRoleResolutionAt']);
+          residentEconomyMigrationCompleted =
+              housingData['residentEconomyMigrationCompleted'] == true;
+          lastResidentEconomyResolvedAt =
+              _readDate(housingData['lastResidentEconomyResolvedAt']);
+          lastEconomicSettlementDayKey =
+              '${housingData['lastEconomicSettlementDayKey'] ?? ''}';
+          lastDomesticEnergyDistributionAt =
+              _readDate(housingData['lastDomesticEnergyDistributionAt']);
         }
         final projectData = buildingsData['projects'];
         if (projectData is Map) {
@@ -9410,6 +12588,16 @@ class Zone0GameState extends ChangeNotifier {
       );
       _migrateBuildingViability();
       _migrateResidentsAndHouses();
+      _migrateResidentNeeds();
+      resolveResidentNeeds();
+      _migrateResidentPassionsAndRoles();
+      _migrateResidentEconomy();
+      _resolveResidentVisions();
+      residentAutonomyGraceUntil ??= DateTime.now()
+          .add(Duration(hours: housingConfig.householdAutonomyGraceHours));
+      bioGeneratorMovedToPlayerHouse =
+          data['bioGeneratorMovedToPlayerHouse'] == true ||
+              bioGeneratorMovedToPlayerHouse;
       refugeSafety = _readInt(
         data['campSecurity'],
       ).clamp(0, securityTowerConfig.maxSecurity);
@@ -10526,6 +13714,7 @@ class Zone0GameState extends ChangeNotifier {
     );
 
     while (!current.isBefore(activeGlobalWeatherEvent!.endsAt)) {
+      _clearResidentWeatherImpact(activeGlobalWeatherEvent!);
       activeGlobalWeatherEvent!.status = GlobalWeatherEventStatus.completed;
       final promoted = nextGlobalWeatherEvent!;
       promoted.status = GlobalWeatherEventStatus.active;
@@ -10533,6 +13722,7 @@ class Zone0GameState extends ChangeNotifier {
       _applyWeatherViabilityDamage(promoted);
       _applyWeatherHouseDamage(promoted);
       _applyWeatherStockLosses(promoted);
+      _resolveResidentWeatherImpact(promoted);
       _notifyGlobalWeatherStarted(promoted);
       nextGlobalWeatherEvent = _newGlobalWeatherEvent(
         startsAt: promoted.endsAt,
@@ -10544,6 +13734,7 @@ class Zone0GameState extends ChangeNotifier {
         !current.isBefore(upcoming.announcedAt)) {
       upcoming.status = GlobalWeatherEventStatus.announced;
       _announceGlobalWeather(upcoming);
+      _prepareResidentWeatherNeeds(upcoming);
       changed = true;
     }
     return changed || forceFirstAlert;
@@ -12170,6 +15361,9 @@ class Zone0GameState extends ChangeNotifier {
               : Timestamp.fromDate(marketAssignedAt!),
           'xpEarnedThisAssignment': marketXpEarnedThisAssignment,
           'bioPilesEarnedThisAssignment': marketBioPilesEarnedThisAssignment,
+          'articlesSoldThisAssignment': marketArticlesSoldThisAssignment,
+          'distributorsRepairedThisAssignment':
+              marketDistributorsRepairedThisAssignment,
           'assignedPtipoteId': marketAssignedPtipoteId,
           'assignedPtipoteName': marketAssignedPtipoteName,
           'restockEnabledItems': marketRestockEnabledItems.toList(),
@@ -12184,6 +15378,11 @@ class Zone0GameState extends ChangeNotifier {
           'shopConstruction': marketShopConstructionOrder?.toFirebase(),
           'activeLicenses': activeMarketLicenses.toList(),
           'shops': marketShops.map((item) => item.toFirebase()).toList(),
+          'shopSlots':
+              marketShopSlots.map((item) => item.toFirebase()).toList(),
+          'restockRules':
+              marketRestockRules.map((item) => item.toFirebase()).toList(),
+          'shopSlotsMigrationCompleted': marketShopSlotsMigrationCompleted,
           'contracts':
               marketContracts.map((item) => item.toFirebase()).toList(),
           'distributor': marketDistributor.toFirebase(),
@@ -12259,6 +15458,7 @@ class Zone0GameState extends ChangeNotifier {
               ? null
               : Timestamp.fromDate(generatorCycleStartedAt!),
         },
+        'bioGeneratorMovedToPlayerHouse': bioGeneratorMovedToPlayerHouse,
         'recycler': <String, dynamic>{
           'level': recyclerLevel,
           'wasteTank': recyclerWasteTank,
@@ -12401,6 +15601,62 @@ class Zone0GameState extends ChangeNotifier {
                 residents.map((resident) => resident.toFirebase()).toList(),
             'functionalHouses':
                 residentHouses.map((house) => house.toFirebase()).toList(),
+            'arrivalCandidates': residentArrivalCandidates
+                .map((candidate) => candidate.toFirebase())
+                .toList(),
+            'residentVisions':
+                residentVisions.map((vision) => vision.toFirebase()).toList(),
+            'householdRepairJobs':
+                householdRepairJobs.map((job) => job.toFirebase()).toList(),
+            'lastResidentArrivalResolutionAt':
+                lastResidentArrivalResolutionAt == null
+                    ? null
+                    : Timestamp.fromDate(lastResidentArrivalResolutionAt!),
+            'residentAutonomyGraceUntil': residentAutonomyGraceUntil == null
+                ? null
+                : Timestamp.fromDate(residentAutonomyGraceUntil!),
+            'communityRoleAssignments': communityRoleAssignments
+                .map((assignment) => assignment.toFirebase())
+                .toList(),
+            'communityProductionBatches': communityProductionBatches
+                .map((batch) => batch.toFirebase())
+                .toList(),
+            'residentEconomicTransactions': residentEconomicTransactions
+                .map((transaction) => transaction.toFirebase())
+                .toList(),
+            'economicSettlementBatches': economicSettlementBatches
+                .map((batch) => batch.toFirebase())
+                .toList(),
+            'residentUncoveredNeeds': residentUncoveredNeeds
+                .map((need) => need.toFirebase())
+                .toList(),
+            'residentPopulationMigrationCompleted':
+                residentPopulationMigrationCompleted,
+            'residentNeedsMigrationCompleted': residentNeedsMigrationCompleted,
+            'residentNeedsGraceUntil': residentNeedsGraceUntil == null
+                ? null
+                : Timestamp.fromDate(residentNeedsGraceUntil!),
+            'lastResidentNeedsResolutionDayKey':
+                lastResidentNeedsResolutionDayKey,
+            'resolvedResidentWeatherEventIds':
+                resolvedResidentWeatherEventIds.toList(),
+            'residentPassionMigrationCompleted':
+                residentPassionMigrationCompleted,
+            'lastCommunityRoleResolutionAt':
+                lastCommunityRoleResolutionAt == null
+                    ? null
+                    : Timestamp.fromDate(lastCommunityRoleResolutionAt!),
+            'residentEconomyMigrationCompleted':
+                residentEconomyMigrationCompleted,
+            'lastResidentEconomyResolvedAt':
+                lastResidentEconomyResolvedAt == null
+                    ? null
+                    : Timestamp.fromDate(lastResidentEconomyResolvedAt!),
+            'lastEconomicSettlementDayKey': lastEconomicSettlementDayKey,
+            'lastDomesticEnergyDistributionAt':
+                lastDomesticEnergyDistributionAt == null
+                    ? null
+                    : Timestamp.fromDate(lastDomesticEnergyDistributionAt!),
           },
           'viability': buildingViabilities.map(
             (key, value) => MapEntry(key, value.toFirebase()),
@@ -12699,6 +15955,8 @@ class MarketDistributorState {
   DateTime? constructionEndsAt;
   DateTime? repairEndsAt;
   String? repairStartedBy;
+  DateTime? upgradeEndsAt;
+  int? upgradeTargetLevel;
   final Map<String, int> constructionDeposits = <String, int>{};
   final List<Zone0InventoryStack> stock = <Zone0InventoryStack>[];
 
@@ -12744,7 +16002,9 @@ class MarketDistributorState {
       ..constructionEndsAt =
           Zone0GameState.instance._readDate(data['constructionEndsAt'])
       ..repairEndsAt = Zone0GameState.instance._readDate(data['repairEndsAt'])
-      ..repairStartedBy = data['repairStartedBy'] as String?;
+      ..repairStartedBy = data['repairStartedBy'] as String?
+      ..upgradeEndsAt = Zone0GameState.instance._readDate(data['upgradeEndsAt'])
+      ..upgradeTargetLevel = data['upgradeTargetLevel'] as int?;
     final deposits = data['constructionDeposits'];
     if (deposits is Map) {
       for (final entry in deposits.entries) {
@@ -12777,6 +16037,9 @@ class MarketDistributorState {
         'repairEndsAt':
             repairEndsAt == null ? null : Timestamp.fromDate(repairEndsAt!),
         'repairStartedBy': repairStartedBy,
+        'upgradeEndsAt':
+            upgradeEndsAt == null ? null : Timestamp.fromDate(upgradeEndsAt!),
+        'upgradeTargetLevel': upgradeTargetLevel,
         'constructionDeposits': constructionDeposits,
         'stock': stock.map((item) => item.toFirebase()).toList(),
       };
@@ -12860,6 +16123,188 @@ class MarketShopConstructionOrder {
       };
 }
 
+enum MarketShopSlotStatus {
+  locked,
+  vacant,
+  playerOccupied,
+  residentOccupied,
+  pendingResidentClaim,
+  reserved,
+  unavailable,
+}
+
+enum MarketShopOwnershipType { player, residentCommunity }
+
+/// Emplacement commercial persistant. Il est volontairement séparé du
+/// magasin afin qu'une boutique supprimée ou migrée ne recrée jamais un slot.
+class MarketShopSlot {
+  MarketShopSlot({
+    required this.slotId,
+    required this.marketLevelRequired,
+    required this.slotIndex,
+    this.status = MarketShopSlotStatus.locked,
+    this.shopId,
+    this.reservedByResidentId,
+    this.vacantSince,
+    this.claimCandidateResidentId,
+    this.claimWarningStartedAt,
+    this.claimFinalizationAt,
+  });
+
+  final String slotId;
+  final int marketLevelRequired;
+  final int slotIndex;
+  MarketShopSlotStatus status;
+  String? shopId;
+  String? reservedByResidentId;
+  DateTime? vacantSince;
+  String? claimCandidateResidentId;
+  DateTime? claimWarningStartedAt;
+  DateTime? claimFinalizationAt;
+
+  factory MarketShopSlot.fromFirebase(Map<dynamic, dynamic> data) =>
+      MarketShopSlot(
+        slotId: '${data['slotId'] ?? ''}',
+        marketLevelRequired: Zone0GameState.instance
+            ._readInt(data['marketLevelRequired'], fallback: 1),
+        slotIndex: Zone0GameState.instance._readInt(data['slotIndex']),
+        status: ForageMission._enumByName(
+          MarketShopSlotStatus.values,
+          '${data['status'] ?? ''}',
+          MarketShopSlotStatus.locked,
+        ),
+        shopId: data['shopId']?.toString(),
+        reservedByResidentId: data['reservedByResidentId']?.toString(),
+        vacantSince: Zone0GameState.instance._readDate(data['vacantSince']),
+        claimCandidateResidentId: data['claimCandidateResidentId']?.toString(),
+        claimWarningStartedAt:
+            Zone0GameState.instance._readDate(data['claimWarningStartedAt']),
+        claimFinalizationAt:
+            Zone0GameState.instance._readDate(data['claimFinalizationAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'slotId': slotId,
+        'marketLevelRequired': marketLevelRequired,
+        'slotIndex': slotIndex,
+        'status': status.name,
+        'shopId': shopId,
+        'reservedByResidentId': reservedByResidentId,
+        'vacantSince':
+            vacantSince == null ? null : Timestamp.fromDate(vacantSince!),
+        'claimCandidateResidentId': claimCandidateResidentId,
+        'claimWarningStartedAt': claimWarningStartedAt == null
+            ? null
+            : Timestamp.fromDate(claimWarningStartedAt!),
+        'claimFinalizationAt': claimFinalizationAt == null
+            ? null
+            : Timestamp.fromDate(claimFinalizationAt!),
+      };
+}
+
+class MarketRestockRule {
+  MarketRestockRule({
+    required this.ruleId,
+    required this.shopId,
+    required this.itemDefinitionId,
+    this.enabled = false,
+    this.reserveMinimum = 0,
+    this.targetStock = 0,
+    this.maximumTransfer = 1,
+    this.priority = 0,
+    this.lastStatus = 'inactive',
+  });
+
+  final String ruleId;
+  final String shopId;
+  final String itemDefinitionId;
+  bool enabled;
+  int reserveMinimum;
+  int targetStock;
+  int maximumTransfer;
+  int priority;
+  String lastStatus;
+
+  factory MarketRestockRule.fromFirebase(Map<dynamic, dynamic> data) =>
+      MarketRestockRule(
+        ruleId: '${data['ruleId'] ?? ''}',
+        shopId: '${data['shopId'] ?? ''}',
+        itemDefinitionId: '${data['itemDefinitionId'] ?? ''}',
+        enabled: data['enabled'] == true,
+        reserveMinimum:
+            Zone0GameState.instance._readInt(data['reserveMinimum']),
+        targetStock: Zone0GameState.instance._readInt(data['targetStock']),
+        maximumTransfer: Zone0GameState.instance
+            ._readInt(data['maximumTransfer'], fallback: 1),
+        priority: Zone0GameState.instance._readInt(data['priority']),
+        lastStatus: '${data['lastStatus'] ?? 'inactive'}',
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'ruleId': ruleId,
+        'shopId': shopId,
+        'itemDefinitionId': itemDefinitionId,
+        'enabled': enabled,
+        'reserveMinimum': reserveMinimum,
+        'targetStock': targetStock,
+        'maximumTransfer': maximumTransfer,
+        'priority': priority,
+        'lastStatus': lastStatus,
+      };
+}
+
+class MarketCoverage {
+  const MarketCoverage({
+    required this.openNeeds,
+    required this.coveredCategories,
+    required this.availableShopIds,
+  });
+
+  final int openNeeds;
+  final Set<String> coveredCategories;
+  final Set<String> availableShopIds;
+}
+
+/// Lecture centralisée de la couverture commerciale : les widgets ne doivent
+/// ni choisir un magasin ni déduire une catégorie eux-mêmes.
+class MarketCoverageService {
+  const MarketCoverageService._();
+
+  static MarketCoverage calculate(Zone0GameState state) {
+    final shops = <MarketShop>[
+      if (state.primaryMarketShopChosen)
+        MarketShop(
+          id: Zone0GameState.primaryMarketShopId,
+          specialization: state.primaryMarketShopSpecialization,
+          level: state.primaryMarketShopLevel,
+          isPrimary: true,
+        ),
+      ...state.marketShops.where((shop) => !shop.legacyExtraSlot),
+    ];
+    return MarketCoverage(
+      openNeeds: state.residentUncoveredNeeds
+          .where((need) => need.resolvedAt == null)
+          .length,
+      coveredCategories: shops.map((shop) => shop.specialization).toSet(),
+      availableShopIds: shops.map((shop) => shop.id).toSet(),
+    );
+  }
+}
+
+class MarketInformationPointService {
+  const MarketInformationPointService._();
+
+  static bool isActive(Zone0GameState state) =>
+      state.isMarketInformationPointUnlocked &&
+      state.marketAssignedPtipoteId != null;
+
+  static List<MarketShop> eligibleShops(Zone0GameState state) => state
+      .marketShops
+      .where(
+          (shop) => shop.informationPointBonusEligible && !shop.legacyExtraSlot)
+      .toList(growable: false);
+}
+
 class MarketShop {
   MarketShop({
     required this.id,
@@ -12868,6 +16313,16 @@ class MarketShop {
     List<Zone0InventoryStack>? stock,
     this.distributor,
     this.isPrimary = false,
+    this.slotId,
+    this.ownershipType = MarketShopOwnershipType.player,
+    this.ownerResidentId,
+    this.managerResidentId,
+    this.shopPileBalance = 0,
+    this.serviceCapacity = 0,
+    this.ownershipStartedAt,
+    this.ownershipLocked = false,
+    this.informationPointBonusEligible = true,
+    this.legacyExtraSlot = false,
   }) : stock = stock ?? <Zone0InventoryStack>[];
   final String id;
   final String specialization;
@@ -12875,12 +16330,29 @@ class MarketShop {
   final List<Zone0InventoryStack> stock;
   MarketDistributorState? distributor;
   final bool isPrimary;
+  String? slotId;
+  MarketShopOwnershipType ownershipType;
+  String? ownerResidentId;
+  String? managerResidentId;
+  int shopPileBalance;
+  int serviceCapacity;
+  DateTime? ownershipStartedAt;
+  bool ownershipLocked;
+  bool informationPointBonusEligible;
+  bool legacyExtraSlot;
 
   bool accepts(String resource) => switch (specialization) {
         'restaurant' => craftConfig.recipes.any(
             (recipe) => recipe.resultItem == resource && recipe.isConsumable,
           ),
-        'home' || 'ameublement' => resource.contains('Meuble') ||
+        'home' || 'ameublement' => const <String>{
+              'Organique',
+              'Minéral',
+              'Déchets',
+              'Mycélium',
+              'Eau',
+            }.contains(resource) ||
+            resource.contains('Meuble') ||
             resource.contains('Ventilation') ||
             resource.contains('Lumière') ||
             resource.contains('Cartouche'),
@@ -12893,7 +16365,8 @@ class MarketShop {
                 !resource.contains('Lumière') &&
                 !resource.contains('Cartouche'),
           ),
-        'ptibug' => resource.startsWith('P’TIBUG '),
+        'ptibug' => resource.startsWith('P’TIBUG ') ||
+            resource.startsWith('Capsule P’TIBUG '),
         // Compatibilité de lecture des anciennes sauvegardes : ce type ne
         // peut plus être choisi, mais son stock reste utilisable.
         'general' => true,
@@ -12915,6 +16388,27 @@ class MarketShop {
             ? MarketDistributorState.fromFirebase(data['distributor'] as Map)
             : null,
         isPrimary: data['isPrimary'] == true,
+        slotId: data['slotId']?.toString(),
+        ownershipType: ForageMission._enumByName(
+          MarketShopOwnershipType.values,
+          '${data['ownershipType'] ?? ''}',
+          data['ownerResidentId'] == null
+              ? MarketShopOwnershipType.player
+              : MarketShopOwnershipType.residentCommunity,
+        ),
+        ownerResidentId: data['ownerResidentId']?.toString(),
+        managerResidentId: data['managerResidentId']?.toString(),
+        shopPileBalance:
+            Zone0GameState.instance._readInt(data['shopPileBalance']),
+        serviceCapacity: Zone0GameState.instance._readInt(
+            data['serviceCapacity'],
+            fallback: marketConfig.residentShopServiceCapacity),
+        ownershipStartedAt:
+            Zone0GameState.instance._readDate(data['ownershipStartedAt']),
+        ownershipLocked: data['ownershipLocked'] == true,
+        informationPointBonusEligible:
+            data['informationPointBonusEligible'] != false,
+        legacyExtraSlot: data['legacyExtraSlot'] == true,
       );
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'id': id,
@@ -12923,6 +16417,18 @@ class MarketShop {
         'stock': stock.map((item) => item.toFirebase()).toList(),
         'distributor': distributor?.toFirebase(),
         'isPrimary': isPrimary,
+        'slotId': slotId,
+        'ownershipType': ownershipType.name,
+        'ownerResidentId': ownerResidentId,
+        'managerResidentId': managerResidentId,
+        'shopPileBalance': shopPileBalance,
+        'serviceCapacity': serviceCapacity,
+        'ownershipStartedAt': ownershipStartedAt == null
+            ? null
+            : Timestamp.fromDate(ownershipStartedAt!),
+        'ownershipLocked': ownershipLocked,
+        'informationPointBonusEligible': informationPointBonusEligible,
+        'legacyExtraSlot': legacyExtraSlot,
       };
 }
 
@@ -13114,6 +16620,7 @@ class MarketRequestLogEntry {
     this.resolvedAt,
     this.rewardBioBatteries = 0,
     this.responder,
+    this.responderDisplayName,
   });
 
   factory MarketRequestLogEntry.fromRequest(MarketCustomerRequest request) =>
@@ -13154,6 +16661,7 @@ class MarketRequestLogEntry {
                 '${data['responder']}',
                 MarketRequestResponder.player,
               ),
+        responderDisplayName: data['responderDisplayName'] as String?,
       );
 
   final String requestId;
@@ -13169,6 +16677,7 @@ class MarketRequestLogEntry {
   /// la valeur est désormais exprimée en bio-piles.
   int rewardBioBatteries;
   MarketRequestResponder? responder;
+  String? responderDisplayName;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'requestId': requestId,
@@ -13183,6 +16692,7 @@ class MarketRequestLogEntry {
         'rewardBioBatteries': rewardBioBatteries ~/ 100,
         'rewardBioPiles': rewardBioBatteries,
         'responder': responder?.name,
+        'responderDisplayName': responderDisplayName,
       };
 }
 
@@ -13581,6 +17091,1120 @@ class BuildingViabilityState {
       };
 }
 
+enum ResidentStatus { active, awaitingHousing, arriving, inactive, archived }
+
+enum ResidentNutritionStatus { nourri, partiellementNourri, nonNourri }
+
+enum ResidentPassion {
+  cooking,
+  crafting,
+  trading,
+  livingObservation,
+  watching,
+}
+
+enum CommunityRoleType {
+  kitchenCook,
+  fablabMaker,
+  marketCounter,
+  lisiereObserver,
+  securityWatch,
+  weatherWatch,
+}
+
+enum CommunityRoleStatus {
+  active,
+  paused,
+  unavailable,
+  awaitingBuilding,
+  awaitingResources,
+  archived,
+}
+
+class CommunityRoleAssignment {
+  CommunityRoleAssignment({
+    required this.id,
+    required this.residentId,
+    required this.passion,
+    required this.roleType,
+    required this.buildingId,
+    required this.slotId,
+    required this.startedAt,
+    this.status = CommunityRoleStatus.active,
+    this.pausedAt,
+    this.lastResolvedAt,
+    this.coverageCapacity = 0,
+    this.dailyOutput = 0,
+    this.outputDayKey = '',
+    this.efficiencyRemainder = 0,
+    this.productionDefinitionId,
+    this.previousAssignmentId,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  })  : createdAt = createdAt ?? startedAt,
+        updatedAt = updatedAt ?? startedAt;
+
+  final String id;
+  final String residentId;
+  final ResidentPassion passion;
+  final CommunityRoleType roleType;
+  final String buildingId;
+  final String slotId;
+  CommunityRoleStatus status;
+  final DateTime startedAt;
+  DateTime? pausedAt;
+  DateTime? lastResolvedAt;
+  int coverageCapacity;
+  int dailyOutput;
+  String outputDayKey;
+  int efficiencyRemainder;
+  String? productionDefinitionId;
+  String? previousAssignmentId;
+  final DateTime createdAt;
+  DateTime updatedAt;
+
+  bool get isActive => status == CommunityRoleStatus.active;
+
+  factory CommunityRoleAssignment.fromFirebase(Map<dynamic, dynamic> data) =>
+      CommunityRoleAssignment(
+        id: '${data['assignmentId'] ?? ''}',
+        residentId: '${data['residentId'] ?? ''}',
+        passion: ForageMission._enumByName(
+          ResidentPassion.values,
+          '${data['passionId'] ?? ''}',
+          ResidentPassion.cooking,
+        ),
+        roleType: ForageMission._enumByName(
+          CommunityRoleType.values,
+          '${data['roleType'] ?? ''}',
+          CommunityRoleType.kitchenCook,
+        ),
+        buildingId: '${data['buildingId'] ?? ''}',
+        slotId: '${data['slotId'] ?? ''}',
+        status: ForageMission._enumByName(
+          CommunityRoleStatus.values,
+          '${data['status'] ?? ''}',
+          CommunityRoleStatus.awaitingBuilding,
+        ),
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']) ??
+            DateTime.now(),
+        pausedAt: Zone0GameState.instance._readDate(data['pausedAt']),
+        lastResolvedAt:
+            Zone0GameState.instance._readDate(data['lastResolvedAt']),
+        coverageCapacity:
+            Zone0GameState.instance._readInt(data['coverageCapacity']),
+        dailyOutput: Zone0GameState.instance._readInt(data['dailyOutput']),
+        outputDayKey: '${data['outputDayKey'] ?? ''}',
+        efficiencyRemainder:
+            Zone0GameState.instance._readInt(data['efficiencyRemainder']),
+        productionDefinitionId: data['productionDefinitionId'] as String?,
+        previousAssignmentId: data['previousAssignmentId'] as String?,
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']),
+        updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'assignmentId': id,
+        'residentId': residentId,
+        'passionId': passion.name,
+        'roleType': roleType.name,
+        'buildingId': buildingId,
+        'slotId': slotId,
+        'status': status.name,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'pausedAt': pausedAt == null ? null : Timestamp.fromDate(pausedAt!),
+        'lastResolvedAt':
+            lastResolvedAt == null ? null : Timestamp.fromDate(lastResolvedAt!),
+        'coverageCapacity': coverageCapacity,
+        'dailyOutput': dailyOutput,
+        'outputDayKey': outputDayKey,
+        'efficiencyRemainder': efficiencyRemainder,
+        'productionDefinitionId': productionDefinitionId,
+        'previousAssignmentId': previousAssignmentId,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'updatedAt': Timestamp.fromDate(updatedAt),
+      };
+}
+
+enum ResidentEconomicTransactionType {
+  householdEnergyProduction,
+  householdEnergyDistribution,
+  residentPurchase,
+  residentSale,
+  communityProductionPayment,
+  merchantPayment,
+  producerPayment,
+  supplierPayment,
+  playerSaleToResident,
+  householdInstallationPurchase,
+  refund,
+  migrationAdjustment,
+}
+
+class _ResidentPaymentParts {
+  const _ResidentPaymentParts(
+      this.producer, this.supplier, this.merchant, this.player);
+  final int producer;
+  final int supplier;
+  final int merchant;
+  final int player;
+}
+
+enum ResidentEconomicTransactionStatus {
+  pending,
+  completed,
+  cancelled,
+  failed,
+  archived,
+}
+
+class SupplierContribution {
+  SupplierContribution({
+    required this.id,
+    this.residentId,
+    required this.sourceType,
+    required this.itemDefinitionId,
+    required this.quantity,
+    required this.contributionWeight,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String? residentId;
+  final String sourceType;
+  final String itemDefinitionId;
+  final int quantity;
+  final int contributionWeight;
+  final DateTime createdAt;
+
+  factory SupplierContribution.fromFirebase(Map<dynamic, dynamic> data) =>
+      SupplierContribution(
+        id: '${data['contributionId'] ?? ''}',
+        residentId: data['residentId'] as String?,
+        sourceType: '${data['sourceType'] ?? 'legacyUnknown'}',
+        itemDefinitionId: '${data['itemDefinitionId'] ?? ''}',
+        quantity: Zone0GameState.instance._readInt(data['quantity']),
+        contributionWeight:
+            Zone0GameState.instance._readInt(data['contributionWeight']),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'contributionId': id,
+        'residentId': residentId,
+        'sourceType': sourceType,
+        'itemDefinitionId': itemDefinitionId,
+        'quantity': quantity,
+        'contributionWeight': contributionWeight,
+        'createdAt': Timestamp.fromDate(createdAt),
+      };
+}
+
+class CommunityProductionBatch {
+  CommunityProductionBatch({
+    required this.id,
+    required this.itemDefinitionId,
+    required this.outputQuantity,
+    int? remainingQuantity,
+    this.producerResidentId,
+    List<SupplierContribution>? supplierContributions,
+    required this.buildingId,
+    Map<String, int>? inputSnapshot,
+    this.unitCostPiles,
+    this.status = ResidentEconomicTransactionStatus.completed,
+    required this.producedAt,
+    DateTime? updatedAt,
+  })  : remainingQuantity = remainingQuantity ?? outputQuantity,
+        supplierContributions =
+            supplierContributions ?? <SupplierContribution>[],
+        inputSnapshot = inputSnapshot ?? <String, int>{},
+        updatedAt = updatedAt ?? producedAt;
+
+  final String id;
+  final String itemDefinitionId;
+  final int outputQuantity;
+  int remainingQuantity;
+  final String? producerResidentId;
+  final List<SupplierContribution> supplierContributions;
+  final String buildingId;
+  final Map<String, int> inputSnapshot;
+  final int? unitCostPiles;
+  ResidentEconomicTransactionStatus status;
+  final DateTime producedAt;
+  DateTime updatedAt;
+
+  bool get isAvailable =>
+      status == ResidentEconomicTransactionStatus.completed &&
+      remainingQuantity > 0;
+
+  factory CommunityProductionBatch.fromFirebase(Map<dynamic, dynamic> data) =>
+      CommunityProductionBatch(
+        id: '${data['batchId'] ?? ''}',
+        itemDefinitionId: '${data['outputItemDefinitionId'] ?? ''}',
+        outputQuantity:
+            Zone0GameState.instance._readInt(data['outputQuantity']),
+        remainingQuantity:
+            Zone0GameState.instance._readInt(data['remainingQuantity']),
+        producerResidentId: data['producerResidentId'] as String?,
+        supplierContributions:
+            (data['supplierContributions'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(SupplierContribution.fromFirebase)
+                .toList(),
+        buildingId: '${data['buildingId'] ?? ''}',
+        inputSnapshot: Map<String, int>.fromEntries(
+          (data['inputSnapshot'] as Map? ?? const <dynamic, dynamic>{})
+              .entries
+              .map((entry) => MapEntry('${entry.key}',
+                  Zone0GameState.instance._readInt(entry.value))),
+        ),
+        unitCostPiles: data['unitCostPiles'] == null
+            ? null
+            : Zone0GameState.instance._readInt(data['unitCostPiles']),
+        status: ForageMission._enumByName(
+          ResidentEconomicTransactionStatus.values,
+          '${data['status'] ?? ''}',
+          ResidentEconomicTransactionStatus.completed,
+        ),
+        producedAt: Zone0GameState.instance._readDate(data['producedAt']) ??
+            DateTime.now(),
+        updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'batchId': id,
+        'outputItemDefinitionId': itemDefinitionId,
+        'outputQuantity': outputQuantity,
+        'remainingQuantity': remainingQuantity,
+        'producerResidentId': producerResidentId,
+        'supplierContributions':
+            supplierContributions.map((item) => item.toFirebase()).toList(),
+        'buildingId': buildingId,
+        'inputSnapshot': inputSnapshot,
+        'unitCostPiles': unitCostPiles,
+        'status': status.name,
+        'producedAt': Timestamp.fromDate(producedAt),
+        'updatedAt': Timestamp.fromDate(updatedAt),
+      };
+}
+
+class ResidentEconomicTransaction {
+  ResidentEconomicTransaction({
+    required this.id,
+    required this.type,
+    this.buyerResidentId,
+    this.sellerResidentId,
+    this.householdId,
+    this.buildingId,
+    this.shopId,
+    this.itemDefinitionId,
+    this.quantity = 1,
+    this.grossAmountPiles = 0,
+    this.merchantSharePiles = 0,
+    this.producerSharePiles = 0,
+    this.supplierSharePiles = 0,
+    this.playerSharePiles = 0,
+    this.otherSharePiles = 0,
+    this.sourceNeedId,
+    this.sourceProductionId,
+    this.sourceRequestId,
+    List<String>? participantResidentIds,
+    this.status = ResidentEconomicTransactionStatus.pending,
+    required this.createdAt,
+    this.completedAt,
+    this.cancelledAt,
+    this.settlementBatchId,
+    required this.idempotencyKey,
+  }) : participantResidentIds = participantResidentIds ?? <String>[];
+
+  final String id;
+  final ResidentEconomicTransactionType type;
+  final String? buyerResidentId;
+  final String? sellerResidentId;
+  final String? householdId;
+  final String? buildingId;
+  final String? shopId;
+  final String? itemDefinitionId;
+  final int quantity;
+  final int grossAmountPiles;
+  final int merchantSharePiles;
+  final int producerSharePiles;
+  final int supplierSharePiles;
+  final int playerSharePiles;
+  final int otherSharePiles;
+  final String? sourceNeedId;
+  final String? sourceProductionId;
+  final String? sourceRequestId;
+  final List<String> participantResidentIds;
+  ResidentEconomicTransactionStatus status;
+  final DateTime createdAt;
+  DateTime? completedAt;
+  DateTime? cancelledAt;
+  String? settlementBatchId;
+  final String idempotencyKey;
+
+  factory ResidentEconomicTransaction.fromFirebase(
+          Map<dynamic, dynamic> data) =>
+      ResidentEconomicTransaction(
+        id: '${data['transactionId'] ?? ''}',
+        type: ForageMission._enumByName(
+          ResidentEconomicTransactionType.values,
+          '${data['transactionType'] ?? ''}',
+          ResidentEconomicTransactionType.migrationAdjustment,
+        ),
+        buyerResidentId: data['buyerResidentId'] as String?,
+        sellerResidentId: data['sellerResidentId'] as String?,
+        householdId: data['householdId'] as String?,
+        buildingId: data['buildingId'] as String?,
+        shopId: data['shopId'] as String?,
+        itemDefinitionId: data['itemDefinitionId'] as String?,
+        quantity:
+            Zone0GameState.instance._readInt(data['quantity'], fallback: 1),
+        grossAmountPiles:
+            Zone0GameState.instance._readInt(data['grossAmountPiles']),
+        merchantSharePiles:
+            Zone0GameState.instance._readInt(data['merchantSharePiles']),
+        producerSharePiles:
+            Zone0GameState.instance._readInt(data['producerSharePiles']),
+        supplierSharePiles:
+            Zone0GameState.instance._readInt(data['supplierSharePiles']),
+        playerSharePiles:
+            Zone0GameState.instance._readInt(data['playerSharePiles']),
+        otherSharePiles:
+            Zone0GameState.instance._readInt(data['otherSharePiles']),
+        sourceNeedId: data['sourceNeedId'] as String?,
+        sourceProductionId: data['sourceProductionId'] as String?,
+        sourceRequestId: data['sourceRequestId'] as String?,
+        participantResidentIds:
+            (data['participantResidentIds'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .toList(),
+        status: ForageMission._enumByName(
+          ResidentEconomicTransactionStatus.values,
+          '${data['status'] ?? ''}',
+          ResidentEconomicTransactionStatus.pending,
+        ),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+        cancelledAt: Zone0GameState.instance._readDate(data['cancelledAt']),
+        settlementBatchId: data['settlementBatchId'] as String?,
+        idempotencyKey: '${data['idempotencyKey'] ?? ''}',
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'transactionId': id,
+        'transactionType': type.name,
+        'buyerResidentId': buyerResidentId,
+        'sellerResidentId': sellerResidentId,
+        'householdId': householdId,
+        'buildingId': buildingId,
+        'shopId': shopId,
+        'itemDefinitionId': itemDefinitionId,
+        'quantity': quantity,
+        'grossAmountPiles': grossAmountPiles,
+        'merchantSharePiles': merchantSharePiles,
+        'producerSharePiles': producerSharePiles,
+        'supplierSharePiles': supplierSharePiles,
+        'playerSharePiles': playerSharePiles,
+        'otherSharePiles': otherSharePiles,
+        'sourceNeedId': sourceNeedId,
+        'sourceProductionId': sourceProductionId,
+        'sourceRequestId': sourceRequestId,
+        'participantResidentIds': participantResidentIds,
+        'status': status.name,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
+        'cancelledAt':
+            cancelledAt == null ? null : Timestamp.fromDate(cancelledAt!),
+        'settlementBatchId': settlementBatchId,
+        'idempotencyKey': idempotencyKey,
+      };
+}
+
+class EconomicSettlementBatch {
+  EconomicSettlementBatch({
+    required this.id,
+    required this.periodStart,
+    required this.periodEnd,
+    List<String>? transactionIds,
+    this.totalGrossPiles = 0,
+    this.totalMerchantPiles = 0,
+    this.totalProducerPiles = 0,
+    this.totalSupplierPiles = 0,
+    this.totalPlayerPiles = 0,
+    this.status = ResidentEconomicTransactionStatus.completed,
+    required this.createdAt,
+    this.completedAt,
+    required this.idempotencyKey,
+  }) : transactionIds = transactionIds ?? <String>[];
+
+  final String id;
+  final DateTime periodStart;
+  final DateTime periodEnd;
+  final List<String> transactionIds;
+  final int totalGrossPiles;
+  final int totalMerchantPiles;
+  final int totalProducerPiles;
+  final int totalSupplierPiles;
+  final int totalPlayerPiles;
+  ResidentEconomicTransactionStatus status;
+  final DateTime createdAt;
+  DateTime? completedAt;
+  final String idempotencyKey;
+
+  factory EconomicSettlementBatch.fromFirebase(Map<dynamic, dynamic> data) =>
+      EconomicSettlementBatch(
+        id: '${data['settlementBatchId'] ?? ''}',
+        periodStart: Zone0GameState.instance._readDate(data['periodStart']) ??
+            DateTime.now(),
+        periodEnd: Zone0GameState.instance._readDate(data['periodEnd']) ??
+            DateTime.now(),
+        transactionIds: (data['transactionIds'] as List? ?? const <dynamic>[])
+            .map((item) => '$item')
+            .toList(),
+        totalGrossPiles:
+            Zone0GameState.instance._readInt(data['totalGrossPiles']),
+        totalMerchantPiles:
+            Zone0GameState.instance._readInt(data['totalMerchantPiles']),
+        totalProducerPiles:
+            Zone0GameState.instance._readInt(data['totalProducerPiles']),
+        totalSupplierPiles:
+            Zone0GameState.instance._readInt(data['totalSupplierPiles']),
+        totalPlayerPiles:
+            Zone0GameState.instance._readInt(data['totalPlayerPiles']),
+        status: ForageMission._enumByName(
+          ResidentEconomicTransactionStatus.values,
+          '${data['status'] ?? ''}',
+          ResidentEconomicTransactionStatus.completed,
+        ),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+        idempotencyKey: '${data['idempotencyKey'] ?? ''}',
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'settlementBatchId': id,
+        'periodStart': Timestamp.fromDate(periodStart),
+        'periodEnd': Timestamp.fromDate(periodEnd),
+        'transactionIds': transactionIds,
+        'totalGrossPiles': totalGrossPiles,
+        'totalMerchantPiles': totalMerchantPiles,
+        'totalProducerPiles': totalProducerPiles,
+        'totalSupplierPiles': totalSupplierPiles,
+        'totalPlayerPiles': totalPlayerPiles,
+        'status': status.name,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
+        'idempotencyKey': idempotencyKey,
+      };
+}
+
+enum ResidentUncoveredNeedReason {
+  noStock,
+  noProducer,
+  noMerchant,
+  insufficientFunds,
+  buildingUnavailable,
+  recipeLocked,
+  noCompatibleShop,
+  inventoryFull,
+}
+
+class ResidentUncoveredNeed {
+  ResidentUncoveredNeed({
+    required this.id,
+    required this.residentId,
+    required this.itemDefinitionId,
+    required this.category,
+    required this.quantity,
+    required this.budgetPiles,
+    required this.reason,
+    required this.urgency,
+    required this.createdAt,
+    this.resolvedAt,
+  });
+
+  final String id;
+  final String residentId;
+  final String itemDefinitionId;
+  final String category;
+  final int quantity;
+  final int budgetPiles;
+  ResidentUncoveredNeedReason reason;
+  final int urgency;
+  final DateTime createdAt;
+  DateTime? resolvedAt;
+
+  factory ResidentUncoveredNeed.fromFirebase(Map<dynamic, dynamic> data) =>
+      ResidentUncoveredNeed(
+        id: '${data['needId'] ?? ''}',
+        residentId: '${data['residentId'] ?? ''}',
+        itemDefinitionId: '${data['itemDefinitionId'] ?? ''}',
+        category: '${data['category'] ?? ''}',
+        quantity:
+            Zone0GameState.instance._readInt(data['quantity'], fallback: 1),
+        budgetPiles: Zone0GameState.instance._readInt(data['budgetPiles']),
+        reason: ForageMission._enumByName(
+          ResidentUncoveredNeedReason.values,
+          '${data['reason'] ?? ''}',
+          ResidentUncoveredNeedReason.noStock,
+        ),
+        urgency: Zone0GameState.instance._readInt(data['urgency'], fallback: 1),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        resolvedAt: Zone0GameState.instance._readDate(data['resolvedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'needId': id,
+        'residentId': residentId,
+        'itemDefinitionId': itemDefinitionId,
+        'category': category,
+        'quantity': quantity,
+        'budgetPiles': budgetPiles,
+        'reason': reason.name,
+        'urgency': urgency,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'resolvedAt':
+            resolvedAt == null ? null : Timestamp.fromDate(resolvedAt!),
+      };
+}
+
+/// Read-only gateway used by the future Market demand layer. The economic
+/// resolver owns creation and resolution; UI and future systems never invent
+/// parallel customer needs from raw materials.
+class ResidentUncoveredNeedsService {
+  const ResidentUncoveredNeedsService._();
+
+  static List<ResidentUncoveredNeed> activeFor(Zone0GameState state) =>
+      state.residentUncoveredNeeds
+          .where((need) => need.resolvedAt == null)
+          .toList(growable: false);
+
+  static Map<ResidentUncoveredNeedReason, int> countByReason(
+      Zone0GameState state) {
+    final counts = <ResidentUncoveredNeedReason, int>{};
+    for (final need in activeFor(state)) {
+      counts.update(need.reason, (count) => count + 1, ifAbsent: () => 1);
+    }
+    return counts;
+  }
+}
+
+class CommunityCoverage {
+  const CommunityCoverage({
+    required this.activeRoles,
+    required this.pausedRoles,
+    required this.freeSlots,
+    required this.foodCoverageCapacity,
+    required this.foodNeedsRemaining,
+    required this.securityProducedToday,
+    required this.observationProducedToday,
+    required this.commerceAvailable,
+  });
+
+  final int activeRoles;
+  final int pausedRoles;
+  final int freeSlots;
+  final int foodCoverageCapacity;
+  final int foodNeedsRemaining;
+  final int securityProducedToday;
+  final int observationProducedToday;
+  final int commerceAvailable;
+}
+
+class CommunityCoverageService {
+  const CommunityCoverageService._();
+
+  static CommunityCoverage calculate(Zone0GameState state) {
+    final active = state.activeCommunityRoles.toList();
+    final paused = state.communityRoleAssignments
+        .where((assignment) =>
+            assignment.status != CommunityRoleStatus.active &&
+            assignment.status != CommunityRoleStatus.archived)
+        .length;
+    final totalSlots = CommunityRoleType.values.fold<int>(
+      0,
+      (sum, role) => sum + state.communityRoleSlotCount(role),
+    );
+    // The two Tower roles share the same physical resident slots.
+    final sharedTowerSlots =
+        state.communityRoleSlotCount(CommunityRoleType.securityWatch);
+    final uniqueSlots = totalSlots - sharedTowerSlots;
+    final foodRoles = active
+        .where((role) => role.roleType == CommunityRoleType.kitchenCook)
+        .toList();
+    final foodCapacity = foodRoles.fold<int>(
+      0,
+      (sum, role) => sum + communityRolesConfig.cookingCoveragePerCycle,
+    );
+    final needsRemaining = state.residents
+        .where((resident) => resident.isActive)
+        .fold<int>(
+            0, (sum, resident) => sum + resident.needsState.mealsMissing);
+    return CommunityCoverage(
+      activeRoles: active.length,
+      pausedRoles: paused,
+      freeSlots: math.max(0, uniqueSlots - active.length),
+      foodCoverageCapacity: foodCapacity,
+      foodNeedsRemaining: needsRemaining,
+      securityProducedToday: active
+          .where((role) => role.roleType == CommunityRoleType.securityWatch)
+          .fold<int>(0, (sum, role) => sum + role.dailyOutput),
+      observationProducedToday: active
+          .where((role) => role.roleType == CommunityRoleType.lisiereObserver)
+          .fold<int>(0, (sum, role) => sum + role.dailyOutput),
+      commerceAvailable: active
+          .where((role) => role.roleType == CommunityRoleType.marketCounter)
+          .length,
+    );
+  }
+}
+
+enum ResidentDesireType { sweetTooth, fashion, comfort, tools }
+
+enum ResidentInteriorProfile { simple, technique, esthete }
+
+enum ResidentOwnedItemStatus {
+  stored,
+  active,
+  consumed,
+  broken,
+  discarded,
+  installedInHouse,
+}
+
+/// A finished good owned by a resident. Raw production materials deliberately
+/// cannot enter this model: validation stays in [giveResidentFinishedItem].
+class ResidentOwnedItem {
+  ResidentOwnedItem({
+    required this.id,
+    required this.itemDefinitionId,
+    required this.category,
+    required this.quantity,
+    required this.acquiredAt,
+    this.currentDurability,
+    this.maxDurability,
+    this.lastUsedAt,
+    this.equippedOrActive = false,
+    this.sourceTransactionId,
+    this.status = ResidentOwnedItemStatus.stored,
+  });
+
+  final String id;
+  final String itemDefinitionId;
+  final String category;
+  int quantity;
+  int? currentDurability;
+  int? maxDurability;
+  DateTime acquiredAt;
+  DateTime? lastUsedAt;
+  bool equippedOrActive;
+  String? sourceTransactionId;
+  ResidentOwnedItemStatus status;
+
+  bool get isUsable =>
+      quantity > 0 &&
+      status != ResidentOwnedItemStatus.broken &&
+      status != ResidentOwnedItemStatus.consumed &&
+      status != ResidentOwnedItemStatus.discarded &&
+      (currentDurability == null || currentDurability! > 0);
+
+  factory ResidentOwnedItem.fromFirebase(Map<dynamic, dynamic> data) =>
+      ResidentOwnedItem(
+        id: '${data['ownedItemId'] ?? ''}',
+        itemDefinitionId: '${data['itemDefinitionId'] ?? ''}',
+        category: '${data['category'] ?? 'other'}',
+        quantity:
+            Zone0GameState.instance._readInt(data['quantity'], fallback: 1),
+        currentDurability: data['currentDurability'] == null
+            ? null
+            : Zone0GameState.instance._readInt(data['currentDurability']),
+        maxDurability: data['maxDurability'] == null
+            ? null
+            : Zone0GameState.instance._readInt(data['maxDurability']),
+        acquiredAt: Zone0GameState.instance._readDate(data['acquiredAt']) ??
+            DateTime.now(),
+        lastUsedAt: Zone0GameState.instance._readDate(data['lastUsedAt']),
+        equippedOrActive: data['equippedOrActive'] == true,
+        sourceTransactionId: data['sourceTransactionId'] as String?,
+        status: ForageMission._enumByName(
+          ResidentOwnedItemStatus.values,
+          '${data['status'] ?? ''}',
+          ResidentOwnedItemStatus.stored,
+        ),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'ownedItemId': id,
+        'itemDefinitionId': itemDefinitionId,
+        'category': category,
+        'quantity': quantity,
+        'currentDurability': currentDurability,
+        'maxDurability': maxDurability,
+        'acquiredAt': Timestamp.fromDate(acquiredAt),
+        'lastUsedAt':
+            lastUsedAt == null ? null : Timestamp.fromDate(lastUsedAt!),
+        'equippedOrActive': equippedOrActive,
+        'sourceTransactionId': sourceTransactionId,
+        'status': status.name,
+      };
+}
+
+/// Per-resident, explainable state. It is persisted separately from the
+/// aggregate happiness so a day/event never has to be inferred from widgets.
+class ResidentNeedsState {
+  ResidentNeedsState({
+    required this.currentDayKey,
+    required this.mealsRequired,
+    this.mealsConsumed = 0,
+    this.nutritionStatus = ResidentNutritionStatus.nourri,
+    List<String>? requiredWeatherProtectionTypes,
+    List<String>? missingWeatherProtectionTypes,
+    this.activeDesireId,
+    this.desireSatisfied = false,
+    this.interiorProfileId = 'simple',
+    this.interiorSatisfied = false,
+    this.houseViabilitySatisfied = true,
+    this.lastResolvedAt,
+    this.nextResolutionAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  })  : requiredWeatherProtectionTypes =
+            requiredWeatherProtectionTypes ?? <String>[],
+        missingWeatherProtectionTypes =
+            missingWeatherProtectionTypes ?? <String>[],
+        createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
+
+  String currentDayKey;
+  int mealsRequired;
+  int mealsConsumed;
+  ResidentNutritionStatus nutritionStatus;
+  final List<String> requiredWeatherProtectionTypes;
+  final List<String> missingWeatherProtectionTypes;
+  String? activeDesireId;
+  bool desireSatisfied;
+  String interiorProfileId;
+  bool interiorSatisfied;
+  bool houseViabilitySatisfied;
+  DateTime? lastResolvedAt;
+  DateTime? nextResolutionAt;
+  DateTime createdAt;
+  DateTime updatedAt;
+
+  int get mealsMissing => math.max(0, mealsRequired - mealsConsumed);
+
+  factory ResidentNeedsState.fromFirebase(Map<dynamic, dynamic> data) =>
+      ResidentNeedsState(
+        currentDayKey: '${data['currentDayKey'] ?? ''}',
+        mealsRequired: Zone0GameState.instance
+            ._readInt(data['mealsRequired'], fallback: 2),
+        mealsConsumed: Zone0GameState.instance._readInt(data['mealsConsumed']),
+        nutritionStatus: ForageMission._enumByName(
+          ResidentNutritionStatus.values,
+          '${data['nutritionStatus'] ?? ''}',
+          ResidentNutritionStatus.nourri,
+        ),
+        requiredWeatherProtectionTypes:
+            (data['requiredWeatherProtectionTypes'] as List? ?? const [])
+                .map((item) => '$item')
+                .toList(),
+        missingWeatherProtectionTypes:
+            (data['missingWeatherProtectionTypes'] as List? ?? const [])
+                .map((item) => '$item')
+                .toList(),
+        activeDesireId: data['activeDesireId'] as String?,
+        desireSatisfied: data['desireSatisfied'] == true,
+        interiorProfileId: '${data['interiorProfileId'] ?? 'simple'}',
+        interiorSatisfied: data['interiorSatisfied'] == true,
+        houseViabilitySatisfied: data['houseViabilitySatisfied'] != false,
+        lastResolvedAt:
+            Zone0GameState.instance._readDate(data['lastResolvedAt']),
+        nextResolutionAt:
+            Zone0GameState.instance._readDate(data['nextResolutionAt']),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']),
+        updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'currentDayKey': currentDayKey,
+        'mealsRequired': mealsRequired,
+        'mealsConsumed': mealsConsumed,
+        'mealsMissing': mealsMissing,
+        'nutritionStatus': nutritionStatus.name,
+        'requiredWeatherProtectionTypes': requiredWeatherProtectionTypes,
+        'missingWeatherProtectionTypes': missingWeatherProtectionTypes,
+        'activeDesireId': activeDesireId,
+        'desireSatisfied': desireSatisfied,
+        'interiorProfileId': interiorProfileId,
+        'interiorSatisfied': interiorSatisfied,
+        'houseViabilitySatisfied': houseViabilitySatisfied,
+        'lastResolvedAt':
+            lastResolvedAt == null ? null : Timestamp.fromDate(lastResolvedAt!),
+        'nextResolutionAt': nextResolutionAt == null
+            ? null
+            : Timestamp.fromDate(nextResolutionAt!),
+        'createdAt': Timestamp.fromDate(createdAt),
+        'updatedAt': Timestamp.fromDate(updatedAt),
+      };
+}
+
+/// Single source of truth for the additive V2 happiness calculation. Widgets
+/// read the same breakdown used by persistence and the global Harmony average.
+class ResidentHappinessService {
+  const ResidentHappinessService._();
+
+  static Map<String, int> breakdown({
+    required Zone0Resident resident,
+    required ResidentHouse? house,
+  }) {
+    final values = <String, int>{'Base': resident.baseHappiness};
+    resident.happinessModifiers.forEach((key, value) {
+      if (value != 0) values[key] = value;
+    });
+    if (resident.temporaryHappinessModifier != 0) {
+      values['legacy'] = resident.temporaryHappinessModifier;
+    }
+    if (house != null && house.currentViability < 50) {
+      values['viabilité maison'] =
+          -housingConfig.houseViabilityDamageHappinessPercent;
+    }
+    if (resident.houseId == null) {
+      values['sans logement'] =
+          -housingConfig.wellbeingPenaltyPerUnhousedResident;
+    }
+    return values;
+  }
+
+  static int calculate({
+    required Zone0Resident resident,
+    required ResidentHouse? house,
+  }) =>
+      breakdown(resident: resident, house: house)
+          .values
+          .fold<int>(0, (sum, value) => sum + value)
+          .clamp(0, 100);
+}
+
+/// Persisted placeholder for the next Residents update. No candidate is
+/// generated in Habitants V1; retaining this model avoids another migration
+/// once Arrivées receives its narrative and acceptance flow.
+enum ResidentArrivalStatus {
+  available,
+  postponed,
+  acceptedPendingConditions,
+  acceptedReady,
+  arrivalScheduled,
+  arrived,
+  rejected,
+  expired,
+  cancelled,
+  archived,
+}
+
+class ResidentArrivalCompanion {
+  ResidentArrivalCompanion({
+    required this.id,
+    required this.displayName,
+    required this.primaryPassionId,
+    required this.primaryDesireId,
+    required this.interiorProfileId,
+  });
+
+  factory ResidentArrivalCompanion.fromFirebase(Map<dynamic, dynamic> data) =>
+      ResidentArrivalCompanion(
+        id: '${data['candidateId'] ?? ''}',
+        displayName: '${data['displayName'] ?? 'Habitant'}',
+        primaryPassionId: '${data['primaryPassionId'] ?? 'cooking'}',
+        primaryDesireId: '${data['primaryDesireId'] ?? 'sweetTooth'}',
+        interiorProfileId: '${data['interiorProfileId'] ?? 'simple'}',
+      );
+
+  final String id;
+  final String displayName;
+  final String primaryPassionId;
+  final String primaryDesireId;
+  final String interiorProfileId;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'candidateId': id,
+        'displayName': displayName,
+        'primaryPassionId': primaryPassionId,
+        'primaryDesireId': primaryDesireId,
+        'interiorProfileId': interiorProfileId,
+      };
+}
+
+class ResidentArrivalCandidate {
+  ResidentArrivalCandidate({
+    required this.id,
+    required this.displayName,
+    required this.originText,
+    required this.arrivalReasonText,
+    required this.promisedContributionText,
+    required this.accompanyingResidentCount,
+    required this.createdAt,
+    this.requestedConditions = const <String>[],
+    this.departureReasonText = '',
+    this.shortStoryText = '',
+    this.primaryPassionId = 'cooking',
+    this.primaryDesireId = 'sweetTooth',
+    this.interiorProfileId = 'simple',
+    this.promisedContributionType = '',
+    this.accompanyingCandidates = const <ResidentArrivalCompanion>[],
+    this.requiredHousingCapacity = 1,
+    this.requiredBuildingConditions = const <String>[],
+    this.requiredItemConditions = const <String>[],
+    this.requiredProjectConditions = const <String>[],
+    this.reservedHouseId,
+    this.status = ResidentArrivalStatus.available,
+    this.expiresAt,
+    this.postponedAt,
+    this.acceptedAt,
+    this.arrivalScheduledAt,
+    this.arrivedAt,
+    this.initialVisionProjectId,
+    this.idempotencyKey,
+    DateTime? updatedAt,
+  }) : updatedAt = updatedAt ?? createdAt;
+
+  factory ResidentArrivalCandidate.fromFirebase(Map<dynamic, dynamic> data) =>
+      ResidentArrivalCandidate(
+        id: '${data['candidateId'] ?? ''}',
+        displayName: '${data['displayName'] ?? 'Habitant'}',
+        originText: '${data['originText'] ?? ''}',
+        arrivalReasonText: '${data['arrivalReasonText'] ?? ''}',
+        promisedContributionText: '${data['promisedContributionText'] ?? ''}',
+        accompanyingResidentCount:
+            Zone0GameState.instance._readInt(data['accompanyingResidentCount']),
+        requestedConditions:
+            (data['requestedConditions'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .toList(),
+        departureReasonText: '${data['departureReasonText'] ?? ''}',
+        shortStoryText: '${data['shortStoryText'] ?? ''}',
+        primaryPassionId: '${data['primaryPassionId'] ?? 'cooking'}',
+        primaryDesireId: '${data['primaryDesireId'] ?? 'sweetTooth'}',
+        interiorProfileId: '${data['interiorProfileId'] ?? 'simple'}',
+        promisedContributionType: '${data['promisedContributionType'] ?? ''}',
+        accompanyingCandidates:
+            (data['accompanyingCandidates'] as List? ?? const <dynamic>[])
+                .whereType<Map>()
+                .map(ResidentArrivalCompanion.fromFirebase)
+                .toList(),
+        requiredHousingCapacity: Zone0GameState.instance._readInt(
+          data['requiredHousingCapacity'],
+          fallback: math.max(
+              1,
+              Zone0GameState.instance
+                      ._readInt(data['accompanyingResidentCount']) +
+                  1),
+        ),
+        requiredBuildingConditions:
+            (data['requiredBuildingConditions'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .toList(),
+        requiredItemConditions:
+            (data['requiredItemConditions'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .toList(),
+        requiredProjectConditions:
+            (data['requiredProjectConditions'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .toList(),
+        reservedHouseId: data['reservedHouseId'] as String?,
+        status: ForageMission._enumByName(
+          ResidentArrivalStatus.values,
+          '${data['status'] ?? ''}',
+          ResidentArrivalStatus.available,
+        ),
+        createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+            DateTime.now(),
+        expiresAt: Zone0GameState.instance._readDate(data['expiresAt']),
+        postponedAt: Zone0GameState.instance._readDate(data['postponedAt']),
+        acceptedAt: Zone0GameState.instance._readDate(data['acceptedAt']),
+        arrivalScheduledAt:
+            Zone0GameState.instance._readDate(data['arrivalScheduledAt']),
+        arrivedAt: Zone0GameState.instance._readDate(data['arrivedAt']),
+        initialVisionProjectId: data['initialVisionProjectId'] as String?,
+        idempotencyKey: data['idempotencyKey'] as String?,
+        updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+      );
+
+  final String id;
+  final String displayName;
+  final String originText;
+  final String arrivalReasonText;
+  final List<String> requestedConditions;
+  final String promisedContributionText;
+  final int accompanyingResidentCount;
+  final String departureReasonText;
+  final String shortStoryText;
+  final String primaryPassionId;
+  final String primaryDesireId;
+  final String interiorProfileId;
+  final String? initialVisionProjectId;
+  final String promisedContributionType;
+  final List<ResidentArrivalCompanion> accompanyingCandidates;
+  final int requiredHousingCapacity;
+  final List<String> requiredBuildingConditions;
+  final List<String> requiredItemConditions;
+  final List<String> requiredProjectConditions;
+  String? reservedHouseId;
+  ResidentArrivalStatus status;
+  final DateTime createdAt;
+  final DateTime? expiresAt;
+  DateTime? postponedAt;
+  DateTime? acceptedAt;
+  DateTime? arrivalScheduledAt;
+  DateTime? arrivedAt;
+  final String? idempotencyKey;
+  DateTime updatedAt;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'candidateId': id,
+        'displayName': displayName,
+        'originText': originText,
+        'arrivalReasonText': arrivalReasonText,
+        'departureReasonText': departureReasonText,
+        'shortStoryText': shortStoryText,
+        'requestedConditions': requestedConditions,
+        'promisedContributionText': promisedContributionText,
+        'promisedContributionType': promisedContributionType,
+        'accompanyingResidentCount': accompanyingResidentCount,
+        'accompanyingCandidates':
+            accompanyingCandidates.map((item) => item.toFirebase()).toList(),
+        'primaryPassionId': primaryPassionId,
+        'primaryDesireId': primaryDesireId,
+        'interiorProfileId': interiorProfileId,
+        'initialVisionProjectId': initialVisionProjectId,
+        'requiredHousingCapacity': requiredHousingCapacity,
+        'requiredBuildingConditions': requiredBuildingConditions,
+        'requiredItemConditions': requiredItemConditions,
+        'requiredProjectConditions': requiredProjectConditions,
+        'reservedHouseId': reservedHouseId,
+        'status': status.name,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'expiresAt': expiresAt == null ? null : Timestamp.fromDate(expiresAt!),
+        'postponedAt':
+            postponedAt == null ? null : Timestamp.fromDate(postponedAt!),
+        'acceptedAt':
+            acceptedAt == null ? null : Timestamp.fromDate(acceptedAt!),
+        'arrivalScheduledAt': arrivalScheduledAt == null
+            ? null
+            : Timestamp.fromDate(arrivalScheduledAt!),
+        'arrivedAt': arrivedAt == null ? null : Timestamp.fromDate(arrivedAt!),
+        'idempotencyKey': idempotencyKey,
+        'updatedAt': Timestamp.fromDate(updatedAt),
+      };
+}
+
 class Zone0Resident {
   Zone0Resident({
     required this.id,
@@ -13588,11 +18212,50 @@ class Zone0Resident {
     required this.createdAt,
     this.houseId,
     this.baseHappiness = 100,
+    int? currentHappiness,
     this.temporaryHappinessModifier = 0,
     this.isActive = true,
     this.contributionEligible = false,
+    this.internalPileBalance = 0,
+    this.financialStrainScore = 0,
+    this.recentDomesticIncomePiles = 0,
+    this.recentSpendingPiles = 0,
+    this.status = ResidentStatus.active,
+    Map<String, int>? happinessModifiers,
+    this.arrivedAt,
+    this.sourceMigrationId,
+    this.primaryDesireId,
+    this.primaryPassionId,
+    this.secondaryPassionId,
+    this.interiorProfileId,
+    this.currentVisionProjectId,
+    Map<String, int>? personalInventory,
+    Map<String, int>? wardrobeInventory,
+    List<String>? ownedCertifiedPtibugIds,
+    this.activeCommunityRoleId,
+    this.assignedBuildingId,
+    this.eligibleForShopOwnership = false,
+    this.ownedShopId,
+    this.shopOwnershipStartedAt,
+    this.preferredShopCategory,
+    this.commercialAssignmentStatus,
+    Map<String, dynamic>? dailyNeedsState,
+    ResidentNeedsState? needsState,
+    List<ResidentOwnedItem>? ownedItems,
     DateTime? updatedAt,
-  }) : updatedAt = updatedAt ?? createdAt;
+  })  : currentHappiness = currentHappiness ?? baseHappiness,
+        happinessModifiers = happinessModifiers ?? <String, int>{},
+        personalInventory = personalInventory ?? <String, int>{},
+        wardrobeInventory = wardrobeInventory ?? <String, int>{},
+        ownedCertifiedPtibugIds = ownedCertifiedPtibugIds ?? <String>[],
+        dailyNeedsState = dailyNeedsState ?? <String, dynamic>{},
+        needsState = needsState ??
+            ResidentNeedsState(
+              currentDayKey: '',
+              mealsRequired: housingConfig.mealsRequiredPerDay,
+            ),
+        ownedItems = ownedItems ?? <ResidentOwnedItem>[],
+        updatedAt = updatedAt ?? createdAt;
 
   factory Zone0Resident.fromFirebase(Map<dynamic, dynamic> data) =>
       Zone0Resident(
@@ -13602,6 +18265,9 @@ class Zone0Resident {
         baseHappiness: Zone0GameState.instance
             ._readInt(data['baseHappiness'], fallback: 100)
             .clamp(0, 100),
+        currentHappiness: Zone0GameState.instance
+            ._readInt(data['currentHappiness'], fallback: 100)
+            .clamp(0, 100),
         temporaryHappinessModifier: Zone0GameState.instance
             ._readInt(data['temporaryHappinessModifier']),
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
@@ -13609,28 +18275,292 @@ class Zone0Resident {
         updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
         isActive: data['isActive'] != false,
         contributionEligible: data['contributionEligible'] == true,
+        internalPileBalance:
+            Zone0GameState.instance._readInt(data['internalPileBalance']),
+        financialStrainScore:
+            Zone0GameState.instance._readInt(data['financialStrainScore']),
+        recentDomesticIncomePiles:
+            Zone0GameState.instance._readInt(data['recentDomesticIncomePiles']),
+        recentSpendingPiles:
+            Zone0GameState.instance._readInt(data['recentSpendingPiles']),
+        status: ForageMission._enumByName(
+          ResidentStatus.values,
+          '${data['status'] ?? ''}',
+          data['houseId'] == null
+              ? ResidentStatus.awaitingHousing
+              : ResidentStatus.active,
+        ),
+        happinessModifiers: Map<String, int>.fromEntries(
+          (data['happinessModifiers'] as Map? ?? const <dynamic, dynamic>{})
+              .entries
+              .map((entry) => MapEntry(
+                    '${entry.key}',
+                    Zone0GameState.instance._readInt(entry.value),
+                  )),
+        ),
+        arrivedAt: Zone0GameState.instance._readDate(data['arrivedAt']),
+        sourceMigrationId: data['sourceMigrationId'] as String?,
+        primaryDesireId: data['primaryDesireId'] as String?,
+        primaryPassionId: data['primaryPassionId'] as String?,
+        secondaryPassionId: data['secondaryPassionId'] as String?,
+        interiorProfileId: data['interiorProfileId'] as String?,
+        currentVisionProjectId: data['currentVisionProjectId'] as String?,
+        personalInventory: Map<String, int>.fromEntries(
+          (data['personalInventory'] as Map? ?? const <dynamic, dynamic>{})
+              .entries
+              .map((entry) => MapEntry(
+                    '${entry.key}',
+                    Zone0GameState.instance._readInt(entry.value),
+                  )),
+        ),
+        wardrobeInventory: Map<String, int>.fromEntries(
+          (data['wardrobeInventory'] as Map? ?? const <dynamic, dynamic>{})
+              .entries
+              .map((entry) => MapEntry(
+                    '${entry.key}',
+                    Zone0GameState.instance._readInt(entry.value),
+                  )),
+        ),
+        ownedCertifiedPtibugIds:
+            (data['ownedCertifiedPtibugIds'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .toList(),
+        activeCommunityRoleId: data['activeCommunityRoleId'] as String?,
+        assignedBuildingId: data['assignedBuildingId'] as String?,
+        eligibleForShopOwnership: data['eligibleForShopOwnership'] == true,
+        ownedShopId: data['ownedShopId'] as String?,
+        shopOwnershipStartedAt:
+            Zone0GameState.instance._readDate(data['shopOwnershipStartedAt']),
+        preferredShopCategory: data['preferredShopCategory'] as String?,
+        commercialAssignmentStatus:
+            data['commercialAssignmentStatus'] as String?,
+        dailyNeedsState: Map<String, dynamic>.from(
+            data['dailyNeedsState'] as Map? ?? const <dynamic, dynamic>{}),
+        needsState: data['needsState'] is Map
+            ? ResidentNeedsState.fromFirebase(data['needsState'] as Map)
+            : ResidentNeedsState(
+                currentDayKey:
+                    '${(data['dailyNeedsState'] as Map?)?['currentDayKey'] ?? ''}',
+                mealsRequired: Zone0GameState.instance._readInt(
+                  (data['dailyNeedsState'] as Map?)?['mealsRequired'],
+                  fallback: housingConfig.mealsRequiredPerDay,
+                ),
+              ),
+        ownedItems: (data['ownedItems'] as List? ?? const <dynamic>[])
+            .whereType<Map>()
+            .map(ResidentOwnedItem.fromFirebase)
+            .where((item) => item.id.isNotEmpty && item.quantity > 0)
+            .toList(),
       );
 
   final String id;
   String displayName;
   String? houseId;
   int baseHappiness;
+  int currentHappiness;
   int temporaryHappinessModifier;
   final DateTime createdAt;
   DateTime updatedAt;
   bool isActive;
   bool contributionEligible;
+  int internalPileBalance;
+  int financialStrainScore;
+  int recentDomesticIncomePiles;
+  int recentSpendingPiles;
+  ResidentStatus status;
+  final Map<String, int> happinessModifiers;
+  DateTime? arrivedAt;
+  String? sourceMigrationId;
+  String? primaryDesireId;
+  String? primaryPassionId;
+  String? secondaryPassionId;
+  String? interiorProfileId;
+  String? currentVisionProjectId;
+  final Map<String, int> personalInventory;
+  final Map<String, int> wardrobeInventory;
+  final List<String> ownedCertifiedPtibugIds;
+  String? activeCommunityRoleId;
+  String? assignedBuildingId;
+  bool eligibleForShopOwnership;
+  String? ownedShopId;
+  DateTime? shopOwnershipStartedAt;
+  String? preferredShopCategory;
+  String? commercialAssignmentStatus;
+  final Map<String, dynamic> dailyNeedsState;
+  final ResidentNeedsState needsState;
+  final List<ResidentOwnedItem> ownedItems;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'residentId': id,
         'displayName': displayName,
         'houseId': houseId,
         'baseHappiness': baseHappiness,
+        'currentHappiness': currentHappiness,
         'temporaryHappinessModifier': temporaryHappinessModifier,
         'createdAt': Timestamp.fromDate(createdAt),
         'updatedAt': Timestamp.fromDate(updatedAt),
         'isActive': isActive,
         'contributionEligible': contributionEligible,
+        'internalPileBalance': internalPileBalance,
+        'financialStrainScore': financialStrainScore,
+        'recentDomesticIncomePiles': recentDomesticIncomePiles,
+        'recentSpendingPiles': recentSpendingPiles,
+        'status': status.name,
+        'happinessModifiers': happinessModifiers,
+        'arrivedAt': arrivedAt == null ? null : Timestamp.fromDate(arrivedAt!),
+        'sourceMigrationId': sourceMigrationId,
+        'primaryDesireId': primaryDesireId,
+        'primaryPassionId': primaryPassionId,
+        'secondaryPassionId': secondaryPassionId,
+        'interiorProfileId': interiorProfileId,
+        'currentVisionProjectId': currentVisionProjectId,
+        'personalInventory': personalInventory,
+        'wardrobeInventory': wardrobeInventory,
+        'ownedCertifiedPtibugIds': ownedCertifiedPtibugIds,
+        'activeCommunityRoleId': activeCommunityRoleId,
+        'assignedBuildingId': assignedBuildingId,
+        'eligibleForShopOwnership': eligibleForShopOwnership,
+        'ownedShopId': ownedShopId,
+        'shopOwnershipStartedAt': shopOwnershipStartedAt == null
+            ? null
+            : Timestamp.fromDate(shopOwnershipStartedAt!),
+        'preferredShopCategory': preferredShopCategory,
+        'commercialAssignmentStatus': commercialAssignmentStatus,
+        'dailyNeedsState': dailyNeedsState,
+        'needsState': needsState.toFirebase(),
+        'ownedItems': ownedItems.map((item) => item.toFirebase()).toList(),
+      };
+}
+
+enum ResidentVisionStatus {
+  active,
+  fulfilled,
+  disappointed,
+  replaced,
+  archived
+}
+
+class ResidentVision {
+  ResidentVision({
+    required this.id,
+    required this.residentId,
+    required this.projectId,
+    required this.projectTier,
+    this.branchId,
+    this.status = ResidentVisionStatus.active,
+    required this.selectedAt,
+    this.fulfilledAt,
+    this.disappointedAt,
+    this.disappointmentEndsAt,
+    this.persistentBonus = 0,
+    this.nextVisionGeneratedAt,
+  });
+
+  factory ResidentVision.fromFirebase(Map<dynamic, dynamic> data) =>
+      ResidentVision(
+        id: '${data['visionId'] ?? ''}',
+        residentId: '${data['residentId'] ?? ''}',
+        projectId: '${data['projectId'] ?? ''}',
+        projectTier:
+            Zone0GameState.instance._readInt(data['projectTier'], fallback: 1),
+        branchId: data['branchId'] as String?,
+        status: ForageMission._enumByName(ResidentVisionStatus.values,
+            '${data['status'] ?? ''}', ResidentVisionStatus.active),
+        selectedAt: Zone0GameState.instance._readDate(data['selectedAt']) ??
+            DateTime.now(),
+        fulfilledAt: Zone0GameState.instance._readDate(data['fulfilledAt']),
+        disappointedAt:
+            Zone0GameState.instance._readDate(data['disappointedAt']),
+        disappointmentEndsAt:
+            Zone0GameState.instance._readDate(data['disappointmentEndsAt']),
+        persistentBonus:
+            Zone0GameState.instance._readInt(data['persistentBonus']),
+        nextVisionGeneratedAt:
+            Zone0GameState.instance._readDate(data['nextVisionGeneratedAt']),
+      );
+
+  final String id;
+  final String residentId;
+  final String projectId;
+  final int projectTier;
+  final String? branchId;
+  ResidentVisionStatus status;
+  final DateTime selectedAt;
+  DateTime? fulfilledAt;
+  DateTime? disappointedAt;
+  DateTime? disappointmentEndsAt;
+  int persistentBonus;
+  DateTime? nextVisionGeneratedAt;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'visionId': id,
+        'residentId': residentId,
+        'projectId': projectId,
+        'projectTier': projectTier,
+        'branchId': branchId,
+        'status': status.name,
+        'selectedAt': Timestamp.fromDate(selectedAt),
+        'fulfilledAt':
+            fulfilledAt == null ? null : Timestamp.fromDate(fulfilledAt!),
+        'disappointedAt':
+            disappointedAt == null ? null : Timestamp.fromDate(disappointedAt!),
+        'disappointmentEndsAt': disappointmentEndsAt == null
+            ? null
+            : Timestamp.fromDate(disappointmentEndsAt!),
+        'persistentBonus': persistentBonus,
+        'nextVisionGeneratedAt': nextVisionGeneratedAt == null
+            ? null
+            : Timestamp.fromDate(nextVisionGeneratedAt!),
+      };
+}
+
+enum HouseholdRepairStatus { active, paused, completed, cancelled }
+
+class HouseholdRepairJob {
+  HouseholdRepairJob({
+    required this.id,
+    required this.houseId,
+    required this.startedAt,
+    required this.endsAt,
+    required this.viabilityGain,
+    required this.isPlayerRepair,
+    this.reservedKitItemId,
+    this.status = HouseholdRepairStatus.active,
+  });
+
+  factory HouseholdRepairJob.fromFirebase(Map<dynamic, dynamic> data) =>
+      HouseholdRepairJob(
+        id: '${data['repairJobId'] ?? ''}',
+        houseId: '${data['houseId'] ?? ''}',
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']) ??
+            DateTime.now(),
+        endsAt:
+            Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
+        viabilityGain: Zone0GameState.instance._readInt(data['viabilityGain']),
+        isPlayerRepair: data['isPlayerRepair'] == true,
+        reservedKitItemId: data['reservedKitItemId'] as String?,
+        status: ForageMission._enumByName(HouseholdRepairStatus.values,
+            '${data['status'] ?? ''}', HouseholdRepairStatus.active),
+      );
+
+  final String id;
+  final String houseId;
+  final DateTime startedAt;
+  final DateTime endsAt;
+  final int viabilityGain;
+  final bool isPlayerRepair;
+  final String? reservedKitItemId;
+  HouseholdRepairStatus status;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'repairJobId': id,
+        'houseId': houseId,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'endsAt': Timestamp.fromDate(endsAt),
+        'viabilityGain': viabilityGain,
+        'isPlayerRepair': isPlayerRepair,
+        'reservedKitItemId': reservedKitItemId,
+        'status': status.name,
       };
 }
 
@@ -13646,11 +18576,35 @@ class ResidentHouse {
     List<StructuralProtectionType>? installedStructuralProtections,
     this.lastDamageEventId,
     this.isUnderRepair = false,
+    int? weatherProtectionSlots,
+    int? furnitureSlots,
+    List<String>? installedFurnitureItems,
+    this.baseGeneratorInstalled = true,
+    int? additionalGeneratorSlots,
+    this.additionalGeneratorInstalled = false,
+    this.householdPileBalance = 0,
+    this.householdDistributionRemainder = 0,
+    this.lastEnergyDistributionAt,
+    this.lastHouseholdEnergyResolvedAt,
+    this.energyProductionRemainder = 0,
+    this.recentEnergyProducedPiles = 0,
+    this.recentHouseholdSpendingPiles = 0,
+    List<String>? reservedArrivalCandidateIds,
+    this.activeRepairJobId,
+    this.autonomyLockedUntil,
+    this.lastAutonomyDecision,
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : residentIds = residentIds ?? <String>[],
         installedStructuralProtections =
             installedStructuralProtections ?? <StructuralProtectionType>[],
+        weatherProtectionSlots =
+            weatherProtectionSlots ?? housingConfig.houseProtectionSlots,
+        furnitureSlots = furnitureSlots ?? housingConfig.residentFurnitureSlots,
+        installedFurnitureItems = installedFurnitureItems ?? <String>[],
+        reservedArrivalCandidateIds = reservedArrivalCandidateIds ?? <String>[],
+        additionalGeneratorSlots =
+            additionalGeneratorSlots ?? housingConfig.additionalGeneratorSlots,
         createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
@@ -13678,6 +18632,47 @@ class ResidentHouse {
                 .toList(),
         lastDamageEventId: data['lastDamageEventId'] as String?,
         isUnderRepair: data['isUnderRepair'] == true,
+        weatherProtectionSlots: Zone0GameState.instance._readInt(
+          data['weatherProtectionSlots'],
+          fallback: housingConfig.houseProtectionSlots,
+        ),
+        furnitureSlots: Zone0GameState.instance._readInt(
+          data['furnitureSlots'],
+          fallback: housingConfig.residentFurnitureSlots,
+        ),
+        installedFurnitureItems:
+            (data['installedFurnitureItems'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .toList(),
+        baseGeneratorInstalled: data['baseGeneratorInstalled'] != false,
+        additionalGeneratorSlots: Zone0GameState.instance._readInt(
+          data['additionalGeneratorSlots'],
+          fallback: housingConfig.additionalGeneratorSlots,
+        ),
+        additionalGeneratorInstalled:
+            data['additionalGeneratorInstalled'] == true,
+        householdPileBalance:
+            Zone0GameState.instance._readInt(data['householdPileBalance']),
+        householdDistributionRemainder: Zone0GameState.instance
+            ._readInt(data['householdDistributionRemainder']),
+        lastEnergyDistributionAt:
+            Zone0GameState.instance._readDate(data['lastEnergyDistributionAt']),
+        lastHouseholdEnergyResolvedAt: Zone0GameState.instance
+            ._readDate(data['lastHouseholdEnergyResolvedAt']),
+        energyProductionRemainder:
+            Zone0GameState.instance._readInt(data['energyProductionRemainder']),
+        recentEnergyProducedPiles:
+            Zone0GameState.instance._readInt(data['recentEnergyProducedPiles']),
+        recentHouseholdSpendingPiles: Zone0GameState.instance
+            ._readInt(data['recentHouseholdSpendingPiles']),
+        reservedArrivalCandidateIds:
+            (data['reservedArrivalCandidateIds'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .toList(),
+        activeRepairJobId: data['activeRepairJobId'] as String?,
+        autonomyLockedUntil:
+            Zone0GameState.instance._readDate(data['autonomyLockedUntil']),
+        lastAutonomyDecision: data['lastAutonomyDecision'] as String?,
         createdAt: Zone0GameState.instance._readDate(data['createdAt']),
         updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
       );
@@ -13692,6 +18687,23 @@ class ResidentHouse {
   final List<StructuralProtectionType> installedStructuralProtections;
   String? lastDamageEventId;
   bool isUnderRepair;
+  int weatherProtectionSlots;
+  int furnitureSlots;
+  final List<String> installedFurnitureItems;
+  bool baseGeneratorInstalled;
+  int additionalGeneratorSlots;
+  bool additionalGeneratorInstalled;
+  int householdPileBalance;
+  int householdDistributionRemainder;
+  DateTime? lastEnergyDistributionAt;
+  DateTime? lastHouseholdEnergyResolvedAt;
+  int energyProductionRemainder;
+  int recentEnergyProducedPiles;
+  int recentHouseholdSpendingPiles;
+  final List<String> reservedArrivalCandidateIds;
+  String? activeRepairJobId;
+  DateTime? autonomyLockedUntil;
+  String? lastAutonomyDecision;
   final DateTime createdAt;
   DateTime updatedAt;
 
@@ -13728,12 +18740,99 @@ class ResidentHouse {
             installedStructuralProtections.map((item) => item.name).toList(),
         'lastDamageEventId': lastDamageEventId,
         'isUnderRepair': isUnderRepair,
+        'weatherProtectionSlots': weatherProtectionSlots,
+        'furnitureSlots': furnitureSlots,
+        'installedFurnitureItems': installedFurnitureItems,
+        'baseGeneratorInstalled': baseGeneratorInstalled,
+        'additionalGeneratorSlots': additionalGeneratorSlots,
+        'additionalGeneratorInstalled': additionalGeneratorInstalled,
+        'householdPileBalance': householdPileBalance,
+        'householdDistributionRemainder': householdDistributionRemainder,
+        'lastEnergyDistributionAt': lastEnergyDistributionAt == null
+            ? null
+            : Timestamp.fromDate(lastEnergyDistributionAt!),
+        'lastHouseholdEnergyResolvedAt': lastHouseholdEnergyResolvedAt == null
+            ? null
+            : Timestamp.fromDate(lastHouseholdEnergyResolvedAt!),
+        'energyProductionRemainder': energyProductionRemainder,
+        'recentEnergyProducedPiles': recentEnergyProducedPiles,
+        'recentHouseholdSpendingPiles': recentHouseholdSpendingPiles,
+        'reservedArrivalCandidateIds': reservedArrivalCandidateIds,
+        'activeRepairJobId': activeRepairJobId,
+        'autonomyLockedUntil': autonomyLockedUntil == null
+            ? null
+            : Timestamp.fromDate(autonomyLockedUntil!),
+        'lastAutonomyDecision': lastAutonomyDecision,
         'createdAt': Timestamp.fromDate(createdAt),
         'updatedAt': Timestamp.fromDate(updatedAt),
       };
 }
 
 enum CommunityProjectStatus { selected, active, paused, completed }
+
+enum HouseholdAutonomyAction { protection, repair, furniture, generator, none }
+
+/// Central, deterministic prioritisation for household decisions. The state
+/// owns transactions; this service only explains and orders real needs.
+class HouseholdAutonomyService {
+  const HouseholdAutonomyService._();
+
+  static StructuralProtectionType? requiredProtection(TowerWeatherType? type) =>
+      switch (type) {
+        TowerWeatherType.heatWave =>
+          StructuralProtectionType.ventilationTermite,
+        TowerWeatherType.heavyRain => StructuralProtectionType.chloroCanaux,
+        TowerWeatherType.toxicCloud => StructuralProtectionType.filtration,
+        _ => null,
+      };
+
+  static String? protectionItem(StructuralProtectionType? type) =>
+      switch (type) {
+        StructuralProtectionType.ventilationTermite => 'Ventilation Termite',
+        StructuralProtectionType.chloroCanaux => 'Chloro-canaux',
+        StructuralProtectionType.filtration => 'Installation filtrante',
+        null => null,
+      };
+
+  static HouseholdAutonomyAction nextAction(
+      Zone0GameState state, ResidentHouse house) {
+    final neededProtection =
+        requiredProtection(state.nextGlobalWeatherEvent?.type);
+    if (neededProtection != null &&
+        !house.installedStructuralProtections.contains(neededProtection) &&
+        house.installedStructuralProtections.length <
+            house.weatherProtectionSlots) {
+      house.lastAutonomyDecision =
+          'Protection recherchée avant la prochaine météo.';
+      return HouseholdAutonomyAction.protection;
+    }
+    if (house.currentViability < 50 &&
+        state.householdRepairFor(house.id) == null) {
+      house.lastAutonomyDecision =
+          'Kit de réparation prioritaire : Viabilité basse.';
+      return HouseholdAutonomyAction.repair;
+    }
+    final occupants =
+        state.residents.where((resident) => resident.houseId == house.id);
+    if (occupants.any((resident) => !resident.needsState.interiorSatisfied)) {
+      house.lastAutonomyDecision =
+          'Mobilier fonctionnel recherché pour le foyer.';
+      return HouseholdAutonomyAction.furniture;
+    }
+    final strain = occupants.fold<int>(
+        0, (total, resident) => total + resident.financialStrainScore);
+    if (!house.additionalGeneratorInstalled &&
+        house.additionalGeneratorSlots > 0 &&
+        strain >= residentEconomyConfig.financialStrainCriticalThreshold &&
+        occupants.every((resident) => resident.needsState.mealsConsumed > 0)) {
+      house.lastAutonomyDecision =
+          'Second générateur envisagé : manque financier durable.';
+      return HouseholdAutonomyAction.generator;
+    }
+    house.lastAutonomyDecision = 'Aucun achat domestique prioritaire.';
+    return HouseholdAutonomyAction.none;
+  }
+}
 
 class CommunityProjectProgress {
   CommunityProjectProgress({

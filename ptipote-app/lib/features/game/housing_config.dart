@@ -20,6 +20,41 @@ class HousingConfig {
     required this.houseRepairMineralCost,
     required this.houseProtectionSlots,
     required this.neutralHappinessWithoutResidents,
+    required this.residentFurnitureSlots,
+    required this.additionalGeneratorSlots,
+    required this.domesticGeneratorPilesPerHour,
+    required this.domesticGeneratorRunsWhenEmpty,
+    required this.residentInitialPileBalance,
+    required this.mealsRequiredPerDay,
+    required this.partialNutritionHappinessPenalty,
+    required this.noNutritionHappinessPenalty,
+    required this.interiorSatisfiedHappinessBonus,
+    required this.interiorUnsatisfiedHappinessPenalty,
+    required this.desireSatisfiedHappinessBonus,
+    required this.weatherProtectionModeratePenalty,
+    required this.weatherProtectionStrongPenalty,
+    required this.weatherProtectionSeverePenalty,
+    required this.migrationGraceHours,
+    required this.clothingRequiredForFashionDesire,
+    required this.defaultProtectionDurabilityEvents,
+    required this.arrivalActiveCandidateLimit,
+    required this.arrivalCandidateIntervalHours,
+    required this.arrivalExpiryDays,
+    required this.arrivalPostponeDays,
+    required this.arrivalTravelHours,
+    required this.arrivalInitialHappiness,
+    required this.arrivalInitialPileBalance,
+    required this.visionDisappointmentPenalty,
+    required this.visionDisappointmentHours,
+    required this.visionFulfilledBonus,
+    required this.visionBonusCap,
+    required this.visionSameBranchPercent,
+    required this.householdAutonomyGraceHours,
+    required this.householdEmergencyReservePiles,
+    required this.autonomousRepairGain,
+    required this.autonomousRepairHours,
+    required this.autonomousRepairCostPiles,
+    required this.householdContributionMaxPercent,
   });
 
   final int houseMaxLevel;
@@ -41,6 +76,41 @@ class HousingConfig {
   final int houseRepairMineralCost;
   final int houseProtectionSlots;
   final int neutralHappinessWithoutResidents;
+  final int residentFurnitureSlots;
+  final int additionalGeneratorSlots;
+  final int domesticGeneratorPilesPerHour;
+  final bool domesticGeneratorRunsWhenEmpty;
+  final int residentInitialPileBalance;
+  final int mealsRequiredPerDay;
+  final int partialNutritionHappinessPenalty;
+  final int noNutritionHappinessPenalty;
+  final int interiorSatisfiedHappinessBonus;
+  final int interiorUnsatisfiedHappinessPenalty;
+  final int desireSatisfiedHappinessBonus;
+  final int weatherProtectionModeratePenalty;
+  final int weatherProtectionStrongPenalty;
+  final int weatherProtectionSeverePenalty;
+  final int migrationGraceHours;
+  final int clothingRequiredForFashionDesire;
+  final int defaultProtectionDurabilityEvents;
+  final int arrivalActiveCandidateLimit;
+  final int arrivalCandidateIntervalHours;
+  final int arrivalExpiryDays;
+  final int arrivalPostponeDays;
+  final int arrivalTravelHours;
+  final int arrivalInitialHappiness;
+  final int arrivalInitialPileBalance;
+  final int visionDisappointmentPenalty;
+  final int visionDisappointmentHours;
+  final int visionFulfilledBonus;
+  final int visionBonusCap;
+  final int visionSameBranchPercent;
+  final int householdAutonomyGraceHours;
+  final int householdEmergencyReservePiles;
+  final int autonomousRepairGain;
+  final int autonomousRepairHours;
+  final int autonomousRepairCostPiles;
+  final int householdContributionMaxPercent;
 
   int alcovesForHouseLevel(int level) =>
       alcovesByHouseLevel[level.clamp(1, houseMaxLevel)] ?? 2;
@@ -74,8 +144,43 @@ const HousingConfig defaultHousingConfig = HousingConfig(
   houseRepairGain: 15,
   houseRepairOrganicCost: 5,
   houseRepairMineralCost: 3,
-  houseProtectionSlots: 1,
+  houseProtectionSlots: 3,
   neutralHappinessWithoutResidents: 50,
+  residentFurnitureSlots: 4,
+  additionalGeneratorSlots: 1,
+  domesticGeneratorPilesPerHour: 5,
+  domesticGeneratorRunsWhenEmpty: false,
+  residentInitialPileBalance: 0,
+  mealsRequiredPerDay: 2,
+  partialNutritionHappinessPenalty: 10,
+  noNutritionHappinessPenalty: 30,
+  interiorSatisfiedHappinessBonus: 10,
+  interiorUnsatisfiedHappinessPenalty: 15,
+  desireSatisfiedHappinessBonus: 5,
+  weatherProtectionModeratePenalty: 5,
+  weatherProtectionStrongPenalty: 10,
+  weatherProtectionSeverePenalty: 20,
+  migrationGraceHours: 24,
+  clothingRequiredForFashionDesire: 2,
+  defaultProtectionDurabilityEvents: 4,
+  arrivalActiveCandidateLimit: 3,
+  arrivalCandidateIntervalHours: 72,
+  arrivalExpiryDays: 7,
+  arrivalPostponeDays: 3,
+  arrivalTravelHours: 12,
+  arrivalInitialHappiness: 70,
+  arrivalInitialPileBalance: 0,
+  visionDisappointmentPenalty: 5,
+  visionDisappointmentHours: 24,
+  visionFulfilledBonus: 3,
+  visionBonusCap: 10,
+  visionSameBranchPercent: 70,
+  householdAutonomyGraceHours: 24,
+  householdEmergencyReservePiles: 25,
+  autonomousRepairGain: 10,
+  autonomousRepairHours: 72,
+  autonomousRepairCostPiles: 25,
+  householdContributionMaxPercent: 50,
 );
 
 HousingConfig housingConfig = defaultHousingConfig;

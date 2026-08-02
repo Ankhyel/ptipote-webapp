@@ -827,6 +827,8 @@ const ZONE0_SECTION_SOURCES = {
   craft: "craft-config.json",
   market: "market-config.json",
   housing: "housing-config.json",
+  communityRoles: "community-roles-config.json",
+  residentEconomy: "resident-economy-config.json",
   ptibug: "ptibug-config.json",
 };
 
@@ -842,6 +844,8 @@ const ZONE0_SECTION_LABELS = {
   craft: "Craft",
   market: "Marché",
   housing: "Maison et logements",
+  communityRoles: "Passions et rôles communautaires",
+  residentEconomy: "Économie interne des habitants",
   ptibug: "P'TIBUG et Nurserie",
 };
 
@@ -1013,6 +1017,14 @@ function prettyPath(path) {
     shopConstructionBioBatteries: "Bio-batteries pour construire un magasin",
     shopUpgradeCostMultiplier: "Multiplicateur de coût d’amélioration magasin",
     distributorConstructionBioBatteries: "Bio-batteries pour construire un Distributeur",
+    residentClaimVacancyDays: "Vacance avant revendication habitante (jours)",
+    residentClaimWarningHours: "Préavis avant installation habitante (heures)",
+    requestBookLevel: "Niveau de déblocage du Livre des demandes",
+    informationPointLevel: "Niveau de déblocage du Point Information",
+    distributorMarketLevels: "Niveaux du Marché requis par niveau de Distributeur",
+    residentShopServiceCapacity: "Capacité de service d’un commerce habitant",
+    residentShopReservePiles: "Réserve initiale d’un commerce habitant (piles)",
+    residentShopStockTarget: "Cible de stock initiale d’un commerce habitant",
   };
   return path.map((key) => labels[key] || String(key).replace(/([A-Z])/g, " $1")).join(" / ");
 }
@@ -1527,7 +1539,10 @@ function renderWorkshopEditor() {
   el.zone0SettingsForm.innerHTML = [
     configCard("Atelier · réglages généraux", "workshop", general, [], { open: true, meta: "Emplacements, vitalité et vitesse" }),
     configCard("Maison · alcôves Ptipotes", "housing", house, [], { meta: "Niveau maximal et nombre d'alcôves pour le repos des Ptipotes" }),
-    configCard("Habitations · habitants", "housing", residentHousing, [], { meta: "Capacité des habitants, coûts, durée et bien-être" }),
+    configCard("Habitants · maisons et besoins", "housing", residentHousing, [], { meta: "Capacité, bonheur, repas, envies, vestiaire, protections météo, mobilier, production domestique et comptes internes" }),
+    configCard("Arrivées, visions et autonomie des maisons", "housing", residentHousing, [], { meta: "Candidatures narratives, soutiens aux grands chantiers, budget du foyer, protections, mobilier, second générateur et réparations lentes." }),
+    configCard("Passions et rôles communautaires", "communityRoles", zone0Settings.communityRoles || {}, [], { meta: "Poids de passion, slots habitants, efficacité lente, Cuisine, Lisière, Sécurité, météo et préparation P’TIBUG" }),
+    configCard("Économie interne des habitants", "residentEconomy", zone0Settings.residentEconomy || {}, [], { meta: "Piles, production domestique, distribution, prix, réserves, lots, répartition 50/25/25 et règlements." }),
   ].join("");
   bindZone0Inputs(el.zone0SettingsForm);
 }

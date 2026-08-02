@@ -1,4 +1,5 @@
 import 'camp_heart_config.dart';
+import 'community_roles_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'housing_config.dart';
@@ -7,6 +8,7 @@ import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
+import 'resident_economy_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'workshop_config.dart';
@@ -25,6 +27,8 @@ void applyRemoteZone0Settings(Map<String, dynamic>? raw) {
   kernelProgressConfig = _kernelProgress(raw?['kernelProgress']);
   marketConfig = _market(raw?['market']);
   housingConfig = _housing(raw?['housing']);
+  communityRolesConfig = _communityRoles(raw?['communityRoles']);
+  residentEconomyConfig = _residentEconomy(raw?['residentEconomy']);
   pTibugConfig = _ptibug(raw?['ptibug']);
 }
 
@@ -2105,6 +2109,125 @@ MarketConfig _market(Object? value) {
     distributorConstructionBioBatteries: _int(
         raw['distributorConstructionBioBatteries'],
         b.distributorConstructionBioBatteries),
+    residentClaimVacancyDays:
+        _int(raw['residentClaimVacancyDays'], b.residentClaimVacancyDays),
+    residentClaimWarningHours:
+        _int(raw['residentClaimWarningHours'], b.residentClaimWarningHours),
+    requestBookLevel: _int(raw['requestBookLevel'], b.requestBookLevel),
+    informationPointLevel:
+        _int(raw['informationPointLevel'], b.informationPointLevel),
+    distributorMarketLevels: _levelMap(
+      raw['distributorMarketLevels'],
+      b.distributorMarketLevels,
+    ),
+    residentShopServiceCapacity: _int(
+      raw['residentShopServiceCapacity'],
+      b.residentShopServiceCapacity,
+    ),
+    residentShopReservePiles: _int(
+      raw['residentShopReservePiles'],
+      b.residentShopReservePiles,
+    ),
+    residentShopStockTarget: _int(
+      raw['residentShopStockTarget'],
+      b.residentShopStockTarget,
+    ),
+  );
+}
+
+CommunityRolesConfig _communityRoles(Object? value) {
+  final raw = _map(value);
+  const b = defaultCommunityRolesConfig;
+  if (raw == null) return b;
+  final weights = _map(raw['passionWeights']);
+  return CommunityRolesConfig(
+    enabled: raw['enabled'] is bool ? raw['enabled'] as bool : b.enabled,
+    passionWeights: <String, int>{
+      for (final entry in b.passionWeights.entries)
+        entry.key: _int(weights?[entry.key], entry.value),
+    },
+    passionHappinessBonus:
+        _int(raw['passionHappinessBonus'], b.passionHappinessBonus),
+    communityEfficiencyPercent:
+        _int(raw['communityEfficiencyPercent'], b.communityEfficiencyPercent),
+    roleIntervalMinutes:
+        _int(raw['roleIntervalMinutes'], b.roleIntervalMinutes),
+    cookingCoveragePerCycle:
+        _int(raw['cookingCoveragePerCycle'], b.cookingCoveragePerCycle),
+    cookingMaximumMealsPerDay:
+        _int(raw['cookingMaximumMealsPerDay'], b.cookingMaximumMealsPerDay),
+    craftingMaximumOutputPerDay:
+        _int(raw['craftingMaximumOutputPerDay'], b.craftingMaximumOutputPerDay),
+    observationOrganicPerCycle:
+        _int(raw['observationOrganicPerCycle'], b.observationOrganicPerCycle),
+    observationMineralPerCycle:
+        _int(raw['observationMineralPerCycle'], b.observationMineralPerCycle),
+    observationRequiresSecurity:
+        _int(raw['observationRequiresSecurity'], b.observationRequiresSecurity),
+    watchingSecurityPerInterval:
+        _int(raw['watchingSecurityPerInterval'], b.watchingSecurityPerInterval),
+    ptibugRequestChancePercent:
+        _int(raw['ptibugRequestChancePercent'], b.ptibugRequestChancePercent),
+    residentPtibugMaximum:
+        _int(raw['residentPtibugMaximum'], b.residentPtibugMaximum),
+    allowNonPassionWork: raw['allowNonPassionWork'] is bool
+        ? raw['allowNonPassionWork'] as bool
+        : b.allowNonPassionWork,
+  );
+}
+
+ResidentEconomyConfig _residentEconomy(Object? value) {
+  final raw = _map(value);
+  const b = defaultResidentEconomyConfig;
+  if (raw == null) return b;
+  return ResidentEconomyConfig(
+    enabled: raw['enabled'] is bool ? raw['enabled'] as bool : b.enabled,
+    pilesPerBattery: _int(raw['pilesPerBattery'], b.pilesPerBattery),
+    batteriesPerEnergyCore:
+        _int(raw['batteriesPerEnergyCore'], b.batteriesPerEnergyCore),
+    householdDistributionMinutes: _int(
+        raw['householdDistributionMinutes'], b.householdDistributionMinutes),
+    secondGeneratorBonusPercent:
+        _int(raw['secondGeneratorBonusPercent'], b.secondGeneratorBonusPercent),
+    secondGeneratorInstallationCostPiles: _int(
+      raw['secondGeneratorInstallationCostPiles'],
+      b.secondGeneratorInstallationCostPiles,
+    ),
+    residentInitialPileBalance:
+        _int(raw['residentInitialPileBalance'], b.residentInitialPileBalance),
+    householdInitialPileBalance:
+        _int(raw['householdInitialPileBalance'], b.householdInitialPileBalance),
+    personalEmergencyReservePiles: _int(
+        raw['personalEmergencyReservePiles'], b.personalEmergencyReservePiles),
+    essentialPurchaseMayUseReserve:
+        raw['essentialPurchaseMayUseReserve'] is bool
+            ? raw['essentialPurchaseMayUseReserve'] as bool
+            : b.essentialPurchaseMayUseReserve,
+    desirePurchaseMayUseReserve: raw['desirePurchaseMayUseReserve'] is bool
+        ? raw['desirePurchaseMayUseReserve'] as bool
+        : b.desirePurchaseMayUseReserve,
+    personalAccountCapPiles:
+        _int(raw['personalAccountCapPiles'], b.personalAccountCapPiles),
+    householdAccountCapPiles:
+        _int(raw['householdAccountCapPiles'], b.householdAccountCapPiles),
+    residentInventoryItemCap:
+        _int(raw['residentInventoryItemCap'], b.residentInventoryItemCap),
+    basePricesPiles: _resourceMap(raw['basePricesPiles'], b.basePricesPiles),
+    producerSharePercent:
+        _int(raw['producerSharePercent'], b.producerSharePercent),
+    supplierSharePercent:
+        _int(raw['supplierSharePercent'], b.supplierSharePercent),
+    merchantSharePercent:
+        _int(raw['merchantSharePercent'], b.merchantSharePercent),
+    absentMerchantShareRecipient: _string(
+        raw['absentMerchantShareRecipient'], b.absentMerchantShareRecipient),
+    financialStrainWindowDays:
+        _int(raw['financialStrainWindowDays'], b.financialStrainWindowDays),
+    financialStrainCriticalThreshold: _int(
+        raw['financialStrainCriticalThreshold'],
+        b.financialStrainCriticalThreshold),
+    maxSettlementHistory:
+        _int(raw['maxSettlementHistory'], b.maxSettlementHistory),
   );
 }
 
@@ -2176,5 +2299,96 @@ HousingConfig _housing(Object? value) {
     neutralHappinessWithoutResidents: _int(
         raw['neutralHappinessWithoutResidents'],
         b.neutralHappinessWithoutResidents),
+    residentFurnitureSlots:
+        _int(raw['residentFurnitureSlots'], b.residentFurnitureSlots),
+    additionalGeneratorSlots:
+        _int(raw['additionalGeneratorSlots'], b.additionalGeneratorSlots),
+    domesticGeneratorPilesPerHour: _int(
+      raw['domesticGeneratorPilesPerHour'],
+      b.domesticGeneratorPilesPerHour,
+    ),
+    domesticGeneratorRunsWhenEmpty:
+        raw['domesticGeneratorRunsWhenEmpty'] is bool
+            ? raw['domesticGeneratorRunsWhenEmpty'] as bool
+            : b.domesticGeneratorRunsWhenEmpty,
+    residentInitialPileBalance:
+        _int(raw['residentInitialPileBalance'], b.residentInitialPileBalance),
+    mealsRequiredPerDay:
+        _int(raw['mealsRequiredPerDay'], b.mealsRequiredPerDay),
+    partialNutritionHappinessPenalty: _int(
+      raw['partialNutritionHappinessPenalty'],
+      b.partialNutritionHappinessPenalty,
+    ),
+    noNutritionHappinessPenalty: _int(
+      raw['noNutritionHappinessPenalty'],
+      b.noNutritionHappinessPenalty,
+    ),
+    interiorSatisfiedHappinessBonus: _int(
+      raw['interiorSatisfiedHappinessBonus'],
+      b.interiorSatisfiedHappinessBonus,
+    ),
+    interiorUnsatisfiedHappinessPenalty: _int(
+      raw['interiorUnsatisfiedHappinessPenalty'],
+      b.interiorUnsatisfiedHappinessPenalty,
+    ),
+    desireSatisfiedHappinessBonus: _int(
+      raw['desireSatisfiedHappinessBonus'],
+      b.desireSatisfiedHappinessBonus,
+    ),
+    weatherProtectionModeratePenalty: _int(
+      raw['weatherProtectionModeratePenalty'],
+      b.weatherProtectionModeratePenalty,
+    ),
+    weatherProtectionStrongPenalty: _int(
+      raw['weatherProtectionStrongPenalty'],
+      b.weatherProtectionStrongPenalty,
+    ),
+    weatherProtectionSeverePenalty: _int(
+      raw['weatherProtectionSeverePenalty'],
+      b.weatherProtectionSeverePenalty,
+    ),
+    migrationGraceHours:
+        _int(raw['migrationGraceHours'], b.migrationGraceHours),
+    clothingRequiredForFashionDesire: _int(
+      raw['clothingRequiredForFashionDesire'],
+      b.clothingRequiredForFashionDesire,
+    ),
+    defaultProtectionDurabilityEvents: _int(
+        raw['defaultProtectionDurabilityEvents'],
+        b.defaultProtectionDurabilityEvents),
+    arrivalActiveCandidateLimit:
+        _int(raw['arrivalActiveCandidateLimit'], b.arrivalActiveCandidateLimit),
+    arrivalCandidateIntervalHours: _int(
+        raw['arrivalCandidateIntervalHours'], b.arrivalCandidateIntervalHours),
+    arrivalExpiryDays: _int(raw['arrivalExpiryDays'], b.arrivalExpiryDays),
+    arrivalPostponeDays:
+        _int(raw['arrivalPostponeDays'], b.arrivalPostponeDays),
+    arrivalTravelHours: _int(raw['arrivalTravelHours'], b.arrivalTravelHours),
+    arrivalInitialHappiness:
+        _int(raw['arrivalInitialHappiness'], b.arrivalInitialHappiness),
+    arrivalInitialPileBalance:
+        _int(raw['arrivalInitialPileBalance'], b.arrivalInitialPileBalance),
+    visionDisappointmentPenalty:
+        _int(raw['visionDisappointmentPenalty'], b.visionDisappointmentPenalty),
+    visionDisappointmentHours:
+        _int(raw['visionDisappointmentHours'], b.visionDisappointmentHours),
+    visionFulfilledBonus:
+        _int(raw['visionFulfilledBonus'], b.visionFulfilledBonus),
+    visionBonusCap: _int(raw['visionBonusCap'], b.visionBonusCap),
+    visionSameBranchPercent:
+        _int(raw['visionSameBranchPercent'], b.visionSameBranchPercent),
+    householdAutonomyGraceHours:
+        _int(raw['householdAutonomyGraceHours'], b.householdAutonomyGraceHours),
+    householdEmergencyReservePiles: _int(raw['householdEmergencyReservePiles'],
+        b.householdEmergencyReservePiles),
+    autonomousRepairGain:
+        _int(raw['autonomousRepairGain'], b.autonomousRepairGain),
+    autonomousRepairHours:
+        _int(raw['autonomousRepairHours'], b.autonomousRepairHours),
+    autonomousRepairCostPiles:
+        _int(raw['autonomousRepairCostPiles'], b.autonomousRepairCostPiles),
+    householdContributionMaxPercent: _int(
+        raw['householdContributionMaxPercent'],
+        b.householdContributionMaxPercent),
   );
 }

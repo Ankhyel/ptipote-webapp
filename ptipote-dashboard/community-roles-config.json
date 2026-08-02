@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "passionWeights": {
+    "cooking": 20,
+    "crafting": 20,
+    "trading": 20,
+    "livingObservation": 20,
+    "watching": 20
+  },
+  "passionHappinessBonus": 5,
+  "communityEfficiencyPercent": 50,
+  "roleIntervalMinutes": 180,
+  "cookingCoveragePerCycle": 2,
+  "cookingMaximumMealsPerDay": 6,
+  "craftingMaximumOutputPerDay": 2,
+  "observationOrganicPerCycle": 1,
+  "observationMineralPerCycle": 0,
+  "observationRequiresSecurity": 15,
+  "watchingSecurityPerInterval": 1,
+  "ptibugRequestChancePercent": 10,
+  "residentPtibugMaximum": 3,
+  "allowNonPassionWork": false
+}

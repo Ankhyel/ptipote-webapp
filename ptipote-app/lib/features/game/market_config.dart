@@ -60,6 +60,14 @@ class MarketConfig {
     required this.shopConstructionBioBatteries,
     required this.shopUpgradeCostMultiplier,
     required this.distributorConstructionBioBatteries,
+    required this.residentClaimVacancyDays,
+    required this.residentClaimWarningHours,
+    required this.requestBookLevel,
+    required this.informationPointLevel,
+    required this.distributorMarketLevels,
+    required this.residentShopServiceCapacity,
+    required this.residentShopReservePiles,
+    required this.residentShopStockTarget,
   });
 
   final Map<String, int> constructionCost;
@@ -120,6 +128,14 @@ class MarketConfig {
   final int shopConstructionBioBatteries;
   final int shopUpgradeCostMultiplier;
   final int distributorConstructionBioBatteries;
+  final int residentClaimVacancyDays;
+  final int residentClaimWarningHours;
+  final int requestBookLevel;
+  final int informationPointLevel;
+  final Map<int, int> distributorMarketLevels;
+  final int residentShopServiceCapacity;
+  final int residentShopReservePiles;
+  final int residentShopStockTarget;
 
   int slotsForLevel(int level) =>
       manualSlotsByLevel[level.clamp(0, maximumLevel)] ??
@@ -149,6 +165,14 @@ class MarketConfig {
 
   int specializedShopSlotsForLevel(int level) =>
       specializedShopSlotsByMarketLevel[level.clamp(1, maximumLevel)] ?? 0;
+
+  /// Emplacements commerciaux réels du Marché. Les anciennes piles de vente
+  /// restent séparées : un emplacement n'est jamais une pile de stock.
+  int shopSlotsForMarketLevel(int level) =>
+      specializedShopSlotsByMarketLevel[level.clamp(1, maximumLevel)] ?? 0;
+
+  int distributorMarketLevelFor(int distributorLevel) =>
+      distributorMarketLevels[distributorLevel.clamp(1, 3)] ?? maximumLevel;
 
   int requestBasePerHourForLevel(int level) =>
       requestBasePerHourByLevel[level.clamp(1, maximumLevel)] ?? 0;
@@ -217,7 +241,9 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   licenseCostBioBatteries: 30,
   licenseChangeCostBioBatteries: 10,
   licenseDirectedRatioPercent: 80,
-  specializedShopSlotsByMarketLevel: <int, int>{1: 1, 2: 3, 3: 5, 4: 7},
+  // Progression V5 : les emplacements sont rares et communs aux commerces
+  // du joueur comme aux commerces habitants.
+  specializedShopSlotsByMarketLevel: <int, int>{1: 1, 2: 2, 3: 4, 4: 4},
   firstShopFree: true,
   residentsPerHourlyRequest: 3,
   requestJitterMinPercent: 10,
@@ -270,6 +296,14 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   shopConstructionBioBatteries: 10,
   shopUpgradeCostMultiplier: 2,
   distributorConstructionBioBatteries: 5,
+  residentClaimVacancyDays: 7,
+  residentClaimWarningHours: 24,
+  requestBookLevel: 3,
+  informationPointLevel: 3,
+  distributorMarketLevels: <int, int>{1: 2, 2: 3, 3: 4},
+  residentShopServiceCapacity: 6,
+  residentShopReservePiles: 30,
+  residentShopStockTarget: 6,
 );
 
 MarketConfig marketConfig = defaultMarketConfig;

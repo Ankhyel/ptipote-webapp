@@ -12,6 +12,7 @@ import '../nfc/nfc_page.dart';
 import '../figurines/ptipote_stats_config.dart';
 import 'camp_heart_config.dart';
 import 'camp_generator_config.dart';
+import 'community_roles_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
 import 'game_asset_resolver.dart';
@@ -22,6 +23,7 @@ import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
 import 'ptibug_valuation_service.dart';
+import 'resident_economy_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'waste_recycler_config.dart';
@@ -150,6 +152,7 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
     _zone0State.resolveDueForageMissions();
     _zone0State.resolveDueTowerMissions();
     _zone0State.resolveGenerator(heartLevel: _campHeartState.campHeartLevel);
+    _zone0State.resolveResidentDomesticGeneration();
     _zone0State.resolveWorkshopOrder();
     _zone0State.resolveConstructionProjects();
     _zone0State.resolvePTibugProduction();
@@ -175,6 +178,7 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
       _zone0State.resolveDueForageMissions();
       _zone0State.resolveDueTowerMissions();
       _zone0State.resolveGenerator(heartLevel: _campHeartState.campHeartLevel);
+      _zone0State.resolveResidentDomesticGeneration();
       _zone0State.resolveWorkshopOrder();
       _zone0State.resolveConstructionProjects();
       _zone0State.resolvePTibugProduction();
@@ -640,11 +644,8 @@ class KernelPage extends StatelessWidget {
     );
     final requests = gameState.refugeRequests(campHeartState.campHeartLevel);
     final mainCount = mainMission?.status == KernelMissionStatus.active ? 1 : 0;
-    final requestCount = requests
-        .where((mission) => mission.status == KernelMissionStatus.active)
-        .length;
     return DefaultTabController(
-      length: 4,
+      length: 3,
       initialIndex: initialTabIndex,
       child: Scaffold(
         appBar: AppBar(
@@ -674,12 +675,13 @@ class KernelPage extends StatelessWidget {
               const Tab(text: 'Progression'),
               Tab(
                 child: _KernelTabLabel(
-                  label: 'Mission principale',
-                  count: mainCount,
+                  label: 'Missions',
+                  count: mainCount +
+                      requests
+                          .where((mission) =>
+                              mission.status == KernelMissionStatus.active)
+                          .length,
                 ),
-              ),
-              Tab(
-                child: _KernelTabLabel(label: 'Demandes', count: requestCount),
               ),
               const Tab(text: 'Plans'),
             ],
@@ -692,8 +694,11 @@ class KernelPage extends StatelessWidget {
                 gameState: gameState,
                 campHeartState: campHeartState,
               ),
-              _KernelMainMissionTab(mission: mainMission, gameState: gameState),
-              _KernelRequestsTab(missions: requests, gameState: gameState),
+              _KernelMainMissionTab(
+                mission: mainMission,
+                requests: requests,
+                gameState: gameState,
+              ),
               _KernelPlansTab(gameState: gameState),
             ],
           ),
@@ -786,34 +791,14 @@ class _MailboxButton extends StatelessWidget {
 }
 
 class _KernelMainMissionTab extends StatelessWidget {
-  const _KernelMainMissionTab({required this.mission, required this.gameState});
-
-  final KernelMissionProgress? mission;
-  final Zone0GameState gameState;
-
-  @override
-  Widget build(BuildContext context) {
-    if (mission == null) {
-      return const _KernelEmptyState(
-        message: 'Aucune mission principale active.',
-      );
-    }
-    return ListView(
-      padding: const EdgeInsets.all(18),
-      children: <Widget>[
-        _KernelMissionCard(mission: mission!, gameState: gameState),
-      ],
-    );
-  }
-}
-
-class _KernelRequestsTab extends StatelessWidget {
-  const _KernelRequestsTab({
-    required this.missions,
+  const _KernelMainMissionTab({
+    required this.mission,
+    required this.requests,
     required this.gameState,
   });
 
-  final List<KernelMissionProgress> missions;
+  final KernelMissionProgress? mission;
+  final List<KernelMissionProgress> requests;
   final Zone0GameState gameState;
 
   @override
@@ -821,13 +806,94 @@ class _KernelRequestsTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(18),
       children: <Widget>[
-        if (missions.isEmpty)
-          const _KernelEmptyState(message: 'Aucune demande du refuge.')
+        if (mission != null)
+          _KernelMissionCard(mission: mission!, gameState: gameState)
         else
-          ...missions.map(
-            (mission) =>
-                _KernelMissionCard(mission: mission, gameState: gameState),
+          const _KernelEmptyState(message: 'Aucune mission active.'),
+        if (requests.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 16),
+          const Text('Missions du refuge',
+              style: TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          ...requests.map(
+            (item) => _KernelMissionCard(mission: item, gameState: gameState),
           ),
+        ],
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text('Arrivées',
+                    style: TextStyle(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 6),
+                if (gameState.residentArrivalCandidates.isEmpty)
+                  const Text(
+                      'Aucune arrivée à examiner. Les futures candidatures apparaîtront ici.')
+                else
+                  ...gameState.residentArrivalCandidates.map(
+                    (candidate) => Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(candidate.displayName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900)),
+                            Text(
+                                '${candidate.originText} · ${candidate.arrivalReasonText}'),
+                            if (candidate.shortStoryText.isNotEmpty)
+                              Text(candidate.shortStoryText),
+                            Text(
+                                'Passion : ${candidate.primaryPassionId} · logement : ${candidate.requiredHousingCapacity} place(s) · ${candidate.status.name}'),
+                            if (candidate.requestedConditions.isNotEmpty)
+                              Text(
+                                  'Conditions : ${candidate.requestedConditions.join(' · ')}'),
+                            if (<ResidentArrivalStatus>{
+                              ResidentArrivalStatus.available,
+                              ResidentArrivalStatus.postponed
+                            }.contains(candidate.status))
+                              Wrap(spacing: 6, children: <Widget>[
+                                TextButton(
+                                    onPressed: () => ScaffoldMessenger.of(
+                                            context)
+                                        .showSnackBar(SnackBar(
+                                            content: Text(gameState
+                                                .acceptResidentArrivalCandidate(
+                                                    candidate.id)
+                                                .message))),
+                                    child: const Text('Accepter')),
+                                TextButton(
+                                    onPressed: () => ScaffoldMessenger.of(
+                                            context)
+                                        .showSnackBar(SnackBar(
+                                            content: Text(gameState
+                                                .postponeResidentArrivalCandidate(
+                                                    candidate.id)
+                                                .message))),
+                                    child: const Text('Reporter')),
+                                TextButton(
+                                    onPressed: () => ScaffoldMessenger.of(
+                                            context)
+                                        .showSnackBar(SnackBar(
+                                            content: Text(gameState
+                                                .rejectResidentArrivalCandidate(
+                                                    candidate.id)
+                                                .message))),
+                                    child: const Text('Refuser')),
+                              ]),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1688,7 +1754,7 @@ class _MaisonPageState extends State<_MaisonPage>
       vsync: this,
       duration: const Duration(seconds: 1),
     )..repeat();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 5, vsync: this);
     _vitalityRecoveryTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _recoverVitalityStep(),
@@ -1832,6 +1898,7 @@ class _MaisonPageState extends State<_MaisonPage>
             Tab(text: 'P’TIPOTES', icon: Icon(Icons.pets_outlined)),
             Tab(text: 'Couveuse', icon: Icon(Icons.egg_alt_outlined)),
             Tab(text: 'Amélioration', icon: Icon(Icons.upgrade_outlined)),
+            Tab(text: 'Générateur', icon: Icon(Icons.battery_charging_full)),
             Tab(text: 'Infos', icon: Icon(Icons.info_outline)),
           ],
         ),
@@ -1961,10 +2028,14 @@ class _MaisonPageState extends State<_MaisonPage>
             onHatched: () => _tabs.animateTo(0),
           ),
           _HouseUpgradeTab(gameState: _gameState),
+          _CampGeneratorView(
+            gameState: _gameState,
+            heartLevel: _gameState.generatorDisplayLevel,
+          ),
           const _BuildingInformationTab(
             title: 'Maison',
             description:
-                'La Maison accueille les P’TIPOTES actifs, leurs alcôves de repos, les messages et l’inventaire du refuge. Son amélioration augmente les alcôves. Les logements des habitants sont agrégés et n’ajoutent pas directement de population.',
+                'La Maison accueille les P’TIPOTES actifs, leurs alcôves de repos, les messages, l’inventaire et le Bio-générateur du joueur. Son amélioration augmente les alcôves. Les logements des habitants sont séparés et n’ajoutent pas directement de population.',
           ),
         ],
       ),
@@ -6357,7 +6428,10 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                   'Production locale : ${production.isEmpty ? 'Aucune' : production.entries.map((entry) => '${entry.value} ${entry.key}').join(' · ')}'),
               const SizedBox(height: 8),
               _PTibugTerritoryStockSummary(
-                  building: activeBuilding, consumption: consumption),
+                gameState: gameState,
+                building: activeBuilding,
+                consumption: consumption,
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -6759,27 +6833,48 @@ class _StructuralInstallationSlots extends StatelessWidget {
 
 class _PTibugTerritoryStockSummary extends StatelessWidget {
   const _PTibugTerritoryStockSummary(
-      {required this.building, required this.consumption});
+      {required this.gameState,
+      required this.building,
+      required this.consumption});
+  final Zone0GameState gameState;
   final PTibugTerritoryBuilding building;
   final PTibugTerritoryConsumption consumption;
 
   @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-              'Organique : ${building.resourceAmount('Organique')} · -${consumption.organicPerDay}/jour'),
-          Text(
-              'Minéral : ${building.resourceAmount('Minéral')} · -${consumption.mineralPerDay}/jour'),
-          Text(
-              'Énergie : ${building.localEnergy} · -${consumption.energyPerDay}/jour'),
-          const SizedBox(height: 4),
-          LinearProgressIndicator(
-              value: (building.localEnergy /
-                      math.max(10, consumption.energyPerDay * 2))
-                  .clamp(0.0, 1.0)),
-        ],
-      );
+  Widget build(BuildContext context) {
+    final autonomyDays = gameState.pTibugTerritoryAutonomyDays(building);
+    final label = building.kind == PTibugTerritoryKind.nursery
+        ? 'La Nurserie'
+        : 'Le Refuge';
+    final autonomyLabel = autonomyDays.isInfinite
+        ? '$label peut fonctionner sans consommation locale.'
+        : autonomyDays < 1
+            ? '$label va cesser de fonctionner bientôt.'
+            : '$label peut fonctionner pendant ${autonomyDays.floor()} jour${autonomyDays.floor() == 1 ? '' : 's'}.';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+            'Organique : ${building.resourceAmount('Organique')}/${consumption.organicPerDay} (par jour)'),
+        Text(
+            'Minéral : ${building.resourceAmount('Minéral')}/${consumption.mineralPerDay} (par jour)'),
+        Text(
+            'Énergie : ${building.localEnergy}/${consumption.energyPerDay} (par jour)'),
+        const SizedBox(height: 4),
+        Text(autonomyLabel,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color:
+                  autonomyDays < 1 ? Theme.of(context).colorScheme.error : null,
+            )),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+            value: (building.localEnergy /
+                    math.max(10, consumption.energyPerDay * 2))
+                .clamp(0.0, 1.0)),
+      ],
+    );
+  }
 }
 
 bool _hasSmartSensor(PTibug bug) =>
@@ -7490,10 +7585,249 @@ class _CampHousingTab extends StatelessWidget {
     );
   }
 
+  void _showResidentSheet(BuildContext context, Zone0Resident resident) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * .78,
+          ),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+            children: <Widget>[
+              Text(resident.displayName,
+                  style: Theme.of(sheetContext)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 10),
+              Text('Statut : ${switch (resident.status) {
+                ResidentStatus.active => 'Actif',
+                ResidentStatus.awaitingHousing => 'En attente de logement',
+                ResidentStatus.arriving => 'En arrivée',
+                ResidentStatus.inactive => 'Inactif',
+                ResidentStatus.archived => 'Archivé',
+              }}'),
+              Text(
+                  'Bonheur : ${gameState.residentHappinessFor(resident)}% · ${gameState.formatInternalPileBalance(resident.internalPileBalance)}'),
+              const SizedBox(height: 14),
+              const Text('Besoins',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text(
+                'Repas : ${resident.needsState.mealsConsumed}/${resident.needsState.mealsRequired} · ${switch (resident.needsState.nutritionStatus) {
+                  ResidentNutritionStatus.nourri => 'Nourri',
+                  ResidentNutritionStatus.partiellementNourri =>
+                    'Partiellement nourri',
+                  ResidentNutritionStatus.nonNourri => 'Non nourri',
+                }}',
+              ),
+              if (resident.needsState.missingWeatherProtectionTypes.isNotEmpty)
+                Text(
+                    'Météo : protection manquante — ${resident.needsState.missingWeatherProtectionTypes.join(', ')}'),
+              OutlinedButton.icon(
+                onPressed: () {
+                  final result = gameState.giveResidentFinishedItem(
+                    residentId: resident.id,
+                    itemName: 'Repas simple',
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(result.message)),
+                  );
+                },
+                icon: const Icon(Icons.restaurant_outlined),
+                label: const Text('Donner un repas simple'),
+              ),
+              const SizedBox(height: 10),
+              const Text('Envie et vestiaire',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text('Envie : ${switch (resident.primaryDesireId) {
+                'sweetTooth' => 'Bouche sucrée',
+                'fashion' => 'Aime la sape',
+                'comfort' => 'Aime le confort',
+                'tools' => 'Aime les outils',
+                _ => 'À déterminer',
+              }} · ${resident.needsState.desireSatisfied ? 'satisfaite' : 'non satisfaite'}'),
+              if (resident.ownedItems.isEmpty)
+                const Text('Aucun produit personnel.')
+              else
+                ...resident.ownedItems.map((item) => Text(
+                    '${item.itemDefinitionId} ×${item.quantity}${item.currentDurability == null ? '' : ' · durabilité ${item.currentDurability}/${item.maxDurability}'}${item.status == ResidentOwnedItemStatus.broken ? ' · usé' : ''}')),
+              const SizedBox(height: 10),
+              const Text('Économie',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text(
+                'Solde : ${gameState.formatInternalPileBalance(resident.internalPileBalance)} · ${gameState.residentEconomicStateLabel(resident)}',
+              ),
+              Text(
+                'Revenu domestique récent : ${resident.recentDomesticIncomePiles} pile(s) · dépenses : ${resident.recentSpendingPiles} pile(s).',
+              ),
+              if (gameState.residentUncoveredNeeds.any((need) =>
+                  need.residentId == resident.id && need.resolvedAt == null))
+                Text(
+                    'Besoins économiques en attente : ${gameState.residentUncoveredNeeds.where((need) => need.residentId == resident.id && need.resolvedAt == null).map((need) => need.itemDefinitionId).toSet().join(', ')}'),
+              const SizedBox(height: 10),
+              const Text('Historique récent',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              ...gameState
+                  .economicHistoryForResident(resident.id)
+                  .toList()
+                  .reversed
+                  .take(4)
+                  .map((transaction) => Text(
+                      '${transaction.itemDefinitionId ?? 'Énergie domestique'} · ${transaction.grossAmountPiles} pile(s)')),
+              const SizedBox(height: 10),
+              const Text('Passion et rôle communautaire',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text(
+                  'Passion : ${gameState.residentPassionLabel(ResidentPassion.values.firstWhere((passion) => passion.name == resident.primaryPassionId, orElse: () => ResidentPassion.cooking))}'),
+              if (gameState.communityRoleForResident(resident.id)
+                  case final role?)
+                Text(
+                  '${gameState.communityRoleLabel(role.roleType)} · ${switch (role.status) {
+                    CommunityRoleStatus.active => 'Actif',
+                    CommunityRoleStatus.paused => 'En pause',
+                    CommunityRoleStatus.unavailable => 'Indisponible',
+                    CommunityRoleStatus.awaitingBuilding => 'Bâtiment requis',
+                    CommunityRoleStatus.awaitingResources =>
+                      'Ressources requises',
+                    CommunityRoleStatus.archived => 'Archivé',
+                  }} · production ${role.dailyOutput}',
+                )
+              else
+                const Text('Passion actuellement inoccupée.'),
+              if (resident.primaryPassionId ==
+                  ResidentPassion.livingObservation.name)
+                Text(
+                  'P’TIBUG certifiés : ${resident.ownedCertifiedPtibugIds.length}/${communityRolesConfig.residentPtibugMaximum} · ${gameState.canResidentRequestCertifiedPtibug(resident) ? 'éligible à une future demande' : 'aucune demande possible actuellement'}',
+                ),
+              Wrap(
+                spacing: 8,
+                children: gameState
+                    .compatibleCommunityRolesFor(resident)
+                    .map(
+                      (role) => OutlinedButton(
+                        onPressed: () {
+                          final result = gameState.assignResidentCommunityRole(
+                            residentId: resident.id,
+                            roleType: role,
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)),
+                          );
+                        },
+                        child: Text(gameState.communityRoleLabel(role)),
+                      ),
+                    )
+                    .toList(),
+              ),
+              if (gameState.communityRoleForResident(resident.id) != null)
+                TextButton.icon(
+                  onPressed: () {
+                    final result =
+                        gameState.removeResidentCommunityRole(resident.id);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(result.message)),
+                    );
+                  },
+                  icon: const Icon(Icons.person_remove_outlined),
+                  label: const Text('Retirer du rôle'),
+                ),
+              const SizedBox(height: 10),
+              const Text('Bonheur',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              ...gameState.residentHappinessBreakdown(resident).entries.map(
+                    (entry) => Text(
+                        '${entry.key} : ${entry.value >= 0 ? '+' : ''}${entry.value}'),
+                  ),
+              const SizedBox(height: 10),
+              const Text('Vision du refuge',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              if (gameState.residentVisionFor(resident.id) case final vision?)
+                Text(
+                    '${gameState.communityProjectDefinition(vision.projectId)?.label ?? vision.projectId} · ${vision.status.name}${vision.persistentBonus > 0 ? ' · +${vision.persistentBonus} bonheur' : ''}')
+              else
+                const Text(
+                    'Une vision apparaîtra quand un grand chantier sera accessible.'),
+              const SizedBox(height: 14),
+              const Text('Logement',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              ...gameState.residentHouses.map(
+                (house) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(resident.houseId == house.id
+                      ? Icons.home
+                      : Icons.home_outlined),
+                  title: Text(house.displayName),
+                  subtitle: Text(
+                    '${house.residentIds.length}/${house.capacity} occupant(s) · Viabilité ${house.currentViability}%',
+                  ),
+                  trailing: resident.houseId == house.id
+                      ? const Text('Actuelle')
+                      : TextButton(
+                          onPressed: house.residentIds.length >= house.capacity
+                              ? null
+                              : () {
+                                  final result = gameState.moveResidentToHouse(
+                                    residentId: resident.id,
+                                    targetHouseId: house.id,
+                                  );
+                                  Navigator.of(sheetContext).pop();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(result.message)),
+                                  );
+                                },
+                          child: const Text('Déplacer'),
+                        ),
+                ),
+              ),
+              if (resident.houseId != null)
+                OutlinedButton.icon(
+                  onPressed: () {
+                    final result = gameState.moveResidentToHouse(
+                      residentId: resident.id,
+                      targetHouseId: null,
+                    );
+                    Navigator.of(sheetContext).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(result.message)),
+                    );
+                  },
+                  icon: const Icon(Icons.logout_outlined),
+                  label: const Text('Retirer du logement'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final project = gameState.constructionProjects['housing'];
     final activity = math.max(0, gameState.currentPopulation * 10);
+    final activeResidents = gameState.residents
+        .where((resident) => resident.isActive)
+        .toList(growable: false);
+    final nourishedResidents = activeResidents
+        .where((resident) =>
+            resident.needsState.nutritionStatus ==
+            ResidentNutritionStatus.nourri)
+        .length;
+    final unprotectedResidents = activeResidents
+        .where((resident) =>
+            resident.needsState.missingWeatherProtectionTypes.isNotEmpty)
+        .length;
+    final community = gameState.communityCoverage;
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(18),
@@ -7566,6 +7900,90 @@ class _CampHousingTab extends StatelessWidget {
               'Cette valeur agrégée représentera plus tard la vitalité du refuge et les opportunités du Marché.',
             ),
           ),
+          _HabitationStatCard(
+            icon: Icons.restaurant_outlined,
+            title: 'Besoins du jour',
+            value: '$nourishedResidents/${activeResidents.length} nourri(s)',
+            subtitle: unprotectedResidents == 0
+                ? 'Tous protégés pour la météo annoncée'
+                : '$unprotectedResidents habitant(s) sans protection météo',
+            onTap: () => _showStatInfo(
+              context,
+              'Besoins des habitants',
+              'Chaque habitant consomme deux repas finis par jour. Les protections personnelles sont vérifiées dès l’annonce de la météo et s’usent une fois par événement.',
+            ),
+          ),
+          _HabitationStatCard(
+            icon: Icons.volunteer_activism_outlined,
+            title: 'Activités des habitants',
+            value: '${community.activeRoles} rôle(s) actif(s)',
+            subtitle:
+                '${community.pausedRoles} en pause · repas ${community.foodCoverageCapacity} · sécurité +${community.securityProducedToday} · météo +${gameState.communityWeatherForecastSupport}',
+            onTap: () => _showStatInfo(
+              context,
+              'Couverture communautaire',
+              'Les habitants occupent des slots distincts des P’TIPOTES. Les rôles produisent lentement avec des intrants physiques : cuisine, fabrication, comptoir, observation, sécurité ou météo.',
+            ),
+          ),
+          _HabitationStatCard(
+            icon: Icons.account_balance_wallet_outlined,
+            title: 'Économie des habitants',
+            value:
+                '${gameState.residentHouses.fold<int>(0, (sum, house) => sum + house.recentEnergyProducedPiles)} piles produites',
+            subtitle:
+                '${gameState.residentEconomicTransactions.where((transaction) => transaction.type == ResidentEconomicTransactionType.residentPurchase || transaction.type == ResidentEconomicTransactionType.playerSaleToResident).length} achat(s) · ${gameState.residentUncoveredNeeds.where((need) => need.resolvedAt == null).length} besoin(s) non couvert(s)',
+            onTap: () => _showStatInfo(
+              context,
+              'Économie interne',
+              'Les maisons produisent des bio-piles, puis les répartissent équitablement entre leurs occupants. Les habitants achètent seulement des produits finis : les besoins sans produit, magasin ou budget restent visibles pour le futur Marché.',
+            ),
+          ),
+          if (gameState.communityRoleAssignments.any((role) =>
+              role.status != CommunityRoleStatus.archived)) ...<Widget>[
+            const SizedBox(height: 6),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text('Rôles en cours',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 6),
+                    ...gameState.communityRoleAssignments
+                        .where((role) =>
+                            role.status != CommunityRoleStatus.archived)
+                        .map((role) {
+                      final resident = gameState.residents
+                          .where((item) => item.id == role.residentId)
+                          .firstOrNull;
+                      final status = switch (role.status) {
+                        CommunityRoleStatus.active => 'Actif',
+                        CommunityRoleStatus.paused => 'En pause',
+                        CommunityRoleStatus.unavailable => 'Indisponible',
+                        CommunityRoleStatus.awaitingBuilding =>
+                          'Bâtiment requis',
+                        CommunityRoleStatus.awaitingResources =>
+                          'Ressources requises',
+                        CommunityRoleStatus.archived => 'Archivé',
+                      };
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.person_outline),
+                        title: Text(
+                            '${resident?.displayName ?? 'Habitant'} · ${gameState.communityRoleLabel(role.roleType)}'),
+                        subtitle:
+                            Text('$status · production ${role.dailyOutput}'),
+                        onTap: resident == null
+                            ? null
+                            : () => _showResidentSheet(context, resident),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           if (gameState.residentHouses.isNotEmpty) ...<Widget>[
             Text('Maisons',
@@ -7614,11 +8032,117 @@ class _CampHousingTab extends StatelessWidget {
                             padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                             children: <Widget>[
                               Text(
-                                '${house.displayName} · protections ${house.installedStructuralProtections.length}/${housingConfig.houseProtectionSlots}',
+                                '${house.displayName} · protections ${house.installedStructuralProtections.length}/${house.weatherProtectionSlots}',
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w900, fontSize: 18),
                               ),
                               const SizedBox(height: 12),
+                              Text(
+                                'Mobilier : ${house.installedFurnitureItems.length}/${house.furnitureSlots} · Générateur domestique : ${house.baseGeneratorInstalled ? 'actif' : 'absent'}',
+                              ),
+                              const SizedBox(height: 10),
+                              const Text('Intérieur',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w900)),
+                              Text(
+                                residents.isEmpty
+                                    ? 'Aucun occupant à satisfaire.'
+                                    : 'Profils : ${residents.map((resident) => switch (resident.interiorProfileId) {
+                                          'technique' => 'Technique',
+                                          'esthete' => 'Esthète',
+                                          _ => 'Simple'
+                                        }).toSet().join(' · ')}',
+                              ),
+                              Text(
+                                residents.isEmpty
+                                    ? ''
+                                    : 'Satisfaction : ${residents.where((resident) => resident.needsState.interiorSatisfied).length}/${residents.length} occupant(s)',
+                              ),
+                              if (house.installedFurnitureItems.isNotEmpty)
+                                Text(
+                                    'Installés : ${house.installedFurnitureItems.join(', ')}'),
+                              OutlinedButton.icon(
+                                onPressed: house
+                                            .installedFurnitureItems.length >=
+                                        house.furnitureSlots
+                                    ? null
+                                    : () {
+                                        final result = gameState
+                                            .installResidentHouseFurniture(
+                                          houseId: house.id,
+                                          itemName: 'Meuble simple',
+                                        );
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                              content: Text(result.message)),
+                                        );
+                                      },
+                                icon: const Icon(Icons.chair_outlined),
+                                label: const Text('Installer un meuble simple'),
+                              ),
+                              Text(
+                                'Compte commun : ${gameState.formatInternalPileBalance(house.householdPileBalance)} · Second générateur : ${house.additionalGeneratorInstalled ? 'installé' : '${house.additionalGeneratorSlots} emplacement libre'}',
+                              ),
+                              Text(
+                                  'Autonomie : ${house.lastAutonomyDecision ?? 'en attente de la prochaine résolution'}'),
+                              if (gameState.householdRepairFor(house.id)
+                                  case final repair?)
+                                Text(
+                                    'Réparation ${repair.isPlayerRepair ? 'joueur' : 'habitante'} : ${repair.status.name} · fin prévue ${repair.endsAt.day}/${repair.endsAt.month} ${repair.endsAt.hour}h'),
+                              const SizedBox(height: 10),
+                              const Text('Énergie domestique',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w900)),
+                              Text(
+                                'Production : ${housingConfig.domesticGeneratorPilesPerHour}${house.additionalGeneratorInstalled ? ' + ${residentEconomyConfig.secondGeneratorBonusPercent}%' : ''} piles/h · revenu 24 h : ${house.recentEnergyProducedPiles} pile(s).',
+                              ),
+                              Text(
+                                'Distribution : toutes les ${residentEconomyConfig.householdDistributionMinutes} min · reste commun ${house.householdPileBalance} pile(s).',
+                              ),
+                              if (!house.additionalGeneratorInstalled)
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    final result = gameState
+                                        .installResidentSecondGenerator(
+                                            house.id);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(result.message)),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.bolt_outlined),
+                                  label: Text(
+                                      'Installer un second générateur (${residentEconomyConfig.secondGeneratorInstallationCostPiles} piles)'),
+                                ),
+                              if (house.currentViability <
+                                  house.maximumViability)
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    final result = gameState
+                                        .startPlayerHouseRepair(house.id);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(result.message)),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.handyman_outlined),
+                                  label: const Text(
+                                      'Réparation rapide du joueur (+10%)'),
+                                ),
+                              const SizedBox(height: 12),
+                              if (residents.isNotEmpty) ...<Widget>[
+                                const Text('Occupants',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w900)),
+                                for (final resident in residents)
+                                  ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: const Icon(Icons.person_outline),
+                                    title: Text(resident.displayName),
+                                    subtitle: Text(
+                                      '${gameState.residentHappinessFor(resident)}% bonheur · ${resident.needsState.mealsConsumed}/${resident.needsState.mealsRequired} repas · ${resident.needsState.interiorSatisfied ? 'intérieur satisfait' : 'intérieur insuffisant'}',
+                                    ),
+                                  ),
+                              ],
                               for (final type
                                   in StructuralProtectionType.values)
                                 Card(
@@ -7673,12 +8197,14 @@ class _CampHousingTab extends StatelessWidget {
                         title: Text(resident.displayName),
                         subtitle: house.currentViability < 50
                             ? Text(
-                                'Maison endommagée : -${housingConfig.houseViabilityDamageHappinessPercent}% bonheur')
-                            : null,
+                                'Maison endommagée : -${housingConfig.houseViabilityDamageHappinessPercent}% bonheur · ${gameState.formatInternalPileBalance(resident.internalPileBalance)}')
+                            : Text(gameState.formatInternalPileBalance(
+                                resident.internalPileBalance)),
                         trailing: Text(
                             '${gameState.residentHappinessFor(resident)}%',
                             style:
                                 const TextStyle(fontWeight: FontWeight.w900)),
+                        onTap: () => _showResidentSheet(context, resident),
                       )),
                 ]),
               );
@@ -7704,9 +8230,10 @@ class _CampHousingTab extends StatelessWidget {
                 leading: const Icon(Icons.person_outline),
                 title: Text(resident.displayName),
                 subtitle: Text(
-                    '${house?.displayName ?? 'Sans logement'}${damaged ? ' · Maison endommagée : -${housingConfig.houseViabilityDamageHappinessPercent}%' : ''}'),
+                    '${house?.displayName ?? 'Sans logement'} · ${gameState.formatInternalPileBalance(resident.internalPileBalance)}${damaged ? ' · Maison endommagée : -${housingConfig.houseViabilityDamageHappinessPercent}%' : ''}'),
                 trailing: Text('${gameState.residentHappinessFor(resident)}%',
                     style: const TextStyle(fontWeight: FontWeight.w900)),
+                onTap: () => _showResidentSheet(context, resident),
               ));
             }),
             const SizedBox(height: 12),
@@ -7854,9 +8381,9 @@ class _CampHeartPageState extends State<CampHeartPage> {
           title: const Text('Cœur du Camp'),
           bottom: const TabBar(
             tabs: <Widget>[
-              Tab(text: 'Végétalisation', icon: Icon(Icons.eco_outlined)),
+              Tab(text: 'Refuge', icon: Icon(Icons.eco_outlined)),
               Tab(text: 'Habitation', icon: Icon(Icons.home_work_outlined)),
-              Tab(text: 'Générateur', icon: Icon(Icons.battery_charging_full)),
+              Tab(text: 'Avis', icon: Icon(Icons.forum_outlined)),
             ],
           ),
         ),
@@ -7905,9 +8432,34 @@ class _CampHeartPageState extends State<CampHeartPage> {
                 gameState: widget.gameState,
                 campHeartLevel: state.campHeartLevel,
               ),
-              _CampGeneratorView(
-                gameState: widget.gameState,
-                heartLevel: state.campHeartLevel,
+              ListView(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  const Text('Avis du refuge',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
+                  const SizedBox(height: 8),
+                  Text(
+                      '${widget.gameState.currentPopulation} habitant(s) · ${widget.gameState.availableResidentHousingPlaces} logement(s) libre(s) · ${widget.gameState.activeResidentArrivalCandidates.length} candidature(s) active(s).'),
+                  const SizedBox(height: 12),
+                  if (widget.gameState.residentVisionSupportCounts.isEmpty)
+                    const Text(
+                        'Les visions apparaîtront dès qu’un grand chantier accessible pourra être soutenu.')
+                  else
+                    ...widget.gameState.residentVisionSupportCounts.entries
+                        .map((entry) => ListTile(
+                              leading: const Icon(Icons.forum_outlined),
+                              title: Text(widget.gameState
+                                      .communityProjectDefinition(entry.key)
+                                      ?.label ??
+                                  entry.key),
+                              trailing: Text('${entry.value} soutien(s)'),
+                            )),
+                  const SizedBox(height: 8),
+                  const Text(
+                      'Ces soutiens éclairent le choix des grands chantiers sans le contraindre.',
+                      style: TextStyle(color: Colors.black54)),
+                ],
               ),
             ],
           ),
@@ -8286,7 +8838,6 @@ class _CampHeartHero extends StatelessWidget {
                 color: Color(0xFF24311D),
               ),
             ),
-            const SizedBox(height: 14),
             Text(
               'Cœur du Camp',
               style: Theme.of(
@@ -10236,6 +10787,11 @@ class _MarketPageState extends State<MarketPage> {
                               ? 'Mode automatique'
                               : 'Aidé par ${widget.gameState.marketAssignedPtipoteName}',
                         ),
+                        if (!widget.gameState.isMarketInformationPointUnlocked)
+                          Text(
+                            'Point Information : niveau ${marketConfig.informationPointLevel} requis.',
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         Wrap(
                           spacing: 8,
                           children: <Widget>[
@@ -10271,7 +10827,8 @@ class _MarketPageState extends State<MarketPage> {
                           icon: const Icon(Icons.restart_alt_outlined),
                           label: const Text('Réinitialiser mes boutiques'),
                         ),
-                        if (widget.gameState.marketAssignedPtipoteId != null)
+                        if (widget.gameState.isMarketInformationPointUnlocked &&
+                            widget.gameState.marketAssignedPtipoteId != null)
                           if (figurines
                                   .where((figurine) =>
                                       figurine.id ==
@@ -10280,52 +10837,66 @@ class _MarketPageState extends State<MarketPage> {
                               case final assigned?)
                             Card(
                               margin: const EdgeInsets.only(top: 10),
-                              child: ListTile(
-                                leading: SizedBox(
-                                  width: 46,
-                                  child: PtipoteImage(
-                                    type: assigned.type,
-                                    species: assigned.species,
-                                    height: 46,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Row(children: <Widget>[
+                                  Expanded(
+                                    flex: 4,
+                                    child: Row(children: <Widget>[
+                                      SizedBox(
+                                          width: 46,
+                                          child: PtipoteImage(
+                                              type: assigned.type,
+                                              species: assigned.species,
+                                              height: 46)),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                          child: Text(assigned.displayName,
+                                              style: const TextStyle(
+                                                  fontWeight:
+                                                      FontWeight.w900))),
+                                    ]),
                                   ),
-                                ),
-                                title: Text(assigned.displayName,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w900)),
-                                subtitle: Text(
-                                  'Niv. ${assigned.level} · faim ${widget.gameState.hungerFor(assigned)} · repos ${widget.gameState.restFor(assigned)}',
-                                ),
-                                trailing: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: <Widget>[
-                                    OutlinedButton(
-                                      onPressed: assigned.levelValue >= 2
-                                          ? _showMarketRestockRules
-                                          : null,
-                                      child: Text(assigned.levelValue >= 2
-                                          ? 'Gestion appro'
-                                          : 'Gestion appro · niv. 2'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => _message(
-                                        widget.gameState
-                                            .removeFromMarket()
-                                            .message,
-                                      ),
-                                      child: const Text('Faire rentrer'),
-                                    ),
-                                  ],
-                                ),
+                                  Expanded(
+                                    flex: 3,
+                                    child: Text(
+                                        'Niv. ${assigned.level}\nFaim ${widget.gameState.hungerFor(assigned)}\nRepos ${widget.gameState.restFor(assigned)}',
+                                        maxLines: 3),
+                                  ),
+                                  Expanded(
+                                    flex: 4,
+                                    child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: <Widget>[
+                                          OutlinedButton(
+                                            onPressed: assigned.levelValue >= 2
+                                                ? _showMarketRestockRules
+                                                : null,
+                                            child: Text(assigned.levelValue >= 2
+                                                ? 'Gestion appro'
+                                                : 'Appro · niv. 2'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () => _message(widget
+                                                .gameState
+                                                .removeFromMarket()
+                                                .message),
+                                            child: const Text('Faire rentrer'),
+                                          ),
+                                        ]),
+                                  ),
+                                ]),
                               ),
                             )
                           else
                             OutlinedButton(
-                              onPressed: () =>
-                                  widget.gameState.removeFromMarket(),
+                              onPressed: () => _message(
+                                  widget.gameState.removeFromMarket().message),
                               child: const Text('Faire rentrer'),
                             )
-                        else
+                        else if (widget
+                            .gameState.isMarketInformationPointUnlocked)
                           FilledButton.icon(
                             onPressed: () async {
                               final figurine = await _pickPtipoteForActivity(
@@ -10351,7 +10922,7 @@ class _MarketPageState extends State<MarketPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                if (widget.gameState.marketLevel >= 2)
+                if (widget.gameState.isMarketRequestBookUnlocked)
                   SegmentedButton<int>(
                     segments: const <ButtonSegment<int>>[
                       ButtonSegment(
@@ -10367,7 +10938,7 @@ class _MarketPageState extends State<MarketPage> {
                     onSelectionChanged: (value) =>
                         setState(() => _marketTab = value.first),
                   ),
-                if (widget.gameState.marketLevel >= 2)
+                if (widget.gameState.isMarketRequestBookUnlocked)
                   const SizedBox(height: 10),
                 if (_marketTab == 1) _marketRequestBook(),
                 if (_marketTab == 0) ...<Widget>[
@@ -10988,7 +11559,6 @@ class _MarketPageState extends State<MarketPage> {
       'restaurant': 'Restaurant',
       'home': 'Magasin du foyer',
       'equipment': 'Magasin d’équipement',
-      'ptibug': 'Magasin P’TIBUG',
       'general': 'Ancien magasin généraliste',
       'ameublement': 'Ancien magasin du foyer',
     };
@@ -11011,6 +11581,22 @@ class _MarketPageState extends State<MarketPage> {
             const SizedBox(height: 4),
             Text(
                 '${widget.gameState.marketShopCount}/$slots boutique(s) construite(s).'),
+            ...widget.gameState.unlockedMarketShopSlots
+                .where((slot) =>
+                    slot.status == MarketShopSlotStatus.vacant ||
+                    slot.status == MarketShopSlotStatus.pendingResidentClaim)
+                .map((slot) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.storefront_outlined),
+                      title: Text(slot.status ==
+                              MarketShopSlotStatus.pendingResidentClaim
+                          ? 'Emplacement réservé par un habitant'
+                          : 'Emplacement vacant'),
+                      subtitle: Text(slot.status ==
+                              MarketShopSlotStatus.pendingResidentClaim
+                          ? 'Installation annoncée : ${slot.claimFinalizationAt == null ? 'prochainement' : _countdownLabel(slot.claimFinalizationAt!)}'
+                          : 'Vacant depuis ${slot.vacantSince == null ? 'maintenant' : '${DateTime.now().difference(slot.vacantSince!).inDays} jour(s)'}'),
+                    )),
             const SizedBox(height: 10),
             if (widget.gameState.marketShopConstructionOrder case final order?)
               Card(
@@ -11071,7 +11657,7 @@ class _MarketPageState extends State<MarketPage> {
                       title: Text(labels[shop.specialization] ?? 'Magasin',
                           style: const TextStyle(fontWeight: FontWeight.w800)),
                       subtitle: Text(
-                          'Niveau ${shop.level} · ${shop.stock.length}/${shop.stockSlots} piles · gain +${marketConfig.specializedShopGainBonusPercent}%'),
+                          '${shop.ownershipType == MarketShopOwnershipType.residentCommunity ? 'Commerce habitant · ${widget.gameState.residents.where((resident) => resident.id == shop.ownerResidentId).firstOrNull?.displayName ?? 'sans responsable'}' : 'Joueur'} · niveau ${shop.level} · ${shop.stock.length}/${shop.stockSlots} piles'),
                       trailing: shop.level < 2
                           ? TextButton(
                               onPressed: () {
@@ -11096,16 +11682,6 @@ class _MarketPageState extends State<MarketPage> {
                       ),
                     ),
                     _marketShopStockGrid(shop.id),
-                    if (shop.specialization == 'ptibug')
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          "P’TIBUG de base disponibles : "
-                          "Scarabé ${widget.gameState.marketShopStockAmount(shop.id, 'P’TIBUG Scarabé')} · "
-                          "Hyme ${widget.gameState.marketShopStockAmount(shop.id, 'P’TIBUG Hyme')} · "
-                          "Arac ${widget.gameState.marketShopStockAmount(shop.id, 'P’TIBUG Arac')}",
-                        ),
-                      ),
                     const SizedBox(height: 8),
                     _shopDistributorCard(shop.id),
                     const Divider(),
@@ -11188,6 +11764,9 @@ class _MarketPageState extends State<MarketPage> {
               Text(distributor.isBroken
                   ? 'En panne'
                   : 'Énergie : ${distributor.energy}/${marketConfig.distributorEnergyCapacity}'),
+              if (distributor.upgradeEndsAt != null)
+                Text(
+                    'Amélioration en cours · ${_countdownLabel(distributor.upgradeEndsAt!)}'),
               if (distributor.repairEndsAt != null) ...<Widget>[
                 const SizedBox(height: 4),
                 Text(
@@ -11209,6 +11788,13 @@ class _MarketPageState extends State<MarketPage> {
                         .repairMarketDistributor(shopId: shopId)
                         .message),
                     child: const Text('Réparer'),
+                  ),
+                if (distributor.level < 3 && distributor.upgradeEndsAt == null)
+                  OutlinedButton(
+                    onPressed: () => _message(widget.gameState
+                        .upgradeMarketDistributor(shopId: shopId)
+                        .message),
+                    child: const Text('Améliorer le distributeur'),
                   ),
               ]),
               const SizedBox(height: 6),
@@ -11253,7 +11839,6 @@ class _MarketPageState extends State<MarketPage> {
                 'restaurant': 'Restaurant',
                 'home': 'Magasin du foyer',
                 'equipment': 'Magasin d’équipement',
-                'ptibug': 'Magasin P’TIBUG'
               }.entries)
                 ListTile(
                   title: Text(entry.value),
@@ -11408,6 +11993,16 @@ class _MarketPageState extends State<MarketPage> {
                       ? 'Travaux en cours'
                       : 'Commencer les travaux'),
                 ),
+                TextButton.icon(
+                  onPressed: () {
+                    final result =
+                        widget.gameState.cancelMarketShopConstruction();
+                    _message(result.message);
+                    if (result.success) Navigator.of(sheetContext).pop();
+                  },
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Arrêter le chantier et tout récupérer'),
+                ),
                 TextButton(
                     onPressed: () => Navigator.of(sheetContext).pop(),
                     child: const Text('Fermer')),
@@ -11516,7 +12111,6 @@ class _MarketPageState extends State<MarketPage> {
                 'restaurant': 'Restaurant',
                 'home': 'Magasin du foyer',
                 'equipment': 'Magasin d’équipement',
-                'ptibug': 'Magasin P’TIBUG'
               }.entries)
                 ListTile(
                   leading: const Icon(Icons.storefront_outlined),
@@ -11561,7 +12155,6 @@ class _MarketPageState extends State<MarketPage> {
                   'restaurant': 'Restaurant',
                   'home': 'Magasin du foyer',
                   'equipment': 'Magasin d’équipement',
-                  'ptibug': 'Magasin P’TIBUG',
                 }.entries)
                   ListTile(
                     leading: const Icon(Icons.storefront_outlined),
@@ -11586,6 +12179,9 @@ class _MarketPageState extends State<MarketPage> {
 
   Widget _marketRequestBook() {
     final entries = widget.gameState.marketRequestLog.reversed.toList();
+    final uncovered = widget.gameState.residentUncoveredNeeds
+        .where((need) => need.resolvedAt == null)
+        .toList(growable: false);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -11593,16 +12189,25 @@ class _MarketPageState extends State<MarketPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              widget.gameState.marketLevel >= 3
-                  ? 'Registre automatique · dernières 24 h'
-                  : 'Livre des demandes · dernières 24 h',
+              'Livre des demandes',
               style: const TextStyle(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
-            if (widget.gameState.marketLevel == 2 &&
-                widget.gameState.marketAssignedPtipoteId == null)
-              const Text(
-                  'Un P’TIPOTE doit être affecté au Marché pour noter les nouvelles demandes.'),
+            const Text(
+                'Les besoins habitants restent distincts des contrats du Sourcier et ne demandent que des produits finis.'),
+            if (uncovered.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
+              const Text('Besoins non couverts',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              ...uncovered.take(8).map((need) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.priority_high_outlined),
+                    title: Text('${need.quantity} ${need.itemDefinitionId}'),
+                    subtitle: Text(
+                        '${need.category} · ${need.reason.name} · habitant ${need.residentId}'),
+                  )),
+            ],
             if (entries.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
@@ -11627,7 +12232,7 @@ class _MarketPageState extends State<MarketPage> {
                     : '${entry.requestedQuantity} ${entry.requestedItemId} · $status'),
                 subtitle: Text(
                   '$created · délai $deadlineMinutes min · ${entry.customerName ?? 'Habitant non identifié'}'
-                  '${entry.status == MarketRequestStatus.completed ? ' · ${entry.responder?.label ?? 'Vente'} · gain +${entry.rewardBioBatteries} bio-pile(s) 🟡' : ''}',
+                  '${entry.status == MarketRequestStatus.completed ? ' · ${entry.responder?.label ?? 'Vente'}${entry.responderDisplayName == null ? '' : ' : ${entry.responderDisplayName}'} · gain +${entry.rewardBioBatteries} bio-pile(s) 🟡' : ''}',
                 ),
               );
             }),
@@ -11716,6 +12321,8 @@ class _MarketPageState extends State<MarketPage> {
                         'Valeur certifiée de base : ${contract.rewardBioBatteries} bio-batterie(s)'),
                     Text(
                         'Bonus de confiance : ${widget.gameState.sourcierConfidence}/100 · paiement prévu ${(contract.rewardBioBatteries * widget.gameState.sourcierConfidencePaymentMultiplier).floor()}'),
+                    Text(
+                        'À fournir depuis : ${contract.requestedItems.keys.map(widget.gameState.sourcierRequiredShopLabel).toSet().join(' · ')}'),
                     const SizedBox(height: 10),
                     FilledButton(
                       onPressed: contract.status == MarketContractStatus.offered
@@ -12340,17 +12947,12 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                 ),
                 Text(
                     'Niveau maximum : ${pTibugConfig.territory.nurseryMaximumLevel} · capacité ${widget.gameState.pTibugTerritoryCapacity(nursery)}'),
-                Text(
-                    'Organique local : ${nursery.resourceAmount('Organique')} · -${consumption.organicPerDay}/jour'),
-                Text(
-                    'Minéral local : ${nursery.resourceAmount('Minéral')} · -${consumption.mineralPerDay}/jour'),
-                Text(
-                    'Énergie locale : ${nursery.localEnergy} · -${consumption.energyPerDay}/jour'),
                 const SizedBox(height: 6),
-                LinearProgressIndicator(
-                    value: (nursery.localEnergy /
-                            math.max(10, consumption.energyPerDay * 2))
-                        .clamp(0.0, 1.0)),
+                _PTibugTerritoryStockSummary(
+                  gameState: widget.gameState,
+                  building: nursery,
+                  consumption: consumption,
+                ),
                 const SizedBox(height: 8),
                 Wrap(spacing: 8, children: <Widget>[
                   OutlinedButton.icon(
@@ -13042,7 +13644,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         .where((item) => item.id == operation.resultPtibugId)
         .firstOrNull;
     if (bug == null) return;
-    await _renamePTibug(bug, context);
+    await _renamePTibug(bug, context, requiredForNewPTibug: true);
   }
 
   String _cultivationOperationTitle(PTibugCultivationOperation operation) {
@@ -13941,34 +14543,53 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     );
   }
 
-  Future<void> _renamePTibug(PTibug bug, BuildContext sheetContext) async {
+  Future<void> _renamePTibug(
+    PTibug bug,
+    BuildContext sheetContext, {
+    bool requiredForNewPTibug = false,
+  }) async {
     final controller = TextEditingController(text: bug.displayName);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Renommer ${bug.displayName}'),
-        content: TextField(
-          controller: controller,
-          maxLength: pTibugConfig.valuation.maximumNameLength,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Nom personnel'),
+    while (mounted) {
+      final name = await showDialog<String>(
+        context: context,
+        barrierDismissible: !requiredForNewPTibug,
+        builder: (dialogContext) => PopScope(
+          canPop: !requiredForNewPTibug,
+          child: AlertDialog(
+            title: Text(requiredForNewPTibug
+                ? 'Donner un nom à ${bug.defaultDisplayName}'
+                : 'Renommer ${bug.displayName}'),
+            content: TextField(
+              controller: controller,
+              maxLength: pTibugConfig.valuation.maximumNameLength,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Nom personnel'),
+            ),
+            actions: <Widget>[
+              if (!requiredForNewPTibug)
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Annuler'),
+                ),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(controller.text),
+                child: const Text('Enregistrer'),
+              ),
+            ],
+          ),
         ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-            child: const Text('Enregistrer'),
-          ),
-        ],
-      ),
-    );
+      );
+      if (name == null) break;
+      final result = widget.gameState.renamePTibug(bug, name);
+      _message(result.message);
+      if (!result.success && requiredForNewPTibug) continue;
+      if (result.success && !requiredForNewPTibug && sheetContext.mounted) {
+        Navigator.of(sheetContext).pop();
+      }
+      break;
+    }
     controller.dispose();
-    if (name == null || !mounted) return;
-    _message(widget.gameState.renamePTibug(bug, name).message);
-    if (sheetContext.mounted) Navigator.of(sheetContext).pop();
   }
 
   Future<void> _choosePTibugContractSale(
@@ -14025,12 +14646,13 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
           child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-            const Text('Mise en Capsule',
+            const Text('Préparer une Capsule pour la vente',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             Text(
                 '${bug.displayName} · valeur indicative ${valuation.total} Bio-batteries'),
-            const Text('Coût : 1 Bio-batterie · 10 Minéral.'),
+            const Text(
+                'Les Capsules sont réservées aux P’TIBUG que vous choisissez de vendre. Coût : 1 Bio-batterie · 10 Minéral.'),
             if (blocker != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -14050,7 +14672,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       _message(result.message);
                     }
                   : null,
-              child: const Text('Mettre en Capsule'),
+              child: const Text('Préparer la Capsule de vente'),
             ),
           ]),
         ),
