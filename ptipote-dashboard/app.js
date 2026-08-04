@@ -1249,7 +1249,7 @@ function renderPTibugEditor() {
     ptibugEditorHeading("Cultivation, Infusion et Évolution P'TIBUG", "Armatures, cuves, réserves locales, Traits et tapotement rythmé."),
     configCard("Cuves, Infusion des Traits et Évolution", "ptibug", cultivation, ["cultivation"], { open: true, meta: "Durées, ratios par espèce, recettes de Cellules, autonomie et tapotement" }),
     ptibugEditorHeading("Aspect esthétique après infusion", "Couleurs principales, motifs et Trait : purement visuel, sans effet de production."),
-    configCard("Palettes RGB et motifs", "ptibug", appearance, ["appearance"], { open: true, meta: "4 couleurs par espèce · 30 % de motif par défaut" }),
+    configCard("Palettes RGB, motifs et animations", "ptibug", appearance, ["appearance"], { open: true, meta: "4 couleurs, motif à 30 % et 2 animations par espèce" }),
     ptibugEditorHeading("Progression et Évolution", "Niveaux, rendement, énergie et second Trait après Évolution."),
     configCard("Progression P'TIBUG", "ptibug", progression, ["progression"], { open: true, meta: "XP, niveau maximum, rendement et prérequis d’Évolution" }),
     ptibugEditorHeading("Identité, valorisation et Capsules certifiées", "Nom personnel, valeur indicative, paiement réel et archivage commercial."),

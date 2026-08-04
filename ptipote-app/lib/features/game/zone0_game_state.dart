@@ -10102,6 +10102,7 @@ class Zone0GameState extends ChangeNotifier {
       motifId: bug.motifId,
       motifColorHex: bug.motifColorHex,
       traitColorHex: bug.traitColorHex,
+      animationName: bug.animationName,
       biologicalTraitId: bug.biologicalTraitId,
       biologicalTraitLevel: bug.biologicalTraitLevel,
       secondTraitId: bug.secondTraitId,
@@ -10159,6 +10160,7 @@ class Zone0GameState extends ChangeNotifier {
         motifId: capsule.motifId,
         motifColorHex: capsule.motifColorHex,
         traitColorHex: capsule.traitColorHex,
+        animationName: capsule.animationName,
         createdAt: DateTime.now(),
         level: capsule.level,
         xp: capsule.xp,
@@ -10560,17 +10562,27 @@ class Zone0GameState extends ChangeNotifier {
     final motif = bug.motifId == null
         ? 'aucun'
         : '${bug.motifId} · ${bug.motifColorHex ?? '—'}';
-    return 'Couleur $primary · Motif $motif · Trait ${bug.traitColorHex ?? '—'}';
+    return 'Couleur $primary · Motif $motif · Trait ${bug.traitColorHex ?? '—'} · Animation ${bug.animationName ?? '—'}';
   }
 
   void _ensurePTibugAppearance(PTibug bug, {bool reroll = false}) {
-    if (!reroll && bug.primaryColorHex != null) return;
     final colors = pTibugConfig.appearance.primaryColorsBySpecies[bug.species];
     if (colors == null || colors.isEmpty) return;
+    final animations =
+        pTibugConfig.appearance.animationNamesBySpecies[bug.species];
+    if (!reroll && bug.primaryColorHex != null) {
+      bug.animationName ??= animations == null || animations.isEmpty
+          ? null
+          : animations[_random.nextInt(animations.length)];
+      return;
+    }
     final primary = colors[_random.nextInt(colors.length)];
     final hasMotif =
         _random.nextInt(100) < pTibugConfig.appearance.motifChancePercent;
     bug.primaryColorHex = primary;
+    bug.animationName = animations == null || animations.isEmpty
+        ? null
+        : animations[_random.nextInt(animations.length)];
     bug.motifId =
         hasMotif ? pTibugConfig.appearance.motifBySpecies[bug.species] : null;
     if (!hasMotif) {
@@ -10722,6 +10734,7 @@ class Zone0GameState extends ChangeNotifier {
       motifId: bug.motifId,
       motifColorHex: bug.motifColorHex,
       traitColorHex: bug.traitColorHex,
+      animationName: bug.animationName,
       biologicalTraitId: bug.biologicalTraitId,
       biologicalTraitLevel: bug.biologicalTraitLevel,
       secondTraitId: bug.secondTraitId,
@@ -19224,6 +19237,7 @@ class PTibug {
     this.motifId,
     this.motifColorHex,
     this.traitColorHex,
+    this.animationName,
     String? defaultDisplayName,
     this.renamedAt,
     this.renameCount = 0,
@@ -19274,6 +19288,7 @@ class PTibug {
   String? motifId;
   String? motifColorHex;
   String? traitColorHex;
+  String? animationName;
   int? assignedSlotIndex;
   String? assignedBuildingId;
   final Map<String, int> storedResources;
@@ -19332,6 +19347,7 @@ class PTibug {
         motifId: data['motifId'] as String?,
         motifColorHex: data['motifColorHex'] as String?,
         traitColorHex: data['traitColorHex'] as String?,
+        animationName: data['animationName'] as String?,
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
             DateTime.now(),
         assignedSlotIndex: data['assignedSlotIndex'] as int?,
@@ -19409,6 +19425,7 @@ class PTibug {
         'motifId': motifId,
         'motifColorHex': motifColorHex,
         'traitColorHex': traitColorHex,
+        'animationName': animationName,
         'createdAt': Timestamp.fromDate(createdAt),
         'assignedSlotIndex': assignedSlotIndex,
         'assignedBuildingId': assignedBuildingId,
@@ -19698,6 +19715,7 @@ class PTibugCapsule {
     this.motifId,
     this.motifColorHex,
     this.traitColorHex,
+    this.animationName,
     this.biologicalTraitId,
     this.biologicalTraitLevel = 0,
     this.level = 1,
@@ -19731,6 +19749,7 @@ class PTibugCapsule {
   final String? motifId;
   final String? motifColorHex;
   final String? traitColorHex;
+  final String? animationName;
   final String? biologicalTraitId;
   final int biologicalTraitLevel;
   final int level;
@@ -19770,6 +19789,7 @@ class PTibugCapsule {
         motifId: data['motifId'] as String?,
         motifColorHex: data['motifColorHex'] as String?,
         traitColorHex: data['traitColorHex'] as String?,
+        animationName: data['animationName'] as String?,
         biologicalTraitId: data['biologicalTraitId'] as String?,
         biologicalTraitLevel: Zone0GameState.instance._readInt(
           data['biologicalTraitLevel'],
@@ -19821,6 +19841,7 @@ class PTibugCapsule {
         'motifId': motifId,
         'motifColorHex': motifColorHex,
         'traitColorHex': traitColorHex,
+        'animationName': animationName,
         'biologicalTraitId': biologicalTraitId,
         'biologicalTraitLevel': biologicalTraitLevel,
         'level': level,

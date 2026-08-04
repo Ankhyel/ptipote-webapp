@@ -119,6 +119,11 @@
       "scarabe": "Irisé",
       "arac": "Pointillé"
     },
+    "animationNamesBySpecies": {
+      "hyme": ["Volant", "Terrier"],
+      "scarabe": ["Cornu", "Briseur"],
+      "arac": ["Sauteuse", "Tisseuse"]
+    },
     "motifChancePercent": 30
   },
   "species": {

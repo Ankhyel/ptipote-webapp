@@ -155,11 +155,13 @@ class PTibugAppearanceConfig {
   const PTibugAppearanceConfig({
     required this.primaryColorsBySpecies,
     required this.motifBySpecies,
+    required this.animationNamesBySpecies,
     required this.motifChancePercent,
   });
 
   final Map<PTibugSpecies, List<String>> primaryColorsBySpecies;
   final Map<PTibugSpecies, String> motifBySpecies;
+  final Map<PTibugSpecies, List<String>> animationNamesBySpecies;
   final int motifChancePercent;
 }
 
@@ -707,6 +709,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       PTibugSpecies.hyme: 'Rayé',
       PTibugSpecies.scarabe: 'Irisé',
       PTibugSpecies.arac: 'Pointillé',
+    },
+    animationNamesBySpecies: <PTibugSpecies, List<String>>{
+      PTibugSpecies.hyme: <String>['Volant', 'Terrier'],
+      PTibugSpecies.scarabe: <String>['Cornu', 'Briseur'],
+      PTibugSpecies.arac: <String>['Sauteuse', 'Tisseuse'],
     },
     motifChancePercent: 30,
   ),

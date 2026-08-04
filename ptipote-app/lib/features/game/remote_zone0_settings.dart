@@ -577,6 +577,19 @@ PTibugConfig _ptibug(Object? value) {
             base.appearance.motifBySpecies[species] ?? '',
           ),
       },
+      animationNamesBySpecies: <PTibugSpecies, List<String>>{
+        for (final species in PTibugSpecies.values)
+          species: () {
+            final configured =
+                _map(rawAppearance?['animationNamesBySpecies'])?[species.name];
+            return configured is List
+                ? configured.whereType<String>().toList()
+                : List<String>.from(
+                    base.appearance.animationNamesBySpecies[species] ??
+                        const <String>[],
+                  );
+          }(),
+      },
       motifChancePercent: _int(
         rawAppearance?['motifChancePercent'],
         base.appearance.motifChancePercent,
