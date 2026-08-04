@@ -2836,6 +2836,15 @@ class _BuildingHotspot extends StatelessWidget {
                 onTap: onTap,
                 child: _content(),
               ),
+              if (_viabilityBuildingId case final buildingId?)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 7,
+                  child: _MapViabilityBar(
+                    state: gameState!.viabilityForBuilding(buildingId),
+                  ),
+                ),
               if (notificationCount > 0)
                 Positioned(
                   right: -5,
@@ -2873,6 +2882,57 @@ class _BuildingHotspot extends StatelessWidget {
           shadows: <Shadow>[Shadow(color: Colors.white, blurRadius: 10)],
         ),
       ),
+    );
+  }
+
+  String? get _viabilityBuildingId => switch (building.name) {
+        'Maison' => 'house',
+        'CampHeart' => 'campHeart',
+        'Tour' => 'securityTower',
+        'FabLab' => 'fablab',
+        'Market' => 'market',
+        _ => null,
+      };
+}
+
+class _MapViabilityBar extends StatelessWidget {
+  const _MapViabilityBar({required this.state});
+
+  final BuildingViabilityState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = (state.current / math.max(1, state.maximum)).clamp(0.0, 1.0);
+    final color = ratio < .1
+        ? const Color(0xFFB3261E)
+        : ratio < .5
+            ? Color.lerp(
+                const Color(0xFFB3261E), const Color(0xFFE3B64A), ratio * 2)!
+            : Color.lerp(const Color(0xFFE3B64A), const Color(0xFF8FAA58),
+                (ratio - .5) * 2)!;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: LinearProgressIndicator(
+            minHeight: 5,
+            value: ratio,
+            backgroundColor: Colors.white.withValues(alpha: .68),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'Viabilité ${state.current}/${state.maximum}',
+          style: const TextStyle(
+            color: Color(0xFF2B2116),
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            shadows: <Shadow>[Shadow(color: Colors.white, blurRadius: 6)],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -6060,11 +6120,6 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
   Widget build(BuildContext context) {
     final gameState = widget.gameState;
     final campHeartState = widget.campHeartState;
-    final biomes = ForageBiome.values.where(gameState.isBiomeUnlocked).toList();
-    final plaine =
-        biomes.where((biome) => biome == ForageBiome.plaineRiche).firstOrNull;
-    final otherBiomes =
-        biomes.where((biome) => biome != ForageBiome.plaineRiche);
     return ListView(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
@@ -6078,66 +6133,23 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
             'Gérez les affectations, les stocks locaux et chaque production individuelle.'),
         const SizedBox(height: 12),
         FilledButton.icon(
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => PTibugNurseryPage(
-              gameState: gameState,
-              campHeartLevel: campHeartState.campHeartLevel,
-              campHeartState: campHeartState,
-            ),
-          )),
+          onPressed: gameState.plaineNurseryTerritory.isBuilt
+              ? () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => PTibugNurseryPage(
+                      gameState: gameState,
+                      campHeartLevel: campHeartState.campHeartLevel,
+                      campHeartState: campHeartState,
+                    ),
+                  ))
+              : null,
           icon: const Icon(Icons.home_work_outlined),
           label: const Text('Entrer dans la Nurserie'),
         ),
         const SizedBox(height: 12),
-        if (plaine != null)
-          Card(
-            child: ExpansionTile(
-              initiallyExpanded: true,
-              leading: const Icon(Icons.landscape_outlined),
-              title: Text(lisiereForageConfig.biomes[plaine]!.label),
-              subtitle: Text(
-                  '${gameState.biomassVisualStateFor(plaine).label} · ${gameState.biomassFor(plaine).round()}%'),
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                  child: _PTibugTerritoryBiomeCard(
-                    gameState: gameState,
-                    biome: plaine,
-                    building: gameState.plaineNurseryTerritory,
-                    campHeartState: campHeartState,
-                    onDragUpdate: _autoScrollForDrag,
-                    onShowDetails: _openCollectionDetail,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ...otherBiomes.map(
-          (biome) => Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Card(
-              child: ExpansionTile(
-                leading: const Icon(Icons.landscape_outlined),
-                title: Text(lisiereForageConfig.biomes[biome]!.label),
-                subtitle: Text(
-                    '${gameState.biomassVisualStateFor(biome).label} · ${gameState.biomassFor(biome).round()}%'),
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                    child: _PTibugTerritoryBiomeCard(
-                      gameState: gameState,
-                      biome: biome,
-                      building: gameState
-                          .territoryBuildingForId('refuge-${biome.name}'),
-                      campHeartState: campHeartState,
-                      onDragUpdate: _autoScrollForDrag,
-                      onShowDetails: _openCollectionDetail,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        _PTibugTerritoryMap(
+          gameState: gameState,
+          onOpen: _openTerritorySquare,
+          onAssign: _confirmMapAssignment,
         ),
         const SizedBox(height: 18),
         const Text('P’TIBUG inactifs',
@@ -6196,6 +6208,240 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
   void _message(BuildContext context, String message) =>
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
+
+  Future<void> _openTerritorySquare(ForageBiome biome) async {
+    final building = biome == ForageBiome.plaineRiche
+        ? widget.gameState.plaineNurseryTerritory
+        : widget.gameState.territoryBuildingForId('refuge-${biome.name}');
+    if (biome == ForageBiome.plaineRiche && building?.isBuilt != true) {
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (_) => _ConstructionProjectSheet(
+          gameState: widget.gameState,
+          targetId: 'plaineNursery',
+          title: 'Nurserie P’TIBUG',
+          description:
+              'Installe des P’TIBUG dans la Savane tropicale pour produire lentement des ressources.',
+          campHeartLevel: widget.campHeartState.campHeartLevel,
+          campHeartState: widget.campHeartState,
+        ),
+      );
+      return;
+    }
+    if (biome == ForageBiome.plaineRiche && building?.isBuilt == true) {
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => PTibugNurseryPage(
+          gameState: widget.gameState,
+          campHeartLevel: widget.campHeartState.campHeartLevel,
+          campHeartState: widget.campHeartState,
+        ),
+      ));
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(12),
+          child: _PTibugTerritoryBiomeCard(
+            gameState: widget.gameState,
+            biome: biome,
+            building: building,
+            campHeartState: widget.campHeartState,
+            onDragUpdate: _autoScrollForDrag,
+            onShowDetails: _openCollectionDetail,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmMapAssignment(PTibug bug, ForageBiome biome) async {
+    final building = biome == ForageBiome.plaineRiche
+        ? widget.gameState.plaineNurseryTerritory
+        : widget.gameState.territoryBuildingForId('refuge-${biome.name}');
+    if (building?.isBuilt != true) return;
+    final targetLabel = biome == ForageBiome.plaineRiche
+        ? 'la Nurserie'
+        : 'le refuge ${lisiereForageConfig.biomes[biome]!.label}';
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Affecter ce P’TIBUG ?'),
+        content: Text(
+          'Voulez-vous affecter ${bug.displayName} de l’espèce ${widget.gameState.pTibugSpeciesNameFor(bug)} à $targetLabel ?',
+        ),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Non')),
+          FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Oui')),
+        ],
+      ),
+    );
+    if (accepted == true && mounted) {
+      _message(context,
+          widget.gameState.assignPTibugToTerritory(bug, building!.id).message);
+    }
+  }
+}
+
+class _PTibugTerritoryMap extends StatelessWidget {
+  const _PTibugTerritoryMap({
+    required this.gameState,
+    required this.onOpen,
+    required this.onAssign,
+  });
+
+  final Zone0GameState gameState;
+  final ValueChanged<ForageBiome> onOpen;
+  final Future<void> Function(PTibug bug, ForageBiome biome) onAssign;
+
+  @override
+  Widget build(BuildContext context) {
+    // Same stable 3×3 geography as the Tour exploration map.
+    const cells = <ForageBiome?>[
+      null,
+      ForageBiome.sousBois,
+      null,
+      ForageBiome.colline,
+      ForageBiome.plaineRiche,
+      null,
+      ForageBiome.bassinMineral,
+      null,
+      null,
+    ];
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            childAspectRatio: .95,
+            crossAxisSpacing: 7,
+            mainAxisSpacing: 7,
+          ),
+          itemCount: cells.length,
+          itemBuilder: (context, index) {
+            final biome = cells[index];
+            if (biome == null) {
+              return DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              );
+            }
+            final unlocked = gameState.isBiomeUnlocked(biome);
+            final building = biome == ForageBiome.plaineRiche
+                ? gameState.plaineNurseryTerritory
+                : gameState.territoryBuildingForId('refuge-${biome.name}');
+            return _PTibugTerritoryMapCell(
+              gameState: gameState,
+              biome: biome,
+              building: building,
+              unlocked: unlocked,
+              onOpen: () => onOpen(biome),
+              onAssign: (bug) => onAssign(bug, biome),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _PTibugTerritoryMapCell extends StatelessWidget {
+  const _PTibugTerritoryMapCell({
+    required this.gameState,
+    required this.biome,
+    required this.building,
+    required this.unlocked,
+    required this.onOpen,
+    required this.onAssign,
+  });
+
+  final Zone0GameState gameState;
+  final ForageBiome biome;
+  final PTibugTerritoryBuilding? building;
+  final bool unlocked;
+  final VoidCallback onOpen;
+  final ValueChanged<PTibug> onAssign;
+
+  @override
+  Widget build(BuildContext context) {
+    final built = building?.isBuilt == true;
+    final label = lisiereForageConfig.biomes[biome]!.label;
+    final viability =
+        built ? gameState.viabilityForBuilding(building!.id) : null;
+    return DragTarget<PTibug>(
+      onWillAcceptWithDetails: (_) => unlocked && built,
+      onAcceptWithDetails: (details) => onAssign(details.data),
+      builder: (context, candidates, _) => Material(
+        color: candidates.isNotEmpty
+            ? Theme.of(context).colorScheme.primaryContainer
+            : unlocked
+                ? Theme.of(context).colorScheme.surfaceContainerLow
+                : Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: unlocked ? onOpen : null,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(
+                  !unlocked
+                      ? Icons.lock_outline
+                      : built
+                          ? Icons.home_work_outlined
+                          : Icons.add_home_work_outlined,
+                  color: built ? Theme.of(context).colorScheme.primary : null,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w900),
+                ),
+                if (unlocked)
+                  Text(
+                    built
+                        ? biome == ForageBiome.plaineRiche
+                            ? 'Nurserie'
+                            : 'Refuge'
+                        : biome == ForageBiome.plaineRiche
+                            ? 'Construire la Nurserie'
+                            : 'Construire un Refuge',
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: const TextStyle(
+                        fontSize: 9, fontWeight: FontWeight.w700),
+                  ),
+                if (viability != null) ...<Widget>[
+                  const SizedBox(height: 4),
+                  _MapViabilityBar(state: viability),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _PTibugTerritoryBiomeCard extends StatelessWidget {
@@ -6920,7 +7166,10 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                   onTap: () => onShowDetails?.call(bug),
                   child: Row(children: <Widget>[
                     CircleAvatar(
-                      child: Icon(_territorySpeciesIcon(bug.species)),
+                      backgroundColor:
+                          _pTibugPrimaryColor(bug).withValues(alpha: .18),
+                      child: Icon(_territorySpeciesIcon(bug.species),
+                          color: _pTibugPrimaryColor(bug)),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -6933,7 +7182,11 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                    '${pTibugConfig.species[bug.species]!.displayName} · niv. ${bug.level}'),
+                    '${gameState.pTibugTerritoryIdentityFor(bug)} · niv. ${bug.level}'),
+                Text('Aspect : ${gameState.pTibugAppearanceLabelFor(bug)}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10)),
                 Text(inactive ? (bug.inactiveReason ?? 'Inactif') : 'Actif'),
                 Text(
                     'Production : ${bug.storedAmount}/${gameState.pTibugCapacityFor(bug)}'),
@@ -7042,6 +7295,12 @@ IconData _territorySpeciesIcon(PTibugSpecies species) => switch (species) {
       PTibugSpecies.hyme => Icons.hive_outlined,
       PTibugSpecies.arac => Icons.hub_outlined,
     };
+
+Color _pTibugPrimaryColor(PTibug bug) {
+  final raw = (bug.primaryColorHex ?? '').replaceFirst('#', '');
+  if (raw.length != 6) return const Color(0xFF7C7850);
+  return Color(0xFF000000 | int.parse(raw, radix: 16));
+}
 
 class _BiomeBuildingsTab extends StatelessWidget {
   const _BiomeBuildingsTab({
@@ -7938,6 +8197,96 @@ class _CampHousingTab extends StatelessWidget {
               'Les maisons produisent des bio-piles, puis les répartissent équitablement entre leurs occupants. Les habitants achètent seulement des produits finis : les besoins sans produit, magasin ou budget restent visibles pour le futur Marché.',
             ),
           ),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Postes communautaires',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  const Text(
+                      'Un carré gris est libre. Lorsqu’un habitant passionné est affecté, son poste devient vert : touche-le pour ouvrir sa fiche.'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: CommunityRoleType.values.expand((roleType) {
+                      final buildingId = switch (roleType) {
+                        CommunityRoleType.kitchenCook => 'cuisine',
+                        CommunityRoleType.fablabMaker => 'atelier',
+                        CommunityRoleType.marketCounter => 'market',
+                        CommunityRoleType.lisiereObserver => 'lisiere',
+                        CommunityRoleType.securityWatch ||
+                        CommunityRoleType.weatherWatch =>
+                          'securityTower',
+                      };
+                      return List<Widget>.generate(
+                        gameState.communityRoleSlotCount(roleType),
+                        (index) {
+                          final slotId = 'resident-$index';
+                          final assignment = gameState.communityRoleAssignments
+                              .where((entry) =>
+                                  entry.status !=
+                                      CommunityRoleStatus.archived &&
+                                  entry.buildingId == buildingId &&
+                                  entry.slotId == slotId)
+                              .firstOrNull;
+                          final resident = assignment == null
+                              ? null
+                              : gameState.residents
+                                  .where((entry) =>
+                                      entry.id == assignment.residentId)
+                                  .firstOrNull;
+                          final occupied = resident != null;
+                          return SizedBox(
+                            width: 118,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: resident == null
+                                  ? null
+                                  : () => _showResidentSheet(context, resident),
+                              child: Ink(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: occupied
+                                      ? Colors.green.withValues(alpha: 0.18)
+                                      : Colors.grey.withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Icon(occupied
+                                        ? Icons.person
+                                        : Icons.person_outline),
+                                    const SizedBox(height: 4),
+                                    Text(gameState.communityRoleLabel(roleType),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(fontSize: 11)),
+                                    Text(resident?.displayName ?? 'Libre',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (gameState.communityRoleAssignments.any((role) =>
               role.status != CommunityRoleStatus.archived)) ...<Widget>[
             const SizedBox(height: 6),
@@ -8505,7 +8854,7 @@ class _CommunityProjectsCard extends StatelessWidget {
             ),
             if (incident != null)
               Text(
-                  'Dernière intempérie : ${incident.wasteCreated} Déchet(s) créés, ${incident.batteriesLost} Bio-batterie(s) exposée(s) perdue(s).'),
+                  'Dernière intempérie : ${incident.organicLost} Organique transformé en Déchets, ${incident.batteriesLost} Bio-batterie(s) exposée(s) perdue(s).'),
             const Divider(),
             for (final definition in config.projects)
               _CommunityProjectTile(
@@ -11745,10 +12094,13 @@ class _MarketPageState extends State<MarketPage> {
   Widget _shopDistributorCard(String shopId) {
     final distributor = widget.gameState.marketDistributorForShop(shopId);
     if (distributor == null || !distributor.isBuilt) {
+      final endsAt = distributor?.constructionEndsAt;
       return OutlinedButton.icon(
         onPressed: () => _showDistributorBuildSheet(shopId),
         icon: const Icon(Icons.precision_manufacturing_outlined),
-        label: const Text('Construire le distributeur'),
+        label: Text(endsAt == null
+            ? 'Construire le distributeur'
+            : 'Distributeur en construction · ${_countdownLabel(endsAt)}'),
       );
     }
     final limit = widget.gameState.distributorSlotsForShop(shopId);
@@ -13299,11 +13651,10 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       ? 'Pré-requis : Pattern actif dans le Kernel'
                       : 'Pré-requis : ${researchActive ? 'Pattern scientifique actif' : _patternStateLabel(state)}',
                   prerequisiteMet: isActive,
-                  primaryActionLabel: 'Fabriquer une Armature',
-                  primaryActionIcon: Icons.auto_awesome_outlined,
-                  primaryActionEnabled: canCreate,
-                  onPrimaryAction: () => _message(
-                      widget.gameState.startPTibugCreation(species).message),
+                  primaryActionLabel: 'Fabriquée à l’Atelier',
+                  primaryActionIcon: Icons.precision_manufacturing_outlined,
+                  primaryActionEnabled: false,
+                  onPrimaryAction: () {},
                 );
               }),
             ],
@@ -13711,7 +14062,12 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                     children: <Widget>[
                       Row(
                         children: <Widget>[
-                          CircleAvatar(child: Icon(_speciesIcon(bug.species))),
+                          CircleAvatar(
+                            backgroundColor:
+                                _pTibugPrimaryColor(bug).withValues(alpha: .18),
+                            child: Icon(_speciesIcon(bug.species),
+                                color: _pTibugPrimaryColor(bug)),
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
@@ -13732,6 +14088,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       Text(
                         '${pTibugConfig.species[bug.species]!.displayName} · ${bug.styleVariant}',
                       ),
+                      Text(
+                          'Aspect : ${widget.gameState.pTibugAppearanceLabelFor(bug)}'),
                       Text(
                         'XP ${bug.xp} · Réserve ${bug.storedAmount}/${widget.gameState.pTibugCapacityFor(bug)}',
                       ),
@@ -15701,6 +16059,23 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
               ),
             const SizedBox(height: 18),
             ExpansionTile(
+              leading: const Icon(Icons.auto_awesome_outlined),
+              title: const Text('Armatures P’TIBUG'),
+              subtitle: const Text(
+                'Fabriquées à l’Atelier, puis cultivées dans la Nurserie.',
+              ),
+              children: PTibugSpecies.values
+                  .map(
+                    (species) => _PTibugArmatureAtelierCard(
+                      gameState: widget.gameState,
+                      species: species,
+                      figurines: figurines,
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 10),
+            ExpansionTile(
               leading: const Icon(Icons.extension_outlined),
               title: const Text('Modules P’TIBUG'),
               subtitle:
@@ -15848,6 +16223,95 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
       figurine: figurine,
     );
     setState(() => _lastResult = result.message);
+  }
+}
+
+class _PTibugArmatureAtelierCard extends StatelessWidget {
+  const _PTibugArmatureAtelierCard({
+    required this.gameState,
+    required this.species,
+    required this.figurines,
+  });
+
+  final Zone0GameState gameState;
+  final PTibugSpecies species;
+  final List<PtipoteFigurine> figurines;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = pTibugConfig.species[species]!;
+    final active =
+        gameState.isPTibugPatternActive('ptibug-species-${species.name}');
+    final crafting = gameState.pTibugArmatures.any((item) => item.isCrafting);
+    final materials = gameState.hasResources(config.creationCost);
+    final batteries = gameState.bioBatteries >= config.creationBioBatteryCost;
+    final manualAvailable = gameState.activeManualWorkshopOrders < 1;
+    final ptipoteAvailable =
+        gameState.activePtipoteWorkshopOrders < gameState.workshopSlots;
+    final details = config.creationCost.entries
+        .map((entry) =>
+            '${entry.key} : ${entry.value} / ${gameState.resourceAmount(entry.key)}')
+        .join('\n');
+    return _ProductionRecipeCard(
+      title: 'Armature ${config.displayName}',
+      leadingIcon: Icons.auto_awesome_outlined,
+      description:
+          'Fabrique une Armature à l’Atelier. Elle sera ensuite placée dans une cuve de la Nurserie.',
+      slots: <_ProductionSlotData>[
+        _ProductionSlotData(
+            label: 'Matériaux', value: details, icon: Icons.eco_outlined),
+        _ProductionSlotData(
+          label: 'Atelier',
+          value:
+              'Bio-batteries : ${config.creationBioBatteryCost}/${gameState.bioBatteries}\nTemps : ${pTibugConfig.cultivation.armatureMinutes ~/ 60} h',
+          icon: Icons.precision_manufacturing_outlined,
+        ),
+      ],
+      details: const <String>[
+        'Une Armature prête rejoint ensuite la réserve de la Nurserie.',
+      ],
+      prerequisiteLabel:
+          active ? 'Pattern Kernel actif' : 'Pré-requis : Pattern Kernel actif',
+      prerequisiteMet: active,
+      unavailableLabel: crafting
+          ? 'Une Armature est déjà en fabrication.'
+          : !materials
+              ? gameState.missingResourcesLabel(config.creationCost)
+              : !batteries
+                  ? 'Bio-batteries insuffisantes.'
+                  : !manualAvailable
+                      ? 'Créneau manuel de l’Atelier occupé.'
+                      : null,
+      primaryActionLabel: 'Fabriquer une Armature',
+      primaryActionIcon: Icons.precision_manufacturing_outlined,
+      primaryActionEnabled:
+          active && !crafting && materials && batteries && manualAvailable,
+      onPrimaryAction: () => ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(gameState.startPTibugCreation(species).message)),
+      ),
+      secondaryActionLabel: 'Confier à un P’TIPOTE',
+      secondaryActionEnabled:
+          active && !crafting && materials && batteries && ptipoteAvailable,
+      onSecondaryAction: () async {
+        final figurine = await _pickPtipoteForActivity(
+          context: context,
+          gameState: gameState,
+          figurines: figurines,
+          title: 'Confier l’Armature ${config.displayName}',
+        );
+        if (figurine != null && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                gameState
+                    .startPTibugCreation(species, figurine: figurine)
+                    .message,
+              ),
+            ),
+          );
+        }
+      },
+    );
   }
 }
 

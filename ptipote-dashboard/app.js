@@ -1025,6 +1025,8 @@ function prettyPath(path) {
     residentShopServiceCapacity: "Capacité de service d’un commerce habitant",
     residentShopReservePiles: "Réserve initiale d’un commerce habitant (piles)",
     residentShopStockTarget: "Cible de stock initiale d’un commerce habitant",
+    requestMinimumMarketLevelByItem: "Niveau minimal du Marché par produit demandé",
+    constructionMinutesByLevel: "Durée de construction des magasins et Distributeurs par niveau (min)",
   };
   return path.map((key) => labels[key] || String(key).replace(/([A-Z])/g, " $1")).join(" / ");
 }
@@ -1045,6 +1047,9 @@ function configFieldControls(key, value, prefix = []) {
         return `<label class="toggle-field"><input type="checkbox" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" ${field.value ? "checked" : ""}>${escapeHtml(label)}</label>`;
       }
       if (typeof field.value === "string") {
+        if (/^#[0-9a-f]{6}$/i.test(field.value)) {
+          return `<div class="stat-field"><label for="zone0-${escapeHtml(key)}-${escapeHtml(path)}">${escapeHtml(label)} (RGB)</label><input id="zone0-${escapeHtml(key)}-${escapeHtml(path)}" type="color" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" value="${escapeHtml(field.value)}"></div>`;
+        }
         return `<div class="stat-field"><label for="zone0-${escapeHtml(key)}-${escapeHtml(path)}">${escapeHtml(label)}</label><input id="zone0-${escapeHtml(key)}-${escapeHtml(path)}" type="text" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" value="${escapeHtml(field.value)}"></div>`;
       }
       return `<div class="stat-field"><label for="zone0-${escapeHtml(key)}-${escapeHtml(path)}">${escapeHtml(label)}</label><input id="zone0-${escapeHtml(key)}-${escapeHtml(path)}" type="number" step="0.01" data-zone0-key="${key}" data-zone0-path="${escapeHtml(path)}" value="${escapeHtml(field.value)}"></div>`;
@@ -1230,6 +1235,7 @@ function renderPTibugEditor() {
     weather = {},
     cultivation = {},
     valuation = {},
+    appearance = {},
     ...general
   } = ptibug;
   el.ptibugConfigList.innerHTML = [
@@ -1242,6 +1248,8 @@ function renderPTibugEditor() {
     configCard("Bâtiments, consommation et Cellules", "ptibug", territory, ["territory"], { open: true, meta: "Nurserie, futurs Refuges, énergie locale et capacités" }),
     ptibugEditorHeading("Cultivation, Infusion et Évolution P'TIBUG", "Armatures, cuves, réserves locales, Traits et tapotement rythmé."),
     configCard("Cuves, Infusion des Traits et Évolution", "ptibug", cultivation, ["cultivation"], { open: true, meta: "Durées, ratios par espèce, recettes de Cellules, autonomie et tapotement" }),
+    ptibugEditorHeading("Aspect esthétique après infusion", "Couleurs principales, motifs et Trait : purement visuel, sans effet de production."),
+    configCard("Palettes RGB et motifs", "ptibug", appearance, ["appearance"], { open: true, meta: "4 couleurs par espèce · 30 % de motif par défaut" }),
     ptibugEditorHeading("Progression et Évolution", "Niveaux, rendement, énergie et second Trait après Évolution."),
     configCard("Progression P'TIBUG", "ptibug", progression, ["progression"], { open: true, meta: "XP, niveau maximum, rendement et prérequis d’Évolution" }),
     ptibugEditorHeading("Identité, valorisation et Capsules certifiées", "Nom personnel, valeur indicative, paiement réel et archivage commercial."),

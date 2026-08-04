@@ -1483,6 +1483,13 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - `Revigorer` dépense Organique et Minéral pour restaurer un nombre configurable de points. Les coûts utilisent un multiplicateur configurable qui augmente quand la Biomasse est faible.
 - L’interface Lisière et les cartes de biomes de la Tour affichent l’état visuel configuré : 🌿 Luxuriante (80–100 %), 🌱 Stable (50–79 %), 🍂 Fragile (20–49 %), 🪨 Épuisée (0–19 %), avec barre et pourcentage dans la Lisière.
 - La production P’TIBUG applique la Biomasse après l’espèce, le bonus de biome, les Traits et les Modules. Le P’TIBUG contient désormais `refugeBiome` : tous les P’TIBUG existants sont migrés vers la Plaine, qui représente la Nurserie principale. Les futurs Refuges P’TIBUG n’auront qu’à modifier ce biome de Refuge ; ils ne créent ni n’améliorent de P’TIBUG.
+
+### Atelier, Marché et postes — ajustements de progression
+
+- Les Armatures P’TIBUG sont fabriquées à l’Atelier du Fablab, après activation de leur Pattern dans le Kernel. Elles occupent le même créneau manuel ou P’TIPOTE que les autres fabrications d’Atelier et restent ensuite placées dans une cuve depuis la Nurserie.
+- Les demandes habitantes sont filtrées par un niveau minimal de Marché réglable produit par produit : alimentation au niveau 1, équipement au niveau 2 et foyer au niveau 3 par défaut. Les produits non encore débloqués ne sont pas créés comme demandes.
+- Une place de Marché libre peut être revendiquée après 1 jour par défaut ; le préavis de 24 h reste conservé. Les chantiers de magasins et Distributeurs utilisent la même table : 6 min, 30 min, 60 min puis 120 min aux niveaux 1 à 4.
+- Les postes communautaires sont affichés sous forme de créneaux : gris lorsqu’ils sont libres, verts avec le nom de l’habitant lorsqu’ils sont occupés. La carte occupée ouvre la fiche de son habitant.
 - Le Dashboard Lisière expose une carte `Biomasse` : maximum, consommation par intensité, seuils de rendement de mission et P’TIBUG, récupération, Revigorer, et états/pictogrammes. Les valeurs Dart restent le fallback versionné.
 - Le rythme `wasteHoursPerLevelRegeneration` est éditable dans chaque carte de biome du Dashboard Lisière. V1 : Savane tropicale +1/h, Semi-désert / Garrigue tropicale +1/2 h, Forêt humide relictuelle +1/2 h, Hauts-Refuges +1/3 h. Une mission consomme les Déchets puis redémarre le cycle au moment de son retour.
 
@@ -1818,3 +1825,18 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 - Le Sourcier indique désormais le magasin spécialisé requis pour chaque contrat. Les matériaux bruts utiles au Sourcier sont explicitement acceptés par le Magasin du foyer ; cette exception n’autorise pas les habitants à demander des matières brutes.
 - Un chantier de magasin peut être arrêté même après son démarrage : tous les matériaux et Bio-batteries déposés sont rendus atomiquement, puis l’emplacement réservé est libéré si nécessaire.
 - Un Distributeur peut être amélioré séparément de son magasin. Sa progression reste limitée par les paliers du Marché, possède son propre coût et sa propre durée, et n’augmente jamais le niveau de la boutique.
+
+### Météo, Viabilité et carte territoriale P’TIBUG
+
+- Chaque bilan météo distingue les pertes réellement appliquées : moyenne et total de Viabilité perdus par les habitations, même lecture pour les Refuges P’TIBUG, Organique converti en Déchets et Bio-batteries exposées perdues. Les nouvelles valeurs sont persistées dans l’incident météo, sans rejouer les dégâts à l’ouverture.
+- Les repères du camp affichent une jauge de Viabilité sous le nom du bâtiment. La couleur évolue du jaune légèrement vert quand le bâtiment est sain jusqu’au rouge sous 10 % ; elle lit le même `BuildingViabilityState` que les dégâts météo et ne crée pas de seconde jauge.
+- Lisière → P’TIBUG utilise une carte territoriale 3×3 construite sur la topologie de l’Exploration de la Tour. La Plaine propose la Nurserie, les autres biomes un Refuge. Un territoire construit montre son pictogramme de maison et sa Viabilité ; toucher la Nurserie ouvre sa page existante, les autres tuiles ouvrent leur carte existante.
+- Le bouton **Entrer dans la Nurserie** reste grisé avant la construction. Les P’TIBUG inactifs restent sous la carte : leur dépôt sur un Refuge/Nurserie construit demande confirmation avant l’affectation.
+- Les cartes territoriales présentent l’identité technique plutôt que le surnom de Collection : espèce de base, armature/style et Trait biologique. Le nom personnel reste réservé à la Collection et au dialogue d’affectation.
+
+### Aspect esthétique P’TIBUG
+
+- Un P’TIBUG conserve désormais un aspect visuel persistant : couleur principale, motif facultatif, couleur pastel du motif et couleur du Trait. Ces valeurs ne modifient ni production, ni XP, ni valeur commerciale.
+- Une Infusion de Trait actualise l’aspect : une couleur est tirée parmi les quatre couleurs de l’espèce et un motif apparaît avec 30 % de chance par défaut. Le motif prend une couleur principale adoucie ; le noir reste noir et ne peut pas être repris comme motif lorsque le P’TIBUG est déjà noir.
+- Hyme utilise jaune/bleu/orange/noir et le motif **Rayé** ; Scarabé vert/bleu/rouge/noir et **Irisé** ; Arac violet/rouge/jaune/noir et **Pointillé**. Les P’TIBUG déjà sauvegardés reçoivent un aspect une seule fois à leur migration.
+- Le Dashboard expose ces palettes comme sélecteurs RGB dans `ptibug-config.json`. Le pictogramme utilise déjà la couleur principale ; les rendus détaillés des motifs seront ajoutés lorsque leurs règles graphiques seront fournies.

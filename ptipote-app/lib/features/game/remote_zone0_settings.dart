@@ -519,6 +519,7 @@ PTibugConfig _ptibug(Object? value) {
   final rawWeather = _map(raw['weather']);
   final rawCultivation = _map(raw['cultivation']);
   final rawValuation = _map(raw['valuation']);
+  final rawAppearance = _map(raw['appearance']);
   return PTibugConfig(
     nurseryRequirements: _resourceMap(
       raw['nurseryRequirements'],
@@ -554,6 +555,32 @@ PTibugConfig _ptibug(Object? value) {
     reservoirCapacityBonus: _int(
       raw['reservoirCapacityBonus'],
       base.reservoirCapacityBonus,
+    ),
+    appearance: PTibugAppearanceConfig(
+      primaryColorsBySpecies: <PTibugSpecies, List<String>>{
+        for (final species in PTibugSpecies.values)
+          species: () {
+            final configured =
+                _map(rawAppearance?['primaryColorsBySpecies'])?[species.name];
+            return configured is List
+                ? configured.whereType<String>().toList()
+                : List<String>.from(
+                    base.appearance.primaryColorsBySpecies[species] ??
+                        const <String>[],
+                  );
+          }(),
+      },
+      motifBySpecies: <PTibugSpecies, String>{
+        for (final species in PTibugSpecies.values)
+          species: _string(
+            _map(rawAppearance?['motifBySpecies'])?[species.name],
+            base.appearance.motifBySpecies[species] ?? '',
+          ),
+      },
+      motifChancePercent: _int(
+        rawAppearance?['motifChancePercent'],
+        base.appearance.motifChancePercent,
+      ).clamp(0, 100).toInt(),
     ),
     species: <PTibugSpecies, PTibugSpeciesConfig>{
       for (final entry in base.species.entries)
@@ -2131,6 +2158,14 @@ MarketConfig _market(Object? value) {
     residentShopStockTarget: _int(
       raw['residentShopStockTarget'],
       b.residentShopStockTarget,
+    ),
+    requestMinimumMarketLevelByItem: _resourceMap(
+      raw['requestMinimumMarketLevelByItem'],
+      b.requestMinimumMarketLevelByItem,
+    ),
+    constructionMinutesByLevel: _levelMap(
+      raw['constructionMinutesByLevel'],
+      b.constructionMinutesByLevel,
     ),
   );
 }

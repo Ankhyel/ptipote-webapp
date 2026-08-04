@@ -17,7 +17,7 @@
   "saleValues": {"Organique": 10, "Minéral": 10, "Repas simple": 2, "Filtre": 1, "Cartouche de filtration": 2, "Tenue ombragée": 2, "Meuble simple": 2, "Ventilation Termite": 3, "Lumière solaire": 3, "P’TIBUG Scarabé": 20, "P’TIBUG Hyme": 20, "P’TIBUG Arac": 20},
   "maxActiveRequestsBonusPerLevel": 1,
   "distributorConstructionCost": {"Organique": 10, "Minéral": 20},
-  "distributorConstructionMinutes": 1,
+  "distributorConstructionMinutes": 6,
   "distributorEnergyCapacity": 100,
   "distributorEnergyPerBioBattery": 10,
   "distributorDailyEnergyByLevel": {"1": 10, "2": 8, "3": 6},
@@ -57,7 +57,7 @@
   "requestPriceBioPiles": {"Boisson tonique": 2, "Repas simple": 5, "Organique": 10, "Minéral": 10, "Tenue ombragée": 20, "Filtre": 7, "Cartouche de filtration": 13, "Meuble simple": 30, "Ventilation Termite": 50, "Lumière solaire": 50, "P’TIBUG Scarabé": 100, "P’TIBUG Hyme": 100, "P’TIBUG Arac": 100},
   "specializedShopGainBonusPercent": 30,
   "baseStorePricePenaltyPercent": 50,
-  "residentClaimVacancyDays": 7,
+  "residentClaimVacancyDays": 1,
   "residentClaimWarningHours": 24,
   "requestBookLevel": 3,
   "informationPointLevel": 3,
@@ -69,4 +69,15 @@
   ,"shopConstructionBioBatteries": 10
   ,"shopUpgradeCostMultiplier": 2
   ,"distributorConstructionBioBatteries": 5
+  ,"constructionMinutesByLevel": {"1": 6, "2": 30, "3": 60, "4": 120}
+  ,"requestMinimumMarketLevelByItem": {
+    "Boisson tonique": 1,
+    "Repas simple": 1,
+    "Tenue ombragée": 2,
+    "Filtre": 2,
+    "Cartouche de filtration": 2,
+    "Meuble simple": 3,
+    "Ventilation Termite": 3,
+    "Lumière solaire": 3
+  }
 }

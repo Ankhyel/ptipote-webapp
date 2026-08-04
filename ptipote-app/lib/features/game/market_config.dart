@@ -68,6 +68,8 @@ class MarketConfig {
     required this.residentShopServiceCapacity,
     required this.residentShopReservePiles,
     required this.residentShopStockTarget,
+    required this.requestMinimumMarketLevelByItem,
+    required this.constructionMinutesByLevel,
   });
 
   final Map<String, int> constructionCost;
@@ -136,6 +138,14 @@ class MarketConfig {
   final int residentShopServiceCapacity;
   final int residentShopReservePiles;
   final int residentShopStockTarget;
+  final Map<String, int> requestMinimumMarketLevelByItem;
+  final Map<int, int> constructionMinutesByLevel;
+
+  int requestMinimumMarketLevelFor(String item) =>
+      requestMinimumMarketLevelByItem[item] ?? 1;
+
+  int constructionMinutesForLevel(int level) =>
+      constructionMinutesByLevel[level.clamp(1, 4)] ?? 6;
 
   int slotsForLevel(int level) =>
       manualSlotsByLevel[level.clamp(0, maximumLevel)] ??
@@ -226,7 +236,7 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   allowDuplicateStacks: true,
   stackQuantityLimit: 10,
   distributorConstructionCost: <String, int>{'Organique': 10, 'Minéral': 20},
-  distributorConstructionMinutes: 1,
+  distributorConstructionMinutes: 6,
   distributorEnergyCapacity: 100,
   distributorEnergyPerBioBattery: 10,
   distributorDailyEnergyByLevel: <int, int>{1: 10, 2: 8, 3: 6},
@@ -296,7 +306,7 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   shopConstructionBioBatteries: 10,
   shopUpgradeCostMultiplier: 2,
   distributorConstructionBioBatteries: 5,
-  residentClaimVacancyDays: 7,
+  residentClaimVacancyDays: 1,
   residentClaimWarningHours: 24,
   requestBookLevel: 3,
   informationPointLevel: 3,
@@ -304,6 +314,17 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   residentShopServiceCapacity: 6,
   residentShopReservePiles: 30,
   residentShopStockTarget: 6,
+  requestMinimumMarketLevelByItem: <String, int>{
+    'Boisson tonique': 1,
+    'Repas simple': 1,
+    'Tenue ombragée': 2,
+    'Filtre': 2,
+    'Cartouche de filtration': 2,
+    'Meuble simple': 3,
+    'Ventilation Termite': 3,
+    'Lumière solaire': 3,
+  },
+  constructionMinutesByLevel: <int, int>{1: 6, 2: 30, 3: 60, 4: 120},
 );
 
 MarketConfig marketConfig = defaultMarketConfig;

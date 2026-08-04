@@ -150,6 +150,19 @@ class PTibugSpeciesConfig {
   final int creationMinutes;
 }
 
+/// Cosmetic catalog only. An aspect never changes production, value or traits.
+class PTibugAppearanceConfig {
+  const PTibugAppearanceConfig({
+    required this.primaryColorsBySpecies,
+    required this.motifBySpecies,
+    required this.motifChancePercent,
+  });
+
+  final Map<PTibugSpecies, List<String>> primaryColorsBySpecies;
+  final Map<PTibugSpecies, String> motifBySpecies;
+  final int motifChancePercent;
+}
+
 /// Les trois opérations partagent une cuve, ses réserves et son calcul hors
 /// ligne. Leur résultat final reste toutefois distinct et explicitement validé.
 enum PTibugCultivationOperationType { cultivation, traitInfusion, evolution }
@@ -376,6 +389,7 @@ class PTibugConfig {
     required this.weather,
     required this.cultivation,
     required this.valuation,
+    required this.appearance,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -418,6 +432,7 @@ class PTibugConfig {
   final PTibugWeatherConfig weather;
   final PTibugCultivationConfig cultivation;
   final PTibugValuationConfig valuation;
+  final PTibugAppearanceConfig appearance;
 
   int slotsForLevel(int level) => territory.nurseryCapacityForLevel(level);
   int moduleSlotsForLevel(int level) =>
@@ -677,6 +692,24 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
   wingsCycleReduction: 0.15,
   clawProductionBonus: 1,
   reservoirCapacityBonus: 4,
+  appearance: const PTibugAppearanceConfig(
+    primaryColorsBySpecies: <PTibugSpecies, List<String>>{
+      PTibugSpecies.hyme: <String>['#F2C94C', '#4A90D9', '#F2994A', '#1E1E1E'],
+      PTibugSpecies.scarabe: <String>[
+        '#5E9B5A',
+        '#4A90D9',
+        '#D85C55',
+        '#1E1E1E'
+      ],
+      PTibugSpecies.arac: <String>['#8B5FBF', '#D85C55', '#F2C94C', '#1E1E1E'],
+    },
+    motifBySpecies: <PTibugSpecies, String>{
+      PTibugSpecies.hyme: 'Rayé',
+      PTibugSpecies.scarabe: 'Irisé',
+      PTibugSpecies.arac: 'Pointillé',
+    },
+    motifChancePercent: 30,
+  ),
   species: <PTibugSpecies, PTibugSpeciesConfig>{
     PTibugSpecies.scarabe: PTibugSpeciesConfig(
       displayName: 'Scarabé',

@@ -108,6 +108,19 @@
   "wingsCycleReduction": 0.15,
   "clawProductionBonus": 1,
   "reservoirCapacityBonus": 4,
+  "appearance": {
+    "primaryColorsBySpecies": {
+      "hyme": ["#F2C94C", "#4A90D9", "#F2994A", "#1E1E1E"],
+      "scarabe": ["#5E9B5A", "#4A90D9", "#D85C55", "#1E1E1E"],
+      "arac": ["#8B5FBF", "#D85C55", "#F2C94C", "#1E1E1E"]
+    },
+    "motifBySpecies": {
+      "hyme": "Rayé",
+      "scarabe": "Irisé",
+      "arac": "Pointillé"
+    },
+    "motifChancePercent": 30
+  },
   "species": {
     "scarabe": {
       "displayName": "Scarabé",

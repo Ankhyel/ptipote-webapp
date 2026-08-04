@@ -573,6 +573,10 @@ class Zone0GameState extends ChangeNotifier {
       ...activePTibugTerritories.map((building) => building.id),
     };
     final config = towerOperationsConfig.buildingViability;
+    final territoryIds =
+        activePTibugTerritories.map((building) => building.id).toSet();
+    var territoryDamage = 0;
+    var damagedTerritories = 0;
     for (final buildingId in candidates) {
       if (constructionProjects[buildingId]?.isInProgress == true) continue;
       final state = viabilityForBuilding(buildingId);
@@ -593,6 +597,11 @@ class Zone0GameState extends ChangeNotifier {
       if (damage <= 0) continue;
       final previous = state.current;
       state.current = math.max(0, state.current - damage);
+      final actualDamage = previous - state.current;
+      if (territoryIds.contains(buildingId) && actualDamage > 0) {
+        territoryDamage += actualDamage;
+        damagedTerritories++;
+      }
       state.lastViabilityUpdateAt = DateTime.now();
       if (state.current == 0) {
         state.restartRequired = true;
@@ -604,6 +613,17 @@ class Zone0GameState extends ChangeNotifier {
         _reportBuildingViability(
             buildingId, 'est endommagé et fonctionne en mode dégradé.');
       }
+    }
+    if (damagedTerritories > 0) {
+      final average = territoryDamage / damagedTerritories;
+      reports.add(PtipoteMissionReport.system(
+        message:
+            'Refuges P’TIBUG : ${average.toStringAsFixed(1)}% de Viabilité perdue en moyenne ($territoryDamage% au total).',
+        sourceBuildingId: 'campHeart',
+        subject: 'Bilan météo',
+        concerned: 'Refuges P’TIBUG',
+        summary: '$damagedTerritories refuge(s) touché(s).',
+      ));
     }
   }
 
@@ -1690,6 +1710,8 @@ class Zone0GameState extends ChangeNotifier {
   void _applyWeatherHouseDamage(GlobalWeatherEvent event) {
     if (event.type == TowerWeatherType.calm) return;
     final config = towerOperationsConfig.buildingViability;
+    var totalDamage = 0;
+    var damagedHouses = 0;
     for (final house in residentHouses) {
       if (house.lastDamageEventId == event.id) continue;
       house.lastDamageEventId = event.id;
@@ -1702,13 +1724,30 @@ class Zone0GameState extends ChangeNotifier {
           .clamp(0, config.protectionCapPercent);
       final raw = config.damageFor(event.type, event.intensity) *
           impact.localImpactMultiplier;
+      final previous = house.currentViability;
       house.currentViability = math
           .max(
             0,
             house.currentViability - (raw * (1 - protection / 100)).ceil(),
           )
           .toInt();
+      final actualDamage = previous - house.currentViability;
+      if (actualDamage > 0) {
+        totalDamage += actualDamage;
+        damagedHouses++;
+      }
       house.updatedAt = DateTime.now();
+    }
+    if (damagedHouses > 0) {
+      final average = totalDamage / damagedHouses;
+      reports.add(PtipoteMissionReport.system(
+        message:
+            'Habitations : ${average.toStringAsFixed(1)}% de Viabilité perdue en moyenne ($totalDamage% au total).',
+        sourceBuildingId: 'campHeart',
+        subject: 'Bilan météo',
+        concerned: 'Habitations',
+        summary: '$damagedHouses maison(s) touchée(s).',
+      ));
     }
   }
 
@@ -1879,11 +1918,13 @@ class Zone0GameState extends ChangeNotifier {
       TowerWeatherType.calm => <String>[],
     };
     var waste = 0;
+    var organicLost = 0;
     for (final item in perishable) {
       final loss = (resourceAmount(item) * effectiveRate / 100).floor();
       if (loss > 0) {
         removeResource(item, loss);
         waste += loss;
+        if (item == 'Organique') organicLost += loss;
       }
     }
     if (waste > 0) addResources(<String, int>{'Déchets': waste});
@@ -1900,13 +1941,14 @@ class Zone0GameState extends ChangeNotifier {
     lastWeatherStockIncident = WeatherStockIncident(
         eventId: event.id,
         wasteCreated: waste,
+        organicLost: organicLost,
         batteriesLost: batteriesLost,
         protectionPercent: reduction,
         resolvedAt: DateTime.now());
     if (waste > 0 || batteriesLost > 0)
       reports.add(PtipoteMissionReport.system(
           message:
-              'Intempérie : $waste ressource(s) transformée(s) en Déchets, $batteriesLost Bio-batterie(s) exposée(s) perdue(s).',
+              'Intempérie : $organicLost Organique transformé(s) en Déchets, $batteriesLost Bio-batterie(s) exposée(s) perdue(s).',
           sourceBuildingId: 'campHeart',
           subject: 'Bilan météo',
           concerned: 'Stocks',
@@ -3714,6 +3756,9 @@ class Zone0GameState extends ChangeNotifier {
           .length +
       activePTibugModuleCraftOrders
           .where((order) => order.assignedPtipoteId == null)
+          .length +
+      pTibugArmatures
+          .where((order) => order.isCrafting && order.assignedPtipoteId == null)
           .length;
 
   int get activePtipoteWorkshopOrders =>
@@ -3726,6 +3771,9 @@ class Zone0GameState extends ChangeNotifier {
           .length +
       activePTibugModuleCraftOrders
           .where((order) => order.assignedPtipoteId != null)
+          .length +
+      pTibugArmatures
+          .where((order) => order.isCrafting && order.assignedPtipoteId != null)
           .length;
 
   List<WorkshopCraftOrder> get activeKitchenOrders => activeWorkshopOrders
@@ -3750,6 +3798,9 @@ class Zone0GameState extends ChangeNotifier {
       ) ||
       activePTibugModuleCraftOrders.any(
         (order) => order.assignedPtipoteId == figurineId,
+      ) ||
+      pTibugArmatures.any(
+        (order) => order.isCrafting && order.assignedPtipoteId == figurineId,
       );
 
   CraftRecipe _orderRecipe(WorkshopCraftOrder order) =>
@@ -5814,8 +5865,9 @@ class Zone0GameState extends ChangeNotifier {
     final now = DateTime.now();
     order
       ..startedAt = now
-      ..endsAt = now
-          .add(Duration(minutes: marketConfig.distributorConstructionMinutes));
+      ..endsAt = now.add(Duration(
+          minutes: marketConfig
+              .constructionMinutesForLevel(order.targetLevel ?? 1)));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
@@ -6654,6 +6706,8 @@ class Zone0GameState extends ChangeNotifier {
     final entries = marketConfig.saleValues.keys
         .where((item) => _isFinishedResidentProduct(item))
         .where((item) =>
+            marketLevel >= marketConfig.requestMinimumMarketLevelFor(item))
+        .where((item) =>
             marketShopAccepts(primaryMarketShopId, item) ||
             marketShops.any((shop) => !shop.isPrimary && shop.accepts(item)))
         .toSet()
@@ -7022,7 +7076,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     distributor.constructionStartedAt = DateTime.now();
     distributor.constructionEndsAt = distributor.constructionStartedAt!.add(
-      Duration(minutes: marketConfig.distributorConstructionMinutes),
+      Duration(minutes: marketConfig.constructionMinutesForLevel(1)),
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -7184,8 +7238,8 @@ class Zone0GameState extends ChangeNotifier {
     }
     distributor
       ..upgradeTargetLevel = target
-      ..upgradeEndsAt = DateTime.now()
-          .add(Duration(minutes: marketConfig.distributorConstructionMinutes));
+      ..upgradeEndsAt = DateTime.now().add(
+          Duration(minutes: marketConfig.constructionMinutesForLevel(target)));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -8775,7 +8829,10 @@ class Zone0GameState extends ChangeNotifier {
   /// Starts the first stage of a new P'TIBUG: the Armature. The old direct
   /// order is retained only to resolve a craft that was already running when
   /// the cultivation migration was installed.
-  Zone0ActionResult startPTibugCreation(PTibugSpecies species) {
+  Zone0ActionResult startPTibugCreation(
+    PTibugSpecies species, {
+    PtipoteFigurine? figurine,
+  }) {
     if (!isPlaineNurseryBuilt) {
       return const Zone0ActionResult(
         success: false,
@@ -8790,12 +8847,35 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Pattern P’TIBUG non actif.',
       );
     }
+    if (!isFablabBuilt ||
+        atelierLevel <= 0 ||
+        !isBuildingOperational('atelier')) {
+      return const Zone0ActionResult(
+        success: false,
+        message:
+            'Construis et remets en marche l’Atelier pour fabriquer une Armature.',
+      );
+    }
     if (pTibugCreationOrder?.isActive == true ||
         pTibugArmatures.any((item) => item.isCrafting)) {
       return const Zone0ActionResult(
         success: false,
-        message: 'La Nurserie fabrique déjà une Armature.',
+        message: 'L’Atelier fabrique déjà une Armature.',
       );
+    }
+    if (figurine == null && activeManualWorkshopOrders >= 1) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Le créneau manuel de l’Atelier est occupé.');
+    }
+    if (figurine != null && activePtipoteWorkshopOrders >= workshopSlots) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Tous les emplacements P’TIPOTE de l’Atelier sont occupés.');
+    }
+    if (figurine != null && isBusy(figurine)) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIPOTE occupé.');
     }
     final config = pTibugConfig.species[species]!;
     if (!hasResources(config.creationCost) ||
@@ -8818,12 +8898,15 @@ class Zone0GameState extends ChangeNotifier {
           now.add(Duration(minutes: pTibugConfig.cultivation.armatureMinutes)),
       materialCosts: Map<String, int>.from(config.creationCost),
       createdAt: now,
+      assignedPtipoteId: figurine?.id,
+      assignedPtipoteName: figurine?.displayName,
     ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: 'Armature ${config.displayName} lancée.',
+      message:
+          'Armature ${config.displayName} lancée à l’Atelier${figurine == null ? '' : ' avec ${figurine.displayName}'}.',
     );
   }
 
@@ -9519,14 +9602,16 @@ class Zone0GameState extends ChangeNotifier {
     final id = 'ptibug-${DateTime.now().microsecondsSinceEpoch}';
     final temporaryName =
         '${config.displayName} ${id.substring(id.length - 4)}';
-    pTibugs.add(PTibug(
+    final createdBug = PTibug(
       id: id,
       displayName: temporaryName,
       defaultDisplayName: temporaryName,
       species: operation.species,
       styleVariant: config.styles[_random.nextInt(config.styles.length)],
       createdAt: DateTime.now(),
-    ));
+    );
+    _ensurePTibugAppearance(createdBug);
+    pTibugs.add(createdBug);
     operation.resultPtibugId = id;
     pTibugArmatures.remove(armature);
     pTibugCultivationOperations.remove(operation);
@@ -9576,10 +9661,12 @@ class Zone0GameState extends ChangeNotifier {
           return const Zone0ActionResult(
               success: false, message: 'Les deux Traits sont déjà distincts.');
         }
+        _ensurePTibugAppearance(bug, reroll: true);
+        bug.traitColorHex = definition.colorHex;
         emitKernelProgressEvent(KernelProgressEventType.ptibugTraitEquipped);
         reports.add(PtipoteMissionReport.system(
           message:
-              '${bug.displayName} reçoit ${definition.displayName} rang $targetRank.',
+              '${bug.displayName} reçoit ${definition.displayName} rang $targetRank. Aspect : ${pTibugAppearanceLabelFor(bug)}.',
           sourceBuildingId: 'plaineNursery',
           mailbox: Zone0MessageMailbox.companions,
           subject: 'Infusion terminée',
@@ -10011,6 +10098,10 @@ class Zone0GameState extends ChangeNotifier {
       species: bug.species,
       styleVariant: bug.styleVariant,
       displayName: bug.displayName,
+      primaryColorHex: bug.primaryColorHex,
+      motifId: bug.motifId,
+      motifColorHex: bug.motifColorHex,
+      traitColorHex: bug.traitColorHex,
       biologicalTraitId: bug.biologicalTraitId,
       biologicalTraitLevel: bug.biologicalTraitLevel,
       secondTraitId: bug.secondTraitId,
@@ -10064,6 +10155,10 @@ class Zone0GameState extends ChangeNotifier {
         displayName: capsule.displayName,
         species: capsule.species,
         styleVariant: capsule.styleVariant,
+        primaryColorHex: capsule.primaryColorHex,
+        motifId: capsule.motifId,
+        motifColorHex: capsule.motifColorHex,
+        traitColorHex: capsule.traitColorHex,
         createdAt: DateTime.now(),
         level: capsule.level,
         xp: capsule.xp,
@@ -10447,6 +10542,64 @@ class Zone0GameState extends ChangeNotifier {
 
   String pTibugSpeciesNameFor(PTibug bug) => _pTibugBiologicalName(bug);
 
+  /// Technical identity for territory cards, separate from the Collection
+  /// nickname and from the purely cosmetic aspect selected during infusion.
+  String pTibugTerritoryIdentityFor(PTibug bug) {
+    final species = pTibugConfig.species[bug.species]!.displayName;
+    final trait = bug.biologicalTraitId == null
+        ? null
+        : pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!);
+    final traitLabel = trait == null || bug.biologicalTraitLevel <= 0
+        ? null
+        : '${trait.displayName} ${bug.biologicalTraitLevel}';
+    return <String>[species, if (traitLabel != null) traitLabel].join(' · ');
+  }
+
+  String pTibugAppearanceLabelFor(PTibug bug) {
+    final primary = bug.primaryColorHex ?? '—';
+    final motif = bug.motifId == null
+        ? 'aucun'
+        : '${bug.motifId} · ${bug.motifColorHex ?? '—'}';
+    return 'Couleur $primary · Motif $motif · Trait ${bug.traitColorHex ?? '—'}';
+  }
+
+  void _ensurePTibugAppearance(PTibug bug, {bool reroll = false}) {
+    if (!reroll && bug.primaryColorHex != null) return;
+    final colors = pTibugConfig.appearance.primaryColorsBySpecies[bug.species];
+    if (colors == null || colors.isEmpty) return;
+    final primary = colors[_random.nextInt(colors.length)];
+    final hasMotif =
+        _random.nextInt(100) < pTibugConfig.appearance.motifChancePercent;
+    bug.primaryColorHex = primary;
+    bug.motifId =
+        hasMotif ? pTibugConfig.appearance.motifBySpecies[bug.species] : null;
+    if (!hasMotif) {
+      bug.motifColorHex = null;
+      return;
+    }
+    final candidates = colors
+        .where((color) => !(primary.toUpperCase() == '#1E1E1E' &&
+            color.toUpperCase() == '#1E1E1E'))
+        .toList(growable: false);
+    final motifBase = candidates[_random.nextInt(candidates.length)];
+    // Black remains black; the other palette colors are stored as pastel
+    // variants so the renderer can later attach the species-specific motif.
+    bug.motifColorHex = motifBase.toUpperCase() == '#1E1E1E'
+        ? motifBase
+        : _pastelHex(motifBase);
+  }
+
+  String _pastelHex(String color) {
+    final raw = color.replaceFirst('#', '');
+    if (raw.length != 6) return color;
+    int soften(int value) => (value + (255 - value) * .45).round();
+    final red = soften(int.parse(raw.substring(0, 2), radix: 16));
+    final green = soften(int.parse(raw.substring(2, 4), radix: 16));
+    final blue = soften(int.parse(raw.substring(4, 6), radix: 16));
+    return '#${red.toRadixString(16).padLeft(2, '0')}${green.toRadixString(16).padLeft(2, '0')}${blue.toRadixString(16).padLeft(2, '0')}'
+        .toUpperCase();
+  }
+
   PTibugValuationBreakdown pTibugValuationFor(PTibug bug) {
     final instanceModules = pTibugModuleInstances
         .where((item) => item.equippedPTibugId == bug.id)
@@ -10565,6 +10718,10 @@ class Zone0GameState extends ChangeNotifier {
       species: bug.species,
       styleVariant: bug.styleVariant,
       displayName: bug.displayName,
+      primaryColorHex: bug.primaryColorHex,
+      motifId: bug.motifId,
+      motifColorHex: bug.motifColorHex,
+      traitColorHex: bug.traitColorHex,
       biologicalTraitId: bug.biologicalTraitId,
       biologicalTraitLevel: bug.biologicalTraitLevel,
       secondTraitId: bug.secondTraitId,
@@ -12243,6 +12400,12 @@ class Zone0GameState extends ChangeNotifier {
         final nurseryCapacity = pTibugTerritoryCapacity(nursery);
         var assignedNursery = 0;
         for (final bug in pTibugs) {
+          _ensurePTibugAppearance(bug);
+          if (bug.traitColorHex == null && bug.biologicalTraitId != null) {
+            bug.traitColorHex = pTibugConfig
+                .traitDefinitionFor(bug.biologicalTraitId!)
+                ?.colorHex;
+          }
           if (bug.secondTraitId == bug.biologicalTraitId) {
             bug.secondTraitId = null;
             bug.secondTraitLevel = 0;
@@ -12265,6 +12428,9 @@ class Zone0GameState extends ChangeNotifier {
             bug.assignedBuildingId = null;
             bug.assignedSlotIndex = null;
           }
+        }
+        for (final bug in soldPTibugArchive) {
+          _ensurePTibugAppearance(bug);
         }
         pTibugTraitData
           ..clear()
@@ -18907,11 +19073,13 @@ class WeatherStockIncident {
   const WeatherStockIncident(
       {required this.eventId,
       required this.wasteCreated,
+      required this.organicLost,
       required this.batteriesLost,
       required this.protectionPercent,
       required this.resolvedAt});
   final String eventId;
   final int wasteCreated;
+  final int organicLost;
   final int batteriesLost;
   final int protectionPercent;
   final DateTime resolvedAt;
@@ -18919,6 +19087,7 @@ class WeatherStockIncident {
       WeatherStockIncident(
           eventId: '${data['eventId'] ?? ''}',
           wasteCreated: Zone0GameState.instance._readInt(data['wasteCreated']),
+          organicLost: Zone0GameState.instance._readInt(data['organicLost']),
           batteriesLost:
               Zone0GameState.instance._readInt(data['batteriesLost']),
           protectionPercent:
@@ -18928,6 +19097,7 @@ class WeatherStockIncident {
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'eventId': eventId,
         'wasteCreated': wasteCreated,
+        'organicLost': organicLost,
         'batteriesLost': batteriesLost,
         'protectionPercent': protectionPercent,
         'resolvedAt': Timestamp.fromDate(resolvedAt)
@@ -19050,6 +19220,10 @@ class PTibug {
     required this.species,
     required this.styleVariant,
     required this.createdAt,
+    this.primaryColorHex,
+    this.motifId,
+    this.motifColorHex,
+    this.traitColorHex,
     String? defaultDisplayName,
     this.renamedAt,
     this.renameCount = 0,
@@ -19096,6 +19270,10 @@ class PTibug {
   final PTibugSpecies species;
   final String styleVariant;
   final DateTime createdAt;
+  String? primaryColorHex;
+  String? motifId;
+  String? motifColorHex;
+  String? traitColorHex;
   int? assignedSlotIndex;
   String? assignedBuildingId;
   final Map<String, int> storedResources;
@@ -19150,6 +19328,10 @@ class PTibug {
           PTibugSpecies.scarabe,
         ),
         styleVariant: '${data['styleVariant'] ?? 'compact'}',
+        primaryColorHex: data['primaryColorHex'] as String?,
+        motifId: data['motifId'] as String?,
+        motifColorHex: data['motifColorHex'] as String?,
+        traitColorHex: data['traitColorHex'] as String?,
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
             DateTime.now(),
         assignedSlotIndex: data['assignedSlotIndex'] as int?,
@@ -19223,6 +19405,10 @@ class PTibug {
         'reservedForSaleId': reservedForSaleId,
         'species': species.name,
         'styleVariant': styleVariant,
+        'primaryColorHex': primaryColorHex,
+        'motifId': motifId,
+        'motifColorHex': motifColorHex,
+        'traitColorHex': traitColorHex,
         'createdAt': Timestamp.fromDate(createdAt),
         'assignedSlotIndex': assignedSlotIndex,
         'assignedBuildingId': assignedBuildingId,
@@ -19508,6 +19694,10 @@ class PTibugCapsule {
     required this.styleVariant,
     required this.displayName,
     required this.createdAt,
+    this.primaryColorHex,
+    this.motifId,
+    this.motifColorHex,
+    this.traitColorHex,
     this.biologicalTraitId,
     this.biologicalTraitLevel = 0,
     this.level = 1,
@@ -19537,6 +19727,10 @@ class PTibugCapsule {
   final PTibugSpecies species;
   final String styleVariant;
   final String displayName;
+  final String? primaryColorHex;
+  final String? motifId;
+  final String? motifColorHex;
+  final String? traitColorHex;
   final String? biologicalTraitId;
   final int biologicalTraitLevel;
   final int level;
@@ -19572,6 +19766,10 @@ class PTibugCapsule {
         ),
         styleVariant: '${data['styleVariant'] ?? 'compact'}',
         displayName: '${data['displayName'] ?? 'Capsule P’TIBUG'}',
+        primaryColorHex: data['primaryColorHex'] as String?,
+        motifId: data['motifId'] as String?,
+        motifColorHex: data['motifColorHex'] as String?,
+        traitColorHex: data['traitColorHex'] as String?,
         biologicalTraitId: data['biologicalTraitId'] as String?,
         biologicalTraitLevel: Zone0GameState.instance._readInt(
           data['biologicalTraitLevel'],
@@ -19619,6 +19817,10 @@ class PTibugCapsule {
         'species': species.name,
         'styleVariant': styleVariant,
         'displayName': displayName,
+        'primaryColorHex': primaryColorHex,
+        'motifId': motifId,
+        'motifColorHex': motifColorHex,
+        'traitColorHex': traitColorHex,
         'biologicalTraitId': biologicalTraitId,
         'biologicalTraitLevel': biologicalTraitLevel,
         'level': level,
@@ -19753,6 +19955,8 @@ class PTibugArmature {
     required this.createdAt,
     this.status = PTibugArmatureStatus.crafting,
     this.updatedAt,
+    this.assignedPtipoteId,
+    this.assignedPtipoteName,
   });
 
   final String id;
@@ -19763,6 +19967,8 @@ class PTibugArmature {
   final DateTime createdAt;
   PTibugArmatureStatus status;
   DateTime? updatedAt;
+  final String? assignedPtipoteId;
+  final String? assignedPtipoteName;
   bool get isCrafting => status == PTibugArmatureStatus.crafting;
   bool get isCompleted => status == PTibugArmatureStatus.completed;
 
@@ -19792,6 +19998,8 @@ class PTibugArmature {
           PTibugArmatureStatus.crafting,
         ),
         updatedAt: Zone0GameState.instance._readDate(data['updatedAt']),
+        assignedPtipoteId: data['assignedPtipoteId']?.toString(),
+        assignedPtipoteName: data['assignedPtipoteName']?.toString(),
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -19803,6 +20011,8 @@ class PTibugArmature {
         'createdAt': Timestamp.fromDate(createdAt),
         'status': status.name,
         'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
+        'assignedPtipoteId': assignedPtipoteId,
+        'assignedPtipoteName': assignedPtipoteName,
       };
 }
 

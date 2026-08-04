@@ -191,8 +191,17 @@ void main() {
     expect(defaultMarketConfig.shopSlotsForMarketLevel(1), 1);
     expect(defaultMarketConfig.shopSlotsForMarketLevel(2), 2);
     expect(defaultMarketConfig.shopSlotsForMarketLevel(3), 4);
-    expect(defaultMarketConfig.residentClaimVacancyDays, 7);
+    expect(defaultMarketConfig.residentClaimVacancyDays, 1);
     expect(defaultMarketConfig.residentClaimWarningHours, 24);
+    expect(defaultMarketConfig.constructionMinutesForLevel(1), 6);
+    expect(defaultMarketConfig.constructionMinutesForLevel(2), 30);
+    expect(defaultMarketConfig.constructionMinutesForLevel(3), 60);
+    expect(defaultMarketConfig.constructionMinutesForLevel(4), 120);
+    expect(defaultMarketConfig.requestMinimumMarketLevelFor('Repas simple'), 1);
+    expect(
+        defaultMarketConfig.requestMinimumMarketLevelFor('Tenue ombragée'), 2);
+    expect(
+        defaultMarketConfig.requestMinimumMarketLevelFor('Meuble simple'), 3);
     expect(defaultMarketConfig.distributorMarketLevelFor(1), 2);
     expect(defaultMarketConfig.distributorMarketLevelFor(2), 3);
     expect(defaultMarketConfig.distributorMarketLevelFor(3), 4);
