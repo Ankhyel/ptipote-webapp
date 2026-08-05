@@ -2822,37 +2822,44 @@ class _BuildingHotspot extends StatelessWidget {
       heightFactor: building.height,
       child: Padding(
         padding: const EdgeInsets.all(4),
-        child: Material(
-          color: Colors.white.withValues(alpha: 0.20),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.50)),
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              InkWell(
-                borderRadius: BorderRadius.circular(18),
-                onTap: onTap,
-                child: _content(),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: _viabilityBuildingId == null ? 0 : 22,
+              child: Material(
+                color: Colors.white.withValues(alpha: 0.20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.50)),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: onTap,
+                  child: _content(),
+                ),
               ),
-              if (_viabilityBuildingId case final buildingId?)
-                Positioned(
-                  left: 12,
-                  right: 12,
-                  bottom: 7,
-                  child: _MapViabilityBar(
-                    state: gameState!.viabilityForBuilding(buildingId),
-                  ),
+            ),
+            if (_viabilityBuildingId case final buildingId?)
+              Positioned(
+                left: 10,
+                right: 10,
+                bottom: 0,
+                child: _MapViabilityBar(
+                  state: gameState!.viabilityForBuilding(buildingId),
+                  compact: true,
                 ),
-              if (notificationCount > 0)
-                Positioned(
-                  right: -5,
-                  top: -5,
-                  child: _NotificationBadge(count: notificationCount),
-                ),
-            ],
-          ),
+              ),
+            if (notificationCount > 0)
+              Positioned(
+                right: -5,
+                top: -5,
+                child: _NotificationBadge(count: notificationCount),
+              ),
+          ],
         ),
       ),
     );
@@ -2896,9 +2903,10 @@ class _BuildingHotspot extends StatelessWidget {
 }
 
 class _MapViabilityBar extends StatelessWidget {
-  const _MapViabilityBar({required this.state});
+  const _MapViabilityBar({required this.state, this.compact = false});
 
   final BuildingViabilityState state;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -2922,16 +2930,18 @@ class _MapViabilityBar extends StatelessWidget {
             valueColor: AlwaysStoppedAnimation<Color>(color),
           ),
         ),
-        const SizedBox(height: 2),
-        Text(
-          'Viabilité ${state.current}/${state.maximum}',
-          style: const TextStyle(
-            color: Color(0xFF2B2116),
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-            shadows: <Shadow>[Shadow(color: Colors.white, blurRadius: 6)],
+        if (!compact) ...<Widget>[
+          const SizedBox(height: 2),
+          Text(
+            'Viabilité ${state.current}/${state.maximum}',
+            style: const TextStyle(
+              color: Color(0xFF2B2116),
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              shadows: <Shadow>[Shadow(color: Colors.white, blurRadius: 6)],
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -6240,24 +6250,15 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
       ));
       return;
     }
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(12),
-          child: _PTibugTerritoryBiomeCard(
-            gameState: widget.gameState,
-            biome: biome,
-            building: building,
-            campHeartState: widget.campHeartState,
-            onDragUpdate: _autoScrollForDrag,
-            onShowDetails: _openCollectionDetail,
-          ),
-        ),
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => _PTibugRefugePage(
+        gameState: widget.gameState,
+        biome: biome,
+        building: building,
+        campHeartState: widget.campHeartState,
+        onShowDetails: _openCollectionDetail,
       ),
-    );
+    ));
   }
 
   Future<void> _confirmMapAssignment(PTibug bug, ForageBiome biome) async {
@@ -6289,6 +6290,58 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
       _message(context,
           widget.gameState.assignPTibugToTerritory(bug, building!.id).message);
     }
+  }
+}
+
+class _PTibugRefugePage extends StatelessWidget {
+  const _PTibugRefugePage({
+    required this.gameState,
+    required this.biome,
+    required this.building,
+    required this.campHeartState,
+    required this.onShowDetails,
+  });
+
+  final Zone0GameState gameState;
+  final ForageBiome biome;
+  final PTibugTerritoryBuilding? building;
+  final CampHeartState campHeartState;
+  final ValueChanged<PTibug> onShowDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = lisiereForageConfig.biomes[biome]!.label;
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) > 250) {
+          Navigator.of(context).maybePop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            tooltip: 'Retour à la carte P’TIBUG',
+            icon: const Icon(Icons.arrow_back_ios_new),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          title: Text('Refuge · $label'),
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: <Widget>[
+              _PTibugTerritoryBiomeCard(
+                gameState: gameState,
+                biome: biome,
+                building: building,
+                campHeartState: campHeartState,
+                onShowDetails: onShowDetails,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
