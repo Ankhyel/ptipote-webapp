@@ -1236,6 +1236,7 @@ function renderPTibugEditor() {
     cultivation = {},
     valuation = {},
     appearance = {},
+    aspectMatrixExtractor = {},
     ...general
   } = ptibug;
   el.ptibugConfigList.innerHTML = [
@@ -1250,6 +1251,7 @@ function renderPTibugEditor() {
     configCard("Cuves, Infusion des Traits et Évolution", "ptibug", cultivation, ["cultivation"], { open: true, meta: "Durées, ratios par espèce, recettes de Cellules, autonomie et tapotement" }),
     ptibugEditorHeading("Aspect esthétique après infusion", "Couleurs principales, motifs et Trait : purement visuel, sans effet de production."),
     configCard("Palettes RGB, motifs et animations", "ptibug", appearance, ["appearance"], { open: true, meta: "4 couleurs, motif à 30 % et 2 animations par espèce" }),
+    configCard("Extracteur de matrice d’aspect", "ptibug", aspectMatrixExtractor, ["aspectMatrixExtractor"], { open: true, meta: "Modules, Matrices, durées et coûts par module" }),
     ptibugEditorHeading("Progression et Évolution", "Niveaux, rendement, énergie et second Trait après Évolution."),
     configCard("Progression P'TIBUG", "ptibug", progression, ["progression"], { open: true, meta: "XP, niveau maximum, rendement et prérequis d’Évolution" }),
     ptibugEditorHeading("Identité, valorisation et Capsules certifiées", "Nom personnel, valeur indicative, paiement réel et archivage commercial."),

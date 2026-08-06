@@ -485,7 +485,8 @@ class _CampHud extends StatelessWidget {
         Expanded(
           child: _HudChip(
             icon: Icons.sentiment_satisfied_alt_outlined,
-            label: '${gameState.displayedCampWellbeing}%',
+            label:
+                '${_wellbeingEmoji(gameState.displayedCampWellbeing)} ${gameState.displayedCampWellbeing}%',
             color: wellbeingColor,
             onTap: () => _showHudInfo(
               context,
@@ -535,6 +536,15 @@ class _CampHud extends StatelessWidget {
       return const Color(0xFFD48425);
     }
     return const Color(0xFF4F7F52);
+  }
+
+  String _wellbeingEmoji(int value) {
+    if (value >= 100) return '🤩';
+    if (value >= 90) return '😁';
+    if (value >= 70) return '🙂';
+    if (value >= 50) return '😐';
+    if (value >= 30) return '😠';
+    return '🤬';
   }
 
   void _showHudInfo(BuildContext context, String title, String body) {
@@ -5524,6 +5534,13 @@ class _LisierePageState extends State<LisierePage> {
                   return ListView(
                     padding: const EdgeInsets.all(16),
                     children: <Widget>[
+                      _CommunityBuildingPosts(
+                        gameState: widget.gameState,
+                        roles: const <CommunityRoleType>[
+                          CommunityRoleType.lisiereObserver,
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       _ForageChoiceCard(
                         title: 'Type de mission',
                         child: Wrap(
@@ -7392,62 +7409,63 @@ class _BiomeBuildingsTab extends StatelessWidget {
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  const Text(
-                    'Nurserie P’TIBUG',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    built
-                        ? 'Construite · niveau ${gameState.plaineNurseryLevel}'
-                        : 'Prérequis : Cœur du Camp niveau 2 (niveau actuel : $campHeartLevel).',
-                  ),
-                  const SizedBox(height: 10),
-                  if (!built)
-                    FilledButton.icon(
-                      onPressed: () => showModalBottomSheet<void>(
-                        context: context,
-                        showDragHandle: true,
-                        isScrollControlled: true,
-                        builder: (_) => _ConstructionProjectSheet(
-                          gameState: gameState,
-                          targetId: 'plaineNursery',
-                          title: 'Construire la Nurserie P’TIBUG',
-                          description:
-                              'La Nurserie a besoin d’une Savane tropicale végétalisée et de matériaux réservés.',
-                          campHeartLevel: campHeartLevel,
-                          campHeartState: campHeartState,
-                          footer: campHeartLevel < 2
-                              ? 'Niveau actuel du Cœur : $campHeartLevel / 2.'
-                              : 'Les matériaux peuvent être déposés progressivement.',
-                        ),
-                      ),
-                      icon: const Icon(Icons.pets_outlined),
-                      label: const Text('Préparer la construction'),
-                    )
-                  else
-                    OutlinedButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => PTibugNurseryPage(
+          if (false)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const Text(
+                      'Nurserie P’TIBUG',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      built
+                          ? 'Construite · niveau ${gameState.plaineNurseryLevel}'
+                          : 'Prérequis : Cœur du Camp niveau 2 (niveau actuel : $campHeartLevel).',
+                    ),
+                    const SizedBox(height: 10),
+                    if (!built)
+                      FilledButton.icon(
+                        onPressed: () => showModalBottomSheet<void>(
+                          context: context,
+                          showDragHandle: true,
+                          isScrollControlled: true,
+                          builder: (_) => _ConstructionProjectSheet(
                             gameState: gameState,
+                            targetId: 'plaineNursery',
+                            title: 'Construire la Nurserie P’TIBUG',
+                            description:
+                                'La Nurserie a besoin d’une Savane tropicale végétalisée et de matériaux réservés.',
                             campHeartLevel: campHeartLevel,
                             campHeartState: campHeartState,
+                            footer: campHeartLevel < 2
+                                ? 'Niveau actuel du Cœur : $campHeartLevel / 2.'
+                                : 'Les matériaux peuvent être déposés progressivement.',
                           ),
                         ),
+                        icon: const Icon(Icons.pets_outlined),
+                        label: const Text('Préparer la construction'),
+                      )
+                    else
+                      OutlinedButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => PTibugNurseryPage(
+                              gameState: gameState,
+                              campHeartLevel: campHeartLevel,
+                              campHeartState: campHeartState,
+                            ),
+                          ),
+                        ),
+                        child: const Text('Ouvrir la Nurserie'),
                       ),
-                      child: const Text('Ouvrir la Nurserie'),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -8123,6 +8141,25 @@ class _CampHousingTab extends StatelessWidget {
     );
   }
 
+  List<Widget> _residentAlertIcons(Zone0Resident resident) => <Widget>[
+        if (gameState.communityRoleForResident(resident.id) == null)
+          const Padding(
+            padding: EdgeInsets.only(left: 5),
+            child: Icon(Icons.handyman_outlined, size: 17),
+          )
+        else if (resident.needsState.nutritionStatus ==
+            ResidentNutritionStatus.nonNourri)
+          const Padding(
+            padding: EdgeInsets.only(left: 5),
+            child: Text('🍽️', style: TextStyle(fontSize: 15)),
+          ),
+        if (gameState.refugeSafety < 30)
+          const Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: Text('🥺', style: TextStyle(fontSize: 15)),
+          ),
+      ];
+
   @override
   Widget build(BuildContext context) {
     final project = gameState.constructionProjects['housing'];
@@ -8340,8 +8377,9 @@ class _CampHousingTab extends StatelessWidget {
               ),
             ),
           ),
-          if (gameState.communityRoleAssignments.any((role) =>
-              role.status != CommunityRoleStatus.archived)) ...<Widget>[
+          if (false &&
+              gameState.communityRoleAssignments.any((role) =>
+                  role.status != CommunityRoleStatus.archived)) ...<Widget>[
             const SizedBox(height: 6),
             Card(
               child: Padding(
@@ -8413,10 +8451,51 @@ class _CampHousingTab extends StatelessWidget {
                     trailing: house.currentViability < house.maximumViability
                         ? OutlinedButton(
                             onPressed: () {
-                              final result =
-                                  gameState.repairResidentHouse(house.id);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(result.message)));
+                              showModalBottomSheet<int>(
+                                context: context,
+                                showDragHandle: true,
+                                builder: (sheetContext) => SafeArea(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(20),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: <Widget>[
+                                        const Text('Réparer la maison',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 18)),
+                                        const Text(
+                                            '10 Minéral et 3 Organique par tranche demandée de 10 %. La Viabilité reste plafonnée à 100 %.'),
+                                        const SizedBox(height: 10),
+                                        Wrap(
+                                          spacing: 8,
+                                          children: <int>[10, 20, 30]
+                                              .map((gain) => FilledButton(
+                                                    onPressed: () =>
+                                                        Navigator.of(
+                                                                sheetContext)
+                                                            .pop(gain),
+                                                    child: Text(
+                                                        '+$gain % · ${gain} Minéral · ${(gain ~/ 10) * 3} Organique'),
+                                                  ))
+                                              .toList(),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ).then((gain) {
+                                if (gain == null || !context.mounted) return;
+                                final result = gameState.repairResidentHouse(
+                                  house.id,
+                                  gain: gain,
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(result.message)),
+                                );
+                              });
                             },
                             child: const Text('Réparer'),
                           )
@@ -8539,7 +8618,11 @@ class _CampHousingTab extends StatelessWidget {
                                   ListTile(
                                     contentPadding: EdgeInsets.zero,
                                     leading: const Icon(Icons.person_outline),
-                                    title: Text(resident.displayName),
+                                    title: Row(children: <Widget>[
+                                      Flexible(
+                                          child: Text(resident.displayName)),
+                                      ..._residentAlertIcons(resident),
+                                    ]),
                                     subtitle: Text(
                                       '${gameState.residentHappinessFor(resident)}% bonheur · ${resident.needsState.mealsConsumed}/${resident.needsState.mealsRequired} repas · ${resident.needsState.interiorSatisfied ? 'intérieur satisfait' : 'intérieur insuffisant'}',
                                     ),
@@ -8596,7 +8679,10 @@ class _CampHousingTab extends StatelessWidget {
                   ...residents.map((resident) => ListTile(
                         dense: true,
                         leading: const Icon(Icons.person_outline),
-                        title: Text(resident.displayName),
+                        title: Row(children: <Widget>[
+                          Flexible(child: Text(resident.displayName)),
+                          ..._residentAlertIcons(resident),
+                        ]),
                         subtitle: house.currentViability < 50
                             ? Text(
                                 'Maison endommagée : -${housingConfig.houseViabilityDamageHappinessPercent}% bonheur · ${gameState.formatInternalPileBalance(resident.internalPileBalance)}')
@@ -8630,7 +8716,10 @@ class _CampHousingTab extends StatelessWidget {
               return Card(
                   child: ListTile(
                 leading: const Icon(Icons.person_outline),
-                title: Text(resident.displayName),
+                title: Row(children: <Widget>[
+                  Flexible(child: Text(resident.displayName)),
+                  ..._residentAlertIcons(resident),
+                ]),
                 subtitle: Text(
                     '${house?.displayName ?? 'Sans logement'} · ${gameState.formatInternalPileBalance(resident.internalPileBalance)}${damaged ? ' · Maison endommagée : -${housingConfig.houseViabilityDamageHappinessPercent}%' : ''}'),
                 trailing: Text('${gameState.residentHappinessFor(resident)}%',
@@ -8699,6 +8788,117 @@ class _CampHousingTab extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CommunityBuildingPosts extends StatelessWidget {
+  const _CommunityBuildingPosts({
+    required this.gameState,
+    required this.roles,
+    this.onResidentTap,
+  });
+
+  final Zone0GameState gameState;
+  final List<CommunityRoleType> roles;
+  final ValueChanged<Zone0Resident>? onResidentTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final slots = <Widget>[];
+    for (final role in roles) {
+      for (var index = 0;
+          index < gameState.communityRoleSlotCount(role);
+          index++) {
+        final assignment = gameState.communityRoleAssignments
+            .where((entry) =>
+                entry.status != CommunityRoleStatus.archived &&
+                entry.roleType == role &&
+                entry.slotId == 'resident-$index')
+            .firstOrNull;
+        final resident = assignment == null
+            ? null
+            : gameState.residents
+                .where((entry) => entry.id == assignment.residentId)
+                .firstOrNull;
+        slots.add(InkWell(
+          onTap: resident == null
+              ? null
+              : () {
+                  if (onResidentTap != null) {
+                    onResidentTap!(resident);
+                  } else {
+                    _showCommunityResidentDetails(context, gameState, resident);
+                  }
+                },
+          child: Ink(
+            width: 118,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: resident == null
+                  ? Colors.grey.withValues(alpha: .16)
+                  : Colors.green.withValues(alpha: .18),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+              Icon(resident == null ? Icons.person_outline : Icons.person),
+              Text(gameState.communityRoleLabel(role),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 11)),
+              Text(resident?.displayName ?? 'Libre',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            ]),
+          ),
+        ));
+      }
+    }
+    if (slots.isEmpty) return const SizedBox.shrink();
+    return Card(
+        child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Habitants affectés',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 8, children: slots),
+                ])));
+  }
+}
+
+void _showCommunityResidentDetails(
+  BuildContext context,
+  Zone0GameState gameState,
+  Zone0Resident resident,
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(resident.displayName,
+                  style: Theme.of(sheetContext)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              Text(
+                  'Passion : ${gameState.residentPassionLabel(gameState.compatibleCommunityRolesFor(resident).isEmpty ? ResidentPassion.cooking : gameState.compatibleCommunityRolesFor(resident).first == CommunityRoleType.kitchenCook ? ResidentPassion.cooking : gameState.compatibleCommunityRolesFor(resident).first == CommunityRoleType.fablabMaker ? ResidentPassion.crafting : gameState.compatibleCommunityRolesFor(resident).first == CommunityRoleType.marketCounter ? ResidentPassion.trading : gameState.compatibleCommunityRolesFor(resident).first == CommunityRoleType.lisiereObserver ? ResidentPassion.livingObservation : ResidentPassion.watching)}'),
+              Text('Bonheur : ${gameState.residentHappinessFor(resident)}%'),
+              Text(
+                  'Repas : ${resident.needsState.mealsConsumed}/${resident.needsState.mealsRequired}'),
+            ]),
+      ),
+    ),
+  );
 }
 
 class _HabitationStatCard extends StatelessWidget {
@@ -9689,6 +9889,14 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                   return ListView(
                     padding: const EdgeInsets.all(18),
                     children: <Widget>[
+                      _CommunityBuildingPosts(
+                        gameState: widget.gameState,
+                        roles: const <CommunityRoleType>[
+                          CommunityRoleType.securityWatch,
+                          CommunityRoleType.weatherWatch,
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -11961,6 +12169,7 @@ class _MarketPageState extends State<MarketPage> {
       'restaurant': 'Restaurant',
       'home': 'Magasin du foyer',
       'equipment': 'Magasin d’équipement',
+      'ptibug': 'Magasin P’TIBUG',
       'general': 'Ancien magasin généraliste',
       'ameublement': 'Ancien magasin du foyer',
     };
@@ -11979,6 +12188,12 @@ class _MarketPageState extends State<MarketPage> {
             const Text(
               'Boutiques du Marché',
               style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            _CommunityBuildingPosts(
+              gameState: widget.gameState,
+              roles: const <CommunityRoleType>[
+                CommunityRoleType.marketCounter,
+              ],
             ),
             const SizedBox(height: 4),
             Text(
@@ -12055,11 +12270,16 @@ class _MarketPageState extends State<MarketPage> {
                   children: <Widget>[
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.storefront_outlined),
-                      title: Text(labels[shop.specialization] ?? 'Magasin',
+                      tileColor: shop.emergencyPink
+                          ? Colors.pink.withValues(alpha: .14)
+                          : null,
+                      leading: Icon(Icons.storefront_outlined,
+                          color: shop.emergencyPink ? Colors.pink : null),
+                      title: Text(
+                          '${shop.emergencyPink ? 'Comptoir communautaire rose · ' : ''}${labels[shop.specialization] ?? 'Magasin'}',
                           style: const TextStyle(fontWeight: FontWeight.w800)),
                       subtitle: Text(
-                          '${shop.ownershipType == MarketShopOwnershipType.residentCommunity ? 'Commerce habitant · ${widget.gameState.residents.where((resident) => resident.id == shop.ownerResidentId).firstOrNull?.displayName ?? 'sans responsable'}' : 'Joueur'} · niveau ${shop.level} · ${shop.stock.length}/${shop.stockSlots} piles'),
+                          '${shop.emergencyPink ? 'Ventes depuis le comptoir toutes les 10 min lorsqu’un habitant Commercer est attribué' : shop.ownershipType == MarketShopOwnershipType.residentCommunity ? 'Commerce habitant · ${widget.gameState.residents.where((resident) => resident.id == shop.ownerResidentId).firstOrNull?.displayName ?? 'sans responsable'}' : 'Joueur'} · niveau ${shop.level} · ${shop.stock.length}/${shop.stockSlots} piles'),
                       trailing: shop.level < 2
                           ? TextButton(
                               onPressed: () {
@@ -12199,7 +12419,9 @@ class _MarketPageState extends State<MarketPage> {
                     onPressed: () => _message(widget.gameState
                         .upgradeMarketDistributor(shopId: shopId)
                         .message),
-                    child: const Text('Améliorer le distributeur'),
+                    child: Text(
+                      'Améliorer · ${marketConfig.distributorConstructionCost.entries.map((entry) => '${entry.value * (distributor.level + 1)} ${entry.key}').join(' · ')}',
+                    ),
                   ),
               ]),
               const SizedBox(height: 6),
@@ -12523,6 +12745,23 @@ class _MarketPageState extends State<MarketPage> {
                   onTap: () {
                     final result = widget.gameState
                         .prepareMarketShopConstruction(entry.key,
+                            primary: false);
+                    _message(result.message);
+                    if (result.success) {
+                      Navigator.of(sheetContext).pop();
+                      _showMarketShopConstructionSheet();
+                    }
+                  },
+                ),
+              if (widget.gameState.marketLevel >= 4)
+                ListTile(
+                  leading: const Icon(Icons.pets_outlined),
+                  title: const Text('Magasin P’TIBUG'),
+                  subtitle: const Text(
+                      'P’TIBUG certifiés et Capsules P’TIBUG uniquement.'),
+                  onTap: () {
+                    final result = widget.gameState
+                        .prepareMarketShopConstruction('ptibug',
                             primary: false);
                     _message(result.message);
                     if (result.success) {
@@ -13426,6 +13665,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
               children: <Widget>[
                 _moduleCapacityUpgradeCard(),
                 const SizedBox(height: 10),
+                _aspectMatrixExtractorCard(),
+                const SizedBox(height: 10),
                 _BuildingViabilityCard(
                   gameState: widget.gameState,
                   buildingId: Zone0GameState.plaineNurseryTerritoryId,
@@ -13453,6 +13694,141 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           ),
         ],
       );
+
+  Widget _aspectMatrixExtractorCard() {
+    final state = widget.gameState;
+    final config = pTibugConfig.aspectMatrixExtractor;
+    final level = state.aspectMatrixExtractorLevel;
+    final modules = config.moduleCountFor(level);
+    final matrices = config.matricesFor(level);
+    final active = state.activeAspectMatrixExtraction;
+    final nursery = state.plaineNurseryTerritory;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text('Extracteur de matrice d’aspect · niv. $level',
+                style: const TextStyle(fontWeight: FontWeight.w900)),
+            const Text(
+                'Le niveau suit les quatre premiers niveaux de la Nurserie.'),
+            Text(
+                '$modules module(s) · ${matrices.join(' + ')} Matrice(s) · ${config.durationFor(level)} min'),
+            Text(
+                'Coût par module : ${config.mineralCostPerModule} Minéral · ${config.organicCostPerModule} Organique · ${config.nurseryEnergyCostPerModule} Énergies de la Nurserie.'),
+            if (active != null)
+              Text(
+                'Extraction de ${active.sourceDisplayName} : ${active.matrixCount} Matrice(s) prêtes dans ${_countdownLabel(active.endsAt)}.',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              )
+            else
+              FilledButton.icon(
+                onPressed:
+                    nursery.isBuilt ? _choosePTibugForAspectExtraction : null,
+                icon: const Icon(Icons.auto_awesome_motion_outlined),
+                label: const Text('Extraire une Matrice'),
+              ),
+            if (state.pTibugAspectMatrices.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                'Matrices disponibles : ${state.pTibugAspectMatrices.length}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              ...state.pTibugAspectMatrices.take(4).map((matrix) => Text(
+                  '${pTibugConfig.species[matrix.species]!.displayName} · ${matrix.sourceDisplayName}')),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _choosePTibugForAspectExtraction() async {
+    final source = await showModalBottomSheet<PTibug>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: <Widget>[
+            const ListTile(title: Text('P’TIBUG source à conserver')),
+            ...widget.gameState.pTibugs
+                .where((bug) => !widget.gameState.isPTibugInCultivation(bug))
+                .map((bug) => ListTile(
+                      leading: Icon(_speciesIcon(bug.species),
+                          color: _pTibugPrimaryColor(bug)),
+                      title: Text(bug.displayName),
+                      subtitle:
+                          Text(widget.gameState.pTibugAppearanceLabelFor(bug)),
+                      onTap: () => Navigator.of(sheetContext).pop(bug),
+                    )),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+    _message(widget.gameState.startPTibugAspectExtraction(source).message);
+  }
+
+  Future<void> _chooseAspectMatricesForCultivation(
+    PTibugArmature armature,
+    String tankId,
+  ) async {
+    final eligible = widget.gameState.pTibugAspectMatrices
+        .where((matrix) => matrix.species == armature.species)
+        .fold<Map<String, List<PTibugAspectMatrix>>>(
+            <String, List<PTibugAspectMatrix>>{}, (groups, matrix) {
+          groups
+              .putIfAbsent(matrix.sourcePTibugId, () => <PTibugAspectMatrix>[])
+              .add(matrix);
+          return groups;
+        })
+        .values
+        .where((group) => group.length >= 2)
+        .toList(growable: false);
+    final selected = await showDialog<List<String>?>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Aspect de la Cultivation'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Text(
+                  'Deux Matrices identiques sont consommées au lancement. Elles doivent provenir du même P’TIBUG.'),
+              const SizedBox(height: 8),
+              ListTile(
+                title: const Text('Sans Matrice'),
+                subtitle: const Text('Aspect aléatoire de l’espèce.'),
+                onTap: () => Navigator.of(dialogContext).pop(const <String>[]),
+              ),
+              ...eligible.map((group) => ListTile(
+                    title: Text('Aspect de ${group.first.sourceDisplayName}'),
+                    subtitle: Text(
+                        '${pTibugConfig.species[group.first.species]!.displayName} · ${group.length} Matrices disponibles'),
+                    onTap: () => Navigator.of(dialogContext)
+                        .pop(group.take(2).map((matrix) => matrix.id).toList()),
+                  )),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Annuler')),
+        ],
+      ),
+    );
+    if (selected == null || !mounted) return;
+    _message(widget.gameState
+        .startPTibugCultivation(
+          armatureId: armature.id,
+          tankId: tankId,
+          aspectMatrixIds: selected,
+        )
+        .message);
+  }
 
   Widget _moduleCapacityUpgradeCard() {
     final config = pTibugConfig.moduleCapacity;
@@ -13572,7 +13948,14 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                 clipBehavior: Clip.none,
                 children: <Widget>[
                   CircleAvatar(
-                      radius: 28, child: Icon(_speciesIcon(bug.species))),
+                    radius: 28,
+                    backgroundColor:
+                        _pTibugPrimaryColor(bug).withValues(alpha: .18),
+                    child: Icon(
+                      _speciesIcon(bug.species),
+                      color: _pTibugPrimaryColor(bug),
+                    ),
+                  ),
                   Positioned(
                     right: -12,
                     top: -10,
@@ -13605,6 +13988,12 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       widget.gameState.pTibugBiologicalNameFor(bug),
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
+                    Text(widget.gameState.pTibugIdentityLabelFor(bug)),
+                    Text(
+                      'Aspect : ${widget.gameState.pTibugAppearanceLabelFor(bug)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     Text(
                         'Réserve : ${bug.storedAmount}/${widget.gameState.pTibugCapacityFor(bug)}'),
                     Text(
@@ -13635,82 +14024,35 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   Widget _creation() => ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          ExpansionTile(
-            leading: const Icon(Icons.auto_awesome_outlined),
-            title: const Text('Patterns P’TIBUG'),
-            children: <Widget>[
-              const Padding(
-                padding: EdgeInsets.only(top: 6, bottom: 8),
-                child: Text(
-                  'Les Patterns se découvrent et s’activent depuis le Kernel.',
-                ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Armatures P’TIBUG',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  const Text(
+                      'Les Patterns sont gérés par le Kernel et les Armatures se fabriquent désormais à l’Atelier.'),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => FablabPage(
+                          gameState: widget.gameState,
+                          campHeartLevel: widget.campHeartLevel,
+                          initialTabIndex: 1,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.precision_manufacturing_outlined),
+                    label: const Text(
+                        'Fabriquer une Armature P’TIBUG dans l’Atelier'),
+                  ),
+                ],
               ),
-              ...PTibugSpecies.values.map((species) {
-                final config = pTibugConfig.species[species]!;
-                final pattern = pTibugConfig.patterns[species]!;
-                final state = widget.gameState.pTibugPatternState(species);
-                final researchPatternId = 'ptibug-species-${species.name}';
-                final researchActive = widget.gameState.isPTibugPatternActive(
-                  researchPatternId,
-                );
-                final isActive =
-                    state == KernelPlanState.active || researchActive;
-                final organicCost = config.creationCost['Organique'] ?? 0;
-                final mineralCost = config.creationCost['Minéral'] ?? 0;
-                final organicStock =
-                    widget.gameState.resourceAmount('Organique');
-                final mineralStock = widget.gameState.resourceAmount('Minéral');
-                final batteryStock = widget.gameState.bioBatteries;
-                final creationRequirements = <String, int>{
-                  ...config.creationCost,
-                  'Bio-batteries': config.creationBioBatteryCost,
-                };
-                final maxCreatable = _maxProductionCount(
-                  creationRequirements,
-                  (resourceId) => resourceId == 'Bio-batteries'
-                      ? batteryStock
-                      : widget.gameState.resourceAmount(resourceId),
-                );
-                final canCreate = isActive &&
-                    maxCreatable > 0 &&
-                    !widget.gameState.pTibugArmatures
-                        .any((item) => item.isCrafting);
-                return _ProductionRecipeCard(
-                  title: 'Pattern ${config.displayName}',
-                  leadingIcon: _speciesIcon(species),
-                  trailingIcon: isActive
-                      ? Icons.check_circle_outline
-                      : Icons.lock_outline,
-                  description: pattern.description,
-                  slots: <_ProductionSlotData>[
-                    _ProductionSlotData(
-                      icon: Icons.eco_outlined,
-                      label: 'Matériaux',
-                      value:
-                          'Organique : $organicCost / $organicStock\nMinéral : $mineralCost / $mineralStock',
-                    ),
-                    _ProductionSlotData(
-                      icon: Icons.battery_charging_full_outlined,
-                      label: 'Bio-batteries',
-                      value: '${config.creationBioBatteryCost} / $batteryStock',
-                    ),
-                  ],
-                  details: <String>[
-                    'Résultat : 1 Armature ${config.displayName}',
-                    'Temps de fabrication : ${pTibugConfig.cultivation.armatureMinutes ~/ 60} h',
-                    'Créations possibles avec le stock : $maxCreatable',
-                  ],
-                  prerequisiteLabel: isActive
-                      ? 'Pré-requis : Pattern actif dans le Kernel'
-                      : 'Pré-requis : ${researchActive ? 'Pattern scientifique actif' : _patternStateLabel(state)}',
-                  prerequisiteMet: isActive,
-                  primaryActionLabel: 'Fabriquée à l’Atelier',
-                  primaryActionIcon: Icons.precision_manufacturing_outlined,
-                  primaryActionEnabled: false,
-                  onPrimaryAction: () {},
-                );
-              }),
-            ],
+            ),
           ),
           const SizedBox(height: 18),
           ExpansionTile(
@@ -13746,10 +14088,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                             child: Text('En cours de cultivation'),
                           )
                         : PopupMenuButton<String>(
-                            onSelected: (tankId) => _message(widget.gameState
-                                .startPTibugCultivation(
-                                    armatureId: armature.id, tankId: tankId)
-                                .message),
+                            onSelected: (tankId) =>
+                                _chooseAspectMatricesForCultivation(
+                                    armature, tankId),
                             itemBuilder: (_) => widget
                                 .gameState.builtCultivationTanks
                                 .where(
@@ -13806,7 +14147,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                 .map((bug) => ListTile(
                       title: Text(bug.displayName),
                       subtitle: Text(
-                          '${pTibugConfig.species[bug.species]!.displayName} · niv. ${bug.level}'),
+                          '${widget.gameState.pTibugIdentityLabelFor(bug)} · niv. ${bug.level}'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _showPTibugCapsuleSheet(bug, context),
                     ))
@@ -14139,7 +14480,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        '${pTibugConfig.species[bug.species]!.displayName} · ${bug.styleVariant}',
+                        widget.gameState.pTibugIdentityLabelFor(bug),
                       ),
                       Text(
                           'Aspect : ${widget.gameState.pTibugAppearanceLabelFor(bug)}'),
@@ -14160,6 +14501,24 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                         ),
                       if (bug.biologicalTraitId != null)
                         const SizedBox(height: 8),
+                      if (bug.isRenewed && bug.secondTraitId == null)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Text(
+                            '✨ Niveau atteint : ce P’TIBUG peut recevoir un second Trait.',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        )
+                      else if (bug.level >= 3 &&
+                          bug.biologicalTraitLevel >= 3 &&
+                          !bug.isRenewed)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Text(
+                            '✨ Niveau atteint : une Évolution ouvrira un second Trait.',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
@@ -14793,7 +15152,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       ),
                 ),
                 Text(
-                  '${pTibugConfig.species[bug.species]!.displayName} · niveau ${bug.level}',
+                  '${widget.gameState.pTibugIdentityLabelFor(bug)} · niveau ${bug.level}',
                 ),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -15019,7 +15378,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Capsule P’TIBUG certifiée'),
         content: Text(
-          '${bug.displayName} · ${pTibugConfig.species[bug.species]!.displayName} niveau ${bug.level}\n'
+          '${bug.displayName} · ${widget.gameState.pTibugIdentityLabelFor(bug)} niveau ${bug.level}\n'
           'Valeur estimée : ${valuation.total} Bio-batteries\n'
           'Paiement du contrat : $payment Bio-batteries\n\n'
           'Cette vente retire définitivement le P’TIBUG et ses Modules installés de votre collection.',
@@ -15227,15 +15586,18 @@ class FablabPage extends StatelessWidget {
     super.key,
     required this.gameState,
     required this.campHeartLevel,
+    this.initialTabIndex = 0,
   });
 
   final Zone0GameState gameState;
   final int campHeartLevel;
+  final int initialTabIndex;
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 5,
+      initialIndex: initialTabIndex.clamp(0, 4),
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Fablab'),
@@ -15515,18 +15877,22 @@ class _FablabEnergyCard extends StatelessWidget {
 class _FablabQuantitySelector extends StatelessWidget {
   const _FablabQuantitySelector({
     required this.quantity,
+    required this.level,
     required this.onChanged,
   });
 
   final int quantity;
+  final int level;
   final ValueChanged<int> onChanged;
 
   @override
   Widget build(BuildContext context) => SegmentedButton<int>(
-        segments: const <ButtonSegment<int>>[
-          ButtonSegment(value: 1, label: Text('x1')),
-          ButtonSegment(value: 5, label: Text('x5')),
-          ButtonSegment(value: 10, label: Text('x10')),
+        segments: <ButtonSegment<int>>[
+          const ButtonSegment(value: 1, label: Text('x1')),
+          const ButtonSegment(value: 5, label: Text('x5')),
+          const ButtonSegment(value: 10, label: Text('x10')),
+          if (level >= 3) const ButtonSegment(value: 50, label: Text('x50')),
+          if (level >= 4) const ButtonSegment(value: -1, label: Text('∞')),
         ],
         selected: <int>{quantity},
         onSelectionChanged: (selected) => onChanged(selected.first),
@@ -16024,6 +16390,13 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
           children: <Widget>[
             _FablabEnergyCard(gameState: widget.gameState),
             const SizedBox(height: 12),
+            _CommunityBuildingPosts(
+              gameState: widget.gameState,
+              roles: const <CommunityRoleType>[
+                CommunityRoleType.fablabMaker,
+              ],
+            ),
+            const SizedBox(height: 12),
             _FablabActiveCraftsPanel(gameState: widget.gameState),
             const SizedBox(height: 12),
             Text(
@@ -16043,6 +16416,7 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                     widget.gameState.workshopSlots) ...<Widget>[
               _FablabQuantitySelector(
                 quantity: _quantity,
+                level: widget.gameState.atelierLevel,
                 onChanged: (value) => setState(() => _quantity = value),
               ),
               const SizedBox(height: 10),
@@ -16117,15 +16491,32 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
               subtitle: const Text(
                 'Fabriquées à l’Atelier, puis cultivées dans la Nurserie.',
               ),
-              children: PTibugSpecies.values
-                  .map(
-                    (species) => _PTibugArmatureAtelierCard(
-                      gameState: widget.gameState,
-                      species: species,
-                      figurines: figurines,
+              children: <Widget>[
+                ...PTibugSpecies.values.map(
+                  (species) => _PTibugArmatureAtelierCard(
+                    gameState: widget.gameState,
+                    species: species,
+                    figurines: figurines,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => PTibugNurseryPage(
+                          gameState: widget.gameState,
+                          campHeartLevel: 1,
+                          campHeartState: CampHeartState.placeholder(),
+                          initialTabIndex: 2,
+                        ),
+                      ),
                     ),
-                  )
-                  .toList(),
+                    icon: const Icon(Icons.pets_outlined),
+                    label: const Text('Voir les Armatures dans la Nurserie'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             ExpansionTile(
@@ -16203,6 +16594,11 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
           children: <Widget>[
             _FablabEnergyCard(gameState: widget.gameState),
             const SizedBox(height: 12),
+            _CommunityBuildingPosts(
+              gameState: widget.gameState,
+              roles: const <CommunityRoleType>[CommunityRoleType.kitchenCook],
+            ),
+            const SizedBox(height: 12),
             _FablabActiveCraftsPanel(gameState: widget.gameState),
             const SizedBox(height: 12),
             Text(
@@ -16218,6 +16614,7 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
             const SizedBox(height: 12),
             _FablabQuantitySelector(
               quantity: _quantity,
+              level: 0,
               onChanged: (value) => setState(() => _quantity = value),
             ),
             const SizedBox(height: 12),
@@ -16406,6 +16803,18 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
       PTibugModuleType.reflecteur => Icons.wb_sunny_outlined,
       PTibugModuleType.etancheite => Icons.water_drop_outlined,
     };
+    final effect = switch (module) {
+      PTibugModuleType.ailes =>
+        'Effet : réduit la durée des cycles de production.',
+      PTibugModuleType.pinces =>
+        'Effet : augmente la production matérielle par cycle.',
+      PTibugModuleType.reservoir =>
+        'Effet : augmente la capacité de réserve du P’TIBUG.',
+      PTibugModuleType.reflecteur =>
+        'Effet : protège le P’TIBUG pendant les fortes chaleurs.',
+      PTibugModuleType.etancheite =>
+        'Effet : protège le P’TIBUG pendant les pluies intenses.',
+    };
     return _ProductionRecipeCard(
       title: '${module.displayName} · Atelier',
       leadingIcon: icon,
@@ -16425,6 +16834,7 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
         ),
       ],
       details: <String>[
+        effect,
         'Modules possibles avec le stock : ${_maxProductionCount(cost, gameState.resourceAmount)}',
       ],
       prerequisiteLabel: patternActive

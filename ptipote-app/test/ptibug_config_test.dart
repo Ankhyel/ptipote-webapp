@@ -217,6 +217,22 @@ void main() {
     expect(cultivation.evolutionDataCost[PTibugDataFamily.organique], 3);
   });
 
+  test('l’Extracteur de matrice respecte les paliers et coûts configurés', () {
+    final extractor = defaultPTibugConfig.aspectMatrixExtractor;
+
+    expect(extractor.moduleCountFor(1), 1);
+    expect(extractor.matricesFor(1), <int>[1]);
+    expect(extractor.durationFor(1), 10);
+    expect(extractor.matricesFor(2), <int>[2]);
+    expect(extractor.moduleCountFor(3), 2);
+    expect(extractor.matricesFor(3), <int>[2, 1]);
+    expect(extractor.matricesFor(4), <int>[2, 2]);
+    expect(extractor.durationFor(4), 4);
+    expect(extractor.mineralCostPerModule, 1);
+    expect(extractor.organicCostPerModule, 10);
+    expect(extractor.nurseryEnergyCostPerModule, 3);
+  });
+
   test('la valeur P’TIBUG additionne espèces, niveaux, Traits et Modules', () {
     final service = PTibugValuationService(defaultPTibugConfig.valuation);
     final value = service.evaluate(const PTibugValuationInput(

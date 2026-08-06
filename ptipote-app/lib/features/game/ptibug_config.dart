@@ -165,6 +165,29 @@ class PTibugAppearanceConfig {
   final int motifChancePercent;
 }
 
+class PTibugAspectMatrixExtractorConfig {
+  const PTibugAspectMatrixExtractorConfig({
+    required this.moduleCountByLevel,
+    required this.matricesPerModuleByLevel,
+    required this.durationMinutesByLevel,
+    required this.mineralCostPerModule,
+    required this.organicCostPerModule,
+    required this.nurseryEnergyCostPerModule,
+  });
+
+  final Map<int, int> moduleCountByLevel;
+  final Map<int, List<int>> matricesPerModuleByLevel;
+  final Map<int, int> durationMinutesByLevel;
+  final int mineralCostPerModule;
+  final int organicCostPerModule;
+  final int nurseryEnergyCostPerModule;
+
+  int moduleCountFor(int level) => moduleCountByLevel[level.clamp(1, 4)] ?? 1;
+  List<int> matricesFor(int level) =>
+      matricesPerModuleByLevel[level.clamp(1, 4)] ?? const <int>[1];
+  int durationFor(int level) => durationMinutesByLevel[level.clamp(1, 4)] ?? 10;
+}
+
 /// Les trois opérations partagent une cuve, ses réserves et son calcul hors
 /// ligne. Leur résultat final reste toutefois distinct et explicitement validé.
 enum PTibugCultivationOperationType { cultivation, traitInfusion, evolution }
@@ -392,6 +415,7 @@ class PTibugConfig {
     required this.cultivation,
     required this.valuation,
     required this.appearance,
+    required this.aspectMatrixExtractor,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -435,6 +459,7 @@ class PTibugConfig {
   final PTibugCultivationConfig cultivation;
   final PTibugValuationConfig valuation;
   final PTibugAppearanceConfig appearance;
+  final PTibugAspectMatrixExtractorConfig aspectMatrixExtractor;
 
   int slotsForLevel(int level) => territory.nurseryCapacityForLevel(level);
   int moduleSlotsForLevel(int level) =>
@@ -716,6 +741,19 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       PTibugSpecies.arac: <String>['Sauteuse', 'Tisseuse'],
     },
     motifChancePercent: 30,
+  ),
+  aspectMatrixExtractor: const PTibugAspectMatrixExtractorConfig(
+    moduleCountByLevel: <int, int>{1: 1, 2: 1, 3: 2, 4: 2},
+    matricesPerModuleByLevel: <int, List<int>>{
+      1: <int>[1],
+      2: <int>[2],
+      3: <int>[2, 1],
+      4: <int>[2, 2],
+    },
+    durationMinutesByLevel: <int, int>{1: 10, 2: 8, 3: 6, 4: 4},
+    mineralCostPerModule: 1,
+    organicCostPerModule: 10,
+    nurseryEnergyCostPerModule: 3,
   ),
   species: <PTibugSpecies, PTibugSpeciesConfig>{
     PTibugSpecies.scarabe: PTibugSpeciesConfig(

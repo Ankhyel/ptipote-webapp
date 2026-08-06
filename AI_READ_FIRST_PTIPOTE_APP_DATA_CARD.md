@@ -1841,3 +1841,9 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 - Hyme utilise jaune/bleu/orange/noir et le motif **Rayé** ; Scarabé vert/bleu/rouge/noir et **Irisé** ; Arac violet/rouge/jaune/noir et **Pointillé**. Les P’TIBUG déjà sauvegardés reçoivent un aspect une seule fois à leur migration.
 - Les animations nominales sont **Volant** ou **Terrier** pour Hyme, **Cornu** ou **Briseur** pour Scarabé, et **Sauteuse** ou **Tisseuse** pour Arac. Elles sont tirées et sauvegardées avec l’aspect, sans animation graphique imposée à ce stade.
 - Le Dashboard expose ces palettes comme sélecteurs RGB dans `ptibug-config.json`. Le pictogramme utilise déjà la couleur principale ; les rendus détaillés des motifs seront ajoutés lorsque leurs règles graphiques seront fournies.
+
+### Extracteur de matrice d’aspect
+
+- L’Extracteur crée des Matrices d’aspect sans retirer ni modifier le P’TIBUG source. Le même P’TIBUG peut donc être extrait plusieurs fois ; une Matrice est un objet interne de Cultivation, non vendable et absent des stocks de Marché.
+- Par niveau, il lance 1 module/1 Matrice en 10 min (niv. 1), 1/2 en 8 min (niv. 2), 2 modules produisant 2 puis 1 Matrice en 6 min (niv. 3), puis 2 modules de 2 Matrices en 4 min (niv. 4). Chaque module consomme 1 Minéral, 10 Organique et 3 Énergies locales de Nurserie.
+- Deux Matrices du même P’TIBUG et de la même espèce peuvent être consommées au lancement d’une Cultivation correspondant à l’Armature. Elles transmettent alors l’aspect sauvegardé ; sans Matrice, la Cultivation conserve sa génération d’aspect habituelle.

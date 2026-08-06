@@ -77,9 +77,9 @@
     "protectionReductionPercents": [25, 15, 10],
     "damageByWeatherAndIntensity": {
       "calm": {"calm": 0, "moderate": 0, "strong": 0, "severe": 0},
-      "heatWave": {"calm": 0, "moderate": 5, "strong": 12, "severe": 25},
-      "heavyRain": {"calm": 0, "moderate": 5, "strong": 12, "severe": 25},
-      "toxicCloud": {"calm": 0, "moderate": 5, "strong": 12, "severe": 25}
+      "heatWave": {"calm": 0, "moderate": 10, "strong": 24, "severe": 50},
+      "heavyRain": {"calm": 0, "moderate": 10, "strong": 24, "severe": 50},
+      "toxicCloud": {"calm": 0, "moderate": 10, "strong": 24, "severe": 50}
     }
   }
 }

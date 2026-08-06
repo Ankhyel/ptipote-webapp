@@ -520,6 +520,7 @@ PTibugConfig _ptibug(Object? value) {
   final rawCultivation = _map(raw['cultivation']);
   final rawValuation = _map(raw['valuation']);
   final rawAppearance = _map(raw['appearance']);
+  final rawAspectMatrixExtractor = _map(raw['aspectMatrixExtractor']);
   return PTibugConfig(
     nurseryRequirements: _resourceMap(
       raw['nurseryRequirements'],
@@ -594,6 +595,38 @@ PTibugConfig _ptibug(Object? value) {
         rawAppearance?['motifChancePercent'],
         base.appearance.motifChancePercent,
       ).clamp(0, 100).toInt(),
+    ),
+    aspectMatrixExtractor: PTibugAspectMatrixExtractorConfig(
+      moduleCountByLevel: _levelMap(
+        rawAspectMatrixExtractor?['moduleCountByLevel'],
+        base.aspectMatrixExtractor.moduleCountByLevel,
+      ),
+      matricesPerModuleByLevel: <int, List<int>>{
+        for (final level in <int>[1, 2, 3, 4])
+          level: (_map(rawAspectMatrixExtractor?['matricesPerModuleByLevel'])?[
+                      '$level'] as List?)
+                  ?.map((value) => _int(value, 1))
+                  .toList() ??
+              List<int>.from(
+                  base.aspectMatrixExtractor.matricesPerModuleByLevel[level] ??
+                      const <int>[1]),
+      },
+      durationMinutesByLevel: _levelMap(
+        rawAspectMatrixExtractor?['durationMinutesByLevel'],
+        base.aspectMatrixExtractor.durationMinutesByLevel,
+      ),
+      mineralCostPerModule: _int(
+        rawAspectMatrixExtractor?['mineralCostPerModule'],
+        base.aspectMatrixExtractor.mineralCostPerModule,
+      ),
+      organicCostPerModule: _int(
+        rawAspectMatrixExtractor?['organicCostPerModule'],
+        base.aspectMatrixExtractor.organicCostPerModule,
+      ),
+      nurseryEnergyCostPerModule: _int(
+        rawAspectMatrixExtractor?['nurseryEnergyCostPerModule'],
+        base.aspectMatrixExtractor.nurseryEnergyCostPerModule,
+      ),
     ),
     species: <PTibugSpecies, PTibugSpeciesConfig>{
       for (final entry in base.species.entries)

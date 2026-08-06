@@ -126,6 +126,14 @@
     },
     "motifChancePercent": 30
   },
+  "aspectMatrixExtractor": {
+    "moduleCountByLevel": {"1": 1, "2": 1, "3": 2, "4": 2},
+    "matricesPerModuleByLevel": {"1": [1], "2": [2], "3": [2, 1], "4": [2, 2]},
+    "durationMinutesByLevel": {"1": 10, "2": 8, "3": 6, "4": 4},
+    "mineralCostPerModule": 1,
+    "organicCostPerModule": 10,
+    "nurseryEnergyCostPerModule": 3
+  },
   "species": {
     "scarabe": {
       "displayName": "Scarabé",
