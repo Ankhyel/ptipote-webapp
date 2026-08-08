@@ -1,3 +1,5 @@
+import 'building_construction_config.dart';
+import 'camp_generator_config.dart';
 import 'camp_heart_config.dart';
 import 'community_roles_config.dart';
 import 'craft_config.dart';
@@ -12,6 +14,7 @@ import 'resident_economy_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'workshop_config.dart';
+import 'waste_recycler_config.dart';
 
 /// Applies Dashboard tuning without ever reading or writing player progress.
 /// Invalid or incomplete values fall back to the versioned Dart defaults.
@@ -30,6 +33,10 @@ void applyRemoteZone0Settings(Map<String, dynamic>? raw) {
   communityRolesConfig = _communityRoles(raw?['communityRoles']);
   residentEconomyConfig = _residentEconomy(raw?['residentEconomy']);
   pTibugConfig = _ptibug(raw?['ptibug']);
+  buildingConstructionConfig =
+      _buildingConstruction(raw?['buildingConstruction']);
+  campGeneratorConfig = _campGenerator(raw?['campGenerator']);
+  wasteRecyclerConfig = _wasteRecycler(raw?['wasteRecycler']);
 }
 
 Map<String, dynamic>? _map(Object? value) =>
@@ -52,6 +59,128 @@ Map<String, int> _resourceMap(Object? value, Map<String, int> fallback) {
     }
   }
   return result;
+}
+
+BuildingConstructionConfig _buildingConstruction(Object? value) {
+  final raw = _map(value);
+  const base = defaultBuildingConstructionConfig;
+  if (raw == null) return base;
+  final projects = _map(raw['projects']);
+  return BuildingConstructionConfig(
+    mineralCostMultiplier:
+        _double(raw['mineralCostMultiplier'], base.mineralCostMultiplier),
+    defaultDurationMinutes:
+        _int(raw['defaultDurationMinutes'], base.defaultDurationMinutes),
+    projects: <String, BuildingProjectDefinition>{
+      for (final entry in base.projects.entries)
+        entry.key: () {
+          final project = _map(projects?[entry.key]);
+          return BuildingProjectDefinition(
+            id: _string(project?['id'], entry.value.id),
+            label: _string(project?['label'], entry.value.label),
+            baseRequirements: _resourceMap(
+              project?['baseRequirements'],
+              entry.value.baseRequirements,
+            ),
+            durationMinutes:
+                _int(project?['durationMinutes'], entry.value.durationMinutes),
+          );
+        }(),
+    },
+  );
+}
+
+CampGeneratorConfig _campGenerator(Object? value) {
+  final raw = _map(value);
+  const base = defaultCampGeneratorConfig;
+  if (raw == null) return base;
+  final cycleMinutes = raw['cycleMinutesByLevel'] as List?;
+  return CampGeneratorConfig(
+    organicCapacityLevel1:
+        _int(raw['organicCapacityLevel1'], base.organicCapacityLevel1),
+    mineralCapacityLevel1:
+        _int(raw['mineralCapacityLevel1'], base.mineralCapacityLevel1),
+    organicCapacityPerLevel:
+        _int(raw['organicCapacityPerLevel'], base.organicCapacityPerLevel),
+    mineralCapacityPerLevel:
+        _int(raw['mineralCapacityPerLevel'], base.mineralCapacityPerLevel),
+    organicCostPerCycle:
+        _int(raw['organicCostPerCycle'], base.organicCostPerCycle),
+    mineralCostPerCycle:
+        _int(raw['mineralCostPerCycle'], base.mineralCostPerCycle),
+    bioBatteriesPerCycle:
+        _int(raw['bioBatteriesPerCycle'], base.bioBatteriesPerCycle),
+    cycleMinutesByLevel: cycleMinutes == null
+        ? List<int>.from(base.cycleMinutesByLevel)
+        : List<int>.generate(
+            base.cycleMinutesByLevel.length,
+            (index) => _int(cycleMinutes.elementAtOrNull(index),
+                base.cycleMinutesByLevel[index]),
+          ),
+    minimumCycleMinutes:
+        _int(raw['minimumCycleMinutes'], base.minimumCycleMinutes),
+  );
+}
+
+WasteRecyclerConfig _wasteRecycler(Object? value) {
+  final raw = _map(value);
+  const base = defaultWasteRecyclerConfig;
+  if (raw == null) return base;
+  final cycleMinutes = _map(raw['cycleMinutesByLevel']);
+  final outputSplits = raw['outputSplits'] as List?;
+  return WasteRecyclerConfig(
+    wasteGenerationCycleMinutes: _int(
+        raw['wasteGenerationCycleMinutes'], base.wasteGenerationCycleMinutes),
+    baseWastePerCycle: _int(raw['baseWastePerCycle'], base.baseWastePerCycle),
+    populationPerWasteUnit:
+        _int(raw['populationPerWasteUnit'], base.populationPerWasteUnit),
+    buildingsPerWasteUnit:
+        _int(raw['buildingsPerWasteUnit'], base.buildingsPerWasteUnit),
+    wasteRewardMinimumPercent:
+        _int(raw['wasteRewardMinimumPercent'], base.wasteRewardMinimumPercent),
+    wasteRewardMaximumPercent:
+        _int(raw['wasteRewardMaximumPercent'], base.wasteRewardMaximumPercent),
+    recyclerUnlockCampHeartLevel: _int(
+        raw['recyclerUnlockCampHeartLevel'], base.recyclerUnlockCampHeartLevel),
+    initialRecyclerLevel:
+        _int(raw['initialRecyclerLevel'], base.initialRecyclerLevel),
+    recyclerMaxLevel: _int(raw['recyclerMaxLevel'], base.recyclerMaxLevel),
+    baseWasteTankCapacity:
+        _int(raw['baseWasteTankCapacity'], base.baseWasteTankCapacity),
+    wasteTankCapacityPerLevel:
+        _int(raw['wasteTankCapacityPerLevel'], base.wasteTankCapacityPerLevel),
+    baseWasteRequired: _int(raw['baseWasteRequired'], base.baseWasteRequired),
+    minimumWasteRequired:
+        _int(raw['minimumWasteRequired'], base.minimumWasteRequired),
+    outputResourcesPerCycle:
+        _int(raw['outputResourcesPerCycle'], base.outputResourcesPerCycle),
+    energyUnitsPerBioBattery:
+        _int(raw['energyUnitsPerBioBattery'], base.energyUnitsPerBioBattery),
+    energyCostPerCycle:
+        _int(raw['energyCostPerCycle'], base.energyCostPerCycle),
+    outputStorageCapacity:
+        _int(raw['outputStorageCapacity'], base.outputStorageCapacity),
+    outputStorageCapacityPerLevel: _int(raw['outputStorageCapacityPerLevel'],
+        base.outputStorageCapacityPerLevel),
+    pendingWasteCapacity:
+        _int(raw['pendingWasteCapacity'], base.pendingWasteCapacity),
+    cycleMinutesByLevel: <int, int>{
+      for (final entry in base.cycleMinutesByLevel.entries)
+        entry.key: _int(cycleMinutes?['${entry.key}'], entry.value),
+    },
+    outputSplits: outputSplits == null
+        ? List<RecyclerOutputSplit>.from(base.outputSplits)
+        : List<RecyclerOutputSplit>.generate(base.outputSplits.length, (index) {
+            final split = outputSplits.elementAtOrNull(index);
+            final fallback = base.outputSplits[index];
+            return RecyclerOutputSplit(
+              _int(split is List ? split.elementAtOrNull(0) : null,
+                  fallback.organic),
+              _int(split is List ? split.elementAtOrNull(1) : null,
+                  fallback.mineral),
+            );
+          }),
+  );
 }
 
 KernelConfig _kernel(Object? value) {

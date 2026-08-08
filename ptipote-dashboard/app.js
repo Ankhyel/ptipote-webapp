@@ -833,6 +833,9 @@ const ZONE0_SECTION_SOURCES = {
   communityRoles: "community-roles-config.json",
   residentEconomy: "resident-economy-config.json",
   ptibug: "ptibug-config.json",
+  buildingConstruction: "building-construction-config.json",
+  campGenerator: "camp-generator-config.json",
+  wasteRecycler: "waste-recycler-config.json",
 };
 
 const ZONE0_SECTION_LABELS = {
@@ -850,6 +853,9 @@ const ZONE0_SECTION_LABELS = {
   communityRoles: "Passions et rôles communautaires",
   residentEconomy: "Économie interne des habitants",
   ptibug: "P'TIBUG et Nurserie",
+  buildingConstruction: "Constructions des bâtiments",
+  campGenerator: "Bio-générateur du Camp",
+  wasteRecycler: "Recycleur",
 };
 
 // These legacy JSON display fields are not gameplay inputs in Flutter. They
@@ -1556,6 +1562,9 @@ function renderWorkshopEditor() {
     configCard("Arrivées, visions et autonomie des maisons", "housing", residentHousing, [], { meta: "Candidatures narratives, soutiens aux grands chantiers, budget du foyer, protections, mobilier, second générateur et réparations lentes." }),
     configCard("Passions et rôles communautaires", "communityRoles", zone0Settings.communityRoles || {}, [], { meta: "Poids de passion, slots habitants, efficacité lente, Cuisine, Lisière, Sécurité, météo et préparation P’TIBUG" }),
     configCard("Économie interne des habitants", "residentEconomy", zone0Settings.residentEconomy || {}, [], { meta: "Piles, production domestique, distribution, prix, réserves, lots, répartition 50/25/25 et règlements." }),
+    configCard("Coûts de construction des bâtiments", "buildingConstruction", zone0Settings.buildingConstruction || {}, [], { meta: "Prix en Organique et Minéral, multiplicateur minéral et durée de chaque bâtiment." }),
+    configCard("Bio-générateur du Camp", "campGenerator", zone0Settings.campGenerator || {}, [], { meta: "Capacités, coûts par cycle et production de Bio-batteries." }),
+    configCard("Recycleur", "wasteRecycler", zone0Settings.wasteRecycler || {}, [], { meta: "Coûts d’énergie, volumes de déchets, rendements et cycles." }),
   ].join("");
   bindZone0Inputs(el.zone0SettingsForm);
 }

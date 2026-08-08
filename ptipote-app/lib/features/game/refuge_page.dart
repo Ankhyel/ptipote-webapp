@@ -8112,6 +8112,27 @@ class _CampHousingTab extends StatelessWidget {
   final Zone0GameState gameState;
   final int campHeartLevel;
 
+  String _residentWellbeingEmoji(Zone0Resident resident) {
+    final value = gameState.residentHappinessFor(resident);
+    if (value >= 100) return '🤩';
+    if (value >= 90) return '😁';
+    if (value >= 70) return '🙂';
+    if (value >= 50) return '😐';
+    if (value >= 30) return '😠';
+    return '🤬';
+  }
+
+  Widget _residentWellbeingValue(Zone0Resident resident) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(_residentWellbeingEmoji(resident),
+              style: const TextStyle(fontSize: 17)),
+          const SizedBox(width: 4),
+          Text('${gameState.residentHappinessFor(resident)}%',
+              style: const TextStyle(fontWeight: FontWeight.w900)),
+        ],
+      );
+
   void _showStatInfo(BuildContext context, String title, String message) {
     showDialog<void>(
       context: context,
@@ -8155,7 +8176,7 @@ class _CampHousingTab extends StatelessWidget {
                 ResidentStatus.archived => 'Archivé',
               }}'),
               Text(
-                  'Bonheur : ${gameState.residentHappinessFor(resident)}% · ${gameState.formatInternalPileBalance(resident.internalPileBalance)}'),
+                  'Bonheur : ${_residentWellbeingEmoji(resident)} ${gameState.residentHappinessFor(resident)}% · ${gameState.formatInternalPileBalance(resident.internalPileBalance)}'),
               const SizedBox(height: 14),
               const Text('Besoins',
                   style: TextStyle(fontWeight: FontWeight.w900)),
@@ -8922,10 +8943,7 @@ class _CampHousingTab extends StatelessWidget {
                                 'Maison endommagée : -${housingConfig.houseViabilityDamageHappinessPercent}% bonheur · ${gameState.formatInternalPileBalance(resident.internalPileBalance)}')
                             : Text(gameState.formatInternalPileBalance(
                                 resident.internalPileBalance)),
-                        trailing: Text(
-                            '${gameState.residentHappinessFor(resident)}%',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w900)),
+                        trailing: _residentWellbeingValue(resident),
                         onTap: () => _showResidentSheet(context, resident),
                       )),
                 ]),
@@ -8956,8 +8974,7 @@ class _CampHousingTab extends StatelessWidget {
                 ]),
                 subtitle: Text(
                     '${house?.displayName ?? 'Sans logement'} · ${gameState.formatInternalPileBalance(resident.internalPileBalance)}${damaged ? ' · Maison endommagée : -${housingConfig.houseViabilityDamageHappinessPercent}%' : ''}'),
-                trailing: Text('${gameState.residentHappinessFor(resident)}%',
-                    style: const TextStyle(fontWeight: FontWeight.w900)),
+                trailing: _residentWellbeingValue(resident),
                 onTap: () => _showResidentSheet(context, resident),
               ));
             }),
@@ -13914,8 +13931,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
               children: <Widget>[
                 _moduleCapacityUpgradeCard(),
                 const SizedBox(height: 10),
-                _aspectMatrixExtractorCard(),
-                const SizedBox(height: 10),
                 _BuildingViabilityCard(
                   gameState: widget.gameState,
                   buildingId: Zone0GameState.plaineNurseryTerritoryId,
@@ -13978,18 +13993,42 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                 icon: const Icon(Icons.auto_awesome_motion_outlined),
                 label: const Text('Extraire une Matrice'),
               ),
-            if (state.pTibugAspectMatrices.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                'Matrices disponibles : ${state.pTibugAspectMatrices.length}',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              ...state.pTibugAspectMatrices.take(4).map((matrix) => Text(
-                  '${pTibugConfig.species[matrix.species]!.displayName} · ${matrix.sourceDisplayName}')),
-            ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _aspectMatrixInventory() {
+    final matrices = widget.gameState.pTibugAspectMatrices;
+    return ExpansionTile(
+      leading: const Icon(Icons.inventory_2_outlined),
+      title: const Text('Inventaire de Matrices'),
+      subtitle: Text('${matrices.length} Matrice(s) d’aspect'),
+      children: <Widget>[
+        if (matrices.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Text(
+              'Les Matrices extraites sont conservées ici. Elles servent uniquement à la Cultivation et ne sont pas vendables.',
+            ),
+          ),
+        ...matrices.map(
+          (matrix) => Card(
+            child: ListTile(
+              leading: CircleAvatar(
+                child: Icon(_speciesIcon(matrix.species)),
+              ),
+              title: Text(
+                'Matrice ${pTibugConfig.species[matrix.species]!.displayName}',
+              ),
+              subtitle: Text(
+                'Source : ${matrix.sourceDisplayName} · ${matrix.createdAt.day}/${matrix.createdAt.month}',
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -14301,6 +14340,10 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
               ),
             ),
           ),
+          const SizedBox(height: 18),
+          _aspectMatrixExtractorCard(),
+          const SizedBox(height: 12),
+          _aspectMatrixInventory(),
           const SizedBox(height: 18),
           ExpansionTile(
             leading: const Icon(Icons.precision_manufacturing_outlined),

@@ -1110,9 +1110,9 @@ Pour formater Dart:
 
 ### Dashboard - Architecture Et Logements
 
-- `ptipote-dashboard/building-architecture-config.json` est le miroir editable/exportable des projets communs: coefficient Mineral, depots recuperables, comportement pendant une amelioration, couts et durees V1.
+- `ptipote-dashboard/building-construction-config.json` est le miroir éditable des projets communs : coefficient Minéral, coûts et durées V1. Il est désormais chargé par le Dashboard et appliqué au runtime.
 - `ptipote-dashboard/housing-config.json` expose les niveaux de Maison, alcoves, logements agreges, malus de Bien-etre et remerciement communautaire.
-- L'onglet Dashboard `Batiments actifs` charge ces deux fichiers et peut les exporter. Comme les configurations Dart restent la source executee par Flutter en V1, un JSON exporte doit etre reporte dans le fichier Dart correspondant avant livraison; aucune modification directe de donnees Firebase n'est faite par le Dashboard.
+- Le Dashboard publie ces réglages vers la configuration Zone 0. Flutter applique alors les valeurs valides sans toucher à la progression des joueurs.
 
 ### Notifications De Chantier
 

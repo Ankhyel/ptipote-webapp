@@ -10941,12 +10941,26 @@ class Zone0GameState extends ChangeNotifier {
   void _gainPTibugXp(PTibug bug, int amount) {
     final config = pTibugConfig.progression;
     if (bug.level >= config.maximumLevel) return;
+    final wasEvolutionReady = canEvolvePTibug(bug);
     bug.xp += amount;
     while (bug.level < config.maximumLevel) {
       final required = config.xpForNextLevel(bug.level);
       if (required <= 0 || bug.xp < required) break;
       bug.xp -= required;
       bug.level += 1;
+    }
+    if (!wasEvolutionReady && canEvolvePTibug(bug)) {
+      reports.add(
+        PtipoteMissionReport.system(
+          message:
+              '${bug.displayName} peut désormais évoluer dans une cuve de la Nurserie.',
+          sourceBuildingId: plaineNurseryTerritoryId,
+          mailbox: Zone0MessageMailbox.companions,
+          subject: 'Évolution disponible',
+          concerned: bug.displayName,
+          summary: 'Niveau et Trait I requis atteints.',
+        ),
+      );
     }
   }
 

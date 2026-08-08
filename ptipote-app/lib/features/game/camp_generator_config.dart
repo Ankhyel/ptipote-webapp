@@ -33,7 +33,7 @@ class CampGeneratorConfig {
   }
 }
 
-const campGeneratorConfig = CampGeneratorConfig(
+const CampGeneratorConfig defaultCampGeneratorConfig = CampGeneratorConfig(
   // Four level-1 production paliers: 5 Organique + 1 Minéral each.
   organicCapacityLevel1: 20,
   mineralCapacityLevel1: 4,
@@ -45,3 +45,5 @@ const campGeneratorConfig = CampGeneratorConfig(
   cycleMinutesByLevel: <int>[60, 50, 40, 35, 30],
   minimumCycleMinutes: 30,
 );
+
+CampGeneratorConfig campGeneratorConfig = defaultCampGeneratorConfig;

@@ -61,7 +61,7 @@ class RecyclerOutputSplit {
   final int mineral;
 }
 
-const wasteRecyclerConfig = WasteRecyclerConfig(
+const WasteRecyclerConfig defaultWasteRecyclerConfig = WasteRecyclerConfig(
   wasteGenerationCycleMinutes: 120,
   baseWastePerCycle: 0,
   populationPerWasteUnit: 5,
@@ -90,3 +90,5 @@ const wasteRecyclerConfig = WasteRecyclerConfig(
     RecyclerOutputSplit(3, 7),
   ],
 );
+
+WasteRecyclerConfig wasteRecyclerConfig = defaultWasteRecyclerConfig;

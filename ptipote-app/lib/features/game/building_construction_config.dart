@@ -35,7 +35,8 @@ class BuildingProjectDefinition {
           ));
 }
 
-const buildingConstructionConfig = BuildingConstructionConfig(
+const BuildingConstructionConfig defaultBuildingConstructionConfig =
+    BuildingConstructionConfig(
   mineralCostMultiplier: 1.30,
   defaultDurationMinutes: 1,
   projects: <String, BuildingProjectDefinition>{
@@ -95,3 +96,8 @@ const buildingConstructionConfig = BuildingConstructionConfig(
     ),
   },
 );
+
+/// Runtime-tunable through the developer Dashboard. Player progress is never
+/// stored here; only the shared construction prices and durations are.
+BuildingConstructionConfig buildingConstructionConfig =
+    defaultBuildingConstructionConfig;
