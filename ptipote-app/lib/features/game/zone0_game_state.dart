@@ -122,6 +122,11 @@ class Zone0GameState extends ChangeNotifier {
   final List<MarketRestockRule> marketRestockRules = <MarketRestockRule>[];
   bool marketShopSlotsMigrationCompleted = false;
   MarketShopConstructionOrder? marketShopConstructionOrder;
+
+  /// Chantier communautaire distinct : il ne bloque jamais le chantier que le
+  /// joueur prépare pour sa propre boutique.
+  MarketShopConstructionOrder? residentCommunityShopConstructionOrder;
+  DateTime? lastResidentCommunityShopConstructionAt;
   String primaryMarketShopSpecialization = 'general';
   bool primaryMarketShopChosen = false;
   int primaryMarketShopLevel = 1;
@@ -456,29 +461,78 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Diagnostic réussi : bâtiment remis en marche.');
   }
 
-  Zone0ActionResult repairBuilding(String buildingId) {
+  int buildingRepairLevel(String buildingId) => switch (buildingId) {
+        'atelier' => math.max(1, atelierLevel),
+        'cuisine' => math.max(1, cuisineLevel),
+        'recycler' => math.max(1, recyclerLevel),
+        'market' => math.max(1, marketLevel),
+        'tower' => math.max(1, securityTowerLevel),
+        _ => 1,
+      };
+
+  Map<String, int> buildingRepairCosts(String buildingId, int requestedGain) {
     final viability = viabilityForBuilding(buildingId);
-    final config = towerOperationsConfig.buildingViability;
+    final actualGain = math.min(
+      math.max(1, requestedGain),
+      viability.maximum - viability.current,
+    );
+    final steps = (actualGain / 10).ceil();
+    final level = buildingRepairLevel(buildingId);
+    return <String, int>{
+      'Minéral': 3 * steps * level,
+      'Organique': steps * level,
+      'Bio-batteries': 10 * steps * level,
+    };
+  }
+
+  Zone0ActionResult repairBuilding(String buildingId, {int gain = 10}) {
+    final viability = viabilityForBuilding(buildingId);
     if (viability.current >= viability.maximum) {
       return const Zone0ActionResult(
           success: false, message: 'La Viabilité est déjà maximale.');
     }
-    final costs = <String, int>{
-      'Organique': config.repairOrganicCost,
-      'Minéral': config.repairMineralCost
+    final requestedGain = (gain / 10).ceil().clamp(1, 10) * 10;
+    final actualGain =
+        math.min(requestedGain, viability.maximum - viability.current).toInt();
+    final costs = buildingRepairCosts(buildingId, actualGain);
+    final materials = <String, int>{
+      'Organique': costs['Organique']!,
+      'Minéral': costs['Minéral']!,
     };
-    if (!hasResources(costs) || !removeResources(costs)) {
+    final batteries = costs['Bio-batteries']!;
+    if (bioBatteries < batteries ||
+        !hasResources(materials) ||
+        !removeResources(materials)) {
       return const Zone0ActionResult(
           success: false, message: 'Ressources insuffisantes pour réparer.');
     }
-    viability.restore(config.repairGain);
+    bioBatteries -= batteries;
+    viability.restore(actualGain);
     if (viability.current >= viability.maximum) {
       _reportBuildingViability(buildingId, 'est entièrement réparé.');
     }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: '+${config.repairGain}% de Viabilité.');
+        success: true,
+        message:
+            '+$actualGain% de Viabilité · ${costs['Minéral']} Minéral · ${costs['Organique']} Organique · $batteries Bio-batteries.');
+  }
+
+  Zone0ActionResult repairBuildingByMiniGame(String buildingId) {
+    final viability = viabilityForBuilding(buildingId);
+    if (viability.current >= viability.maximum) {
+      return const Zone0ActionResult(
+          success: false, message: 'La Viabilité est déjà maximale.');
+    }
+    final gain = math.min(10, viability.maximum - viability.current).toInt();
+    viability.restore(gain);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Circuit réparé : +$gain% de Viabilité.',
+    );
   }
 
   int structuralProtectionReductionPercent(
@@ -1574,20 +1628,23 @@ class Zone0GameState extends ChangeNotifier {
       activeRepair.status = HouseholdRepairStatus.paused;
       house.isUnderRepair = false;
     }
-    final requestedGain = (gain ~/ 10).clamp(1, 10) * 10;
-    final steps = requestedGain ~/ 10;
+    final requestedGain = (gain / 10).ceil().clamp(1, 10) * 10;
+    final actualGain = math
+        .min(requestedGain, house.maximumViability - house.currentViability)
+        .toInt();
+    final steps = (actualGain / 10).ceil();
     final costs = <String, int>{
       'Organique': housingConfig.houseRepairOrganicCost * steps,
       'Minéral': housingConfig.houseRepairMineralCost * steps,
     };
-    if (!hasResources(costs) || !removeResources(costs)) {
+    final batteries = 10 * steps;
+    if (bioBatteries < batteries ||
+        !hasResources(costs) ||
+        !removeResources(costs)) {
       return const Zone0ActionResult(
           success: false,
           message: 'Ressources insuffisantes pour réparer cette maison.');
     }
-    final actualGain = math
-        .min(requestedGain, house.maximumViability - house.currentViability)
-        .toInt();
     house.currentViability = math
         .min(house.maximumViability, house.currentViability + requestedGain)
         .toInt();
@@ -1595,7 +1652,24 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: 'Maison réparée : +$actualGain% de Viabilité.');
+        success: true,
+        message:
+            'Maison réparée : +$actualGain% · ${costs['Minéral']} Minéral · ${costs['Organique']} Organique · $batteries Bio-batteries.');
+  }
+
+  Zone0ActionResult repairResidentHouseByMiniGame(String houseId) {
+    final house = residentHouseForId(houseId);
+    if (house == null || house.currentViability >= house.maximumViability) {
+      return const Zone0ActionResult(
+          success: false, message: 'Réparation indisponible.');
+    }
+    final gain = math.min(10, house.maximumViability - house.currentViability);
+    house.currentViability += gain.toInt();
+    house.updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: 'Circuit de la maison réparé : +$gain%.');
   }
 
   /// Fast player intervention uses the established material cost path while
@@ -2505,7 +2579,8 @@ class Zone0GameState extends ChangeNotifier {
   int communityRoleSlotCount(CommunityRoleType role) => switch (role) {
         CommunityRoleType.kitchenCook => math.max(0, cuisineLevel),
         CommunityRoleType.fablabMaker => math.max(0, atelierLevel),
-        CommunityRoleType.marketCounter => isMarketBuilt ? 1 : 0,
+        // Un emplacement d'habitant par niveau, comme Cuisine et Atelier.
+        CommunityRoleType.marketCounter => isMarketBuilt ? marketLevel : 0,
         CommunityRoleType.lisiereObserver =>
           isBiomeUnlocked(ForageBiome.plaineRiche) ? 1 : 0,
         CommunityRoleType.securityWatch ||
@@ -6000,7 +6075,9 @@ class Zone0GameState extends ChangeNotifier {
       primaryMarketShopChosen = true;
     } else {
       final slot = unlockedMarketShopSlots
-              .where((item) => item.status == MarketShopSlotStatus.reserved)
+              .where((item) =>
+                  item.status == MarketShopSlotStatus.reserved &&
+                  item.reservedByResidentId == null)
               .firstOrNull ??
           _vacantMarketShopSlot();
       if (slot == null) return false;
@@ -6050,6 +6127,13 @@ class Zone0GameState extends ChangeNotifier {
 
   String? _chooseResidentShopCategory() {
     const categories = <String>['restaurant', 'equipment', 'home'];
+    // Une catégorie communautaire est unique : le deuxième comptoir de la
+    // même spécialisation n'apporterait aucune nouvelle couverture.
+    final residentCategories = marketShops
+        .where((shop) =>
+            shop.ownershipType == MarketShopOwnershipType.residentCommunity)
+        .map((shop) => shop.specialization)
+        .toSet();
     final covered = <String>{
       if (primaryMarketShopChosen) primaryMarketShopSpecialization,
       ...marketShops.map((shop) => shop.specialization),
@@ -6063,7 +6147,10 @@ class Zone0GameState extends ChangeNotifier {
       if (category != null)
         counts[category] = (counts[category] ?? 0) + need.quantity;
     }
-    final viable = categories.where(_marketCategoryViable).toList();
+    final viable = categories
+        .where((category) => !residentCategories.contains(category))
+        .where(_marketCategoryViable)
+        .toList();
     if (viable.isEmpty) return null;
     viable.sort((a, b) {
       final missing =
@@ -6247,6 +6334,117 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  /// Outil réservé aux comptes dev/admin par l'interface. Les figurines NFC
+  /// ne sont jamais touchées : seules leur progression et leurs jauges Zone 0
+  /// repartent de leur valeur initiale.
+  Zone0ActionResult developerResetZone0Progress() {
+    vitalityOverrides.clear();
+    hungerOverrides.clear();
+    restOverrides.clear();
+    xpOverrides.clear();
+    levelOverrides.clear();
+    wellRestedRewardedIds.clear();
+    manualRestingIds.clear();
+    waitingForBedIds.clear();
+    lastCuddleAt.clear();
+    autoPreferenceOverrides.clear();
+    missions.clear();
+    towerMissions.clear();
+    workshopOrders.clear();
+    inventory.clear();
+    pTibugs.clear();
+    soldPTibugArchive.clear();
+    pTibugTraitData.clear();
+    pTibugDataCells.clear();
+    pTibugModuleInstances.clear();
+    pTibugModuleCraftOrders.clear();
+    pTibugCapsules.clear();
+    pTibugArmatures.clear();
+    pTibugCultivationTanks.clear();
+    pTibugCultivationOperations.clear();
+    pTibugAspectMatrices.clear();
+    pTibugAspectExtractionOrder = null;
+    activePTibugPatterns.clear();
+    unlockedPTibugModules.clear();
+    sourcierPatternIds.clear();
+    pTibugPatternProgress.clear();
+    for (final family in PTibugDataFamily.values) {
+      pTibugDataReserve[family] = 0;
+    }
+    pTibugModuleCapacityLevel = 0;
+    plaineNurseryLevel = 0;
+    pTibugTerritoryBuildings.clear();
+    starterPTibugChoiceMade = false;
+    firstCultivationTankGranted = false;
+    residents.clear();
+    residentHouses.clear();
+    residentArrivalCandidates.clear();
+    residentVisions.clear();
+    householdRepairJobs.clear();
+    communityRoleAssignments.clear();
+    communityProductionBatches.clear();
+    residentEconomicTransactions.clear();
+    economicSettlementBatches.clear();
+    residentUncoveredNeeds.clear();
+    marketStock.clear();
+    marketRequests.clear();
+    marketRequestLog.clear();
+    marketContracts.clear();
+    marketShops.clear();
+    marketShopSlots.clear();
+    marketRestockRules.clear();
+    marketShopConstructionOrder = null;
+    residentCommunityShopConstructionOrder = null;
+    lastResidentCommunityShopConstructionAt = null;
+    marketDistributor
+      ..isBuilt = false
+      ..level = 0
+      ..energy = 0
+      ..isBroken = false
+      ..stock.clear()
+      ..constructionDeposits.clear()
+      ..constructionStartedAt = null
+      ..constructionEndsAt = null
+      ..upgradeEndsAt = null
+      ..repairEndsAt = null
+      ..repairStartedBy = null
+      ..upgradeTargetLevel = null;
+    marketAssignedPtipoteId = null;
+    marketAssignedPtipoteName = null;
+    marketLevel = 0;
+    primaryMarketShopChosen = false;
+    primaryMarketShopSpecialization = 'general';
+    primaryMarketShopLevel = 1;
+    firstFreeShopClaimed = false;
+    fablabLevel = 0;
+    atelierLevel = 0;
+    cuisineLevel = 0;
+    recyclerLevel = 0;
+    securityTowerLevel = 0;
+    houseLevel = 1;
+    alcoveCapacity = 2;
+    housingUnits = 0;
+    housingCapacity = 0;
+    currentPopulation = 0;
+    bioBatteries = 0;
+    energyUnits = 0;
+    generatorOrganic = 0;
+    generatorMineral = 0;
+    generatorTotalProduced = 0;
+    refugeSafety = lisiereForageConfig.refugeSafetyFallback;
+    constructionProjects.clear();
+    buildingViabilities.clear();
+    reports.clear();
+    notifyListeners();
+    unawaited(saveInventoryToFirebase());
+    unawaited(saveBuildingsToFirebase());
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Zone 0 réinitialisée. Les P’TIPOTES sont conservés.',
+    );
+  }
+
   Zone0ActionResult setMarketRestockRule(
     String resource, {
     required bool enabled,
@@ -6406,6 +6604,13 @@ class Zone0GameState extends ChangeNotifier {
     String resource,
     int amount,
   ) {
+    final shop = marketShopById(shopId);
+    if (shop?.ownershipType == MarketShopOwnershipType.residentCommunity) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le comptoir communautaire n’utilise pas de stock.',
+      );
+    }
     final stock = marketStockForShop(shopId);
     if (stock == null || !marketShopAccepts(shopId, resource)) {
       return const Zone0ActionResult(
@@ -6668,7 +6873,8 @@ class Zone0GameState extends ChangeNotifier {
     _migrateMarketShopSlots(current);
     var changed = _resolveMarketShopConstruction(current);
     if (!isMarketBuilt || !isBuildingOperational('market')) return changed;
-    changed = _resolveResidentShopClaims(current) || changed;
+    // Les commerces habitants sont déclenchés par les demandes expirées,
+    // pas par le simple temps de vacance d'un emplacement.
     changed = _resolveMerchantSchedule(current) || changed;
     // Migration du cycle de vente V1 : aucun stock ne doit plus être vendu
     // sans demande habitant. La valeur est ensuite sauvegardée à null.
@@ -6785,15 +6991,20 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool _maybeStartEmergencyCounterShop(DateTime now) {
-    if (marketShopConstructionOrder != null) return false;
+    if (residentCommunityShopConstructionOrder != null) return false;
+    if (lastResidentCommunityShopConstructionAt != null &&
+        now.difference(lastResidentCommunityShopConstructionAt!).inDays < 3) {
+      return false;
+    }
     final expiredByItem = <String, int>{};
-    for (final entry in marketRequestLog
-        .where((entry) => entry.status == MarketRequestStatus.expired)) {
+    for (final entry in marketRequestLog.where((entry) =>
+        entry.status == MarketRequestStatus.expired &&
+        now.difference(entry.resolvedAt ?? entry.deadline).inHours <= 24)) {
       expiredByItem.update(entry.requestedItemId, (count) => count + 1,
           ifAbsent: () => 1);
     }
     final item = expiredByItem.entries
-        .where((entry) => entry.value > 10)
+        .where((entry) => entry.value >= 10)
         .map((entry) => entry.key)
         .toList()
       ..sort();
@@ -6807,10 +7018,18 @@ class Zone0GameState extends ChangeNotifier {
       orElse: () => '',
     );
     if (category.isEmpty) return false;
+    // Un seul comptoir communautaire par spécialisation : deux magasins du
+    // foyer roses ne peuvent plus occuper deux emplacements.
+    if (marketShops.any((shop) =>
+        shop.ownershipType == MarketShopOwnershipType.residentCommunity &&
+        shop.specialization == category)) {
+      return false;
+    }
     slot
       ..status = MarketShopSlotStatus.reserved
+      ..reservedByResidentId = 'community-counter'
       ..vacantSince = null;
-    marketShopConstructionOrder = MarketShopConstructionOrder(
+    residentCommunityShopConstructionOrder = MarketShopConstructionOrder(
       id: 'community-counter-${now.microsecondsSinceEpoch}',
       specialization: category,
       isPrimary: false,
@@ -6818,11 +7037,11 @@ class Zone0GameState extends ChangeNotifier {
       requiredBioBatteries: 0,
       emergencyPink: true,
       startedAt: now,
-      endsAt: now.add(const Duration(hours: 2)),
+      endsAt: now.add(const Duration(hours: 48)),
     );
     reports.add(PtipoteMissionReport.system(
       message:
-          'Le comptoir communautaire lance un magasin rose $category pour répondre aux demandes expirées de ${item.first}.',
+          'Suite à un manque de produits, un habitant a l’autorisation de construire un magasin $category. Si rien ne change, il sera construit dans 2 jours.',
       sourceBuildingId: 'market',
       subject: 'Magasin communautaire',
     ));
@@ -6830,6 +7049,77 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool _resolveCommunityCounterSales(DateTime current) {
+    final order = residentCommunityShopConstructionOrder;
+    if (order != null) {
+      final missingStillActive = marketRequestLog
+              .where((entry) =>
+                  entry.status == MarketRequestStatus.expired &&
+                  current
+                          .difference(entry.resolvedAt ?? entry.deadline)
+                          .inHours <=
+                      24 &&
+                  MarketShop(
+                          id: 'counter-check',
+                          specialization: order.specialization)
+                      .accepts(entry.requestedItemId))
+              .length >=
+          10;
+      if (!missingStillActive) {
+        final reserved = unlockedMarketShopSlots
+            .where((slot) =>
+                slot.status == MarketShopSlotStatus.reserved &&
+                slot.reservedByResidentId == 'community-counter')
+            .firstOrNull;
+        if (reserved != null) {
+          reserved
+            ..status = MarketShopSlotStatus.vacant
+            ..reservedByResidentId = null
+            ..vacantSince = current;
+        }
+        residentCommunityShopConstructionOrder = null;
+        reports.add(PtipoteMissionReport.system(
+          message:
+              'Le manque de produits a été résolu : le chantier communautaire est annulé.',
+          sourceBuildingId: 'market',
+          subject: 'Magasin communautaire',
+        ));
+        return true;
+      }
+      if (order.endsAt != null && !current.isBefore(order.endsAt!)) {
+        final slot = unlockedMarketShopSlots
+                .where((slot) =>
+                    slot.status == MarketShopSlotStatus.reserved &&
+                    slot.reservedByResidentId == 'community-counter')
+                .firstOrNull ??
+            _vacantMarketShopSlot();
+        if (slot != null) {
+          final shop = MarketShop(
+            id: 'community-counter-${current.microsecondsSinceEpoch}',
+            specialization: order.specialization,
+            slotId: slot.slotId,
+            ownershipType: MarketShopOwnershipType.residentCommunity,
+            emergencyPink: true,
+            serviceCapacity: 1,
+          );
+          marketShops.add(shop);
+          slot
+            ..shopId = shop.id
+            ..status = MarketShopSlotStatus.residentOccupied
+            ..reservedByResidentId = null
+            ..vacantSince = null;
+          lastResidentCommunityShopConstructionAt = current;
+          residentCommunityShopConstructionOrder = null;
+          reports.add(PtipoteMissionReport.system(
+            message:
+                'Le magasin communautaire ${order.specialization} est construit.',
+            sourceBuildingId: 'market',
+            subject: 'Magasin communautaire',
+          ));
+          return true;
+        }
+      }
+      return false;
+    }
     final counterResident = communityRoleAssignments
         .where((role) =>
             role.roleType == CommunityRoleType.marketCounter && role.isActive)
@@ -6838,22 +7128,30 @@ class Zone0GameState extends ChangeNotifier {
             .firstOrNull)
         .whereType<Zone0Resident>()
         .firstOrNull;
-    if (counterResident == null) return false;
+    if (counterResident == null || !_hasCommunityCounterProductionLine()) {
+      return false;
+    }
     var changed = false;
-    for (final shop in marketShops.where((shop) => shop.emergencyPink)) {
+    for (final shop in marketShops.where((shop) =>
+        shop.ownershipType == MarketShopOwnershipType.residentCommunity)) {
       final previous = shop.lastCommunityCounterSaleAt ??
           current.subtract(const Duration(minutes: 10));
       if (current.difference(previous).inMinutes < 10) continue;
       final request = marketRequests
-          .where((item) => item.isOpen && item.shopId == shop.id)
+          .where((item) => item.isOpen && shop.accepts(item.requestedItemId))
           .firstOrNull;
       if (request == null) continue;
-      final result = sellMarketRequest(
+      // Les comptoirs roses n'ont volontairement pas de stock ni de
+      // distributeur. Leur ligne de production habitante livre une demande
+      // toutes les dix minutes lorsque Cuisine, Atelier, Lisière et Marché
+      // sont effectivement tenus.
+      _creditMarketBioPiles(request.rewardBioPiles);
+      request.status = MarketRequestStatus.completed;
+      _recordMarketRequestOutcome(
         request,
+        completedAt: current,
         responder: MarketRequestResponder.ptipote,
-        allowAnyShop: false,
       );
-      if (!result.success) continue;
       shop.lastCommunityCounterSaleAt = current;
       final log = marketRequestLog
           .where((entry) => entry.requestId == request.id)
@@ -6866,6 +7164,14 @@ class Zone0GameState extends ChangeNotifier {
     }
     return changed;
   }
+
+  bool _hasCommunityCounterProductionLine() => <CommunityRoleType>{
+        CommunityRoleType.marketCounter,
+        CommunityRoleType.kitchenCook,
+        CommunityRoleType.fablabMaker,
+        CommunityRoleType.lisiereObserver,
+      }.every((role) =>
+          activeCommunityRoles.any((entry) => entry.roleType == role));
 
   void _createMarketRequest(DateTime now) {
     final entries = marketConfig.saleValues.keys
@@ -7936,9 +8242,13 @@ class Zone0GameState extends ChangeNotifier {
       final happy = isHappy(figurine);
       final hunger = hungerFor(figurine);
       var vitalityGain = 0;
-      if (resting && tick.isEven) {
+      final recoveryTick = math.max(
+        1,
+        ptipoteStatsConfig.statRecoveryTimeMultiplier.round(),
+      );
+      if (resting && tick % (2 * recoveryTick) == 0) {
         vitalityGain = ptipoteStatsConfig.vitalityRecoveryPerMinute;
-      } else if (happy && tick.isEven) {
+      } else if (happy && tick % (2 * recoveryTick) == 0) {
         vitalityGain = ptipoteStatsConfig.happyVitalityRecoveryPerMinute;
       } else if (!resting &&
           hunger >= ptipoteStatsConfig.wellFedHungerThreshold &&
@@ -7993,7 +8303,7 @@ class Zone0GameState extends ChangeNotifier {
       }
 
       final currentRest = restFor(figurine);
-      if (resting) {
+      if (resting && tick % recoveryTick == 0) {
         final restGain = math.max(
           1,
           ptipoteStatsConfig.sleepRestRecoveryPerMinute ~/ 2,
@@ -8079,6 +8389,9 @@ class Zone0GameState extends ChangeNotifier {
       var currentHunger = hungerFor(figurine);
       var currentRest = restFor(figurine);
       var currentVitality = vitalityFor(figurine);
+      final recoveryMinutes =
+          (elapsedMinutes / ptipoteStatsConfig.statRecoveryTimeMultiplier)
+              .floor();
 
       final hungerLoss =
           elapsedMinutes ~/ math.max(1, ptipoteStatsConfig.hungerDecayMinutes);
@@ -8090,13 +8403,15 @@ class Zone0GameState extends ChangeNotifier {
 
       if (resting) {
         final restGain =
-            elapsedMinutes * ptipoteStatsConfig.sleepRestRecoveryPerMinute;
+            recoveryMinutes * ptipoteStatsConfig.sleepRestRecoveryPerMinute;
         if (restGain > 0 && currentRest < ptipoteStatsConfig.maxRest) {
           final previousRest = currentRest;
-          currentRest = math.min(
-            ptipoteStatsConfig.maxRest,
-            currentRest + restGain,
-          );
+          currentRest = math
+              .min(
+                ptipoteStatsConfig.maxRest,
+                currentRest + restGain,
+              )
+              .toInt();
           restOverrides[figurine.id] = currentRest;
           _trackWellRestedTransition(
             figurineId: figurine.id,
@@ -8106,11 +8421,14 @@ class Zone0GameState extends ChangeNotifier {
           changed = true;
         }
         if (currentVitality < ptipoteStatsConfig.maxVitality) {
-          currentVitality = math.min(
-            ptipoteStatsConfig.maxVitality,
-            currentVitality +
-                elapsedMinutes * ptipoteStatsConfig.vitalityRecoveryPerMinute,
-          );
+          currentVitality = math
+              .min(
+                ptipoteStatsConfig.maxVitality,
+                currentVitality +
+                    recoveryMinutes *
+                        ptipoteStatsConfig.vitalityRecoveryPerMinute,
+              )
+              .toInt();
           vitalityOverrides[figurine.id] = currentVitality;
           changed = true;
         }
@@ -8135,7 +8453,7 @@ class Zone0GameState extends ChangeNotifier {
                 (1 / ptipoteStatsConfig.happyVitalityRecoveryPerMinute).ceil(),
               )
             : ptipoteStatsConfig.naturalVitalityRecoveryMinutes;
-        var vitalityGain = elapsedMinutes ~/ math.max(1, recoveryInterval);
+        var vitalityGain = recoveryMinutes ~/ math.max(1, recoveryInterval);
         if (currentHunger >= ptipoteStatsConfig.wellFedHungerThreshold &&
             currentHunger <= ptipoteStatsConfig.indigestionHungerThreshold) {
           vitalityGain = (vitalityGain *
@@ -8149,10 +8467,12 @@ class Zone0GameState extends ChangeNotifier {
         }
         if (vitalityGain > 0 &&
             currentVitality < ptipoteStatsConfig.maxVitality) {
-          currentVitality = math.min(
-            ptipoteStatsConfig.maxVitality,
-            currentVitality + vitalityGain,
-          );
+          currentVitality = math
+              .min(
+                ptipoteStatsConfig.maxVitality,
+                currentVitality + vitalityGain,
+              )
+              .toInt();
           vitalityOverrides[figurine.id] = currentVitality;
           changed = true;
         }
@@ -9028,13 +9348,9 @@ class Zone0GameState extends ChangeNotifier {
             'Construis et remets en marche l’Atelier pour fabriquer une Armature.',
       );
     }
-    if (pTibugCreationOrder?.isActive == true ||
-        pTibugArmatures.any((item) => item.isCrafting)) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'L’Atelier fabrique déjà une Armature.',
-      );
-    }
+    // Une Armature est un craft Atelier normal : le créneau manuel et les
+    // emplacements P'TIPOTE limitent la concurrence, pas un verrou global
+    // entre toutes les espèces.
     if (figurine == null && activeManualWorkshopOrders >= 1) {
       return const Zone0ActionResult(
           success: false,
@@ -9669,7 +9985,8 @@ class Zone0GameState extends ChangeNotifier {
             _cultivationRateFor(operation, 'Organique') / 3600 &&
         tank.mineralStored >=
             _cultivationRateFor(operation, 'Minéral') / 3600 &&
-        tank.energyStored >= _cultivationRateFor(operation, 'Énergie') / 3600;
+        plaineNurseryTerritory.localEnergy >=
+            _cultivationRateFor(operation, 'Énergie') / 3600;
     if (!ready) return;
     final resumed = operation.status ==
         PTibugCultivationOperationStatus.pausedMissingResources;
@@ -9697,7 +10014,7 @@ class Zone0GameState extends ChangeNotifier {
     final stored = switch (resource) {
       'Organique' => tank.organicStored,
       'Minéral' => tank.mineralStored,
-      _ => tank.energyStored,
+      _ => plaineNurseryTerritory.localEnergy,
     };
     return rate <= 0 ? double.infinity : stored / rate;
   }
@@ -9764,12 +10081,13 @@ class Zone0GameState extends ChangeNotifier {
       final organicRate = _cultivationRateFor(operation, 'Organique') / 3600;
       final mineralRate = _cultivationRateFor(operation, 'Minéral') / 3600;
       final energyRate = _cultivationRateFor(operation, 'Énergie') / 3600;
+      final nursery = plaineNurseryTerritory;
       final availability = <double>[
         operation.activeSecondsRemaining.toDouble(),
         elapsed.toDouble(),
         organicRate <= 0 ? double.infinity : tank.organicStored / organicRate,
         mineralRate <= 0 ? double.infinity : tank.mineralStored / mineralRate,
-        energyRate <= 0 ? double.infinity : tank.energyStored / energyRate,
+        energyRate <= 0 ? double.infinity : nursery.localEnergy / energyRate,
       ].reduce(math.min);
       final activeSeconds = math.max(0, availability.floor());
       if (activeSeconds > 0) {
@@ -9778,8 +10096,10 @@ class Zone0GameState extends ChangeNotifier {
               math.max(0, tank.organicStored - organicRate * activeSeconds)
           ..mineralStored =
               math.max(0, tank.mineralStored - mineralRate * activeSeconds)
-          ..energyStored =
-              math.max(0, tank.energyStored - energyRate * activeSeconds);
+          ..energyStored = tank.energyStored;
+        nursery.localEnergy = math
+            .max(0, nursery.localEnergy - energyRate * activeSeconds)
+            .toInt();
         operation
           ..activeSecondsCompleted = math.min(operation.activeSecondsRequired,
               operation.activeSecondsCompleted + activeSeconds)
@@ -9805,7 +10125,8 @@ class Zone0GameState extends ChangeNotifier {
         final reasons = <String>[
           if (organicRate > 0 && tank.organicStored <= 0.0001) 'Organique',
           if (mineralRate > 0 && tank.mineralStored <= 0.0001) 'Minéral',
-          if (energyRate > 0 && tank.energyStored <= 0.0001) 'Énergie',
+          if (energyRate > 0 && nursery.localEnergy <= 0.0001)
+            'Énergie Nurserie',
         ];
         operation
           ..status = PTibugCultivationOperationStatus.pausedMissingResources
@@ -10901,7 +11222,7 @@ class Zone0GameState extends ChangeNotifier {
     final motif = bug.motifId == null
         ? 'aucun'
         : '${bug.motifId} · ${pTibugColorNameFor(bug.motifColorHex)}';
-    return 'Couleur $primary · Motif $motif · Trait ${pTibugColorNameFor(bug.traitColorHex)} · Animation ${bug.animationName ?? '—'}';
+    return 'Couleur $primary · Motif $motif · Animation ${bug.animationName ?? '—'}';
   }
 
   void _ensurePTibugAppearance(PTibug bug, {bool reroll = false}) {
@@ -12365,6 +12686,15 @@ class Zone0GameState extends ChangeNotifier {
         marketShopConstructionOrder = shopConstruction is Map
             ? MarketShopConstructionOrder.fromFirebase(shopConstruction)
             : null;
+        final communityShopConstruction =
+            marketData['residentCommunityShopConstruction'];
+        residentCommunityShopConstructionOrder =
+            communityShopConstruction is Map
+                ? MarketShopConstructionOrder.fromFirebase(
+                    communityShopConstruction)
+                : null;
+        lastResidentCommunityShopConstructionAt =
+            _readDate(marketData['lastResidentCommunityShopConstructionAt']);
         activeMarketLicenses
           ..clear()
           ..addAll((marketData['activeLicenses'] as List? ?? const <dynamic>[])
@@ -15907,6 +16237,13 @@ class Zone0GameState extends ChangeNotifier {
           'primaryShopChosen': primaryMarketShopChosen,
           'primaryShopLevel': primaryMarketShopLevel,
           'shopConstruction': marketShopConstructionOrder?.toFirebase(),
+          'residentCommunityShopConstruction':
+              residentCommunityShopConstructionOrder?.toFirebase(),
+          'lastResidentCommunityShopConstructionAt':
+              lastResidentCommunityShopConstructionAt == null
+                  ? null
+                  : Timestamp.fromDate(
+                      lastResidentCommunityShopConstructionAt!),
           'activeLicenses': activeMarketLicenses.toList(),
           'shops': marketShops.map((item) => item.toFirebase()).toList(),
           'shopSlots':

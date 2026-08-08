@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../services/figurine_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/user_profile_service.dart';
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/ptipote_image.dart';
 import '../nfc/nfc_page.dart';
@@ -44,6 +45,7 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
 
   final _assetResolver = GameAssetResolver();
   final _figurineService = FigurineService();
+  final _profileService = UserProfileService();
   String? _refugeAsset;
   Timer? _missionResolutionTimer;
   bool _simulationStarted = false;
@@ -310,10 +312,60 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
     _openBuilding(building);
   }
 
+  Future<void> _confirmDeveloperReset() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Repartir de zéro ?'),
+        content: const Text(
+          'Les bâtiments, ressources et la progression Zone 0 seront remis au camp initial. Les P’TIPOTES sont conservés, mais leurs XP, faim, sommeil et vitalité repartent à zéro.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Réinitialiser'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final result = _zone0State.developerResetZone0Progress();
+    // Le niveau 1 représente le camp de départ dans la configuration du
+    // Cœur : le bâtiment existe, sans déblocage ni progression investie.
+    _campHeartState
+      ..campHeartLevel = 1
+      ..vegetalizationXp = 0
+      ..totalVegetalizationInvested = 0;
+    await _flushZone0State();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message)),
+      );
+      setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Jeu')),
+      floatingActionButton: StreamBuilder<UserProfile?>(
+        stream: _profileService.watchMyProfile(),
+        builder: (context, snapshot) {
+          if (snapshot.data?.canSeeDiagnostics != true) {
+            return const SizedBox.shrink();
+          }
+          return FloatingActionButton.extended(
+            onPressed: _confirmDeveloperReset,
+            icon: const Icon(Icons.restart_alt),
+            label: const Text('Repartir de zéro'),
+          );
+        },
+      ),
       body: SafeArea(
         child: Column(
           children: <Widget>[
@@ -6994,8 +7046,7 @@ class _BuildingViabilityCard extends StatelessWidget {
                 ),
               if (state.current < state.maximum && !disabled)
                 OutlinedButton(
-                  onPressed: () => _showMessage(
-                      context, gameState.repairBuilding(buildingId).message),
+                  onPressed: () => _showRepairOptions(context),
                   child: const Text('Réparer'),
                 ),
               OutlinedButton(
@@ -7038,6 +7089,88 @@ class _BuildingViabilityCard extends StatelessWidget {
         ),
       );
 
+  void _showRepairOptions(BuildContext context) => showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Réparer le bâtiment'),
+          content: const Text(
+            'Choisis un mini-jeu gratuit de raccordement, ou une réparation immédiate avec des ressources.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Annuler'),
+            ),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _showPaidRepairSheet(context);
+              },
+              child: const Text('Payer la réparation'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  showDragHandle: true,
+                  builder: (_) => _PipeRepairGameSheet(
+                    onSolved: () =>
+                        gameState.repairBuildingByMiniGame(buildingId),
+                  ),
+                );
+              },
+              child: const Text('Mini-jeu'),
+            ),
+          ],
+        ),
+      );
+
+  void _showPaidRepairSheet(BuildContext context) {
+    final missing = gameState.viabilityForBuilding(buildingId).maximum -
+        gameState.viabilityForBuilding(buildingId).current;
+    final choices = <int>{10, 20, 30, 50, 100, missing}
+        .where((gain) => gain > 0)
+        .map((gain) => ((gain / 10).ceil() * 10).clamp(10, 100))
+        .toList()
+      ..sort();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            const Text('Réparation avec ressources',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            const Text(
+                'Par tranche de 10 % : 3 Minéral, 1 Organique et 10 Bio-batteries, multipliés par le niveau du bâtiment.'),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: choices.map((gain) {
+                final cost = gameState.buildingRepairCosts(buildingId, gain);
+                return FilledButton(
+                  onPressed: () {
+                    final result =
+                        gameState.repairBuilding(buildingId, gain: gain);
+                    Navigator.of(sheetContext).pop();
+                    _showMessage(context, result.message);
+                  },
+                  child: Text(
+                      '+$gain % · ${cost['Minéral']} M · ${cost['Organique']} O · ${cost['Bio-batteries']} ⚡'),
+                );
+              }).toList(),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
   void _showInstallations(BuildContext context) => showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
@@ -7062,6 +7195,86 @@ class _BuildingViabilityCard extends StatelessWidget {
   void _showMessage(BuildContext context, String message) =>
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
+}
+
+/// Mini-jeu volontairement court : les tuiles sont des segments de conduite
+/// tournés de 90° par pression. Lorsque les neuf raccords sont alignés, le
+/// circuit entre l'entrée et la sortie est réparé.
+class _PipeRepairGameSheet extends StatefulWidget {
+  const _PipeRepairGameSheet({required this.onSolved});
+
+  final Zone0ActionResult Function() onSolved;
+
+  @override
+  State<_PipeRepairGameSheet> createState() => _PipeRepairGameSheetState();
+}
+
+class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
+  // Les quatre dernières rotations forment le raccordement gauche → droite.
+  final List<int> _rotations = <int>[1, 2, 3, 1, 2, 3, 1, 2, 3];
+  bool _completed = false;
+
+  bool get _solved => _rotations.every((rotation) => rotation == 0);
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 6, 22, 28),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            const Text('Raccorder les tuyaux',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            const Text(
+                'Tourne chaque segment de 90° pour relier l’entrée à la sortie.'),
+            const SizedBox(height: 16),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
+              const Icon(Icons.input, color: Color(0xff54724A)),
+              const SizedBox(width: 8),
+              ...List<Widget>.generate(3, (index) => _pipeTile(index)),
+              const SizedBox(width: 8),
+              const Icon(Icons.output, color: Color(0xff54724A)),
+            ]),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: _solved && !_completed
+                  ? () {
+                      final result = widget.onSolved();
+                      setState(() => _completed = result.success);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(result.message)));
+                      if (result.success) Navigator.of(context).pop();
+                    }
+                  : null,
+              icon: const Icon(Icons.build_circle_outlined),
+              label: Text(
+                  _completed ? 'Réparation terminée' : 'Valider le circuit'),
+            ),
+          ]),
+        ),
+      );
+
+  Widget _pipeTile(int index) => InkWell(
+        onTap: () =>
+            setState(() => _rotations[index] = (_rotations[index] + 1) % 4),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 66,
+          height: 66,
+          decoration: BoxDecoration(
+            color: const Color(0xffE8E5DC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xff807A68)),
+          ),
+          child: Transform.rotate(
+            angle: _rotations[index] * math.pi / 2,
+            child: Icon(
+              index == 1 ? Icons.turn_right : Icons.horizontal_rule,
+              size: 42,
+              color: const Color(0xff54724A),
+            ),
+          ),
+        ),
+      );
 }
 
 class _StructuralInstallationSlots extends StatelessWidget {
@@ -8467,20 +8680,41 @@ class _CampHousingTab extends StatelessWidget {
                                                 fontWeight: FontWeight.w900,
                                                 fontSize: 18)),
                                         const Text(
-                                            '10 Minéral et 3 Organique par tranche demandée de 10 %. La Viabilité reste plafonnée à 100 %.'),
+                                            '10 Minéral, 3 Organique et 10 Bio-batteries par tranche demandée de 10 %. La Viabilité reste plafonnée à 100 %.'),
                                         const SizedBox(height: 10),
                                         Wrap(
                                           spacing: 8,
-                                          children: <int>[10, 20, 30]
-                                              .map((gain) => FilledButton(
-                                                    onPressed: () =>
-                                                        Navigator.of(
-                                                                sheetContext)
-                                                            .pop(gain),
-                                                    child: Text(
-                                                        '+$gain % · ${gain} Minéral · ${(gain ~/ 10) * 3} Organique'),
-                                                  ))
-                                              .toList(),
+                                          runSpacing: 8,
+                                          children: <Widget>[
+                                            OutlinedButton.icon(
+                                              onPressed: () {
+                                                Navigator.of(sheetContext)
+                                                    .pop();
+                                                showModalBottomSheet<void>(
+                                                  context: context,
+                                                  showDragHandle: true,
+                                                  builder: (_) =>
+                                                      _PipeRepairGameSheet(
+                                                    onSolved: () => gameState
+                                                        .repairResidentHouseByMiniGame(
+                                                            house.id),
+                                                  ),
+                                                );
+                                              },
+                                              icon: const Icon(Icons.tune),
+                                              label: const Text('Mini-jeu'),
+                                            ),
+                                            ...<int>[10, 20, 30]
+                                                .map((gain) => FilledButton(
+                                                      onPressed: () =>
+                                                          Navigator.of(
+                                                                  sheetContext)
+                                                              .pop(gain),
+                                                      child: Text(
+                                                          '+$gain % · ${(gain ~/ 10) * 10} Minéral · ${(gain ~/ 10) * 3} Organique · ${(gain ~/ 10) * 10} ⚡'),
+                                                    ))
+                                                .toList(),
+                                          ],
                                         ),
                                       ],
                                     ),
@@ -12235,6 +12469,18 @@ class _MarketPageState extends State<MarketPage> {
                   ),
                 ),
               ),
+            if (widget.gameState.residentCommunityShopConstructionOrder
+                case final communityOrder?)
+              Card(
+                color: Colors.pink.withValues(alpha: .12),
+                child: ListTile(
+                  leading:
+                      const Icon(Icons.storefront_outlined, color: Colors.pink),
+                  title: const Text('Magasin communautaire autorisé'),
+                  subtitle: Text(
+                      '${labels[communityOrder.specialization] ?? communityOrder.specialization} · construction dans ${communityOrder.endsAt == null ? '2 jours' : _countdownLabel(communityOrder.endsAt!)}. Le chantier sera annulé si le manque est résolu.'),
+                ),
+              ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.storefront_outlined),
@@ -12279,33 +12525,43 @@ class _MarketPageState extends State<MarketPage> {
                           '${shop.emergencyPink ? 'Comptoir communautaire rose · ' : ''}${labels[shop.specialization] ?? 'Magasin'}',
                           style: const TextStyle(fontWeight: FontWeight.w800)),
                       subtitle: Text(
-                          '${shop.emergencyPink ? 'Ventes depuis le comptoir toutes les 10 min lorsqu’un habitant Commercer est attribué' : shop.ownershipType == MarketShopOwnershipType.residentCommunity ? 'Commerce habitant · ${widget.gameState.residents.where((resident) => resident.id == shop.ownerResidentId).firstOrNull?.displayName ?? 'sans responsable'}' : 'Joueur'} · niveau ${shop.level} · ${shop.stock.length}/${shop.stockSlots} piles'),
-                      trailing: shop.level < 2
-                          ? TextButton(
-                              onPressed: () {
-                                final result = widget.gameState
-                                    .prepareMarketShopUpgrade(shop.id);
-                                _message(result.message);
-                                if (result.success) {
-                                  _showMarketShopConstructionSheet();
-                                }
-                              },
-                              child: const Text('Améliorer'),
-                            )
-                          : const Text('Max.'),
+                          '${shop.ownershipType == MarketShopOwnershipType.residentCommunity ? (shop.emergencyPink ? 'Comptoir communautaire · ventes toutes les 10 min par ligne de production' : 'Commerce habitant · ${widget.gameState.residents.where((resident) => resident.id == shop.ownerResidentId).firstOrNull?.displayName ?? 'sans responsable'} · distribution par ligne de production') : 'Joueur · niveau ${shop.level} · ${shop.stock.length}/${shop.stockSlots} piles'}'),
+                      trailing: shop.emergencyPink
+                          ? const Text('Communautaire')
+                          : shop.level < 2
+                              ? TextButton(
+                                  onPressed: () {
+                                    final result = widget.gameState
+                                        .prepareMarketShopUpgrade(shop.id);
+                                    _message(result.message);
+                                    if (result.success) {
+                                      _showMarketShopConstructionSheet();
+                                    }
+                                  },
+                                  child: const Text('Améliorer'),
+                                )
+                              : const Text('Max.'),
                     ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed: () => _editMarketShopSlot(shop.id),
-                        icon: const Icon(Icons.inventory_2_outlined),
-                        label: Text(
-                            'Gérer le stock (${shop.stock.length}/${shop.stockSlots})'),
+                    if (shop.ownershipType !=
+                        MarketShopOwnershipType.residentCommunity) ...<Widget>[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _editMarketShopSlot(shop.id),
+                          icon: const Icon(Icons.inventory_2_outlined),
+                          label: Text(
+                              'Gérer le stock (${shop.stock.length}/${shop.stockSlots})'),
+                        ),
                       ),
-                    ),
-                    _marketShopStockGrid(shop.id),
-                    const SizedBox(height: 8),
-                    _shopDistributorCard(shop.id),
+                      _marketShopStockGrid(shop.id),
+                      const SizedBox(height: 8),
+                      _shopDistributorCard(shop.id),
+                    ] else
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text(
+                            'Sans stock ni distributeur : une demande compatible est distribuée toutes les 10 min lorsque la ligne habitante est complète.'),
+                      ),
                     const Divider(),
                   ],
                 )),
@@ -13603,14 +13859,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       onPressed: () => _showNurseryTransfer(nursery),
                       icon: const Icon(Icons.add_box_outlined),
                       label: const Text('Alimenter')),
-                  FilledButton.icon(
-                      onPressed: widget.gameState.bioBatteries <= 0
-                          ? null
-                          : () => _message(widget.gameState
-                              .openBioBatteryForPTibugTerritory(nursery.id)
-                              .message),
-                      icon: const Icon(Icons.battery_charging_full_outlined),
-                      label: const Text('Ouvrir une Bio-batterie')),
                 ]),
                 const Text(
                     'Chaque P’TIBUG conserve sa production jusqu’à sa récolte.'),
@@ -13618,8 +13866,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             ),
           ),
         ),
-        if (widget.gameState.pTibugArmatures.any((item) => item.isCrafting))
-          _armatureInProgressCard(),
+        ...widget.gameState.pTibugArmatures
+            .where((item) => item.isCrafting)
+            .map(_armatureInProgressCard),
         if (producing.isNotEmpty) ...<Widget>[
           const Padding(
             padding: EdgeInsets.only(top: 14, bottom: 6),
@@ -13926,9 +14175,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         ),
       );
 
-  Widget _armatureInProgressCard() {
-    final order =
-        widget.gameState.pTibugArmatures.firstWhere((item) => item.isCrafting);
+  Widget _armatureInProgressCard(PTibugArmature order) {
     final config = pTibugConfig.species[order.species]!;
     return Card(
       child: ListTile(
@@ -14126,7 +14373,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
               const Padding(
                   padding: EdgeInsets.only(top: 4, bottom: 8),
                   child: Text(
-                      'Les réserves sont locales à chaque cuve. Une Bio-batterie fournit 10 Énergies.')),
+                      'Chaque cuve consomme 1 Énergie de la Nurserie par heure. Les réserves de matériaux restent locales à la cuve.')),
               ...List<Widget>.generate(
                   widget.gameState.cultivationTankSlotCount, (index) {
                 final tank =
@@ -14214,7 +14461,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                           math.max(1, operation.activeSecondsRequired))
                       .clamp(0.0, 1.0)),
               Text(
-                  'Organique : ${tank.organicStored.toStringAsFixed(1)} (${widget.gameState.cultivationTankAutonomyHours(tank, 'Organique').toStringAsFixed(1)} h) · Minéral : ${tank.mineralStored.toStringAsFixed(1)} (${widget.gameState.cultivationTankAutonomyHours(tank, 'Minéral').toStringAsFixed(1)} h) · Énergie : ${tank.energyStored.toStringAsFixed(1)} (${widget.gameState.cultivationTankAutonomyHours(tank, 'Énergie').toStringAsFixed(1)} h)'),
+                  'Organique : ${tank.organicStored.toStringAsFixed(1)} (${widget.gameState.cultivationTankAutonomyHours(tank, 'Organique').toStringAsFixed(1)} h) · Minéral : ${tank.mineralStored.toStringAsFixed(1)} (${widget.gameState.cultivationTankAutonomyHours(tank, 'Minéral').toStringAsFixed(1)} h) · Énergie Nurserie : ${widget.gameState.plaineNurseryTerritory.localEnergy.toStringAsFixed(1)} (${widget.gameState.cultivationTankAutonomyHours(tank, 'Énergie').toStringAsFixed(1)} h)'),
               if (operation.pauseReason != null)
                 Text('Pause : ${operation.pauseReason}',
                     style:
@@ -14235,11 +14482,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                             tankId: tank.id, resource: 'Minéral', amount: 5)
                         .message),
                     child: const Text('+5 Minéral')),
-                OutlinedButton(
-                    onPressed: () => _message(widget.gameState
-                        .openBioBatteryForCultivationTank(tank.id)
-                        .message),
-                    child: const Text('Ouvrir une Bio-batterie')),
                 if (operation.status == PTibugCultivationOperationStatus.active)
                   FilledButton(
                       onPressed: () =>
@@ -16692,7 +16934,6 @@ class _PTibugArmatureAtelierCard extends StatelessWidget {
     final config = pTibugConfig.species[species]!;
     final active =
         gameState.isPTibugPatternActive('ptibug-species-${species.name}');
-    final crafting = gameState.pTibugArmatures.any((item) => item.isCrafting);
     final materials = gameState.hasResources(config.creationCost);
     final batteries = gameState.bioBatteries >= config.creationBioBatteryCost;
     final manualAvailable = gameState.activeManualWorkshopOrders < 1;
@@ -16723,25 +16964,22 @@ class _PTibugArmatureAtelierCard extends StatelessWidget {
       prerequisiteLabel:
           active ? 'Pattern Kernel actif' : 'Pré-requis : Pattern Kernel actif',
       prerequisiteMet: active,
-      unavailableLabel: crafting
-          ? 'Une Armature est déjà en fabrication.'
-          : !materials
-              ? gameState.missingResourcesLabel(config.creationCost)
-              : !batteries
-                  ? 'Bio-batteries insuffisantes.'
-                  : !manualAvailable
-                      ? 'Créneau manuel de l’Atelier occupé.'
-                      : null,
+      unavailableLabel: !materials
+          ? gameState.missingResourcesLabel(config.creationCost)
+          : !batteries
+              ? 'Bio-batteries insuffisantes.'
+              : !manualAvailable
+                  ? 'Créneau manuel de l’Atelier occupé.'
+                  : null,
       primaryActionLabel: 'Fabriquer une Armature',
       primaryActionIcon: Icons.precision_manufacturing_outlined,
-      primaryActionEnabled:
-          active && !crafting && materials && batteries && manualAvailable,
+      primaryActionEnabled: active && materials && batteries && manualAvailable,
       onPrimaryAction: () => ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(gameState.startPTibugCreation(species).message)),
       ),
       secondaryActionLabel: 'Confier à un P’TIPOTE',
       secondaryActionEnabled:
-          active && !crafting && materials && batteries && ptipoteAvailable,
+          active && materials && batteries && ptipoteAvailable,
       onSecondaryAction: () async {
         final figurine = await _pickPtipoteForActivity(
           context: context,

@@ -30,6 +30,7 @@ class PtipoteStatsConfig {
   const PtipoteStatsConfig({
     required this.maxVitality,
     required this.vitalityRecoveryPerMinute,
+    required this.statRecoveryTimeMultiplier,
     required this.alcoveVitalityRecoveryPerMinute,
     required this.naturalVitalityRecoveryMinutes,
     required this.happyVitalityRecoveryPerMinute,
@@ -84,6 +85,9 @@ class PtipoteStatsConfig {
 
   final int maxVitality;
   final int vitalityRecoveryPerMinute;
+
+  /// 1 = timing normal; 2 = les remontées de statistiques sont deux fois plus lentes.
+  final double statRecoveryTimeMultiplier;
   final int alcoveVitalityRecoveryPerMinute;
   final int naturalVitalityRecoveryMinutes;
   final int happyVitalityRecoveryPerMinute;
@@ -154,6 +158,7 @@ class PtipoteStatsConfig {
   Map<String, num> toDashboardMap() => <String, num>{
         'maxVitality': maxVitality,
         'vitalityRecoveryPerMinute': vitalityRecoveryPerMinute,
+        'statRecoveryTimeMultiplier': statRecoveryTimeMultiplier,
         'alcoveVitalityRecoveryPerMinute': alcoveVitalityRecoveryPerMinute,
         'naturalVitalityRecoveryMinutes': naturalVitalityRecoveryMinutes,
         'happyVitalityRecoveryPerMinute': happyVitalityRecoveryPerMinute,
@@ -216,6 +221,10 @@ class PtipoteStatsConfig {
       maxVitality: integer('maxVitality', fallback.maxVitality),
       vitalityRecoveryPerMinute: integer(
           'vitalityRecoveryPerMinute', fallback.vitalityRecoveryPerMinute),
+      statRecoveryTimeMultiplier: decimal(
+        'statRecoveryTimeMultiplier',
+        fallback.statRecoveryTimeMultiplier,
+      ).clamp(0.1, 10).toDouble(),
       alcoveVitalityRecoveryPerMinute: integer(
           'alcoveVitalityRecoveryPerMinute',
           fallback.alcoveVitalityRecoveryPerMinute),
@@ -333,6 +342,7 @@ class PtipoteStatModifier {
 const defaultPtipoteStatsConfig = PtipoteStatsConfig(
   maxVitality: 100,
   vitalityRecoveryPerMinute: 1,
+  statRecoveryTimeMultiplier: 1,
   alcoveVitalityRecoveryPerMinute: 2,
   naturalVitalityRecoveryMinutes: 2,
   happyVitalityRecoveryPerMinute: 1,

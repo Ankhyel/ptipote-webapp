@@ -1,6 +1,7 @@
 {
   "maxVitality": 100,
   "vitalityRecoveryPerMinute": 1,
+  "statRecoveryTimeMultiplier": 1,
   "alcoveVitalityRecoveryPerMinute": 2,
   "naturalVitalityRecoveryMinutes": 2,
   "happyVitalityRecoveryPerMinute": 1,

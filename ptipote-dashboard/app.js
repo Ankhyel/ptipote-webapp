@@ -46,6 +46,7 @@ let recyclerConfig = {};
 const PTIPOTE_STATS_FIELDS = [
   "maxVitality",
   "vitalityRecoveryPerMinute",
+  "statRecoveryTimeMultiplier",
   "alcoveVitalityRecoveryPerMinute",
   "naturalVitalityRecoveryMinutes",
   "happyVitalityRecoveryPerMinute",

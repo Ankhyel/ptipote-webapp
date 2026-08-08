@@ -192,6 +192,7 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | --- | --- | --- |
 | `maxVitality` | `100` | `ptipote_stats_config.dart` + `ptipote-stats-config.json` |
 | `vitalityRecoveryPerMinute` | `1` | idem |
+| `statRecoveryTimeMultiplier` | `1` | multiplicateur du temps de remontée des statistiques (`2` = deux fois plus lent) |
 | `alcoveVitalityRecoveryPerMinute` | `2` | idem |
 | `minVitalityBeforeAutoRest` | `20` | idem |
 | `baseHappiness` | `70` | idem |
