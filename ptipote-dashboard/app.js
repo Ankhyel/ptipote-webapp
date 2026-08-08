@@ -1571,10 +1571,19 @@ function renderWorkshopEditor() {
 
 function renderMarketEditor() {
   const market = zone0Settings.market || {};
-  const construction = Object.fromEntries(["constructionCost", "requiredCampHeartLevel", "requiredPopulation", "saleSlotsPerLevel"].map((key) => [key, market[key]]));
-  const { constructionCost, requiredCampHeartLevel, requiredPopulation, saleSlotsPerLevel, saleValues, salePriceBioPiles, requestPriceBioPiles, ...activity } = market;
+  const constructionKeys = [
+    "constructionCost", "shopConstructionCost", "shopConstructionBioBatteries",
+    "distributorConstructionCost", "distributorConstructionBioBatteries",
+    "requiredCampHeartLevel", "requiredPopulation", "saleSlotsPerLevel",
+    "constructionMinutesByLevel",
+  ];
+  const construction = Object.fromEntries(constructionKeys.map((key) => [key, market[key]]));
+  const { constructionCost, shopConstructionCost, shopConstructionBioBatteries,
+    distributorConstructionCost, distributorConstructionBioBatteries,
+    requiredCampHeartLevel, requiredPopulation, saleSlotsPerLevel,
+    constructionMinutesByLevel, saleValues, salePriceBioPiles, requestPriceBioPiles, ...activity } = market;
   el.marketSettingsForm.innerHTML = [
-    configCard("Construction et prérequis", "market", construction, [], { open: true, meta: "Accès au bâtiment et emplacements" }),
+    configCard("Construction et prérequis", "market", construction, [], { open: true, meta: "Marché, magasins, Distributeurs, coûts en ressources, Bio-batteries et durées" }),
     configCard("Activité du marché", "market", activity, [], { meta: "La population et le niveau du Marché accélèrent les achats ; les demandes restent réglables." }),
     renderSellableCatalog(market),
   ].join("");

@@ -13876,6 +13876,16 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                       onPressed: () => _showNurseryTransfer(nursery),
                       icon: const Icon(Icons.add_box_outlined),
                       label: const Text('Alimenter')),
+                  OutlinedButton.icon(
+                    onPressed: widget.gameState.bioBatteries <= 0
+                        ? null
+                        : () => _message(widget.gameState
+                            .openBioBatteryForPTibugTerritory(nursery.id)
+                            .message),
+                    icon: const Icon(Icons.bolt_outlined),
+                    label: Text(
+                        'Ouvrir une Bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)'),
+                  ),
                 ]),
                 const Text(
                     'Chaque P’TIBUG conserve sa production jusqu’à sa récolte.'),
