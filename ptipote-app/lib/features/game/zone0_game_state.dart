@@ -7318,11 +7318,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int _marketPriceInBioPiles(String item, {required String shopId}) {
-    final base = math.max(
-        1,
-        marketConfig.requestPriceBioPiles[item] ??
-            (marketConfig.saleValues[item] ?? 1) *
-                marketConfig.valuePerBioBattery);
+    final base = math.max(1, marketConfig.salePriceInBioPiles(item));
     if (shopId == primaryMarketShopId) {
       return math.max(
           1,
@@ -14072,10 +14068,7 @@ class Zone0GameState extends ChangeNotifier {
     // 1 ne peut donc jamais être proposé sous sa valeur de base. La confiance
     // reste appliquée séparément au moment du paiement.
     final basePayment = ptibugSpecies == null
-        ? ((marketConfig.saleValues[item] ?? 1) *
-                quantity /
-                marketConfig.valuePerBioBattery)
-            .ceil()
+        ? (marketConfig.salePriceInBioPiles(item) * quantity / 100).ceil()
         : _sourcierPTibugContractBasePaymentFor(ptibugSpecies);
     marketContracts.add(MarketSourcierContract(
       contractId: 'contract-${now.microsecondsSinceEpoch}',

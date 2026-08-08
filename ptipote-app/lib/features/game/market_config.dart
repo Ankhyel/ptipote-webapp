@@ -14,6 +14,7 @@ class MarketConfig {
     required this.requestMinReturnMinutes,
     required this.requestMaxReturnMinutes,
     required this.saleValues,
+    required this.salePriceBioPiles,
     required this.maxActiveRequestsBonusPerLevel,
     required this.maximumLevel,
     required this.manualSlotsByLevel,
@@ -84,6 +85,14 @@ class MarketConfig {
   final int requestMinReturnMinutes;
   final int requestMaxReturnMinutes;
   final Map<String, int> saleValues;
+
+  /// Reste de prix affiché en Bio-piles. Chaque prix reste fractionné en
+  /// Bio-batteries + 0..99 Bio-piles, sans décimale côté joueur.
+  final Map<String, int> salePriceBioPiles;
+
+  int salePriceInBioPiles(String item) =>
+      math.max(0, saleValues[item] ?? 0) * 100 +
+      (salePriceBioPiles[item] ?? 0).clamp(0, 99).toInt();
   final int maxActiveRequestsBonusPerLevel;
   final int maximumLevel;
   final Map<int, int> manualSlotsByLevel;
@@ -229,7 +238,19 @@ const MarketConfig defaultMarketConfig = MarketConfig(
     'P’TIBUG Scarabé': 20,
     'P’TIBUG Hyme': 20,
     'P’TIBUG Arac': 20,
+    'Boisson tonique': 2,
+    'Cœur d’énergie': 20,
+    'Déchets': 1,
+    'Mycélium': 2,
+    'Eau': 1,
+    'Chloro-canaux': 3,
+    'Installation filtrante': 3,
+    'Kit de réparation domestique': 2,
+    'Capsule P’TIBUG Scarabé': 20,
+    'Capsule P’TIBUG Hyme': 20,
+    'Capsule P’TIBUG Arac': 20,
   },
+  salePriceBioPiles: <String, int>{},
   maxActiveRequestsBonusPerLevel: 1,
   maximumLevel: 4,
   manualSlotsByLevel: <int, int>{1: 3, 2: 6, 3: 6, 4: 6},

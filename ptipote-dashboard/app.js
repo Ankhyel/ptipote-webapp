@@ -791,6 +791,8 @@ function addCraftRecipe(event) {
     zone0Settings.kernelProgress.plans.push({ id: recipePlanId, title: `Pattern ${displayName}`, category: "workshop", workshopRecipeId: id, requiredTrustLevel: 1, requiredBreederLevel: 1, requiredBuilderLevel: 1, requiredRestorerLevel: 1, requiredBuildingLevels: {}, discoveryThreshold: 0, requiredAxisLevel: 0 });
   }
   renderCraftConfig();
+  // Toute nouvelle recette devient immédiatement tarifable dans le Marché.
+  renderMarketEditor();
   el.craftStatus.textContent = "Recette ajoutée. Clique sur Publier dans l'app pour l'ajouter à l'application.";
 }
 
@@ -1561,13 +1563,76 @@ function renderWorkshopEditor() {
 function renderMarketEditor() {
   const market = zone0Settings.market || {};
   const construction = Object.fromEntries(["constructionCost", "requiredCampHeartLevel", "requiredPopulation", "saleSlotsPerLevel"].map((key) => [key, market[key]]));
-  const { constructionCost, requiredCampHeartLevel, requiredPopulation, saleSlotsPerLevel, saleValues, ...activity } = market;
+  const { constructionCost, requiredCampHeartLevel, requiredPopulation, saleSlotsPerLevel, saleValues, salePriceBioPiles, requestPriceBioPiles, ...activity } = market;
   el.marketSettingsForm.innerHTML = [
     configCard("Construction et prérequis", "market", construction, [], { open: true, meta: "Accès au bâtiment et emplacements" }),
     configCard("Activité du marché", "market", activity, [], { meta: "La population et le niveau du Marché accélèrent les achats ; les demandes restent réglables." }),
-    configCard("Tarifs des ressources et objets", "market", saleValues || {}, ["saleValues"], { meta: "Prix par matériau et objet fabriqué" }),
+    renderSellableCatalog(market),
   ].join("");
   bindZone0Inputs(el.marketSettingsForm);
+  bindSellableCatalog();
+}
+
+const DEFAULT_SELLABLE_ITEMS = [
+  "Organique", "Minéral", "Déchets", "Mycélium", "Eau",
+  "Repas simple", "Boisson tonique", "Filtre", "Cartouche de filtration",
+  "Tenue ombragée", "Meuble simple", "Ventilation Termite", "Chloro-canaux",
+  "Installation filtrante", "Lumière solaire", "Kit de réparation domestique",
+  "Cœur d’énergie", "P’TIBUG Scarabé", "P’TIBUG Hyme", "P’TIBUG Arac",
+  "Capsule P’TIBUG Scarabé", "Capsule P’TIBUG Hyme", "Capsule P’TIBUG Arac",
+];
+
+function sellableItemsForDashboard(market) {
+  const recipeOutputs = (zone0Settings.craft?.recipes || [])
+    .map((recipe) => String(recipe.resultItem || "").trim())
+    .filter(Boolean);
+  return [...new Set([
+    ...DEFAULT_SELLABLE_ITEMS,
+    ...Object.keys(market.saleValues || {}),
+    ...Object.keys(market.salePriceBioPiles || {}),
+    ...recipeOutputs,
+  ])].sort((a, b) => a.localeCompare(b, "fr"));
+}
+
+function renderSellableCatalog(market) {
+  const items = sellableItemsForDashboard(market);
+  return `<details class="config-card" open><summary><span><strong>Catalogue des éléments vendables</strong><small>Chaque prix est réglé en Bio-batteries et en Bio-piles (0 à 99).</small></span><span class="card-chevron">⌄</span></summary><div class="config-card-body"><div class="sellable-price-list">${items.map((item) => {
+    const batteries = Math.max(0, Number(market.saleValues?.[item] || 0));
+    const piles = Math.min(99, Math.max(0, Number(market.salePriceBioPiles?.[item] || 0)));
+    return `<div class="sellable-price-row" data-sellable-item="${escapeHtml(item)}"><strong>${escapeHtml(item)}</strong><label>Bio-batteries<input type="number" min="0" step="1" data-sellable-batteries value="${batteries}"></label><label>Bio-piles<input type="number" min="0" max="99" step="1" data-sellable-piles value="${piles}"></label></div>`;
+  }).join("")}</div><div class="sellable-price-add"><input id="newSellableItem" type="text" placeholder="Nouvel élément vendable"><button class="ghost" id="addSellableItem" type="button">Ajouter au catalogue</button></div></div></details>`;
+}
+
+function bindSellableCatalog() {
+  el.marketSettingsForm.querySelectorAll("[data-sellable-item]").forEach((row) => {
+    const item = row.dataset.sellableItem;
+    const batteries = row.querySelector("[data-sellable-batteries]");
+    const piles = row.querySelector("[data-sellable-piles]");
+    const save = () => {
+      zone0Settings.market ||= {};
+      zone0Settings.market.saleValues ||= {};
+      zone0Settings.market.salePriceBioPiles ||= {};
+      zone0Settings.market.saleValues[item] = Math.max(0, Math.floor(Number(batteries.value) || 0));
+      const pileValue = Math.min(99, Math.max(0, Math.floor(Number(piles.value) || 0)));
+      piles.value = pileValue;
+      zone0Settings.market.salePriceBioPiles[item] = pileValue;
+      el.marketSettingsStatus.textContent = "Tarif modifié. Clique sur Publier dans l'application.";
+    };
+    batteries.addEventListener("input", save);
+    piles.addEventListener("input", save);
+  });
+  document.getElementById("addSellableItem")?.addEventListener("click", () => {
+    const input = document.getElementById("newSellableItem");
+    const item = String(input?.value || "").trim();
+    if (!item) return;
+    zone0Settings.market ||= {};
+    zone0Settings.market.saleValues ||= {};
+    zone0Settings.market.salePriceBioPiles ||= {};
+    if (!(item in zone0Settings.market.saleValues)) zone0Settings.market.saleValues[item] = 0;
+    if (!(item in zone0Settings.market.salePriceBioPiles)) zone0Settings.market.salePriceBioPiles[item] = 0;
+    renderMarketEditor();
+    el.marketSettingsStatus.textContent = `${item} ajouté au catalogue. Règle son prix puis publie.`;
+  });
 }
 
 function renderZone0Settings() {

@@ -193,6 +193,15 @@ Les routes sont branchees dans `ptipote-app/lib/app.dart`.
 | `maxVitality` | `100` | `ptipote_stats_config.dart` + `ptipote-stats-config.json` |
 | `vitalityRecoveryPerMinute` | `1` | idem |
 | `statRecoveryTimeMultiplier` | `1` | multiplicateur du temps de remontée des statistiques (`2` = deux fois plus lent) |
+
+### Catalogue de vente du Marché
+
+Le Dashboard contient le catalogue complet des éléments vendables. Chaque
+produit possède un prix fractionné : Bio-batteries entières et Bio-piles de
+`0` à `99`. Les sorties de nouvelles recettes apparaissent automatiquement
+dans le catalogue ; un produit vendable non issu d'une recette peut aussi y
+être ajouté manuellement. Le moteur convertit ce couple en piles internes
+(`1 Bio-batterie = 100 Bio-piles`) pour les demandes et les ventes.
 | `alcoveVitalityRecoveryPerMinute` | `2` | idem |
 | `minVitalityBeforeAutoRest` | `20` | idem |
 | `baseHappiness` | `70` | idem |

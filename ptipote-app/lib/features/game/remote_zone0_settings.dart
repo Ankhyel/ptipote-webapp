@@ -2031,6 +2031,10 @@ MarketConfig _market(Object? value) {
       b.requestMaxReturnMinutes,
     ),
     saleValues: _resourceMap(raw['saleValues'], b.saleValues),
+    salePriceBioPiles: _resourceMap(
+      raw['salePriceBioPiles'],
+      b.salePriceBioPiles,
+    ).map((key, value) => MapEntry(key, value.clamp(0, 99).toInt())),
     maxActiveRequestsBonusPerLevel: _int(
       raw['maxActiveRequestsBonusPerLevel'],
       b.maxActiveRequestsBonusPerLevel,
