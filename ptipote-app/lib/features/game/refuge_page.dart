@@ -7580,10 +7580,32 @@ IconData _territorySpeciesIcon(PTibugSpecies species) => switch (species) {
     };
 
 Color _pTibugPrimaryColor(PTibug bug) {
-  final raw = (bug.primaryColorHex ?? '').replaceFirst('#', '');
-  if (raw.length != 6) return const Color(0xFF7C7850);
+  return _pTibugColorFromHex(bug.primaryColorHex);
+}
+
+Color _pTibugColorFromHex(String? colorHex,
+    {Color fallback = const Color(0xFF7C7850)}) {
+  final raw = (colorHex ?? '').replaceFirst('#', '');
+  if (raw.length != 6) return fallback;
   return Color(0xFF000000 | int.parse(raw, radix: 16));
 }
+
+IconData _pTibugMotifIcon(String? motifId) => switch (motifId) {
+      'Rayé' => Icons.format_line_spacing_outlined,
+      'Irisé' => Icons.auto_awesome_outlined,
+      'Pointillé' => Icons.scatter_plot_outlined,
+      _ => Icons.texture_outlined,
+    };
+
+IconData _pTibugAnimationIcon(String? animationName) => switch (animationName) {
+      'Volant' => Icons.flight_outlined,
+      'Terrier' => Icons.terrain_outlined,
+      'Cornu' => Icons.emoji_nature_outlined,
+      'Briseur' => Icons.hardware_outlined,
+      'Sauteuse' => Icons.north_east_outlined,
+      'Tisseuse' => Icons.hub_outlined,
+      _ => Icons.motion_photos_on_outlined,
+    };
 
 class _BiomeBuildingsTab extends StatelessWidget {
   const _BiomeBuildingsTab({
@@ -14024,21 +14046,176 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             ),
           ),
         ...matrices.map(
-          (matrix) => Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                child: Icon(_speciesIcon(matrix.species)),
+          (matrix) {
+            final source = _sourceForAspectMatrix(matrix);
+            final primary = matrix.primaryColorHex ?? source?.primaryColorHex;
+            final motif = matrix.motifId ?? source?.motifId;
+            final motifColor = matrix.motifColorHex ?? source?.motifColorHex;
+            final animation = matrix.animationName ?? source?.animationName;
+            return Card(
+              child: ListTile(
+                onTap: () => _showAspectMatrixDetails(matrix),
+                leading: CircleAvatar(
+                  backgroundColor: _pTibugColorFromHex(primary),
+                  child: Icon(
+                    _speciesIcon(matrix.species),
+                    color: primary?.toUpperCase() == '#1E1E1E'
+                        ? Colors.white
+                        : Colors.black87,
+                  ),
+                ),
+                title: Text(
+                  'Matrice ${pTibugConfig.species[matrix.species]!.displayName}',
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Source : ${matrix.sourceDisplayName} · ${matrix.createdAt.day}/${matrix.createdAt.month}',
+                    ),
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: <Widget>[
+                        _aspectColorBadge(
+                          primary,
+                          'Couleur ${widget.gameState.pTibugColorNameFor(primary)}',
+                        ),
+                        if (motif != null)
+                          _aspectIconBadge(
+                            _pTibugMotifIcon(motif),
+                            'Motif $motif',
+                          ),
+                        if (motif != null)
+                          _aspectColorBadge(
+                            motifColor,
+                            'Motif ${widget.gameState.pTibugColorNameFor(motifColor)}',
+                          ),
+                        if (animation != null)
+                          _aspectIconBadge(
+                            _pTibugAnimationIcon(animation),
+                            animation,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+                trailing: const Icon(Icons.chevron_right),
               ),
-              title: Text(
-                'Matrice ${pTibugConfig.species[matrix.species]!.displayName}',
-              ),
-              subtitle: Text(
-                'Source : ${matrix.sourceDisplayName} · ${matrix.createdAt.day}/${matrix.createdAt.month}',
-              ),
-            ),
-          ),
+            );
+          },
         ),
       ],
+    );
+  }
+
+  PTibug? _sourceForAspectMatrix(PTibugAspectMatrix matrix) =>
+      widget.gameState.pTibugs
+          .where((bug) => bug.id == matrix.sourcePTibugId)
+          .firstOrNull;
+
+  Widget _aspectColorBadge(String? colorHex, String label) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: _pTibugColorFromHex(colorHex),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.black26),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(label, style: const TextStyle(fontSize: 12)),
+        ],
+      );
+
+  Widget _aspectIconBadge(IconData icon, String label) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 15),
+          const SizedBox(width: 4),
+          Text(label, style: const TextStyle(fontSize: 12)),
+        ],
+      );
+
+  Future<void> _showAspectMatrixDetails(PTibugAspectMatrix matrix) async {
+    final source = _sourceForAspectMatrix(matrix);
+    final primary = matrix.primaryColorHex ?? source?.primaryColorHex;
+    final motif = matrix.motifId ?? source?.motifId;
+    final motifColor = matrix.motifColorHex ?? source?.motifColorHex;
+    final animation = matrix.animationName ?? source?.animationName;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  CircleAvatar(
+                    backgroundColor: _pTibugColorFromHex(primary),
+                    child: Icon(
+                      _speciesIcon(matrix.species),
+                      color: primary?.toUpperCase() == '#1E1E1E'
+                          ? Colors.white
+                          : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Matrice ${pTibugConfig.species[matrix.species]!.displayName}',
+                      style: Theme.of(sheetContext)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text('Ancien P’TIBUG : ${matrix.sourceDisplayName}'),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 14,
+                runSpacing: 10,
+                children: <Widget>[
+                  _aspectColorBadge(
+                    primary,
+                    'Couleur principale : ${widget.gameState.pTibugColorNameFor(primary)}',
+                  ),
+                  if (motif != null)
+                    _aspectIconBadge(
+                      _pTibugMotifIcon(motif),
+                      'Motif : $motif',
+                    ),
+                  if (motif != null)
+                    _aspectColorBadge(
+                      motifColor,
+                      'Couleur du motif : ${widget.gameState.pTibugColorNameFor(motifColor)}',
+                    ),
+                  if (animation != null)
+                    _aspectIconBadge(
+                      _pTibugAnimationIcon(animation),
+                      'Animation : $animation',
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Cette Matrice conserve l’aspect de son P’TIBUG source. Elle est réservée à la Cultivation et ne peut pas être vendue.',
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

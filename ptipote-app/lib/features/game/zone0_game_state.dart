@@ -10002,6 +10002,25 @@ class Zone0GameState extends ChangeNotifier {
     }
   }
 
+  /// Cultivation uses the Nurserie’s shared local energy, not a private tank
+  /// battery. Opening a Bio-battery must wake every paused tank whose other
+  /// local resources are ready as well.
+  bool _resumePausedCultivationTanks() {
+    var resumed = false;
+    for (final tank in pTibugCultivationTanks) {
+      final operation = cultivationOperationForTank(tank.id);
+      if (operation?.status !=
+          PTibugCultivationOperationStatus.pausedMissingResources) {
+        continue;
+      }
+      _resumeCultivationIfReady(tank);
+      if (operation?.status == PTibugCultivationOperationStatus.active) {
+        resumed = true;
+      }
+    }
+    return resumed;
+  }
+
   double cultivationTankAutonomyHours(
       PTibugCultivationTank tank, String resource) {
     final operation = cultivationOperationForTank(tank.id);
@@ -10038,6 +10057,7 @@ class Zone0GameState extends ChangeNotifier {
   void _resolveCultivation(DateTime current) {
     _ensureCultivationTankSlots();
     var changed = _resolveAspectMatrixExtraction(current);
+    changed = _resumePausedCultivationTanks() || changed;
     for (final armature in pTibugArmatures.where((item) => item.isCrafting)) {
       if (armature.completesAt.isAfter(current)) continue;
       armature
@@ -10093,9 +10113,8 @@ class Zone0GameState extends ChangeNotifier {
           ..mineralStored =
               math.max(0, tank.mineralStored - mineralRate * activeSeconds)
           ..energyStored = tank.energyStored;
-        nursery.localEnergy = math
-            .max(0, nursery.localEnergy - energyRate * activeSeconds)
-            .toInt();
+        nursery.localEnergy =
+            math.max(0, nursery.localEnergy - energyRate * activeSeconds);
         operation
           ..activeSecondsCompleted = math.min(operation.activeSecondsRequired,
               operation.activeSecondsCompleted + activeSeconds)
@@ -11923,6 +11942,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     bioBatteries -= 1;
     building.localEnergy += wasteRecyclerConfig.energyUnitsPerBioBattery;
+    _resumePausedCultivationTanks();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -19876,7 +19896,10 @@ class PTibugTerritoryBuilding {
   int level;
   bool isBuilt;
   final Map<String, int> localResources;
-  int localEnergy;
+
+  /// Shared Nursery/Refuge energy. Keeping fractions prevents a cuve using
+  /// 1 energy per hour from losing a whole unit at every short game tick.
+  double localEnergy;
 
   double pTibugOrganicRemainder;
 
@@ -19913,7 +19936,7 @@ class PTibugTerritoryBuilding {
                 ),
               ),
         ),
-        localEnergy: Zone0GameState.instance._readInt(data['localEnergy']),
+        localEnergy: Zone0GameState.instance._readDouble(data['localEnergy']),
         pTibugOrganicRemainder:
             Zone0GameState.instance._readDouble(data['pTibugOrganicRemainder']),
         pTibugEnergyRemainder:
