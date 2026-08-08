@@ -4010,6 +4010,10 @@ class Zone0GameState extends ChangeNotifier {
         ),
       ...marketShops.where((shop) => !shop.isPrimary),
     ];
+    final hasPlayerConstructionReservation =
+        marketShopConstructionOrder != null &&
+            !marketShopConstructionOrder!.isPrimary &&
+            marketShopConstructionOrder!.targetShopId == null;
     for (final slot in marketShopSlots) {
       if (slot.marketLevelRequired > marketLevel) {
         if (slot.status != MarketShopSlotStatus.playerOccupied &&
@@ -4052,6 +4056,17 @@ class Zone0GameState extends ChangeNotifier {
             ..vacantSince = null;
           continue;
         }
+      }
+      // Les anciennes versions pouvaient laisser un slot « réservé » après
+      // fermeture du panneau de construction. Sans chantier joueur actif,
+      // cette réservation est un reliquat et doit redevenir disponible.
+      if (slot.status == MarketShopSlotStatus.reserved &&
+          !hasPlayerConstructionReservation) {
+        slot
+          ..status = MarketShopSlotStatus.vacant
+          ..reservedByResidentId = null
+          ..vacantSince = now;
+        continue;
       }
       if (slot.status != MarketShopSlotStatus.pendingResidentClaim &&
           slot.status != MarketShopSlotStatus.reserved) {
@@ -5837,6 +5852,10 @@ class Zone0GameState extends ChangeNotifier {
     String specialization, {
     required bool primary,
   }) {
+    // Les anciennes sauvegardes n'avaient pas toujours leurs emplacements
+    // spécialisés persistés. Les créer avant toute réservation garde le
+    // compteur affiché et les emplacements réellement utilisables alignés.
+    _migrateMarketShopSlots(DateTime.now());
     if (!const <String>{'restaurant', 'home', 'equipment', 'ptibug'}
         .contains(specialization)) {
       return const Zone0ActionResult(

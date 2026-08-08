@@ -12450,8 +12450,6 @@ class _MarketPageState extends State<MarketPage> {
     final shops = widget.gameState.marketShops
         .where((shop) => !shop.isPrimary)
         .toList(growable: false);
-    final availableFirstShop = widget.gameState.marketLevel >= 2 &&
-        !widget.gameState.firstFreeShopClaimed;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -12524,7 +12522,7 @@ class _MarketPageState extends State<MarketPage> {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.storefront_outlined),
               title: Text(
-                  'Boutique principale · ${labels[widget.gameState.primaryMarketShopSpecialization] ?? 'Fournitures'}',
+                  'Magasin du joueur · ${labels[widget.gameState.primaryMarketShopSpecialization] ?? 'Fournitures'}',
                   style: const TextStyle(fontWeight: FontWeight.w800)),
               subtitle: Text(
                   'Niveau ${widget.gameState.primaryMarketShopLevel} · ${widget.gameState.marketStock.length}/${widget.gameState.marketShopStockLimit(Zone0GameState.primaryMarketShopId)} piles · prix -${marketConfig.baseStorePricePenaltyPercent}%'),
@@ -12548,7 +12546,7 @@ class _MarketPageState extends State<MarketPage> {
               FilledButton.icon(
                 onPressed: _showPrimaryShopPicker,
                 icon: const Icon(Icons.storefront_outlined),
-                label: const Text('Choisir le type de la première boutique'),
+                label: const Text('Construire un magasin'),
               ),
             const Divider(),
             ...shops.map((shop) => Column(
@@ -12610,13 +12608,6 @@ class _MarketPageState extends State<MarketPage> {
               children: List<Widget>.generate(
                   math.max(0, slots - widget.gameState.marketShopCount),
                   (index) {
-                if (availableFirstShop && index == 0) {
-                  return OutlinedButton.icon(
-                    onPressed: () => _showFirstShopPicker(),
-                    icon: const Icon(Icons.add_business_outlined),
-                    label: const Text('Construire le premier magasin'),
-                  );
-                }
                 return OutlinedButton.icon(
                   onPressed: () => _showAdditionalShopPicker(),
                   icon: const Icon(Icons.add_business_outlined),
@@ -12753,10 +12744,10 @@ class _MarketPageState extends State<MarketPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
             child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-              const Text('Première boutique',
+              const Text('Construire un magasin',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
               const Text(
-                  'Ce choix définit les produits que la boutique peut vendre.'),
+                  'Choisissez la spécialisation du magasin à construire.'),
               for (final entry in const <String, String>{
                 'restaurant': 'Restaurant',
                 'home': 'Magasin du foyer',
@@ -13066,52 +13057,6 @@ class _MarketPageState extends State<MarketPage> {
                   },
                 ),
             ]),
-          ),
-        ),
-      );
-
-  Future<void> _showFirstShopPicker() => showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (sheetContext) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'Premier magasin spécialisé',
-                  style: Theme.of(sheetContext)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 6),
-                const Text('Choisissez la spécialisation du magasin offert.'),
-                const SizedBox(height: 8),
-                for (final entry in const <String, String>{
-                  'restaurant': 'Restaurant',
-                  'home': 'Magasin du foyer',
-                  'equipment': 'Magasin d’équipement',
-                }.entries)
-                  ListTile(
-                    leading: const Icon(Icons.storefront_outlined),
-                    title: Text(entry.value),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      final result = widget.gameState
-                          .prepareMarketShopConstruction(entry.key,
-                              primary: false);
-                      _message(result.message);
-                      if (result.success) {
-                        Navigator.of(sheetContext).pop();
-                        _showMarketShopConstructionSheet();
-                      }
-                    },
-                  ),
-              ],
-            ),
           ),
         ),
       );

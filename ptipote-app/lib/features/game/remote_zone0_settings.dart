@@ -174,9 +174,19 @@ WasteRecyclerConfig _wasteRecycler(Object? value) {
             final split = outputSplits.elementAtOrNull(index);
             final fallback = base.outputSplits[index];
             return RecyclerOutputSplit(
-              _int(split is List ? split.elementAtOrNull(0) : null,
+              _int(
+                  split is Map
+                      ? split['organic']
+                      : split is List
+                          ? split.elementAtOrNull(0)
+                          : null,
                   fallback.organic),
-              _int(split is List ? split.elementAtOrNull(1) : null,
+              _int(
+                  split is Map
+                      ? split['mineral']
+                      : split is List
+                          ? split.elementAtOrNull(1)
+                          : null,
                   fallback.mineral),
             );
           }),

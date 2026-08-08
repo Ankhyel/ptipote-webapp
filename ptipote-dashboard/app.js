@@ -1676,12 +1676,30 @@ function validateZone0Settings() {
   if (invalid) throw new Error(`Valeur invalide pour ${prettyPath(invalid.path)}.`);
 }
 
+// Firestore accepte les objets dans un tableau, mais jamais un tableau dans
+// un autre tableau. Le Recycleur historique emploie des paires compactes
+// [organique, minéral] : elles sont converties à la publication uniquement.
+function firestoreSafeZone0Settings(settings) {
+  const safe = structuredClone(settings);
+  const splits = safe?.wasteRecycler?.outputSplits;
+  if (Array.isArray(splits)) {
+    safe.wasteRecycler.outputSplits = splits.map((split) => {
+      if (!Array.isArray(split)) return split;
+      return {
+        organic: Number(split[0]) || 0,
+        mineral: Number(split[1]) || 0,
+      };
+    });
+  }
+  return safe;
+}
+
 async function publishZone0Settings() {
   if (!auth.currentUser || !currentDashboardRole) throw new Error("Connexion admin ou dev requise.");
   validateZone0Settings();
   await setDoc(doc(db, "gameConfigs", "zone0"), {
     schemaVersion: 2,
-    zone0Settings,
+    zone0Settings: firestoreSafeZone0Settings(zone0Settings),
     zone0SettingsUpdatedAt: serverTimestamp(),
     zone0SettingsUpdatedBy: auth.currentUser.uid,
   }, { merge: true });
