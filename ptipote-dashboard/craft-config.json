@@ -239,6 +239,55 @@
       "durationMinutes": 8,
       "energyCost": 0,
       "stackLimit": 1
+    },
+    {
+      "id": "repairKit",
+      "displayName": "Kit de réparation domestique",
+      "craftSection": "atelier",
+      "ingredients": [
+        {"resource": "Organique", "amount": 1},
+        {"resource": "Minéral", "amount": 3}
+      ],
+      "contextIngredients": {},
+      "cuisineLevel": 0,
+      "atelierLevel": 1,
+      "kernelTrustLevel": 1,
+      "breederLevel": 1,
+      "builderLevel": 1,
+      "restorerLevel": 1,
+      "resultItem": "Kit de réparation domestique",
+      "resultAmount": 1,
+      "isConsumable": false,
+      "hungerRestore": 0,
+      "vitalityRestore": 0,
+      "durationMinutes": 3,
+      "energyCost": 1,
+      "stackLimit": 10
+    },
+    {
+      "id": "biomassRegenerator",
+      "displayName": "Dispositif de régénération",
+      "craftSection": "atelier",
+      "ingredients": [
+        {"resource": "Organique", "amount": 10},
+        {"resource": "Minéral", "amount": 10},
+        {"resource": "Mycélium", "amount": 10}
+      ],
+      "contextIngredients": {},
+      "cuisineLevel": 0,
+      "atelierLevel": 1,
+      "kernelTrustLevel": 1,
+      "breederLevel": 1,
+      "builderLevel": 1,
+      "restorerLevel": 1,
+      "resultItem": "Dispositif de régénération",
+      "resultAmount": 1,
+      "isConsumable": false,
+      "hungerRestore": 0,
+      "vitalityRestore": 0,
+      "durationMinutes": 5,
+      "energyCost": 1,
+      "stackLimit": 10
     }
   ]
 }

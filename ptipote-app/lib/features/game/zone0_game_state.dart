@@ -139,6 +139,13 @@ class Zone0GameState extends ChangeNotifier {
     for (final biome in ForageBiome.values)
       biome: BiomeSecurityState.initial(biome),
   };
+
+  /// Un emplacement territorial par biome, distinct des refuges P'TIBUG.
+  final Map<ForageBiome, LisiereTerritoryZone> lisiereTerritoryZones =
+      <ForageBiome, LisiereTerritoryZone>{
+    for (final biome in ForageBiome.values)
+      biome: LisiereTerritoryZone.initial(biome),
+  };
   final List<BiomeExplorationMission> explorationMissions =
       <BiomeExplorationMission>[];
   final List<WeatherAlert> weatherAlerts = <WeatherAlert>[];
@@ -276,9 +283,17 @@ class Zone0GameState extends ChangeNotifier {
   int recyclerWasteTank = 0;
   int recyclerOutputOrganic = 0;
   int recyclerOutputMineral = 0;
+  int recyclerOutputOther = 0;
+  bool recyclerBiologicalOrientationInstalled = false;
+  bool recyclerBiologicalOrientationActive = false;
+  RecyclerBatchSnapshot? recyclerActiveBatch;
   int pendingWaste = 0;
   DateTime? recyclerCycleStartedAt;
   DateTime? lastWasteGenerationAt;
+  DateTime? lastCampWasteCalculationAt;
+  double campWasteRemainder = 0;
+  final List<CampWasteDailyReport> campWasteDailyReports =
+      <CampWasteDailyReport>[];
   int campWellbeing = kernelConfig.startingWellbeing;
   int mealsPrepared = 0;
   int plaineMissionsCompleted = 0;
@@ -532,6 +547,29 @@ class Zone0GameState extends ChangeNotifier {
     return Zone0ActionResult(
       success: true,
       message: 'Circuit réparé : +$gain% de Viabilité.',
+    );
+  }
+
+  /// A finished repair kit is deliberately more effective than raw materials.
+  /// It is consumed atomically so a persisted action can never reuse it.
+  Zone0ActionResult repairBuildingWithKit(String buildingId) {
+    final viability = viabilityForBuilding(buildingId);
+    if (viability.current >= viability.maximum) {
+      return const Zone0ActionResult(
+          success: false, message: 'La Viabilité est déjà maximale.');
+    }
+    const kit = 'Kit de réparation domestique';
+    if (resourceAmount(kit) < 1 || removeResource(kit, 1) <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Un Kit de réparation est requis.');
+    }
+    final gain = math.min(15, viability.maximum - viability.current).toInt();
+    viability.restore(gain);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Kit de réparation utilisé : +$gain% de Viabilité.',
     );
   }
 
@@ -1683,6 +1721,35 @@ class Zone0GameState extends ChangeNotifier {
         success: true, message: 'Circuit de la maison réparé : +$gain%.');
   }
 
+  Zone0ActionResult repairResidentHouseWithKit(String houseId) {
+    final house = residentHouseForId(houseId);
+    if (house == null || house.currentViability >= house.maximumViability) {
+      return const Zone0ActionResult(
+          success: false, message: 'Réparation indisponible.');
+    }
+    const kit = 'Kit de réparation domestique';
+    if (resourceAmount(kit) < 1 || removeResource(kit, 1) <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Un Kit de réparation est requis.');
+    }
+    final activeRepair = householdRepairFor(houseId);
+    if (activeRepair != null && !activeRepair.isPlayerRepair) {
+      activeRepair.status = HouseholdRepairStatus.paused;
+      house.isUnderRepair = false;
+    }
+    final gain =
+        math.min(15, house.maximumViability - house.currentViability).toInt();
+    house
+      ..currentViability += gain
+      ..updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Kit de réparation utilisé : maison réparée de +$gain%.',
+    );
+  }
+
   /// Fast player intervention uses the established material cost path while
   /// pausing (never discarding) a slower household repair.
   Zone0ActionResult startPlayerHouseRepair(String houseId, {int gain = 10}) {
@@ -2152,7 +2219,8 @@ class Zone0GameState extends ChangeNotifier {
       wasteRecyclerConfig.wasteRequired(recyclerLevel);
   int get recyclerTankCapacity =>
       wasteRecyclerConfig.tankCapacity(recyclerLevel);
-  int get recyclerOutputAmount => recyclerOutputOrganic + recyclerOutputMineral;
+  int get recyclerOutputAmount =>
+      recyclerOutputOrganic + recyclerOutputMineral + recyclerOutputOther;
   int get recyclerOutputCapacity =>
       wasteRecyclerConfig.outputCapacity(recyclerLevel);
   int get securityTowerSlots =>
@@ -5629,7 +5697,9 @@ class Zone0GameState extends ChangeNotifier {
       final batteryLimit = recipe.bioBatteryCost <= 0
           ? 1 << 30
           : bioBatteries ~/ recipe.bioBatteryCost;
-      quantity = math.min(materialLimit, batteryLimit);
+      final energyLimit =
+          recipe.energyCost <= 0 ? 1 << 30 : energyUnits ~/ recipe.energyCost;
+      quantity = math.min(materialLimit, math.min(batteryLimit, energyLimit));
     }
     if (quantity <= 0) {
       return const Zone0ActionResult(
@@ -5638,10 +5708,18 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     final bioBatteryCost = recipe.bioBatteryCost * quantity;
+    final craftEnergyCost =
+        recipe.energyCost * quantity + (figurine == null ? 1 : 0);
     if (bioBatteries < bioBatteryCost) {
       return Zone0ActionResult(
         success: false,
         message: '$bioBatteryCost Bio-batteries requises.',
+      );
+    }
+    if (energyUnits < craftEnergyCost) {
+      return Zone0ActionResult(
+        success: false,
+        message: '$craftEnergyCost unité(s) d’énergie requise(s).',
       );
     }
     if (figurine != null && isBusy(figurine)) {
@@ -5676,9 +5754,7 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     bioBatteries -= bioBatteryCost;
-    if (figurine == null) {
-      energyUnits -= 1;
-    }
+    energyUnits -= craftEnergyCost;
     final speedBonus = craftSpeedBonus(figurine, atelierLevel);
     final unitSeconds = math.max(
       1,
@@ -5788,7 +5864,9 @@ class Zone0GameState extends ChangeNotifier {
       final batteryLimit = recipe.bioBatteryCost <= 0
           ? 1 << 30
           : bioBatteries ~/ recipe.bioBatteryCost;
-      quantity = math.min(materialLimit, batteryLimit);
+      final energyLimit =
+          recipe.energyCost <= 0 ? 1 << 30 : energyUnits ~/ recipe.energyCost;
+      quantity = math.min(materialLimit, math.min(batteryLimit, energyLimit));
     }
     if (quantity <= 0) {
       return const Zone0ActionResult(
@@ -5805,10 +5883,18 @@ class Zone0GameState extends ChangeNotifier {
       recipe.resultItem: recipe.resultAmount * quantity,
     };
     final bioBatteryCost = recipe.bioBatteryCost * quantity;
+    final craftEnergyCost =
+        recipe.energyCost * quantity + (figurine == null ? 1 : 0);
     if (bioBatteries < bioBatteryCost) {
       return Zone0ActionResult(
         success: false,
         message: '$bioBatteryCost Bio-batteries requises.',
+      );
+    }
+    if (energyUnits < craftEnergyCost) {
+      return Zone0ActionResult(
+        success: false,
+        message: '$craftEnergyCost unité(s) d’énergie requise(s).',
       );
     }
     if (!hasResources(totalCosts)) {
@@ -5830,9 +5916,7 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     bioBatteries -= bioBatteryCost;
-    if (figurine == null) {
-      energyUnits -= 1;
-    }
+    energyUnits -= craftEnergyCost;
     final speedBonus = craftSpeedBonus(figurine, cuisineLevel);
     final unitSeconds = math.max(
       1,
@@ -8988,12 +9072,16 @@ class Zone0GameState extends ChangeNotifier {
     final rewards = <String, int>{
       'Organique': recyclerOutputOrganic,
       'Minéral': recyclerOutputMineral,
+      wasteRecyclerConfig.otherOutputResource: recyclerOutputOther,
     };
     final result = addResources(rewards);
     final organicLeft = result.pending['Organique'] ?? 0;
     final mineralLeft = result.pending['Minéral'] ?? 0;
+    final otherLeft =
+        result.pending[wasteRecyclerConfig.otherOutputResource] ?? 0;
     recyclerOutputOrganic = organicLeft;
     recyclerOutputMineral = mineralLeft;
+    recyclerOutputOther = otherLeft;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -9004,43 +9092,254 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
-  bool resolveWasteAndRecycler({required int campHeartLevel, DateTime? now}) {
+  LisiereTerritoryZone territoryZone(ForageBiome biome) =>
+      lisiereTerritoryZones.putIfAbsent(
+        biome,
+        () => LisiereTerritoryZone.initial(biome),
+      );
+
+  bool buildBiofermenter(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    if (zone.buildingId != null) return false;
+    final cost =
+        lisiereForageConfig.territoryBuildings.biofermenter.constructionCost;
+    if (!hasResources(cost)) return false;
+    removeResources(cost);
+    zone
+      ..buildingId = 'biofermenter'
+      ..buildingLevel = 1
+      ..lastProductionResolvedAt = DateTime.now()
+      ..updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return true;
+  }
+
+  bool upgradeBiofermenter(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    if (zone.buildingId != 'biofermenter' || zone.buildingLevel >= 4)
+      return false;
+    final cost =
+        config.upgradeCosts[zone.buildingLevel + 1] ?? const <String, int>{};
+    if (!hasResources(cost)) return false;
+    resolveBiofermenterProduction(now: DateTime.now());
+    removeResources(cost);
+    zone
+      ..buildingLevel += 1
+      ..updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return true;
+  }
+
+  int activePollinatorsForBiofermenter(ForageBiome biome) {
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    return pTibugs
+        .where((bug) =>
+            bug.lifecycleStatus == PTibugLifecycleStatus.active &&
+            bug.refugeBiome == biome &&
+            bug.assignedBuildingId != null &&
+            (bug.biologicalTraitId == config.pollinatorTraitId ||
+                bug.secondTraitId == config.pollinatorTraitId))
+        .length
+        .clamp(0, config.maxPollinatorsCounted);
+  }
+
+  double biofermenterOrganicPerDay(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    if (zone.buildingId != 'biofermenter' || zone.buildingLevel <= 0) return 0;
+    var result = (config.passiveOrganicPerDayByLevel[zone.buildingLevel] ?? 0) *
+        config.passiveProductionMultiplier *
+        zone.vatEfficiencyMultiplier;
+    if (zone.edibleForestInstalled && config.edibleForestEnabled) {
+      result *= 1 +
+          activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator;
+    }
+    return result;
+  }
+
+  bool resolveBiofermenterProduction({DateTime? now}) {
     final current = now ?? DateTime.now();
     var changed = false;
+    for (final biome in ForageBiome.values) {
+      final zone = territoryZone(biome);
+      if (zone.buildingId != 'biofermenter') continue;
+      final last = zone.lastProductionResolvedAt ?? current;
+      final elapsedHours = current.difference(last).inMilliseconds /
+          Duration.millisecondsPerHour;
+      if (elapsedHours <= 0) continue;
+      final exact = elapsedHours * biofermenterOrganicPerDay(biome) / 24 +
+          zone.organicProductionRemainder;
+      final whole = exact.floor();
+      zone
+        ..organicProductionRemainder = exact - whole
+        ..lastProductionResolvedAt = current
+        ..updatedAt = current;
+      if (whole > 0) addResources(<String, int>{'Organique': whole});
+      changed = true;
+    }
+    return changed;
+  }
+
+  int getLithocultureMineralCostPerOrganic(ForageBiome biome) =>
+      territoryZone(biome).terrainTags.contains('mineralBasin')
+          ? lisiereForageConfig
+              .territoryBuildings.biofermenter.mineralBasinMineralPerOrganic
+          : lisiereForageConfig
+              .territoryBuildings.biofermenter.normalMineralPerOrganic;
+
+  LithoculturePreview lithoculturePreview(
+      ForageBiome biome, int organicAmount) {
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    final mineralCost =
+        getLithocultureMineralCostPerOrganic(biome) * organicAmount;
+    final availableWaste = resourceAmount('Déchets');
+    final wasteUsed = config.wasteCanReplaceMineral
+        ? math.min(availableWaste,
+            (mineralCost * config.maxWasteSharePerBatch).floor())
+        : 0;
+    final mineralCovered =
+        (wasteUsed * config.mineralEquivalentPerWaste).floor();
+    return LithoculturePreview(
+      organicAmount,
+      math.max(0, mineralCost - mineralCovered).toInt(),
+      wasteUsed,
+    );
+  }
+
+  bool runLithoculture(ForageBiome biome, int organicAmount) {
+    final zone = territoryZone(biome);
+    if (zone.buildingId != 'biofermenter' || organicAmount <= 0) return false;
+    final preview = lithoculturePreview(biome, organicAmount);
+    if (!hasResources(<String, int>{
+      'Minéral': preview.mineralCost,
+      'Déchets': preview.wasteCost
+    })) return false;
+    removeResources(<String, int>{
+      'Minéral': preview.mineralCost,
+      'Déchets': preview.wasteCost
+    });
+    addResources(<String, int>{'Organique': preview.organicOutput});
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return true;
+  }
+
+  bool installEdibleForest(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    final cost =
+        lisiereForageConfig.territoryBuildings.biofermenter.edibleForestCost;
+    if (zone.buildingId != 'biofermenter' ||
+        zone.edibleForestInstalled ||
+        !hasResources(cost)) return false;
+    removeResources(cost);
+    zone.edibleForestInstalled = true;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return true;
+  }
+
+  String _wasteDayKey(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+  CampWasteDailyReport _wasteReport(DateTime at) {
+    final key = _wasteDayKey(at);
+    return campWasteDailyReports.firstWhere(
+      (report) => report.reportDate == key,
+      orElse: () {
+        final report = CampWasteDailyReport(reportDate: key, createdAt: at);
+        campWasteDailyReports.add(report);
+        return report;
+      },
+    );
+  }
+
+  void registerWasteGeneration(String sourceType, String sourceId, int amount,
+      {DateTime? timestamp}) {
+    if (amount <= 0) return;
+    final at = timestamp ?? DateTime.now();
+    final result = addResources(<String, int>{'Déchets': amount});
+    pendingWaste = math.min(wasteRecyclerConfig.pendingWasteCapacity,
+        pendingWaste + (result.pending['Déchets'] ?? 0));
+    _wasteReport(at).technicalWasteGenerated += amount;
+  }
+
+  bool _resolveCampWaste(DateTime current) {
+    final last = lastCampWasteCalculationAt;
+    // Migration : aucune production rétroactive à la première ouverture.
+    if (last == null) {
+      lastCampWasteCalculationAt = current;
+      return false;
+    }
+    final hours =
+        current.difference(last).inMilliseconds / Duration.millisecondsPerHour;
+    if (hours <= 0) return false;
+    final activeBugs = pTibugs
+        .where((bug) => bug.lifecycleStatus == PTibugLifecycleStatus.active)
+        .length;
+    final daily = residents.where((resident) => resident.isActive).length *
+            wasteRecyclerConfig.wastePerResidentPerDay +
+        hatchedPtipoteIds.length * wasteRecyclerConfig.wastePerPtibotePerDay +
+        activeBugs * wasteRecyclerConfig.wastePerPtibugPerDay;
+    final exact = daily * hours / 24 + campWasteRemainder;
+    final whole = exact.floor();
+    campWasteRemainder = exact - whole;
+    lastCampWasteCalculationAt = current;
+    if (whole <= 0) return true;
+    final result = addResources(<String, int>{'Déchets': whole});
+    pendingWaste = math.min(wasteRecyclerConfig.pendingWasteCapacity,
+        pendingWaste + (result.pending['Déchets'] ?? 0));
+    _wasteReport(current).domesticWasteGenerated += whole;
+    final cutoff = current.subtract(
+        Duration(days: wasteRecyclerConfig.wasteHistoryRetentionDays));
+    campWasteDailyReports
+        .removeWhere((report) => report.createdAt.isBefore(cutoff));
+    return true;
+  }
+
+  bool installRecyclerBiologicalOrientation() {
+    if (recyclerBiologicalOrientationInstalled ||
+        !hasResources(wasteRecyclerConfig.biologicalOrientationModuleCost)) {
+      return false;
+    }
+    removeResources(wasteRecyclerConfig.biologicalOrientationModuleCost);
+    recyclerBiologicalOrientationInstalled = true;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return true;
+  }
+
+  bool setRecyclerBiologicalOrientation(bool active) {
+    if (active && !recyclerBiologicalOrientationInstalled) return false;
+    recyclerBiologicalOrientationActive = active;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return true;
+  }
+
+  List<int> _recyclerRatios() => recyclerBiologicalOrientationActive
+      ? <int>[
+          wasteRecyclerConfig.biologicalOrganicRatio,
+          wasteRecyclerConfig.biologicalMineralRatio,
+          wasteRecyclerConfig.biologicalOtherRatio,
+        ]
+      : <int>[
+          wasteRecyclerConfig.standardOrganicRatio,
+          wasteRecyclerConfig.standardMineralRatio,
+          wasteRecyclerConfig.standardOtherRatio,
+        ];
+
+  bool resolveWasteAndRecycler({required int campHeartLevel, DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = resolveBiofermenterProduction(now: current);
     if (pendingWaste > 0) {
       final result = addResources(<String, int>{'Déchets': pendingWaste});
       pendingWaste = result.pending['Déchets'] ?? 0;
       changed = result.addedAny;
     }
-    final builtBuildings = <bool>[
-          isFablabBuilt,
-          isSecurityTowerBuilt,
-          isMarketBuilt,
-        ].where((item) => item).length +
-        1;
-    final lastWaste = lastWasteGenerationAt ?? current;
-    final wasteCycles = current.difference(lastWaste).inMinutes ~/
-        wasteRecyclerConfig.wasteGenerationCycleMinutes;
-    if (wasteCycles > 0) {
-      final perCycle = wasteRecyclerConfig.baseWastePerCycle +
-          currentPopulation ~/ wasteRecyclerConfig.populationPerWasteUnit +
-          builtBuildings ~/ wasteRecyclerConfig.buildingsPerWasteUnit;
-      if (perCycle > 0) {
-        final generated = perCycle * wasteCycles;
-        final result = addResources(<String, int>{'Déchets': generated});
-        pendingWaste = math.min(
-          wasteRecyclerConfig.pendingWasteCapacity,
-          pendingWaste + (result.pending['Déchets'] ?? 0),
-        );
-      }
-      lastWasteGenerationAt = lastWaste.add(
-        Duration(
-          minutes:
-              wasteCycles * wasteRecyclerConfig.wasteGenerationCycleMinutes,
-        ),
-      );
-      changed = true;
-    }
+    changed = _resolveCampWaste(current) || changed;
     if (!isRecyclerUnlocked(campHeartLevel) ||
         !isBuildingOperational('recycler')) return changed;
     if (recyclerLevel == 0) {
@@ -9050,20 +9349,26 @@ class Zone0GameState extends ChangeNotifier {
     var completedCycles = 0;
     var producedOrganic = 0;
     var producedMineral = 0;
+    var producedOther = 0;
     while (recyclerCycleStartedAt != null) {
       final finishedAt = recyclerCycleStartedAt!.add(
         Duration(minutes: wasteRecyclerConfig.cycleMinutes(recyclerLevel)),
       );
       if (finishedAt.isAfter(current)) break;
-      final split = wasteRecyclerConfig.outputSplits[_random.nextInt(
-        wasteRecyclerConfig.outputSplits.length,
-      )];
-      recyclerOutputOrganic += split.organic;
-      recyclerOutputMineral += split.mineral;
+      final ratios = recyclerActiveBatch?.ratios ?? _recyclerRatios();
+      final units = wasteRecyclerConfig.outputResourcesPerCycle;
+      final organic = units * ratios[0] ~/ 100;
+      final mineral = units * ratios[1] ~/ 100;
+      final other = units - organic - mineral;
+      recyclerOutputOrganic += organic;
+      recyclerOutputMineral += mineral;
+      recyclerOutputOther += other;
       completedCycles += 1;
-      producedOrganic += split.organic;
-      producedMineral += split.mineral;
+      producedOrganic += organic;
+      producedMineral += mineral;
+      producedOther += other;
       recyclerCycleStartedAt = finishedAt;
+      recyclerActiveBatch = null;
       changed = true;
       if (recyclerOutputAmount + wasteRecyclerConfig.outputResourcesPerCycle >
           recyclerOutputCapacity) {
@@ -9073,7 +9378,10 @@ class Zone0GameState extends ChangeNotifier {
         recyclerCycleStartedAt = null;
       } else {
         recyclerWasteTank -= recyclerWasteRequired;
+        _wasteReport(finishedAt).wasteRecycled += recyclerWasteRequired;
         energyUnits -= wasteRecyclerConfig.energyCostPerCycle;
+        recyclerActiveBatch = RecyclerBatchSnapshot.fromRatios(
+            _recyclerRatios(), recyclerBiologicalOrientationActive);
       }
     }
     if (recyclerCycleStartedAt == null &&
@@ -9082,8 +9390,11 @@ class Zone0GameState extends ChangeNotifier {
         recyclerWasteTank >= recyclerWasteRequired &&
         energyUnits >= wasteRecyclerConfig.energyCostPerCycle) {
       recyclerWasteTank -= recyclerWasteRequired;
+      _wasteReport(current).wasteRecycled += recyclerWasteRequired;
       energyUnits -= wasteRecyclerConfig.energyCostPerCycle;
       recyclerCycleStartedAt = current;
+      recyclerActiveBatch = RecyclerBatchSnapshot.fromRatios(
+          _recyclerRatios(), recyclerBiologicalOrientationActive);
       changed = true;
     }
     if (completedCycles > 0) {
@@ -9092,7 +9403,7 @@ class Zone0GameState extends ChangeNotifier {
           message: 'Recycleur : $completedCycles cycle(s) terminé(s). '
               'Déchets traités : ${completedCycles * recyclerWasteRequired}. '
               'Énergie consommée : ${completedCycles * wasteRecyclerConfig.energyCostPerCycle}. '
-              '+$producedOrganic Organique, +$producedMineral Minéral.',
+              '+$producedOrganic Organique, +$producedMineral Minéral, +$producedOther ${wasteRecyclerConfig.otherOutputResource}.',
           sourceBuildingId: 'recycler',
           mailbox: Zone0MessageMailbox.fablab,
           subject: 'Fin de craft',
@@ -13215,6 +13526,16 @@ class Zone0GameState extends ChangeNotifier {
           }
         }
       }
+      final territoryZonesData = data['lisiereTerritoryZones'];
+      if (territoryZonesData is Map) {
+        for (final biome in ForageBiome.values) {
+          final item = territoryZonesData[biome.name];
+          if (item is Map) {
+            lisiereTerritoryZones[biome] =
+                LisiereTerritoryZone.fromFirebase(biome, item);
+          }
+        }
+      }
       final explorationData = data['explorationMissions'];
       if (explorationData is List) {
         explorationMissions
@@ -13414,11 +13735,29 @@ class Zone0GameState extends ChangeNotifier {
         recyclerWasteTank = _readInt(recyclerData['wasteTank']);
         recyclerOutputOrganic = _readInt(recyclerData['outputOrganic']);
         recyclerOutputMineral = _readInt(recyclerData['outputMineral']);
+        recyclerOutputOther = _readInt(recyclerData['outputOther']);
+        recyclerBiologicalOrientationInstalled =
+            recyclerData['biologicalOrientationInstalled'] == true;
+        recyclerBiologicalOrientationActive =
+            recyclerData['biologicalOrientationActive'] == true;
+        recyclerActiveBatch = recyclerData['activeBatch'] is Map
+            ? RecyclerBatchSnapshot.fromFirebase(
+                recyclerData['activeBatch'] as Map)
+            : null;
         pendingWaste = _readInt(recyclerData['pendingWaste']);
         recyclerCycleStartedAt = _readDate(recyclerData['cycleStartedAt']);
         lastWasteGenerationAt = _readDate(
           recyclerData['lastWasteGenerationAt'],
         );
+        lastCampWasteCalculationAt =
+            _readDate(recyclerData['lastCampWasteCalculationAt']);
+        campWasteRemainder =
+            (recyclerData['campWasteRemainder'] as num?)?.toDouble() ?? 0;
+        campWasteDailyReports
+          ..clear()
+          ..addAll((recyclerData['dailyReports'] as List? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map(CampWasteDailyReport.fromFirebase));
       }
       final ptibugData = data['ptibug'];
       if (ptibugData is Map) {
@@ -16068,21 +16407,20 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Map<String, int> biomassRevitalizeCost(ForageBiome biome) {
-    final config = lisiereForageConfig.biomass;
-    final multiplier = _biomassMultiplierFor(
-      biomassFor(biome),
-      config.revitalizeCostTiers,
-    );
     return <String, int>{
-      'Organique': math.max(
-        1,
-        (config.revitalizeBaseOrganicCost * multiplier).ceil(),
-      ),
-      'Minéral': math.max(
-        1,
-        (config.revitalizeBaseMineralCost * multiplier).ceil(),
-      ),
+      'Dispositif de régénération': 1,
     };
+  }
+
+  Duration biomassRevitalizeCooldownRemaining(ForageBiome biome,
+      {DateTime? now}) {
+    final last = biomeSecurity[biome]?.lastBiomassRevitalizedAt;
+    if (last == null) return Duration.zero;
+    final cooldown = Duration(
+        hours:
+            math.max(0, lisiereForageConfig.biomass.revitalizeCooldownHours));
+    final elapsed = (now ?? DateTime.now()).difference(last);
+    return elapsed >= cooldown ? Duration.zero : cooldown - elapsed;
   }
 
   Zone0ActionResult revitalizeBiome(ForageBiome biome) {
@@ -16097,17 +16435,26 @@ class Zone0GameState extends ChangeNotifier {
         message: 'La Biomasse de ce biome est déjà au maximum.',
       );
     }
-    final cost = biomassRevitalizeCost(biome);
-    if (!hasResources(cost)) {
+    final cooldown = biomassRevitalizeCooldownRemaining(biome);
+    if (cooldown > Duration.zero) {
+      final hours = cooldown.inHours;
+      final minutes = cooldown.inMinutes.remainder(60);
       return Zone0ActionResult(
         success: false,
-        message: missingResourcesLabel(cost),
+        message:
+            'Dispositif en recharge : ${hours}h ${minutes.toString().padLeft(2, '0')} min.',
       );
     }
-    removeResources(cost);
+    const device = 'Dispositif de régénération';
+    if (resourceAmount(device) < 1 || removeResource(device, 1) <= 0) {
+      return Zone0ActionResult(
+        success: false,
+        message: 'Un Dispositif de régénération est requis.',
+      );
+    }
     final gain = math.max(1, lisiereForageConfig.biomass.revitalizeGain);
     state.biomassPercent = math.min(maximum, state.biomassPercent + gain);
-    state.lastBiomassRegenerationAt = DateTime.now();
+    state.lastBiomassRevitalizedAt = DateTime.now();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -16674,6 +17021,9 @@ class Zone0GameState extends ChangeNotifier {
         'biomeSecurity': biomeSecurity.map(
           (key, value) => MapEntry(key.name, value.toFirebase()),
         ),
+        'lisiereTerritoryZones': lisiereTerritoryZones.map(
+          (biome, zone) => MapEntry(biome.name, zone.toFirebase()),
+        ),
         'explorationMissions':
             explorationMissions.map((item) => item.toFirebase()).toList(),
         'campSecurity': refugeSafety,
@@ -16735,6 +17085,11 @@ class Zone0GameState extends ChangeNotifier {
           'wasteTank': recyclerWasteTank,
           'outputOrganic': recyclerOutputOrganic,
           'outputMineral': recyclerOutputMineral,
+          'outputOther': recyclerOutputOther,
+          'biologicalOrientationInstalled':
+              recyclerBiologicalOrientationInstalled,
+          'biologicalOrientationActive': recyclerBiologicalOrientationActive,
+          'activeBatch': recyclerActiveBatch?.toFirebase(),
           'pendingWaste': pendingWaste,
           'cycleStartedAt': recyclerCycleStartedAt == null
               ? null
@@ -16742,6 +17097,13 @@ class Zone0GameState extends ChangeNotifier {
           'lastWasteGenerationAt': lastWasteGenerationAt == null
               ? null
               : Timestamp.fromDate(lastWasteGenerationAt!),
+          'lastCampWasteCalculationAt': lastCampWasteCalculationAt == null
+              ? null
+              : Timestamp.fromDate(lastCampWasteCalculationAt!),
+          'campWasteRemainder': campWasteRemainder,
+          'dailyReports': campWasteDailyReports
+              .map((report) => report.toFirebase())
+              .toList(),
         },
         'ptibug': <String, dynamic>{
           'nurseryLevel': plaineNurseryLevel,
@@ -21588,6 +21950,139 @@ enum TowerMissionPlan {
 
 enum BiomeDiscoveryStatus { discovered, exploring, unlocked }
 
+class LisiereTerritoryZone {
+  LisiereTerritoryZone({
+    required this.zoneId,
+    required this.biome,
+    required this.terrainTags,
+    this.buildingId,
+    this.buildingLevel = 0,
+    this.edibleForestInstalled = false,
+    this.vatCount = 1,
+    this.vatEfficiencyMultiplier = 1,
+    this.organicProductionRemainder = 0,
+    this.lastProductionResolvedAt,
+    this.updatedAt,
+  });
+  factory LisiereTerritoryZone.initial(ForageBiome biome) =>
+      LisiereTerritoryZone(
+        zoneId: biome.name,
+        biome: biome,
+        terrainTags: <String>{
+          if (biome == ForageBiome.bassinMineral) 'mineralBasin' else 'normal'
+        },
+      );
+  factory LisiereTerritoryZone.fromFirebase(
+          ForageBiome biome, Map<dynamic, dynamic> data) =>
+      LisiereTerritoryZone(
+        zoneId: '${data['zoneId'] ?? biome.name}',
+        biome: biome,
+        terrainTags: ((data['terrainTags'] as List?) ?? const <dynamic>[])
+            .map((item) => '$item')
+            .toSet()
+          ..addAll(biome == ForageBiome.bassinMineral
+              ? <String>{'mineralBasin'}
+              : <String>{'normal'}),
+        buildingId: data['buildingId'] as String?,
+        buildingLevel: ForageMission._readStaticInt(data['buildingLevel']),
+        edibleForestInstalled: data['edibleForestInstalled'] == true,
+        vatCount: math.max(1, ForageMission._readStaticInt(data['vatCount'])),
+        vatEfficiencyMultiplier:
+            (data['vatEfficiencyMultiplier'] as num?)?.toDouble() ?? 1,
+        organicProductionRemainder:
+            (data['organicProductionRemainder'] as num?)?.toDouble() ?? 0,
+        lastProductionResolvedAt:
+            ForageMission._readDate(data['lastProductionResolvedAt']),
+        updatedAt: ForageMission._readDate(data['updatedAt']),
+      );
+  final String zoneId;
+  final ForageBiome biome;
+  final Set<String> terrainTags;
+  String? buildingId;
+  int buildingLevel;
+  bool edibleForestInstalled;
+  int vatCount;
+  double vatEfficiencyMultiplier;
+  double organicProductionRemainder;
+  DateTime? lastProductionResolvedAt;
+  DateTime? updatedAt;
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'zoneId': zoneId,
+        'biome': biome.name,
+        'terrainTags': terrainTags.toList(),
+        'buildingId': buildingId,
+        'buildingLevel': buildingLevel,
+        'edibleForestInstalled': edibleForestInstalled,
+        'vatCount': vatCount,
+        'vatEfficiencyMultiplier': vatEfficiencyMultiplier,
+        'organicProductionRemainder': organicProductionRemainder,
+        'lastProductionResolvedAt': lastProductionResolvedAt == null
+            ? null
+            : Timestamp.fromDate(lastProductionResolvedAt!),
+        'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
+      };
+}
+
+class LithoculturePreview {
+  const LithoculturePreview(
+      this.organicOutput, this.mineralCost, this.wasteCost);
+  final int organicOutput;
+  final int mineralCost;
+  final int wasteCost;
+}
+
+class CampWasteDailyReport {
+  CampWasteDailyReport(
+      {required this.reportDate,
+      required this.createdAt,
+      this.domesticWasteGenerated = 0,
+      this.technicalWasteGenerated = 0,
+      this.wasteRecycled = 0});
+  factory CampWasteDailyReport.fromFirebase(Map<dynamic, dynamic> data) =>
+      CampWasteDailyReport(
+        reportDate: '${data['reportDate'] ?? ''}',
+        createdAt: ForageMission._readDate(data['createdAt']) ?? DateTime.now(),
+        domesticWasteGenerated:
+            ForageMission._readStaticInt(data['domesticWasteGenerated']),
+        technicalWasteGenerated:
+            ForageMission._readStaticInt(data['technicalWasteGenerated']),
+        wasteRecycled: ForageMission._readStaticInt(data['wasteRecycled']),
+      );
+  final String reportDate;
+  final DateTime createdAt;
+  int domesticWasteGenerated;
+  int technicalWasteGenerated;
+  int wasteRecycled;
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'reportDate': reportDate,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'domesticWasteGenerated': domesticWasteGenerated,
+        'technicalWasteGenerated': technicalWasteGenerated,
+        'wasteRecycled': wasteRecycled,
+      };
+}
+
+class RecyclerBatchSnapshot {
+  const RecyclerBatchSnapshot(
+      {required this.ratios, required this.orientationModuleActive});
+  factory RecyclerBatchSnapshot.fromRatios(List<int> ratios, bool active) =>
+      RecyclerBatchSnapshot(
+          ratios: List<int>.from(ratios), orientationModuleActive: active);
+  factory RecyclerBatchSnapshot.fromFirebase(Map<dynamic, dynamic> data) =>
+      RecyclerBatchSnapshot(
+        ratios: ((data['ratios'] as List?) ?? const <dynamic>[])
+            .map((item) => ForageMission._readStaticInt(item))
+            .toList(),
+        orientationModuleActive: data['orientationModuleActive'] == true,
+      );
+  final List<int> ratios;
+  final bool orientationModuleActive;
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'ratios': ratios,
+        'orientationModuleActive': orientationModuleActive,
+      };
+}
+
 class BiomeSecurityState {
   BiomeSecurityState({
     required this.biome,
@@ -21602,6 +22097,7 @@ class BiomeSecurityState {
     this.lastDecayAt,
     this.lastWasteRegenerationAt,
     this.lastBiomassRegenerationAt,
+    this.lastBiomassRevitalizedAt,
   });
 
   factory BiomeSecurityState.initial(ForageBiome biome) => BiomeSecurityState(
@@ -21652,6 +22148,9 @@ class BiomeSecurityState {
         lastBiomassRegenerationAt: ForageMission._readDate(
           data['lastBiomassRegenerationAt'],
         ),
+        lastBiomassRevitalizedAt: ForageMission._readDate(
+          data['lastBiomassRevitalizedAt'],
+        ),
       );
 
   final ForageBiome biome;
@@ -21665,6 +22164,7 @@ class BiomeSecurityState {
   DateTime? lastDecayAt;
   DateTime? lastWasteRegenerationAt;
   DateTime? lastBiomassRegenerationAt;
+  DateTime? lastBiomassRevitalizedAt;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'securitySchema': 2,
@@ -21685,6 +22185,9 @@ class BiomeSecurityState {
         'lastBiomassRegenerationAt': lastBiomassRegenerationAt == null
             ? null
             : Timestamp.fromDate(lastBiomassRegenerationAt!),
+        'lastBiomassRevitalizedAt': lastBiomassRevitalizedAt == null
+            ? null
+            : Timestamp.fromDate(lastBiomassRevitalizedAt!),
       };
 }
 

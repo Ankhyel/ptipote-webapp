@@ -21,6 +21,18 @@ class WasteRecyclerConfig {
     required this.pendingWasteCapacity,
     required this.cycleMinutesByLevel,
     required this.outputSplits,
+    required this.wastePerResidentPerDay,
+    required this.wastePerPtibotePerDay,
+    required this.wastePerPtibugPerDay,
+    required this.wasteHistoryRetentionDays,
+    required this.standardOrganicRatio,
+    required this.standardMineralRatio,
+    required this.standardOtherRatio,
+    required this.biologicalOrganicRatio,
+    required this.biologicalMineralRatio,
+    required this.biologicalOtherRatio,
+    required this.otherOutputResource,
+    required this.biologicalOrientationModuleCost,
   });
 
   final int wasteGenerationCycleMinutes;
@@ -44,6 +56,18 @@ class WasteRecyclerConfig {
   final int pendingWasteCapacity;
   final Map<int, int> cycleMinutesByLevel;
   final List<RecyclerOutputSplit> outputSplits;
+  final double wastePerResidentPerDay;
+  final double wastePerPtibotePerDay;
+  final double wastePerPtibugPerDay;
+  final int wasteHistoryRetentionDays;
+  final int standardOrganicRatio;
+  final int standardMineralRatio;
+  final int standardOtherRatio;
+  final int biologicalOrganicRatio;
+  final int biologicalMineralRatio;
+  final int biologicalOtherRatio;
+  final String otherOutputResource;
+  final Map<String, int> biologicalOrientationModuleCost;
 
   int tankCapacity(int level) =>
       baseWasteTankCapacity + (level - 1) * wasteTankCapacityPerLevel;
@@ -89,6 +113,22 @@ const WasteRecyclerConfig defaultWasteRecyclerConfig = WasteRecyclerConfig(
     RecyclerOutputSplit(4, 6),
     RecyclerOutputSplit(3, 7),
   ],
+  wastePerResidentPerDay: .5,
+  wastePerPtibotePerDay: .25,
+  wastePerPtibugPerDay: .1,
+  wasteHistoryRetentionDays: 7,
+  standardOrganicRatio: 40,
+  standardMineralRatio: 40,
+  standardOtherRatio: 20,
+  biologicalOrganicRatio: 60,
+  biologicalMineralRatio: 20,
+  biologicalOtherRatio: 20,
+  otherOutputResource: 'Mycélium',
+  biologicalOrientationModuleCost: <String, int>{
+    'Organique': 10,
+    'Minéral': 10,
+    'Mycélium': 5
+  },
 );
 
 WasteRecyclerConfig wasteRecyclerConfig = defaultWasteRecyclerConfig;

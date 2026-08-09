@@ -5,6 +5,7 @@ import 'package:ptipote_app/features/game/lisiere_forage_config.dart';
 import 'package:ptipote_app/features/game/market_config.dart';
 import 'package:ptipote_app/features/game/resident_economy_config.dart';
 import 'package:ptipote_app/features/game/zone0_game_state.dart';
+import 'package:ptipote_app/features/game/waste_recycler_config.dart';
 
 void main() {
   test('les réglages Habitants V1 séparent les emplacements de maison', () {
@@ -285,7 +286,7 @@ void main() {
     );
 
     expect(vision.toFirebase()['projectId'], 'canalisations');
-    expect(repair.toFirebase()['viabilityGain'], 10);
+    expect(repair.toFirebase()['viabilityGain'], 15);
     expect(repair.reservedKitItemId, 'Kit de réparation domestique');
   });
 
@@ -294,7 +295,34 @@ void main() {
     expect(defaultHousingConfig.arrivalTravelHours, 12);
     expect(defaultHousingConfig.visionSameBranchPercent, 70);
     expect(defaultHousingConfig.visionBonusCap, 10);
-    expect(defaultHousingConfig.autonomousRepairGain, 10);
+    expect(defaultHousingConfig.autonomousRepairGain, 15);
     expect(defaultHousingConfig.autonomousRepairHours, 72);
+  });
+
+  test('le Biofermenteur et la Lithoculture restent configurables', () {
+    final bio = defaultLisiereForageConfig.territoryBuildings.biofermenter;
+    expect(defaultLisiereForageConfig.territoryBuildings.slotsPerZone, 1);
+    expect(bio.passiveOrganicPerDayByLevel,
+        <int, double>{1: 12, 2: 18, 3: 24, 4: 30});
+    expect(bio.normalMineralPerOrganic, 3);
+    expect(bio.mineralBasinMineralPerOrganic, 2);
+    expect(bio.futureScarabeHookEnabled, isFalse);
+  });
+
+  test('le Recycleur conserve ses deux répartitions et son module', () {
+    expect(
+        defaultWasteRecyclerConfig.standardOrganicRatio +
+            defaultWasteRecyclerConfig.standardMineralRatio +
+            defaultWasteRecyclerConfig.standardOtherRatio,
+        100);
+    expect(
+        defaultWasteRecyclerConfig.biologicalOrganicRatio +
+            defaultWasteRecyclerConfig.biologicalMineralRatio +
+            defaultWasteRecyclerConfig.biologicalOtherRatio,
+        100);
+    expect(defaultWasteRecyclerConfig.otherOutputResource, 'Mycélium');
+    expect(
+        defaultWasteRecyclerConfig.biologicalOrientationModuleCost['Mycélium'],
+        5);
   });
 }

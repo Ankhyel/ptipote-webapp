@@ -506,8 +506,8 @@ class _CampHud extends StatelessWidget {
       campHeartLevel,
     );
     final wellbeingColor = _wellbeingColor(gameState.campWellbeing);
-    return Row(
-      children: <Widget>[
+    return Column(children: <Widget>[
+      Row(children: <Widget>[
         Expanded(
           child: _HudChip(
             icon: Icons.groups_2_outlined,
@@ -521,7 +521,6 @@ class _CampHud extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Expanded(
-          flex: 2,
           child: _HudChip(
             icon: Icons.battery_charging_full_outlined,
             color: const Color(0xFF2878C9),
@@ -536,9 +535,8 @@ class _CampHud extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: _HudChip(
-            icon: Icons.sentiment_satisfied_alt_outlined,
-            label:
-                '${_wellbeingEmoji(gameState.displayedCampWellbeing)} ${gameState.displayedCampWellbeing}%',
+            emoji: _wellbeingEmoji(gameState.displayedCampWellbeing),
+            label: '${gameState.displayedCampWellbeing}%',
             color: wellbeingColor,
             onTap: () => _showHudInfo(
               context,
@@ -547,8 +545,42 @@ class _CampHud extends StatelessWidget {
             ),
           ),
         ),
-      ],
-    );
+      ]),
+      const SizedBox(height: 6),
+      Row(children: <Widget>[
+        for (final resource in <({String name, IconData icon, Color color})>[
+          (
+            name: 'Organique',
+            icon: Icons.eco_outlined,
+            color: const Color(0xFF4F7F52)
+          ),
+          (
+            name: 'Minéral',
+            icon: Icons.terrain_outlined,
+            color: const Color(0xFF7A6753)
+          ),
+          (
+            name: 'Déchets',
+            icon: Icons.delete_sweep_outlined,
+            color: const Color(0xFF8A5A42)
+          ),
+          (
+            name: 'Mycélium',
+            icon: Icons.spa_outlined,
+            color: const Color(0xFF7452A0)
+          ),
+        ]) ...<Widget>[
+          Expanded(
+              child: _HudChip(
+                  icon: resource.icon,
+                  color: resource.color,
+                  label: '${gameState.resourceAmount(resource.name)}',
+                  onTap: () => _showHudInfo(context, resource.name,
+                      'Stock ${resource.name} disponible dans l’inventaire du refuge.'))),
+          if (resource.name != 'Mycélium') const SizedBox(width: 5),
+        ],
+      ]),
+    ]);
   }
 
   InlineSpan _energyHudLabel(Zone0GameState state) {
@@ -628,14 +660,16 @@ class _CampHud extends StatelessWidget {
 
 class _HudChip extends StatelessWidget {
   const _HudChip({
-    required this.icon,
+    this.icon,
+    this.emoji,
     this.label,
     this.richLabel,
     this.color = const Color(0xFF2F241A),
     this.onTap,
   });
 
-  final IconData icon;
+  final IconData? icon;
+  final String? emoji;
   final String? label;
   final InlineSpan? richLabel;
   final Color color;
@@ -658,7 +692,10 @@ class _HudChip extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, size: 18, color: color),
+              if (emoji != null)
+                Text(emoji!, style: const TextStyle(fontSize: 17))
+              else if (icon != null)
+                Icon(icon, size: 18, color: color),
               const SizedBox(width: 6),
               Flexible(
                 child: richLabel == null
@@ -5611,7 +5648,7 @@ class _LisierePageState extends State<LisierePage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Lisière proche'),
@@ -5620,6 +5657,7 @@ class _LisierePageState extends State<LisierePage> {
             tabs: <Widget>[
               const Tab(text: 'Missions'),
               const Tab(text: 'P’TIBUG'),
+              const Tab(text: 'Bâtiment'),
             ],
           ),
         ),
@@ -5881,6 +5919,7 @@ class _LisierePageState extends State<LisierePage> {
               gameState: widget.gameState,
               campHeartState: widget.campHeartState,
             ),
+            _LisiereBuildingsTab(gameState: widget.gameState),
           ],
         ),
       ),
@@ -6221,6 +6260,131 @@ class ForageGroupEstimate {
 
   int get totalRewards {
     return rewards.values.fold(0, (total, amount) => total + amount);
+  }
+}
+
+class _LisiereBuildingsTab extends StatefulWidget {
+  const _LisiereBuildingsTab({required this.gameState});
+  final Zone0GameState gameState;
+  @override
+  State<_LisiereBuildingsTab> createState() => _LisiereBuildingsTabState();
+}
+
+class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
+  ForageBiome biome = ForageBiome.plaineRiche;
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.gameState;
+    final zone = state.territoryZone(biome);
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    final built = zone.buildingId == 'biofermenter';
+    final preview = state.lithoculturePreview(biome, 1);
+    final label = lisiereForageConfig.biomes[biome]!.label;
+    return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+      Text('Bâtiment territorial',
+          style: Theme.of(context)
+              .textTheme
+              .headlineSmall
+              ?.copyWith(fontWeight: FontWeight.w900)),
+      const SizedBox(height: 6),
+      const Text('Chaque zone possède un seul emplacement de bâtiment.'),
+      const SizedBox(height: 12),
+      Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ForageBiome.values
+              .where(state.isBiomeUnlocked)
+              .map((item) => ChoiceChip(
+                    label: Text(lisiereForageConfig.biomes[item]!.label),
+                    selected: biome == item,
+                    onSelected: (_) => setState(() => biome = item),
+                  ))
+              .toList()),
+      const SizedBox(height: 12),
+      Card(
+          child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(label,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w900, fontSize: 18)),
+                    Text(zone.terrainTags.contains('mineralBasin')
+                        ? 'Terrain : Bassin minéral'
+                        : 'Terrain : normal'),
+                    const Divider(),
+                    if (!built) ...<Widget>[
+                      const Text(
+                          'Emplacement libre · Biofermenteur mycélien compatible.'),
+                      Text(
+                          'Coût provisoire : ${config.constructionCost.entries.map((e) => '${e.value} ${e.key}').join(' · ')}'),
+                      FilledButton.icon(
+                          onPressed: () {
+                            final ok = state.buildBiofermenter(biome);
+                            setState(() {});
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text(ok
+                                    ? 'Biofermenteur construit.'
+                                    : 'Ressources insuffisantes.')));
+                          },
+                          icon: const Icon(Icons.eco_outlined),
+                          label: const Text('Construire le Biofermenteur')),
+                    ] else ...<Widget>[
+                      Text(
+                          'Biofermenteur mycélien · niveau ${zone.buildingLevel}',
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Text(
+                          'Production passive : ${state.biofermenterOrganicPerDay(biome).toStringAsFixed(1)} Organique/jour'),
+                      Text(
+                          'Lithoculture : ${state.getLithocultureMineralCostPerOrganic(biome)} Minéraux → 1 Organique${zone.terrainTags.contains('mineralBasin') ? ' · Bonus Bassin minéral' : ''}'),
+                      Text(
+                          'Forêt comestible : ${zone.edibleForestInstalled ? '+${(state.activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator * 100).round()} % · ${state.activePollinatorsForBiofermenter(biome)}/${config.maxPollinatorsCounted} Pollinisateurs' : 'non installée'}'),
+                      Wrap(spacing: 8, children: <Widget>[
+                        OutlinedButton(
+                            onPressed: zone.buildingLevel >= 4
+                                ? null
+                                : () {
+                                    final ok = state.upgradeBiofermenter(biome);
+                                    setState(() {});
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                            content: Text(ok
+                                                ? 'Biofermenteur amélioré.'
+                                                : 'Ressources insuffisantes.')));
+                                  },
+                            child: const Text('Améliorer')),
+                        OutlinedButton(
+                            onPressed: zone.edibleForestInstalled
+                                ? null
+                                : () {
+                                    final ok = state.installEdibleForest(biome);
+                                    setState(() {});
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(ok
+                                              ? 'Forêt comestible installée.'
+                                              : 'Ressources insuffisantes.')),
+                                    );
+                                  },
+                            child: Text(
+                                'Installer Forêt comestible (${config.edibleForestCost.entries.map((item) => '${item.value} ${item.key}').join(' · ')})')),
+                        FilledButton(
+                            onPressed: () {
+                              final ok = state.runLithoculture(biome, 1);
+                              setState(() {});
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(ok
+                                          ? '+1 Organique obtenu.'
+                                          : 'Intrants insuffisants.')));
+                            },
+                            child: Text(
+                                'Lithoculture : ${preview.mineralCost} Minéral + ${preview.wasteCost} Déchet')),
+                      ]),
+                    ],
+                  ]))),
+    ]);
   }
 }
 
@@ -7226,6 +7390,16 @@ class _BuildingViabilityCard extends StatelessWidget {
             const Text(
                 'Par tranche de 10 % : 3 Minéral, 1 Organique et 10 Bio-batteries, multipliés par le niveau du bâtiment.'),
             const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () {
+                final result = gameState.repairBuildingWithKit(buildingId);
+                if (result.success) Navigator.of(sheetContext).pop();
+                _showMessage(context, result.message);
+              },
+              icon: const Icon(Icons.handyman_outlined),
+              label: const Text('Utiliser un Kit de réparation · +15 %'),
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -7824,7 +7998,7 @@ class _BiomeBiomassCard extends StatelessWidget {
     final biomass = gameState.biomassFor(biome);
     final visual = gameState.biomassVisualStateFor(biome);
     final maximum = lisiereForageConfig.biomass.maximumPercent;
-    final cost = gameState.biomassRevitalizeCost(biome);
+    final cooldown = gameState.biomassRevitalizeCooldownRemaining(biome);
     final multiplier = gameState.biomassResourceMultiplierFor(biome);
     return Card(
       child: Padding(
@@ -7854,7 +8028,7 @@ class _BiomeBiomassCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             FilledButton.tonalIcon(
-              onPressed: biomass >= maximum
+              onPressed: biomass >= maximum || cooldown > Duration.zero
                   ? null
                   : () {
                       final result = gameState.revitalizeBiome(biome);
@@ -7864,8 +8038,15 @@ class _BiomeBiomassCard extends StatelessWidget {
                     },
               icon: const Icon(Icons.eco_outlined),
               label: Text(
-                'Revigorer · ${cost['Organique']} Organique · ${cost['Minéral']} Minéral',
+                cooldown > Duration.zero
+                    ? 'Dispositif en recharge · ${cooldown.inHours}h ${cooldown.inMinutes.remainder(60).toString().padLeft(2, '0')}'
+                    : 'Utiliser un dispositif · +${lisiereForageConfig.biomass.revitalizeGain}%',
               ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Le Dispositif de régénération se fabrique à l’Atelier : 10 Organique · 10 Minéral · 10 Mycélium. Un seul usage par biome toutes les 24 h.',
+              style: TextStyle(fontSize: 12),
             ),
           ],
         ),
@@ -8812,12 +8993,30 @@ class _CampHousingTab extends StatelessWidget {
                                                 fontWeight: FontWeight.w900,
                                                 fontSize: 18)),
                                         const Text(
-                                            '10 Minéral, 3 Organique et 10 Bio-batteries par tranche demandée de 10 %. La Viabilité reste plafonnée à 100 %.'),
+                                            'Les matériaux réparent 10 % par tranche. Un Kit de réparation restaure 15 %. La Viabilité reste plafonnée à 100 %.'),
                                         const SizedBox(height: 10),
                                         Wrap(
                                           spacing: 8,
                                           runSpacing: 8,
                                           children: <Widget>[
+                                            FilledButton.icon(
+                                              onPressed: () {
+                                                final result = gameState
+                                                    .repairResidentHouseWithKit(
+                                                        house.id);
+                                                if (result.success) {
+                                                  Navigator.of(sheetContext)
+                                                      .pop();
+                                                }
+                                                ScaffoldMessenger.of(context)
+                                                    .showSnackBar(SnackBar(
+                                                        content: Text(
+                                                            result.message)));
+                                              },
+                                              icon: const Icon(
+                                                  Icons.handyman_outlined),
+                                              label: const Text('Kit · +15 %'),
+                                            ),
                                             OutlinedButton.icon(
                                               onPressed: () {
                                                 Navigator.of(sheetContext)
@@ -8942,26 +9141,8 @@ class _CampHousingTab extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 10),
-                              OutlinedButton.icon(
-                                onPressed: house
-                                            .installedFurnitureItems.length >=
-                                        house.furnitureSlots
-                                    ? null
-                                    : () {
-                                        final result = gameState
-                                            .installResidentHouseFurniture(
-                                          houseId: house.id,
-                                          itemName: 'Meuble simple',
-                                        );
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                              content: Text(result.message)),
-                                        );
-                                      },
-                                icon: const Icon(Icons.chair_outlined),
-                                label: const Text('Installer un meuble simple'),
-                              ),
+                              const Text(
+                                  'Les achats et installations du foyer sont réalisés par ses habitants selon leurs priorités.'),
                               Text(
                                 'Compte commun : ${gameState.formatInternalPileBalance(house.householdPileBalance)} · Second générateur : ${house.additionalGeneratorInstalled ? 'installé' : '${house.additionalGeneratorSlots} emplacement libre'}',
                               ),
@@ -8981,20 +9162,6 @@ class _CampHousingTab extends StatelessWidget {
                               Text(
                                 'Distribution : toutes les ${residentEconomyConfig.householdDistributionMinutes} min · reste commun ${house.householdPileBalance} pile(s).',
                               ),
-                              if (!house.additionalGeneratorInstalled)
-                                OutlinedButton.icon(
-                                  onPressed: () {
-                                    final result = gameState
-                                        .installResidentSecondGenerator(
-                                            house.id);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(result.message)),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.bolt_outlined),
-                                  label: Text(
-                                      'Installer un second générateur (${residentEconomyConfig.secondGeneratorInstallationCostPiles} piles)'),
-                                ),
                               if (house.currentViability <
                                   house.maximumViability)
                                 OutlinedButton.icon(
@@ -9028,47 +9195,6 @@ class _CampHousingTab extends StatelessWidget {
                                     ),
                                   ),
                               ],
-                              for (final type
-                                  in StructuralProtectionType.values)
-                                Card(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: <Widget>[
-                                        Text(
-                                          switch (type) {
-                                            StructuralProtectionType
-                                                  .ventilationTermite =>
-                                              'Ventilation Termite',
-                                            StructuralProtectionType
-                                                  .chloroCanaux =>
-                                              'Chloro-canaux',
-                                            StructuralProtectionType
-                                                  .filtration =>
-                                              'Installation filtrante',
-                                          },
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.w800),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        FilledButton(
-                                          onPressed: () {
-                                            final result = gameState
-                                                .installHouseProtection(
-                                                    house.id, type);
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(SnackBar(
-                                                    content:
-                                                        Text(result.message)));
-                                          },
-                                          child: const Text('Installer'),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
                             ],
                           ),
                         ),
@@ -16541,6 +16667,25 @@ class FablabRecyclerView extends StatelessWidget {
                 Text(
                   '${wasteRecyclerConfig.cycleMinutes(gameState.recyclerLevel)} min par cycle · ${wasteRecyclerConfig.energyCostPerCycle} Énergie',
                 ),
+                const SizedBox(height: 6),
+                Text(gameState.recyclerBiologicalOrientationActive
+                    ? 'Orientation biologique active : 60 % Organique · 20 % Minéral · 20 % ${wasteRecyclerConfig.otherOutputResource}'
+                    : 'Ratio standard : 40 % Organique · 40 % Minéral · 20 % ${wasteRecyclerConfig.otherOutputResource}'),
+                OutlinedButton(
+                  onPressed: () {
+                    if (!gameState.recyclerBiologicalOrientationInstalled) {
+                      gameState.installRecyclerBiologicalOrientation();
+                    } else {
+                      gameState.setRecyclerBiologicalOrientation(
+                          !gameState.recyclerBiologicalOrientationActive);
+                    }
+                  },
+                  child: Text(!gameState.recyclerBiologicalOrientationInstalled
+                      ? 'Installer l’orientation (${wasteRecyclerConfig.biologicalOrientationModuleCost.entries.map((item) => '${item.value} ${item.key}').join(' · ')})'
+                      : gameState.recyclerBiologicalOrientationActive
+                          ? 'Désactiver l’orientation biologique'
+                          : 'Activer l’orientation biologique'),
+                ),
               ],
             ),
           ),
@@ -16708,7 +16853,7 @@ class FablabRecyclerView extends StatelessWidget {
                   ),
                 const SizedBox(height: 8),
                 Text(
-                  'Sortie : ${gameState.recyclerOutputOrganic} Organique · ${gameState.recyclerOutputMineral} Minéral',
+                  'Sortie : ${gameState.recyclerOutputOrganic} Organique · ${gameState.recyclerOutputMineral} Minéral · ${gameState.recyclerOutputOther} ${wasteRecyclerConfig.otherOutputResource}',
                 ),
                 FilledButton(
                   onPressed: gameState.recyclerOutputAmount == 0
@@ -16725,6 +16870,27 @@ class FablabRecyclerView extends StatelessWidget {
             ),
           ),
         ),
+        if (gameState.campWasteDailyReports.isNotEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Builder(builder: (context) {
+                final report = gameState.campWasteDailyReports.last;
+                final total = report.domesticWasteGenerated +
+                    report.technicalWasteGenerated;
+                return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text('Rapport quotidien des Déchets',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
+                      Text(
+                          'Domestiques : ${report.domesticWasteGenerated} · techniques : ${report.technicalWasteGenerated} · total : $total'),
+                      Text(
+                          'Recyclés : ${report.wasteRecycled} · restants : ${gameState.resourceAmount('Déchets')}'),
+                    ]);
+              }),
+            ),
+          ),
       ],
     );
   }
@@ -17584,7 +17750,10 @@ class _CraftProductionRecipeCard extends StatelessWidget {
     final hasCapacity = gameState.hasInventoryCapacityFor(output);
     final bioBatteryCost = recipe.bioBatteryCost * effectiveQuantity;
     final hasBioBatteries = gameState.bioBatteries >= bioBatteryCost;
-    final canPrepare = hasResources && hasCapacity && hasBioBatteries;
+    final craftEnergyCost = recipe.energyCost * effectiveQuantity;
+    final hasCraftEnergy = gameState.energyUnits >= craftEnergyCost;
+    final canPrepare =
+        hasResources && hasCapacity && hasBioBatteries && hasCraftEnergy;
     final ingredientText = costs.entries
         .map(
           (entry) =>
@@ -17603,6 +17772,9 @@ class _CraftProductionRecipeCard extends StatelessWidget {
       outputDetails.add(
         'Consommable · faim +${recipe.hungerRestore} · vitalité +${recipe.vitalityRestore}',
       );
+    }
+    if (craftEnergyCost > 0) {
+      outputDetails.add('Énergie du craft : $craftEnergyCost');
     }
     return _ProductionRecipeCard(
       title: '${recipe.displayName} · $sectionLabel niv. $sectionLevel',
@@ -17653,7 +17825,9 @@ class _CraftProductionRecipeCard extends StatelessWidget {
                   ? gameState.missingResourcesLabel(costs)
                   : !hasBioBatteries
                       ? '$bioBatteryCost Bio-batteries requises.'
-                      : null
+                      : !hasCraftEnergy
+                          ? '$craftEnergyCost unité(s) d’énergie requise(s).'
+                          : null
               : 'Inventaire plein : impossible de ranger ${recipe.resultItem}.'
           : null,
       primaryActionLabel: 'Lancer manuellement',
@@ -17664,7 +17838,7 @@ class _CraftProductionRecipeCard extends StatelessWidget {
       primaryActionEnabled: !isUnlimited &&
           canPrepare &&
           manualAvailable &&
-          gameState.energyUnits >= 1,
+          gameState.energyUnits >= craftEnergyCost + 1,
       onPrimaryAction: onPrepare,
       secondaryActionLabel: 'Confier à un P’TIPOTE',
       secondaryActionIcon: Icons.person_add_alt_1,

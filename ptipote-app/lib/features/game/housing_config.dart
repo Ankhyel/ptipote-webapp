@@ -177,7 +177,7 @@ const HousingConfig defaultHousingConfig = HousingConfig(
   visionSameBranchPercent: 70,
   householdAutonomyGraceHours: 24,
   householdEmergencyReservePiles: 25,
-  autonomousRepairGain: 10,
+  autonomousRepairGain: 15,
   autonomousRepairHours: 72,
   autonomousRepairCostPiles: 25,
   householdContributionMaxPercent: 50,

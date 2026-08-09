@@ -49,6 +49,7 @@ class LisiereForageConfig {
     required this.intensities,
     required this.biomass,
     required this.missionTypes,
+    required this.territoryBuildings,
   });
 
   final int forageTimeScale;
@@ -68,6 +69,59 @@ class LisiereForageConfig {
   final Map<ForageIntensity, ForageIntensityConfig> intensities;
   final BiomassConfig biomass;
   final Map<ForageMissionType, ForageMissionTypeConfig> missionTypes;
+  final LisiereTerritoryBuildingsConfig territoryBuildings;
+}
+
+/// Configuration centralisée des bâtiments attachés à un biome. Il n'y a pas
+/// de coordonnées libres : une zone ne possède qu'un seul emplacement.
+class LisiereTerritoryBuildingsConfig {
+  const LisiereTerritoryBuildingsConfig({
+    required this.slotsPerZone,
+    required this.biofermenter,
+  });
+  final int slotsPerZone;
+  final BiofermenterConfig biofermenter;
+}
+
+class BiofermenterConfig {
+  const BiofermenterConfig({
+    required this.passiveOrganicPerDayByLevel,
+    required this.constructionCost,
+    required this.upgradeCosts,
+    required this.passiveProductionMultiplier,
+    required this.vatCount,
+    required this.vatEfficiencyMultiplier,
+    required this.normalMineralPerOrganic,
+    required this.mineralBasinMineralPerOrganic,
+    required this.wasteCanReplaceMineral,
+    required this.mineralEquivalentPerWaste,
+    required this.maxWasteSharePerBatch,
+    required this.edibleForestEnabled,
+    required this.edibleForestCost,
+    required this.pollinatorTraitId,
+    required this.bonusPerPollinator,
+    required this.maxPollinatorsCounted,
+    required this.futureScarabeHookEnabled,
+    required this.futureScarabeMineralPerOrganic,
+  });
+  final Map<int, double> passiveOrganicPerDayByLevel;
+  final Map<String, int> constructionCost;
+  final Map<int, Map<String, int>> upgradeCosts;
+  final double passiveProductionMultiplier;
+  final int vatCount;
+  final double vatEfficiencyMultiplier;
+  final int normalMineralPerOrganic;
+  final int mineralBasinMineralPerOrganic;
+  final bool wasteCanReplaceMineral;
+  final double mineralEquivalentPerWaste;
+  final double maxWasteSharePerBatch;
+  final bool edibleForestEnabled;
+  final Map<String, int> edibleForestCost;
+  final String pollinatorTraitId;
+  final double bonusPerPollinator;
+  final int maxPollinatorsCounted;
+  final bool futureScarabeHookEnabled;
+  final int futureScarabeMineralPerOrganic;
 }
 
 class BiomassTierConfig {
@@ -111,7 +165,9 @@ class BiomassConfig {
     required this.recoveryTiers,
     required this.revitalizeBaseOrganicCost,
     required this.revitalizeBaseMineralCost,
+    required this.revitalizeBaseMyceliumCost,
     required this.revitalizeGain,
+    required this.revitalizeCooldownHours,
     required this.revitalizeCostTiers,
     required this.ptibugYieldTiers,
     required this.visualStates,
@@ -124,7 +180,9 @@ class BiomassConfig {
   final List<BiomassTierConfig> recoveryTiers;
   final int revitalizeBaseOrganicCost;
   final int revitalizeBaseMineralCost;
+  final int revitalizeBaseMyceliumCost;
   final int revitalizeGain;
+  final int revitalizeCooldownHours;
   final List<BiomassTierConfig> revitalizeCostTiers;
   final List<BiomassTierConfig> ptibugYieldTiers;
   final List<BiomassVisualStateConfig> visualStates;
@@ -347,9 +405,11 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       BiomassTierConfig(minimumPercent: 10, maximumPercent: 19, multiplier: 8),
       BiomassTierConfig(minimumPercent: 0, maximumPercent: 9, multiplier: 16),
     ],
-    revitalizeBaseOrganicCost: 4,
-    revitalizeBaseMineralCost: 2,
-    revitalizeGain: 10,
+    revitalizeBaseOrganicCost: 10,
+    revitalizeBaseMineralCost: 10,
+    revitalizeBaseMyceliumCost: 10,
+    revitalizeGain: 15,
+    revitalizeCooldownHours: 24,
     revitalizeCostTiers: <BiomassTierConfig>[
       BiomassTierConfig(minimumPercent: 50, maximumPercent: 100, multiplier: 1),
       BiomassTierConfig(minimumPercent: 30, maximumPercent: 49, multiplier: 2),
@@ -395,6 +455,43 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       wastePerHour: 2,
     ),
   },
+  territoryBuildings: LisiereTerritoryBuildingsConfig(
+    slotsPerZone: 1,
+    biofermenter: BiofermenterConfig(
+      passiveOrganicPerDayByLevel: const <int, double>{
+        1: 12,
+        2: 18,
+        3: 24,
+        4: 30
+      },
+      // Valeurs provisoires : elles restent exposées au Dashboard.
+      constructionCost: const <String, int>{'Organique': 20, 'Minéral': 20},
+      upgradeCosts: const <int, Map<String, int>>{
+        2: <String, int>{'Organique': 30, 'Minéral': 30},
+        3: <String, int>{'Organique': 45, 'Minéral': 45},
+        4: <String, int>{'Organique': 60, 'Minéral': 60},
+      },
+      passiveProductionMultiplier: 1,
+      vatCount: 1,
+      vatEfficiencyMultiplier: 1,
+      normalMineralPerOrganic: 3,
+      mineralBasinMineralPerOrganic: 2,
+      wasteCanReplaceMineral: true,
+      mineralEquivalentPerWaste: 1,
+      maxWasteSharePerBatch: 1,
+      edibleForestEnabled: true,
+      edibleForestCost: const <String, int>{
+        'Organique': 20,
+        'Minéral': 10,
+        'Mycélium': 10
+      },
+      pollinatorTraitId: 'pollinisateur',
+      bonusPerPollinator: .10,
+      maxPollinatorsCounted: 3,
+      futureScarabeHookEnabled: false,
+      futureScarabeMineralPerOrganic: 4,
+    ),
+  ),
 );
 
 LisiereForageConfig lisiereForageConfig = defaultLisiereForageConfig;

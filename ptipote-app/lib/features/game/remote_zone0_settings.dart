@@ -128,6 +128,7 @@ WasteRecyclerConfig _wasteRecycler(Object? value) {
   if (raw == null) return base;
   final cycleMinutes = _map(raw['cycleMinutesByLevel']);
   final outputSplits = raw['outputSplits'] as List?;
+  final orientationCost = _map(raw['biologicalOrientationModuleCost']);
   return WasteRecyclerConfig(
     wasteGenerationCycleMinutes: _int(
         raw['wasteGenerationCycleMinutes'], base.wasteGenerationCycleMinutes),
@@ -190,6 +191,32 @@ WasteRecyclerConfig _wasteRecycler(Object? value) {
                   fallback.mineral),
             );
           }),
+    wastePerResidentPerDay:
+        _double(raw['wastePerResidentPerDay'], base.wastePerResidentPerDay),
+    wastePerPtibotePerDay:
+        _double(raw['wastePerPtibotePerDay'], base.wastePerPtibotePerDay),
+    wastePerPtibugPerDay:
+        _double(raw['wastePerPtibugPerDay'], base.wastePerPtibugPerDay),
+    wasteHistoryRetentionDays:
+        _int(raw['wasteHistoryRetentionDays'], base.wasteHistoryRetentionDays),
+    standardOrganicRatio:
+        _int(raw['standardOrganicRatio'], base.standardOrganicRatio),
+    standardMineralRatio:
+        _int(raw['standardMineralRatio'], base.standardMineralRatio),
+    standardOtherRatio:
+        _int(raw['standardOtherRatio'], base.standardOtherRatio),
+    biologicalOrganicRatio:
+        _int(raw['biologicalOrganicRatio'], base.biologicalOrganicRatio),
+    biologicalMineralRatio:
+        _int(raw['biologicalMineralRatio'], base.biologicalMineralRatio),
+    biologicalOtherRatio:
+        _int(raw['biologicalOtherRatio'], base.biologicalOtherRatio),
+    otherOutputResource:
+        _string(raw['otherOutputResource'], base.otherOutputResource),
+    biologicalOrientationModuleCost: <String, int>{
+      for (final entry in base.biologicalOrientationModuleCost.entries)
+        entry.key: _int(orientationCost?[entry.key], entry.value),
+    },
   );
 }
 
@@ -1489,6 +1516,7 @@ LisiereForageConfig _lisiere(Object? value) {
         key: _biome(key, biomeById[key.name]),
     },
     biomass: _biomass(_map(raw['biomass'])),
+    territoryBuildings: _territoryBuildings(_map(raw['territoryBuildings'])),
     missionTypes: <ForageMissionType, ForageMissionTypeConfig>{
       for (final type in ForageMissionType.values)
         type: () {
@@ -1506,6 +1534,74 @@ LisiereForageConfig _lisiere(Object? value) {
           );
         }(),
     },
+  );
+}
+
+LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
+  final base = defaultLisiereForageConfig.territoryBuildings;
+  final bio = _map(raw?['biofermenter']);
+  final baseBio = base.biofermenter;
+  final perLevel = _map(bio?['passiveOrganicPerDayByLevel']);
+  final construct = _map(bio?['constructionCost']);
+  final upgrades = _map(bio?['upgradeCosts']);
+  final forest = _map(bio?['edibleForest']);
+  final scarabe = _map(bio?['futureScarabeHook']);
+  return LisiereTerritoryBuildingsConfig(
+    slotsPerZone: _int(raw?['slotsPerZone'], base.slotsPerZone),
+    biofermenter: BiofermenterConfig(
+      passiveOrganicPerDayByLevel: <int, double>{
+        for (var level = 1; level <= 4; level++)
+          level: _double(
+              perLevel?['$level'], baseBio.passiveOrganicPerDayByLevel[level]!)
+      },
+      constructionCost: <String, int>{
+        for (final entry in baseBio.constructionCost.entries)
+          entry.key: _int(construct?[entry.key], entry.value)
+      },
+      upgradeCosts: <int, Map<String, int>>{
+        for (final entry in baseBio.upgradeCosts.entries)
+          entry.key: <String, int>{
+            for (final cost in entry.value.entries)
+              cost.key:
+                  _int(_map(upgrades?['${entry.key}'])?[cost.key], cost.value)
+          }
+      },
+      passiveProductionMultiplier: _double(bio?['passiveProductionMultiplier'],
+          baseBio.passiveProductionMultiplier),
+      vatCount: _int(bio?['vatCount'], baseBio.vatCount),
+      vatEfficiencyMultiplier: _double(
+          bio?['vatEfficiencyMultiplier'], baseBio.vatEfficiencyMultiplier),
+      normalMineralPerOrganic: _int(
+          bio?['normalMineralPerOrganic'], baseBio.normalMineralPerOrganic),
+      mineralBasinMineralPerOrganic: _int(bio?['mineralBasinMineralPerOrganic'],
+          baseBio.mineralBasinMineralPerOrganic),
+      wasteCanReplaceMineral: bio?['wasteCanReplaceMineral'] is bool
+          ? bio!['wasteCanReplaceMineral'] as bool
+          : baseBio.wasteCanReplaceMineral,
+      mineralEquivalentPerWaste: _double(
+          bio?['mineralEquivalentPerWaste'], baseBio.mineralEquivalentPerWaste),
+      maxWasteSharePerBatch:
+          _double(bio?['maxWasteSharePerBatch'], baseBio.maxWasteSharePerBatch),
+      edibleForestEnabled: forest?['enabled'] is bool
+          ? forest!['enabled'] as bool
+          : baseBio.edibleForestEnabled,
+      edibleForestCost: <String, int>{
+        for (final entry in baseBio.edibleForestCost.entries)
+          entry.key: _int(_map(forest?['cost'])?[entry.key], entry.value),
+      },
+      pollinatorTraitId:
+          _string(forest?['pollinatorTraitId'], baseBio.pollinatorTraitId),
+      bonusPerPollinator:
+          _double(forest?['bonusPerPollinator'], baseBio.bonusPerPollinator),
+      maxPollinatorsCounted:
+          _int(forest?['maxPollinatorsCounted'], baseBio.maxPollinatorsCounted),
+      futureScarabeHookEnabled: scarabe?['enabled'] is bool
+          ? scarabe!['enabled'] as bool
+          : baseBio.futureScarabeHookEnabled,
+      futureScarabeMineralPerOrganic: _int(
+          scarabe?['mineralToOrganicConversionRate'],
+          baseBio.futureScarabeMineralPerOrganic),
+    ),
   );
 }
 
@@ -1581,7 +1677,15 @@ BiomassConfig _biomass(Map<String, dynamic>? raw) {
       raw['revitalizeBaseMineralCost'],
       base.revitalizeBaseMineralCost,
     ),
+    revitalizeBaseMyceliumCost: _int(
+      raw['revitalizeBaseMyceliumCost'],
+      base.revitalizeBaseMyceliumCost,
+    ),
     revitalizeGain: _int(raw['revitalizeGain'], base.revitalizeGain),
+    revitalizeCooldownHours: _int(
+      raw['revitalizeCooldownHours'],
+      base.revitalizeCooldownHours,
+    ),
     revitalizeCostTiers: _biomassTiers(
       raw['revitalizeCostTiers'],
       base.revitalizeCostTiers,
@@ -2067,9 +2171,19 @@ CraftConfig _craft(Object? value) {
       )
       .whereType<CraftRecipe>()
       .toList();
-  return parsed.any((recipe) => recipe.id == 'simpleMeal')
-      ? CraftConfig(recipes: parsed)
-      : defaultCraftConfig;
+  if (!parsed.any((recipe) => recipe.id == 'simpleMeal')) {
+    return defaultCraftConfig;
+  }
+  // Remote dashboards created before a recipe was introduced must not hide
+  // it from an existing refuge. Their configured recipes still take priority.
+  final remoteIds = parsed.map((recipe) => recipe.id).toSet();
+  return CraftConfig(
+    recipes: <CraftRecipe>[
+      ...parsed,
+      ...defaultCraftConfig.recipes
+          .where((recipe) => !remoteIds.contains(recipe.id)),
+    ],
+  );
 }
 
 CraftRecipe? _craftRecipe(Map<String, dynamic> raw, CraftRecipe? fallback) {
