@@ -500,6 +500,11 @@ class Zone0GameState extends ChangeNotifier {
     };
   }
 
+  void _awardPlayerBuildingRepairXp() {
+    _addKernelAxisXp(KernelAxis.builder, 5);
+    _refreshKernelPlanReadiness();
+  }
+
   Zone0ActionResult repairBuilding(String buildingId, {int gain = 10}) {
     final viability = viabilityForBuilding(buildingId);
     if (viability.current >= viability.maximum) {
@@ -523,6 +528,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     bioBatteries -= batteries;
     viability.restore(actualGain);
+    _awardPlayerBuildingRepairXp();
     if (viability.current >= viability.maximum) {
       _reportBuildingViability(buildingId, 'est entièrement réparé.');
     }
@@ -542,6 +548,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     final gain = math.min(10, viability.maximum - viability.current).toInt();
     viability.restore(gain);
+    _awardPlayerBuildingRepairXp();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -565,6 +572,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     final gain = math.min(15, viability.maximum - viability.current).toInt();
     viability.restore(gain);
+    _awardPlayerBuildingRepairXp();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -2365,6 +2373,41 @@ class Zone0GameState extends ChangeNotifier {
     return true;
   }
 
+  /// A repair kit bought for a household is not a piece of furniture to keep
+  /// in reserve: it is consumed as soon as the Market sale is completed.
+  /// Keeping this transition here makes both the resident-economy and the
+  /// legacy Market request paths apply the exact same, capped repair.
+  int _applyPurchasedHouseholdRepairKit(
+    ResidentHouse house,
+    DateTime now, {
+    String? requesterName,
+  }) {
+    const kit = 'Kit de réparation domestique';
+    if (house.currentViability >= house.maximumViability ||
+        !_consumeHouseholdInventoryItem(house, kit)) {
+      return 0;
+    }
+    final activeRepair = householdRepairFor(house.id);
+    if (activeRepair != null && !activeRepair.isPlayerRepair) {
+      activeRepair.status = HouseholdRepairStatus.paused;
+      house.isUnderRepair = false;
+    }
+    final gain =
+        math.min(15, house.maximumViability - house.currentViability).toInt();
+    house
+      ..currentViability += gain
+      ..lastAutonomyDecision = requesterName == null
+          ? 'Kit de réparation utilisé immédiatement : +$gain% de Viabilité.'
+          : '$requesterName a fait utiliser un Kit : +$gain% de Viabilité.'
+      ..updatedAt = now;
+    for (final resident in residents.where(
+        (resident) => resident.houseId == house.id && resident.isActive)) {
+      _resolveResidentUncoveredNeed(resident.id, kit, now);
+      resident.currentHappiness = residentHappinessFor(resident);
+    }
+    return gain;
+  }
+
   void _addResidentOwnedItems(
     Zone0Resident resident,
     String item,
@@ -3388,6 +3431,57 @@ class Zone0GameState extends ChangeNotifier {
     }
   }
 
+  /// Below 85% Viability, one active occupant is selected deterministically
+  /// for the house's repair-kit request. The choice stays stable while the
+  /// request is open, so reopening the app cannot cycle through residents or
+  /// create duplicate Market cards.
+  bool _resolveHouseholdRepairKitDemands(DateTime now) {
+    const kit = 'Kit de réparation domestique';
+    var changed = false;
+    for (final house in residentHouses) {
+      final occupants = residents
+          .where(
+              (resident) => resident.isActive && resident.houseId == house.id)
+          .toList()
+        ..sort((a, b) => a.id.compareTo(b.id));
+      if (occupants.isEmpty) continue;
+
+      final activeNeeds = residentUncoveredNeeds
+          .where((need) =>
+              need.resolvedAt == null &&
+              need.itemDefinitionId == kit &&
+              occupants.any((resident) => resident.id == need.residentId))
+          .toList();
+      if (house.currentViability >= 85 ||
+          (house.householdInventory[kit] ?? 0) > 0) {
+        for (final need in activeNeeds) {
+          _resolveResidentUncoveredNeed(need.residentId, kit, now);
+          changed = true;
+        }
+        continue;
+      }
+
+      if (activeNeeds.isNotEmpty) continue;
+      final seed = house.id.hashCode ^ _residentDayKey(now).hashCode;
+      final requester = occupants[seed.abs() % occupants.length];
+      _upsertResidentUncoveredNeed(
+        resident: requester,
+        item: kit,
+        category: 'householdInstallation',
+        quantity: 1,
+        reason: ResidentUncoveredNeedReason.noStock,
+        urgency: 3,
+        now: now,
+      );
+      house
+        ..lastAutonomyDecision =
+            '${requester.displayName} recherche un Kit de réparation.'
+        ..updatedAt = now;
+      changed = true;
+    }
+    return changed;
+  }
+
   bool _isFinishedResidentProduct(String item) =>
       _residentItemCategory(item) != null;
 
@@ -3510,6 +3604,13 @@ class Zone0GameState extends ChangeNotifier {
     resident.recentSpendingPiles += price;
     if (house != null && isHouseholdItem) {
       _addHouseholdInventoryItem(house, itemDefinitionId, safeQuantity);
+      if (itemDefinitionId == 'Kit de réparation domestique') {
+        _applyPurchasedHouseholdRepairKit(
+          house,
+          current,
+          requesterName: resident.displayName,
+        );
+      }
     } else {
       _addResidentOwnedItems(
         resident,
@@ -3694,6 +3795,7 @@ class Zone0GameState extends ChangeNotifier {
     final current = now ?? DateTime.now();
     _migrateResidentEconomy();
     var changed = resolveResidentDomesticGeneration(now: current);
+    changed = _resolveHouseholdRepairKitDemands(current) || changed;
     residentUncoveredNeeds.removeWhere((need) =>
         need.resolvedAt != null &&
         current.difference(need.resolvedAt!).inDays > 2);
@@ -7178,6 +7280,13 @@ class Zone0GameState extends ChangeNotifier {
       if (house != null && _isHouseholdFinishedItem(request.requestedItemId)) {
         _addHouseholdInventoryItem(
             house, request.requestedItemId, request.requestedQuantity);
+        if (request.requestedItemId == 'Kit de réparation domestique') {
+          _applyPurchasedHouseholdRepairKit(
+            house,
+            DateTime.now(),
+            requesterName: resident.displayName,
+          );
+        }
       } else {
         _addResidentOwnedItems(
           resident,
@@ -20606,12 +20715,6 @@ class HouseholdAutonomyService {
       house.lastAutonomyDecision =
           'Protection recherchée avant la prochaine météo.';
       return HouseholdAutonomyAction.protection;
-    }
-    if (house.currentViability < 50 &&
-        state.householdRepairFor(house.id) == null) {
-      house.lastAutonomyDecision =
-          'Kit de réparation prioritaire : Viabilité basse.';
-      return HouseholdAutonomyAction.repair;
     }
     final occupants =
         state.residents.where((resident) => resident.houseId == house.id);
