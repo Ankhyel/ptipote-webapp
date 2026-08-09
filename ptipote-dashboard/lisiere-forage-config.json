@@ -11,7 +11,7 @@
   "organicBonusAtZeroWaste": 0.3,
   "biomass": {
     "maximumPercent": 100,
-    "missionConsumptionByIntensity": {"doux": 4, "normal": 8, "intensif": 16},
+    "missionConsumptionByIntensity": {"doux": 2, "normal": 4, "intensif": 8},
     "resourceYieldTiers": [
       {"minimumPercent": 50, "maximumPercent": 100, "multiplier": 1.0},
       {"minimumPercent": 20, "maximumPercent": 49, "multiplier": 0.75},

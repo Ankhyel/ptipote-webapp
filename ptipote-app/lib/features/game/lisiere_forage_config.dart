@@ -327,9 +327,9 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
   biomass: BiomassConfig(
     maximumPercent: 100,
     missionConsumptionByIntensity: <ForageIntensity, int>{
-      ForageIntensity.doux: 4,
-      ForageIntensity.normal: 8,
-      ForageIntensity.intensif: 16,
+      ForageIntensity.doux: 2,
+      ForageIntensity.normal: 4,
+      ForageIntensity.intensif: 8,
     },
     resourceYieldTiers: <BiomassTierConfig>[
       BiomassTierConfig(minimumPercent: 50, maximumPercent: 100, multiplier: 1),

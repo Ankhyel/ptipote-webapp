@@ -1683,15 +1683,26 @@ function firestoreSafeZone0Settings(settings) {
   const safe = structuredClone(settings);
   const splits = safe?.wasteRecycler?.outputSplits;
   if (Array.isArray(splits)) {
-    safe.wasteRecycler.outputSplits = splits.map((split) => {
-      if (!Array.isArray(split)) return split;
-      return {
-        organic: Number(split[0]) || 0,
-        mineral: Number(split[1]) || 0,
-      };
-    });
+    safe.wasteRecycler.outputSplits = splits.map((split) => Array.isArray(split)
+      ? { organic: Number(split[0]) || 0, mineral: Number(split[1]) || 0 }
+      : split);
   }
-  return safe;
+  const serialize = (value, nestedInArray = false) => {
+    if (Array.isArray(value)) {
+      // Firestore interdit toute liste enfant d'une liste. Un wrapper garde
+      // ces données lisibles et protège aussi les anciennes configurations
+      // publiées avant l'ajout du Dashboard actuel.
+      if (nestedInArray) {
+        return { __zone0ArrayValues: value.map((item) => serialize(item, true)) };
+      }
+      return value.map((item) => serialize(item, true));
+    }
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, serialize(item, false)]));
+    }
+    return value;
+  };
+  return serialize(safe);
 }
 
 async function publishZone0Settings() {

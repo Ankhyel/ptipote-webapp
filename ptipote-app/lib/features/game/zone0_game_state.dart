@@ -4010,6 +4010,24 @@ class Zone0GameState extends ChangeNotifier {
         ),
       ...marketShops.where((shop) => !shop.isPrimary),
     ];
+    // Une ancienne migration recréait la boutique principale comme candidat
+    // pour chaque slot vide. Elle pouvait donc réserver les quatre places
+    // avec le même id `market-main`, alors que le compteur restait à 1/4.
+    // La boutique principale ne conserve que son premier slot réel.
+    final primarySlots = marketShopSlots
+        .where((slot) => slot.shopId == primaryMarketShopId)
+        .toList()
+      ..sort((a, b) => a.slotIndex.compareTo(b.slotIndex));
+    if (primaryMarketShopChosen && primarySlots.isNotEmpty) {
+      orderedShops.firstWhere((shop) => shop.id == primaryMarketShopId).slotId =
+          primarySlots.first.slotId;
+      for (final duplicate in primarySlots.skip(1)) {
+        duplicate
+          ..shopId = null
+          ..status = MarketShopSlotStatus.vacant
+          ..vacantSince = now;
+      }
+    }
     final hasPlayerConstructionReservation =
         marketShopConstructionOrder != null &&
             !marketShopConstructionOrder!.isPrimary &&
@@ -4026,6 +4044,9 @@ class Zone0GameState extends ChangeNotifier {
           .where((entry) => entry.slotId == slot.slotId)
           .firstOrNull;
       if (slot.shopId == primaryMarketShopId && primaryMarketShopChosen) {
+        orderedShops
+            .firstWhere((shop) => shop.id == primaryMarketShopId)
+            .slotId = slot.slotId;
         slot
           ..status = MarketShopSlotStatus.playerOccupied
           ..vacantSince = null;
