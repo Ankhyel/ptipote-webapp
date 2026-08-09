@@ -1861,8 +1861,8 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 ### Lisière : bâtiments territoriaux, Biofermenteur et Déchets
 
 - Chaque biome de Lisière possède un seul emplacement territorial persistant, lié au biome et non à une position libre. Les tags actuels sont **normal** et **Bassin minéral**.
-- Le **Biofermenteur mycélien** produit en continu 12 / 18 / 24 / 30 Organique par jour aux niveaux 1 à 4. Les fractions sont conservées et résolues hors ligne vers le stock global.
+- Le **Biofermenteur mycélien** produit en continu 12 / 18 / 24 / 30 Organique par jour aux niveaux 1 à 4. Les fractions sont conservées et résolues hors ligne vers le stock global. Sa construction dure 1 h au niveau 1, puis 2 h, 3 h et 4 h pour les améliorations ; **Forêt comestible** dure 1 h.
 - Sa **Lithoculture** convertit 3 Minéraux en 1 Organique, ou 2:1 dans un Bassin minéral. Les Déchets peuvent remplacer des Minéraux suivant les réglages Dashboard ; il n’existe pas de recette séparée Déchets → Organique.
 - **Forêt comestible** est un module préparé : les P’TIBUG Pollinisateur réellement affectés au même biome augmentent uniquement la production passive, avec plafond configurable. Le hook Scarabée 4 Minéraux → 1 Organique reste inactif.
-- Le camp génère des Déchets domestiques continus à partir des habitants, P’TIBOTES et P’TIBUG actifs. Les sources techniques peuvent appeler `registerWasteGeneration`; les rapports quotidiens sont agrégés et conservés sur une durée réglable.
+- Le camp génère des Déchets domestiques continus à partir des habitants, P’TIBOTES et P’TIBUG actifs. Les sources techniques peuvent appeler `registerWasteGeneration`; les rapports quotidiens sont agrégés, découpés par jour même hors ligne, visibles au Recycleur et résumés dans le Journal.
 - Le Recycleur conserve sa capacité et sa vitesse. Son orientation standard est **40 % Organique / 40 % Minéral / 20 % Mycélium** ; l’orientation biologique est **60 % / 20 % / 20 %**. Le ratio est enregistré au cycle afin qu’un changement de module ne réécrive jamais un batch lancé.

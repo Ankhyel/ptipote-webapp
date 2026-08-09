@@ -171,6 +171,7 @@
       "passiveOrganicPerDayByLevel": {"1": 12, "2": 18, "3": 24, "4": 30},
       "constructionCost": {"Organique": 20, "Minéral": 20},
       "upgradeCosts": {"2": {"Organique": 30, "Minéral": 30}, "3": {"Organique": 45, "Minéral": 45}, "4": {"Organique": 60, "Minéral": 60}},
+      "constructionMinutesByLevel": {"1": 60, "2": 120, "3": 180, "4": 240},
       "passiveProductionMultiplier": 1,
       "vatCount": 1,
       "vatEfficiencyMultiplier": 1,
@@ -179,7 +180,7 @@
       "wasteCanReplaceMineral": true,
       "mineralEquivalentPerWaste": 1,
       "maxWasteSharePerBatch": 1,
-      "edibleForest": {"enabled": true, "cost": {"Organique": 20, "Minéral": 10, "Mycélium": 10}, "pollinatorTraitId": "pollinisateur", "bonusPerPollinator": 0.1, "maxPollinatorsCounted": 3, "affectsPassiveProductionOnly": true},
+      "edibleForest": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 10, "Mycélium": 10}, "pollinatorTraitId": "pollinisateur", "bonusPerPollinator": 0.1, "maxPollinatorsCounted": 3, "affectsPassiveProductionOnly": true},
       "futureScarabeHook": {"enabled": false, "mineralToOrganicConversionRate": 4}
     }
   }

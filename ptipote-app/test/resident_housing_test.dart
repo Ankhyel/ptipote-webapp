@@ -307,6 +307,9 @@ void main() {
     expect(bio.normalMineralPerOrganic, 3);
     expect(bio.mineralBasinMineralPerOrganic, 2);
     expect(bio.futureScarabeHookEnabled, isFalse);
+    expect(bio.constructionMinutesByLevel,
+        <int, int>{1: 60, 2: 120, 3: 180, 4: 240});
+    expect(bio.edibleForestConstructionMinutes, 60);
   });
 
   test('le Recycleur conserve ses deux répartitions et son module', () {

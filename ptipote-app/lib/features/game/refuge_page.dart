@@ -2194,6 +2194,8 @@ class _MaisonPageState extends State<_MaisonPage>
                       padding: const EdgeInsets.only(bottom: 14),
                       child: _PtipoteDashboardCard(
                         figurine: figurine,
+                        xp: _gameState.xpFor(figurine),
+                        level: _gameState.levelFor(figurine),
                         hunger: _gameState.hungerFor(figurine),
                         rest: _gameState.restFor(figurine),
                         energy: _gameState.vitalityFor(figurine),
@@ -3255,6 +3257,8 @@ class _NotificationBadge extends StatelessWidget {
 class _PtipoteDashboardCard extends StatelessWidget {
   const _PtipoteDashboardCard({
     required this.figurine,
+    required this.xp,
+    required this.level,
     required this.hunger,
     required this.rest,
     required this.energy,
@@ -3264,6 +3268,8 @@ class _PtipoteDashboardCard extends StatelessWidget {
   });
 
   final PtipoteFigurine figurine;
+  final int xp;
+  final int level;
   final int hunger;
   final int rest;
   final int energy;
@@ -3273,8 +3279,9 @@ class _PtipoteDashboardCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final xpRequired = math.max(1, figurine.xpRequiredForNextLevel);
-    final xpProgress = (figurine.xpValue / xpRequired).clamp(0.0, 1.0);
+    final xpRequired =
+        math.max(1, ptipoteStatsConfig.xpRequiredForNextLevel(level));
+    final xpProgress = (xp / xpRequired).clamp(0.0, 1.0);
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
@@ -3328,7 +3335,7 @@ class _PtipoteDashboardCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Text(
-              'Niveau ${figurine.levelValue}',
+              'Niveau $level',
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 7),
@@ -3342,7 +3349,7 @@ class _PtipoteDashboardCard extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             Text(
-              '${figurine.xpValue} / $xpRequired XP',
+              '$xp / $xpRequired XP',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             const Divider(height: 28),
@@ -6278,6 +6285,10 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
     final zone = state.territoryZone(biome);
     final config = lisiereForageConfig.territoryBuildings.biofermenter;
     final built = zone.buildingId == 'biofermenter';
+    final bioTarget = state.biofermenterTargetId(biome);
+    final forestTarget = state.edibleForestTargetId(biome);
+    final bioProject = state.projectFor(bioTarget);
+    final forestProject = state.projectFor(forestTarget);
     final preview = state.lithoculturePreview(biome, 1);
     final label = lisiereForageConfig.biomes[biome]!.label;
     return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
@@ -6318,18 +6329,20 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                       const Text(
                           'Emplacement libre · Biofermenteur mycélien compatible.'),
                       Text(
-                          'Coût provisoire : ${config.constructionCost.entries.map((e) => '${e.value} ${e.key}').join(' · ')}'),
+                          'Durée : ${config.constructionMinutesByLevel[1]} min'),
                       FilledButton.icon(
                           onPressed: () {
-                            final ok = state.buildBiofermenter(biome);
-                            setState(() {});
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text(ok
-                                    ? 'Biofermenteur construit.'
-                                    : 'Ressources insuffisantes.')));
+                            _showBuildingProject(context,
+                                gameState: state,
+                                targetId: bioTarget,
+                                title: 'Biofermenteur mycélien',
+                                description:
+                                    'Produit de l’Organique passivement dans $label.');
                           },
                           icon: const Icon(Icons.eco_outlined),
-                          label: const Text('Construire le Biofermenteur')),
+                          label: Text(bioProject.isInProgress
+                              ? 'Travaux : ${_countdownLabel(bioProject.endsAt!)}'
+                              : 'Construire le Biofermenteur')),
                     ] else ...<Widget>[
                       Text(
                           'Biofermenteur mycélien · niveau ${zone.buildingLevel}',
@@ -6345,30 +6358,30 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                             onPressed: zone.buildingLevel >= 4
                                 ? null
                                 : () {
-                                    final ok = state.upgradeBiofermenter(biome);
-                                    setState(() {});
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                            content: Text(ok
-                                                ? 'Biofermenteur amélioré.'
-                                                : 'Ressources insuffisantes.')));
+                                    _showBuildingProject(context,
+                                        gameState: state,
+                                        targetId: bioTarget,
+                                        title: 'Biofermenteur mycélien',
+                                        description:
+                                            'Amélioration niveau ${zone.buildingLevel + 1} · ${config.constructionMinutesByLevel[zone.buildingLevel + 1]} min.');
                                   },
-                            child: const Text('Améliorer')),
+                            child: Text(bioProject.isInProgress
+                                ? 'Travaux : ${_countdownLabel(bioProject.endsAt!)}'
+                                : 'Améliorer')),
                         OutlinedButton(
                             onPressed: zone.edibleForestInstalled
                                 ? null
                                 : () {
-                                    final ok = state.installEdibleForest(biome);
-                                    setState(() {});
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                          content: Text(ok
-                                              ? 'Forêt comestible installée.'
-                                              : 'Ressources insuffisantes.')),
-                                    );
+                                    _showBuildingProject(context,
+                                        gameState: state,
+                                        targetId: forestTarget,
+                                        title: 'Forêt comestible',
+                                        description:
+                                            'Module territorial · ${config.edibleForestConstructionMinutes} min.');
                                   },
-                            child: Text(
-                                'Installer Forêt comestible (${config.edibleForestCost.entries.map((item) => '${item.value} ${item.key}').join(' · ')})')),
+                            child: Text(forestProject.isInProgress
+                                ? 'Travaux : ${_countdownLabel(forestProject.endsAt!)}'
+                                : 'Installer Forêt comestible')),
                         FilledButton(
                             onPressed: () {
                               final ok = state.runLithoculture(biome, 1);
@@ -6526,9 +6539,17 @@ class _PTibugTerritoryTabState extends State<_PTibugTerritoryTab> {
     );
   }
 
-  void _message(BuildContext context, String message) =>
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
+  void _message(BuildContext context, String message) {
+    final normalized = message.toLowerCase();
+    if (!normalized.contains('insuffisant') &&
+        !normalized.contains('manque') &&
+        !normalized.contains('pas assez') &&
+        !normalized.contains('impossible')) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
 
   Future<void> _openTerritorySquare(ForageBiome biome) async {
     final building = biome == ForageBiome.plaineRiche
@@ -12457,6 +12478,11 @@ class _MarketPageState extends State<MarketPage> {
                                         : null;
                                     return _MarketStockSlot(
                                       stack: stack,
+                                      label: stack == null
+                                          ? null
+                                          : widget.gameState
+                                              .marketInventoryDisplayLabel(
+                                                  stack),
                                       onTap: () =>
                                           _editMarketDistributorSlot(stack),
                                     );
@@ -12891,6 +12917,9 @@ class _MarketPageState extends State<MarketPage> {
             final stack = index < stock.length ? stock[index] : null;
             return _MarketStockSlot(
               stack: stack,
+              label: stack == null
+                  ? null
+                  : widget.gameState.marketInventoryDisplayLabel(stack),
               onTap: () => _editMarketShopSlot(shopId),
             );
           }),
@@ -12973,6 +13002,10 @@ class _MarketPageState extends State<MarketPage> {
                     (index) => _MarketStockSlot(
                           stack: index < distributor.stock.length
                               ? distributor.stock[index]
+                              : null,
+                          label: index < distributor.stock.length
+                              ? widget.gameState.marketInventoryDisplayLabel(
+                                  distributor.stock[index])
                               : null,
                           onTap: () => _editMarketDistributorSlotForShop(
                               shopId,
@@ -13061,7 +13094,8 @@ class _MarketPageState extends State<MarketPage> {
                 )),
             if (stock.isNotEmpty) const Divider(),
             ...stock.map((stack) => ListTile(
-                  title: Text('${stack.amount} ${stack.resource}'),
+                  title: Text(
+                      '${stack.amount} ${widget.gameState.marketInventoryDisplayLabel(stack)}'),
                   trailing: TextButton(
                     onPressed: () {
                       _message(widget.gameState
@@ -13722,10 +13756,15 @@ class _MarketPageState extends State<MarketPage> {
 }
 
 class _MarketStockSlot extends StatelessWidget {
-  const _MarketStockSlot({required this.stack, required this.onTap});
+  const _MarketStockSlot({
+    required this.stack,
+    required this.onTap,
+    this.label,
+  });
 
   final Zone0InventoryStack? stack;
   final VoidCallback onTap;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -13769,7 +13808,7 @@ class _MarketStockSlot extends StatelessWidget {
                 right: 6,
                 bottom: 7,
                 child: Text(
-                  stack!.resource,
+                  label ?? stack!.resource,
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -14018,9 +14057,19 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     );
   }
 
-  void _message(String message) => ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+  /// Les dépôts et remplissages mettent déjà la jauge à jour en direct : ils
+  /// ne doivent pas encombrer le bas d'écran. Une notification reste visible
+  /// lorsqu'un manque de ressources empêche réellement l'action.
+  void _message(String message) {
+    final normalized = message.toLowerCase();
+    final isResourceFailure = normalized.contains('insuffisant') ||
+        normalized.contains('manque') ||
+        normalized.contains('aucune ressource') ||
+        normalized.contains('pas assez');
+    if (!isResourceFailure) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -14187,50 +14236,67 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
 
   Widget _nurseryObjectInventory() {
     final state = widget.gameState;
-    final stacks = <Zone0InventoryStack>[
-      for (final species in PTibugSpecies.values)
-        if (state.nurseryMarketInventoryAmount(
-                state.marketItemForCertifiedCapsule(species)) >
-            0)
-          Zone0InventoryStack(
-            resource: state.marketItemForCertifiedCapsule(species),
-            amount: state.nurseryMarketInventoryAmount(
-                state.marketItemForCertifiedCapsule(species)),
-          ),
-      for (final species in PTibugSpecies.values)
-        if (state.nurseryMarketInventoryAmount(
-                state.marketMatrixItemForSpecies(species)) >
-            0)
-          Zone0InventoryStack(
-            resource: state.marketMatrixItemForSpecies(species),
-            amount: state.nurseryMarketInventoryAmount(
-                state.marketMatrixItemForSpecies(species)),
-          ),
-    ];
-    return ExpansionTile(
-      leading: const Icon(Icons.inventory_2_outlined),
-      title: const Text('Inventaire de la Nurserie'),
-      subtitle: const Text('Capsules P’TIBUG et Matrices uniquement'),
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-          child: GridView.count(
-            crossAxisCount: 3,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: List<Widget>.generate(
-              math.max(3, stacks.length + 1),
-              (index) => _InventorySlot(
-                stack: index < stacks.length ? stacks[index] : null,
-              ),
-            ),
-          ),
-        ),
-      ],
+    final total = state.nurseryInventoryCapsules.length +
+        state.nurseryInventoryMatrices.length;
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.inventory_2_outlined),
+        title: const Text('Inventaire de la Nurserie'),
+        subtitle:
+            Text('$total objet(s) · Capsules P’TIBUG et Matrices uniquement'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _showNurseryObjectInventory,
+      ),
     );
   }
+
+  Future<void> _showNurseryObjectInventory() => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) {
+          final capsules = widget.gameState.nurseryInventoryCapsules;
+          final matrices = widget.gameState.nurseryInventoryMatrices;
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+              children: <Widget>[
+                const Text('Inventaire de la Nurserie',
+                    style:
+                        TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                const Text('Capsules P’TIBUG et Matrices uniquement'),
+                const SizedBox(height: 12),
+                if (capsules.isNotEmpty) ...<Widget>[
+                  const Text('Capsules P’TIBUG',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  ...capsules.map((capsule) => ListTile(
+                        leading: const Icon(Icons.inventory_2_outlined),
+                        title: Text('Capsule P’TIBUG · ${capsule.displayName}'),
+                        subtitle: Text(
+                            '${pTibugConfig.species[capsule.species]!.displayName} · niveau ${capsule.level}'),
+                      )),
+                ],
+                if (matrices.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 8),
+                  const Text('Matrices d’aspect',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  ...matrices.map((matrix) => ListTile(
+                        leading: const Icon(Icons.auto_awesome_motion_outlined),
+                        title: Text(
+                            'Matrice ${pTibugConfig.species[matrix.species]!.displayName} · ${matrix.sourceDisplayName}'),
+                        subtitle: const Text('Réservée à la Cultivation'),
+                      )),
+                ],
+                if (capsules.isEmpty && matrices.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text('Aucune Capsule ni Matrice disponible.'),
+                  ),
+              ],
+            ),
+          );
+        },
+      );
 
   Widget _aspectMatrixExtractorCard() {
     final state = widget.gameState;
@@ -16870,27 +16936,35 @@ class FablabRecyclerView extends StatelessWidget {
             ),
           ),
         ),
-        if (gameState.campWasteDailyReports.isNotEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Builder(builder: (context) {
-                final report = gameState.campWasteDailyReports.last;
-                final total = report.domesticWasteGenerated +
-                    report.technicalWasteGenerated;
-                return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      const Text('Rapport quotidien des Déchets',
-                          style: TextStyle(fontWeight: FontWeight.w900)),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Builder(builder: (context) {
+              final report = gameState.campWasteDailyReports.isEmpty
+                  ? null
+                  : gameState.campWasteDailyReports.last;
+              final total = (report?.domesticWasteGenerated ?? 0) +
+                  (report?.technicalWasteGenerated ?? 0);
+              return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text('Rapport quotidien des Déchets',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
+                    Text(
+                        'Population : ${gameState.campWasteGeneratedPerDay.toStringAsFixed(1)} Déchet(s) généré(s) par jour'),
+                    if (report == null)
+                      Text(
+                          'Le premier bilan sera disponible à la prochaine journée du refuge.')
+                    else ...<Widget>[
                       Text(
                           'Domestiques : ${report.domesticWasteGenerated} · techniques : ${report.technicalWasteGenerated} · total : $total'),
                       Text(
                           'Recyclés : ${report.wasteRecycled} · restants : ${gameState.resourceAmount('Déchets')}'),
-                    ]);
-              }),
-            ),
+                    ],
+                  ]);
+            }),
           ),
+        ),
       ],
     );
   }

@@ -1546,6 +1546,7 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
   final upgrades = _map(bio?['upgradeCosts']);
   final forest = _map(bio?['edibleForest']);
   final scarabe = _map(bio?['futureScarabeHook']);
+  final durations = _map(bio?['constructionMinutesByLevel']);
   return LisiereTerritoryBuildingsConfig(
     slotsPerZone: _int(raw?['slotsPerZone'], base.slotsPerZone),
     biofermenter: BiofermenterConfig(
@@ -1601,6 +1602,13 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
       futureScarabeMineralPerOrganic: _int(
           scarabe?['mineralToOrganicConversionRate'],
           baseBio.futureScarabeMineralPerOrganic),
+      constructionMinutesByLevel: <int, int>{
+        for (var level = 1; level <= 4; level++)
+          level: _int(
+              durations?['$level'], baseBio.constructionMinutesByLevel[level]!)
+      },
+      edibleForestConstructionMinutes: _int(forest?['constructionMinutes'],
+          baseBio.edibleForestConstructionMinutes),
     ),
   );
 }

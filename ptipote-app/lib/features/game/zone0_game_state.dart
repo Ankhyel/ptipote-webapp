@@ -2793,8 +2793,10 @@ class Zone0GameState extends ChangeNotifier {
         CommunityRoleType.fablabMaker => math.max(0, atelierLevel),
         // Un emplacement d'habitant par niveau, comme Cuisine et Atelier.
         CommunityRoleType.marketCounter => isMarketBuilt ? marketLevel : 0,
+        // La Lisière n'a pas de niveau : elle offre donc ses huit postes
+        // d'observation dès qu'elle est accessible.
         CommunityRoleType.lisiereObserver =>
-          isBiomeUnlocked(ForageBiome.plaineRiche) ? 1 : 0,
+          isBiomeUnlocked(ForageBiome.plaineRiche) ? 8 : 0,
         CommunityRoleType.securityWatch ||
         CommunityRoleType.weatherWatch =>
           securityTowerSlots,
@@ -4404,6 +4406,44 @@ class Zone0GameState extends ChangeNotifier {
 
   int nurseryMarketInventoryAmount(String resource) =>
       _availableNurseryMarketItemIds(resource).length;
+
+  /// Les Capsules et Matrices restent des objets identifiés même une fois
+  /// déposés dans une pile du Marché. Cette étiquette évite de vendre une
+  /// Capsule anonyme dans l'interface de stock.
+  String marketInventoryDisplayLabel(Zone0InventoryStack stack) {
+    if (stack.sourceItemIds.isEmpty) return stack.resource;
+    final labels = <String>[];
+    for (final sourceId in stack.sourceItemIds) {
+      final capsule =
+          pTibugCapsules.where((item) => item.id == sourceId).firstOrNull;
+      if (capsule != null) {
+        labels.add(capsule.displayName);
+        continue;
+      }
+      final matrix =
+          pTibugAspectMatrices.where((item) => item.id == sourceId).firstOrNull;
+      if (matrix != null) labels.add(matrix.sourceDisplayName);
+    }
+    if (labels.isEmpty) return stack.resource;
+    if (labels.length == 1) return '${stack.resource} · ${labels.first}';
+    return '${stack.resource} · ${labels.first} +${labels.length - 1}';
+  }
+
+  List<PTibugCapsule> get nurseryInventoryCapsules {
+    final reserved = _nurseryMarketReservedIds;
+    return pTibugCapsules
+        .where((capsule) =>
+            capsule.status == CertifiedPTibugCapsuleStatus.certified &&
+            !reserved.contains(capsule.id))
+        .toList(growable: false);
+  }
+
+  List<PTibugAspectMatrix> get nurseryInventoryMatrices {
+    final reserved = _nurseryMarketReservedIds;
+    return pTibugAspectMatrices
+        .where((matrix) => !reserved.contains(matrix.id))
+        .toList(growable: false);
+  }
 
   List<String> marketTransferableItemsForShop(String shopId) {
     final resources = <String>{
@@ -9098,41 +9138,6 @@ class Zone0GameState extends ChangeNotifier {
         () => LisiereTerritoryZone.initial(biome),
       );
 
-  bool buildBiofermenter(ForageBiome biome) {
-    final zone = territoryZone(biome);
-    if (zone.buildingId != null) return false;
-    final cost =
-        lisiereForageConfig.territoryBuildings.biofermenter.constructionCost;
-    if (!hasResources(cost)) return false;
-    removeResources(cost);
-    zone
-      ..buildingId = 'biofermenter'
-      ..buildingLevel = 1
-      ..lastProductionResolvedAt = DateTime.now()
-      ..updatedAt = DateTime.now();
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
-    return true;
-  }
-
-  bool upgradeBiofermenter(ForageBiome biome) {
-    final zone = territoryZone(biome);
-    final config = lisiereForageConfig.territoryBuildings.biofermenter;
-    if (zone.buildingId != 'biofermenter' || zone.buildingLevel >= 4)
-      return false;
-    final cost =
-        config.upgradeCosts[zone.buildingLevel + 1] ?? const <String, int>{};
-    if (!hasResources(cost)) return false;
-    resolveBiofermenterProduction(now: DateTime.now());
-    removeResources(cost);
-    zone
-      ..buildingLevel += 1
-      ..updatedAt = DateTime.now();
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
-    return true;
-  }
-
   int activePollinatorsForBiofermenter(ForageBiome biome) {
     final config = lisiereForageConfig.territoryBuildings.biofermenter;
     return pTibugs
@@ -9227,20 +9232,6 @@ class Zone0GameState extends ChangeNotifier {
     return true;
   }
 
-  bool installEdibleForest(ForageBiome biome) {
-    final zone = territoryZone(biome);
-    final cost =
-        lisiereForageConfig.territoryBuildings.biofermenter.edibleForestCost;
-    if (zone.buildingId != 'biofermenter' ||
-        zone.edibleForestInstalled ||
-        !hasResources(cost)) return false;
-    removeResources(cost);
-    zone.edibleForestInstalled = true;
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
-    return true;
-  }
-
   String _wasteDayKey(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 
@@ -9266,6 +9257,18 @@ class Zone0GameState extends ChangeNotifier {
     _wasteReport(at).technicalWasteGenerated += amount;
   }
 
+  /// Prévision lisible de la production quotidienne du camp. Elle emploie
+  /// exactement la même formule que le calcul offline des Déchets.
+  double get campWasteGeneratedPerDay {
+    final activeBugs = pTibugs
+        .where((bug) => bug.lifecycleStatus == PTibugLifecycleStatus.active)
+        .length;
+    return residents.where((resident) => resident.isActive).length *
+            wasteRecyclerConfig.wastePerResidentPerDay +
+        hatchedPtipoteIds.length * wasteRecyclerConfig.wastePerPtibotePerDay +
+        activeBugs * wasteRecyclerConfig.wastePerPtibugPerDay;
+  }
+
   bool _resolveCampWaste(DateTime current) {
     final last = lastCampWasteCalculationAt;
     // Migration : aucune production rétroactive à la première ouverture.
@@ -9273,25 +9276,40 @@ class Zone0GameState extends ChangeNotifier {
       lastCampWasteCalculationAt = current;
       return false;
     }
-    final hours =
-        current.difference(last).inMilliseconds / Duration.millisecondsPerHour;
-    if (hours <= 0) return false;
-    final activeBugs = pTibugs
-        .where((bug) => bug.lifecycleStatus == PTibugLifecycleStatus.active)
-        .length;
-    final daily = residents.where((resident) => resident.isActive).length *
-            wasteRecyclerConfig.wastePerResidentPerDay +
-        hatchedPtipoteIds.length * wasteRecyclerConfig.wastePerPtibotePerDay +
-        activeBugs * wasteRecyclerConfig.wastePerPtibugPerDay;
-    final exact = daily * hours / 24 + campWasteRemainder;
-    final whole = exact.floor();
-    campWasteRemainder = exact - whole;
+    if (!current.isAfter(last)) return false;
+    final daily = campWasteGeneratedPerDay;
+    var cursor = last;
+    var generated = 0;
+    while (cursor.isBefore(current)) {
+      final nextMidnight = DateTime(cursor.year, cursor.month, cursor.day + 1);
+      final segmentEnd =
+          nextMidnight.isBefore(current) ? nextMidnight : current;
+      final hours = segmentEnd.difference(cursor).inMilliseconds /
+          Duration.millisecondsPerHour;
+      final exact = daily * hours / 24 + campWasteRemainder;
+      final whole = exact.floor();
+      campWasteRemainder = exact - whole;
+      if (whole > 0) {
+        generated += whole;
+        _wasteReport(cursor).domesticWasteGenerated += whole;
+        if (segmentEnd == nextMidnight) {
+          reports.add(PtipoteMissionReport.system(
+            message:
+                'Rapport Déchets du ${_wasteDayKey(cursor)} : $whole Déchet(s) domestique(s) produit(s).',
+            sourceBuildingId: 'recycler',
+            mailbox: Zone0MessageMailbox.fablab,
+            subject: 'Rapport du camp',
+            concerned: 'Refuge',
+          ));
+        }
+      }
+      cursor = segmentEnd;
+    }
     lastCampWasteCalculationAt = current;
-    if (whole <= 0) return true;
-    final result = addResources(<String, int>{'Déchets': whole});
+    if (generated <= 0) return true;
+    final result = addResources(<String, int>{'Déchets': generated});
     pendingWaste = math.min(wasteRecyclerConfig.pendingWasteCapacity,
         pendingWaste + (result.pending['Déchets'] ?? 0));
-    _wasteReport(current).domesticWasteGenerated += whole;
     final cutoff = current.subtract(
         Duration(days: wasteRecyclerConfig.wasteHistoryRetentionDays));
     campWasteDailyReports
@@ -9572,6 +9590,17 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Map<String, int> _projectRequirements(String targetId, int targetLevel) {
+    final territoryBiome = _biofermenterBiomeForTarget(targetId);
+    if (territoryBiome != null) {
+      final config = lisiereForageConfig.territoryBuildings.biofermenter;
+      return targetLevel == 1
+          ? config.constructionCost
+          : config.upgradeCosts[targetLevel] ?? const <String, int>{};
+    }
+    if (_edibleForestBiomeForTarget(targetId) != null) {
+      return lisiereForageConfig
+          .territoryBuildings.biofermenter.edibleForestCost;
+    }
     if (_isRefugeTarget(targetId)) {
       return pTibugConfig.territory.refugeRequirementsForLevel(targetLevel);
     }
@@ -9592,15 +9621,30 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Duration _projectDuration(String targetId) => Duration(
-        minutes: targetId == 'housing'
-            ? housingConfig.housingDurationMinutes
-            : _isRefugeTarget(targetId)
-                ? pTibugConfig.territory
-                    .refugeMinutesForLevel(_buildingLevel(targetId) + 1)
-                : buildingConstructionConfig.project(targetId).durationMinutes,
+        minutes: _biofermenterBiomeForTarget(targetId) != null
+            ? lisiereForageConfig.territoryBuildings.biofermenter
+                    .constructionMinutesByLevel[_buildingLevel(targetId) + 1] ??
+                60
+            : _edibleForestBiomeForTarget(targetId) != null
+                ? lisiereForageConfig.territoryBuildings.biofermenter
+                    .edibleForestConstructionMinutes
+                : targetId == 'housing'
+                    ? housingConfig.housingDurationMinutes
+                    : _isRefugeTarget(targetId)
+                        ? pTibugConfig.territory
+                            .refugeMinutesForLevel(_buildingLevel(targetId) + 1)
+                        : buildingConstructionConfig
+                            .project(targetId)
+                            .durationMinutes,
       );
 
   int _buildingLevel(String targetId) {
+    final territoryBiome = _biofermenterBiomeForTarget(targetId);
+    if (territoryBiome != null)
+      return territoryZone(territoryBiome).buildingLevel;
+    final forestBiome = _edibleForestBiomeForTarget(targetId);
+    if (forestBiome != null)
+      return territoryZone(forestBiome).edibleForestInstalled ? 1 : 0;
     if (_isRefugeTarget(targetId)) {
       return territoryBuildingForId(targetId)?.level ?? 0;
     }
@@ -9619,6 +9663,8 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int _projectMaxLevel(String targetId) {
+    if (_biofermenterBiomeForTarget(targetId) != null) return 4;
+    if (_edibleForestBiomeForTarget(targetId) != null) return 1;
     if (_isRefugeTarget(targetId))
       return pTibugConfig.territory.refugeMaximumLevel;
     return switch (targetId) {
@@ -9633,6 +9679,26 @@ class Zone0GameState extends ChangeNotifier {
       'plaineNursery' => pTibugConfig.territory.nurseryMaximumLevel,
       _ => 1,
     };
+  }
+
+  String biofermenterTargetId(ForageBiome biome) =>
+      'biofermenter-${biome.name}';
+  String edibleForestTargetId(ForageBiome biome) =>
+      'edibleForest-${biome.name}';
+  ForageBiome? _biofermenterBiomeForTarget(String targetId) {
+    const prefix = 'biofermenter-';
+    if (!targetId.startsWith(prefix)) return null;
+    return ForageBiome.values
+        .where((biome) => biome.name == targetId.substring(prefix.length))
+        .firstOrNull;
+  }
+
+  ForageBiome? _edibleForestBiomeForTarget(String targetId) {
+    const prefix = 'edibleForest-';
+    if (!targetId.startsWith(prefix)) return null;
+    return ForageBiome.values
+        .where((biome) => biome.name == targetId.substring(prefix.length))
+        .firstOrNull;
   }
 
   int projectBioBatteryRequirement(String targetId) {
@@ -9745,6 +9811,21 @@ class Zone0GameState extends ChangeNotifier {
     String targetId, {
     int? campHeartLevel,
   }) {
+    final biofermenterBiome = _biofermenterBiomeForTarget(targetId);
+    if (biofermenterBiome != null && !isBiomeUnlocked(biofermenterBiome)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce biome doit être découvert avant la construction.',
+      );
+    }
+    final forestBiome = _edibleForestBiomeForTarget(targetId);
+    if (forestBiome != null &&
+        territoryZone(forestBiome).buildingId != 'biofermenter') {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Biofermenteur doit être construit avant ce module.',
+      );
+    }
     final refugeBiome = _refugeBiomeForTarget(targetId);
     if (refugeBiome != null &&
         (refugeBiome == ForageBiome.plaineRiche ||
@@ -9884,6 +9965,23 @@ class Zone0GameState extends ChangeNotifier {
           ..isBuilt = plaineNurseryLevel > 0;
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
       default:
+        final territoryBiome = _biofermenterBiomeForTarget(project.targetId);
+        if (territoryBiome != null) {
+          final zone = territoryZone(territoryBiome)
+            ..buildingId = 'biofermenter'
+            ..buildingLevel = project.currentLevel
+            ..lastProductionResolvedAt = now
+            ..updatedAt = now;
+          emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
+          break;
+        }
+        final forestBiome = _edibleForestBiomeForTarget(project.targetId);
+        if (forestBiome != null) {
+          territoryZone(forestBiome)
+            ..edibleForestInstalled = true
+            ..updatedAt = now;
+          break;
+        }
         final refugeBiome = _refugeBiomeForTarget(project.targetId);
         if (refugeBiome != null) {
           final refuge = pTibugTerritoryBuildings.putIfAbsent(
@@ -13224,6 +13322,31 @@ class Zone0GameState extends ChangeNotifier {
           ..addEntries(
             restData.entries.map(
               (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
+            ),
+          );
+      }
+
+      // Les niveaux et XP P'TIPOTE font partie de la progression Zone 0.
+      // Les anciennes sauvegardes ne possèdent pas ces maps : dans ce cas les
+      // valeurs du scan restent la référence sans réinitialiser la figurine.
+      final xpData = data['xpOverrides'];
+      if (xpData is Map) {
+        xpOverrides
+          ..clear()
+          ..addEntries(
+            xpData.entries.map(
+              (entry) => MapEntry('${entry.key}', _readInt(entry.value)),
+            ),
+          );
+      }
+      final levelData = data['levelOverrides'];
+      if (levelData is Map) {
+        levelOverrides
+          ..clear()
+          ..addEntries(
+            levelData.entries.map(
+              (entry) =>
+                  MapEntry('${entry.key}', _readInt(entry.value, fallback: 1)),
             ),
           );
       }
@@ -16937,6 +17060,8 @@ class Zone0GameState extends ChangeNotifier {
         'vitalityOverrides': vitalityOverrides,
         'hungerOverrides': hungerOverrides,
         'restOverrides': restOverrides,
+        'xpOverrides': xpOverrides,
+        'levelOverrides': levelOverrides,
         'wellRestedRewardedIds': wellRestedRewardedIds.toList(),
         'manualRestingIds': manualRestingIds.toList(),
         'waitingForBedIds': waitingForBedIds.toList(),

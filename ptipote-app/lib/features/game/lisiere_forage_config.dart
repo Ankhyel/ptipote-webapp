@@ -103,6 +103,8 @@ class BiofermenterConfig {
     required this.maxPollinatorsCounted,
     required this.futureScarabeHookEnabled,
     required this.futureScarabeMineralPerOrganic,
+    required this.constructionMinutesByLevel,
+    required this.edibleForestConstructionMinutes,
   });
   final Map<int, double> passiveOrganicPerDayByLevel;
   final Map<String, int> constructionCost;
@@ -122,6 +124,8 @@ class BiofermenterConfig {
   final int maxPollinatorsCounted;
   final bool futureScarabeHookEnabled;
   final int futureScarabeMineralPerOrganic;
+  final Map<int, int> constructionMinutesByLevel;
+  final int edibleForestConstructionMinutes;
 }
 
 class BiomassTierConfig {
@@ -490,6 +494,13 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       maxPollinatorsCounted: 3,
       futureScarabeHookEnabled: false,
       futureScarabeMineralPerOrganic: 4,
+      constructionMinutesByLevel: const <int, int>{
+        1: 60,
+        2: 120,
+        3: 180,
+        4: 240
+      },
+      edibleForestConstructionMinutes: 60,
     ),
   ),
 );
