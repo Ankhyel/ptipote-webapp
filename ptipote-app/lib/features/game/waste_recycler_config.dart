@@ -76,7 +76,7 @@ const WasteRecyclerConfig defaultWasteRecyclerConfig = WasteRecyclerConfig(
   baseWasteRequired: 17,
   minimumWasteRequired: 13,
   outputResourcesPerCycle: 10,
-  energyUnitsPerBioBattery: 10,
+  energyUnitsPerBioBattery: 100,
   energyCostPerCycle: 1,
   outputStorageCapacity: 50,
   outputStorageCapacityPerLevel: 20,

@@ -4285,6 +4285,77 @@ class Zone0GameState extends ChangeNotifier {
         _ => null,
       };
 
+  PTibugSpecies? _marketMatrixSpecies(String resource) => switch (resource) {
+        'Matrice Scarabé' => PTibugSpecies.scarabe,
+        'Matrice Hyme' => PTibugSpecies.hyme,
+        'Matrice Arac' => PTibugSpecies.arac,
+        _ => null,
+      };
+
+  bool _isMarketMatrixResource(String resource) =>
+      resource == 'Matrice P’TIBUG' || _marketMatrixSpecies(resource) != null;
+
+  String marketMatrixItemForSpecies(PTibugSpecies species) =>
+      'Matrice ${pTibugConfig.species[species]!.displayName}';
+
+  Set<String> get _nurseryMarketReservedIds => <String>{
+        for (final stack in <Zone0InventoryStack>[
+          ...marketStock,
+          for (final shop in marketShops) ...shop.stock,
+          for (final shop in marketShops) ...?shop.distributor?.stock,
+          ...marketDistributor.stock,
+        ])
+          ...stack.sourceItemIds,
+      };
+
+  List<String> _availableNurseryMarketItemIds(String resource) {
+    final reserved = _nurseryMarketReservedIds;
+    final capsuleSpecies = resource.startsWith('Capsule P’TIBUG ')
+        ? _marketPTibugSpecies(resource)
+        : null;
+    if (capsuleSpecies != null) {
+      return pTibugCapsules
+          .where((capsule) =>
+              capsule.status == CertifiedPTibugCapsuleStatus.certified &&
+              capsule.species == capsuleSpecies &&
+              !reserved.contains(capsule.id))
+          .map((capsule) => capsule.id)
+          .toList();
+    }
+    if (_isMarketMatrixResource(resource)) {
+      final species = _marketMatrixSpecies(resource);
+      return pTibugAspectMatrices
+          .where((matrix) =>
+              (species == null || matrix.species == species) &&
+              !reserved.contains(matrix.id))
+          .map((matrix) => matrix.id)
+          .toList();
+    }
+    return const <String>[];
+  }
+
+  int nurseryMarketInventoryAmount(String resource) =>
+      _availableNurseryMarketItemIds(resource).length;
+
+  List<String> marketTransferableItemsForShop(String shopId) {
+    final resources = <String>{
+      ...marketConfig.saleValues.keys.where((resource) =>
+          resourceAmount(resource) > 0 && marketShopAccepts(shopId, resource)),
+      for (final species in PTibugSpecies.values)
+        if (marketShopAccepts(shopId, marketItemForCertifiedCapsule(species)) &&
+            nurseryMarketInventoryAmount(
+                    marketItemForCertifiedCapsule(species)) >
+                0)
+          marketItemForCertifiedCapsule(species),
+      for (final species in PTibugSpecies.values)
+        if (marketShopAccepts(shopId, marketMatrixItemForSpecies(species)) &&
+            nurseryMarketInventoryAmount(marketMatrixItemForSpecies(species)) >
+                0)
+          marketMatrixItemForSpecies(species),
+    };
+    return resources.toList()..sort();
+  }
+
   String marketItemForCertifiedCapsule(PTibugSpecies species) =>
       'Capsule P’TIBUG ${switch (species) {
         PTibugSpecies.scarabe => 'Scarabé',
@@ -6818,11 +6889,22 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Stock du magasin complet.');
     }
-    final moved = removeResource(
-      resource,
-      math.min(amount,
-          math.min(resourceAmount(resource), marketConfig.stackQuantityLimit)),
-    );
+    final isNurseryObject = _marketPTibugSpecies(resource) != null ||
+        _isMarketMatrixResource(resource);
+    final sourceItemIds = isNurseryObject
+        ? _availableNurseryMarketItemIds(resource)
+            .take(math.min(amount, marketConfig.stackQuantityLimit))
+            .toList()
+        : const <String>[];
+    final moved = isNurseryObject
+        ? sourceItemIds.length
+        : removeResource(
+            resource,
+            math.min(
+                amount,
+                math.min(
+                    resourceAmount(resource), marketConfig.stackQuantityLimit)),
+          );
     if (moved <= 0) {
       return const Zone0ActionResult(
           success: false, message: 'Stock insuffisant.');
@@ -6831,6 +6913,7 @@ class Zone0GameState extends ChangeNotifier {
       id: 'shop-$shopId-${DateTime.now().microsecondsSinceEpoch}-${stock.length}',
       resource: resource,
       amount: moved,
+      sourceItemIds: sourceItemIds,
     ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -6844,8 +6927,14 @@ class Zone0GameState extends ChangeNotifier {
     if (stock == null || !stock.contains(stack)) {
       return const Zone0ActionResult(success: false, message: 'Stock absent.');
     }
-    final result = addResources(<String, int>{stack.resource: stack.amount});
-    final returned = stack.amount - (result.pending[stack.resource] ?? 0);
+    final isNurseryObject = _marketPTibugSpecies(stack.resource) != null ||
+        _isMarketMatrixResource(stack.resource);
+    final result = isNurseryObject
+        ? const InventoryAddResult(addedAny: true, pending: <String, int>{})
+        : addResources(<String, int>{stack.resource: stack.amount});
+    final returned = isNurseryObject
+        ? stack.amount
+        : stack.amount - (result.pending[stack.resource] ?? 0);
     stack.amount -= returned;
     if (stack.amount <= 0) stock.remove(stack);
     notifyListeners();
@@ -6860,10 +6949,6 @@ class Zone0GameState extends ChangeNotifier {
       .fold(0, (sum, stack) => sum + stack.amount);
 
   int marketShopStockAmount(String shopId, String resource) {
-    if (_marketPTibugSpecies(resource) != null &&
-        marketShopAccepts(shopId, resource)) {
-      return _marketPTibugAmount(resource);
-    }
     return (marketStockForShop(shopId) ?? const <Zone0InventoryStack>[])
         .where((stack) => stack.resource == resource)
         .fold(0, (sum, stack) => sum + stack.amount);
@@ -6871,6 +6956,22 @@ class Zone0GameState extends ChangeNotifier {
 
   /// Uses an already started pile first, then the next matching one. This is
   /// the single stock transition used by manual sales, automation and contracts.
+  void _consumeNurserySourceItems(Zone0InventoryStack stack, int amount) {
+    if (stack.sourceItemIds.isEmpty || amount <= 0) return;
+    final ids = stack.sourceItemIds.take(amount).toList();
+    if (_marketPTibugSpecies(stack.resource) != null) {
+      pTibugCapsules.removeWhere((capsule) => ids.contains(capsule.id));
+    } else if (_isMarketMatrixResource(stack.resource)) {
+      pTibugAspectMatrices.removeWhere((matrix) => ids.contains(matrix.id));
+    }
+    stack.sourceItemIds.removeRange(0, ids.length);
+  }
+
+  void _consumeMarketStack(Zone0InventoryStack stack, int amount) {
+    _consumeNurserySourceItems(stack, amount);
+    stack.amount -= amount;
+  }
+
   bool _consumeMarketStock(String resource, int amount) {
     if (amount <= 0 || marketStockAmount(resource) < amount) return false;
     var remaining = amount;
@@ -6881,7 +6982,7 @@ class Zone0GameState extends ChangeNotifier {
     for (final stack in matching) {
       if (remaining <= 0) break;
       final used = math.min(remaining, stack.amount);
-      stack.amount -= used;
+      _consumeMarketStack(stack, used);
       remaining -= used;
       if (stack.amount <= 0) marketStock.remove(stack);
     }
@@ -6889,10 +6990,6 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool _consumeMarketShopStock(String shopId, String resource, int amount) {
-    if (_marketPTibugSpecies(resource) != null) {
-      if (!marketShopAccepts(shopId, resource)) return false;
-      return _consumeMarketPTibugs(resource, amount);
-    }
     if (shopId == primaryMarketShopId)
       return _consumeMarketStock(resource, amount);
     final stock = marketStockForShop(shopId);
@@ -6902,7 +6999,7 @@ class Zone0GameState extends ChangeNotifier {
     for (final stack
         in stock.where((stack) => stack.resource == resource).toList()) {
       final used = math.min(remaining, stack.amount);
-      stack.amount -= used;
+      _consumeMarketStack(stack, used);
       remaining -= used;
       if (stack.amount <= 0) stock.remove(stack);
       if (remaining <= 0) break;
@@ -8070,12 +8167,15 @@ class Zone0GameState extends ChangeNotifier {
       if (source != null) {
         final transferred =
             math.min(source.amount, marketConfig.stackQuantityLimit);
+        final sourceItemIds = source.sourceItemIds.take(transferred).toList();
         source.amount -= transferred;
+        source.sourceItemIds.removeRange(0, sourceItemIds.length);
         if (source.amount <= 0) sourceStock.remove(source);
         distributor.stock.add(Zone0InventoryStack(
           id: 'distributor-refill-$shopId-${DateTime.now().microsecondsSinceEpoch}',
           resource: source.resource,
           amount: transferred,
+          sourceItemIds: sourceItemIds,
         ));
         changed = true;
       }
@@ -8088,7 +8188,7 @@ class Zone0GameState extends ChangeNotifier {
           .where((item) => item.resource == request.requestedItemId)
           .firstOrNull;
       if (stack == null || stack.amount < request.requestedQuantity) continue;
-      stack.amount -= request.requestedQuantity;
+      _consumeMarketStack(stack, request.requestedQuantity);
       if (stack.amount <= 0) distributor.stock.remove(stack);
       _creditMarketBioPiles(request.rewardBioPiles);
       request.status = MarketRequestStatus.completed;
@@ -8126,11 +8226,8 @@ class Zone0GameState extends ChangeNotifier {
         changed = true;
       } else if (contract.autoDeliverAllowed &&
           marketAssignedPtipoteId != null &&
-          contract.requestedItems.entries.every((entry) =>
-              (_marketPTibugSpecies(entry.key) != null
-                  ? _marketPTibugAmount(entry.key)
-                  : _marketStockAmountAcrossCompatibleShops(entry.key)) >=
-              entry.value)) {
+          contract.requestedItems.entries.every(
+              (entry) => _contractAvailableAmount(entry.key) >= entry.value)) {
         _deliverMarketContract(contract);
         changed = true;
       }
@@ -8169,15 +8266,14 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool _deliverMarketContract(MarketSourcierContract contract) {
-    if (!contract.requestedItems.entries.every((entry) =>
-        (_marketPTibugSpecies(entry.key) != null
-            ? _marketPTibugAmount(entry.key)
-            : _marketStockAmountAcrossCompatibleShops(entry.key)) >=
-        entry.value)) return false;
+    if (!contract.requestedItems.entries
+        .every((entry) => _contractAvailableAmount(entry.key) >= entry.value)) {
+      return false;
+    }
     for (final entry in contract.requestedItems.entries) {
       final isPTibug = _marketPTibugSpecies(entry.key) != null;
-      if (isPTibug) {
-        if (!_consumeMarketPTibugs(entry.key, entry.value)) {
+      if (isPTibug || _isMarketMatrixResource(entry.key)) {
+        if (!_consumeContractPTibugStock(entry.key, entry.value)) {
           return false;
         }
       } else if (!_consumeAnyMarketShopStock(entry.key, entry.value)) {
@@ -8211,8 +8307,48 @@ class Zone0GameState extends ChangeNotifier {
                 : 0));
   }
 
+  int _contractAvailableAmount(String item) => _isMarketMatrixResource(item)
+      ? _marketMatrixStockAmount(item)
+      : _marketPTibugSpecies(item) != null
+          ? _marketStockAmountAcrossCompatibleShops(item)
+          : _marketStockAmountAcrossCompatibleShops(item);
+
+  int _marketMatrixStockAmount(String item) {
+    final resources = item == 'Matrice P’TIBUG'
+        ? <String>{
+            for (final species in PTibugSpecies.values)
+              marketMatrixItemForSpecies(species),
+          }
+        : <String>{item};
+    return resources.fold<int>(
+      0,
+      (total, resource) =>
+          total + _marketStockAmountAcrossCompatibleShops(resource),
+    );
+  }
+
+  bool _consumeContractPTibugStock(String item, int amount) {
+    if (item != 'Matrice P’TIBUG') {
+      return _consumeAnyMarketShopStock(item, amount);
+    }
+    var remaining = amount;
+    for (final species in PTibugSpecies.values) {
+      if (remaining <= 0) break;
+      final resource = marketMatrixItemForSpecies(species);
+      final available = _marketStockAmountAcrossCompatibleShops(resource);
+      final taken = math.min(available, remaining);
+      if (taken > 0 && !_consumeAnyMarketShopStock(resource, taken)) {
+        return false;
+      }
+      remaining -= taken;
+    }
+    return remaining == 0;
+  }
+
   String sourcierRequiredShopLabel(String item) {
-    if (_marketPTibugSpecies(item) != null) return 'Magasin P’TIBUG';
+    if (_marketPTibugSpecies(item) != null || _isMarketMatrixResource(item)) {
+      return 'Magasin P’TIBUG';
+    }
     if (const <String>{'Organique', 'Minéral', 'Déchets', 'Mycélium', 'Eau'}
         .contains(item)) {
       return 'Magasin du foyer';
@@ -9826,12 +9962,15 @@ class Zone0GameState extends ChangeNotifier {
           success: false, message: 'Bio-batterie ou cuve indisponible.');
     }
     final operation = cultivationOperationForTank(tank.id);
-    final capacity = operation == null
-        ? pTibugConfig.cultivation.energyCapacityFor(PTibugSpecies.arac)
-        : _cultivationRateFor(operation, 'Énergie') *
-            pTibugConfig.cultivation.targetAutonomyHours;
-    final gain =
-        math.min(10, math.max(0, (capacity - tank.energyStored).floor()));
+    final capacity = math.max(
+      wasteRecyclerConfig.energyUnitsPerBioBattery,
+      operation == null
+          ? pTibugConfig.cultivation.energyCapacityFor(PTibugSpecies.arac)
+          : _cultivationRateFor(operation, 'Énergie') *
+              pTibugConfig.cultivation.targetAutonomyHours,
+    );
+    final gain = math.min(wasteRecyclerConfig.energyUnitsPerBioBattery,
+        math.max(0, (capacity - tank.energyStored).floor()));
     if (gain <= 0)
       return const Zone0ActionResult(
           success: false, message: 'Réserve d’énergie pleine.');
@@ -14313,22 +14452,34 @@ class Zone0GameState extends ChangeNotifier {
         : category == 'structure' && marketLevel >= 3
             ? 'Ventilation Termite'
             : category == 'ptibug'
-                ? <String>[
-                    'P’TIBUG Scarabé',
-                    'P’TIBUG Hyme',
-                    'P’TIBUG Arac',
-                  ][_random.nextInt(3)]
+                ? (_random.nextInt(100) < 60
+                    ? (_random.nextBool()
+                        ? 'Matrice P’TIBUG'
+                        : marketMatrixItemForSpecies(PTibugSpecies.values[
+                            _random.nextInt(PTibugSpecies.values.length)]))
+                    : <String>[
+                        'P’TIBUG Scarabé',
+                        'P’TIBUG Hyme',
+                        'P’TIBUG Arac',
+                      ][_random.nextInt(3)])
                 : _random.nextBool()
                     ? 'Organique'
                     : 'Minéral';
-    final quantity = item == 'Organique' || item == 'Minéral' ? 10 : 1;
+    final isMatrix = _isMarketMatrixResource(item);
+    final quantity = item == 'Organique' || item == 'Minéral'
+        ? 10
+        : isMatrix
+            ? 2 + (_random.nextInt(6) * 2)
+            : 1;
     final ptibugSpecies = _marketPTibugSpecies(item);
     // La base d'un contrat P'TIBUG est la certification Nurserie : un niveau
     // 1 ne peut donc jamais être proposé sous sa valeur de base. La confiance
     // reste appliquée séparément au moment du paiement.
-    final basePayment = ptibugSpecies == null
-        ? (marketConfig.salePriceInBioPiles(item) * quantity / 100).ceil()
-        : _sourcierPTibugContractBasePaymentFor(ptibugSpecies);
+    final basePayment = isMatrix
+        ? quantity * (item == 'Matrice P’TIBUG' ? 1 : 2)
+        : ptibugSpecies == null
+            ? (marketConfig.salePriceInBioPiles(item) * quantity / 100).ceil()
+            : _sourcierPTibugContractBasePaymentFor(ptibugSpecies);
     marketContracts.add(MarketSourcierContract(
       contractId: 'contract-${now.microsecondsSinceEpoch}',
       marketLevelRequired: marketLevel,
@@ -16934,25 +17085,38 @@ class PtipoteXpGainResult {
 }
 
 class Zone0InventoryStack {
-  Zone0InventoryStack({String? id, required this.resource, required int amount})
-      : id = id ?? 'stack-${DateTime.now().microsecondsSinceEpoch}',
-        amount = math.max(0, amount);
+  Zone0InventoryStack({
+    String? id,
+    required this.resource,
+    required int amount,
+    List<String>? sourceItemIds,
+  })  : id = id ?? 'stack-${DateTime.now().microsecondsSinceEpoch}',
+        amount = math.max(0, amount),
+        sourceItemIds = sourceItemIds ?? <String>[];
 
   final String id;
   final String resource;
   int amount;
+
+  /// Identifiants d'objets de Nurserie déposés au Marché (Capsules ou
+  /// Matrices). Ils gardent leur identité visuelle tout en restant un stack.
+  final List<String> sourceItemIds;
 
   factory Zone0InventoryStack.fromFirebase(Map<dynamic, dynamic> data) =>
       Zone0InventoryStack(
         id: data['id'] as String?,
         resource: '${data['resource'] ?? ''}',
         amount: Zone0GameState.instance._readInt(data['amount']),
+        sourceItemIds: (data['sourceItemIds'] as List? ?? const <dynamic>[])
+            .map((item) => '$item')
+            .toList(),
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'id': id,
         'resource': resource,
         'amount': amount,
+        'sourceItemIds': sourceItemIds,
       };
 }
 
@@ -17498,7 +17662,9 @@ class MarketShop {
                 !resource.contains('Cartouche'),
           ),
         'ptibug' => resource.startsWith('P’TIBUG ') ||
-            resource.startsWith('Capsule P’TIBUG '),
+            resource.startsWith('Capsule P’TIBUG ') ||
+            resource == 'Matrice P’TIBUG' ||
+            resource.startsWith('Matrice '),
         // Compatibilité de lecture des anciennes sauvegardes : ce type ne
         // peut plus être choisi, mais son stock reste utilisable.
         'general' => true,

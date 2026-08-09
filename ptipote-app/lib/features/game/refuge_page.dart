@@ -12897,11 +12897,7 @@ class _MarketPageState extends State<MarketPage> {
   Future<void> _editMarketShopSlot(String shopId) async {
     final stock = widget.gameState.marketStockForShop(shopId);
     if (stock == null) return;
-    final resources = marketConfig.saleValues.keys
-        .where((resource) =>
-            widget.gameState.marketShopAccepts(shopId, resource) &&
-            widget.gameState.resourceAmount(resource) > 0)
-        .toList(growable: false);
+    final resources = widget.gameState.marketTransferableItemsForShop(shopId);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -12915,7 +12911,11 @@ class _MarketPageState extends State<MarketPage> {
             ...resources.map((resource) => ListTile(
                   title: Text(resource),
                   subtitle: Text(
-                      'Maison : ${widget.gameState.resourceAmount(resource)}'),
+                    resource.startsWith('Capsule P’TIBUG ') ||
+                            resource.startsWith('Matrice ')
+                        ? 'Nurserie : ${widget.gameState.nurseryMarketInventoryAmount(resource)}'
+                        : 'Maison : ${widget.gameState.resourceAmount(resource)}',
+                  ),
                   trailing: Wrap(
                     spacing: 2,
                     children: <int>[1, 5, 10]
@@ -14059,6 +14059,53 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         ],
       );
 
+  Widget _nurseryObjectInventory() {
+    final state = widget.gameState;
+    final stacks = <Zone0InventoryStack>[
+      for (final species in PTibugSpecies.values)
+        if (state.nurseryMarketInventoryAmount(
+                state.marketItemForCertifiedCapsule(species)) >
+            0)
+          Zone0InventoryStack(
+            resource: state.marketItemForCertifiedCapsule(species),
+            amount: state.nurseryMarketInventoryAmount(
+                state.marketItemForCertifiedCapsule(species)),
+          ),
+      for (final species in PTibugSpecies.values)
+        if (state.nurseryMarketInventoryAmount(
+                state.marketMatrixItemForSpecies(species)) >
+            0)
+          Zone0InventoryStack(
+            resource: state.marketMatrixItemForSpecies(species),
+            amount: state.nurseryMarketInventoryAmount(
+                state.marketMatrixItemForSpecies(species)),
+          ),
+    ];
+    return ExpansionTile(
+      leading: const Icon(Icons.inventory_2_outlined),
+      title: const Text('Inventaire de la Nurserie'),
+      subtitle: const Text('Capsules P’TIBUG et Matrices uniquement'),
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          child: GridView.count(
+            crossAxisCount: 3,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: List<Widget>.generate(
+              math.max(3, stacks.length + 1),
+              (index) => _InventorySlot(
+                stack: index < stacks.length ? stacks[index] : null,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _aspectMatrixExtractorCard() {
     final state = widget.gameState;
     final config = pTibugConfig.aspectMatrixExtractor;
@@ -14110,7 +14157,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Text(
-              'Les Matrices extraites sont conservées ici. Elles servent uniquement à la Cultivation et ne sont pas vendables.',
+              'Les Matrices extraites servent à la Cultivation et peuvent aussi être déposées au Magasin P’TIBUG pour les contrats du Sourcier.',
             ),
           ),
         ...matrices.map(
@@ -14596,6 +14643,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             ),
           ),
           const SizedBox(height: 18),
+          _nurseryObjectInventory(),
+          const SizedBox(height: 12),
           _aspectMatrixExtractorCard(),
           const SizedBox(height: 12),
           _aspectMatrixInventory(),

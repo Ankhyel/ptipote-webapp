@@ -259,7 +259,7 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   distributorConstructionCost: <String, int>{'Organique': 10, 'Minéral': 20},
   distributorConstructionMinutes: 6,
   distributorEnergyCapacity: 100,
-  distributorEnergyPerBioBattery: 10,
+  distributorEnergyPerBioBattery: 100,
   distributorDailyEnergyByLevel: <int, int>{1: 10, 2: 8, 3: 6},
   distributorSlotsByLevel: <int, int>{1: 2, 2: 3, 3: 4},
   distributorBreakDenominatorByLevel: <int, int>{1: 6, 2: 12, 3: 24},
