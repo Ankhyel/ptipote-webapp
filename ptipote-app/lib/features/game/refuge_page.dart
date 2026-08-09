@@ -580,6 +580,19 @@ class _CampHud extends StatelessWidget {
           if (resource.name != 'Mycélium') const SizedBox(width: 5),
         ],
       ]),
+      if (gameState.isTowerWeatherUnlocked) ...<Widget>[
+        const SizedBox(height: 6),
+        _HudChip(
+          icon: Icons.cloud_outlined,
+          label: gameState.towerWeatherHudLabel,
+          color: const Color(0xFF61758D),
+          onTap: () => _showHudInfo(
+            context,
+            'Météo actuelle',
+            'La Tour météo suit les conditions actuelles du refuge. Les prévisions détaillées restent disponibles dans la Tour.',
+          ),
+        ),
+      ],
     ]);
   }
 
@@ -10382,7 +10395,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Tour de sécurité'),
@@ -10390,6 +10403,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
             tabs: <Widget>[
               Tab(text: 'Surveillance'),
               Tab(text: 'Exploration'),
+              Tab(text: 'Recherche'),
               Tab(text: 'Météo'),
               Tab(text: 'Amélioration'),
               Tab(text: 'Infos'),
@@ -10606,7 +10620,14 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
               gameState: widget.gameState,
               figurineService: widget.figurineService,
             ),
-            _TowerWeatherTab(gameState: widget.gameState),
+            _TowerResearchTab(
+              gameState: widget.gameState,
+              campHeartLevel: widget.campHeartLevel,
+            ),
+            _TowerWeatherTab(
+              gameState: widget.gameState,
+              campHeartLevel: widget.campHeartLevel,
+            ),
             _BuildingUpgradeTab(
               gameState: widget.gameState,
               targetId: 'securityTower',
@@ -11018,11 +11039,141 @@ class _ExplorationMapCell extends StatelessWidget {
       );
 }
 
-class _TowerWeatherTab extends StatelessWidget {
-  const _TowerWeatherTab({required this.gameState});
+class _TowerResearchTab extends StatelessWidget {
+  const _TowerResearchTab({
+    required this.gameState,
+    required this.campHeartLevel,
+  });
+
   final Zone0GameState gameState;
+  final int campHeartLevel;
+
   @override
   Widget build(BuildContext context) {
+    if (!gameState.isTowerResearchUnlocked) {
+      return _BuildingUpgradeTab(
+        gameState: gameState,
+        targetId: 'towerResearchModule',
+        title: 'Débloquer la Tour de recherche',
+        description:
+            'Elle analyse les chances de découverte des Cellules de données en Lisière et les modifie selon la météo actuelle.',
+        currentEffects: const <String>[
+          'Recherche de données : verrouillée',
+        ],
+        nextEffects: const <String>[
+          'Chances par famille de données',
+          'Influence de la météo sur les recherches de Lisière',
+        ],
+        campHeartLevel: campHeartLevel,
+      );
+    }
+    final weather = gameState.activeGlobalWeatherEvent;
+    final weatherLabel = weather == null
+        ? 'Météo en cours de lecture'
+        : gameState.towerWeatherHudLabel;
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Recherche de capsules de données',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  Text('Météo actuelle : $weatherLabel'),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Les pourcentages indiquent la chance de chaque famille pour la première Cellule trouvée. Les recherches se lancent depuis la Lisière et utilisent les mêmes Cellules réelles.',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...ForageBiome.values
+              .where(gameState.isBiomeUnlocked)
+              .map((biome) => _TowerResearchBiomeCard(
+                    gameState: gameState,
+                    biome: biome,
+                  )),
+        ],
+      ),
+    );
+  }
+}
+
+class _TowerResearchBiomeCard extends StatelessWidget {
+  const _TowerResearchBiomeCard({
+    required this.gameState,
+    required this.biome,
+  });
+
+  final Zone0GameState gameState;
+  final ForageBiome biome;
+
+  @override
+  Widget build(BuildContext context) {
+    final chances = gameState.towerResearchDataChancesFor(biome);
+    final modifier = gameState.towerResearchWeatherMultiplierFor(biome);
+    final entries = chances.entries.where((entry) => entry.value > 0).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(lisiereForageConfig.biomes[biome]!.label,
+                style: const TextStyle(fontWeight: FontWeight.w900)),
+            Text(
+              'Chance de trouver une Cellule : ${gameState.towerResearchCellChanceFor(biome)}% · météo ×${modifier.toStringAsFixed(2)}',
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: entries
+                  .map((entry) => Chip(
+                        label: Text(
+                            '${_kernelDataFamilyLabel(entry.key)} ${entry.value}%'),
+                      ))
+                  .toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TowerWeatherTab extends StatelessWidget {
+  const _TowerWeatherTab({
+    required this.gameState,
+    required this.campHeartLevel,
+  });
+  final Zone0GameState gameState;
+  final int campHeartLevel;
+  @override
+  Widget build(BuildContext context) {
+    if (!gameState.isTowerWeatherUnlocked) {
+      return _BuildingUpgradeTab(
+        gameState: gameState,
+        targetId: 'towerWeatherModule',
+        title: 'Débloquer la Tour météo',
+        description:
+            'Elle active les prévisions, les alertes météo et l’indicateur météo du HUD.',
+        currentEffects: const <String>['Météo : verrouillée'],
+        nextEffects: const <String>[
+          'Prévisions météo et alertes',
+          'Météo actuelle affichée dans le HUD',
+        ],
+        campHeartLevel: campHeartLevel,
+      );
+    }
     final active = gameState.activeGlobalWeatherEvent;
     String label(TowerWeatherType type) => switch (type) {
           TowerWeatherType.calm => '🌤️ Temps calme',

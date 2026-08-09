@@ -27,11 +27,11 @@ void main() {
     final biomass = defaultLisiereForageConfig.biomass;
 
     expect(biomass.maximumPercent, 100);
-    expect(biomass.missionConsumptionByIntensity[ForageIntensity.doux], 4);
-    expect(biomass.missionConsumptionByIntensity[ForageIntensity.normal], 8);
+    expect(biomass.missionConsumptionByIntensity[ForageIntensity.doux], 2);
+    expect(biomass.missionConsumptionByIntensity[ForageIntensity.normal], 4);
     expect(
       biomass.missionConsumptionByIntensity[ForageIntensity.intensif],
-      16,
+      8,
     );
     expect(
       biomass.resourceYieldTiers

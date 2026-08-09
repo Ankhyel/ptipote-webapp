@@ -70,6 +70,20 @@ const BuildingConstructionConfig defaultBuildingConstructionConfig =
       baseRequirements: <String, int>{'Organique': 6, 'Minéral': 8},
       durationMinutes: 1,
     ),
+    // Les deux équipements sont des améliorations de la Tour : ils gardent
+    // volontairement le même coût que sa construction initiale.
+    'towerWeatherModule': BuildingProjectDefinition(
+      id: 'towerWeatherModule',
+      label: 'Tour météo',
+      baseRequirements: <String, int>{'Organique': 6, 'Minéral': 8},
+      durationMinutes: 1,
+    ),
+    'towerResearchModule': BuildingProjectDefinition(
+      id: 'towerResearchModule',
+      label: 'Tour de recherche',
+      baseRequirements: <String, int>{'Organique': 6, 'Minéral': 8},
+      durationMinutes: 1,
+    ),
     'market': BuildingProjectDefinition(
       id: 'market',
       label: 'Marché',

@@ -265,6 +265,8 @@ class Zone0GameState extends ChangeNotifier {
   int pTibugAspectExtractorLevel = 1;
   bool firstCultivationTankGranted = false;
   int securityTowerLevel = 0;
+  bool towerWeatherModuleInstalled = false;
+  bool towerResearchModuleInstalled = false;
   int marketLevel = 0;
   int currentPopulation = kernelConfig.startingPopulation;
   int kernelTrustLevel = 1;
@@ -340,6 +342,10 @@ class Zone0GameState extends ChangeNotifier {
 
   bool get isFablabBuilt => atelierLevel >= fablabConfig.cuisineUnlockLevel;
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
+  bool get isTowerWeatherUnlocked =>
+      isSecurityTowerBuilt && towerWeatherModuleInstalled;
+  bool get isTowerResearchUnlocked =>
+      isSecurityTowerBuilt && towerResearchModuleInstalled;
   bool get isMarketBuilt => marketLevel >= 1;
   bool get isPlaineNurseryBuilt => plaineNurseryLevel >= 1;
 
@@ -2844,6 +2850,51 @@ class Zone0GameState extends ChangeNotifier {
         CommunityRoleType.weatherWatch =>
           securityTowerSlots,
       };
+
+  /// The research tower reads the same weighted data-family tables as Lisière
+  /// research. It only exposes information and a weather modifier; it does
+  /// not create a second data-cell generator.
+  double towerResearchWeatherMultiplierFor(ForageBiome biome) {
+    if (!isTowerResearchUnlocked) return 1;
+    final weather = activeGlobalWeatherEvent;
+    if (weather == null || weather.type == TowerWeatherType.calm) return 1;
+    final ptibugBiome = _ptibugBiomeForForageBiome(biome);
+    final compatible = pTibugConfig.biomes[ptibugBiome]?.weatherTypes
+            .contains(weather.type.name) ??
+        false;
+    return compatible ? 1.25 : .75;
+  }
+
+  int towerResearchCellChanceFor(ForageBiome biome, {int ordinal = 1}) {
+    final base = pTibugConfig.cellChanceForOrdinal(ordinal);
+    return (base * towerResearchWeatherMultiplierFor(biome))
+        .round()
+        .clamp(0, 100)
+        .toInt();
+  }
+
+  Map<PTibugDataFamily, int> towerResearchDataChancesFor(
+    ForageBiome biome, {
+    int ordinal = 1,
+  }) {
+    final weights =
+        pTibugConfig.biomes[_ptibugBiomeForForageBiome(biome)]!.dataWeights;
+    final total = weights.values.fold<int>(0, (sum, value) => sum + value);
+    final cellChance = towerResearchCellChanceFor(biome, ordinal: ordinal);
+    if (total <= 0 || cellChance <= 0) return const <PTibugDataFamily, int>{};
+    return <PTibugDataFamily, int>{
+      for (final family in PTibugDataFamily.values)
+        family: ((weights[family] ?? 0) * cellChance / total).round(),
+    };
+  }
+
+  String get towerWeatherHudLabel {
+    final weather = activeGlobalWeatherEvent;
+    if (weather == null || weather.type == TowerWeatherType.calm) {
+      return 'Météo calme';
+    }
+    return '${_weatherTypeLabel(weather.type)} · ${_weatherIntensityLabel(weather.intensity)}';
+  }
 
   CommunityRoleStatus _roleAvailability(CommunityRoleType role) {
     final built = switch (role) {
@@ -6916,6 +6967,8 @@ class Zone0GameState extends ChangeNotifier {
     cuisineLevel = 0;
     recyclerLevel = 0;
     securityTowerLevel = 0;
+    towerWeatherModuleInstalled = false;
+    towerResearchModuleInstalled = false;
     houseLevel = 1;
     alcoveCapacity = 2;
     housingUnits = 0;
@@ -9763,6 +9816,8 @@ class Zone0GameState extends ChangeNotifier {
       'atelier' => atelierLevel,
       'recycler' => recyclerLevel,
       'securityTower' => securityTowerLevel,
+      'towerWeatherModule' => towerWeatherModuleInstalled ? 1 : 0,
+      'towerResearchModule' => towerResearchModuleInstalled ? 1 : 0,
       'market' => marketLevel,
       'house' => houseLevel,
       'housing' => housingUnits,
@@ -9782,6 +9837,8 @@ class Zone0GameState extends ChangeNotifier {
       'atelier' => fablabConfig.atelierMaxLevel,
       'recycler' => wasteRecyclerConfig.recyclerMaxLevel,
       'securityTower' => 3,
+      'towerWeatherModule' => 1,
+      'towerResearchModule' => 1,
       'market' => 5,
       'house' => housingConfig.houseMaxLevel,
       'housing' => 99,
@@ -9952,6 +10009,14 @@ class Zone0GameState extends ChangeNotifier {
             'Le Cœur du Camp doit atteindre le niveau ${securityTowerConfig.requiredCampHeartLevel}.',
       );
     }
+    if ((targetId == 'towerWeatherModule' ||
+            targetId == 'towerResearchModule') &&
+        !isSecurityTowerBuilt) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Construisez d’abord la Tour de sécurité.',
+      );
+    }
     if (targetId == 'plaineNursery' && (campHeartLevel ?? 0) < 2) {
       return const Zone0ActionResult(
         success: false,
@@ -10053,7 +10118,11 @@ class Zone0GameState extends ChangeNotifier {
           refugeSafety,
           securityTowerConfig.initialSecurity,
         );
+      case 'towerWeatherModule':
+        towerWeatherModuleInstalled = true;
         ensureWeatherForecast();
+      case 'towerResearchModule':
+        towerResearchModuleInstalled = true;
       case 'market':
         marketLevel = project.currentLevel;
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
@@ -14243,6 +14312,10 @@ class Zone0GameState extends ChangeNotifier {
         final towerData = buildingsData['securityTower'];
         if (towerData is Map) {
           securityTowerLevel = _readInt(towerData['currentLevel']).clamp(0, 3);
+          towerWeatherModuleInstalled =
+              towerData['weatherModuleInstalled'] == true;
+          towerResearchModuleInstalled =
+              towerData['researchModuleInstalled'] == true;
         }
         final marketBuildingData = buildingsData['market'];
         if (marketBuildingData is Map) {
@@ -15532,7 +15605,7 @@ class Zone0GameState extends ChangeNotifier {
     final current = now ?? DateTime.now();
     _resolveCommunityDailyContribution(current);
     var changed = _closeFinishedWeatherAlerts(current);
-    if (!isSecurityTowerBuilt) return changed;
+    if (!isTowerWeatherUnlocked) return changed;
 
     _migrateGlobalWeatherIfNeeded(current);
     activeGlobalWeatherEvent ??= _newGlobalWeatherEvent(
@@ -16850,6 +16923,9 @@ class Zone0GameState extends ChangeNotifier {
     final typeConfig = lisiereForageConfig.missionTypes[mission.type] ??
         lisiereForageConfig.missionTypes[ForageMissionType.harvest]!;
     final intensityConfig = lisiereForageConfig.intensities[mission.intensity]!;
+    final weatherMultiplier = mission.type == ForageMissionType.research
+        ? towerResearchWeatherMultiplierFor(mission.biome)
+        : 1.0;
     final attempts = math.max(
       0,
       (pTibugConfig.maxCellsForMissionHours(duration.theoreticalHours) *
@@ -16862,7 +16938,8 @@ class Zone0GameState extends ChangeNotifier {
     final cells = <PTibugDataCell>[];
     for (var attempt = 0; attempt < attempts; attempt += 1) {
       final chance = (pTibugConfig.cellChanceForOrdinal(attempt + 1) *
-              typeConfig.cellChanceMultiplier)
+              typeConfig.cellChanceMultiplier *
+              weatherMultiplier)
           .round()
           .clamp(0, 100);
       if (_random.nextInt(100) >= chance) continue;
@@ -17439,6 +17516,8 @@ class Zone0GameState extends ChangeNotifier {
             'state': isSecurityTowerBuilt ? 'built' : 'constructible',
             'currentLevel': securityTowerLevel,
             'maxLevel': 3,
+            'weatherModuleInstalled': towerWeatherModuleInstalled,
+            'researchModuleInstalled': towerResearchModuleInstalled,
             'requiredCampHeartLevel':
                 securityTowerConfig.requiredCampHeartLevel,
             'isVisible': true,
