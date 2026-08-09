@@ -6284,16 +6284,69 @@ class ForageGroupEstimate {
 }
 
 class _LisiereBuildingsTab extends StatefulWidget {
-  const _LisiereBuildingsTab({required this.gameState});
+  const _LisiereBuildingsTab({
+    required this.gameState,
+    this.initialBiome,
+    this.showBiomeDetail = false,
+  });
   final Zone0GameState gameState;
+  final ForageBiome? initialBiome;
+  final bool showBiomeDetail;
   @override
   State<_LisiereBuildingsTab> createState() => _LisiereBuildingsTabState();
 }
 
 class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
-  ForageBiome biome = ForageBiome.plaineRiche;
+  late ForageBiome biome;
+  int lithocultureAmount = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    biome = widget.initialBiome ?? ForageBiome.plaineRiche;
+  }
+
+  void _openBiome(ForageBiome selectedBiome) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _LisiereBuildingsTab(
+          gameState: widget.gameState,
+          initialBiome: selectedBiome,
+          showBiomeDetail: true,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!widget.showBiomeDetail) {
+      return _LisiereBuildingsMap(
+        gameState: widget.gameState,
+        onOpen: _openBiome,
+      );
+    }
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) > 250) {
+          Navigator.of(context).maybePop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            tooltip: 'Retour à la carte Bâtiment',
+            icon: const Icon(Icons.arrow_back_ios_new),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          title: Text('Bâtiment · ${lisiereForageConfig.biomes[biome]!.label}'),
+        ),
+        body: SafeArea(child: _buildDetail(context)),
+      ),
+    );
+  }
+
+  Widget _buildDetail(BuildContext context) {
     final state = widget.gameState;
     final zone = state.territoryZone(biome);
     final config = lisiereForageConfig.territoryBuildings.biofermenter;
@@ -6302,7 +6355,7 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
     final forestTarget = state.edibleForestTargetId(biome);
     final bioProject = state.projectFor(bioTarget);
     final forestProject = state.projectFor(forestTarget);
-    final preview = state.lithoculturePreview(biome, 1);
+    final preview = state.lithoculturePreview(biome, lithocultureAmount);
     final label = lisiereForageConfig.biomes[biome]!.label;
     return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
       Text('Bâtiment territorial',
@@ -6311,19 +6364,7 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
               .headlineSmall
               ?.copyWith(fontWeight: FontWeight.w900)),
       const SizedBox(height: 6),
-      const Text('Chaque zone possède un seul emplacement de bâtiment.'),
-      const SizedBox(height: 12),
-      Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: ForageBiome.values
-              .where(state.isBiomeUnlocked)
-              .map((item) => ChoiceChip(
-                    label: Text(lisiereForageConfig.biomes[item]!.label),
-                    selected: biome == item,
-                    onSelected: (_) => setState(() => biome = item),
-                  ))
-              .toList()),
+      const Text('Cet emplacement appartient à cette zone uniquement.'),
       const SizedBox(height: 12),
       Card(
           child: Padding(
@@ -6366,6 +6407,24 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                           'Lithoculture : ${state.getLithocultureMineralCostPerOrganic(biome)} Minéraux → 1 Organique${zone.terrainTags.contains('mineralBasin') ? ' · Bonus Bassin minéral' : ''}'),
                       Text(
                           'Forêt comestible : ${zone.edibleForestInstalled ? '+${(state.activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator * 100).round()} % · ${state.activePollinatorsForBiofermenter(biome)}/${config.maxPollinatorsCounted} Pollinisateurs' : 'non installée'}'),
+                      const SizedBox(height: 10),
+                      const Text('Lithoculture',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
+                      Text(
+                          'Obtenir $lithocultureAmount Organique : ${preview.mineralCost} Minéral + ${preview.wasteCost} Déchet'),
+                      Wrap(
+                        spacing: 8,
+                        children: <int>[1, 5, 10]
+                            .map((amount) => ChoiceChip(
+                                  label: Text('×$amount'),
+                                  selected: lithocultureAmount == amount,
+                                  onSelected: (_) => setState(
+                                    () => lithocultureAmount = amount,
+                                  ),
+                                ))
+                            .toList(),
+                      ),
+                      const SizedBox(height: 8),
                       Wrap(spacing: 8, children: <Widget>[
                         OutlinedButton(
                             onPressed: zone.buildingLevel >= 4
@@ -6397,13 +6456,15 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                 : 'Installer Forêt comestible')),
                         FilledButton(
                             onPressed: () {
-                              final ok = state.runLithoculture(biome, 1);
+                              final ok = state.runLithoculture(
+                                biome,
+                                lithocultureAmount,
+                              );
                               setState(() {});
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(ok
-                                          ? '+1 Organique obtenu.'
-                                          : 'Intrants insuffisants.')));
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: Text(ok
+                                      ? '+$lithocultureAmount Organique obtenu.'
+                                      : 'Intrants insuffisants.')));
                             },
                             child: Text(
                                 'Lithoculture : ${preview.mineralCost} Minéral + ${preview.wasteCost} Déchet')),
@@ -6411,6 +6472,137 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                     ],
                   ]))),
     ]);
+  }
+}
+
+class _LisiereBuildingsMap extends StatelessWidget {
+  const _LisiereBuildingsMap({
+    required this.gameState,
+    required this.onOpen,
+  });
+
+  final Zone0GameState gameState;
+  final ValueChanged<ForageBiome> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    const cells = <ForageBiome?>[
+      null,
+      ForageBiome.sousBois,
+      null,
+      ForageBiome.colline,
+      ForageBiome.plaineRiche,
+      null,
+      ForageBiome.bassinMineral,
+      null,
+      null,
+    ];
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: <Widget>[
+        const Text(
+          'Bâtiments de Lisière',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 22),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Chaque biome possède un emplacement territorial. Touchez une zone pour consulter ou construire son bâtiment.',
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                childAspectRatio: .95,
+                crossAxisSpacing: 7,
+                mainAxisSpacing: 7,
+              ),
+              itemCount: cells.length,
+              itemBuilder: (context, index) {
+                final biome = cells[index];
+                if (biome == null) {
+                  return DecoratedBox(
+                    decoration: BoxDecoration(
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  );
+                }
+                final unlocked = gameState.isBiomeUnlocked(biome);
+                final zone = gameState.territoryZone(biome);
+                final built = zone.buildingId != null;
+                final label = lisiereForageConfig.biomes[biome]!.label;
+                return Material(
+                  color: unlocked
+                      ? Theme.of(context).colorScheme.surfaceContainerLow
+                      : Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: unlocked ? () => onOpen(biome) : null,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          Icon(
+                            unlocked
+                                ? built
+                                    ? Icons.eco_outlined
+                                    : Icons.add_home_work_outlined
+                                : Icons.lock_outline,
+                            color: built
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            !unlocked
+                                ? 'Bientôt disponible'
+                                : built
+                                    ? 'Biofermenteur niv. ${zone.buildingLevel}'
+                                    : 'Emplacement libre',
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (unlocked &&
+                              zone.terrainTags.contains('mineralBasin'))
+                            const Text(
+                              'Bassin minéral',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 9),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
