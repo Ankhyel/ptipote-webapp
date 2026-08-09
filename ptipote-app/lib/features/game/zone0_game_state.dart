@@ -1447,6 +1447,7 @@ class Zone0GameState extends ChangeNotifier {
       idempotencyKey:
           'household-buy:${house.id}:$item:${now.microsecondsSinceEpoch}',
     ));
+    _addHouseholdInventoryItem(house, item, 1);
     return true;
   }
 
@@ -1456,6 +1457,7 @@ class Zone0GameState extends ChangeNotifier {
     const kit = 'Kit de réparation domestique';
     if (!_buyHouseholdFinishedItem(house, kit, now, essential: true))
       return false;
+    if (!_consumeHouseholdInventoryItem(house, kit)) return false;
     final job = HouseholdRepairJob(
       id: 'repair-${house.id}-${now.microsecondsSinceEpoch}',
       houseId: house.id,
@@ -1532,13 +1534,20 @@ class Zone0GameState extends ChangeNotifier {
           house.installedFurnitureItems.length < house.furnitureSlots) {
         completed = _buyHouseholdFinishedItem(house, 'Meuble simple', current,
             essential: true);
-        if (completed) house.installedFurnitureItems.add('Meuble simple');
+        if (completed &&
+            _consumeHouseholdInventoryItem(house, 'Meuble simple')) {
+          house.installedFurnitureItems.add('Meuble simple');
+        }
       } else if (action == HouseholdAutonomyAction.generator &&
           !house.additionalGeneratorInstalled) {
         completed = _buyHouseholdFinishedItem(
             house, 'Second générateur domestique', current,
             essential: false);
-        if (completed) house.additionalGeneratorInstalled = true;
+        if (completed &&
+            _consumeHouseholdInventoryItem(
+                house, 'Second générateur domestique')) {
+          house.additionalGeneratorInstalled = true;
+        }
       } else if (action == HouseholdAutonomyAction.protection) {
         final type = HouseholdAutonomyService.requiredProtection(
             nextGlobalWeatherEvent?.type);
@@ -1550,7 +1559,9 @@ class Zone0GameState extends ChangeNotifier {
                 house.weatherProtectionSlots) {
           completed =
               _buyHouseholdFinishedItem(house, item, current, essential: true);
-          if (completed) house.installedStructuralProtections.add(type);
+          if (completed && _consumeHouseholdInventoryItem(house, item)) {
+            house.installedStructuralProtections.add(type);
+          }
         }
       }
       if (completed) {
@@ -1776,9 +1787,14 @@ class Zone0GameState extends ChangeNotifier {
       StructuralProtectionType.chloroCanaux => 'Chloro-canaux',
       StructuralProtectionType.filtration => 'Installation filtrante',
     };
-    if (resourceAmount(item) < 1 || removeResource(item, 1) <= 0) {
+    // Les achats habitants arrivent d'abord dans l'inventaire de la Maison.
+    // Le prélèvement direct du joueur reste accepté ici pour ne pas bloquer
+    // une installation manuelle existante.
+    if (!_consumeHouseholdInventoryItem(house, item) &&
+        (resourceAmount(item) < 1 || removeResource(item, 1) <= 0)) {
       return Zone0ActionResult(
-          success: false, message: '$item requis dans l’inventaire.');
+          success: false,
+          message: '$item requis dans l’inventaire de la maison.');
     }
     house.installedStructuralProtections.add(type);
     house.updatedAt = DateTime.now();
@@ -2195,6 +2211,23 @@ class Zone0GameState extends ChangeNotifier {
           ..lastResolvedAt = current
           ..updatedAt = current;
       }
+      // Migration douce des anciens équipements à 4 usages : on garde leur
+      // usure déjà subie, mais la jauge de référence passe bien à 10.
+      for (final item in resident.ownedItems) {
+        final max = item.maxDurability;
+        final currentDurability = item.currentDurability;
+        if (max != null &&
+            currentDurability != null &&
+            max < housingConfig.defaultProtectionDurabilityEvents) {
+          final spent = math.max(0, max - currentDurability);
+          item
+            ..maxDurability = housingConfig.defaultProtectionDurabilityEvents
+            ..currentDurability = math.max(
+              0,
+              housingConfig.defaultProtectionDurabilityEvents - spent,
+            );
+        }
+      }
     }
     if (!residentNeedsMigrationCompleted) {
       residentNeedsMigrationCompleted = true;
@@ -2207,6 +2240,103 @@ class Zone0GameState extends ChangeNotifier {
 
   bool _isResidentFinishedItem(String item) =>
       _residentItemCategory(item) != null;
+
+  /// Les produits qui servent au foyer ne transitent jamais par le sac
+  /// personnel de l'habitant : ils rejoignent la réserve de sa Maison avant
+  /// toute installation dans un emplacement.
+  bool _isHouseholdFinishedItem(String item) => <String>{
+        'Meuble simple',
+        'Ventilation Termite',
+        'Chloro-canaux',
+        'Installation filtrante',
+        'Lumière solaire',
+        'Kit de réparation domestique',
+        'Second générateur domestique',
+      }.contains(item);
+
+  bool _isResidentDurableEquipment(String item, String category) {
+    if (category == 'clothing' || category.endsWith('Protection')) return true;
+    final probe = ResidentOwnedItem(
+      id: 'durability-probe',
+      itemDefinitionId: item,
+      category: category,
+      quantity: 1,
+      acquiredAt: DateTime.now(),
+    );
+    return TowerWeatherType.values
+        .where((weather) => weather != TowerWeatherType.calm)
+        .any((weather) => _itemProtectsWeather(probe, weather));
+  }
+
+  void _addHouseholdInventoryItem(
+    ResidentHouse house,
+    String item,
+    int quantity,
+  ) {
+    if (quantity <= 0) return;
+    house.householdInventory.update(
+      item,
+      (current) => current + quantity,
+      ifAbsent: () => quantity,
+    );
+  }
+
+  bool _consumeHouseholdInventoryItem(
+    ResidentHouse house,
+    String item, {
+    int quantity = 1,
+  }) {
+    final stored = house.householdInventory[item] ?? 0;
+    if (stored < quantity || quantity <= 0) return false;
+    final remaining = stored - quantity;
+    if (remaining == 0) {
+      house.householdInventory.remove(item);
+    } else {
+      house.householdInventory[item] = remaining;
+    }
+    return true;
+  }
+
+  void _addResidentOwnedItems(
+    Zone0Resident resident,
+    String item,
+    String category,
+    int quantity,
+    DateTime acquiredAt, {
+    String? sourceTransactionId,
+  }) {
+    if (quantity <= 0) return;
+    final durable = _isResidentDurableEquipment(item, category);
+    if (!durable) {
+      final existing = resident.ownedItems
+          .where((owned) =>
+              owned.itemDefinitionId == item &&
+              owned.category == category &&
+              owned.isUsable)
+          .firstOrNull;
+      if (existing != null) {
+        existing.quantity += quantity;
+        return;
+      }
+    }
+    // Une protection est stockée par exemplaire : chaque barre de durabilité
+    // représente bien un seul équipement et non une pile entière.
+    for (var index = 0; index < (durable ? quantity : 1); index++) {
+      resident.ownedItems.add(ResidentOwnedItem(
+        id: 'resident-item-${resident.id}-${item.hashCode}-${acquiredAt.microsecondsSinceEpoch}-$index',
+        itemDefinitionId: item,
+        category: category,
+        quantity: durable ? 1 : quantity,
+        acquiredAt: acquiredAt,
+        currentDurability:
+            durable ? housingConfig.defaultProtectionDurabilityEvents : null,
+        maxDurability:
+            durable ? housingConfig.defaultProtectionDurabilityEvents : null,
+        sourceTransactionId: sourceTransactionId,
+      ));
+      if (!durable) break;
+    }
+  }
 
   String? _residentItemCategory(String item) {
     switch (item.trim().toLowerCase()) {
@@ -2228,6 +2358,10 @@ class Zone0GameState extends ChangeNotifier {
       case 'chloro-canaux':
       case 'installation filtrante':
         return 'technicalEquipment';
+      case 'lumière solaire':
+      case 'kit de réparation domestique':
+      case 'second générateur domestique':
+        return 'householdInstallation';
       default:
         return null;
     }
@@ -2416,24 +2550,17 @@ class Zone0GameState extends ChangeNotifier {
           success: false, message: 'Stock du refuge insuffisant.');
     }
     if (consumeFromPlayerInventory) removeResource(itemName, safeQuantity);
-    final existing = resident.ownedItems
-        .where((item) => item.itemDefinitionId == itemName && item.isUsable)
-        .firstOrNull;
-    if (existing != null) {
-      existing.quantity += safeQuantity;
+    final house = residentHouseForId(resident.houseId);
+    if (house != null && _isHouseholdFinishedItem(itemName)) {
+      _addHouseholdInventoryItem(house, itemName, safeQuantity);
     } else {
-      final durable = category == 'clothing' || category.endsWith('Protection');
-      resident.ownedItems.add(ResidentOwnedItem(
-        id: 'resident-item-${resident.id}-${itemName.hashCode}-${DateTime.now().microsecondsSinceEpoch}',
-        itemDefinitionId: itemName,
-        category: category,
-        quantity: safeQuantity,
-        acquiredAt: DateTime.now(),
-        maxDurability:
-            durable ? housingConfig.defaultProtectionDurabilityEvents : null,
-        currentDurability:
-            durable ? housingConfig.defaultProtectionDurabilityEvents : null,
-      ));
+      _addResidentOwnedItems(
+        resident,
+        itemName,
+        category,
+        safeQuantity,
+        DateTime.now(),
+      );
     }
     resolveResidentNeeds();
     notifyListeners();
@@ -2455,11 +2582,16 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Aucun emplacement de mobilier disponible.');
     }
-    if (_residentItemCategory(itemName) != 'furniture' ||
-        removeResource(itemName, 1) < 1) {
+    if (_residentItemCategory(itemName) != 'furniture') {
       return const Zone0ActionResult(
           success: false,
-          message: 'Meuble fini requis dans l’inventaire du refuge.');
+          message: 'Meuble fini requis dans l’inventaire de la maison.');
+    }
+    if (!_consumeHouseholdInventoryItem(house, itemName) &&
+        (resourceAmount(itemName) < 1 || removeResource(itemName, 1) <= 0)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Meuble fini requis dans l’inventaire de la maison.');
     }
     house.installedFurnitureItems.add(itemName);
     for (final resident
@@ -2512,8 +2644,20 @@ class Zone0GameState extends ChangeNotifier {
       } else {
         if (used.currentDurability != null) {
           used.currentDurability = math.max(0, used.currentDurability! - 1);
-          if (used.currentDurability == 0)
-            used.status = ResidentOwnedItemStatus.broken;
+          if (used.currentDurability == 0) {
+            // Une protection est réellement consommée au dernier événement :
+            // elle disparaît du vestiaire et recrée son besoin commercial.
+            resident.ownedItems.remove(used);
+            _upsertResidentUncoveredNeed(
+              resident: resident,
+              item: used.itemDefinitionId,
+              category: used.category,
+              quantity: 1,
+              reason: ResidentUncoveredNeedReason.noStock,
+              urgency: 3,
+              now: DateTime.now(),
+            );
+          }
         }
         used
           ..equippedOrActive = true
@@ -3229,8 +3373,14 @@ class Zone0GameState extends ChangeNotifier {
           success: false,
           message: 'Les habitants achètent uniquement des produits finis.');
     }
+    final house = residentHouseForId(resident.houseId);
+    final isHouseholdItem =
+        house != null && _isHouseholdFinishedItem(itemDefinitionId);
     if (itemDefinitionId != 'Repas simple' &&
-        _residentUsableItemAmount(resident, itemDefinitionId) >= safeQuantity) {
+        (isHouseholdItem
+            ? (house.householdInventory[itemDefinitionId] ?? 0) >= safeQuantity
+            : _residentUsableItemAmount(resident, itemDefinitionId) >=
+                safeQuantity)) {
       return const Zone0ActionResult(
           success: false, message: 'Produit déjà disponible.');
     }
@@ -3288,47 +3438,20 @@ class Zone0GameState extends ChangeNotifier {
     }
     resident.internalPileBalance -= price;
     resident.recentSpendingPiles += price;
-    if (itemDefinitionId == 'Repas simple') {
-      _giveCommunityMeal(resident, current);
-      resident.needsState.mealsConsumed = math.min(
-          resident.needsState.mealsRequired,
-          resident.needsState.mealsConsumed + safeQuantity);
+    if (house != null && isHouseholdItem) {
+      _addHouseholdInventoryItem(house, itemDefinitionId, safeQuantity);
     } else {
-      resident.ownedItems.add(ResidentOwnedItem(
-        id: 'resident-purchase-${resident.id}-${current.microsecondsSinceEpoch}',
-        itemDefinitionId: itemDefinitionId,
-        category: _residentItemCategory(itemDefinitionId) ?? 'finished',
-        quantity: safeQuantity,
-        acquiredAt: current,
-        currentDurability: _itemProtectsWeather(
-                    ResidentOwnedItem(
-                        id: '',
-                        itemDefinitionId: itemDefinitionId,
-                        category: '',
-                        quantity: 1,
-                        acquiredAt: current),
-                    TowerWeatherType.heatWave) ||
-                _itemProtectsWeather(
-                    ResidentOwnedItem(
-                        id: '',
-                        itemDefinitionId: itemDefinitionId,
-                        category: '',
-                        quantity: 1,
-                        acquiredAt: current),
-                    TowerWeatherType.heavyRain) ||
-                _itemProtectsWeather(
-                    ResidentOwnedItem(
-                        id: '',
-                        itemDefinitionId: itemDefinitionId,
-                        category: '',
-                        quantity: 1,
-                        acquiredAt: current),
-                    TowerWeatherType.toxicCloud)
-            ? housingConfig.defaultProtectionDurabilityEvents
-            : null,
-        maxDurability: housingConfig.defaultProtectionDurabilityEvents,
-      ));
+      _addResidentOwnedItems(
+        resident,
+        itemDefinitionId,
+        _residentItemCategory(itemDefinitionId) ?? 'finished',
+        safeQuantity,
+        current,
+      );
     }
+    // Les repas passent eux aussi par le sac personnel. La résolution des
+    // besoins peut ensuite les consommer réellement, sans objet fantôme.
+    resolveResidentNeeds(now: current);
     var producer = 0;
     var supplier = 0;
     var merchant = 0;
@@ -5569,6 +5692,33 @@ class Zone0GameState extends ChangeNotifier {
         message: 'P’TIPOTE occupé.',
       );
     }
+    if (quantity == -1 && figurine == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le mode ∞ est réservé à un craft confié à un P’TIPOTE.',
+      );
+    }
+    if (quantity == -1 && cuisineLevel < 4) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le mode ∞ se débloque au niveau 4 de la Cuisine.',
+      );
+    }
+    if (quantity == 50 && cuisineLevel < 3) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le lot x50 se débloque au niveau 3 de la Cuisine.',
+      );
+    }
+    if (quantity == -1) {
+      final materialLimit = recipe.ingredients.entries
+          .map((entry) => resourceAmount(entry.key) ~/ entry.value)
+          .fold<int>(1 << 30, math.min);
+      final batteryLimit = recipe.bioBatteryCost <= 0
+          ? 1 << 30
+          : bioBatteries ~/ recipe.bioBatteryCost;
+      quantity = math.min(materialLimit, batteryLimit);
+    }
     if (quantity <= 0) {
       return const Zone0ActionResult(
         success: false,
@@ -5583,6 +5733,13 @@ class Zone0GameState extends ChangeNotifier {
     final output = <String, int>{
       recipe.resultItem: recipe.resultAmount * quantity,
     };
+    final bioBatteryCost = recipe.bioBatteryCost * quantity;
+    if (bioBatteries < bioBatteryCost) {
+      return Zone0ActionResult(
+        success: false,
+        message: '$bioBatteryCost Bio-batteries requises.',
+      );
+    }
     if (!hasResources(totalCosts)) {
       return Zone0ActionResult(
         success: false,
@@ -5601,6 +5758,7 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Ressources indisponibles.',
       );
     }
+    bioBatteries -= bioBatteryCost;
     if (figurine == null) {
       energyUnits -= 1;
     }
@@ -6782,6 +6940,33 @@ class Zone0GameState extends ChangeNotifier {
     if (!sold) {
       return const Zone0ActionResult(
           success: false, message: 'Stock du Marché insuffisant.');
+    }
+    // Une vente à un habitant transfère toujours l'objet physique vers son
+    // bon stockage. Les biens du foyer restent dans la Maison, les objets
+    // personnels rejoignent le sac de l'habitant.
+    final resident = request.customerName == null
+        ? null
+        : residents
+            .where((entry) => entry.displayName == request.customerName)
+            .firstOrNull;
+    if (resident != null &&
+        _isFinishedResidentProduct(request.requestedItemId)) {
+      final category =
+          _residentItemCategory(request.requestedItemId) ?? 'finished';
+      final house = residentHouseForId(resident.houseId);
+      if (house != null && _isHouseholdFinishedItem(request.requestedItemId)) {
+        _addHouseholdInventoryItem(
+            house, request.requestedItemId, request.requestedQuantity);
+      } else {
+        _addResidentOwnedItems(
+          resident,
+          request.requestedItemId,
+          category,
+          request.requestedQuantity,
+          DateTime.now(),
+          sourceTransactionId: request.id,
+        );
+      }
     }
     _creditMarketBioPiles(request.rewardBioPiles);
     if (responder == MarketRequestResponder.ptipote) {
@@ -19533,6 +19718,7 @@ class ResidentHouse {
     int? weatherProtectionSlots,
     int? furnitureSlots,
     List<String>? installedFurnitureItems,
+    Map<String, int>? householdInventory,
     this.baseGeneratorInstalled = true,
     int? additionalGeneratorSlots,
     this.additionalGeneratorInstalled = false,
@@ -19556,6 +19742,7 @@ class ResidentHouse {
             weatherProtectionSlots ?? housingConfig.houseProtectionSlots,
         furnitureSlots = furnitureSlots ?? housingConfig.residentFurnitureSlots,
         installedFurnitureItems = installedFurnitureItems ?? <String>[],
+        householdInventory = householdInventory ?? <String, int>{},
         reservedArrivalCandidateIds = reservedArrivalCandidateIds ?? <String>[],
         additionalGeneratorSlots =
             additionalGeneratorSlots ?? housingConfig.additionalGeneratorSlots,
@@ -19598,6 +19785,11 @@ class ResidentHouse {
             (data['installedFurnitureItems'] as List? ?? const <dynamic>[])
                 .map((item) => '$item')
                 .toList(),
+        householdInventory: (data['householdInventory'] as Map? ?? const {})
+            .map((key, value) => MapEntry(
+                  '$key',
+                  Zone0GameState.instance._readInt(value),
+                )),
         baseGeneratorInstalled: data['baseGeneratorInstalled'] != false,
         additionalGeneratorSlots: Zone0GameState.instance._readInt(
           data['additionalGeneratorSlots'],
@@ -19644,6 +19836,7 @@ class ResidentHouse {
   int weatherProtectionSlots;
   int furnitureSlots;
   final List<String> installedFurnitureItems;
+  final Map<String, int> householdInventory;
   bool baseGeneratorInstalled;
   int additionalGeneratorSlots;
   bool additionalGeneratorInstalled;
@@ -19697,6 +19890,7 @@ class ResidentHouse {
         'weatherProtectionSlots': weatherProtectionSlots,
         'furnitureSlots': furnitureSlots,
         'installedFurnitureItems': installedFurnitureItems,
+        'householdInventory': householdInventory,
         'baseGeneratorInstalled': baseGeneratorInstalled,
         'additionalGeneratorSlots': additionalGeneratorSlots,
         'additionalGeneratorInstalled': additionalGeneratorInstalled,

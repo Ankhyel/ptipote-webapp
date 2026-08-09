@@ -34,7 +34,7 @@
   "weatherProtectionSeverePenalty": 20,
   "migrationGraceHours": 24,
   "clothingRequiredForFashionDesire": 2,
-  "defaultProtectionDurabilityEvents": 4,
+  "defaultProtectionDurabilityEvents": 10,
   "arrivalActiveCandidateLimit": 3,
   "arrivalCandidateIntervalHours": 72,
   "arrivalExpiryDays": 7,

@@ -5168,6 +5168,84 @@ class _FirebaseSyncStatus extends StatelessWidget {
   }
 }
 
+class _ResidentInventorySlot extends StatelessWidget {
+  const _ResidentInventorySlot({this.item});
+
+  final ResidentOwnedItem? item;
+
+  @override
+  Widget build(BuildContext context) {
+    final filled = item != null;
+    final durability = item?.currentDurability;
+    final maxDurability = item?.maxDurability;
+    return AspectRatio(
+      aspectRatio: 1,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: filled
+              ? Theme.of(context).colorScheme.surface
+              : Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withValues(alpha: .46),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: .32),
+          ),
+        ),
+        child: Stack(
+          children: <Widget>[
+            Center(
+              child: Icon(
+                filled ? _resourceIcon(item!.itemDefinitionId) : Icons.add,
+                size: 34,
+                color: filled ? Theme.of(context).colorScheme.primary : null,
+              ),
+            ),
+            if (filled && item!.quantity > 1)
+              Positioned(
+                top: 7,
+                right: 8,
+                child: Text('×${item!.quantity}',
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
+              ),
+            if (filled)
+              Positioned(
+                left: 6,
+                right: 6,
+                bottom: durability == null ? 7 : 19,
+                child: Text(
+                  item!.itemDefinitionId,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w800),
+                ),
+              ),
+            if (durability != null && maxDurability != null)
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 7,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: LinearProgressIndicator(
+                    value: maxDurability == 0 ? 0 : durability / maxDurability,
+                    minHeight: 6,
+                    color: Theme.of(context).colorScheme.primary,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _InventorySlot extends StatelessWidget {
   const _InventorySlot({required this.stack, this.onTap});
 
@@ -8238,11 +8316,22 @@ class _CampHousingTab extends StatelessWidget {
                 'tools' => 'Aime les outils',
                 _ => 'À déterminer',
               }} · ${resident.needsState.desireSatisfied ? 'satisfaite' : 'non satisfaite'}'),
-              if (resident.ownedItems.isEmpty)
-                const Text('Aucun produit personnel.')
-              else
-                ...resident.ownedItems.map((item) => Text(
-                    '${item.itemDefinitionId} ×${item.quantity}${item.currentDurability == null ? '' : ' · durabilité ${item.currentDurability}/${item.maxDurability}'}${item.status == ResidentOwnedItemStatus.broken ? ' · usé' : ''}')),
+              const SizedBox(height: 8),
+              GridView.count(
+                crossAxisCount: 3,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: List<Widget>.generate(
+                  math.max(3, resident.ownedItems.length + 1),
+                  (index) => _ResidentInventorySlot(
+                    item: index < resident.ownedItems.length
+                        ? resident.ownedItems[index]
+                        : null,
+                  ),
+                ),
+              ),
               const SizedBox(height: 10),
               const Text('Économie',
                   style: TextStyle(fontWeight: FontWeight.w900)),
@@ -8819,6 +8908,40 @@ class _CampHousingTab extends StatelessWidget {
                               if (house.installedFurnitureItems.isNotEmpty)
                                 Text(
                                     'Installés : ${house.installedFurnitureItems.join(', ')}'),
+                              const SizedBox(height: 10),
+                              const Text('Inventaire du foyer',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w900)),
+                              const SizedBox(height: 6),
+                              GridView.count(
+                                crossAxisCount: 3,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                children: List<Widget>.generate(
+                                  math.max(
+                                      3, house.householdInventory.length + 1),
+                                  (index) {
+                                    final entries = house
+                                        .householdInventory.entries
+                                        .where((entry) => entry.value > 0)
+                                        .toList();
+                                    final entry = index < entries.length
+                                        ? entries[index]
+                                        : null;
+                                    return _InventorySlot(
+                                      stack: entry == null
+                                          ? null
+                                          : Zone0InventoryStack(
+                                              resource: entry.key,
+                                              amount: entry.value,
+                                            ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 10),
                               OutlinedButton.icon(
                                 onPressed: house
                                             .installedFurnitureItems.length >=
@@ -17031,7 +17154,7 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
             const SizedBox(height: 12),
             _FablabQuantitySelector(
               quantity: _quantity,
-              level: 0,
+              level: widget.gameState.cuisineLevel,
               onChanged: (value) => setState(() => _quantity = value),
             ),
             const SizedBox(height: 12),
@@ -17392,21 +17515,27 @@ class _CraftProductionRecipeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final costs = recipe.ingredients.map(
-      (key, value) => MapEntry(key, value * quantity),
-    );
-    final output = <String, int>{
-      recipe.resultItem: recipe.resultAmount * quantity,
-    };
-    final hasResources = gameState.hasResources(costs);
-    final hasCapacity = gameState.hasInventoryCapacityFor(output);
-    final bioBatteryCost = recipe.bioBatteryCost * quantity;
-    final hasBioBatteries = gameState.bioBatteries >= bioBatteryCost;
-    final canPrepare = hasResources && hasCapacity && hasBioBatteries;
-    final maxCreatable = _maxProductionCount(
+    final isUnlimited = quantity == -1;
+    final materialMaxCreatable = _maxProductionCount(
       recipe.ingredients,
       gameState.resourceAmount,
     );
+    final batteryMaxCreatable = recipe.bioBatteryCost <= 0
+        ? materialMaxCreatable
+        : gameState.bioBatteries ~/ recipe.bioBatteryCost;
+    final maxCreatable = math.min(materialMaxCreatable, batteryMaxCreatable);
+    final effectiveQuantity = isUnlimited ? maxCreatable : quantity;
+    final costs = recipe.ingredients.map(
+      (key, value) => MapEntry(key, value * effectiveQuantity),
+    );
+    final output = <String, int>{
+      recipe.resultItem: recipe.resultAmount * effectiveQuantity,
+    };
+    final hasResources = effectiveQuantity > 0 && gameState.hasResources(costs);
+    final hasCapacity = gameState.hasInventoryCapacityFor(output);
+    final bioBatteryCost = recipe.bioBatteryCost * effectiveQuantity;
+    final hasBioBatteries = gameState.bioBatteries >= bioBatteryCost;
+    final canPrepare = hasResources && hasCapacity && hasBioBatteries;
     final ingredientText = costs.entries
         .map(
           (entry) =>
@@ -17417,7 +17546,7 @@ class _CraftProductionRecipeCard extends StatelessWidget {
         .map((entry) => '${entry.value} ${entry.key}')
         .join(' + ');
     final outputDetails = <String>[
-      'Résultat : ${recipe.resultAmount * quantity} ${recipe.resultItem}',
+      'Résultat : ${isUnlimited ? 'jusqu’à ${recipe.resultAmount * maxCreatable}' : recipe.resultAmount * effectiveQuantity} ${recipe.resultItem}',
       'Créations possibles avec le stock : $maxCreatable',
       'Temps : ${recipe.durationMinutes} min/unité',
     ];
@@ -17483,8 +17612,10 @@ class _CraftProductionRecipeCard extends StatelessWidget {
       primaryActionIcon: sectionLabel == 'Cuisine'
           ? Icons.restaurant_outlined
           : Icons.handyman_outlined,
-      primaryActionEnabled:
-          canPrepare && manualAvailable && gameState.energyUnits >= 1,
+      primaryActionEnabled: !isUnlimited &&
+          canPrepare &&
+          manualAvailable &&
+          gameState.energyUnits >= 1,
       onPrimaryAction: onPrepare,
       secondaryActionLabel: 'Confier à un P’TIPOTE',
       secondaryActionIcon: Icons.person_add_alt_1,
