@@ -81,5 +81,20 @@
       "heavyRain": {"calm": 0, "moderate": 10, "strong": 24, "severe": 50},
       "toxicCloud": {"calm": 0, "moderate": 10, "strong": 24, "severe": 50}
     }
+  },
+  "research": {
+    "harvestCellChanceByOrdinal": {"1": 50, "2": 25, "3": 0, "4": 0, "5": 0},
+    "researchCellChanceByOrdinal": {"1": 100, "2": 75, "3": 50, "4": 25, "5": 0},
+    "harvestValueSevenEightChance": 25,
+    "harvestValueNineChance": 0,
+    "researchValueSevenEightChance": 75,
+    "researchValueNineChance": 50,
+    "progressPerHour": 5,
+    "cellChancePerHour": 10,
+    "progressDecayPerDay": 2,
+    "cellChanceRevealPercent": 25,
+    "valueChanceRevealPercent": 50,
+    "familyRevealPercent": 65,
+    "fullRevealPercent": 85
   }
 }

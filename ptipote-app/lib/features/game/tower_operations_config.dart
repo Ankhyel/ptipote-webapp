@@ -1,3 +1,5 @@
+import 'lisiere_forage_config.dart';
+
 enum TowerWeatherType { calm, toxicCloud, heatWave, heavyRain }
 
 enum GlobalWeatherIntensity { calm, moderate, strong, severe }
@@ -168,6 +170,7 @@ class TowerOperationsConfig {
     required this.manualWeatherTriggerType,
     required this.globalWeather,
     required this.buildingViability,
+    required this.research,
   });
 
   final int biomeRevealSecurityThreshold;
@@ -198,12 +201,53 @@ class TowerOperationsConfig {
   final TowerWeatherType? manualWeatherTriggerType;
   final GlobalWeatherConfig globalWeather;
   final BuildingViabilityConfig buildingViability;
+  final TowerResearchConfig research;
 
   SecurityWellbeingBand wellbeingBandFor(int security) =>
       wellbeingBands.where((band) => security >= band.minimumSecurity).reduce(
             (best, band) =>
                 band.minimumSecurity > best.minimumSecurity ? band : best,
           );
+}
+
+class TowerResearchConfig {
+  const TowerResearchConfig({
+    required this.harvestCellChanceByOrdinal,
+    required this.researchCellChanceByOrdinal,
+    required this.harvestValueSevenEightChance,
+    required this.harvestValueNineChance,
+    required this.researchValueSevenEightChance,
+    required this.researchValueNineChance,
+    required this.progressPerHour,
+    required this.cellChancePerHour,
+    required this.progressDecayPerDay,
+    required this.cellChanceRevealPercent,
+    required this.valueChanceRevealPercent,
+    required this.familyRevealPercent,
+    required this.fullRevealPercent,
+  });
+
+  final Map<int, int> harvestCellChanceByOrdinal;
+  final Map<int, int> researchCellChanceByOrdinal;
+  final int harvestValueSevenEightChance;
+  final int harvestValueNineChance;
+  final int researchValueSevenEightChance;
+  final int researchValueNineChance;
+  final int progressPerHour;
+  final int cellChancePerHour;
+  final int progressDecayPerDay;
+  final int cellChanceRevealPercent;
+  final int valueChanceRevealPercent;
+  final int familyRevealPercent;
+  final int fullRevealPercent;
+
+  int cellChanceFor(ForageMissionType type, int ordinal) =>
+      ((type == ForageMissionType.research
+                  ? researchCellChanceByOrdinal
+                  : harvestCellChanceByOrdinal)[ordinal] ??
+              0)
+          .clamp(0, 100)
+          .toInt();
 }
 
 const TowerOperationsConfig defaultTowerOperationsConfig =
@@ -422,6 +466,33 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
       occurrenceWeight: 1,
     ),
   ],
+  research: TowerResearchConfig(
+    harvestCellChanceByOrdinal: const <int, int>{
+      1: 50,
+      2: 25,
+      3: 0,
+      4: 0,
+      5: 0,
+    },
+    researchCellChanceByOrdinal: const <int, int>{
+      1: 100,
+      2: 75,
+      3: 50,
+      4: 25,
+      5: 0,
+    },
+    harvestValueSevenEightChance: 25,
+    harvestValueNineChance: 0,
+    researchValueSevenEightChance: 75,
+    researchValueNineChance: 50,
+    progressPerHour: 5,
+    cellChancePerHour: 10,
+    progressDecayPerDay: 2,
+    cellChanceRevealPercent: 25,
+    valueChanceRevealPercent: 50,
+    familyRevealPercent: 65,
+    fullRevealPercent: 85,
+  ),
 );
 
 TowerOperationsConfig towerOperationsConfig = defaultTowerOperationsConfig;

@@ -80,6 +80,7 @@ class Zone0GameState extends ChangeNotifier {
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
   final List<ForageMission> missions = <ForageMission>[];
   final List<TowerMission> towerMissions = <TowerMission>[];
+  final List<TowerBiomeResearch> towerBiomeResearch = <TowerBiomeResearch>[];
   final List<WorkshopCraftOrder> workshopOrders = <WorkshopCraftOrder>[];
   final List<PTibug> pTibugs = <PTibug>[];
   final List<PTibug> soldPTibugArchive = <PTibug>[];
@@ -2866,25 +2867,99 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int towerResearchCellChanceFor(ForageBiome biome, {int ordinal = 1}) {
-    final base = pTibugConfig.cellChanceForOrdinal(ordinal);
+    final base = towerOperationsConfig.research.cellChanceFor(
+      ForageMissionType.research,
+      ordinal,
+    );
     return (base * towerResearchWeatherMultiplierFor(biome))
         .round()
         .clamp(0, 100)
         .toInt();
   }
 
+  int biomeResearchProgressFor(ForageBiome biome) =>
+      biomeSecurity[biome]?.researchProgress ?? 0;
+
+  bool isBiomeResearching(ForageBiome biome) => towerBiomeResearch.any(
+        (research) => research.biome == biome && research.isActive,
+      );
+
+  TowerBiomeResearch? activeBiomeResearchFor(ForageBiome biome) =>
+      towerBiomeResearch
+          .where((research) => research.biome == biome && research.isActive)
+          .firstOrNull;
+
+  Zone0ActionResult startTowerBiomeResearch({
+    required ForageBiome biome,
+    required int hours,
+  }) {
+    if (!isTowerResearchUnlocked) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'La Tour de recherche est verrouillée.',
+      );
+    }
+    if (!isBiomeUnlocked(biome)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce biome doit être exploré avant son analyse.',
+      );
+    }
+    if (hours <= 0 || !<int>[1, 2, 4, 8].contains(hours)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Durée de recherche invalide.',
+      );
+    }
+    if (isBiomeResearching(biome)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Une recherche est déjà en cours dans ce biome.',
+      );
+    }
+    final now = DateTime.now();
+    final realMinutes =
+        math.max(1, (hours * 60 / lisiereForageConfig.forageTimeScale).round());
+    towerBiomeResearch.add(TowerBiomeResearch(
+      id: 'tower-research-${biome.name}-${now.microsecondsSinceEpoch}',
+      biome: biome,
+      theoreticalHours: hours,
+      startedAt: now,
+      endsAt: now.add(Duration(minutes: realMinutes)),
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          'Recherche lancée dans ${lisiereForageConfig.biomes[biome]!.label}.',
+    );
+  }
+
   Map<PTibugDataFamily, int> towerResearchDataChancesFor(
     ForageBiome biome, {
     int ordinal = 1,
   }) {
-    final weights =
-        pTibugConfig.biomes[_ptibugBiomeForForageBiome(biome)]!.dataWeights;
+    final weights = towerResearchFamilyWeightsFor(biome);
     final total = weights.values.fold<int>(0, (sum, value) => sum + value);
     final cellChance = towerResearchCellChanceFor(biome, ordinal: ordinal);
     if (total <= 0 || cellChance <= 0) return const <PTibugDataFamily, int>{};
     return <PTibugDataFamily, int>{
       for (final family in PTibugDataFamily.values)
         family: ((weights[family] ?? 0) * cellChance / total).round(),
+    };
+  }
+
+  /// Stable family weights exposed once the Tower has fully analysed a biome.
+  /// They deliberately remain independent from the number of Cells found.
+  Map<PTibugDataFamily, int> towerResearchFamilyWeightsFor(
+    ForageBiome biome,
+  ) {
+    final weights =
+        pTibugConfig.biomes[_ptibugBiomeForForageBiome(biome)]!.dataWeights;
+    return <PTibugDataFamily, int>{
+      for (final family in PTibugDataFamily.values)
+        family: weights[family] ?? 0,
     };
   }
 
@@ -13779,6 +13854,14 @@ class Zone0GameState extends ChangeNotifier {
                 .whereType<TowerMission>(),
           );
       }
+      final towerResearchData = data['towerBiomeResearch'];
+      if (towerResearchData is List) {
+        towerBiomeResearch
+          ..clear()
+          ..addAll(towerResearchData.whereType<Map>().map(
+                TowerBiomeResearch.fromFirebase,
+              ));
+      }
       workshopOrders.clear();
       final workshopOrdersData = data['workshopOrders'];
       if (workshopOrdersData is List) {
@@ -15128,9 +15211,47 @@ class Zone0GameState extends ChangeNotifier {
       );
       changed = true;
     }
+    for (final research in towerBiomeResearch.where(
+      (item) => item.isActive && !item.endsAt.isAfter(current),
+    )) {
+      final state = biomeSecurity[research.biome]!;
+      state.researchProgress = math.min(
+        100,
+        state.researchProgress +
+            research.theoreticalHours *
+                towerOperationsConfig.research.progressPerHour,
+      );
+      state.lastResearchDecayAt = current;
+      final cells = _createTowerResearchCells(research, completedAt: current);
+      pTibugDataCells.addAll(cells);
+      research.completedAt = current;
+      reports.add(PtipoteMissionReport.system(
+        message:
+            'Recherche de ${lisiereForageConfig.biomes[research.biome]!.label} : ${state.researchProgress}% de données locales${cells.isEmpty ? '' : ' · ${cells.length} Cellule(s) trouvée(s)'}.',
+      ));
+      changed = true;
+    }
     for (final state in biomeSecurity.values) {
       changed = _regenerateBiomeWaste(state: state, now: current) || changed;
       changed = _regenerateBiomeBiomass(state: state, now: current) || changed;
+      final lastResearch = state.lastResearchDecayAt;
+      if (lastResearch == null || current.isBefore(lastResearch)) {
+        state.lastResearchDecayAt = current;
+        changed = true;
+      } else {
+        final elapsedDays = current.difference(lastResearch).inDays;
+        if (elapsedDays > 0 && state.researchProgress > 0) {
+          state.researchProgress = math.max(
+            0,
+            state.researchProgress -
+                elapsedDays *
+                    towerOperationsConfig.research.progressDecayPerDay,
+          );
+          state.lastResearchDecayAt =
+              lastResearch.add(Duration(days: elapsedDays));
+          changed = true;
+        }
+      }
       final lastActivity = state.lastMissionAt ?? state.lastPatrolAt;
       if (lastActivity == null ||
           current.difference(lastActivity).inHours >=
@@ -17096,25 +17217,14 @@ class Zone0GameState extends ChangeNotifier {
     final biome = pTibugConfig.biomes[biomeId];
     if (biome == null) return const <PTibugDataCell>[];
 
-    final typeConfig = lisiereForageConfig.missionTypes[mission.type] ??
-        lisiereForageConfig.missionTypes[ForageMissionType.harvest]!;
-    final intensityConfig = lisiereForageConfig.intensities[mission.intensity]!;
     final weatherMultiplier = mission.type == ForageMissionType.research
         ? towerResearchWeatherMultiplierFor(mission.biome)
         : 1.0;
-    final attempts = math.max(
-      0,
-      (pTibugConfig.maxCellsForMissionHours(duration.theoreticalHours) *
-              typeConfig.maximumCellsMultiplier *
-              intensityConfig.rewardMultiplier)
-          .ceil(),
-    );
-    // Research is the active way to acquire Cells. Harvest keeps the same
-    // biome table but its findings remain occasional.
+    final attempts = mission.type == ForageMissionType.research ? 5 : 2;
     final cells = <PTibugDataCell>[];
     for (var attempt = 0; attempt < attempts; attempt += 1) {
-      final chance = (pTibugConfig.cellChanceForOrdinal(attempt + 1) *
-              typeConfig.cellChanceMultiplier *
+      final chance = (towerOperationsConfig.research
+                  .cellChanceFor(mission.type, attempt + 1) *
               weatherMultiplier)
           .round()
           .clamp(0, 100);
@@ -17133,12 +17243,15 @@ class Zone0GameState extends ChangeNotifier {
       }
       final dominant = _pickWeightedDataFamily(weights);
       final entries = <PTibugDataCellEntry>[];
+      final targetValue = _pickDataCellValue(mission.type);
       for (var slot = 0; slot < 5; slot += 1) {
         final family = slot < 2 ? dominant : _pickWeightedDataFamily(weights);
         entries.add(
           PTibugDataCellEntry(
             family: family,
-            quality: _pickWeightedDataQuality(),
+            quality: slot < targetValue - 5
+                ? PTibugDataQuality.sought
+                : PTibugDataQuality.common,
             slotIndex: slot,
           ),
         );
@@ -17156,6 +17269,59 @@ class Zone0GameState extends ChangeNotifier {
           createdAt: completedAt,
         ),
       );
+    }
+    return cells;
+  }
+
+  int _pickDataCellValue(ForageMissionType type) {
+    final research = towerOperationsConfig.research;
+    final valueNineChance = type == ForageMissionType.research
+        ? research.researchValueNineChance
+        : research.harvestValueNineChance;
+    final valueSevenEightChance = type == ForageMissionType.research
+        ? research.researchValueSevenEightChance
+        : research.harvestValueSevenEightChance;
+    if (_random.nextInt(100) < valueNineChance) return 9;
+    if (_random.nextInt(100) < valueSevenEightChance) {
+      return _random.nextBool() ? 7 : 8;
+    }
+    return _random.nextBool() ? 5 : 6;
+  }
+
+  List<PTibugDataCell> _createTowerResearchCells(
+    TowerBiomeResearch research, {
+    required DateTime completedAt,
+  }) {
+    final biomeId = _ptibugBiomeForForageBiome(research.biome);
+    final biome = pTibugConfig.biomes[biomeId];
+    if (biome == null) return const <PTibugDataCell>[];
+    final cells = <PTibugDataCell>[];
+    for (var attempt = 0; attempt < research.theoreticalHours; attempt += 1) {
+      if (_random.nextInt(100) >=
+          towerOperationsConfig.research.cellChancePerHour) continue;
+      final weights = Map<PTibugDataFamily, int>.from(biome.dataWeights);
+      final dominant = _pickWeightedDataFamily(weights);
+      final targetValue = _pickDataCellValue(ForageMissionType.research);
+      final entries = List<PTibugDataCellEntry>.generate(
+        5,
+        (slot) => PTibugDataCellEntry(
+          family: slot < 2 ? dominant : _pickWeightedDataFamily(weights),
+          quality: slot < targetValue - 5
+              ? PTibugDataQuality.sought
+              : PTibugDataQuality.common,
+          slotIndex: slot,
+        ),
+      );
+      cells.add(PTibugDataCell(
+        id: 'tower-cell-${research.id}-$attempt',
+        displayName:
+            'Cellule ${_ptibugDataFamilyLabel(dominant)} · ${biome.displayName}',
+        sourceBiomeId: biomeId.name,
+        sourceMissionId: research.id,
+        dominantFamily: dominant,
+        entries: entries,
+        createdAt: completedAt,
+      ));
     }
     return cells;
   }
@@ -17434,6 +17600,9 @@ class Zone0GameState extends ChangeNotifier {
         'towerAssignedIds': towerAssignedIds.toList(),
         'towerMissions':
             towerMissions.map((mission) => mission.toFirebase()).toList(),
+        'towerBiomeResearch': towerBiomeResearch
+            .map((research) => research.toFirebase())
+            .toList(),
         'workshopOrder': null,
         'workshopOrders':
             workshopOrders.map((order) => order.toFirebase()).toList(),
@@ -22431,6 +22600,54 @@ enum TowerMissionPlan {
   until25Vitality,
 }
 
+class TowerBiomeResearch {
+  TowerBiomeResearch({
+    required this.id,
+    required this.biome,
+    required this.theoreticalHours,
+    required this.startedAt,
+    required this.endsAt,
+    this.completedAt,
+  });
+
+  final String id;
+  final ForageBiome biome;
+  final int theoreticalHours;
+  final DateTime startedAt;
+  final DateTime endsAt;
+  DateTime? completedAt;
+  bool get isActive => completedAt == null;
+
+  factory TowerBiomeResearch.fromFirebase(Map<dynamic, dynamic> data) =>
+      TowerBiomeResearch(
+        id: '${data['id'] ?? ''}',
+        biome: ForageMission._enumByName(
+          ForageBiome.values,
+          '${data['biome'] ?? ''}',
+          ForageBiome.plaineRiche,
+        ),
+        theoreticalHours: Zone0GameState.instance._readInt(
+          data['theoreticalHours'],
+          fallback: 1,
+        ),
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']) ??
+            DateTime.now(),
+        endsAt:
+            Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
+        completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'biome': biome.name,
+        'theoreticalHours': theoreticalHours,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'endsAt': Timestamp.fromDate(endsAt),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
+      };
+}
+
 enum BiomeDiscoveryStatus { discovered, exploring, unlocked }
 
 class LisiereTerritoryZone {
@@ -22590,6 +22807,8 @@ class BiomeSecurityState {
     this.lastWasteRegenerationAt,
     this.lastBiomassRegenerationAt,
     this.lastBiomassRevitalizedAt,
+    this.researchProgress = 0,
+    this.lastResearchDecayAt,
   });
 
   factory BiomeSecurityState.initial(ForageBiome biome) => BiomeSecurityState(
@@ -22643,6 +22862,11 @@ class BiomeSecurityState {
         lastBiomassRevitalizedAt: ForageMission._readDate(
           data['lastBiomassRevitalizedAt'],
         ),
+        researchProgress: ForageMission._readStaticInt(data['researchProgress'])
+            .clamp(0, 100)
+            .toInt(),
+        lastResearchDecayAt:
+            ForageMission._readDate(data['lastResearchDecayAt']),
       );
 
   final ForageBiome biome;
@@ -22657,6 +22881,8 @@ class BiomeSecurityState {
   DateTime? lastWasteRegenerationAt;
   DateTime? lastBiomassRegenerationAt;
   DateTime? lastBiomassRevitalizedAt;
+  int researchProgress;
+  DateTime? lastResearchDecayAt;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'securitySchema': 2,
@@ -22680,6 +22906,10 @@ class BiomeSecurityState {
         'lastBiomassRevitalizedAt': lastBiomassRevitalizedAt == null
             ? null
             : Timestamp.fromDate(lastBiomassRevitalizedAt!),
+        'researchProgress': researchProgress,
+        'lastResearchDecayAt': lastResearchDecayAt == null
+            ? null
+            : Timestamp.fromDate(lastResearchDecayAt!),
       };
 }
 

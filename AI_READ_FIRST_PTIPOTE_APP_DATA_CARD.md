@@ -1551,6 +1551,14 @@ Une alerte active instancie une mission Kernel à partir du template météo cor
 - L’estimation avant départ, les missions en cours et le rapport indiquent le type, les Cellules, les Déchets et l’impact prévu sur la Vigueur. Sécurité et météo continuent d’être affichées comme risques indépendants de la Vigueur.
 - `lisiere-forage-config.json` expose `missionTypes.harvest` et `missionTypes.research` : multiplicateur de Vigueur, probabilité/maximum de Cellules et Déchets par heure. Le Dashboard Lisière les rend visibles dans la configuration versionnée ; `lisiere_forage_config.dart` reste le fallback hors ligne et `remote_zone0_settings.dart` fusionne toute valeur distante publiée.
 
+### Tour de recherche : données locales par biome
+
+- Le module **Tour de recherche** réutilise la carte 3×3 de la Tour de sécurité. Chaque biome déjà déverrouillé conserve une connaissance locale persistante (`researchProgress`) et un seul relevé peut y être actif à la fois.
+- Les durées disponibles sont `1 h`, `2 h`, `4 h` et `8 h`. Chaque heure apporte **+5 %** de connaissances et donne **10 %** de chance de produire une Cellule réelle depuis la table de familles du biome. Une période entière de 24 h sans nouvelle analyse retire **2 %** de connaissances; l’horloge et les recherches en cours sont résolues hors ligne sans rejouer de tirage.
+- Paliers d’affichage : à **25 %**, chances de Cellules par rang; à **50 %**, chances de valeurs 5–6 / 7–8 / 9; à **65 %**, types de Cellules du biome; à **85 %**, pourcentages de ces types. Avant le palier correspondant, l’information reste explicitement masquée.
+- Les chances par mission sont centralisées dans `towerOperations.research` : **Récolte** 50 % pour la première Cellule, 25 % pour la deuxième, puis 0; **Recherche** 100 %, 75 %, 50 %, 25 %, puis 0. Les valeurs suivent : Récolte 5–6 100 %, 7–8 25 %, 9 0 %; Recherche 5–6 100 %, 7–8 75 %, 9 50 %. Ces valeurs sont éditables depuis Dashboard → Tour → Recherche de Cellules.
+- La progression est intégrée à `BiomeSecurityState` pour préserver les `biomeId`, sauvegardes, Biomasse, sécurité et exploration existants. Les anciennes sauvegardes commencent simplement leur décroissance à la première ouverture et ne reçoivent aucun calcul rétroactif.
+
 ### Traits P’TIBUG V1, Capteur intelligent et météo
 
 - Les huit Traits V1 sont Pollinisateur, Mineur, Décomposeur, Récupérateur, Stabilisateur, Économe, Filtreur et Capteur intelligent. Les deux emplacements de Trait issus de l’Évolution utilisent le même service d’effets : leurs bonus matériels se cumulent et les doublons restent interdits.
@@ -1623,7 +1631,7 @@ Le Dashboard expose `towerOperations.buildingViability` : seuils, dégâts par m
 
 ### Ajustements météo, Kernel et Biomasse
 
-- La Tour ne montre plus de carte « prochaine météo » ni de compte à rebours redondant : la carte de l’événement actif reste la source de durée. Elle liste désormais les protections pertinentes pour cet événement : installation structurelle de bâtiment, branche de grands chantiers du Cœur, contre-mesure P’TIBUG et produits que les habitants peuvent demander au Marché.
+- La Tour affiche désormais deux lectures distinctes : **Météo actuelle** avec son compte à rebours et ses préparations recommandées, puis **Prochaine météo** avec ses propres préparations. La prochaine météo ne montre volontairement pas de compte à rebours : elle commence à la fin de l’événement actuel.
 - Les anciennes missions météo du Kernel sont retirées de la configuration et des missions calculées. L’onglet **Météo** du Kernel disparaît ; les préparations météo sont visibles dans la Tour, le Cœur et le Marché.
 - Chaque carte de biome territoriale affiche de nouveau la météo active. Si le biome est touché, elle indique le malus P’TIBUG maximal calculé pour le biome et le nombre de P’TIBUG non protégés ; si le biome est hors zone, aucun malus n’est annoncé. Le calcul reste celui de `pTibugWeatherMalusPercentFor`, donc aucune seconde formule d’interface n’est créée.
 - La consommation de Vigueur/Biomasse des missions est maintenant exprimée par heure de mission : le coût d’intensité et de type est multiplié par les heures théoriques, puis pondéré une seule fois par l’avancement réel à la résolution. L’estimation avant départ utilise la même durée et le même calcul.

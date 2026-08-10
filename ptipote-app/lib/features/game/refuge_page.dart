@@ -11388,10 +11388,6 @@ class _TowerResearchTab extends StatelessWidget {
         campHeartLevel: campHeartLevel,
       );
     }
-    final weather = gameState.activeGlobalWeatherEvent;
-    final weatherLabel = weather == null
-        ? 'Météo en cours de lecture'
-        : gameState.towerWeatherHudLabel;
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -11405,21 +11401,28 @@ class _TowerResearchTab extends StatelessWidget {
                   const Text('Recherche de capsules de données',
                       style: TextStyle(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
-                  Text('Météo actuelle : $weatherLabel'),
-                  const SizedBox(height: 6),
                   const Text(
-                    'Les pourcentages indiquent la chance de chaque famille pour la première Cellule trouvée. Les recherches se lancent depuis la Lisière et utilisent les mêmes Cellules réelles.',
+                    'Touchez un biome pour lancer une analyse. 1 h de recherche ajoute 5% de connaissances et a 10% de chance de trouver une Cellule réelle du biome.',
                   ),
+                  const SizedBox(height: 6),
+                  const Text('Les connaissances locales perdent 2% par jour.'),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 10),
+          _TowerResearchMap3x3(gameState: gameState),
+          const SizedBox(height: 12),
           ...ForageBiome.values
               .where(gameState.isBiomeUnlocked)
-              .map((biome) => _TowerResearchBiomeCard(
+              .map((biome) => _TowerResearchBiomeSummary(
                     gameState: gameState,
                     biome: biome,
+                    onTap: () => _showTowerResearchBiomeSheet(
+                      context,
+                      gameState: gameState,
+                      biome: biome,
+                    ),
                   )),
         ],
       ),
@@ -11427,48 +11430,277 @@ class _TowerResearchTab extends StatelessWidget {
   }
 }
 
-class _TowerResearchBiomeCard extends StatelessWidget {
-  const _TowerResearchBiomeCard({
+class _TowerResearchMap3x3 extends StatelessWidget {
+  const _TowerResearchMap3x3({required this.gameState});
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    const cells = <ForageBiome?>[
+      null,
+      ForageBiome.sousBois,
+      null,
+      ForageBiome.colline,
+      ForageBiome.plaineRiche,
+      null,
+      ForageBiome.bassinMineral,
+      null,
+      null,
+    ];
+    const futureLabels = <int, String>{
+      0: 'Haut Refuge',
+      2: 'Savane',
+      5: 'Mangrove',
+      8: 'Littoral',
+    };
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 1.2,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
+      ),
+      itemCount: 9,
+      itemBuilder: (context, index) {
+        if (index == 7) {
+          return const _ResearchMapCell(
+            label: 'Camp',
+            icon: Icons.home_outlined,
+            enabled: false,
+          );
+        }
+        final biome = cells[index];
+        if (biome == null) {
+          return _ResearchMapCell(
+            label:
+                '${futureLabels[index] ?? 'Zone inconnue'}\nBientôt disponible',
+            icon: Icons.lock_outline,
+            enabled: false,
+          );
+        }
+        final unlocked = gameState.isBiomeUnlocked(biome);
+        final active = gameState.activeBiomeResearchFor(biome);
+        return _ResearchMapCell(
+          label: lisiereForageConfig.biomes[biome]!.label,
+          icon: active == null
+              ? Icons.manage_search_outlined
+              : Icons.hourglass_top,
+          enabled: unlocked,
+          progress: gameState.biomeResearchProgressFor(biome),
+          subtitle: active == null ? null : _countdownLabel(active.endsAt),
+          onTap: unlocked
+              ? () => _showTowerResearchBiomeSheet(
+                    context,
+                    gameState: gameState,
+                    biome: biome,
+                  )
+              : null,
+        );
+      },
+    );
+  }
+}
+
+class _ResearchMapCell extends StatelessWidget {
+  const _ResearchMapCell({
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    this.progress,
+    this.subtitle,
+    this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final int? progress;
+  final String? subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: enabled
+            ? Theme.of(context).colorScheme.primaryContainer
+            : Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(icon, size: 18),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w800),
+                ),
+                if (progress != null) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text('$progress%', style: const TextStyle(fontSize: 10)),
+                ],
+                if (subtitle != null)
+                  Text(subtitle!, style: const TextStyle(fontSize: 9)),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class _TowerResearchBiomeSummary extends StatelessWidget {
+  const _TowerResearchBiomeSummary({
     required this.gameState,
     required this.biome,
+    required this.onTap,
   });
 
   final Zone0GameState gameState;
   final ForageBiome biome;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final chances = gameState.towerResearchDataChancesFor(biome);
-    final modifier = gameState.towerResearchWeatherMultiplierFor(biome);
-    final entries = chances.entries.where((entry) => entry.value > 0).toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+    final progress = gameState.biomeResearchProgressFor(biome);
+    final active = gameState.activeBiomeResearchFor(biome);
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
+      child: ListTile(
+        onTap: onTap,
+        leading: const Icon(Icons.manage_search_outlined),
+        title: Text(lisiereForageConfig.biomes[biome]!.label,
+            style: const TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: Text(active == null
+            ? 'Connaissances : $progress%'
+            : 'Recherche en cours · retour ${_countdownLabel(active.endsAt)}'),
+        trailing: const Icon(Icons.chevron_right),
+      ),
+    );
+  }
+}
+
+Future<void> _showTowerResearchBiomeSheet(
+  BuildContext context, {
+  required Zone0GameState gameState,
+  required ForageBiome biome,
+}) async {
+  final progress = gameState.biomeResearchProgressFor(biome);
+  final config = towerOperationsConfig.research;
+  final active = gameState.activeBiomeResearchFor(biome);
+  final families = gameState
+      .towerResearchFamilyWeightsFor(biome)
+      .entries
+      .where((entry) => entry.value > 0)
+      .toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+  String chances(Map<int, int> values, int count) => List<String>.generate(
+        count,
+        (index) => '${index + 1}e : ${values[index + 1] ?? 0}%',
+      ).join(' · ');
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) => SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(lisiereForageConfig.biomes[biome]!.label,
-                style: const TextStyle(fontWeight: FontWeight.w900)),
-            Text(
-              'Chance de trouver une Cellule : ${gameState.towerResearchCellChanceFor(biome)}% · météo ×${modifier.toStringAsFixed(2)}',
-            ),
+                style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    )),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: entries
-                  .map((entry) => Chip(
-                        label: Text(
-                            '${_kernelDataFamilyLabel(entry.key)} ${entry.value}%'),
-                      ))
-                  .toList(),
-            ),
+            Text('Connaissances locales : $progress%'),
+            LinearProgressIndicator(value: progress / 100),
+            const SizedBox(height: 14),
+            if (progress >= config.cellChanceRevealPercent) ...<Widget>[
+              const Text('Chances de trouver des Cellules',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              Text(
+                  'Récolte : ${chances(config.harvestCellChanceByOrdinal, 3)}'),
+              Text(
+                  'Recherche : ${chances(config.researchCellChanceByOrdinal, 5)}'),
+              const SizedBox(height: 12),
+            ] else
+              const Text(
+                  'À 25%, les chances de trouver des Cellules seront révélées.'),
+            if (progress >= config.valueChanceRevealPercent) ...<Widget>[
+              const Text('Valeur totale des Cellules',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              Text(
+                  'Récolte : valeur 5–6 : 100% · 7–8 : ${config.harvestValueSevenEightChance}% · 9 : ${config.harvestValueNineChance}%'),
+              Text(
+                  'Recherche : valeur 5–6 : 100% · 7–8 : ${config.researchValueSevenEightChance}% · 9 : ${config.researchValueNineChance}%'),
+              const SizedBox(height: 12),
+            ] else
+              const Text('À 50%, les probabilités de valeur seront révélées.'),
+            if (progress >= config.familyRevealPercent) ...<Widget>[
+              const Text('Types de Cellules du biome',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: families
+                    .map((entry) => Chip(
+                          label: Text(progress >= config.fullRevealPercent
+                              ? '${_kernelDataFamilyLabel(entry.key)} ${entry.value}%'
+                              : _kernelDataFamilyLabel(entry.key)),
+                        ))
+                    .toList(),
+              ),
+              if (progress < config.fullRevealPercent)
+                Text(
+                    'À ${config.fullRevealPercent}%, les pourcentages par type seront révélés.'),
+              const SizedBox(height: 12),
+            ] else
+              Text(
+                  'À ${config.familyRevealPercent}%, les types de Cellules seront révélés.'),
+            if (active != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                    'Recherche en cours · retour ${_countdownLabel(active.endsAt)}'),
+              )
+            else ...<Widget>[
+              const SizedBox(height: 16),
+              const Text('Lancer une recherche',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <int>[1, 2, 4, 8]
+                    .map((hours) => FilledButton.tonal(
+                          onPressed: () {
+                            final result = gameState.startTowerBiomeResearch(
+                              biome: biome,
+                              hours: hours,
+                            );
+                            Navigator.of(sheetContext).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(result.message)),
+                            );
+                          },
+                          child: Text(
+                              '${hours}h · +${hours * config.progressPerHour}%'),
+                        ))
+                    .toList(),
+              ),
+            ],
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _TowerWeatherTab extends StatelessWidget {
@@ -11496,6 +11728,7 @@ class _TowerWeatherTab extends StatelessWidget {
       );
     }
     final active = gameState.activeGlobalWeatherEvent;
+    final upcoming = gameState.nextGlobalWeatherEvent;
     String label(TowerWeatherType type) => switch (type) {
           TowerWeatherType.calm => '🌤️ Temps calme',
           TowerWeatherType.toxicCloud => '☁️ Nuage toxique',
@@ -11542,6 +11775,31 @@ class _TowerWeatherTab extends StatelessWidget {
           if (active != null) ...<Widget>[
             const SizedBox(height: 10),
             _WeatherPreparationCard(gameState: gameState, event: active),
+          ],
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Prochaine météo',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  Text(upcoming == null
+                      ? 'Prévision en cours de calcul.'
+                      : '${label(upcoming.type)} · ${intensity(upcoming.intensity)}'),
+                  if (upcoming != null)
+                    Text(upcoming.type == TowerWeatherType.calm
+                        ? 'Conditions calmes prévues sur la Zone 0.'
+                        : 'Biomes touchés : ${biomes(upcoming)}'),
+                ],
+              ),
+            ),
+          ),
+          if (upcoming != null) ...<Widget>[
+            const SizedBox(height: 10),
+            _WeatherPreparationCard(gameState: gameState, event: upcoming),
           ],
         ],
       ),

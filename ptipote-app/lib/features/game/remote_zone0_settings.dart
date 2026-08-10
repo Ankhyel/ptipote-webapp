@@ -499,6 +499,36 @@ Map<int, int> _levelMap(Object? value, Map<int, int> fallback) {
   };
 }
 
+TowerResearchConfig _towerResearch(Object? value, TowerResearchConfig base) {
+  final raw = _map(value);
+  if (raw == null) return base;
+  return TowerResearchConfig(
+    harvestCellChanceByOrdinal: _levelMap(
+        raw['harvestCellChanceByOrdinal'], base.harvestCellChanceByOrdinal),
+    researchCellChanceByOrdinal: _levelMap(
+        raw['researchCellChanceByOrdinal'], base.researchCellChanceByOrdinal),
+    harvestValueSevenEightChance: _int(
+        raw['harvestValueSevenEightChance'], base.harvestValueSevenEightChance),
+    harvestValueNineChance:
+        _int(raw['harvestValueNineChance'], base.harvestValueNineChance),
+    researchValueSevenEightChance: _int(raw['researchValueSevenEightChance'],
+        base.researchValueSevenEightChance),
+    researchValueNineChance:
+        _int(raw['researchValueNineChance'], base.researchValueNineChance),
+    progressPerHour: _int(raw['progressPerHour'], base.progressPerHour),
+    cellChancePerHour: _int(raw['cellChancePerHour'], base.cellChancePerHour),
+    progressDecayPerDay:
+        _int(raw['progressDecayPerDay'], base.progressDecayPerDay),
+    cellChanceRevealPercent:
+        _int(raw['cellChanceRevealPercent'], base.cellChanceRevealPercent),
+    valueChanceRevealPercent:
+        _int(raw['valueChanceRevealPercent'], base.valueChanceRevealPercent),
+    familyRevealPercent:
+        _int(raw['familyRevealPercent'], base.familyRevealPercent),
+    fullRevealPercent: _int(raw['fullRevealPercent'], base.fullRevealPercent),
+  );
+}
+
 Map<int, int> _intLevels(
   Object? value,
   Map<int, int> fallback,
@@ -1987,6 +2017,7 @@ TowerOperationsConfig _towerOperations(Object? value) {
         .firstOrNull,
     globalWeather: globalWeather,
     buildingViability: buildingViability,
+    research: _towerResearch(raw['research'], base.research),
     wellbeingBands: List<SecurityWellbeingBand>.generate(
       base.wellbeingBands.length,
       (index) {
