@@ -1855,7 +1855,7 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 ### Aspect esthétique P’TIBUG
 
 - Un P’TIBUG conserve désormais un aspect visuel persistant : couleur principale, motif facultatif, couleur pastel du motif, couleur du Trait et animation nominale. Ces valeurs ne modifient ni production, ni XP, ni valeur commerciale.
-- Une Infusion de Trait actualise l’aspect : une couleur est tirée parmi les quatre couleurs de l’espèce et un motif apparaît avec 30 % de chance par défaut. Le motif prend une couleur principale adoucie ; le noir reste noir et ne peut pas être repris comme motif lorsque le P’TIBUG est déjà noir.
+- L’aspect est tiré une seule fois lors de la Cultivation : couleur principale parmi la palette de l’espèce, motif à 30 % par défaut, couleur de motif adoucie (le noir reste noir et n’est pas repris comme motif lorsque le P’TIBUG est déjà noir) et animation. Une **Infusion** ne modifie jamais cet aspect, l’espèce, le nom, le niveau ou l’XP : seul le Trait ciblé et son rang changent.
 - Hyme utilise jaune/bleu/orange/noir et le motif **Rayé** ; Scarabé vert/bleu/rouge/noir et **Irisé** ; Arac violet/rouge/jaune/noir et **Pointillé**. Les P’TIBUG déjà sauvegardés reçoivent un aspect une seule fois à leur migration.
 - Les animations nominales sont **Volant** ou **Terrier** pour Hyme, **Cornu** ou **Briseur** pour Scarabé, et **Sauteuse** ou **Tisseuse** pour Arac. Elles sont tirées et sauvegardées avec l’aspect, sans animation graphique imposée à ce stade.
 - Le Dashboard expose ces palettes comme sélecteurs RGB dans `ptibug-config.json`. Le pictogramme utilise déjà la couleur principale ; les rendus détaillés des motifs seront ajoutés lorsque leurs règles graphiques seront fournies.

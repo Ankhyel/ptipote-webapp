@@ -11494,8 +11494,9 @@ class Zone0GameState extends ChangeNotifier {
           return const Zone0ActionResult(
               success: false, message: 'Les deux Traits sont déjà distincts.');
         }
-        _ensurePTibugAppearance(bug, reroll: true);
-        bug.traitColorHex = definition.colorHex;
+        // An Infusion changes biological data only. The species, level and
+        // cosmetic identity were chosen at Cultivation and must remain stable:
+        // never re-roll primary colour, motif or animation here.
         emitKernelProgressEvent(KernelProgressEventType.ptibugTraitEquipped);
         reports.add(PtipoteMissionReport.system(
           message:
