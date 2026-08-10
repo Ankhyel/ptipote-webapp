@@ -48,4 +48,38 @@ void main() {
       '🌿',
     );
   });
+
+  test('le Mycélium suit la richesse des biomes sans changer leurs IDs', () {
+    final config = defaultLisiereForageConfig;
+    expect(config.biomes[ForageBiome.sousBois]!.label, 'Forêt humide');
+    expect(config.biomes[ForageBiome.colline]!.label, 'Forêt sèche');
+    expect(config.biomes[ForageBiome.plaineRiche]!.label, 'Savane tropicale');
+    expect(
+      config.biomes[ForageBiome.sousBois]!.myceliumRichness,
+      MyceliumRichness.rich,
+    );
+    expect(
+      config.biomes[ForageBiome.plaineRiche]!.myceliumRichness,
+      MyceliumRichness.medium,
+    );
+    expect(
+      config.biomes[ForageBiome.bassinMineral]!.myceliumRichness,
+      MyceliumRichness.none,
+    );
+    expect(
+        config.myceliumExploration.yieldByRichness[MyceliumRichness.rich], 3);
+    expect(config.myceliumExploration.mycelialTypeGatherBonus, .5);
+  });
+
+  test('le Réseau mycélien reste une spécialisation configurable', () {
+    final bio = defaultLisiereForageConfig.territoryBuildings.biofermenter;
+    expect(bio.mycelialNetworkEnabled, isTrue);
+    expect(bio.baseMyceliumPerDay, 8);
+    expect(bio.myceliumBiomeMultipliers[MyceliumRichness.none], 1);
+    expect(bio.myceliumBiomeMultipliers[MyceliumRichness.medium], 1.25);
+    expect(bio.myceliumBiomeMultipliers[MyceliumRichness.rich], 1.5);
+    expect(bio.mycelialTraitId, 'decomposeur');
+    expect(bio.mycelialTraitBonusPerPTibug, .1);
+    expect(bio.maxMycelialPTibugsCounted, 3);
+  });
 }

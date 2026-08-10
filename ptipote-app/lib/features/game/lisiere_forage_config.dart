@@ -6,6 +6,10 @@ enum ForageIntensity { doux, normal, intensif }
 
 enum ForageMissionType { harvest, research }
 
+/// Richesse naturelle utilisée par la récolte de Mycélium. Les identifiants
+/// de biome restent inchangés : seule leur configuration évolue.
+enum MyceliumRichness { none, medium, rich }
+
 class ForageMissionTypeConfig {
   const ForageMissionTypeConfig({
     required this.label,
@@ -50,6 +54,7 @@ class LisiereForageConfig {
     required this.biomass,
     required this.missionTypes,
     required this.territoryBuildings,
+    required this.myceliumExploration,
   });
 
   final int forageTimeScale;
@@ -70,6 +75,17 @@ class LisiereForageConfig {
   final BiomassConfig biomass;
   final Map<ForageMissionType, ForageMissionTypeConfig> missionTypes;
   final LisiereTerritoryBuildingsConfig territoryBuildings;
+  final MyceliumExplorationConfig myceliumExploration;
+}
+
+class MyceliumExplorationConfig {
+  const MyceliumExplorationConfig({
+    required this.yieldByRichness,
+    required this.mycelialTypeGatherBonus,
+  });
+
+  final Map<MyceliumRichness, int> yieldByRichness;
+  final double mycelialTypeGatherBonus;
 }
 
 /// Configuration centralisée des bâtiments attachés à un biome. Il n'y a pas
@@ -105,6 +121,14 @@ class BiofermenterConfig {
     required this.futureScarabeMineralPerOrganic,
     required this.constructionMinutesByLevel,
     required this.edibleForestConstructionMinutes,
+    required this.mycelialNetworkEnabled,
+    required this.mycelialNetworkCost,
+    required this.mycelialNetworkConstructionMinutes,
+    required this.baseMyceliumPerDay,
+    required this.myceliumBiomeMultipliers,
+    required this.mycelialTraitId,
+    required this.mycelialTraitBonusPerPTibug,
+    required this.maxMycelialPTibugsCounted,
   });
   final Map<int, double> passiveOrganicPerDayByLevel;
   final Map<String, int> constructionCost;
@@ -126,6 +150,14 @@ class BiofermenterConfig {
   final int futureScarabeMineralPerOrganic;
   final Map<int, int> constructionMinutesByLevel;
   final int edibleForestConstructionMinutes;
+  final bool mycelialNetworkEnabled;
+  final Map<String, int> mycelialNetworkCost;
+  final int mycelialNetworkConstructionMinutes;
+  final double baseMyceliumPerDay;
+  final Map<MyceliumRichness, double> myceliumBiomeMultipliers;
+  final String mycelialTraitId;
+  final double mycelialTraitBonusPerPTibug;
+  final int maxMycelialPTibugsCounted;
 }
 
 class BiomassTierConfig {
@@ -206,6 +238,7 @@ class ForageBiomeConfig {
     this.linkedPtipoteRefugeBonus = 0,
     this.wasteBaseGain = 0,
     this.wasteHoursPerLevelRegeneration = 0,
+    this.myceliumRichness = MyceliumRichness.none,
     this.hazards = const <ForageHazard>[],
   });
 
@@ -223,6 +256,7 @@ class ForageBiomeConfig {
 
   /// Real-time hours required to regenerate one waste level in this biome.
   final double wasteHoursPerLevelRegeneration;
+  final MyceliumRichness myceliumRichness;
   final List<ForageHazard> hazards;
 }
 
@@ -288,7 +322,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
   },
   biomes: <ForageBiome, ForageBiomeConfig>{
     ForageBiome.colline: ForageBiomeConfig(
-      label: 'Hauts-Refuges',
+      label: 'Forêt sèche',
       tendency: 'mixte',
       baseRewards: <String, int>{'Organique': 4, 'Minéral': 3},
       baseRiskPercent: 45,
@@ -298,6 +332,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
         ForageHazard.terrainInstable,
         ForageHazard.droneErrant
       ],
+      myceliumRichness: MyceliumRichness.medium,
     ),
     ForageBiome.plaineRiche: ForageBiomeConfig(
       label: 'Savane tropicale',
@@ -312,9 +347,10 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
         ForageHazard.climatDifficile,
         ForageHazard.droneErrant
       ],
+      myceliumRichness: MyceliumRichness.medium,
     ),
     ForageBiome.bassinMineral: ForageBiomeConfig(
-      label: 'Semi-désert / Garrigue tropicale',
+      label: 'Bassin minéral',
       tendency: 'Minéral',
       baseRewards: <String, int>{'Organique': 1, 'Minéral': 5},
       baseRiskPercent: 35,
@@ -326,7 +362,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       ],
     ),
     ForageBiome.sousBois: ForageBiomeConfig(
-      label: 'Forêt humide relictuelle',
+      label: 'Forêt humide',
       tendency: 'Organique / transformation',
       baseRewards: <String, int>{'Organique': 5, 'Minéral': 1},
       baseRiskPercent: 40,
@@ -336,6 +372,7 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
         ForageHazard.pollution,
         ForageHazard.climatDifficile
       ],
+      myceliumRichness: MyceliumRichness.rich,
     ),
   },
   durations: <ForageDuration, ForageDurationConfig>{
@@ -501,7 +538,31 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
         4: 240
       },
       edibleForestConstructionMinutes: 60,
+      mycelialNetworkEnabled: true,
+      mycelialNetworkCost: const <String, int>{
+        'Organique': 20,
+        'Minéral': 10,
+        'Mycélium': 10,
+      },
+      mycelialNetworkConstructionMinutes: 60,
+      baseMyceliumPerDay: 8,
+      myceliumBiomeMultipliers: const <MyceliumRichness, double>{
+        MyceliumRichness.none: 1,
+        MyceliumRichness.medium: 1.25,
+        MyceliumRichness.rich: 1.5,
+      },
+      mycelialTraitId: 'decomposeur',
+      mycelialTraitBonusPerPTibug: .10,
+      maxMycelialPTibugsCounted: 3,
     ),
+  ),
+  myceliumExploration: const MyceliumExplorationConfig(
+    yieldByRichness: <MyceliumRichness, int>{
+      MyceliumRichness.none: 0,
+      MyceliumRichness.medium: 2,
+      MyceliumRichness.rich: 3,
+    },
+    mycelialTypeGatherBonus: .50,
   ),
 );
 

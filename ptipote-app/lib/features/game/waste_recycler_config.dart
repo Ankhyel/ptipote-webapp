@@ -123,7 +123,8 @@ const WasteRecyclerConfig defaultWasteRecyclerConfig = WasteRecyclerConfig(
   biologicalOrganicRatio: 60,
   biologicalMineralRatio: 20,
   biologicalOtherRatio: 20,
-  otherOutputResource: 'Mycélium',
+  // Mycélium has dedicated biological sources and is never a Recycler output.
+  otherOutputResource: 'Eau',
   biologicalOrientationModuleCost: <String, int>{
     'Organique': 10,
     'Minéral': 10,

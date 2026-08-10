@@ -4603,18 +4603,27 @@ class Zone0GameState extends ChangeNotifier {
       ...marketConfig.saleValues.keys.where((resource) =>
           resourceAmount(resource) > 0 && marketShopAccepts(shopId, resource)),
       for (final species in PTibugSpecies.values)
-        if (marketShopAccepts(shopId, marketItemForCertifiedCapsule(species)) &&
-            nurseryMarketInventoryAmount(
-                    marketItemForCertifiedCapsule(species)) >
-                0)
-          marketItemForCertifiedCapsule(species),
-      for (final species in PTibugSpecies.values)
         if (marketShopAccepts(shopId, marketMatrixItemForSpecies(species)) &&
             nurseryMarketInventoryAmount(marketMatrixItemForSpecies(species)) >
                 0)
           marketMatrixItemForSpecies(species),
     };
     return resources.toList()..sort();
+  }
+
+  /// Capsules are never merged in the Market picker: each certified P'TIBUG
+  /// keeps its own name, level and visual identity before it is deposited.
+  List<PTibugCapsule> nurseryMarketCapsulesForShop(String shopId) {
+    final reserved = _nurseryMarketReservedIds;
+    return pTibugCapsules
+        .where((capsule) =>
+            capsule.status == CertifiedPTibugCapsuleStatus.certified &&
+            !reserved.contains(capsule.id) &&
+            marketShopAccepts(
+              shopId,
+              marketItemForCertifiedCapsule(capsule.species),
+            ))
+        .toList(growable: false);
   }
 
   String marketItemForCertifiedCapsule(PTibugSpecies species) =>
@@ -7200,6 +7209,55 @@ class Zone0GameState extends ChangeNotifier {
         success: true, message: '$moved $resource placé(s) dans ce magasin.');
   }
 
+  Zone0ActionResult transferNurseryCapsuleToMarketShop(
+    String shopId,
+    String capsuleId,
+  ) {
+    final capsule =
+        pTibugCapsules.where((item) => item.id == capsuleId).firstOrNull;
+    if (capsule == null ||
+        capsule.status != CertifiedPTibugCapsuleStatus.certified ||
+        _nurseryMarketReservedIds.contains(capsuleId)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Capsule P’TIBUG indisponible.',
+      );
+    }
+    final resource = marketItemForCertifiedCapsule(capsule.species);
+    final shop = marketShopById(shopId);
+    final stock = marketStockForShop(shopId);
+    if (shop?.ownershipType == MarketShopOwnershipType.residentCommunity) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le comptoir communautaire n’utilise pas de stock.',
+      );
+    }
+    if (stock == null || !marketShopAccepts(shopId, resource)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Capsule incompatible avec ce magasin.',
+      );
+    }
+    if (stock.length >= marketShopStockLimit(shopId)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Stock du magasin complet.',
+      );
+    }
+    stock.add(Zone0InventoryStack(
+      id: 'shop-$shopId-capsule-${DateTime.now().microsecondsSinceEpoch}',
+      resource: resource,
+      amount: 1,
+      sourceItemIds: <String>[capsule.id],
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '${capsule.displayName} placé(e) dans ce magasin.',
+    );
+  }
+
   Zone0ActionResult returnMarketShopStock(
       String shopId, Zone0InventoryStack stack) {
     final stock = marketStockForShop(shopId);
@@ -8173,12 +8231,14 @@ class Zone0GameState extends ChangeNotifier {
     bioBatteries -= 1;
     distributor.energy = math.min(
       marketConfig.distributorEnergyCapacity,
-      distributor.energy + marketConfig.distributorEnergyPerBioBattery,
+      distributor.energy + wasteRecyclerConfig.energyUnitsPerBioBattery,
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true, message: 'Énergie du Distributeur rechargée.');
+        success: true,
+        message:
+            '+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie du Distributeur.');
   }
 
   Zone0ActionResult setMarketDistributorType(MarketDistributorType type) {
@@ -9313,6 +9373,19 @@ class Zone0GameState extends ChangeNotifier {
         .clamp(0, config.maxPollinatorsCounted);
   }
 
+  int activeMycelialPTibugsForBiofermenter(ForageBiome biome) {
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    return pTibugs
+        .where((bug) =>
+            bug.lifecycleStatus == PTibugLifecycleStatus.active &&
+            bug.refugeBiome == biome &&
+            bug.assignedBuildingId != null &&
+            (bug.biologicalTraitId == config.mycelialTraitId ||
+                bug.secondTraitId == config.mycelialTraitId))
+        .length
+        .clamp(0, config.maxMycelialPTibugsCounted);
+  }
+
   double biofermenterOrganicPerDay(ForageBiome biome) {
     final zone = territoryZone(biome);
     final config = lisiereForageConfig.territoryBuildings.biofermenter;
@@ -9325,6 +9398,24 @@ class Zone0GameState extends ChangeNotifier {
           activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator;
     }
     return result;
+  }
+
+  /// The ceiling is applied once to the complete daily formula, then the
+  /// continuous resolver preserves hourly fractions. This favours the player
+  /// without compounding rounding on each multiplier or refresh.
+  int biofermenterMyceliumPerDay(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    if (zone.buildingId != 'biofermenter' || !zone.mycelialNetworkInstalled) {
+      return 0;
+    }
+    final richness = lisiereForageConfig.biomes[biome]!.myceliumRichness;
+    final biomeMultiplier = config.myceliumBiomeMultipliers[richness] ?? 1;
+    final traitMultiplier = 1 +
+        activeMycelialPTibugsForBiofermenter(biome) *
+            config.mycelialTraitBonusPerPTibug;
+    return (config.baseMyceliumPerDay * biomeMultiplier * traitMultiplier)
+        .ceil();
   }
 
   bool resolveBiofermenterProduction({DateTime? now}) {
@@ -9345,6 +9436,14 @@ class Zone0GameState extends ChangeNotifier {
         ..lastProductionResolvedAt = current
         ..updatedAt = current;
       if (whole > 0) addResources(<String, int>{'Organique': whole});
+      final myceliumExact =
+          elapsedHours * biofermenterMyceliumPerDay(biome) / 24 +
+              zone.myceliumProductionRemainder;
+      final myceliumWhole = myceliumExact.floor();
+      zone.myceliumProductionRemainder = myceliumExact - myceliumWhole;
+      if (myceliumWhole > 0) {
+        addResources(<String, int>{'Mycélium': myceliumWhole});
+      }
       changed = true;
     }
     return changed;
@@ -9763,6 +9862,10 @@ class Zone0GameState extends ChangeNotifier {
       return lisiereForageConfig
           .territoryBuildings.biofermenter.edibleForestCost;
     }
+    if (_mycelialNetworkBiomeForTarget(targetId) != null) {
+      return lisiereForageConfig
+          .territoryBuildings.biofermenter.mycelialNetworkCost;
+    }
     if (_isRefugeTarget(targetId)) {
       return pTibugConfig.territory.refugeRequirementsForLevel(targetLevel);
     }
@@ -9790,14 +9893,17 @@ class Zone0GameState extends ChangeNotifier {
             : _edibleForestBiomeForTarget(targetId) != null
                 ? lisiereForageConfig.territoryBuildings.biofermenter
                     .edibleForestConstructionMinutes
-                : targetId == 'housing'
-                    ? housingConfig.housingDurationMinutes
-                    : _isRefugeTarget(targetId)
-                        ? pTibugConfig.territory
-                            .refugeMinutesForLevel(_buildingLevel(targetId) + 1)
-                        : buildingConstructionConfig
-                            .project(targetId)
-                            .durationMinutes,
+                : _mycelialNetworkBiomeForTarget(targetId) != null
+                    ? lisiereForageConfig.territoryBuildings.biofermenter
+                        .mycelialNetworkConstructionMinutes
+                    : targetId == 'housing'
+                        ? housingConfig.housingDurationMinutes
+                        : _isRefugeTarget(targetId)
+                            ? pTibugConfig.territory.refugeMinutesForLevel(
+                                _buildingLevel(targetId) + 1)
+                            : buildingConstructionConfig
+                                .project(targetId)
+                                .durationMinutes,
       );
 
   int _buildingLevel(String targetId) {
@@ -9807,6 +9913,10 @@ class Zone0GameState extends ChangeNotifier {
     final forestBiome = _edibleForestBiomeForTarget(targetId);
     if (forestBiome != null)
       return territoryZone(forestBiome).edibleForestInstalled ? 1 : 0;
+    final networkBiome = _mycelialNetworkBiomeForTarget(targetId);
+    if (networkBiome != null) {
+      return territoryZone(networkBiome).mycelialNetworkInstalled ? 1 : 0;
+    }
     if (_isRefugeTarget(targetId)) {
       return territoryBuildingForId(targetId)?.level ?? 0;
     }
@@ -9829,6 +9939,7 @@ class Zone0GameState extends ChangeNotifier {
   int _projectMaxLevel(String targetId) {
     if (_biofermenterBiomeForTarget(targetId) != null) return 4;
     if (_edibleForestBiomeForTarget(targetId) != null) return 1;
+    if (_mycelialNetworkBiomeForTarget(targetId) != null) return 1;
     if (_isRefugeTarget(targetId))
       return pTibugConfig.territory.refugeMaximumLevel;
     return switch (targetId) {
@@ -9851,6 +9962,8 @@ class Zone0GameState extends ChangeNotifier {
       'biofermenter-${biome.name}';
   String edibleForestTargetId(ForageBiome biome) =>
       'edibleForest-${biome.name}';
+  String mycelialNetworkTargetId(ForageBiome biome) =>
+      'mycelialNetwork-${biome.name}';
   ForageBiome? _biofermenterBiomeForTarget(String targetId) {
     const prefix = 'biofermenter-';
     if (!targetId.startsWith(prefix)) return null;
@@ -9865,6 +9978,13 @@ class Zone0GameState extends ChangeNotifier {
     return ForageBiome.values
         .where((biome) => biome.name == targetId.substring(prefix.length))
         .firstOrNull;
+  }
+
+  ForageBiome? _mycelialNetworkBiomeForTarget(String targetId) {
+    const prefix = 'mycelialNetwork-';
+    if (!targetId.startsWith(prefix)) return null;
+    final name = targetId.substring(prefix.length);
+    return ForageBiome.values.where((item) => item.name == name).firstOrNull;
   }
 
   int projectBioBatteryRequirement(String targetId) {
@@ -9990,6 +10110,48 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
         success: false,
         message: 'Le Biofermenteur doit être construit avant ce module.',
+      );
+    }
+    final networkBiome = _mycelialNetworkBiomeForTarget(targetId);
+    if (networkBiome != null) {
+      final zone = territoryZone(networkBiome);
+      if (!lisiereForageConfig
+              .territoryBuildings.biofermenter.mycelialNetworkEnabled ||
+          zone.buildingId != 'biofermenter') {
+        return const Zone0ActionResult(
+          success: false,
+          message: 'Le Biofermenteur doit être construit avant ce module.',
+        );
+      }
+      if (zone.edibleForestInstalled) {
+        return const Zone0ActionResult(
+          success: false,
+          message: 'La Forêt comestible est déjà la spécialisation active.',
+        );
+      }
+      if (constructionProjects[edibleForestTargetId(networkBiome)]
+              ?.isInProgress ??
+          false) {
+        return const Zone0ActionResult(
+          success: false,
+          message: 'La Forêt comestible est déjà en cours d’installation.',
+        );
+      }
+    }
+    if (forestBiome != null &&
+        territoryZone(forestBiome).mycelialNetworkInstalled) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Réseau mycélien est déjà la spécialisation active.',
+      );
+    }
+    if (forestBiome != null &&
+        (constructionProjects[mycelialNetworkTargetId(forestBiome)]
+                ?.isInProgress ??
+            false)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Réseau mycélien est déjà en cours d’installation.',
       );
     }
     final refugeBiome = _refugeBiomeForTarget(targetId);
@@ -10145,7 +10307,7 @@ class Zone0GameState extends ChangeNotifier {
       default:
         final territoryBiome = _biofermenterBiomeForTarget(project.targetId);
         if (territoryBiome != null) {
-          final zone = territoryZone(territoryBiome)
+          territoryZone(territoryBiome)
             ..buildingId = 'biofermenter'
             ..buildingLevel = project.currentLevel
             ..lastProductionResolvedAt = now
@@ -10157,6 +10319,15 @@ class Zone0GameState extends ChangeNotifier {
         if (forestBiome != null) {
           territoryZone(forestBiome)
             ..edibleForestInstalled = true
+            ..lastProductionResolvedAt = now
+            ..updatedAt = now;
+          break;
+        }
+        final networkBiome = _mycelialNetworkBiomeForTarget(project.targetId);
+        if (networkBiome != null) {
+          territoryZone(networkBiome)
+            ..mycelialNetworkInstalled = true
+            ..lastProductionResolvedAt = now
             ..updatedAt = now;
           break;
         }
@@ -16684,7 +16855,12 @@ class Zone0GameState extends ChangeNotifier {
     Map<String, int> rewards,
   ) {
     final multiplier = biomassResourceMultiplierFor(biome);
-    const naturalResources = <String>{'Organique', 'Minéral', 'Déchets'};
+    const naturalResources = <String>{
+      'Organique',
+      'Minéral',
+      'Déchets',
+      'Mycélium',
+    };
     return <String, int>{
       for (final entry in rewards.entries)
         entry.key: naturalResources.contains(entry.key)
@@ -22265,9 +22441,11 @@ class LisiereTerritoryZone {
     this.buildingId,
     this.buildingLevel = 0,
     this.edibleForestInstalled = false,
+    this.mycelialNetworkInstalled = false,
     this.vatCount = 1,
     this.vatEfficiencyMultiplier = 1,
     this.organicProductionRemainder = 0,
+    this.myceliumProductionRemainder = 0,
     this.lastProductionResolvedAt,
     this.updatedAt,
   });
@@ -22293,11 +22471,14 @@ class LisiereTerritoryZone {
         buildingId: data['buildingId'] as String?,
         buildingLevel: ForageMission._readStaticInt(data['buildingLevel']),
         edibleForestInstalled: data['edibleForestInstalled'] == true,
+        mycelialNetworkInstalled: data['mycelialNetworkInstalled'] == true,
         vatCount: math.max(1, ForageMission._readStaticInt(data['vatCount'])),
         vatEfficiencyMultiplier:
             (data['vatEfficiencyMultiplier'] as num?)?.toDouble() ?? 1,
         organicProductionRemainder:
             (data['organicProductionRemainder'] as num?)?.toDouble() ?? 0,
+        myceliumProductionRemainder:
+            (data['myceliumProductionRemainder'] as num?)?.toDouble() ?? 0,
         lastProductionResolvedAt:
             ForageMission._readDate(data['lastProductionResolvedAt']),
         updatedAt: ForageMission._readDate(data['updatedAt']),
@@ -22308,9 +22489,11 @@ class LisiereTerritoryZone {
   String? buildingId;
   int buildingLevel;
   bool edibleForestInstalled;
+  bool mycelialNetworkInstalled;
   int vatCount;
   double vatEfficiencyMultiplier;
   double organicProductionRemainder;
+  double myceliumProductionRemainder;
   DateTime? lastProductionResolvedAt;
   DateTime? updatedAt;
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -22320,9 +22503,11 @@ class LisiereTerritoryZone {
         'buildingId': buildingId,
         'buildingLevel': buildingLevel,
         'edibleForestInstalled': edibleForestInstalled,
+        'mycelialNetworkInstalled': mycelialNetworkInstalled,
         'vatCount': vatCount,
         'vatEfficiencyMultiplier': vatEfficiencyMultiplier,
         'organicProductionRemainder': organicProductionRemainder,
+        'myceliumProductionRemainder': myceliumProductionRemainder,
         'lastProductionResolvedAt': lastProductionResolvedAt == null
             ? null
             : Timestamp.fromDate(lastProductionResolvedAt!),

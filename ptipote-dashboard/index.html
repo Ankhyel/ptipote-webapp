@@ -37,6 +37,7 @@
         <button class="tab-button" type="button" data-dashboard-tab="security-tower">Tour</button>
         <button class="tab-button" type="button" data-dashboard-tab="fablab">Fablab</button>
         <button class="tab-button" type="button" data-dashboard-tab="recycler">Déchets / Recycleur</button>
+        <button class="tab-button" type="button" data-dashboard-tab="energy">Énergie</button>
         <button class="tab-button" type="button" data-dashboard-tab="craft">Craft</button>
         <button class="tab-button" type="button" data-dashboard-tab="market">Marché</button>
         <button class="tab-button" type="button" data-dashboard-tab="active-buildings">Atelier & Maison</button>
@@ -218,6 +219,17 @@
           </div>
           <p class="panel-note" id="recyclerStatus">Charge les cycles, rendements et coûts énergétiques.</p>
           <div class="stage-list" id="recyclerConfigList"></div>
+        </section>
+      </section>
+
+      <section class="dashboard-panel" data-dashboard-panel="energy">
+        <section class="panel stat-ptipote-panel" aria-labelledby="energyTitle">
+          <div class="panel-head">
+            <div><p class="eyebrow">Configuration distante</p><h2 id="energyTitle">Énergie</h2></div>
+            <button class="ghost" id="publishEnergyButton" type="button">Publier dans l'app</button>
+          </div>
+          <p class="panel-note" id="energySettingsStatus">Une Bio-batterie alimente de façon uniforme le Fablab, la Nurserie et les Distributeurs.</p>
+          <div class="config-section-list" id="energySettingsForm"></div>
         </section>
       </section>
 

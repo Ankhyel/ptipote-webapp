@@ -219,7 +219,7 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
         'Lisière proche de base',
         '1 P’TIPOTE actif confortable',
         'Visiteurs ponctuels',
-        'Hauts-Refuges',
+        'Haut Refuge',
         'Savane tropicale',
       ],
       effects: <String>[
@@ -242,7 +242,7 @@ const CampHeartConfig defaultCampHeartConfig = CampHeartConfig(
         'Atelier simple',
         'Tour',
         'Semi-désert / Garrigue tropicale',
-        'Forêt humide relictuelle',
+        'Forêt humide',
         'Refuge PTIBUG',
         '2 P’TIPOTES actifs confortables',
         'Premiers habitants permanents',

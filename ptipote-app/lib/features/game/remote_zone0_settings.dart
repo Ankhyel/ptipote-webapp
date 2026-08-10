@@ -211,8 +211,14 @@ WasteRecyclerConfig _wasteRecycler(Object? value) {
         _int(raw['biologicalMineralRatio'], base.biologicalMineralRatio),
     biologicalOtherRatio:
         _int(raw['biologicalOtherRatio'], base.biologicalOtherRatio),
+    // Mycélium is intentionally excluded from Recycler outputs. Old remote
+    // configurations are normalized on read instead of being allowed to keep
+    // producing the legacy third output.
     otherOutputResource:
-        _string(raw['otherOutputResource'], base.otherOutputResource),
+        _string(raw['otherOutputResource'], base.otherOutputResource) ==
+                'Mycélium'
+            ? 'Eau'
+            : _string(raw['otherOutputResource'], base.otherOutputResource),
     biologicalOrientationModuleCost: <String, int>{
       for (final entry in base.biologicalOrientationModuleCost.entries)
         entry.key: _int(orientationCost?[entry.key], entry.value),
@@ -1517,6 +1523,7 @@ LisiereForageConfig _lisiere(Object? value) {
     },
     biomass: _biomass(_map(raw['biomass'])),
     territoryBuildings: _territoryBuildings(_map(raw['territoryBuildings'])),
+    myceliumExploration: _myceliumExploration(_map(raw['myceliumExploration'])),
     missionTypes: <ForageMissionType, ForageMissionTypeConfig>{
       for (final type in ForageMissionType.values)
         type: () {
@@ -1545,6 +1552,7 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
   final construct = _map(bio?['constructionCost']);
   final upgrades = _map(bio?['upgradeCosts']);
   final forest = _map(bio?['edibleForest']);
+  final network = _map(bio?['mycelialNetwork']);
   final scarabe = _map(bio?['futureScarabeHook']);
   final durations = _map(bio?['constructionMinutesByLevel']);
   return LisiereTerritoryBuildingsConfig(
@@ -1609,6 +1617,55 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
       },
       edibleForestConstructionMinutes: _int(forest?['constructionMinutes'],
           baseBio.edibleForestConstructionMinutes),
+      mycelialNetworkEnabled: network?['enabled'] is bool
+          ? network!['enabled'] as bool
+          : baseBio.mycelialNetworkEnabled,
+      mycelialNetworkCost: <String, int>{
+        for (final entry in baseBio.mycelialNetworkCost.entries)
+          entry.key: _int(_map(network?['cost'])?[entry.key], entry.value),
+      },
+      mycelialNetworkConstructionMinutes: _int(
+        network?['constructionMinutes'],
+        baseBio.mycelialNetworkConstructionMinutes,
+      ),
+      baseMyceliumPerDay: _double(
+        network?['baseMyceliumPerDay'],
+        baseBio.baseMyceliumPerDay,
+      ),
+      myceliumBiomeMultipliers: <MyceliumRichness, double>{
+        for (final richness in MyceliumRichness.values)
+          richness: _double(
+            _map(network?['biomeMultipliers'])?[richness.name],
+            baseBio.myceliumBiomeMultipliers[richness]!,
+          ),
+      },
+      mycelialTraitId:
+          _string(network?['mycelialTraitId'], baseBio.mycelialTraitId),
+      mycelialTraitBonusPerPTibug: _double(
+        network?['mycelialTraitBonusPerPTibug'],
+        baseBio.mycelialTraitBonusPerPTibug,
+      ),
+      maxMycelialPTibugsCounted: _int(
+        network?['maxMycelialPTibugsCounted'],
+        baseBio.maxMycelialPTibugsCounted,
+      ),
+    ),
+  );
+}
+
+MyceliumExplorationConfig _myceliumExploration(
+  Map<String, dynamic>? raw,
+) {
+  final base = defaultLisiereForageConfig.myceliumExploration;
+  final yields = _map(raw?['yieldByRichness']);
+  return MyceliumExplorationConfig(
+    yieldByRichness: <MyceliumRichness, int>{
+      for (final richness in MyceliumRichness.values)
+        richness: _int(yields?[richness.name], base.yieldByRichness[richness]!),
+    },
+    mycelialTypeGatherBonus: _double(
+      raw?['mycelialTypeGatherBonus'],
+      base.mycelialTypeGatherBonus,
     ),
   );
 }
@@ -1742,7 +1799,9 @@ ForageIntensityConfig _intensity(
 ForageBiomeConfig _biome(ForageBiome key, Map<String, dynamic>? raw) {
   final base = defaultLisiereForageConfig.biomes[key]!;
   return ForageBiomeConfig(
-    label: _string(raw?['label'], base.label),
+    // Biome IDs are persistent. Their display labels are canonicalized here
+    // so a legacy Dashboard document cannot revive an obsolete name in-app.
+    label: base.label,
     tendency: base.tendency,
     baseRewards: _resourceMap(raw?['rewards'], base.baseRewards),
     baseRiskPercent: _int(raw?['baseRiskPercent'], base.baseRiskPercent),
@@ -1756,6 +1815,12 @@ ForageBiomeConfig _biome(ForageBiome key, Map<String, dynamic>? raw) {
     wasteHoursPerLevelRegeneration: _double(
       raw?['wasteHoursPerLevelRegeneration'],
       base.wasteHoursPerLevelRegeneration,
+    ),
+    myceliumRichness: MyceliumRichness.values.firstWhere(
+      (item) =>
+          item.name ==
+          _string(raw?['myceliumRichness'], base.myceliumRichness.name),
+      orElse: () => base.myceliumRichness,
     ),
     hazards: base.hazards,
   );

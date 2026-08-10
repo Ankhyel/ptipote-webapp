@@ -31,6 +31,6 @@
   "biologicalOrganicRatio": 60,
   "biologicalMineralRatio": 20,
   "biologicalOtherRatio": 20,
-  "otherOutputResource": "Mycélium",
+  "otherOutputResource": "Eau",
   "biologicalOrientationModuleCost": {"Organique": 10, "Minéral": 10, "Mycélium": 5}
 }

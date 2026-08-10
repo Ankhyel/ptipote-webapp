@@ -1177,7 +1177,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
   },
   biomes: <PTibugBiome, PTibugBiomeConfig>{
     PTibugBiome.hautsRefuges: PTibugBiomeConfig(
-      displayName: 'Hauts-Refuges',
+      displayName: 'Haut Refuge',
       risks: <String>['Glissements', 'Vents', 'Anciennes structures'],
       weatherTypes: <String>['heavyRain'],
       dataWeights: <PTibugDataFamily, int>{
@@ -1196,7 +1196,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
     ),
     PTibugBiome.foretHumideRelictuelle: PTibugBiomeConfig(
-      displayName: 'Forêt humide relictuelle',
+      displayName: 'Forêt humide',
       risks: <String>[
         'Humidité',
         'Spores',

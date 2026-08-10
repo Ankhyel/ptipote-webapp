@@ -149,6 +149,9 @@ const ids = [
   "publishFablabButton",
   "recyclerStatus",
   "recyclerConfigList",
+  "energySettingsStatus",
+  "energySettingsForm",
+  "publishEnergyButton",
   "exportRecyclerButton",
   "craftStatus",
   "craftRecipeList",
@@ -1569,6 +1572,23 @@ function renderWorkshopEditor() {
   bindZone0Inputs(el.zone0SettingsForm);
 }
 
+function renderEnergyEditor() {
+  const recycler = zone0Settings.wasteRecycler || {};
+  const energy = {
+    energyUnitsPerBioBattery: recycler.energyUnitsPerBioBattery,
+  };
+  el.energySettingsForm.innerHTML = [
+    configCard(
+      "Conversion des Bio-batteries",
+      "wasteRecycler",
+      energy,
+      [],
+      { open: true, meta: "Gain appliqué par une Bio-batterie dans le Fablab, la Nurserie et chaque Distributeur." },
+    ),
+  ].join("");
+  bindZone0Inputs(el.energySettingsForm);
+}
+
 function renderMarketEditor() {
   const market = zone0Settings.market || {};
   const constructionKeys = [
@@ -1661,6 +1681,7 @@ function renderZone0Settings() {
   renderTowerEditor();
   renderConfigEditor(el.fablabConfigList, ["fablab"]);
   renderWorkshopEditor();
+  renderEnergyEditor();
   renderCraftConfig();
   renderMarketEditor();
 }
@@ -1719,6 +1740,7 @@ async function publishZone0Settings() {
   el.ptibugStatus.textContent = "Configuration P'TIBUG et prérequis de Patterns publiés. Les applications connectées se mettent à jour.";
   el.craftStatus.textContent = "Configuration Craft publiée. Les applications connectées se mettent à jour.";
   el.marketSettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
+  el.energySettingsStatus.textContent = "Conversion d’énergie publiée. Les applications connectées se mettent à jour.";
 }
 
 async function handleAuthClick() {
@@ -1792,6 +1814,7 @@ el.exportPtipoteStatsButton.addEventListener("click", () => {
   el.publishLisiereForageButton,
   el.publishSecurityTowerButton,
   el.publishFablabButton,
+  el.publishEnergyButton,
   el.publishZone0SettingsButton,
   el.publishCraftButton,
   el.publishMarketButton,
@@ -1803,6 +1826,7 @@ el.exportPtipoteStatsButton.addEventListener("click", () => {
       el.ptibugStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
       el.craftStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
       el.marketSettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
+      el.energySettingsStatus.textContent = `Publication impossible: ${readableFirebaseError(error)}`;
     });
   });
 });

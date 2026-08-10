@@ -421,6 +421,12 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
                             ),
                           ),
                         ),
+                        if (_zone0State.isTowerWeatherUnlocked)
+                          Positioned(
+                            top: 12,
+                            left: 12,
+                            child: _CampWeatherBadge(gameState: _zone0State),
+                          ),
                         ..._buildings.map(
                           (building) => _BuildingHotspot(
                             building: building,
@@ -580,19 +586,6 @@ class _CampHud extends StatelessWidget {
           if (resource.name != 'Mycélium') const SizedBox(width: 5),
         ],
       ]),
-      if (gameState.isTowerWeatherUnlocked) ...<Widget>[
-        const SizedBox(height: 6),
-        _HudChip(
-          icon: Icons.cloud_outlined,
-          label: gameState.towerWeatherHudLabel,
-          color: const Color(0xFF61758D),
-          onTap: () => _showHudInfo(
-            context,
-            'Météo actuelle',
-            'La Tour météo suit les conditions actuelles du refuge. Les prévisions détaillées restent disponibles dans la Tour.',
-          ),
-        ),
-      ],
     ]);
   }
 
@@ -669,6 +662,99 @@ class _CampHud extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CampWeatherBadge extends StatelessWidget {
+  const _CampWeatherBadge({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  String get _emoji => switch (gameState.activeGlobalWeatherEvent?.type) {
+        TowerWeatherType.toxicCloud => '☁️',
+        TowerWeatherType.heatWave => '☀️',
+        TowerWeatherType.heavyRain => '🌧️',
+        _ => '🌤️',
+      };
+
+  String get _timeLeft {
+    final endsAt = gameState.activeGlobalWeatherEvent?.endsAt;
+    if (endsAt == null) return '—';
+    final remaining = endsAt.difference(DateTime.now());
+    if (remaining.isNegative) return '0 min';
+    final hours = remaining.inHours;
+    final minutes = remaining.inMinutes.remainder(60);
+    return hours > 0
+        ? '${hours} h ${minutes.toString().padLeft(2, '0')}'
+        : '$minutes min';
+  }
+
+  void _showDetails(BuildContext context) {
+    final weather = gameState.activeGlobalWeatherEvent;
+    final title = weather == null || weather.type == TowerWeatherType.calm
+        ? 'Météo calme'
+        : gameState.towerWeatherHudLabel;
+    final intensity = weather == null
+        ? 'Calme'
+        : switch (weather.intensity) {
+            GlobalWeatherIntensity.moderate => 'Modérée',
+            GlobalWeatherIntensity.strong => 'Forte',
+            GlobalWeatherIntensity.severe => 'Sévère',
+            GlobalWeatherIntensity.calm => 'Calme',
+          };
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 6, 24, 28),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Text(_emoji, style: const TextStyle(fontSize: 38)),
+            const SizedBox(height: 8),
+            Text(title,
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text('Intensité : $intensity'),
+            Text('Temps restant : $_timeLeft'),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showDetails(context),
+          borderRadius: BorderRadius.circular(22),
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFDFDF9F0),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF8B8153), width: 1.4),
+              ),
+              child: Text(_emoji, style: const TextStyle(fontSize: 24)),
+            ),
+            const SizedBox(height: 3),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xEDEDE4CF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(_timeLeft,
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+        ),
+      );
 }
 
 class _HudChip extends StatelessWidget {
@@ -6038,6 +6124,26 @@ class _LisierePageState extends State<LisierePage> {
       }
       rewards[entry.key] = math.max(0, value.round());
     }
+    final naturalMycelium = lisiereForageConfig
+            .myceliumExploration.yieldByRichness[biome.myceliumRichness] ??
+        0;
+    if (naturalMycelium > 0) {
+      var mycelium = naturalMycelium *
+          duration.theoreticalHours *
+          intensity.rewardMultiplier;
+      final restState = widget.gameState.restStateFor(figurine);
+      if (restState == PtipoteRestState.wellRested) {
+        mycelium *= 1 + ptipoteStatsConfig.wellRestedRewardBonus;
+      } else if (restState == PtipoteRestState.tired ||
+          restState == PtipoteRestState.exhausted) {
+        mycelium *= 1 - ptipoteStatsConfig.tiredRewardPenalty;
+      }
+      if (figurine.elementType == PtipoteElementType.fungal) {
+        mycelium *=
+            1 + lisiereForageConfig.myceliumExploration.mycelialTypeGatherBonus;
+      }
+      rewards['Mycélium'] = math.max(0, mycelium.round());
+    }
     final wasteReward = widget.gameState.estimatedBiomeWasteReward(
       biome: _biome,
       theoreticalHours: duration.theoreticalHours,
@@ -6353,8 +6459,10 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
     final built = zone.buildingId == 'biofermenter';
     final bioTarget = state.biofermenterTargetId(biome);
     final forestTarget = state.edibleForestTargetId(biome);
+    final networkTarget = state.mycelialNetworkTargetId(biome);
     final bioProject = state.projectFor(bioTarget);
     final forestProject = state.projectFor(forestTarget);
+    final networkProject = state.projectFor(networkTarget);
     final preview = state.lithoculturePreview(biome, lithocultureAmount);
     final label = lisiereForageConfig.biomes[biome]!.label;
     return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
@@ -6407,6 +6515,8 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                           'Lithoculture : ${state.getLithocultureMineralCostPerOrganic(biome)} Minéraux → 1 Organique${zone.terrainTags.contains('mineralBasin') ? ' · Bonus Bassin minéral' : ''}'),
                       Text(
                           'Forêt comestible : ${zone.edibleForestInstalled ? '+${(state.activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator * 100).round()} % · ${state.activePollinatorsForBiofermenter(biome)}/${config.maxPollinatorsCounted} Pollinisateurs' : 'non installée'}'),
+                      Text(
+                          'Réseau mycélien : ${zone.mycelialNetworkInstalled ? '${state.biofermenterMyceliumPerDay(biome)} Mycélium/jour · ${state.activeMycelialPTibugsForBiofermenter(biome)}/${config.maxMycelialPTibugsCounted} P’TIBUG mycéliens' : 'non installé'}'),
                       const SizedBox(height: 10),
                       const Text('Lithoculture',
                           style: TextStyle(fontWeight: FontWeight.w900)),
@@ -6441,7 +6551,8 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                 ? 'Travaux : ${_countdownLabel(bioProject.endsAt!)}'
                                 : 'Améliorer')),
                         OutlinedButton(
-                            onPressed: zone.edibleForestInstalled
+                            onPressed: zone.edibleForestInstalled ||
+                                    zone.mycelialNetworkInstalled
                                 ? null
                                 : () {
                                     _showBuildingProject(context,
@@ -6454,6 +6565,22 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                             child: Text(forestProject.isInProgress
                                 ? 'Travaux : ${_countdownLabel(forestProject.endsAt!)}'
                                 : 'Installer Forêt comestible')),
+                        OutlinedButton(
+                            onPressed: zone.mycelialNetworkInstalled ||
+                                    zone.edibleForestInstalled ||
+                                    !config.mycelialNetworkEnabled
+                                ? null
+                                : () {
+                                    _showBuildingProject(context,
+                                        gameState: state,
+                                        targetId: networkTarget,
+                                        title: 'Réseau mycélien',
+                                        description:
+                                            'Module territorial · ${config.mycelialNetworkConstructionMinutes} min.');
+                                  },
+                            child: Text(networkProject.isInProgress
+                                ? 'Travaux : ${_countdownLabel(networkProject.endsAt!)}'
+                                : 'Installer Réseau mycélien')),
                         FilledButton(
                             onPressed: () {
                               final ok = state.runLithoculture(
@@ -7289,7 +7416,9 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                                     activeBuilding.id)
                                 .message),
                     icon: const Icon(Icons.battery_charging_full_outlined),
-                    label: const Text('Ouvrir une Bio-batterie'),
+                    label: Text(
+                      'Ouvrir une Bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)',
+                    ),
                   ),
                   if (activeBuilding.kind == PTibugTerritoryKind.nursery)
                     OutlinedButton.icon(
@@ -11143,7 +11272,7 @@ class _ExplorationMap3x3 extends StatelessWidget {
       null,
     ];
     const futureLabels = <int, String>{
-      0: 'Montagne',
+      0: 'Haut Refuge',
       2: 'Savane',
       5: 'Mangrove',
       8: 'Littoral',
@@ -12782,7 +12911,9 @@ class _MarketPageState extends State<MarketPage> {
                                   onPressed: () => _message(widget.gameState
                                       .openBioBatteryForMarketDistributor()
                                       .message),
-                                  child: const Text('Ouvrir une Bio-batterie'),
+                                  child: Text(
+                                    'Ouvrir une Bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)',
+                                  ),
                                 )),
                                 if (widget.gameState.marketDistributor
                                     .isBroken) ...<Widget>[
@@ -13312,7 +13443,9 @@ class _MarketPageState extends State<MarketPage> {
                   onPressed: () => _message(widget.gameState
                       .openBioBatteryForMarketDistributor(shopId: shopId)
                       .message),
-                  child: const Text('Ouvrir une Bio-batterie'),
+                  child: Text(
+                    'Ouvrir une Bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)',
+                  ),
                 ),
                 if (distributor.isBroken)
                   FilledButton(
@@ -13435,6 +13568,39 @@ class _MarketPageState extends State<MarketPage> {
                         .toList(),
                   ),
                 )),
+            if (widget.gameState
+                .nurseryMarketCapsulesForShop(shopId)
+                .isNotEmpty) ...<Widget>[
+              const Padding(
+                padding: EdgeInsets.only(top: 12, bottom: 4),
+                child: Text('Capsules P’TIBUG',
+                    style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+              ...widget.gameState
+                  .nurseryMarketCapsulesForShop(shopId)
+                  .map((capsule) => ListTile(
+                        leading: const Icon(Icons.inventory_2_outlined),
+                        title: Text(
+                          'Capsule ${pTibugConfig.species[capsule.species]!.displayName} · ${capsule.displayName}',
+                        ),
+                        subtitle:
+                            Text('Niveau ${capsule.level} · objet unique'),
+                        trailing: TextButton(
+                          onPressed: () {
+                            final result = widget.gameState
+                                .transferNurseryCapsuleToMarketShop(
+                              shopId,
+                              capsule.id,
+                            );
+                            _message(result.message);
+                            if (result.success) {
+                              Navigator.of(sheetContext).pop();
+                            }
+                          },
+                          child: const Text('Ajouter'),
+                        ),
+                      )),
+            ],
             if (stock.isNotEmpty) const Divider(),
             ...stock.map((stack) => ListTile(
                   title: Text(
@@ -14422,6 +14588,13 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Nurserie P’TIBUG'),
+          actions: <Widget>[
+            IconButton(
+              tooltip: 'Inventaire de la Nurserie',
+              icon: const Icon(Icons.inventory_2_outlined),
+              onPressed: _showNurseryObjectInventory,
+            ),
+          ],
           bottom: const TabBar(
             isScrollable: true,
             tabs: <Widget>[
@@ -14576,22 +14749,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           ),
         ],
       );
-
-  Widget _nurseryObjectInventory() {
-    final state = widget.gameState;
-    final total = state.nurseryInventoryCapsules.length +
-        state.nurseryInventoryMatrices.length;
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.inventory_2_outlined),
-        title: const Text('Inventaire de la Nurserie'),
-        subtitle:
-            Text('$total objet(s) · Capsules P’TIBUG et Matrices uniquement'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: _showNurseryObjectInventory,
-      ),
-    );
-  }
 
   Future<void> _showNurseryObjectInventory() => showModalBottomSheet<void>(
         context: context,
@@ -15177,9 +15334,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
               ),
             ),
           ),
-          const SizedBox(height: 18),
-          _nurseryObjectInventory(),
-          const SizedBox(height: 12),
           _aspectMatrixExtractorCard(),
           const SizedBox(height: 12),
           _aspectMatrixInventory(),

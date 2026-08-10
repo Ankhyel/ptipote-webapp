@@ -89,7 +89,8 @@
   "biomes": [
     {
       "id": "colline",
-      "label": "Hauts-Refuges",
+      "label": "Forêt sèche",
+      "myceliumRichness": "medium",
       "baseRiskPercent": 45,
       "rewards": { "Organique": 4, "Minéral": 3 },
       "wasteBaseGain": 3,
@@ -99,6 +100,7 @@
     {
       "id": "plaineRiche",
       "label": "Savane tropicale",
+      "myceliumRichness": "medium",
       "baseRiskPercent": 30,
       "rewards": { "Organique": 2, "Minéral": 1 },
       "wasteBaseGain": 2,
@@ -109,7 +111,8 @@
     },
     {
       "id": "bassinMineral",
-      "label": "Semi-désert / Garrigue tropicale",
+      "label": "Bassin minéral",
+      "myceliumRichness": "none",
       "baseRiskPercent": 35,
       "rewards": { "Organique": 1, "Minéral": 5 },
       "wasteBaseGain": 3,
@@ -118,7 +121,8 @@
     },
     {
       "id": "sousBois",
-      "label": "Forêt humide relictuelle",
+      "label": "Forêt humide",
+      "myceliumRichness": "rich",
       "baseRiskPercent": 40,
       "rewards": { "Organique": 5, "Minéral": 1 },
       "wasteBaseGain": 4,
@@ -129,7 +133,8 @@
   "upcomingBiomes": [
     {
       "id": "montagne",
-      "label": "Montagne",
+      "label": "Haut Refuge",
+      "myceliumRichness": "rich",
       "availableSoon": true,
       "baseRiskPercent": 55,
       "rewards": { "Organique": 1, "Minéral": 6 },
@@ -138,7 +143,8 @@
     },
     {
       "id": "savane",
-      "label": "Savane",
+      "label": "Forêt sèche",
+      "myceliumRichness": "medium",
       "availableSoon": true,
       "baseRiskPercent": 45,
       "rewards": { "Organique": 4, "Minéral": 2 },
@@ -148,6 +154,7 @@
     {
       "id": "mangrove",
       "label": "Mangrove",
+      "myceliumRichness": "rich",
       "availableSoon": true,
       "baseRiskPercent": 50,
       "rewards": { "Organique": 5, "Minéral": 2 },
@@ -157,6 +164,7 @@
     {
       "id": "littoral",
       "label": "Littoral",
+      "myceliumRichness": "none",
       "availableSoon": true,
       "baseRiskPercent": 35,
       "rewards": { "Organique": 3, "Minéral": 3 },
@@ -164,6 +172,10 @@
       "hazards": ["droneErrant", "climatDifficile"]
     }
   ],
+  "myceliumExploration": {
+    "yieldByRichness": {"none": 0, "medium": 2, "rich": 3},
+    "mycelialTypeGatherBonus": 0.5
+  },
   "territoryBuildings": {
     "slotsPerZone": 1,
     "terrainTags": ["normal", "mineralBasin"],
@@ -181,6 +193,7 @@
       "mineralEquivalentPerWaste": 1,
       "maxWasteSharePerBatch": 1,
       "edibleForest": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 10, "Mycélium": 10}, "pollinatorTraitId": "pollinisateur", "bonusPerPollinator": 0.1, "maxPollinatorsCounted": 3, "affectsPassiveProductionOnly": true},
+      "mycelialNetwork": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 10, "Mycélium": 10}, "baseMyceliumPerDay": 8, "biomeMultipliers": {"none": 1.0, "medium": 1.25, "rich": 1.5}, "mycelialTraitId": "decomposeur", "mycelialTraitBonusPerPTibug": 0.1, "maxMycelialPTibugsCounted": 3, "roundFinalProductionUp": true},
       "futureScarabeHook": {"enabled": false, "mineralToOrganicConversionRate": 4}
     }
   }
