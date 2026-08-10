@@ -1615,8 +1615,8 @@ function renderMarketEditor() {
 
 const DEFAULT_SELLABLE_ITEMS = [
   "Organique", "Minéral", "Déchets", "Mycélium", "Eau",
-  "Repas simple", "Boisson tonique", "Filtre", "Cartouche de filtration",
-  "Tenue ombragée", "Meuble simple", "Ventilation Termite", "Chloro-canaux",
+  "Repas simple", "Boisson tonique", "Filtre", "Cartouche de filtration", "Filtre personnel",
+  "Tenue ombragée", "Tenue anti-pluie", "Tenue filtrante", "Couche imperméabilisante", "Réflecteur thermique", "Meuble simple", "Ventilation Termite", "Chloro-canaux",
   "Installation filtrante", "Lumière solaire", "Kit de réparation domestique",
   "Cœur d’énergie", "P’TIBUG Scarabé", "P’TIBUG Hyme", "P’TIBUG Arac",
   "Capsule P’TIBUG Scarabé", "Capsule P’TIBUG Hyme", "Capsule P’TIBUG Arac",

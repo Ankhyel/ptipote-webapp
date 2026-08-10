@@ -5501,8 +5501,16 @@ IconData _resourceIcon(String? resource) {
     'Énergie' || 'Energie' => Icons.bolt_outlined,
     'Repas' || 'Repas simple' => Icons.restaurant_outlined,
     'Boisson tonique' => Icons.local_drink_outlined,
-    'Filtre' || 'Cartouche de filtration' => Icons.filter_alt_outlined,
-    'Tenue ombragée' => Icons.checkroom_outlined,
+    'Filtre' ||
+    'Cartouche de filtration' ||
+    'Filtre personnel' =>
+      Icons.filter_alt_outlined,
+    'Tenue ombragée' ||
+    'Tenue anti-pluie' ||
+    'Tenue filtrante' =>
+      Icons.checkroom_outlined,
+    'Couche imperméabilisante' => Icons.water_drop_outlined,
+    'Réflecteur thermique' => Icons.wb_sunny_outlined,
     'Meuble simple' => Icons.chair_outlined,
     'Ventilation Termite' => Icons.air_outlined,
     'Lumière solaire' => Icons.lightbulb_outline,
@@ -5835,10 +5843,24 @@ class _LisierePageState extends State<LisierePage> {
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Text(
                           _missionType == ForageMissionType.research
-                              ? 'Explorer le biome pour découvrir des Cellules de données. Aucun Organique ni Minéral n’est récolté.'
+                              ? widget.gameState.isTowerResearchUnlocked
+                                  ? 'Explorer le biome pour découvrir des Cellules de données. Chaque heure augmente le savoir de la zone de 5 % : la Tour de recherche permet de mieux comprendre les données disponibles.'
+                                  : 'Explorer le biome pour découvrir des Cellules de données. Vous devez avoir une Tour de recherche pour comprendre quelles données s’y trouvent.'
                               : 'Prélever les ressources naturelles du biome.',
                         ),
                       ),
+                      if (_missionType == ForageMissionType.research &&
+                          widget.gameState.capsuleDiscoveryMultiplierFor(
+                                _biome,
+                              ) <
+                              1)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            'Connaissances locales sous 50 % : les chances de trouver des Capsules sont divisées par deux.',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
                       _ForageChoiceCard(
                         title: 'Biome',
                         child: Wrap(
@@ -8853,6 +8875,21 @@ class _CampHousingTab extends StatelessWidget {
                 _ => 'À déterminer',
               }} · ${resident.needsState.desireSatisfied ? 'satisfaite' : 'non satisfaite'}'),
               const SizedBox(height: 8),
+              Text(
+                'Inventaire : ${resident.ownedItems.length}/${math.max(gameState.residentInventorySlotsFor(resident), resident.ownedItems.length)} cases',
+              ),
+              if (resident.inventorySlotBonus < 3)
+                OutlinedButton.icon(
+                  onPressed: () {
+                    final result =
+                        gameState.expandResidentInventory(resident.id);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(result.message)),
+                    );
+                  },
+                  icon: const Icon(Icons.inventory_2_outlined),
+                  label: const Text('Agrandir gratuitement (+3 cases)'),
+                ),
               GridView.count(
                 crossAxisCount: 3,
                 crossAxisSpacing: 8,
@@ -8860,7 +8897,10 @@ class _CampHousingTab extends StatelessWidget {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 children: List<Widget>.generate(
-                  math.max(3, resident.ownedItems.length + 1),
+                  math.max(
+                    gameState.residentInventorySlotsFor(resident),
+                    resident.ownedItems.length,
+                  ),
                   (index) => _ResidentInventorySlot(
                     item: index < resident.ownedItems.length
                         ? resident.ownedItems[index]
@@ -11621,6 +11661,14 @@ Future<void> _showTowerResearchBiomeSheet(
             const SizedBox(height: 8),
             Text('Connaissances locales : $progress%'),
             LinearProgressIndicator(value: progress / 100),
+            if (gameState.capsuleDiscoveryMultiplierFor(biome) < 1)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Sous 50 % de connaissances, les chances de trouver des Capsules sont divisées par deux.',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
             const SizedBox(height: 14),
             if (progress >= config.cellChanceRevealPercent) ...<Widget>[
               const Text('Chances de trouver des Cellules',
@@ -11832,6 +11880,7 @@ class _WeatherPreparationCard extends StatelessWidget {
         .join(' → ');
     final requests =
         marketConfig.weatherRequestItems[event.type.name] ?? const <String>[];
+    final uses = gameState.weatherProtectionUsesFor(event.intensity);
     return Card(
         child: Padding(
             padding: const EdgeInsets.all(16),
@@ -11844,6 +11893,10 @@ class _WeatherPreparationCard extends StatelessWidget {
                   if (projects.isNotEmpty)
                     Text('Grands chantiers : $projects.'),
                   Text('P’TIBUG : $module.'),
+                  if (uses > 0)
+                    Text(
+                      '${event.intensity == GlobalWeatherIntensity.moderate ? 'Météo normale' : event.intensity == GlobalWeatherIntensity.strong ? 'Météo moyenne' : 'Météo forte'} : les consommables de protection subiront $uses utilisation${uses > 1 ? 's' : ''}.',
+                    ),
                   if (requests.isNotEmpty)
                     Text(
                         'Demandes possibles au Marché : ${requests.join(', ')}.'),
@@ -12753,10 +12806,14 @@ class _MarketPageState extends State<MarketPage> {
                                             CrossAxisAlignment.stretch,
                                         children: <Widget>[
                                           OutlinedButton(
-                                            onPressed: assigned.levelValue >= 2
+                                            onPressed: widget.gameState
+                                                        .levelFor(assigned) >=
+                                                    2
                                                 ? _showMarketRestockRules
                                                 : null,
-                                            child: Text(assigned.levelValue >= 2
+                                            child: Text(widget.gameState
+                                                        .levelFor(assigned) >=
+                                                    2
                                                 ? 'Gestion appro'
                                                 : 'Appro · niv. 2'),
                                           ),
@@ -13516,10 +13573,10 @@ class _MarketPageState extends State<MarketPage> {
             if (widget.gameState.residentCommunityShopConstructionOrder
                 case final communityOrder?)
               Card(
-                color: Colors.pink.withValues(alpha: .12),
+                color: const Color(0xffc7a746).withValues(alpha: .18),
                 child: ListTile(
-                  leading:
-                      const Icon(Icons.storefront_outlined, color: Colors.pink),
+                  leading: const Icon(Icons.storefront_outlined,
+                      color: Color(0xff9c7b14)),
                   title: const Text('Magasin communautaire autorisé'),
                   subtitle: Text(
                       '${labels[communityOrder.specialization] ?? communityOrder.specialization} · construction dans ${communityOrder.endsAt == null ? '2 jours' : _countdownLabel(communityOrder.endsAt!)}. Le chantier sera annulé si le manque est résolu.'),
@@ -13529,10 +13586,10 @@ class _MarketPageState extends State<MarketPage> {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.storefront_outlined),
               title: Text(
-                  'Magasin du joueur · ${labels[widget.gameState.primaryMarketShopSpecialization] ?? 'Fournitures'}',
+                  'Magasin - ${labels[widget.gameState.primaryMarketShopSpecialization] ?? 'Fournitures'}',
                   style: const TextStyle(fontWeight: FontWeight.w800)),
               subtitle: Text(
-                  'Niveau ${widget.gameState.primaryMarketShopLevel} · ${widget.gameState.marketStock.length}/${widget.gameState.marketShopStockLimit(Zone0GameState.primaryMarketShopId)} piles · prix -${marketConfig.baseStorePricePenaltyPercent}%'),
+                  'Niveau ${widget.gameState.primaryMarketShopLevel} · ${widget.gameState.marketStock.length}/${widget.gameState.marketShopStockLimit(Zone0GameState.primaryMarketShopId)} piles${widget.gameState.primaryMarketShopChosen ? '' : ' · prix -${marketConfig.baseStorePricePenaltyPercent}%'}'),
               trailing: widget.gameState.primaryMarketShopLevel < 2
                   ? TextButton(
                       onPressed: () {
@@ -13561,12 +13618,17 @@ class _MarketPageState extends State<MarketPage> {
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       tileColor: shop.emergencyPink
-                          ? Colors.pink.withValues(alpha: .14)
+                          ? const Color(0xffc7a746).withValues(alpha: .18)
                           : null,
                       leading: Icon(Icons.storefront_outlined,
-                          color: shop.emergencyPink ? Colors.pink : null),
+                          color: shop.emergencyPink
+                              ? const Color(0xff9c7b14)
+                              : null),
                       title: Text(
-                          '${shop.emergencyPink ? 'Comptoir communautaire rose · ' : ''}${labels[shop.specialization] ?? 'Magasin'}',
+                          shop.ownershipType ==
+                                  MarketShopOwnershipType.residentCommunity
+                              ? 'Magasin de ${widget.gameState.residents.where((resident) => resident.id == shop.ownerResidentId).firstOrNull?.displayName ?? 'la communauté'} - ${labels[shop.specialization] ?? 'Magasin'}'
+                              : 'Magasin - ${labels[shop.specialization] ?? 'Magasin'}',
                           style: const TextStyle(fontWeight: FontWeight.w800)),
                       subtitle: Text(
                           '${shop.ownershipType == MarketShopOwnershipType.residentCommunity ? (shop.emergencyPink ? 'Comptoir communautaire · ventes toutes les 10 min par ligne de production' : 'Commerce habitant · ${widget.gameState.residents.where((resident) => resident.id == shop.ownerResidentId).firstOrNull?.displayName ?? 'sans responsable'} · distribution par ligne de production') : 'Joueur · niveau ${shop.level} · ${shop.stock.length}/${shop.stockSlots} piles'}'),
@@ -18016,7 +18078,9 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                       !recipe.displayName.contains('Meuble') &&
                       !recipe.displayName.contains('Ventilation') &&
                       !recipe.displayName.contains('Lumière') &&
-                      !recipe.displayName.contains('Cartouche')
+                      !recipe.displayName.contains('Cartouche') &&
+                      recipe.id != 'repairKit' &&
+                      recipe.id != 'biomassRegenerator'
                 ),
                 (
                   title: 'Structures',
@@ -18024,7 +18088,9 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                   matches: (recipe) =>
                       recipe.displayName.contains('Ventilation') ||
                       recipe.displayName.contains('Lumière') ||
-                      recipe.displayName.contains('Cartouche')
+                      recipe.displayName.contains('Cartouche') ||
+                      recipe.id == 'repairKit' ||
+                      recipe.id == 'biomassRegenerator'
                 ),
                 (
                   title: 'Meubles',

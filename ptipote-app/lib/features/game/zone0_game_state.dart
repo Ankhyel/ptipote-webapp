@@ -617,6 +617,99 @@ class Zone0GameState extends ChangeNotifier {
         0, towerOperationsConfig.buildingViability.protectionCapPercent);
   }
 
+  /// Cartouches are stored by the filtering installation itself.  They are
+  /// consumed before the building has to absorb the toxic event.  A partial
+  /// stock is consumed, but cannot claim the full filtration bonus.
+  bool _consumeStructuralFilterCartridges(
+    Map<String, int> inventory,
+    List<StructuralProtectionType> installations,
+    GlobalWeatherEvent event,
+  ) {
+    if (event.type != TowerWeatherType.toxicCloud ||
+        !installations.contains(StructuralProtectionType.filtration)) {
+      return true;
+    }
+    final needed = weatherProtectionUsesFor(event.intensity);
+    final stored = inventory['Cartouche de filtration'] ?? 0;
+    final ready = stored >= needed;
+    final consumed = math.min(stored, needed);
+    if (consumed > 0) {
+      final remaining = stored - consumed;
+      if (remaining <= 0) {
+        inventory.remove('Cartouche de filtration');
+      } else {
+        inventory['Cartouche de filtration'] = remaining;
+      }
+    }
+    return ready;
+  }
+
+  Zone0ActionResult addFilterCartridgesToBuilding(
+    String buildingId, {
+    int quantity = 1,
+  }) {
+    final state = viabilityForBuilding(buildingId);
+    if (!state.installedStructuralProtections
+        .contains(StructuralProtectionType.filtration)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Installation filtrante requise.');
+    }
+    final safeQuantity = math.max(1, quantity);
+    if (resourceAmount('Cartouche de filtration') < safeQuantity ||
+        removeResource('Cartouche de filtration', safeQuantity) <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cartouches de filtration insuffisantes.');
+    }
+    state.structuralConsumables.update(
+      'Cartouche de filtration',
+      (value) => value + safeQuantity,
+      ifAbsent: () => safeQuantity,
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '$safeQuantity cartouche(s) ajoutée(s) à la filtration.');
+  }
+
+  Zone0ActionResult addFilterCartridgesToHouse(
+    String houseId, {
+    int quantity = 1,
+  }) {
+    final house = residentHouseForId(houseId);
+    if (house == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Maison introuvable.');
+    }
+    if (!house.installedStructuralProtections
+        .contains(StructuralProtectionType.filtration)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Installation filtrante requise.');
+    }
+    final safeQuantity = math.max(1, quantity);
+    if (!_consumeHouseholdInventoryItem(
+          house,
+          'Cartouche de filtration',
+          quantity: safeQuantity,
+        ) &&
+        (resourceAmount('Cartouche de filtration') < safeQuantity ||
+            removeResource('Cartouche de filtration', safeQuantity) <= 0)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cartouches de filtration insuffisantes.');
+    }
+    house.structuralConsumables.update(
+      'Cartouche de filtration',
+      (value) => value + safeQuantity,
+      ifAbsent: () => safeQuantity,
+    );
+    house.updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '$safeQuantity cartouche(s) ajoutée(s) à la filtration.');
+  }
+
   Zone0ActionResult installStructuralProtection(
     String buildingId,
     StructuralProtectionType type,
@@ -696,12 +789,18 @@ class Zone0GameState extends ChangeNotifier {
           .firstOrNull;
       state.lastDamageEventId = event.id;
       if (impact == null || !impact.isAffected) continue;
+      final filtrationReady = _consumeStructuralFilterCartridges(
+        state.structuralConsumables,
+        state.installedStructuralProtections,
+        event,
+      );
       final raw = config.damageFor(event.type, event.intensity) *
           impact.localImpactMultiplier;
-      final protection =
-          (structuralProtectionReductionPercent(buildingId, event.type) +
-                  globalWeatherProtectionPercent(event.type))
-              .clamp(0, config.protectionCapPercent);
+      final protection = ((filtrationReady
+                  ? structuralProtectionReductionPercent(buildingId, event.type)
+                  : 0) +
+              globalWeatherProtectionPercent(event.type))
+          .clamp(0, config.protectionCapPercent);
       final reduced = raw * (1 - protection / 100);
       final damage = reduced.ceil();
       if (damage <= 0) continue;
@@ -1898,7 +1997,14 @@ class Zone0GameState extends ChangeNotifier {
           .where((item) => item.biome == house.biome)
           .firstOrNull;
       if (impact == null || !impact.isAffected) continue;
-      final protection = (house.protectionReductionPercent(event.type, config) +
+      final filtrationReady = _consumeStructuralFilterCartridges(
+        house.structuralConsumables,
+        house.installedStructuralProtections,
+        event,
+      );
+      final protection = ((filtrationReady
+                  ? house.protectionReductionPercent(event.type, config)
+                  : 0) +
               globalWeatherProtectionPercent(event.type))
           .clamp(0, config.protectionCapPercent);
       final raw = config.damageFor(event.type, event.intensity) *
@@ -2338,7 +2444,11 @@ class Zone0GameState extends ChangeNotifier {
       }.contains(item);
 
   bool _isResidentDurableEquipment(String item, String category) {
-    if (category == 'clothing' || category.endsWith('Protection')) return true;
+    if (category == 'clothing' ||
+        category.endsWith('Protection') ||
+        category == 'weatherConsumable') {
+      return true;
+    }
     final probe = ResidentOwnedItem(
       id: 'durability-probe',
       itemDefinitionId: item,
@@ -2415,7 +2525,27 @@ class Zone0GameState extends ChangeNotifier {
     return gain;
   }
 
-  void _addResidentOwnedItems(
+  bool _canResidentStoreOwnedItems(
+    Zone0Resident resident,
+    String item,
+    String category,
+    int quantity,
+  ) {
+    if (quantity <= 0) return true;
+    final durable = _isResidentDurableEquipment(item, category);
+    if (!durable &&
+        resident.ownedItems.any((owned) =>
+            owned.itemDefinitionId == item &&
+            owned.category == category &&
+            owned.isUsable)) {
+      return true;
+    }
+    final requiredSlots = durable ? quantity : 1;
+    return resident.ownedItems.length + requiredSlots <=
+        residentInventorySlotsFor(resident);
+  }
+
+  bool _addResidentOwnedItems(
     Zone0Resident resident,
     String item,
     String category,
@@ -2423,7 +2553,10 @@ class Zone0GameState extends ChangeNotifier {
     DateTime acquiredAt, {
     String? sourceTransactionId,
   }) {
-    if (quantity <= 0) return;
+    if (quantity <= 0) return true;
+    if (!_canResidentStoreOwnedItems(resident, item, category, quantity)) {
+      return false;
+    }
     final durable = _isResidentDurableEquipment(item, category);
     if (!durable) {
       final existing = resident.ownedItems
@@ -2434,7 +2567,7 @@ class Zone0GameState extends ChangeNotifier {
           .firstOrNull;
       if (existing != null) {
         existing.quantity += quantity;
-        return;
+        return true;
       }
     }
     // Une protection est stockée par exemplaire : chaque barre de durabilité
@@ -2454,6 +2587,32 @@ class Zone0GameState extends ChangeNotifier {
       ));
       if (!durable) break;
     }
+    return true;
+  }
+
+  int residentInventorySlotsFor(Zone0Resident resident) =>
+      3 + resident.inventorySlotBonus;
+
+  Zone0ActionResult expandResidentInventory(String residentId) {
+    final resident =
+        residents.where((item) => item.id == residentId).firstOrNull;
+    if (resident == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Habitant introuvable.');
+    }
+    if (resident.inventorySlotBonus >= 3) {
+      return const Zone0ActionResult(
+          success: false, message: 'Inventaire déjà agrandi au maximum.');
+    }
+    resident.inventorySlotBonus = 3;
+    resident.updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message:
+          'Inventaire de ${resident.displayName} agrandi à ${residentInventorySlotsFor(resident)} cases.',
+    );
   }
 
   String? _residentItemCategory(String item) {
@@ -2463,10 +2622,13 @@ class Zone0GameState extends ChangeNotifier {
       case 'boisson tonique':
         return 'drink';
       case 'tenue ombragée':
+      case 'tenue anti-pluie':
+      case 'tenue filtrante':
         return 'clothing';
-      case 'cartouche de filtration':
-      case 'filtre':
-        return 'toxicProtection';
+      case 'couche imperméabilisante':
+      case 'réflecteur thermique':
+      case 'filtre personnel':
+        return 'weatherConsumable';
       case 'peau amphibienne':
       case 'tenue étanche':
         return 'rainProtection';
@@ -2489,14 +2651,42 @@ class Zone0GameState extends ChangeNotifier {
     final name = item.itemDefinitionId.toLowerCase();
     return switch (type) {
       TowerWeatherType.heatWave => name == 'tenue ombragée',
-      TowerWeatherType.heavyRain =>
-        name == 'peau amphibienne' || name == 'tenue étanche',
-      TowerWeatherType.toxicCloud => name == 'cartouche de filtration' ||
-          name == 'filtre' ||
-          name == 'biofiltration personnelle',
+      TowerWeatherType.heavyRain => name == 'tenue anti-pluie' ||
+          name == 'peau amphibienne' ||
+          name == 'tenue étanche',
+      TowerWeatherType.toxicCloud =>
+        name == 'tenue filtrante' || name == 'biofiltration personnelle',
       TowerWeatherType.calm => false,
     };
   }
+
+  bool _itemIsWeatherConsumable(
+    ResidentOwnedItem item,
+    TowerWeatherType type,
+  ) {
+    final name = item.itemDefinitionId.toLowerCase();
+    return switch (type) {
+      TowerWeatherType.heatWave => name == 'réflecteur thermique',
+      TowerWeatherType.heavyRain => name == 'couche imperméabilisante',
+      TowerWeatherType.toxicCloud => name == 'filtre personnel',
+      TowerWeatherType.calm => false,
+    };
+  }
+
+  String _weatherConsumableFor(TowerWeatherType type) => switch (type) {
+        TowerWeatherType.heatWave => 'Réflecteur thermique',
+        TowerWeatherType.heavyRain => 'Couche imperméabilisante',
+        TowerWeatherType.toxicCloud => 'Filtre personnel',
+        TowerWeatherType.calm => '',
+      };
+
+  int weatherProtectionUsesFor(GlobalWeatherIntensity intensity) =>
+      switch (intensity) {
+        GlobalWeatherIntensity.moderate => 1,
+        GlobalWeatherIntensity.strong => 2,
+        GlobalWeatherIntensity.severe => 3,
+        GlobalWeatherIntensity.calm => 0,
+      };
 
   String _weatherProtectionLabel(TowerWeatherType type) => switch (type) {
         TowerWeatherType.heatWave => 'protection chaleur',
@@ -2667,8 +2857,17 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Stock du refuge insuffisant.');
     }
-    if (consumeFromPlayerInventory) removeResource(itemName, safeQuantity);
     final house = residentHouseForId(resident.houseId);
+    if ((house == null || !_isHouseholdFinishedItem(itemName)) &&
+        !_canResidentStoreOwnedItems(
+            resident, itemName, category, safeQuantity)) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Inventaire de ${resident.displayName} plein (${residentInventorySlotsFor(resident)} cases).',
+      );
+    }
+    if (consumeFromPlayerInventory) removeResource(itemName, safeQuantity);
     if (house != null && _isHouseholdFinishedItem(itemName)) {
       _addHouseholdInventoryItem(house, itemName, safeQuantity);
     } else {
@@ -2736,6 +2935,22 @@ class Zone0GameState extends ChangeNotifier {
           (item) => item.isUsable && _itemProtectsWeather(item, event.type));
       if (protected) {
         needs.missingWeatherProtectionTypes.remove(label);
+        // Une tenue reste utilisable sans consommable, mais le foyer est
+        // averti avant la météo afin de préserver ses dix usages.
+        final consumable = _weatherConsumableFor(event.type);
+        final hasConsumable = resident.ownedItems.any((item) =>
+            item.isUsable && _itemIsWeatherConsumable(item, event.type));
+        if (consumable.isNotEmpty && !hasConsumable) {
+          _upsertResidentUncoveredNeed(
+            resident: resident,
+            item: consumable,
+            category: 'weatherConsumable',
+            quantity: 1,
+            reason: ResidentUncoveredNeedReason.noStock,
+            urgency: 2,
+            now: DateTime.now(),
+          );
+        }
       } else if (!needs.missingWeatherProtectionTypes.contains(label)) {
         needs.missingWeatherProtectionTypes.add(label);
       }
@@ -2748,28 +2963,41 @@ class Zone0GameState extends ChangeNotifier {
         !event.isBiomeAffected(ForageBiome.plaineRiche)) return;
     final label = _weatherProtectionLabel(event.type);
     for (final resident in residents.where((item) => item.isActive)) {
-      final candidates = resident.ownedItems
+      final supportCandidates = resident.ownedItems
           .where(
               (item) => item.isUsable && _itemProtectsWeather(item, event.type))
           .toList()
         ..sort((a, b) => (a.currentDurability ?? 999999)
             .compareTo(b.currentDurability ?? 999999));
-      final used = candidates.firstOrNull;
-      if (used == null) {
+      final support = supportCandidates.firstOrNull;
+      if (support == null) {
         resident.needsState.missingWeatherProtectionTypes.add(label);
         resident.happinessModifiers['weather-${event.id}'] =
             -_weatherProtectionPenalty(event.intensity);
       } else {
-        if (used.currentDurability != null) {
-          used.currentDurability = math.max(0, used.currentDurability! - 1);
-          if (used.currentDurability == 0) {
-            // Une protection est réellement consommée au dernier événement :
-            // elle disparaît du vestiaire et recrée son besoin commercial.
-            resident.ownedItems.remove(used);
+        var remainingUses = weatherProtectionUsesFor(event.intensity);
+        final consumables = resident.ownedItems
+            .where((item) =>
+                item.isUsable && _itemIsWeatherConsumable(item, event.type))
+            .toList()
+          ..sort((a, b) => (a.currentDurability ?? 999999)
+              .compareTo(b.currentDurability ?? 999999));
+        for (final consumable in consumables) {
+          if (remainingUses <= 0) break;
+          final available = consumable.currentDurability ?? 0;
+          final consumed = math.min(available, remainingUses);
+          if (consumed <= 0) continue;
+          consumable
+            ..currentDurability = available - consumed
+            ..equippedOrActive = true
+            ..lastUsedAt = DateTime.now();
+          remainingUses -= consumed;
+          if (consumable.currentDurability == 0) {
+            resident.ownedItems.remove(consumable);
             _upsertResidentUncoveredNeed(
               resident: resident,
-              item: used.itemDefinitionId,
-              category: used.category,
+              item: consumable.itemDefinitionId,
+              category: consumable.category,
               quantity: 1,
               reason: ResidentUncoveredNeedReason.noStock,
               urgency: 3,
@@ -2777,7 +3005,25 @@ class Zone0GameState extends ChangeNotifier {
             );
           }
         }
-        used
+        if (remainingUses > 0 && support.currentDurability != null) {
+          support.currentDurability = math.max(
+            0,
+            support.currentDurability! - remainingUses,
+          );
+          if (support.currentDurability == 0) {
+            resident.ownedItems.remove(support);
+            _upsertResidentUncoveredNeed(
+              resident: resident,
+              item: support.itemDefinitionId,
+              category: support.category,
+              quantity: 1,
+              reason: ResidentUncoveredNeedReason.noStock,
+              urgency: 3,
+              now: DateTime.now(),
+            );
+          }
+        }
+        support
           ..equippedOrActive = true
           ..lastUsedAt = DateTime.now();
         resident.needsState.missingWeatherProtectionTypes.remove(label);
@@ -2879,6 +3125,12 @@ class Zone0GameState extends ChangeNotifier {
 
   int biomeResearchProgressFor(ForageBiome biome) =>
       biomeSecurity[biome]?.researchProgress ?? 0;
+
+  /// Les expéditions de recherche de la Lisière et la Tour contribuent au
+  /// même savoir local. Sous 50 %, les données sont trop incertaines : les
+  /// chances de trouver une Capsule sont donc divisées par deux.
+  double capsuleDiscoveryMultiplierFor(ForageBiome biome) =>
+      biomeResearchProgressFor(biome) < 50 ? .5 : 1;
 
   bool isBiomeResearching(ForageBiome biome) => towerBiomeResearch.any(
         (research) => research.biome == biome && research.isActive,
@@ -3666,6 +3918,25 @@ class Zone0GameState extends ChangeNotifier {
     final house = residentHouseForId(resident.houseId);
     final isHouseholdItem =
         house != null && _isHouseholdFinishedItem(itemDefinitionId);
+    final category = _residentItemCategory(itemDefinitionId) ?? 'finished';
+    if (!isHouseholdItem &&
+        !_canResidentStoreOwnedItems(
+            resident, itemDefinitionId, category, safeQuantity)) {
+      _upsertResidentUncoveredNeed(
+        resident: resident,
+        item: itemDefinitionId,
+        category: category,
+        quantity: safeQuantity,
+        reason: ResidentUncoveredNeedReason.noStock,
+        urgency: essential ? 3 : 1,
+        now: current,
+      );
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Inventaire de ${resident.displayName} plein (${residentInventorySlotsFor(resident)} cases).',
+      );
+    }
     if (itemDefinitionId != 'Repas simple' &&
         (isHouseholdItem
             ? (house.householdInventory[itemDefinitionId] ?? 0) >= safeQuantity
@@ -3741,7 +4012,7 @@ class Zone0GameState extends ChangeNotifier {
       _addResidentOwnedItems(
         resident,
         itemDefinitionId,
-        _residentItemCategory(itemDefinitionId) ?? 'finished',
+        category,
         safeQuantity,
         current,
       );
@@ -7441,6 +7712,31 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Demande indisponible.');
     }
+    final resident = request.customerName == null
+        ? null
+        : residents
+            .where((entry) => entry.displayName == request.customerName)
+            .firstOrNull;
+    if (resident != null &&
+        _isFinishedResidentProduct(request.requestedItemId)) {
+      final category =
+          _residentItemCategory(request.requestedItemId) ?? 'finished';
+      final house = residentHouseForId(resident.houseId);
+      if ((house == null ||
+              !_isHouseholdFinishedItem(request.requestedItemId)) &&
+          !_canResidentStoreOwnedItems(
+            resident,
+            request.requestedItemId,
+            category,
+            request.requestedQuantity,
+          )) {
+        return Zone0ActionResult(
+          success: false,
+          message:
+              'Inventaire de ${resident.displayName} plein (${residentInventorySlotsFor(resident)} cases).',
+        );
+      }
+    }
     final sold = allowAnyShop
         ? _consumeAnyMarketShopStock(
             request.requestedItemId, request.requestedQuantity)
@@ -7453,11 +7749,6 @@ class Zone0GameState extends ChangeNotifier {
     // Une vente à un habitant transfère toujours l'objet physique vers son
     // bon stockage. Les biens du foyer restent dans la Maison, les objets
     // personnels rejoignent le sac de l'habitant.
-    final resident = request.customerName == null
-        ? null
-        : residents
-            .where((entry) => entry.displayName == request.customerName)
-            .firstOrNull;
     if (resident != null &&
         _isFinishedResidentProduct(request.requestedItemId)) {
       final category =
@@ -8053,14 +8344,24 @@ class Zone0GameState extends ChangeNotifier {
         .any((recipe) => recipe.resultItem == item && recipe.isConsumable)) {
       return 'food';
     }
-    if (item.contains('Tenue')) return 'clothing';
+    if (item.contains('Tenue') ||
+        const <String>{
+          'Couche imperméabilisante',
+          'Réflecteur thermique',
+          'Filtre personnel',
+        }.contains(item)) {
+      return 'clothing';
+    }
     if (item.contains('Meuble')) return 'furniture';
     return 'materials';
   }
 
   int _marketPriceInBioPiles(String item, {required String shopId}) {
     final base = math.max(1, marketConfig.salePriceInBioPiles(item));
-    if (shopId == primaryMarketShopId) {
+    // Le malus ne concerne que l'ancien magasin généraliste. Dès que le
+    // joueur a choisi une spécialisation, il vend au même tarif qu'un magasin
+    // spécialisé et l'interface ne l'affiche plus comme un rabais permanent.
+    if (shopId == primaryMarketShopId && !primaryMarketShopChosen) {
       return math.max(
           1,
           (base * (100 - marketConfig.baseStorePricePenaltyPercent) / 100)
@@ -16815,6 +17116,16 @@ class Zone0GameState extends ChangeNotifier {
     if (localState != null) {
       localState.lastMissionAt = completedAt;
       localState.lastDecayAt = completedAt;
+      if (mission.type == ForageMissionType.research &&
+          isTowerResearchUnlocked) {
+        localState.researchProgress = math.min(
+          100,
+          localState.researchProgress +
+              duration.theoreticalHours *
+                  towerOperationsConfig.research.progressPerHour,
+        );
+        localState.lastResearchDecayAt = completedAt;
+      }
     }
     emitKernelProgressEvent(KernelProgressEventType.missionCompleted);
     if (incident.startsWith('pollution')) {
@@ -16891,7 +17202,9 @@ class Zone0GameState extends ChangeNotifier {
     }
     final finalState = <String>[
       mission.type == ForageMissionType.research
-          ? 'Recherche : aucune ressource naturelle extraite.'
+          ? isTowerResearchUnlocked
+              ? 'Recherche : aucune ressource naturelle extraite. Le savoir local progresse de ${duration.theoreticalHours * towerOperationsConfig.research.progressPerHour}%.'
+              : 'Recherche : aucune ressource naturelle extraite. Une Tour de recherche est nécessaire pour comprendre les données de ce biome.'
           : 'Récolte : ressources naturelles prélevées.',
       'Vigueur : $biomassBefore% → ${math.max(0, biomassBefore - biomassCost)}% (-$biomassCost%).',
       if (emergencyReturn)
@@ -17226,7 +17539,8 @@ class Zone0GameState extends ChangeNotifier {
     for (var attempt = 0; attempt < attempts; attempt += 1) {
       final chance = (towerOperationsConfig.research
                   .cellChanceFor(mission.type, attempt + 1) *
-              weatherMultiplier)
+              weatherMultiplier *
+              capsuleDiscoveryMultiplierFor(mission.biome))
           .round()
           .clamp(0, 100);
       if (_random.nextInt(100) >= chance) continue;
@@ -19327,8 +19641,10 @@ class BuildingViabilityState {
     this.viabilityWarningShown = false,
     this.restartRequired = false,
     List<StructuralProtectionType>? installedStructuralProtections,
-  }) : installedStructuralProtections =
-            installedStructuralProtections ?? <StructuralProtectionType>[];
+    Map<String, int>? structuralConsumables,
+  })  : installedStructuralProtections =
+            installedStructuralProtections ?? <StructuralProtectionType>[],
+        structuralConsumables = structuralConsumables ?? <String, int>{};
 
   factory BuildingViabilityState.fresh(
     String buildingId, {
@@ -19373,6 +19689,12 @@ class BuildingViabilityState {
                 ),
               )
               .toList(),
+      structuralConsumables:
+          (data['structuralConsumables'] as Map? ?? const <dynamic, dynamic>{})
+              .map((key, value) => MapEntry(
+                    '$key',
+                    Zone0GameState.instance._readInt(value),
+                  )),
     );
   }
 
@@ -19384,6 +19706,7 @@ class BuildingViabilityState {
   bool viabilityWarningShown;
   bool restartRequired;
   final List<StructuralProtectionType> installedStructuralProtections;
+  final Map<String, int> structuralConsumables;
 
   bool get isDisabled => current <= 0 || restartRequired;
   bool isDegraded(int threshold) => !isDisabled && current < threshold;
@@ -19414,6 +19737,7 @@ class BuildingViabilityState {
         'restartRequired': restartRequired,
         'installedStructuralProtections':
             installedStructuralProtections.map((item) => item.name).toList(),
+        'structuralConsumables': structuralConsumables,
       };
 }
 
@@ -20555,6 +20879,7 @@ class Zone0Resident {
     this.secondaryPassionId,
     this.interiorProfileId,
     this.currentVisionProjectId,
+    this.inventorySlotBonus = 0,
     Map<String, int>? personalInventory,
     Map<String, int>? wardrobeInventory,
     List<String>? ownedCertifiedPtibugIds,
@@ -20631,6 +20956,8 @@ class Zone0Resident {
         secondaryPassionId: data['secondaryPassionId'] as String?,
         interiorProfileId: data['interiorProfileId'] as String?,
         currentVisionProjectId: data['currentVisionProjectId'] as String?,
+        inventorySlotBonus:
+            Zone0GameState.instance._readInt(data['inventorySlotBonus']),
         personalInventory: Map<String, int>.fromEntries(
           (data['personalInventory'] as Map? ?? const <dynamic, dynamic>{})
               .entries
@@ -20702,6 +21029,7 @@ class Zone0Resident {
   String? secondaryPassionId;
   String? interiorProfileId;
   String? currentVisionProjectId;
+  int inventorySlotBonus;
   final Map<String, int> personalInventory;
   final Map<String, int> wardrobeInventory;
   final List<String> ownedCertifiedPtibugIds;
@@ -20740,6 +21068,7 @@ class Zone0Resident {
         'secondaryPassionId': secondaryPassionId,
         'interiorProfileId': interiorProfileId,
         'currentVisionProjectId': currentVisionProjectId,
+        'inventorySlotBonus': inventorySlotBonus,
         'personalInventory': personalInventory,
         'wardrobeInventory': wardrobeInventory,
         'ownedCertifiedPtibugIds': ownedCertifiedPtibugIds,
@@ -20906,6 +21235,7 @@ class ResidentHouse {
     int? furnitureSlots,
     List<String>? installedFurnitureItems,
     Map<String, int>? householdInventory,
+    Map<String, int>? structuralConsumables,
     this.baseGeneratorInstalled = true,
     int? additionalGeneratorSlots,
     this.additionalGeneratorInstalled = false,
@@ -20930,6 +21260,7 @@ class ResidentHouse {
         furnitureSlots = furnitureSlots ?? housingConfig.residentFurnitureSlots,
         installedFurnitureItems = installedFurnitureItems ?? <String>[],
         householdInventory = householdInventory ?? <String, int>{},
+        structuralConsumables = structuralConsumables ?? <String, int>{},
         reservedArrivalCandidateIds = reservedArrivalCandidateIds ?? <String>[],
         additionalGeneratorSlots =
             additionalGeneratorSlots ?? housingConfig.additionalGeneratorSlots,
@@ -20973,6 +21304,12 @@ class ResidentHouse {
                 .map((item) => '$item')
                 .toList(),
         householdInventory: (data['householdInventory'] as Map? ?? const {})
+            .map((key, value) => MapEntry(
+                  '$key',
+                  Zone0GameState.instance._readInt(value),
+                )),
+        structuralConsumables: (data['structuralConsumables'] as Map? ??
+                const <dynamic, dynamic>{})
             .map((key, value) => MapEntry(
                   '$key',
                   Zone0GameState.instance._readInt(value),
@@ -21024,6 +21361,7 @@ class ResidentHouse {
   int furnitureSlots;
   final List<String> installedFurnitureItems;
   final Map<String, int> householdInventory;
+  final Map<String, int> structuralConsumables;
   bool baseGeneratorInstalled;
   int additionalGeneratorSlots;
   bool additionalGeneratorInstalled;
@@ -21078,6 +21416,7 @@ class ResidentHouse {
         'furnitureSlots': furnitureSlots,
         'installedFurnitureItems': installedFurnitureItems,
         'householdInventory': householdInventory,
+        'structuralConsumables': structuralConsumables,
         'baseGeneratorInstalled': baseGeneratorInstalled,
         'additionalGeneratorSlots': additionalGeneratorSlots,
         'additionalGeneratorInstalled': additionalGeneratorInstalled,

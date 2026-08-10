@@ -151,6 +151,61 @@
       "stackLimit": 1
     },
     {
+      "id": "rainSuit",
+      "displayName": "Tenue anti-pluie",
+      "craftSection": "atelier",
+      "ingredients": [{"resource": "Organique", "amount": 4}, {"resource": "Minéral", "amount": 2}],
+      "contextIngredients": {}, "cuisineLevel": 0, "atelierLevel": 1,
+      "kernelTrustLevel": 2, "breederLevel": 1, "builderLevel": 2, "restorerLevel": 1,
+      "resultItem": "Tenue anti-pluie", "resultAmount": 1,
+      "isConsumable": false, "hungerRestore": 0, "vitalityRestore": 0,
+      "durationMinutes": 5, "isEquipment": true, "energyCost": 0, "stackLimit": 1
+    },
+    {
+      "id": "filterSuit",
+      "displayName": "Tenue filtrante",
+      "craftSection": "atelier",
+      "ingredients": [{"resource": "Filtre", "amount": 1}, {"resource": "Organique", "amount": 3}, {"resource": "Minéral", "amount": 2}],
+      "contextIngredients": {}, "cuisineLevel": 0, "atelierLevel": 1,
+      "kernelTrustLevel": 2, "breederLevel": 1, "builderLevel": 2, "restorerLevel": 2,
+      "resultItem": "Tenue filtrante", "resultAmount": 1,
+      "isConsumable": false, "hungerRestore": 0, "vitalityRestore": 0,
+      "durationMinutes": 6, "isEquipment": true, "energyCost": 0, "stackLimit": 1
+    },
+    {
+      "id": "waterproofLayer",
+      "displayName": "Couche imperméabilisante",
+      "craftSection": "atelier",
+      "ingredients": [{"resource": "Organique", "amount": 2}, {"resource": "Minéral", "amount": 1}],
+      "contextIngredients": {}, "cuisineLevel": 0, "atelierLevel": 1,
+      "kernelTrustLevel": 2, "breederLevel": 1, "builderLevel": 2, "restorerLevel": 1,
+      "resultItem": "Couche imperméabilisante", "resultAmount": 1,
+      "isConsumable": false, "hungerRestore": 0, "vitalityRestore": 0,
+      "durationMinutes": 3, "isEquipment": true, "energyCost": 0, "stackLimit": 1
+    },
+    {
+      "id": "thermalReflector",
+      "displayName": "Réflecteur thermique",
+      "craftSection": "atelier",
+      "ingredients": [{"resource": "Organique", "amount": 2}, {"resource": "Minéral", "amount": 2}],
+      "contextIngredients": {}, "cuisineLevel": 0, "atelierLevel": 1,
+      "kernelTrustLevel": 2, "breederLevel": 1, "builderLevel": 2, "restorerLevel": 1,
+      "resultItem": "Réflecteur thermique", "resultAmount": 1,
+      "isConsumable": false, "hungerRestore": 0, "vitalityRestore": 0,
+      "durationMinutes": 3, "isEquipment": true, "energyCost": 0, "stackLimit": 1
+    },
+    {
+      "id": "personalFilter",
+      "displayName": "Filtre personnel",
+      "craftSection": "atelier",
+      "ingredients": [{"resource": "Filtre", "amount": 1}, {"resource": "Organique", "amount": 1}],
+      "contextIngredients": {}, "cuisineLevel": 0, "atelierLevel": 1,
+      "kernelTrustLevel": 2, "breederLevel": 1, "builderLevel": 2, "restorerLevel": 2,
+      "resultItem": "Filtre personnel", "resultAmount": 1,
+      "isConsumable": false, "hungerRestore": 0, "vitalityRestore": 0,
+      "durationMinutes": 3, "isEquipment": true, "energyCost": 0, "stackLimit": 1
+    },
+    {
       "id": "simpleFurniture",
       "displayName": "Meuble simple",
       "craftSection": "atelier",
