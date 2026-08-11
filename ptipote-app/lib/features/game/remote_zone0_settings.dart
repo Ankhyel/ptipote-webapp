@@ -2345,6 +2345,10 @@ CraftRecipe? _craftRecipe(Map<String, dynamic> raw, CraftRecipe? fallback) {
         ? raw['isEquipment'] as bool
         : fallback?.isEquipment ?? false,
     energyCost: _int(raw['energyCost'], fallback?.energyCost ?? 0),
+    bioBatteryCost: _int(
+      raw['bioBatteryCost'],
+      fallback?.bioBatteryCost ?? 0,
+    ),
     stackLimit: _int(raw['stackLimit'], fallback?.stackLimit ?? 1),
   );
 }

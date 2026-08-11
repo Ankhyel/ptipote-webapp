@@ -9864,6 +9864,14 @@ class Zone0GameState extends ChangeNotifier {
     return result;
   }
 
+  int biofermenterOrganicReserveCapacity(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    if (zone.buildingId != 'biofermenter' || zone.buildingLevel <= 0) {
+      return 0;
+    }
+    return 30 + (zone.buildingLevel - 1) * 10;
+  }
+
   /// The ceiling is applied once to the complete daily formula, then the
   /// continuous resolver preserves hourly fractions. This favours the player
   /// without compounding rounding on each multiplier or refresh.
@@ -9895,9 +9903,17 @@ class Zone0GameState extends ChangeNotifier {
       if (elapsedHours > 0) {
         final exact = elapsedHours * biofermenterOrganicPerDay(biome) / 24 +
             zone.organicProductionRemainder;
-        final whole = exact.floor();
+        final requested = exact.floor();
+        final reserveRoom = math.max(
+          0,
+          biofermenterOrganicReserveCapacity(biome) - zone.organicReserve,
+        );
+        final whole = math.min(requested, reserveRoom);
         zone
-          ..organicProductionRemainder = exact - whole
+          // Une réserve pleine interrompt la production au lieu de créer un
+          // crédit invisible. Les fractions ne sont conservées que tant que
+          // le Biofermenteur possède réellement une place libre.
+          ..organicProductionRemainder = whole == requested ? exact - whole : 0
           ..lastProductionResolvedAt = current
           ..updatedAt = current;
         // La production passive attend désormais dans le réservoir du
@@ -9918,7 +9934,11 @@ class Zone0GameState extends ChangeNotifier {
         final finishedAt = zone.lithocultureCycleStartedAt!.add(
           Duration(minutes: config.lithocultureCycleMinutes),
         );
-        if (finishedAt.isAfter(current)) break;
+        if (finishedAt.isAfter(current) ||
+            zone.organicReserve + config.lithocultureOrganicPerCycle >
+                biofermenterOrganicReserveCapacity(biome)) {
+          break;
+        }
         zone.organicReserve += config.lithocultureOrganicPerCycle;
         zone.lithocultureCycleStartedAt = null;
         if (zone.lithocultureMineralTank >=
@@ -9928,7 +9948,9 @@ class Zone0GameState extends ChangeNotifier {
         }
       }
       if (zone.lithocultureCycleStartedAt == null &&
-          zone.lithocultureMineralTank >= config.lithocultureMineralPerCycle) {
+          zone.lithocultureMineralTank >= config.lithocultureMineralPerCycle &&
+          zone.organicReserve + config.lithocultureOrganicPerCycle <=
+              biofermenterOrganicReserveCapacity(biome)) {
         zone.lithocultureMineralTank -= config.lithocultureMineralPerCycle;
         zone.lithocultureCycleStartedAt = current;
       }

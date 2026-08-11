@@ -703,11 +703,16 @@ function craftIngredients(recipe) {
   return Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
 }
 
-function craftMaterialOptions(selected = "") {
+function craftMaterialOptions(selected = "", includeWater = false) {
   const recipeOutputs = (zone0Settings.craft?.recipes || [])
     .map((recipe) => recipe.resultItem)
     .filter(Boolean);
-  const materials = [...new Set(["Organique", "Minéral", "Débris", "Eau", ...recipeOutputs, selected])];
+  const materials = [...new Set([
+    "Organique", "Minéral", "Déchets", "Mycélium",
+    ...(includeWater ? ["Eau"] : []),
+    ...recipeOutputs,
+    selected,
+  ])];
   return [`<option value="">Aucun</option>`, ...materials.map((material) =>
     `<option value="${escapeHtml(material)}" ${material === selected ? "selected" : ""}>${escapeHtml(material)}</option>`
   )].join("");
@@ -720,10 +725,15 @@ function renderCraftConfig() {
       .map((item) => `${escapeHtml(item.amount)} ${escapeHtml(item.resource)}`).join(" + ");
     const section = recipe.craftSection === "atelier" ? "Atelier" : "Cuisine";
     const stackLimit = craftNumber(recipe.stackLimit || 1, 1);
-    const ingredientFields = [0, 1, 2].map((slot) => {
-      const ingredient = craftIngredients(recipe)[slot] || { resource: "", amount: 0 };
-      return `<div class="stat-field"><label>Ingrédient ${slot + 1}</label><select data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="resource">${craftMaterialOptions(ingredient.resource)}</select></div><div class="stat-field"><label>Quantité ${slot + 1}</label><input type="number" min="0" data-craft-index="${index}" data-craft-ingredient="${slot}" data-craft-part="amount" value="${escapeHtml(ingredient.amount)}"></div>`;
+    const recipeResourceFields = (field, label, includeWater = false) => [0, 1, 2].map((slot) => {
+      const resources = Array.isArray(recipe[field]) ? recipe[field] : [];
+      const ingredient = resources[slot] || { resource: "", amount: 0 };
+      return `<div class="stat-field"><label>${label} ${slot + 1}</label><select data-craft-index="${index}" data-craft-resource-field="${field}" data-craft-ingredient="${slot}" data-craft-part="resource">${craftMaterialOptions(ingredient.resource, includeWater)}</select></div><div class="stat-field"><label>Quantité ${label.toLowerCase()} ${slot + 1}</label><input type="number" min="0" data-craft-index="${index}" data-craft-resource-field="${field}" data-craft-ingredient="${slot}" data-craft-part="amount" value="${escapeHtml(ingredient.amount)}"></div>`;
     }).join("");
+    const ingredientFields = recipeResourceFields("ingredients", "Ingrédient");
+    const contextIngredients = Object.entries(recipe.contextIngredients || {}).map(([resource, amount]) => ({ resource, amount }));
+    recipe.contextIngredients = contextIngredients;
+    const contextFields = recipeResourceFields("contextIngredients", "Contexte", true);
     return `<details class="config-card craft-card">
       <summary><span><strong>${escapeHtml(recipe.displayName || recipe.resultItem)}</strong><small>${section} · ${ingredients || "sans ingrédient"} → ${escapeHtml(recipe.resultAmount || 1)} ${escapeHtml(recipe.resultItem)} · ${recipe.patternRequired === false ? "sans Pattern" : "Pattern requis"}</small></span><span class="pill">pile ${stackLimit}</span></summary>
       <div class="stat-form config-card-body">
@@ -734,9 +744,20 @@ function renderCraftConfig() {
         <div class="stat-field"><label>Durée (minutes)</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="durationMinutes" value="${escapeHtml(recipe.durationMinutes || 1)}"></div>
         <div class="stat-field"><label>Taille maximale d'une pile</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="stackLimit" value="${stackLimit}"></div>
         ${ingredientFields}
+        ${contextFields}
         <label class="toggle-field"><input type="checkbox" data-craft-index="${index}" data-craft-field="patternRequired" ${recipe.patternRequired === false ? "" : "checked"}>Pattern requis</label>
+        <label class="toggle-field"><input type="checkbox" data-craft-index="${index}" data-craft-field="isConsumable" ${recipe.isConsumable ? "checked" : ""}>Objet consommable</label>
+        <label class="toggle-field"><input type="checkbox" data-craft-index="${index}" data-craft-field="isEquipment" ${recipe.isEquipment ? "checked" : ""}>Équipement</label>
         <div class="stat-field"><label>Niveau Cuisine</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="cuisineLevel" value="${craftNumber(recipe.cuisineLevel)}"></div>
         <div class="stat-field"><label>Niveau Atelier</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="atelierLevel" value="${craftNumber(recipe.atelierLevel)}"></div>
+        <div class="stat-field"><label>Niveau de confiance Kernel</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="kernelTrustLevel" value="${craftNumber(recipe.kernelTrustLevel, 1)}"></div>
+        <div class="stat-field"><label>Niveau Éleveur</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="breederLevel" value="${craftNumber(recipe.breederLevel, 1)}"></div>
+        <div class="stat-field"><label>Niveau Bâtisseur</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="builderLevel" value="${craftNumber(recipe.builderLevel, 1)}"></div>
+        <div class="stat-field"><label>Niveau Restaurateur</label><input type="number" min="1" data-craft-index="${index}" data-craft-field="restorerLevel" value="${craftNumber(recipe.restorerLevel, 1)}"></div>
+        <div class="stat-field"><label>Faim restaurée</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="hungerRestore" value="${craftNumber(recipe.hungerRestore)}"></div>
+        <div class="stat-field"><label>Vitalité restaurée</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="vitalityRestore" value="${craftNumber(recipe.vitalityRestore)}"></div>
+        <div class="stat-field"><label>Coût Énergie</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="energyCost" value="${craftNumber(recipe.energyCost)}"></div>
+        <div class="stat-field"><label>Coût Bio-batteries</label><input type="number" min="0" data-craft-index="${index}" data-craft-field="bioBatteryCost" value="${craftNumber(recipe.bioBatteryCost)}"></div>
         <div class="stat-field stat-field-wide"><button class="ghost" type="button" data-delete-craft="${index}" ${recipe.id === "simpleMeal" ? "disabled" : ""}>${recipe.id === "simpleMeal" ? "Recette de départ" : "Supprimer la recette"}</button></div>
       </div>
     </details>`;
@@ -746,13 +767,17 @@ function renderCraftConfig() {
       const recipe = zone0Settings.craft.recipes[Number(input.dataset.craftIndex)];
       if (input.dataset.craftIngredient !== undefined) {
         const slot = Number(input.dataset.craftIngredient);
-        recipe.ingredients = craftIngredients(recipe);
-        recipe.ingredients[slot] ||= { resource: "", amount: 0 };
-        recipe.ingredients[slot][input.dataset.craftPart] = input.dataset.craftPart === "amount" ? craftNumber(input.value) : input.value;
-        recipe.ingredients = recipe.ingredients.filter((item) => item.resource && craftNumber(item.amount) > 0);
+        const field = input.dataset.craftResourceField || "ingredients";
+        recipe[field] = Array.isArray(recipe[field]) ? recipe[field] : [];
+        recipe[field][slot] ||= { resource: "", amount: 0 };
+        recipe[field][slot][input.dataset.craftPart] = input.dataset.craftPart === "amount" ? craftNumber(input.value) : input.value;
+        recipe[field] = recipe[field].filter((item) => item.resource && craftNumber(item.amount) > 0);
       } else {
         const field = input.dataset.craftField;
-        recipe[field] = input.type === "number" ? craftNumber(input.value, field === "cuisineLevel" || field === "atelierLevel" ? 0 : 1) : input.value;
+        recipe[field] = input.type === "checkbox" ? input.checked : input.type === "number" ? craftNumber(input.value, field === "cuisineLevel" || field === "atelierLevel" || field === "hungerRestore" || field === "vitalityRestore" || field === "energyCost" || field === "bioBatteryCost" ? 0 : 1) : input.value;
+      }
+      if (Array.isArray(recipe.contextIngredients)) {
+        recipe.contextIngredients = Object.fromEntries(recipe.contextIngredients.map((item) => [item.resource, craftNumber(item.amount)]));
       }
       el.craftStatus.textContent = "Modifications en attente. Clique sur Publier dans l'app.";
     };
@@ -925,7 +950,14 @@ async function loadZone0Settings() {
     }
     if (Array.isArray(published?.craft?.recipes)) {
       const baselineById = new Map((base.craft?.recipes || []).map((recipe) => [recipe.id, recipe]));
-      zone0Settings.craft.recipes = published.craft.recipes.map((recipe) => mergeConfig(baselineById.get(recipe.id) || {}, recipe));
+      const publishedRecipes = published.craft.recipes.map((recipe) => mergeConfig(baselineById.get(recipe.id) || {}, recipe));
+      const publishedIds = new Set(publishedRecipes.map((recipe) => recipe.id));
+      // Une publication ancienne ne doit jamais masquer les recettes ajoutées
+      // ensuite dans l'application ou dans le JSON versionné.
+      zone0Settings.craft.recipes = [
+        ...publishedRecipes,
+        ...(base.craft?.recipes || []).filter((recipe) => !publishedIds.has(recipe.id)),
+      ];
     }
     if (Array.isArray(published?.kernel?.missions)) {
       const baselineById = new Map((base.kernel?.missions || []).map((mission) => [mission.id, mission]));

@@ -6486,6 +6486,8 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
     final forestProject = state.projectFor(forestTarget);
     final networkProject = state.projectFor(networkTarget);
     final label = lisiereForageConfig.biomes[biome]!.label;
+    final organicReserveCapacity =
+        state.biofermenterOrganicReserveCapacity(biome);
     return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
       Text('Bâtiment territorial',
           style: Theme.of(context)
@@ -6532,6 +6534,24 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                           style: const TextStyle(fontWeight: FontWeight.w900)),
                       Text(
                           'Production passive : ${state.biofermenterOrganicPerDay(biome).toStringAsFixed(1)} Organique/jour'),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Réserve organique : ${zone.organicReserve}/$organicReserveCapacity',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 3),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          minHeight: 9,
+                          value: organicReserveCapacity == 0
+                              ? 0
+                              : (zone.organicReserve / organicReserveCapacity)
+                                  .clamp(0, 1),
+                          color: Colors.grey.shade600,
+                          backgroundColor: Colors.grey.shade300,
+                        ),
+                      ),
                       Text(
                           'Lithoculture : ${state.lithocultureMineralPerCycle} Minéral → ${state.lithocultureOrganicPerCycle} Organique · 1 h/cycle'),
                       Text(
@@ -6687,7 +6707,7 @@ class _LisiereBuildingsMap extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
-                childAspectRatio: .95,
+                childAspectRatio: .78,
                 crossAxisSpacing: 7,
                 mainAxisSpacing: 7,
               ),
@@ -6712,60 +6732,96 @@ class _LisiereBuildingsMap extends StatelessWidget {
                       ? Theme.of(context).colorScheme.surfaceContainerLow
                       : Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    onTap: unlocked ? () => onOpen(biome) : null,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: <Widget>[
-                          Icon(
-                            unlocked
-                                ? built
-                                    ? Icons.eco_outlined
-                                    : Icons.add_home_work_outlined
-                                : Icons.lock_outline,
-                            color: built
-                                ? Theme.of(context).colorScheme.primary
-                                : null,
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            label,
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
+                  child: Stack(children: <Widget>[
+                    InkWell(
+                      onTap: unlocked ? () => onOpen(biome) : null,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(6, 12, 6, 6),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            Icon(
+                              unlocked
+                                  ? built
+                                      ? Icons.inventory_2_outlined
+                                      : Icons.add_home_work_outlined
+                                  : Icons.lock_outline,
+                              color: built
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
                             ),
-                          ),
-                          Text(
-                            !unlocked
-                                ? 'Bientôt disponible'
-                                : built
-                                    ? 'Biofermenteur niv. ${zone.buildingLevel}'
-                                    : 'Emplacement libre',
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          if (unlocked &&
-                              zone.terrainTags.contains('mineralBasin'))
-                            const Text(
-                              'Bassin minéral',
+                            const SizedBox(height: 3),
+                            Text(
+                              label,
                               textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 9),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
-                        ],
+                            Text(
+                              !unlocked
+                                  ? 'Bientôt disponible'
+                                  : built
+                                      ? 'Biofermenteur niv. ${zone.buildingLevel}'
+                                      : 'Emplacement libre',
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (built)
+                              TextButton(
+                                onPressed: () => onOpen(biome),
+                                style: TextButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  minimumSize: const Size(0, 28),
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 8),
+                                ),
+                                child: const Text('Entrer'),
+                              ),
+                            if (unlocked &&
+                                zone.terrainTags.contains('mineralBasin'))
+                              const Text(
+                                'Bassin minéral',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 9),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+                    if (built)
+                      Positioned(
+                        top: 5,
+                        left: 5,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            child: Text(
+                              '${zone.organicReserve}',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onPrimary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ]),
                 );
               },
             ),
