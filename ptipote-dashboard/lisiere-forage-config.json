@@ -187,6 +187,7 @@
       "passiveProductionMultiplier": 1,
       "vatCount": 1,
       "vatEfficiencyMultiplier": 1,
+      "lithoculture": {"mineralPerCycle": 10, "organicPerCycle": 3, "cycleMinutes": 60},
       "normalMineralPerOrganic": 3,
       "mineralBasinMineralPerOrganic": 2,
       "wasteCanReplaceMineral": true,

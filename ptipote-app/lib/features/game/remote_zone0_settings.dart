@@ -203,22 +203,15 @@ WasteRecyclerConfig _wasteRecycler(Object? value) {
         _int(raw['standardOrganicRatio'], base.standardOrganicRatio),
     standardMineralRatio:
         _int(raw['standardMineralRatio'], base.standardMineralRatio),
-    standardOtherRatio:
-        _int(raw['standardOtherRatio'], base.standardOtherRatio),
+    // Water is contextual to Cuisine and must never come back as an
+    // inventory output through an older remote Dashboard document.
+    standardOtherRatio: 0,
     biologicalOrganicRatio:
         _int(raw['biologicalOrganicRatio'], base.biologicalOrganicRatio),
     biologicalMineralRatio:
         _int(raw['biologicalMineralRatio'], base.biologicalMineralRatio),
-    biologicalOtherRatio:
-        _int(raw['biologicalOtherRatio'], base.biologicalOtherRatio),
-    // Mycélium is intentionally excluded from Recycler outputs. Old remote
-    // configurations are normalized on read instead of being allowed to keep
-    // producing the legacy third output.
-    otherOutputResource:
-        _string(raw['otherOutputResource'], base.otherOutputResource) ==
-                'Mycélium'
-            ? 'Eau'
-            : _string(raw['otherOutputResource'], base.otherOutputResource),
+    biologicalOtherRatio: 0,
+    otherOutputResource: 'Autre',
     biologicalOrientationModuleCost: <String, int>{
       for (final entry in base.biologicalOrientationModuleCost.entries)
         entry.key: _int(orientationCost?[entry.key], entry.value),
@@ -1584,6 +1577,7 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
   final forest = _map(bio?['edibleForest']);
   final network = _map(bio?['mycelialNetwork']);
   final scarabe = _map(bio?['futureScarabeHook']);
+  final lithoculture = _map(bio?['lithoculture']);
   final durations = _map(bio?['constructionMinutesByLevel']);
   return LisiereTerritoryBuildingsConfig(
     slotsPerZone: _int(raw?['slotsPerZone'], base.slotsPerZone),
@@ -1610,6 +1604,18 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
       vatCount: _int(bio?['vatCount'], baseBio.vatCount),
       vatEfficiencyMultiplier: _double(
           bio?['vatEfficiencyMultiplier'], baseBio.vatEfficiencyMultiplier),
+      lithocultureMineralPerCycle: _int(
+        lithoculture?['mineralPerCycle'],
+        baseBio.lithocultureMineralPerCycle,
+      ),
+      lithocultureOrganicPerCycle: _int(
+        lithoculture?['organicPerCycle'],
+        baseBio.lithocultureOrganicPerCycle,
+      ),
+      lithocultureCycleMinutes: _int(
+        lithoculture?['cycleMinutes'],
+        baseBio.lithocultureCycleMinutes,
+      ),
       normalMineralPerOrganic: _int(
           bio?['normalMineralPerOrganic'], baseBio.normalMineralPerOrganic),
       mineralBasinMineralPerOrganic: _int(bio?['mineralBasinMineralPerOrganic'],
@@ -2387,11 +2393,12 @@ MarketConfig _market(Object? value) {
       raw['requestMaxReturnMinutes'],
       b.requestMaxReturnMinutes,
     ),
-    saleValues: _resourceMap(raw['saleValues'], b.saleValues),
-    salePriceBioPiles: _resourceMap(
+    saleValues: (_resourceMap(raw['saleValues'], b.saleValues)..remove('Eau')),
+    salePriceBioPiles: (_resourceMap(
       raw['salePriceBioPiles'],
       b.salePriceBioPiles,
-    ).map((key, value) => MapEntry(key, value.clamp(0, 99).toInt())),
+    )..remove('Eau'))
+        .map((key, value) => MapEntry(key, value.clamp(0, 99).toInt())),
     maxActiveRequestsBonusPerLevel: _int(
       raw['maxActiveRequestsBonusPerLevel'],
       b.maxActiveRequestsBonusPerLevel,

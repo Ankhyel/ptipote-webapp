@@ -107,24 +107,29 @@ const WasteRecyclerConfig defaultWasteRecyclerConfig = WasteRecyclerConfig(
   pendingWasteCapacity: 100,
   cycleMinutesByLevel: <int, int>{1: 20, 2: 18, 3: 16, 4: 14, 5: 12},
   outputSplits: <RecyclerOutputSplit>[
-    RecyclerOutputSplit(7, 3),
-    RecyclerOutputSplit(6, 4),
-    RecyclerOutputSplit(5, 5),
-    RecyclerOutputSplit(4, 6),
+    // Each standard cycle chooses one of these matter-only distributions.
+    // The 20/80 to 50/50 range is mirrored by the resolver so either
+    // Organique or Minéral can be the dominant material.
+    RecyclerOutputSplit(2, 8),
     RecyclerOutputSplit(3, 7),
+    RecyclerOutputSplit(4, 6),
+    RecyclerOutputSplit(5, 5),
   ],
   wastePerResidentPerDay: .5,
   wastePerPtibotePerDay: .25,
   wastePerPtibugPerDay: .1,
   wasteHistoryRetentionDays: 7,
-  standardOrganicRatio: 40,
-  standardMineralRatio: 40,
-  standardOtherRatio: 20,
-  biologicalOrganicRatio: 60,
-  biologicalMineralRatio: 20,
-  biologicalOtherRatio: 20,
-  // Mycélium has dedicated biological sources and is never a Recycler output.
-  otherOutputResource: 'Eau',
+  standardOrganicRatio: 50,
+  standardMineralRatio: 50,
+  standardOtherRatio: 0,
+  // The biological orientation is the explicit exception: it weights the
+  // same material-only output towards Organique.
+  biologicalOrganicRatio: 70,
+  biologicalMineralRatio: 30,
+  biologicalOtherRatio: 0,
+  // Retained for backwards-compatible batch snapshots only. No current
+  // recycler output uses a third resource.
+  otherOutputResource: 'Autre',
   biologicalOrientationModuleCost: <String, int>{
     'Organique': 10,
     'Minéral': 10,

@@ -2590,8 +2590,12 @@ class Zone0GameState extends ChangeNotifier {
     return true;
   }
 
+  /// Neuf emplacements sont nécessaires dès l'arrivée : repas, tenue,
+  /// consommables et outils personnels ne doivent pas se concurrencer.
+  /// Le bonus existant reste conservé pour les anciennes sauvegardes qui ont
+  /// déjà bénéficié de l'agrandissement gratuit.
   int residentInventorySlotsFor(Zone0Resident resident) =>
-      3 + resident.inventorySlotBonus;
+      9 + resident.inventorySlotBonus;
 
   Zone0ActionResult expandResidentInventory(String residentId) {
     final resident =
@@ -4824,6 +4828,7 @@ class Zone0GameState extends ChangeNotifier {
     return shop.distributor ??= MarketDistributorState()
       ..type = switch (shop.specialization) {
         'restaurant' => MarketDistributorType.food,
+        'wholesale' => MarketDistributorType.resources,
         // Le type est un libellé historique ; l'acceptation utilise toujours
         // la spécialisation réelle de la boutique ci-dessous.
         _ => MarketDistributorType.general,
@@ -6766,8 +6771,13 @@ class Zone0GameState extends ChangeNotifier {
     // spécialisés persistés. Les créer avant toute réservation garde le
     // compteur affiché et les emplacements réellement utilisables alignés.
     _migrateMarketShopSlots(DateTime.now());
-    if (!const <String>{'restaurant', 'home', 'equipment', 'ptibug'}
-        .contains(specialization)) {
+    if (!const <String>{
+      'restaurant',
+      'home',
+      'equipment',
+      'ptibug',
+      'wholesale',
+    }.contains(specialization)) {
       return const Zone0ActionResult(
           success: false, message: 'Spécialisation invalide.');
     }
@@ -9147,9 +9157,8 @@ class Zone0GameState extends ChangeNotifier {
     if (_marketPTibugSpecies(item) != null || _isMarketMatrixResource(item)) {
       return 'Magasin P’TIBUG';
     }
-    if (const <String>{'Organique', 'Minéral', 'Déchets', 'Mycélium', 'Eau'}
-        .contains(item)) {
-      return 'Magasin du foyer';
+    if (const <String>{'Organique', 'Minéral', 'Mycélium'}.contains(item)) {
+      return 'Grossiste';
     }
     final category = _residentItemCategory(item);
     return switch (category) {
@@ -9783,19 +9792,22 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Zone0ActionResult retrieveRecyclerOutput() {
+    // A legacy save can still contain the retired third Recycler output.
+    // Keep that quantity by folding it into Minéral before retrieval.
+    if (recyclerOutputOther > 0) {
+      recyclerOutputMineral += recyclerOutputOther;
+      recyclerOutputOther = 0;
+    }
     final rewards = <String, int>{
       'Organique': recyclerOutputOrganic,
       'Minéral': recyclerOutputMineral,
-      wasteRecyclerConfig.otherOutputResource: recyclerOutputOther,
     };
     final result = addResources(rewards);
     final organicLeft = result.pending['Organique'] ?? 0;
     final mineralLeft = result.pending['Minéral'] ?? 0;
-    final otherLeft =
-        result.pending[wasteRecyclerConfig.otherOutputResource] ?? 0;
     recyclerOutputOrganic = organicLeft;
     recyclerOutputMineral = mineralLeft;
-    recyclerOutputOther = otherLeft;
+    recyclerOutputOther = 0;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -9876,29 +9888,110 @@ class Zone0GameState extends ChangeNotifier {
     for (final biome in ForageBiome.values) {
       final zone = territoryZone(biome);
       if (zone.buildingId != 'biofermenter') continue;
+      final config = lisiereForageConfig.territoryBuildings.biofermenter;
       final last = zone.lastProductionResolvedAt ?? current;
       final elapsedHours = current.difference(last).inMilliseconds /
           Duration.millisecondsPerHour;
-      if (elapsedHours <= 0) continue;
-      final exact = elapsedHours * biofermenterOrganicPerDay(biome) / 24 +
-          zone.organicProductionRemainder;
-      final whole = exact.floor();
-      zone
-        ..organicProductionRemainder = exact - whole
-        ..lastProductionResolvedAt = current
-        ..updatedAt = current;
-      if (whole > 0) addResources(<String, int>{'Organique': whole});
-      final myceliumExact =
-          elapsedHours * biofermenterMyceliumPerDay(biome) / 24 +
-              zone.myceliumProductionRemainder;
-      final myceliumWhole = myceliumExact.floor();
-      zone.myceliumProductionRemainder = myceliumExact - myceliumWhole;
-      if (myceliumWhole > 0) {
-        addResources(<String, int>{'Mycélium': myceliumWhole});
+      if (elapsedHours > 0) {
+        final exact = elapsedHours * biofermenterOrganicPerDay(biome) / 24 +
+            zone.organicProductionRemainder;
+        final whole = exact.floor();
+        zone
+          ..organicProductionRemainder = exact - whole
+          ..lastProductionResolvedAt = current
+          ..updatedAt = current;
+        // La production passive attend désormais dans le réservoir du
+        // Biofermenteur, comme une réserve P'TIBUG : elle n'est jamais versée
+        // automatiquement dans l'inventaire global.
+        if (whole > 0) zone.organicReserve += whole;
+        final myceliumExact =
+            elapsedHours * biofermenterMyceliumPerDay(biome) / 24 +
+                zone.myceliumProductionRemainder;
+        final myceliumWhole = myceliumExact.floor();
+        zone.myceliumProductionRemainder = myceliumExact - myceliumWhole;
+        if (myceliumWhole > 0) {
+          addResources(<String, int>{'Mycélium': myceliumWhole});
+        }
+        changed = true;
       }
-      changed = true;
+      while (zone.lithocultureCycleStartedAt != null) {
+        final finishedAt = zone.lithocultureCycleStartedAt!.add(
+          Duration(minutes: config.lithocultureCycleMinutes),
+        );
+        if (finishedAt.isAfter(current)) break;
+        zone.organicReserve += config.lithocultureOrganicPerCycle;
+        zone.lithocultureCycleStartedAt = null;
+        if (zone.lithocultureMineralTank >=
+            config.lithocultureMineralPerCycle) {
+          zone.lithocultureMineralTank -= config.lithocultureMineralPerCycle;
+          zone.lithocultureCycleStartedAt = finishedAt;
+        }
+      }
+      if (zone.lithocultureCycleStartedAt == null &&
+          zone.lithocultureMineralTank >= config.lithocultureMineralPerCycle) {
+        zone.lithocultureMineralTank -= config.lithocultureMineralPerCycle;
+        zone.lithocultureCycleStartedAt = current;
+      }
+      changed = changed || zone.lithocultureCycleStartedAt != null;
     }
     return changed;
+  }
+
+  int get lithocultureMineralPerCycle => lisiereForageConfig
+      .territoryBuildings.biofermenter.lithocultureMineralPerCycle;
+  int get lithocultureOrganicPerCycle => lisiereForageConfig
+      .territoryBuildings.biofermenter.lithocultureOrganicPerCycle;
+
+  Zone0ActionResult transferMineralToLithoculture(
+    ForageBiome biome,
+    int amount,
+  ) {
+    final zone = territoryZone(biome);
+    if (zone.buildingId != 'biofermenter' || amount <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Biofermenteur indisponible.',
+      );
+    }
+    final moved = math.min(amount, resourceAmount('Minéral'));
+    if (moved <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Minéral insuffisant.',
+      );
+    }
+    removeResources(<String, int>{'Minéral': moved});
+    zone
+      ..lithocultureMineralTank += moved
+      ..updatedAt = DateTime.now();
+    resolveBiofermenterProduction();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '$moved Minéral versé dans la cuve de Lithoculture.',
+    );
+  }
+
+  Zone0ActionResult retrieveBiofermenterOrganic(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    if (zone.buildingId != 'biofermenter' || zone.organicReserve <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucun Organique à récolter.',
+      );
+    }
+    final result =
+        addResources(<String, int>{'Organique': zone.organicReserve});
+    zone.organicReserve = result.pending['Organique'] ?? 0;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: result.addedAny,
+      message: result.hasPending
+          ? 'Inventaire plein : l’Organique reste dans le Biofermenteur.'
+          : 'Organique récolté.',
+    );
   }
 
   int getLithocultureMineralCostPerOrganic(ForageBiome biome) =>
@@ -9927,23 +10020,11 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
-  bool runLithoculture(ForageBiome biome, int organicAmount) {
-    final zone = territoryZone(biome);
-    if (zone.buildingId != 'biofermenter' || organicAmount <= 0) return false;
-    final preview = lithoculturePreview(biome, organicAmount);
-    if (!hasResources(<String, int>{
-      'Minéral': preview.mineralCost,
-      'Déchets': preview.wasteCost
-    })) return false;
-    removeResources(<String, int>{
-      'Minéral': preview.mineralCost,
-      'Déchets': preview.wasteCost
-    });
-    addResources(<String, int>{'Organique': preview.organicOutput});
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
-    return true;
-  }
+  /// Compatibilité avec les anciens appelants : la Lithoculture ne crédite
+  /// plus jamais l'inventaire directement. La quantité correspond maintenant
+  /// au Minéral versé dans sa cuve.
+  bool runLithoculture(ForageBiome biome, int mineralAmount) =>
+      transferMineralToLithoculture(biome, mineralAmount).success;
 
   String _wasteDayKey(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
@@ -10050,17 +10131,30 @@ class Zone0GameState extends ChangeNotifier {
     return true;
   }
 
-  List<int> _recyclerRatios() => recyclerBiologicalOrientationActive
-      ? <int>[
-          wasteRecyclerConfig.biologicalOrganicRatio,
-          wasteRecyclerConfig.biologicalMineralRatio,
-          wasteRecyclerConfig.biologicalOtherRatio,
-        ]
-      : <int>[
-          wasteRecyclerConfig.standardOrganicRatio,
-          wasteRecyclerConfig.standardMineralRatio,
-          wasteRecyclerConfig.standardOtherRatio,
-        ];
+  List<int> _recyclerRatios() {
+    if (recyclerBiologicalOrientationActive) {
+      return <int>[
+        wasteRecyclerConfig.biologicalOrganicRatio,
+        wasteRecyclerConfig.biologicalMineralRatio,
+        0,
+      ];
+    }
+    final splits = wasteRecyclerConfig.outputSplits;
+    if (splits.isEmpty) {
+      return <int>[
+        wasteRecyclerConfig.standardOrganicRatio,
+        wasteRecyclerConfig.standardMineralRatio,
+        0,
+      ];
+    }
+    final split = splits[_random.nextInt(splits.length)];
+    final reverse = _random.nextBool();
+    return <int>[
+      (reverse ? split.mineral : split.organic) * 10,
+      (reverse ? split.organic : split.mineral) * 10,
+      0,
+    ];
+  }
 
   bool resolveWasteAndRecycler({required int campHeartLevel, DateTime? now}) {
     final current = now ?? DateTime.now();
@@ -10080,7 +10174,6 @@ class Zone0GameState extends ChangeNotifier {
     var completedCycles = 0;
     var producedOrganic = 0;
     var producedMineral = 0;
-    var producedOther = 0;
     while (recyclerCycleStartedAt != null) {
       final finishedAt = recyclerCycleStartedAt!.add(
         Duration(minutes: wasteRecyclerConfig.cycleMinutes(recyclerLevel)),
@@ -10089,15 +10182,15 @@ class Zone0GameState extends ChangeNotifier {
       final ratios = recyclerActiveBatch?.ratios ?? _recyclerRatios();
       final units = wasteRecyclerConfig.outputResourcesPerCycle;
       final organic = units * ratios[0] ~/ 100;
-      final mineral = units * ratios[1] ~/ 100;
-      final other = units - organic - mineral;
+      // Old 40/40/20 snapshots are resolved as matter-only output: the
+      // retired third share is credited as Minéral instead of Eau.
+      final mineral = units - organic;
       recyclerOutputOrganic += organic;
       recyclerOutputMineral += mineral;
-      recyclerOutputOther += other;
+      recyclerOutputOther = 0;
       completedCycles += 1;
       producedOrganic += organic;
       producedMineral += mineral;
-      producedOther += other;
       recyclerCycleStartedAt = finishedAt;
       recyclerActiveBatch = null;
       changed = true;
@@ -10134,7 +10227,7 @@ class Zone0GameState extends ChangeNotifier {
           message: 'Recycleur : $completedCycles cycle(s) terminé(s). '
               'Déchets traités : ${completedCycles * recyclerWasteRequired}. '
               'Énergie consommée : ${completedCycles * wasteRecyclerConfig.energyCostPerCycle}. '
-              '+$producedOrganic Organique, +$producedMineral Minéral, +$producedOther ${wasteRecyclerConfig.otherOutputResource}.',
+              '+$producedOrganic Organique, +$producedMineral Minéral.',
           sourceBuildingId: 'recycler',
           mailbox: Zone0MessageMailbox.fablab,
           subject: 'Fin de craft',
@@ -14093,6 +14186,15 @@ class Zone0GameState extends ChangeNotifier {
                   (stack) => stack.resource.isNotEmpty && stack.amount > 0,
                 ),
           );
+        // Eau is now contextual to Cuisine. Remove only this deprecated
+        // inventory representation; no other stack is touched.
+        final removedLegacyWater = inventory
+            .where((stack) => stack.resource == 'Eau')
+            .fold<int>(0, (total, stack) => total + stack.amount);
+        if (removedLegacyWater > 0) {
+          inventory.removeWhere((stack) => stack.resource == 'Eau');
+          unawaited(saveInventoryToFirebase());
+        }
       }
 
       final vitalityData = data['vitalityOverrides'];
@@ -16785,7 +16887,7 @@ class Zone0GameState extends ChangeNotifier {
 
   InventoryAddResult addResources(Map<String, int> rewards) {
     final pending = Map<String, int>.from(rewards)
-      ..removeWhere((_, amount) => amount <= 0);
+      ..removeWhere((resource, amount) => amount <= 0 || resource == 'Eau');
     var addedAny = false;
 
     for (final entry in pending.entries.toList()) {
@@ -18634,7 +18736,7 @@ extension MarketDistributorTypeLabel on MarketDistributorType {
 
   String get stockDescription => switch (this) {
         MarketDistributorType.resources =>
-          'Organique, Minéral, Déchets, Mycélium et Eau.',
+          'Organique, Minéral, Déchets et Mycélium.',
         MarketDistributorType.food => 'Aliments et consommables préparés.',
         MarketDistributorType.general =>
           'Matériaux transformés et produits de l’Atelier.',
@@ -18664,8 +18766,7 @@ class MarketDistributorState {
             'Organique',
             'Minéral',
             'Déchets',
-            'Mycélium',
-            'Eau'
+            'Mycélium'
           }.contains(resource),
         MarketDistributorType.food => craftConfig.recipes.any(
             (recipe) => recipe.resultItem == resource && recipe.isConsumable,
@@ -18674,8 +18775,7 @@ class MarketDistributorState {
               'Organique',
               'Minéral',
               'Déchets',
-              'Mycélium',
-              'Eau'
+              'Mycélium'
             }.contains(resource) &&
             !craftConfig.recipes.any(
               (recipe) => recipe.resultItem == resource && recipe.isConsumable,
@@ -19051,17 +19151,12 @@ class MarketShop {
         'restaurant' => craftConfig.recipes.any(
             (recipe) => recipe.resultItem == resource && recipe.isConsumable,
           ),
-        'home' || 'ameublement' => const <String>{
-              'Organique',
-              'Minéral',
-              'Déchets',
-              'Mycélium',
-              'Eau',
-            }.contains(resource) ||
-            resource.contains('Meuble') ||
+        'home' || 'ameublement' => resource.contains('Meuble') ||
             resource.contains('Ventilation') ||
             resource.contains('Lumière') ||
-            resource.contains('Cartouche'),
+            resource.contains('Cartouche') ||
+            resource.contains('Installation') ||
+            resource.contains('Kit de réparation'),
         'equipment' => craftConfig.recipes.any(
             (recipe) =>
                 recipe.resultItem == resource &&
@@ -19075,6 +19170,13 @@ class MarketShop {
             resource.startsWith('Capsule P’TIBUG ') ||
             resource == 'Matrice P’TIBUG' ||
             resource.startsWith('Matrice '),
+        // Le Grossiste est une spécialisation technique : il ne génère pas
+        // de demandes habitantes et sert pour l'instant au Sourcier.
+        'wholesale' => const <String>{
+            'Organique',
+            'Minéral',
+            'Mycélium',
+          }.contains(resource),
         // Compatibilité de lecture des anciennes sauvegardes : ce type ne
         // peut plus être choisi, mais son stock reste utilisable.
         'general' => true,
@@ -23077,6 +23179,9 @@ class LisiereTerritoryZone {
     this.vatCount = 1,
     this.vatEfficiencyMultiplier = 1,
     this.organicProductionRemainder = 0,
+    this.organicReserve = 0,
+    this.lithocultureMineralTank = 0,
+    this.lithocultureCycleStartedAt,
     this.myceliumProductionRemainder = 0,
     this.lastProductionResolvedAt,
     this.updatedAt,
@@ -23109,6 +23214,11 @@ class LisiereTerritoryZone {
             (data['vatEfficiencyMultiplier'] as num?)?.toDouble() ?? 1,
         organicProductionRemainder:
             (data['organicProductionRemainder'] as num?)?.toDouble() ?? 0,
+        organicReserve: ForageMission._readStaticInt(data['organicReserve']),
+        lithocultureMineralTank:
+            ForageMission._readStaticInt(data['lithocultureMineralTank']),
+        lithocultureCycleStartedAt:
+            ForageMission._readDate(data['lithocultureCycleStartedAt']),
         myceliumProductionRemainder:
             (data['myceliumProductionRemainder'] as num?)?.toDouble() ?? 0,
         lastProductionResolvedAt:
@@ -23125,6 +23235,9 @@ class LisiereTerritoryZone {
   int vatCount;
   double vatEfficiencyMultiplier;
   double organicProductionRemainder;
+  int organicReserve;
+  int lithocultureMineralTank;
+  DateTime? lithocultureCycleStartedAt;
   double myceliumProductionRemainder;
   DateTime? lastProductionResolvedAt;
   DateTime? updatedAt;
@@ -23139,6 +23252,11 @@ class LisiereTerritoryZone {
         'vatCount': vatCount,
         'vatEfficiencyMultiplier': vatEfficiencyMultiplier,
         'organicProductionRemainder': organicProductionRemainder,
+        'organicReserve': organicReserve,
+        'lithocultureMineralTank': lithocultureMineralTank,
+        'lithocultureCycleStartedAt': lithocultureCycleStartedAt == null
+            ? null
+            : Timestamp.fromDate(lithocultureCycleStartedAt!),
         'myceliumProductionRemainder': myceliumProductionRemainder,
         'lastProductionResolvedAt': lastProductionResolvedAt == null
             ? null

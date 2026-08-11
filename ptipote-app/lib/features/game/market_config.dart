@@ -247,7 +247,6 @@ const MarketConfig defaultMarketConfig = MarketConfig(
     'Cœur d’énergie': 20,
     'Déchets': 1,
     'Mycélium': 2,
-    'Eau': 1,
     'Chloro-canaux': 3,
     'Installation filtrante': 3,
     'Kit de réparation domestique': 2,

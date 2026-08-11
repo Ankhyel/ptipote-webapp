@@ -6426,7 +6426,7 @@ class _LisiereBuildingsTab extends StatefulWidget {
 
 class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
   late ForageBiome biome;
-  int lithocultureAmount = 1;
+  int lithocultureAmount = 10;
 
   @override
   void initState() {
@@ -6485,7 +6485,6 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
     final bioProject = state.projectFor(bioTarget);
     final forestProject = state.projectFor(forestTarget);
     final networkProject = state.projectFor(networkTarget);
-    final preview = state.lithoculturePreview(biome, lithocultureAmount);
     final label = lisiereForageConfig.biomes[biome]!.label;
     return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
       Text('Bâtiment territorial',
@@ -6534,7 +6533,7 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                       Text(
                           'Production passive : ${state.biofermenterOrganicPerDay(biome).toStringAsFixed(1)} Organique/jour'),
                       Text(
-                          'Lithoculture : ${state.getLithocultureMineralCostPerOrganic(biome)} Minéraux → 1 Organique${zone.terrainTags.contains('mineralBasin') ? ' · Bonus Bassin minéral' : ''}'),
+                          'Lithoculture : ${state.lithocultureMineralPerCycle} Minéral → ${state.lithocultureOrganicPerCycle} Organique · 1 h/cycle'),
                       Text(
                           'Forêt comestible : ${zone.edibleForestInstalled ? '+${(state.activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator * 100).round()} % · ${state.activePollinatorsForBiofermenter(biome)}/${config.maxPollinatorsCounted} Pollinisateurs' : 'non installée'}'),
                       Text(
@@ -6543,7 +6542,7 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                       const Text('Lithoculture',
                           style: TextStyle(fontWeight: FontWeight.w900)),
                       Text(
-                          'Obtenir $lithocultureAmount Organique : ${preview.mineralCost} Minéral + ${preview.wasteCost} Déchet'),
+                          'Cuve : ${zone.lithocultureMineralTank}/${state.lithocultureMineralPerCycle} Minéral${zone.lithocultureCycleStartedAt == null ? ' · en attente du seuil' : ' · cycle en cours : ${_countdownLabel(zone.lithocultureCycleStartedAt!.add(Duration(minutes: config.lithocultureCycleMinutes)))}'}'),
                       Wrap(
                         spacing: 8,
                         children: <int>[1, 5, 10]
@@ -6554,7 +6553,15 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                     () => lithocultureAmount = amount,
                                   ),
                                 ))
-                            .toList(),
+                            .toList()
+                          ..add(ChoiceChip(
+                            label: const Text('Max'),
+                            selected: false,
+                            onSelected: (_) => setState(
+                              () => lithocultureAmount =
+                                  state.resourceAmount('Minéral'),
+                            ),
+                          )),
                       ),
                       const SizedBox(height: 8),
                       Wrap(spacing: 8, children: <Widget>[
@@ -6605,18 +6612,32 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                 : 'Installer Réseau mycélien')),
                         FilledButton(
                             onPressed: () {
-                              final ok = state.runLithoculture(
+                              final result =
+                                  state.transferMineralToLithoculture(
                                 biome,
                                 lithocultureAmount,
                               );
                               setState(() {});
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                  content: Text(ok
-                                      ? '+$lithocultureAmount Organique obtenu.'
-                                      : 'Intrants insuffisants.')));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(result.message)));
                             },
-                            child: Text(
-                                'Lithoculture : ${preview.mineralCost} Minéral + ${preview.wasteCost} Déchet')),
+                            child: Text('Verser $lithocultureAmount Minéral')),
+                        OutlinedButton.icon(
+                          onPressed: zone.organicReserve <= 0
+                              ? null
+                              : () {
+                                  final result =
+                                      state.retrieveBiofermenterOrganic(biome);
+                                  setState(() {});
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(result.message)),
+                                  );
+                                },
+                          icon: const Icon(Icons.inventory_2_outlined),
+                          label: Text(
+                            'Récolter l’Organique (${zone.organicReserve})',
+                          ),
+                        ),
                       ]),
                     ],
                   ]))),
@@ -7826,9 +7847,8 @@ class _BuildingViabilityCard extends StatelessWidget {
           .showSnackBar(SnackBar(content: Text(message)));
 }
 
-/// Mini-jeu volontairement court : les tuiles sont des segments de conduite
-/// tournés de 90° par pression. Lorsque les neuf raccords sont alignés, le
-/// circuit entre l'entrée et la sortie est réparé.
+/// Chaque réparation gratuite lance avec la même probabilité un réseau de
+/// tuyaux 3×3 ou un raccordement de câbles colorés.
 class _PipeRepairGameSheet extends StatefulWidget {
   const _PipeRepairGameSheet({required this.onSolved});
 
@@ -7839,41 +7859,100 @@ class _PipeRepairGameSheet extends StatefulWidget {
 }
 
 class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
-  // Les quatre dernières rotations forment le raccordement gauche → droite.
+  static const Color _circuitColor = Color(0xff54724A);
+  static const List<bool> _pipeIsCorner = <bool>[
+    true,
+    false,
+    true,
+    true,
+    true,
+    false,
+    true,
+    false,
+    true,
+  ];
+  static const List<String> _cableColors = <String>['rouge', 'bleu', 'jaune'];
+  static const Map<String, Color> _cableColorValues = <String, Color>{
+    'rouge': Color(0xffC84A45),
+    'bleu': Color(0xff3877C8),
+    'jaune': Color(0xffD5A726),
+  };
+
+  late final bool _isCableGame;
   final List<int> _rotations = <int>[1, 2, 3, 1, 2, 3, 1, 2, 3];
+  final List<String> _socketOrder = <String>['jaune', 'rouge', 'bleu'];
+  final Map<String, String> _cableConnections = <String, String>{};
+  String? _selectedCable;
   bool _completed = false;
 
-  bool get _solved => _rotations.every((rotation) => rotation == 0);
+  @override
+  void initState() {
+    super.initState();
+    _isCableGame = math.Random().nextBool();
+  }
+
+  Set<int> _pipeConnections(int index) {
+    final base = _pipeIsCorner[index] ? const <int>{0, 1} : const <int>{0, 2};
+    return base.map((side) => (side + _rotations[index]) % 4).toSet();
+  }
+
+  bool get _pipeSolved {
+    const entryIndex = 3;
+    const exitIndex = 6;
+    if (!_pipeConnections(entryIndex).contains(3)) return false;
+    final pending = <int>[entryIndex];
+    final visited = <int>{entryIndex};
+    while (pending.isNotEmpty) {
+      final index = pending.removeLast();
+      final connections = _pipeConnections(index);
+      if (index == exitIndex && connections.contains(2)) return true;
+      final row = index ~/ 3;
+      final column = index % 3;
+      for (final side in connections) {
+        final nextRow = row + const <int>[-1, 0, 1, 0][side];
+        final nextColumn = column + const <int>[0, 1, 0, -1][side];
+        if (nextRow < 0 || nextRow >= 3 || nextColumn < 0 || nextColumn >= 3) {
+          continue;
+        }
+        final next = nextRow * 3 + nextColumn;
+        if (_pipeConnections(next).contains((side + 2) % 4) &&
+            visited.add(next)) {
+          pending.add(next);
+        }
+      }
+    }
+    return false;
+  }
+
+  bool get _cablesSolved =>
+      _cableConnections.length == _cableColors.length &&
+      _cableColors.every((color) => _cableConnections[color] == color);
+
+  bool get _solved => _isCableGame ? _cablesSolved : _pipeSolved;
+
+  void _finishRepair() {
+    final result = widget.onSolved();
+    setState(() => _completed = result.success);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(result.message)));
+    if (result.success) Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(22, 6, 22, 28),
           child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-            const Text('Raccorder les tuyaux',
+            Text(_isCableGame ? 'Raccorder les câbles' : 'Raccorder les tuyaux',
                 style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
             const Text(
-                'Tourne chaque segment de 90° pour relier l’entrée à la sortie.'),
+                'Tourne les segments ou relie chaque câble à la prise de la même couleur.'),
             const SizedBox(height: 16),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
-              const Icon(Icons.input, color: Color(0xff54724A)),
-              const SizedBox(width: 8),
-              ...List<Widget>.generate(3, (index) => _pipeTile(index)),
-              const SizedBox(width: 8),
-              const Icon(Icons.output, color: Color(0xff54724A)),
-            ]),
+            if (_isCableGame) _cableBoard() else _pipeBoard(),
             const SizedBox(height: 14),
             FilledButton.icon(
-              onPressed: _solved && !_completed
-                  ? () {
-                      final result = widget.onSolved();
-                      setState(() => _completed = result.success);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(result.message)));
-                      if (result.success) Navigator.of(context).pop();
-                    }
-                  : null,
+              onPressed: _solved && !_completed ? _finishRepair : null,
               icon: const Icon(Icons.build_circle_outlined),
               label: Text(
                   _completed ? 'Réparation terminée' : 'Valider le circuit'),
@@ -7882,28 +7961,128 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
         ),
       );
 
+  Widget _pipeBoard() => SizedBox(
+        width: 248,
+        child: Column(
+          children: <Widget>[
+            Row(children: <Widget>[
+              const Icon(Icons.input, color: _circuitColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: GridView.count(
+                  crossAxisCount: 3,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 5,
+                  mainAxisSpacing: 5,
+                  children: List<Widget>.generate(9, _pipeTile),
+                ),
+              ),
+            ]),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: EdgeInsets.only(left: 42, top: 4),
+                child: Icon(Icons.output, color: _circuitColor),
+              ),
+            ),
+          ],
+        ),
+      );
+
   Widget _pipeTile(int index) => InkWell(
         onTap: () =>
             setState(() => _rotations[index] = (_rotations[index] + 1) % 4),
         borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: 66,
-          height: 66,
-          decoration: BoxDecoration(
-            color: const Color(0xffE8E5DC),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xff807A68)),
-          ),
-          child: Transform.rotate(
-            angle: _rotations[index] * math.pi / 2,
-            child: Icon(
-              index == 1 ? Icons.turn_right : Icons.horizontal_rule,
-              size: 42,
-              color: const Color(0xff54724A),
+        child: AspectRatio(
+          aspectRatio: 1,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xffE8E5DC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xff807A68)),
+            ),
+            child: Transform.rotate(
+              angle: _rotations[index] * math.pi / 2,
+              child: Icon(
+                _pipeIsCorner[index]
+                    ? Icons.turn_right
+                    : Icons.vertical_align_center,
+                size: 36,
+                color: _circuitColor,
+              ),
             ),
           ),
         ),
       );
+
+  Widget _cableBoard() => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              children: _cableColors
+                  .map((color) => _cableEndpoint(color, isSource: true))
+                  .toList(),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 50),
+            child: Icon(Icons.compare_arrows, color: _circuitColor),
+          ),
+          Expanded(
+            child: Column(
+              children: _socketOrder
+                  .map((color) => _cableEndpoint(color, isSource: false))
+                  .toList(),
+            ),
+          ),
+        ],
+      );
+
+  String? _assignedCableForSocket(String socket) {
+    for (final entry in _cableConnections.entries) {
+      if (entry.value == socket) return entry.key;
+    }
+    return null;
+  }
+
+  Widget _cableEndpoint(String color, {required bool isSource}) {
+    final assignedCable = _assignedCableForSocket(color);
+    final selected = isSource && _selectedCable == color;
+    final connected =
+        isSource ? _cableConnections.containsKey(color) : assignedCable != null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          backgroundColor: selected
+              ? _cableColorValues[color]!.withValues(alpha: .18)
+              : null,
+          side: BorderSide(color: _cableColorValues[color]!),
+        ),
+        onPressed: () => setState(() {
+          if (isSource) {
+            _selectedCable = _selectedCable == color ? null : color;
+            return;
+          }
+          final cable = _selectedCable;
+          if (cable == null) return;
+          _cableConnections.remove(cable);
+          _cableConnections.removeWhere((_, target) => target == color);
+          _cableConnections[cable] = color;
+          _selectedCable = null;
+        }),
+        icon: Icon(isSource ? Icons.cable : Icons.power,
+            color: _cableColorValues[color]),
+        label: Text(
+          isSource
+              ? 'Câble $color${connected ? ' ✓' : ''}'
+              : 'Prise $color${connected ? ' ✓' : ''}',
+        ),
+      ),
+    );
+  }
 }
 
 class _StructuralInstallationSlots extends StatelessWidget {
@@ -13524,6 +13703,7 @@ class _MarketPageState extends State<MarketPage> {
       'home': 'Magasin du foyer',
       'equipment': 'Magasin d’équipement',
       'ptibug': 'Magasin P’TIBUG',
+      'wholesale': 'Grossiste',
       'general': 'Ancien magasin généraliste',
       'ameublement': 'Ancien magasin du foyer',
     };
@@ -13847,6 +14027,7 @@ class _MarketPageState extends State<MarketPage> {
                 'restaurant': 'Restaurant',
                 'home': 'Magasin du foyer',
                 'equipment': 'Magasin d’équipement',
+                'wholesale': 'Grossiste',
               }.entries)
                 ListTile(
                   title: Text(entry.value),
@@ -14182,6 +14363,7 @@ class _MarketPageState extends State<MarketPage> {
                 'restaurant': 'Restaurant',
                 'home': 'Magasin du foyer',
                 'equipment': 'Magasin d’équipement',
+                'wholesale': 'Grossiste',
               }.entries)
                 ListTile(
                   leading: const Icon(Icons.storefront_outlined),
@@ -17599,8 +17781,8 @@ class FablabRecyclerView extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(gameState.recyclerBiologicalOrientationActive
-                    ? 'Orientation biologique active : 60 % Organique · 20 % Minéral · 20 % ${wasteRecyclerConfig.otherOutputResource}'
-                    : 'Ratio standard : 40 % Organique · 40 % Minéral · 20 % ${wasteRecyclerConfig.otherOutputResource}'),
+                    ? 'Orientation biologique active : ${wasteRecyclerConfig.biologicalOrganicRatio} % Organique · ${wasteRecyclerConfig.biologicalMineralRatio} % Minéral'
+                    : 'Ratio aléatoire : 20 à 50 % Organique · le reste en Minéral (ou inversement).'),
                 OutlinedButton(
                   onPressed: () {
                     if (!gameState.recyclerBiologicalOrientationInstalled) {
@@ -17783,7 +17965,7 @@ class FablabRecyclerView extends StatelessWidget {
                   ),
                 const SizedBox(height: 8),
                 Text(
-                  'Sortie : ${gameState.recyclerOutputOrganic} Organique · ${gameState.recyclerOutputMineral} Minéral · ${gameState.recyclerOutputOther} ${wasteRecyclerConfig.otherOutputResource}',
+                  'Sortie : ${gameState.recyclerOutputOrganic} Organique · ${gameState.recyclerOutputMineral} Minéral',
                 ),
                 FilledButton(
                   onPressed: gameState.recyclerOutputAmount == 0

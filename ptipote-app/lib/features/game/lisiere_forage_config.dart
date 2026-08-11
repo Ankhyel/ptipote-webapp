@@ -107,6 +107,9 @@ class BiofermenterConfig {
     required this.passiveProductionMultiplier,
     required this.vatCount,
     required this.vatEfficiencyMultiplier,
+    required this.lithocultureMineralPerCycle,
+    required this.lithocultureOrganicPerCycle,
+    required this.lithocultureCycleMinutes,
     required this.normalMineralPerOrganic,
     required this.mineralBasinMineralPerOrganic,
     required this.wasteCanReplaceMineral,
@@ -136,6 +139,12 @@ class BiofermenterConfig {
   final double passiveProductionMultiplier;
   final int vatCount;
   final double vatEfficiencyMultiplier;
+
+  /// La Lithoculture utilise une cuve : chaque cycle consomme ce nombre de
+  /// Minéraux et dépose sa production dans la réserve du Biofermenteur.
+  final int lithocultureMineralPerCycle;
+  final int lithocultureOrganicPerCycle;
+  final int lithocultureCycleMinutes;
   final int normalMineralPerOrganic;
   final int mineralBasinMineralPerOrganic;
   final bool wasteCanReplaceMineral;
@@ -515,6 +524,9 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       passiveProductionMultiplier: 1,
       vatCount: 1,
       vatEfficiencyMultiplier: 1,
+      lithocultureMineralPerCycle: 10,
+      lithocultureOrganicPerCycle: 3,
+      lithocultureCycleMinutes: 60,
       normalMineralPerOrganic: 3,
       mineralBasinMineralPerOrganic: 2,
       wasteCanReplaceMineral: true,
