@@ -12771,63 +12771,66 @@ class _MarketPageState extends State<MarketPage> {
                                       widget.gameState.marketAssignedPtipoteId)
                                   .firstOrNull
                               case final assigned?)
-                            Card(
-                              margin: const EdgeInsets.only(top: 10),
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Row(children: <Widget>[
-                                  Expanded(
-                                    flex: 4,
+                            Builder(
+                              builder: (context) {
+                                final assignedLevel =
+                                    widget.gameState.levelFor(assigned);
+                                return Card(
+                                  margin: const EdgeInsets.only(top: 10),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
                                     child: Row(children: <Widget>[
-                                      SizedBox(
-                                          width: 46,
-                                          child: PtipoteImage(
-                                              type: assigned.type,
-                                              species: assigned.species,
-                                              height: 46)),
-                                      const SizedBox(width: 8),
                                       Expanded(
-                                          child: Text(assigned.displayName,
-                                              style: const TextStyle(
-                                                  fontWeight:
-                                                      FontWeight.w900))),
+                                        flex: 4,
+                                        child: Row(children: <Widget>[
+                                          SizedBox(
+                                              width: 46,
+                                              child: PtipoteImage(
+                                                  type: assigned.type,
+                                                  species: assigned.species,
+                                                  height: 46)),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                              child: Text(assigned.displayName,
+                                                  style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w900))),
+                                        ]),
+                                      ),
+                                      Expanded(
+                                        flex: 3,
+                                        child: Text(
+                                            'Niv. $assignedLevel\nFaim ${widget.gameState.hungerFor(assigned)}\nRepos ${widget.gameState.restFor(assigned)}',
+                                            maxLines: 3),
+                                      ),
+                                      Expanded(
+                                        flex: 4,
+                                        child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.stretch,
+                                            children: <Widget>[
+                                              OutlinedButton(
+                                                onPressed: assignedLevel >= 2
+                                                    ? _showMarketRestockRules
+                                                    : null,
+                                                child: Text(assignedLevel >= 2
+                                                    ? 'Gestion appro'
+                                                    : 'Appro · niv. 2'),
+                                              ),
+                                              TextButton(
+                                                onPressed: () => _message(widget
+                                                    .gameState
+                                                    .removeFromMarket()
+                                                    .message),
+                                                child:
+                                                    const Text('Faire rentrer'),
+                                              ),
+                                            ]),
+                                      ),
                                     ]),
                                   ),
-                                  Expanded(
-                                    flex: 3,
-                                    child: Text(
-                                        'Niv. ${assigned.level}\nFaim ${widget.gameState.hungerFor(assigned)}\nRepos ${widget.gameState.restFor(assigned)}',
-                                        maxLines: 3),
-                                  ),
-                                  Expanded(
-                                    flex: 4,
-                                    child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        children: <Widget>[
-                                          OutlinedButton(
-                                            onPressed: widget.gameState
-                                                        .levelFor(assigned) >=
-                                                    2
-                                                ? _showMarketRestockRules
-                                                : null,
-                                            child: Text(widget.gameState
-                                                        .levelFor(assigned) >=
-                                                    2
-                                                ? 'Gestion appro'
-                                                : 'Appro · niv. 2'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () => _message(widget
-                                                .gameState
-                                                .removeFromMarket()
-                                                .message),
-                                            child: const Text('Faire rentrer'),
-                                          ),
-                                        ]),
-                                  ),
-                                ]),
-                              ),
+                                );
+                              },
                             )
                           else
                             OutlinedButton(
@@ -13338,12 +13341,26 @@ class _MarketPageState extends State<MarketPage> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      enableDrag: true,
+      isDismissible: true,
       builder: (sheetContext) => SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
           children: <Widget>[
-            const Text('Ordres de réapprovisionnement',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+            Row(
+              children: <Widget>[
+                const Expanded(
+                  child: Text('Ordres de réapprovisionnement',
+                      style:
+                          TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                ),
+                IconButton(
+                  tooltip: 'Fermer',
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
             const SizedBox(height: 6),
             const Text(
               'Active les produits autorisés. Le nombre indique le minimum que la Maison doit conserver avant un futur réapprovisionnement automatique.',
@@ -13853,6 +13870,7 @@ class _MarketPageState extends State<MarketPage> {
     final stock = widget.gameState.marketStockForShop(shopId);
     if (stock == null) return;
     final resources = widget.gameState.marketTransferableItemsForShop(shopId);
+    final matrices = widget.gameState.nurseryMarketMatricesForShop(shopId);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -13888,6 +13906,34 @@ class _MarketPageState extends State<MarketPage> {
                         .toList(),
                   ),
                 )),
+            if (matrices.isNotEmpty) ...<Widget>[
+              const Padding(
+                padding: EdgeInsets.only(top: 12, bottom: 4),
+                child: Text('Matrices d’aspect',
+                    style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+              ...matrices.map((matrix) => ListTile(
+                    leading: const Icon(Icons.auto_awesome_motion_outlined),
+                    title: Text(
+                      'Matrice ${pTibugConfig.species[matrix.species]!.displayName} · ${matrix.sourceDisplayName}',
+                    ),
+                    subtitle: const Text('Objet unique · Nurserie'),
+                    trailing: TextButton(
+                      onPressed: () {
+                        final result =
+                            widget.gameState.transferNurseryMatrixToMarketShop(
+                          shopId,
+                          matrix.id,
+                        );
+                        _message(result.message);
+                        if (result.success) {
+                          Navigator.of(sheetContext).pop();
+                        }
+                      },
+                      child: const Text('Ajouter'),
+                    ),
+                  )),
+            ],
             if (widget.gameState
                 .nurseryMarketCapsulesForShop(shopId)
                 .isNotEmpty) ...<Widget>[
@@ -15104,7 +15150,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                         leading: const Icon(Icons.auto_awesome_motion_outlined),
                         title: Text(
                             'Matrice ${pTibugConfig.species[matrix.species]!.displayName} · ${matrix.sourceDisplayName}'),
-                        subtitle: const Text('Réservée à la Cultivation'),
+                        subtitle: const Text(
+                            'Utilisable en Cultivation ou au Magasin P’TIBUG'),
                       )),
                 ],
                 if (capsules.isEmpty && matrices.isEmpty)
@@ -15337,7 +15384,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Cette Matrice conserve l’aspect de son P’TIBUG source. Elle est réservée à la Cultivation et ne peut pas être vendue.',
+                'Cette Matrice conserve l’aspect de son P’TIBUG source. Elle peut être utilisée par la Cultivation ou déposée au Magasin P’TIBUG pour les contrats du Sourcier.',
               ),
             ],
           ),

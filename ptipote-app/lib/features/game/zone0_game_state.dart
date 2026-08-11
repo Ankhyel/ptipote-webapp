@@ -4857,6 +4857,10 @@ class Zone0GameState extends ChangeNotifier {
   PTibugSpecies? _marketMatrixSpecies(String resource) => switch (resource) {
         'Matrice Scarabé' => PTibugSpecies.scarabe,
         'Matrice Hyme' => PTibugSpecies.hyme,
+        // Une version accentuée a existé dans certaines sauvegardes/tests.
+        // Elle doit continuer à pointer vers le Magasin P’TIBUG, sans créer
+        // une seconde catégorie de Matrice.
+        'Matrice Hymé' => PTibugSpecies.hyme,
         'Matrice Arac' => PTibugSpecies.arac,
         _ => null,
       };
@@ -4944,15 +4948,25 @@ class Zone0GameState extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  /// A matrix keeps the identity and the visual data of its source P'TIBUG.
+  /// The market therefore exposes it as an individual object rather than as
+  /// an anonymous species stack.
+  List<PTibugAspectMatrix> nurseryMarketMatricesForShop(String shopId) =>
+      nurseryInventoryMatrices
+          .where(
+            (matrix) => marketShopAccepts(
+              shopId,
+              marketMatrixItemForSpecies(matrix.species),
+            ),
+          )
+          .toList(growable: false);
+
   List<String> marketTransferableItemsForShop(String shopId) {
     final resources = <String>{
       ...marketConfig.saleValues.keys.where((resource) =>
-          resourceAmount(resource) > 0 && marketShopAccepts(shopId, resource)),
-      for (final species in PTibugSpecies.values)
-        if (marketShopAccepts(shopId, marketMatrixItemForSpecies(species)) &&
-            nurseryMarketInventoryAmount(marketMatrixItemForSpecies(species)) >
-                0)
-          marketMatrixItemForSpecies(species),
+          !_isMarketMatrixResource(resource) &&
+          resourceAmount(resource) > 0 &&
+          marketShopAccepts(shopId, resource)),
     };
     return resources.toList()..sort();
   }
@@ -6056,7 +6070,21 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int levelFor(PtipoteFigurine figurine) {
-    return levelOverrides[figurine.id] ?? figurine.levelValue;
+    // Une figurine peut avoir été montée de niveau avant l'introduction de la
+    // sauvegarde Zone 0. On ne doit jamais laisser une ancienne valeur locale
+    // (souvent 1) masquer le niveau effectivement inscrit sur la figurine.
+    return math.max(
+      levelOverrides[figurine.id] ?? figurine.levelValue,
+      figurine.levelValue,
+    );
+  }
+
+  void _synchronizePtipoteProgress(PtipoteFigurine figurine) {
+    final canonicalLevel = levelFor(figurine);
+    if (levelOverrides[figurine.id] != canonicalLevel) {
+      levelOverrides[figurine.id] = canonicalLevel;
+    }
+    xpOverrides.putIfAbsent(figurine.id, () => figurine.xpValue);
   }
 
   PtipoteAutoAssignmentPreference autoPreferenceFor(PtipoteFigurine figurine) {
@@ -7604,6 +7632,53 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  Zone0ActionResult transferNurseryMatrixToMarketShop(
+    String shopId,
+    String matrixId,
+  ) {
+    final matrix =
+        pTibugAspectMatrices.where((item) => item.id == matrixId).firstOrNull;
+    if (matrix == null || _nurseryMarketReservedIds.contains(matrixId)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Matrice d’aspect indisponible.',
+      );
+    }
+    final resource = marketMatrixItemForSpecies(matrix.species);
+    final shop = marketShopById(shopId);
+    final stock = marketStockForShop(shopId);
+    if (shop?.ownershipType == MarketShopOwnershipType.residentCommunity) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le comptoir communautaire n’utilise pas de stock.',
+      );
+    }
+    if (stock == null || !marketShopAccepts(shopId, resource)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Matrice incompatible avec ce magasin.',
+      );
+    }
+    if (stock.length >= marketShopStockLimit(shopId)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Stock du magasin complet.',
+      );
+    }
+    stock.add(Zone0InventoryStack(
+      id: 'shop-$shopId-matrix-${DateTime.now().microsecondsSinceEpoch}',
+      resource: resource,
+      amount: 1,
+      sourceItemIds: <String>[matrix.id],
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Matrice ${matrix.sourceDisplayName} placée dans ce magasin.',
+    );
+  }
+
   Zone0ActionResult returnMarketShopStock(
       String shopId, Zone0InventoryStack stack) {
     final stock = marketStockForShop(shopId);
@@ -7832,6 +7907,7 @@ class Zone0GameState extends ChangeNotifier {
         message: 'P’TIPOTE trop fatigué.',
       );
     }
+    _synchronizePtipoteProgress(figurine);
     marketAssignedPtipoteId = figurine.id;
     marketAssignedPtipoteName = figurine.displayName;
     marketLastWorkTickAt = DateTime.now();
@@ -15313,8 +15389,7 @@ class Zone0GameState extends ChangeNotifier {
     final durationConfig = lisiereForageConfig.durations[duration]!;
     final intensityConfig = lisiereForageConfig.intensities[intensity]!;
     for (final figurine in figurines) {
-      levelOverrides.putIfAbsent(figurine.id, () => figurine.levelValue);
-      xpOverrides.putIfAbsent(figurine.id, () => figurine.xpValue);
+      _synchronizePtipoteProgress(figurine);
     }
     final memberIds = figurines.map((figurine) => figurine.id).toList();
     final memberNames =
