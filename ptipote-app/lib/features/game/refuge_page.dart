@@ -2843,17 +2843,24 @@ class _CoBreedingPage extends StatefulWidget {
 
 class _CoBreedingPageState extends State<_CoBreedingPage> {
   Zone0GameState get gameState => widget.gameState;
+  CoBreedingOffer? _offer;
 
   @override
   void initState() {
     super.initState();
-    gameState.ensureCoBreedingOffer();
+    // Resolve once at page entry, never from build. Mutating a ChangeNotifier
+    // while its AnimatedBuilder is building can create a recursive rebuild on
+    // iOS exactly when an offer is accepted.
+    gameState.resolveCoBreedingSessions();
+    _offer = gameState.ensureCoBreedingOffer();
   }
 
   void _showResult(Zone0ActionResult result) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(result.message)));
-    if (result.success) setState(() {});
+    if (result.success) {
+      setState(() => _offer = gameState.coBreedingOffer);
+    }
   }
 
   String _remaining(Duration duration) {
@@ -2871,8 +2878,7 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
 
   @override
   Widget build(BuildContext context) {
-    gameState.resolveCoBreedingSessions();
-    final offer = gameState.ensureCoBreedingOffer();
+    final offer = _offer;
     final now = DateTime.now();
     final eligibleProtocols = gameState.ptipoteV2Profiles.values
         .where((profile) => gameState.isEligibleForEnvelope(profile.ptipoteId))

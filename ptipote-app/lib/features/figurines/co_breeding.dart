@@ -722,6 +722,10 @@ class CoBreedingTimeService {
     }
     final elapsed =
         math.max(0, now.difference(session.lastPlayerActiveAt).inSeconds);
+    // UI rebuilds and successive lifecycle callbacks routinely resolve the
+    // same instant. Returning the original immutable session prevents an
+    // unnecessary notify/save loop while the Co-élevage page is visible.
+    if (elapsed == 0) return session;
     var remaining = math.max(0, session.remainingSeconds - elapsed);
     var protected = session.finalWindowProtectionConsumed;
     final guaranteed = config.offlineGuaranteedRemainingHours * 3600;

@@ -63,6 +63,34 @@ void main() {
       expect(resolved.finalWindowProtectionConsumed, isFalse);
     });
 
+    test('resolving the same instant is a no-op', () {
+      final start = DateTime.utc(2026, 1, 1);
+      final session = CoBreedingSession(
+        sessionId: 'stable-session',
+        ptipoteId: 'ptipote',
+        selectionMode: CoBreedingSelectionMode.randomFreeOffer,
+        typeId: PtipoteTypeId.vegetal,
+        ptipoteTemplateId: 'vestige-liane',
+        startedAt: start,
+        expiresAt: start.add(const Duration(days: 7)),
+        initialDurationSeconds: const Duration(days: 7).inSeconds,
+        remainingSeconds: const Duration(days: 7).inSeconds,
+        lastPlayerActiveAt: start,
+      );
+
+      expect(
+        identical(
+          CoBreedingTimeService.resolve(
+            session,
+            config: defaultCoBreedingConfig,
+            now: start,
+          ),
+          session,
+        ),
+        isTrue,
+      );
+    });
+
     test('level cap marks a session pending without deleting it', () {
       final start = DateTime.utc(2026, 1, 1);
       final session = CoBreedingSession(
