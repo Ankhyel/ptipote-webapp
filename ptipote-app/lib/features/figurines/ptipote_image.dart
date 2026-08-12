@@ -5,11 +5,16 @@ class PtipoteImage extends StatefulWidget {
     super.key,
     required this.type,
     required this.species,
+    this.visualAssetKey = '',
     this.height = 180,
   });
 
   final String type;
   final String species;
+
+  /// Optional final Protocol/Noyau image key. This remains a single prepared
+  /// image; the widget never layers a core and an envelope at runtime.
+  final String visualAssetKey;
   final double height;
 
   @override
@@ -32,7 +37,9 @@ class _PtipoteImageState extends State<PtipoteImage> {
   @override
   void didUpdateWidget(covariant PtipoteImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.type != widget.type || oldWidget.species != widget.species) {
+    if (oldWidget.type != widget.type ||
+        oldWidget.species != widget.species ||
+        oldWidget.visualAssetKey != widget.visualAssetKey) {
       _candidates = _buildCandidates();
       _index = 0;
     }
@@ -40,6 +47,7 @@ class _PtipoteImageState extends State<PtipoteImage> {
 
   List<String> _buildCandidates() {
     final names = <String>{
+      widget.visualAssetKey.trim(),
       widget.type.trim(),
       widget.species.trim(),
     }..removeWhere((value) => value.isEmpty || value == '-');

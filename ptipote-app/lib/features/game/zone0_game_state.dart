@@ -7,7 +7,9 @@ import 'package:flutter/foundation.dart';
 
 import '../../services/notification_service.dart';
 import '../figurines/ptipote_figurine.dart';
+import '../figurines/co_breeding.dart';
 import '../figurines/ptipote_stats_config.dart';
+import '../figurines/ptipote_v2.dart';
 import 'building_construction_config.dart';
 import 'camp_heart_config.dart';
 import 'camp_generator_config.dart';
@@ -42,6 +44,12 @@ String _ptibugDataFamilyLabel(PTibugDataFamily family) => switch (family) {
       PTibugDataFamily.comportementInsectoide => 'Comportement insectoïde',
     };
 
+String _ptipoteTypeLabel(PtipoteTypeId type) => switch (type) {
+      PtipoteTypeId.vegetal => 'Végétal',
+      PtipoteTypeId.mineral => 'Minéral',
+      PtipoteTypeId.mycelial => 'Mycélien',
+    };
+
 class Zone0GameState extends ChangeNotifier {
   static const String primaryMarketShopId = 'market-main';
   Zone0GameState._() {
@@ -67,14 +75,53 @@ class Zone0GameState extends ChangeNotifier {
   final Set<String> wellRestedRewardedIds = <String>{};
   final Map<String, int> xpOverrides = <String, int>{};
   final Map<String, int> levelOverrides = <String, int>{};
+
+  /// V2 game profiles are deliberately separate from the NFC figurine data.
+  /// This gives physical scans and future co-bred companions one common game
+  /// model without mutating an NFC source record.
+  final Map<String, PtipoteV2Profile> ptipoteV2Profiles =
+      <String, PtipoteV2Profile>{};
+  final List<CoBreedingSession> coBreedingSessions = <CoBreedingSession>[];
+  CoBreedingOffer? coBreedingOffer;
+  final Map<String, CoBreedingEnvelopeOffer> coBreedingEnvelopeOffers =
+      <String, CoBreedingEnvelopeOffer>{};
+  final List<CoBreedingXpReward> coBreedingXpRewards = <CoBreedingXpReward>[];
+  final List<CoBreedingArchive> coBreedingArchive = <CoBreedingArchive>[];
+  int completedCoBreedingCount = 0;
+  bool coBreedingUnlocked = false;
+  bool coBreedingIntroMissionDismissed = false;
+  bool coBreedingDevMode = false;
+  CoBreedingConfig get coBreedingConfig {
+    final v2 = ptipoteStatsConfig.v2;
+    return CoBreedingConfig(
+      enabled: v2.coBreedingEnabled,
+      kernelUnlockLevel: v2.coBreedingKernelUnlockLevel,
+      maxDurationHours: v2.coBreedingMaxDurationHours,
+      finalProtectionWindowHours: v2.coBreedingFinalProtectionWindowHours,
+      offlineGuaranteedRemainingHours:
+          v2.coBreedingOfflineGuaranteedRemainingHours,
+      capacityPerBreederLevel: v2.coBreedingCapacityPerBreederLevel,
+      levelEarlyDeparture: v2.coBreedingLevelEarlyDeparture,
+      offerRotationHours: v2.coBreedingOfferRotationHours,
+      chooseTypeCost: v2.coBreedingChooseTypeCost,
+      chooseExactPtipoteCost: v2.coBreedingChooseExactPtipoteCost,
+      chooseExactEnvelopeCost: v2.coBreedingChooseExactEnvelopeCost,
+      initialFreeCoBreedingEnabled: v2.coBreedingInitialFreeEnabled,
+      devPoolMode: coBreedingDevMode
+          ? CoBreedingPoolMode.publicAndDev
+          : CoBreedingPoolMode.publicOnly,
+    );
+  }
+
   final Map<String, DateTime> lastCuddleAt = <String, DateTime>{};
   final Set<String> manualRestingIds = <String>{};
   // A P'TIPOTE can need rest even when every alcove is occupied. Keeping this
   // separately prevents an unavailable bed from granting alcove recovery.
   final Set<String> waitingForBedIds = <String>{};
-  // P'TIPOTES admitted into the Maison. New scans remain eggs in the
-  // Couveuse when the active alcove capacity is full.
+  // Legacy active P'TIPOTES. V2 arrivalState is the source of truth for new
+  // entries; this set is preserved solely for backward-compatible saves.
   final Set<String> hatchedPtipoteIds = <String>{};
+  bool _legacyArrivalSnapshotPresent = false;
   final Map<String, PtipoteAutoAssignmentPreference> autoPreferenceOverrides =
       <String, PtipoteAutoAssignmentPreference>{};
   final List<Zone0InventoryStack> inventory = <Zone0InventoryStack>[];
@@ -6159,30 +6206,1112 @@ class Zone0GameState extends ChangeNotifier {
 
   void ensureNurseryAdmissions(List<PtipoteFigurine> figurines) {
     var changed = false;
+    if (ensurePtipoteV2Profiles(figurines)) changed = true;
     for (final figurine in figurines) {
-      if (hatchedPtipoteIds.length >= alcoveCapacity) break;
-      if (hatchedPtipoteIds.add(figurine.id)) changed = true;
+      if (ptipoteV2ProfileFor(figurine).isArrivalComplete &&
+          hatchedPtipoteIds.add(figurine.id)) {
+        changed = true;
+      }
     }
     if (changed) {
       unawaited(saveRuntimeToFirebase());
     }
   }
 
-  bool isInNursery(PtipoteFigurine figurine) =>
-      !hatchedPtipoteIds.contains(figurine.id);
+  /// One-time, idempotent migration for all existing physical P'TIPOTES.
+  /// The source NFC fields remain untouched; only Zone 0 runtime gains a V2
+  /// profile keyed by the same figurine id.
+  bool ensurePtipoteV2Profiles(List<PtipoteFigurine> figurines) {
+    var changed = false;
+    for (final figurine in figurines) {
+      if (ptipoteV2Profiles.containsKey(figurine.id)) continue;
+      final legacy = figurine.legacyV2Profile(
+        baseCarryCapacity: ptipoteStatsConfig.v2.defaultBaseCarryCapacity,
+      );
+      // A legacy runtime which had no arrival data contained only active
+      // companions. If it did keep the former nursery list, preserve its
+      // pending entries as eggs instead of silently activating them.
+      ptipoteV2Profiles[figurine.id] = _legacyArrivalSnapshotPresent &&
+              !hatchedPtipoteIds.contains(figurine.id)
+          ? PtipoteArrivalService.sendPtipoteToIncubator(
+              profile: legacy.copyWith(
+                arrivalState: PtipoteArrivalState.pendingEgg,
+              ),
+              config: ptipoteStatsConfig.v2,
+              systemName: figurine.displayName,
+            )
+          : legacy.copyWith(
+              systemName: figurine.displayName,
+              displayName: figurine.displayName,
+              arrivalState: PtipoteArrivalState.completed,
+            );
+      changed = true;
+    }
+    return changed;
+  }
 
-  bool canHatchFromNursery(PtipoteFigurine figurine) =>
-      isInNursery(figurine) && hatchedPtipoteIds.length < alcoveCapacity;
+  PtipoteV2Profile ptipoteV2ProfileFor(PtipoteFigurine figurine) {
+    return ptipoteV2Profiles.putIfAbsent(
+      figurine.id,
+      () => figurine
+          .legacyV2Profile(
+            baseCarryCapacity: ptipoteStatsConfig.v2.defaultBaseCarryCapacity,
+          )
+          .copyWith(
+            systemName: figurine.displayName,
+            displayName: figurine.displayName,
+            arrivalState: PtipoteArrivalState.completed,
+          ),
+    );
+  }
 
-  void hatchFromNursery(PtipoteFigurine figurine) {
-    if (!canHatchFromNursery(figurine)) return;
-    hatchedPtipoteIds.add(figurine.id);
+  /// Common public entry point for NFC scans and the future Co-élevage flow.
+  /// Calling it again for the same pending arrival is intentionally a no-op.
+  void sendPtipoteToIncubator(
+    PtipoteFigurine figurine, {
+    PtipoteAcquisitionOrigin acquisitionOrigin =
+        PtipoteAcquisitionOrigin.physicalScan,
+    PtipoteOwnershipMode ownershipMode = PtipoteOwnershipMode.owned,
+    PtipoteGeneration? generation,
+    String? coBreedingSessionId,
+    DateTime? now,
+  }) {
+    final existing = ptipoteV2Profiles[figurine.id];
+    if (existing != null && existing.isAwaitingIncubator) return;
+    final base = existing ??
+        figurine.legacyV2Profile(
+          baseCarryCapacity: ptipoteStatsConfig.v2.defaultBaseCarryCapacity,
+        );
+    sendPtipoteProfileToIncubator(
+      base.copyWith(
+        acquisitionOrigin: acquisitionOrigin,
+        ownershipMode: ownershipMode,
+        ptipoteGeneration: generation ?? base.ptipoteGeneration,
+        // This is only the future physical fabrication route marker. It does
+        // not grant an Envelope and it is never used by Co-élevage.
+        envelopeAcquisitionMode:
+            acquisitionOrigin == PtipoteAcquisitionOrigin.physicalScan &&
+                    (generation ?? base.ptipoteGeneration) ==
+                        PtipoteGeneration.protocol
+                ? 'cultivated'
+                : base.envelopeAcquisitionMode,
+        coBreedingSessionId: coBreedingSessionId,
+      ),
+      systemName: figurine.displayName,
+      now: now,
+    );
+  }
+
+  /// Shared future entry point for Co-élevage. It only needs the common V2
+  /// profile, unlike the physical-figurine wrapper above.
+  void sendPtipoteProfileToIncubator(
+    PtipoteV2Profile profile, {
+    required String systemName,
+    DateTime? now,
+  }) {
+    final existing = ptipoteV2Profiles[profile.ptipoteId];
+    if (existing != null && existing.isAwaitingIncubator) return;
+    final pending = profile.copyWith(
+      arrivalState: PtipoteArrivalState.pendingEgg,
+      systemName: systemName,
+      displayName: '',
+      rhythmPattern: const <int>[],
+      rhythmAttemptCount: 0,
+      arrivalCreatedAt: now ?? DateTime.now(),
+      updatedAt: now ?? DateTime.now(),
+    );
+    ptipoteV2Profiles[profile.ptipoteId] =
+        PtipoteArrivalService.sendPtipoteToIncubator(
+      profile: pending,
+      config: ptipoteStatsConfig.v2,
+      systemName: systemName,
+      now: now,
+    );
+    hatchedPtipoteIds.remove(profile.ptipoteId);
+    levelOverrides[profile.ptipoteId] =
+        ptipoteStatsConfig.v2.arrivalInitialLevel;
+    xpOverrides[profile.ptipoteId] = ptipoteStatsConfig.v2.arrivalInitialXp;
+    _recordPtipoteArrivalReport(
+      PtipoteMissionReport.system(
+        id: 'ptipote-egg-${profile.ptipoteId}',
+        message: 'Un œuf vous attend dans la Couveuse de la Maison.',
+        mailbox: Zone0MessageMailbox.companions,
+        sourceBuildingId: 'house',
+        subject: 'Œuf dans la Couveuse',
+        concerned: 'Maison',
+      ),
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
   }
 
+  void preparePtipoteArrivalRhythm(PtipoteFigurine figurine) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    _replacePtipoteArrivalProfile(
+      PtipoteArrivalService.prepareRhythm(
+        profile,
+        config: ptipoteStatsConfig.v2,
+      ),
+    );
+  }
+
+  void beginPtipoteArrivalRhythm(PtipoteFigurine figurine) {
+    _replacePtipoteArrivalProfile(
+      PtipoteArrivalService.beginRhythm(ptipoteV2ProfileFor(figurine)),
+    );
+  }
+
+  void failPtipoteArrivalRhythm(PtipoteFigurine figurine) {
+    _replacePtipoteArrivalProfile(
+      PtipoteArrivalService.failRhythm(ptipoteV2ProfileFor(figurine)),
+    );
+  }
+
+  void hatchPtipoteArrival(PtipoteFigurine figurine) {
+    _replacePtipoteArrivalProfile(
+      PtipoteArrivalService.hatch(ptipoteV2ProfileFor(figurine)),
+    );
+  }
+
+  void beginPtipoteArrivalNaming(PtipoteFigurine figurine) {
+    _replacePtipoteArrivalProfile(
+      PtipoteArrivalService.startNaming(ptipoteV2ProfileFor(figurine)),
+    );
+  }
+
+  void completePtipoteArrival(PtipoteFigurine figurine, String displayName) {
+    final profile = PtipoteArrivalService.finalizeNaming(
+      ptipoteV2ProfileFor(figurine),
+      displayName: displayName,
+    );
+    _replacePtipoteArrivalProfile(profile);
+    hatchedPtipoteIds.add(figurine.id);
+    _recordPtipoteArrivalReport(
+      PtipoteMissionReport.system(
+        id: 'ptipote-hatched-${figurine.id}',
+        message: profile.ownershipMode == PtipoteOwnershipMode.coBred
+            ? '${profile.displayName} rejoint temporairement le refuge.'
+            : '${profile.displayName} a éclos dans la Couveuse.',
+        mailbox: Zone0MessageMailbox.companions,
+        sourceBuildingId: 'house',
+        subject: 'Éclosion terminée',
+        concerned: profile.displayName,
+      ),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  void resumeInterruptedPtipoteArrival(PtipoteFigurine figurine) {
+    _replacePtipoteArrivalProfile(
+      PtipoteArrivalService.resumeAfterInterruption(
+        ptipoteV2ProfileFor(figurine),
+      ),
+    );
+  }
+
+  int get breederLevel => kernelAxisLevel(KernelAxis.breeder);
+
+  int get coBreedingCapacity =>
+      getCoBreedingCapacity(breederLevel, coBreedingConfig);
+
+  List<CoBreedingSession> get activeCoBreedingSessions => coBreedingSessions
+      .where(
+        (session) =>
+            session.status != CoBreedingSessionStatus.completed &&
+            session.status != CoBreedingSessionStatus.archived,
+      )
+      .toList();
+
+  List<CoBreedingSession> get pendingCoBreedingDepartures => coBreedingSessions
+      .where(
+        (session) =>
+            session.departurePending &&
+            session.status != CoBreedingSessionStatus.completed &&
+            session.status != CoBreedingSessionStatus.archived,
+      )
+      .toList()
+    ..sort(
+      (a, b) => (a.departurePendingAt ?? a.startedAt)
+          .compareTo(b.departurePendingAt ?? b.startedAt),
+    );
+
+  int get activeCoBredCount => activeCoBreedingSessions.length;
+
+  bool get isCoBreedingCapacityReached =>
+      activeCoBredCount >= coBreedingCapacity;
+
+  List<PtipoteFigurine> coBredFigurines() => activeCoBreedingSessions
+      .map((session) => ptipoteV2Profiles[session.ptipoteId])
+      .whereType<PtipoteV2Profile>()
+      .map(coBredFigurineFromProfile)
+      .toList();
+
+  List<PtipoteFigurine> allPtipotes(List<PtipoteFigurine> physical) =>
+      <PtipoteFigurine>[...physical, ...coBredFigurines()];
+
+  bool shouldShowInitialPtipoteChoice(List<PtipoteFigurine> physical) =>
+      allPtipotes(physical).isEmpty &&
+      ptipoteV2Profiles.values.every((profile) => profile.isArrivalComplete);
+
+  bool isCoBreedingIntroMissionAvailable(List<PtipoteFigurine> physical) =>
+      !coBreedingUnlocked &&
+      !coBreedingIntroMissionDismissed &&
+      !shouldShowInitialPtipoteChoice(physical) &&
+      kernelTrustLevel >= coBreedingConfig.kernelUnlockLevel;
+
+  void acceptCoBreedingIntroMission() {
+    if (coBreedingUnlocked) return;
+    coBreedingUnlocked = true;
+    reports.add(
+      PtipoteMissionReport.system(
+        id: 'co-breeding-unlocked',
+        message: 'Le Co-élevage est désormais disponible depuis la Maison.',
+        sourceBuildingId: 'kernel',
+        mailbox: Zone0MessageMailbox.kernel,
+        subject: 'Co-élevage débloqué',
+        concerned: 'Joueur',
+      ),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  void dismissCoBreedingIntroMission() {
+    coBreedingIntroMissionDismissed = true;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  List<CoBreedingTemplate> availableCoBreedingTemplates({
+    PtipoteTypeId? type,
+    PtipoteGeneration? generation,
+  }) {
+    final useDev = coBreedingDevMode;
+    return <CoBreedingTemplate>[
+      ...defaultCoBreedingVestiges,
+      ...defaultCoBreedingProtocols,
+    ].where((template) {
+      if (type != null && template.typeId != type) return false;
+      if (generation != null && template.generation != generation) return false;
+      if (template.minBreederLevel > breederLevel) return false;
+      return useDev ? template.devEnabled : template.publicEnabled;
+    }).toList();
+  }
+
+  CoBreedingOffer? ensureCoBreedingOffer({DateTime? now}) {
+    final timestamp = now ?? DateTime.now();
+    if (coBreedingOffer != null &&
+        !coBreedingOffer!.consumed &&
+        coBreedingOffer!.expiresAt.isAfter(timestamp)) {
+      return coBreedingOffer;
+    }
+    final templates = availableCoBreedingTemplates();
+    if (templates.isEmpty) {
+      coBreedingOffer = null;
+      return null;
+    }
+    final seed = timestamp.millisecondsSinceEpoch ~/ 1000;
+    final template = _weightedCoBreedingTemplate(templates, seed);
+    coBreedingOffer = CoBreedingOffer(
+      offerId: 'co-offer-$seed-${template.templateId}',
+      templateId: template.templateId,
+      typeId: template.typeId,
+      generation: template.generation,
+      generatedAt: timestamp,
+      expiresAt: timestamp.add(
+        Duration(hours: math.max(1, coBreedingConfig.offerRotationHours)),
+      ),
+      randomSeed: seed,
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return coBreedingOffer;
+  }
+
+  CoBreedingTemplate _weightedCoBreedingTemplate(
+    List<CoBreedingTemplate> templates,
+    int seed,
+  ) {
+    final total = templates.fold<int>(
+      0,
+      (sum, item) => sum + math.max(1, item.drawWeight),
+    );
+    var cursor = math.Random(seed).nextInt(math.max(1, total));
+    for (final template in templates) {
+      cursor -= math.max(1, template.drawWeight);
+      if (cursor < 0) return template;
+    }
+    return templates.first;
+  }
+
+  CoBreedingTemplate? coBreedingTemplateFor(String templateId) {
+    for (final template in <CoBreedingTemplate>[
+      ...defaultCoBreedingVestiges,
+      ...defaultCoBreedingProtocols,
+    ]) {
+      if (template.templateId == templateId) return template;
+    }
+    return null;
+  }
+
+  CoBreedingSession? activeCoBreedingSessionFor(String ptipoteId) {
+    for (final session in coBreedingSessions) {
+      if (session.ptipoteId == ptipoteId &&
+          session.status == CoBreedingSessionStatus.active &&
+          !session.departurePending) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  /// Business-rule guard used by both the offer generator and the UI. A
+  /// Vestige, a departing companion or an owned physical Protocol can never
+  /// acquire a temporary Co-élevage envelope through this path.
+  bool isEligibleForEnvelope(String ptipoteId) {
+    final profile = ptipoteV2Profiles[ptipoteId];
+    if (profile == null ||
+        !profile.isProtocol ||
+        profile.ownershipMode != PtipoteOwnershipMode.coBred ||
+        profile.envelopeId != null ||
+        profile.departurePending ||
+        levelForId(ptipoteId) <
+            ptipoteStatsConfig.v2.envelopeUnlockPtipoteLevel) {
+      return false;
+    }
+    return activeCoBreedingSessionFor(ptipoteId) != null;
+  }
+
+  int levelForId(String ptipoteId) => levelOverrides[ptipoteId] ?? 1;
+
+  List<CoBreedingEnvelopeTemplate> availableCoBreedingEnvelopeTemplatesFor(
+    String ptipoteId,
+  ) {
+    final session = activeCoBreedingSessionFor(ptipoteId);
+    final template = session == null
+        ? null
+        : coBreedingTemplateFor(session.ptipoteTemplateId);
+    if (template == null) return const <CoBreedingEnvelopeTemplate>[];
+    return defaultCoBreedingEnvelopeTemplates.where((envelope) {
+      if (envelope.minBreederLevel > breederLevel) return false;
+      if (!template.compatibleEnvelopeIds.contains(envelope.envelopeId)) {
+        return false;
+      }
+      return coBreedingDevMode ? envelope.devEnabled : envelope.publicEnabled;
+    }).toList();
+  }
+
+  CoBreedingEnvelopeOffer? ensureCoBreedingEnvelopeOffer(
+    String ptipoteId, {
+    DateTime? now,
+  }) {
+    final timestamp = now ?? DateTime.now();
+    if (!isEligibleForEnvelope(ptipoteId)) return null;
+    final existing = coBreedingEnvelopeOffers[ptipoteId];
+    if (existing != null &&
+        existing.ptipoteId == ptipoteId &&
+        !existing.consumed &&
+        existing.expiresAt.isAfter(timestamp) &&
+        availableCoBreedingEnvelopeTemplatesFor(ptipoteId)
+            .any((item) => item.envelopeId == existing.envelopeId)) {
+      return existing;
+    }
+    final templates = availableCoBreedingEnvelopeTemplatesFor(ptipoteId);
+    if (templates.isEmpty) return null;
+    final seed = timestamp.millisecondsSinceEpoch ~/ 1000;
+    final chosen = _weightedCoBreedingEnvelopeTemplate(templates, seed);
+    final created = CoBreedingEnvelopeOffer(
+      offerId: 'co-envelope-$seed-$ptipoteId-${chosen.envelopeId}',
+      ptipoteId: ptipoteId,
+      envelopeId: chosen.envelopeId,
+      generatedAt: timestamp,
+      expiresAt: timestamp.add(
+        Duration(hours: math.max(1, coBreedingConfig.offerRotationHours)),
+      ),
+      randomSeed: seed,
+    );
+    coBreedingEnvelopeOffers[ptipoteId] = created;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return created;
+  }
+
+  CoBreedingEnvelopeTemplate _weightedCoBreedingEnvelopeTemplate(
+    List<CoBreedingEnvelopeTemplate> templates,
+    int seed,
+  ) {
+    final total = templates.fold<int>(
+      0,
+      (sum, item) => sum + math.max(1, item.drawWeight),
+    );
+    var cursor = math.Random(seed).nextInt(math.max(1, total));
+    for (final template in templates) {
+      cursor -= math.max(1, template.drawWeight);
+      if (cursor < 0) return template;
+    }
+    return templates.first;
+  }
+
+  Zone0ActionResult acceptFreeCoBreedingEnvelope(String ptipoteId) {
+    final offer = ensureCoBreedingEnvelopeOffer(ptipoteId);
+    if (offer == null ||
+        offer.consumed ||
+        !offer.expiresAt.isAfter(DateTime.now())) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucune Enveloppe compatible disponible actuellement.',
+      );
+    }
+    final result = _assignCoBreedingEnvelope(
+      ptipoteId: ptipoteId,
+      envelopeId: offer.envelopeId,
+    );
+    if (result.success) {
+      coBreedingEnvelopeOffers[ptipoteId] = offer.copyWith(consumed: true);
+    }
+    return result;
+  }
+
+  Zone0ActionResult chooseExactCoBreedingEnvelope(
+    String ptipoteId,
+    String envelopeId,
+  ) {
+    if (!availableCoBreedingEnvelopeTemplatesFor(ptipoteId)
+        .any((item) => item.envelopeId == envelopeId)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cette Enveloppe n’est pas compatible ou indisponible.',
+      );
+    }
+    return _assignCoBreedingEnvelope(
+      ptipoteId: ptipoteId,
+      envelopeId: envelopeId,
+      bioBatteryCost: coBreedingConfig.chooseExactEnvelopeCost,
+    );
+  }
+
+  Zone0ActionResult _assignCoBreedingEnvelope({
+    required String ptipoteId,
+    required String envelopeId,
+    int bioBatteryCost = 0,
+  }) {
+    final profile = ptipoteV2Profiles[ptipoteId];
+    if (!isEligibleForEnvelope(ptipoteId) || profile == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce P’TIPOTE ne peut pas encore recevoir d’Enveloppe.',
+      );
+    }
+    if (!availableCoBreedingEnvelopeTemplatesFor(ptipoteId)
+        .any((item) => item.envelopeId == envelopeId)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Enveloppe incompatible.',
+      );
+    }
+    if (bioBatteryCost > 0 && bioBatteries < bioBatteryCost) {
+      return Zone0ActionResult(
+        success: false,
+        message: '$bioBatteryCost Bio-batteries requises.',
+      );
+    }
+    final now = DateTime.now();
+    final assetKey = '${normalizePtipoteAssetKey(profile.natureId)}_'
+        '${normalizePtipoteAssetKey(envelopeId)}';
+    final symbiosis = PtipoteEnvelopeSymbiosis(
+      envelopeId: envelopeId,
+      symbiosisLevel: 0,
+      symbiosisProgressPercent: 0,
+      startedAt: now,
+      lastCalculatedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    );
+    // Every failing validation is complete before the debit: this is the
+    // transaction boundary for local/Firebase eventual persistence.
+    if (bioBatteryCost > 0) bioBatteries -= bioBatteryCost;
+    ptipoteV2Profiles[ptipoteId] = profile.copyWith(
+      envelopeId: envelopeId,
+      envelopeAcquisitionMode: 'coBreedingTemporary',
+      envelopeSymbiosis: symbiosis,
+      visualAssetKey: assetKey,
+      clearProtocolEfficiencyMultiplier: true,
+      updatedAt: now,
+    );
+    reports.add(PtipoteMissionReport.system(
+      id: 'co-envelope-$ptipoteId-$envelopeId-${now.millisecondsSinceEpoch}',
+      message:
+          '${profile.displayName.isNotEmpty ? profile.displayName : profile.systemName} reçoit l’Enveloppe $envelopeId.',
+      sourceBuildingId: 'house',
+      mailbox: Zone0MessageMailbox.companions,
+      subject: 'Enveloppe obtenue',
+      concerned: profile.displayName.isNotEmpty
+          ? profile.displayName
+          : profile.systemName,
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Enveloppe attribuée.');
+  }
+
+  Zone0ActionResult startInitialCoBreeding(PtipoteTypeId type) {
+    if (!coBreedingConfig.initialFreeCoBreedingEnabled) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le premier Co-élevage est indisponible.',
+      );
+    }
+    return _startCoBreedingFromTemplate(
+      templates: availableCoBreedingTemplates(type: type),
+      selectionMode: CoBreedingSelectionMode.initialFreeTypeChoice,
+      randomSeed: DateTime.now().microsecondsSinceEpoch,
+    );
+  }
+
+  Zone0ActionResult acceptCoBreedingOffer() {
+    final offer = ensureCoBreedingOffer();
+    if (offer == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucun P’TIPOTE disponible actuellement.',
+      );
+    }
+    if (offer.consumed || !offer.expiresAt.isAfter(DateTime.now())) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cette proposition n’est plus disponible.',
+      );
+    }
+    final template = coBreedingTemplateFor(offer.templateId);
+    if (template == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Proposition indisponible actuellement.',
+      );
+    }
+    final result = _startCoBreedingTemplate(
+      template,
+      selectionMode: CoBreedingSelectionMode.randomFreeOffer,
+      sourceOfferId: offer.offerId,
+    );
+    if (result.success) {
+      coBreedingOffer = offer.copyWith(consumed: true);
+      ensureCoBreedingOffer(
+          now: DateTime.now().add(const Duration(seconds: 1)));
+    }
+    return result;
+  }
+
+  Zone0ActionResult chooseCoBreedingType(PtipoteTypeId type) {
+    if (breederLevel < 3) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Niveau Éleveur 3 requis.',
+      );
+    }
+    return _startCoBreedingFromTemplate(
+      templates: availableCoBreedingTemplates(type: type),
+      selectionMode: CoBreedingSelectionMode.paidTypeChoice,
+      randomSeed: DateTime.now().microsecondsSinceEpoch,
+      bioBatteryCost: coBreedingConfig.chooseTypeCost,
+    );
+  }
+
+  Zone0ActionResult chooseExactCoBreedingPtipote(String templateId) {
+    if (breederLevel < 4) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Niveau Éleveur 4 requis.',
+      );
+    }
+    final template = availableCoBreedingTemplates()
+        .where(
+          (item) => item.templateId == templateId,
+        )
+        .firstOrNull;
+    if (template == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'P’TIPOTE indisponible actuellement.',
+      );
+    }
+    return _startCoBreedingTemplate(
+      template,
+      selectionMode: CoBreedingSelectionMode.paidExactPtipote,
+      bioBatteryCost: coBreedingConfig.chooseExactPtipoteCost,
+    );
+  }
+
+  Zone0ActionResult _startCoBreedingFromTemplate({
+    required List<CoBreedingTemplate> templates,
+    required CoBreedingSelectionMode selectionMode,
+    required int randomSeed,
+    int bioBatteryCost = 0,
+  }) {
+    if (templates.isEmpty) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Indisponible actuellement.',
+      );
+    }
+    return _startCoBreedingTemplate(
+      _weightedCoBreedingTemplate(templates, randomSeed),
+      selectionMode: selectionMode,
+      bioBatteryCost: bioBatteryCost,
+    );
+  }
+
+  Zone0ActionResult _startCoBreedingTemplate(
+    CoBreedingTemplate template, {
+    required CoBreedingSelectionMode selectionMode,
+    String? sourceOfferId,
+    int bioBatteryCost = 0,
+  }) {
+    if (!coBreedingConfig.enabled) {
+      return const Zone0ActionResult(
+          success: false, message: 'Co-élevage indisponible.');
+    }
+    if (isCoBreedingCapacityReached) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Capacité de Co-élevage atteinte.',
+      );
+    }
+    if (bioBatteryCost > 0 && bioBatteries < bioBatteryCost) {
+      return Zone0ActionResult(
+        success: false,
+        message: '$bioBatteryCost Bio-batteries requises.',
+      );
+    }
+    final now = DateTime.now();
+    final sessionId = 'co-${now.microsecondsSinceEpoch}-${template.templateId}';
+    final ptipoteId = 'co-ptipote-$sessionId';
+    final duration = Duration(hours: coBreedingConfig.maxDurationHours);
+    final profile = PtipoteV2Profile(
+      ptipoteId: ptipoteId,
+      acquisitionOrigin: PtipoteAcquisitionOrigin.coBreeding,
+      ownershipMode: PtipoteOwnershipMode.coBred,
+      ptipoteGeneration: template.generation,
+      typeId: template.typeId,
+      natureId: template.natureId,
+      coreId: template.coreId,
+      systemName: template.systemName,
+      baseCarryCapacity: ptipoteStatsConfig.v2.defaultBaseCarryCapacity,
+      coBreedingSessionId: sessionId,
+      coBreedingStartedAt: now,
+      coBreedingExpiresAt: now.add(duration),
+      createdAt: now,
+      updatedAt: now,
+    );
+    // All checks precede the only debit: atomic from the game’s perspective.
+    if (bioBatteryCost > 0) bioBatteries -= bioBatteryCost;
+    coBreedingSessions.add(CoBreedingSession(
+      sessionId: sessionId,
+      ptipoteId: ptipoteId,
+      sourceOfferId: sourceOfferId,
+      selectionMode: selectionMode,
+      typeId: template.typeId,
+      ptipoteTemplateId: template.templateId,
+      startedAt: now,
+      expiresAt: now.add(duration),
+      initialDurationSeconds: duration.inSeconds,
+      remainingSeconds: duration.inSeconds,
+      lastPlayerActiveAt: now,
+    ));
+    sendPtipoteProfileToIncubator(profile,
+        systemName: template.systemName, now: now);
+    reports.add(PtipoteMissionReport.system(
+      id: 'co-breeding-start-$sessionId',
+      message: '${template.systemName} rejoint temporairement la Couveuse.',
+      sourceBuildingId: 'house',
+      mailbox: Zone0MessageMailbox.companions,
+      subject: 'Co-élevage commencé',
+      concerned: template.systemName,
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Un œuf vous attend dans la Couveuse de la Maison.',
+    );
+  }
+
+  void resolveCoBreedingSessions({DateTime? now}) {
+    final timestamp = now ?? DateTime.now();
+    var changed = false;
+    for (var index = 0; index < coBreedingSessions.length; index += 1) {
+      final session = coBreedingSessions[index];
+      final resolved = CoBreedingTimeService.resolve(
+        session,
+        config: coBreedingConfig,
+        now: timestamp,
+      );
+      if (resolved == session) continue;
+      coBreedingSessions[index] = resolved;
+      changed = true;
+      if (resolved.departurePending) {
+        final profile = ptipoteV2Profiles[resolved.ptipoteId];
+        if (profile != null) {
+          ptipoteV2Profiles[profile.ptipoteId] = profile.copyWith(
+            departurePending: true,
+            departureReason: resolved.departureReason?.name,
+            lifecycleStatus: PtipoteLifecycleStatus.departurePending,
+          );
+        }
+      }
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    resolveEnvelopeSymbiosis(now: timestamp);
+  }
+
+  /// Marks the oldest departure as presented so only one Maison modal can be
+  /// active at a time. A crash retains this state and the same session resumes
+  /// before any other departure can be finalised.
+  CoBreedingSession? prepareNextCoBreedingDeparture() {
+    final pending = pendingCoBreedingDepartures;
+    if (pending.isEmpty) return null;
+    final next = pending.first;
+    final index = coBreedingSessions.indexWhere(
+      (session) => session.sessionId == next.sessionId,
+    );
+    if (index < 0) return null;
+    final presented = next.status == CoBreedingSessionStatus.departurePresented
+        ? next
+        : next.copyWith(status: CoBreedingSessionStatus.departurePresented);
+    coBreedingSessions[index] = presented;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return presented;
+  }
+
+  CoBreedingCompletionResult? finalizeCoBreedingDeparture(String sessionId) {
+    final index = coBreedingSessions.indexWhere(
+      (session) => session.sessionId == sessionId,
+    );
+    if (index < 0) return null;
+    final session = coBreedingSessions[index];
+    final profile = ptipoteV2Profiles[session.ptipoteId];
+    if (profile == null) return null;
+    final existingReward = coBreedingXpRewards
+        .where((reward) => reward.sourceSessionId == sessionId)
+        .firstOrNull;
+    final finalLevel = levelForId(profile.ptipoteId);
+    final finalXp = xpOverrides[profile.ptipoteId] ?? 0;
+    final displayName = profile.displayName.isNotEmpty
+        ? profile.displayName
+        : profile.systemName;
+    final v2 = ptipoteStatsConfig.v2;
+    final rewards = CoBreedingCompletionService.rewardsFor(
+      config: v2,
+      finalLevel: finalLevel,
+    );
+    final ptipoteXp = rewards.ptipoteXp;
+    final breederXp = rewards.breederXp;
+    final trustXp = rewards.kernelTrust;
+    if (session.rewardsGrantedAt != null || existingReward != null) {
+      return CoBreedingCompletionResult(
+        sessionId: sessionId,
+        displayName: displayName,
+        typeId: profile.typeId,
+        ptipoteXpAmount: existingReward?.xpAmount ?? ptipoteXp,
+        breederXpAmount: breederXp,
+        kernelTrustAmount: trustXp,
+        alreadyCompleted: true,
+      );
+    }
+    if (!CoBreedingCompletionService.canFinalize(session, profile)) {
+      return null;
+    }
+    final now = DateTime.now();
+    final transactionId =
+        'co-complete-$sessionId-${now.microsecondsSinceEpoch}';
+    final archive = CoBreedingArchive(
+      sessionId: sessionId,
+      ptipoteId: profile.ptipoteId,
+      displayName: profile.displayName,
+      systemName: profile.systemName,
+      typeId: profile.typeId,
+      natureId: profile.natureId,
+      generation: profile.ptipoteGeneration,
+      coreId: profile.coreId,
+      envelopeId: profile.envelopeId,
+      finalLevel: finalLevel,
+      finalXp: finalXp,
+      symbiosisLevel: profile.envelopeSymbiosis?.symbiosisLevel,
+      symbiosisProgressPercent:
+          profile.envelopeSymbiosis?.symbiosisProgressPercent,
+      protocolEfficiency:
+          profile.isProtocol ? profile.effectiveProtocolEfficiency(v2) : null,
+      arrivedAt: session.startedAt,
+      departedAt: now,
+      departureReason: session.departureReason,
+    );
+    // One local transaction: archive, immutable reward, generic Kernel gains,
+    // and terminal session status are written together before persistence.
+    coBreedingArchive.removeWhere((entry) => entry.sessionId == sessionId);
+    coBreedingArchive.add(archive);
+    coBreedingXpRewards.add(CoBreedingXpReward(
+      itemId: 'co-xp-$sessionId',
+      compatibleTypeId: profile.typeId,
+      xpAmount: ptipoteXp,
+      sourceSessionId: sessionId,
+      sourcePtipoteId: profile.ptipoteId,
+      createdAt: now,
+    ));
+    _addKernelAxisXp(KernelAxis.breeder, breederXp);
+    _addKernelTrustXp(trustXp);
+    kernelProgressHistory.add(KernelProgressHistoryEntry(
+      occurredAt: now,
+      eventType: KernelProgressEventType.craftCompleted,
+      trustXp: trustXp,
+      breederXp: breederXp,
+      builderXp: 0,
+      restorerXp: 0,
+    ));
+    completedCoBreedingCount += 1;
+    ptipoteV2Profiles[profile.ptipoteId] = profile.copyWith(
+      lifecycleStatus: PtipoteLifecycleStatus.departedCoBreeding,
+      departurePending: true,
+      updatedAt: now,
+    );
+    coBreedingSessions[index] = session.copyWith(
+      status: CoBreedingSessionStatus.completed,
+      departurePending: true,
+      rewardsGrantedAt: now,
+      completionTransactionId: transactionId,
+    );
+    reports.add(PtipoteMissionReport.system(
+      id: 'co-breeding-departure-$sessionId',
+      message:
+          '$displayName a quitté le refuge après son Co-élevage · niveau $finalLevel.',
+      sourceBuildingId: 'house',
+      mailbox: Zone0MessageMailbox.companions,
+      subject: 'Co-élevage terminé',
+      concerned: displayName,
+      summary:
+          'Bonus XP ${_ptipoteTypeLabel(profile.typeId)} +$ptipoteXp · Éleveur +$breederXp · Kernel +$trustXp.',
+    ));
+    _refreshKernelPlanReadiness();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return CoBreedingCompletionResult(
+      sessionId: sessionId,
+      displayName: displayName,
+      typeId: profile.typeId,
+      ptipoteXpAmount: ptipoteXp,
+      breederXpAmount: breederXp,
+      kernelTrustAmount: trustXp,
+      alreadyCompleted: false,
+    );
+  }
+
+  List<PtipoteFigurine> eligibleTargetsForCoBreedingXpReward(
+    CoBreedingXpReward reward,
+    List<PtipoteFigurine> physical,
+  ) =>
+      physical.where((figurine) {
+        final profile = ptipoteV2ProfileFor(figurine);
+        return profile.ownershipMode == PtipoteOwnershipMode.owned &&
+            profile.lifecycleStatus == PtipoteLifecycleStatus.active &&
+            profile.typeId == reward.compatibleTypeId &&
+            !profile.departurePending &&
+            !isOnMission(figurine.id);
+      }).toList();
+
+  Zone0ActionResult consumeCoBreedingXpReward(
+    String itemId,
+    PtipoteFigurine target,
+  ) {
+    final index = coBreedingXpRewards.indexWhere(
+      (reward) => reward.itemId == itemId && !reward.isConsumed,
+    );
+    if (index < 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Bonus XP indisponible.');
+    }
+    final reward = coBreedingXpRewards[index];
+    final profile = ptipoteV2ProfileFor(target);
+    if (profile.ownershipMode != PtipoteOwnershipMode.owned ||
+        profile.lifecycleStatus != PtipoteLifecycleStatus.active ||
+        profile.departurePending) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce Bonus XP vise uniquement un P’TIPOTE possédé actif.',
+      );
+    }
+    if (profile.typeId != reward.compatibleTypeId) {
+      return const Zone0ActionResult(
+          success: false, message: 'Type incompatible.');
+    }
+    // Normal XP resolution first, then irreversible consumption.
+    addMissionXp(target.id, reward.xpAmount);
+    coBreedingXpRewards[index] = reward.consume(target.id, DateTime.now());
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '+${reward.xpAmount} XP appliquée à ${target.displayName}.');
+  }
+
+  /// Applies the continuous +1%/h symbiosis credit once per elapsed period.
+  /// The timestamp is advanced even for fractional hours, preventing a second
+  /// reconnect from crediting the same time again.
+  void resolveEnvelopeSymbiosis({DateTime? now}) {
+    final timestamp = now ?? DateTime.now();
+    var changed = false;
+    for (final entry in ptipoteV2Profiles.entries.toList()) {
+      final profile = entry.value;
+      final current = profile.envelopeSymbiosis;
+      if (current == null ||
+          profile.envelopeId == null ||
+          profile.departurePending ||
+          !profile.isArrivalComplete ||
+          activeCoBreedingSessionFor(profile.ptipoteId) == null) {
+        continue;
+      }
+      final resolved = EnvelopeSymbiosisService.resolveTime(
+        current,
+        config: ptipoteStatsConfig.v2,
+        now: timestamp,
+      );
+      if (resolved == current) continue;
+      ptipoteV2Profiles[entry.key] = profile.copyWith(
+        envelopeSymbiosis: resolved,
+        updatedAt: timestamp,
+      );
+      changed = true;
+      if (resolved.symbiosisLevel > current.symbiosisLevel) {
+        final completed = resolved.maxLevelReached;
+        reports.add(PtipoteMissionReport.system(
+          id: 'symbiosis-level-${profile.ptipoteId}-${resolved.symbiosisLevel}',
+          message: completed
+              ? '${profile.displayName.isNotEmpty ? profile.displayName : profile.systemName} a pleinement adopté son Enveloppe.'
+              : '${profile.displayName.isNotEmpty ? profile.displayName : profile.systemName} s’habitue à son Enveloppe.',
+          sourceBuildingId: 'house',
+          mailbox: Zone0MessageMailbox.companions,
+          subject: completed ? 'Symbiose complète' : 'Symbiose renforcée',
+          concerned: profile.displayName.isNotEmpty
+              ? profile.displayName
+              : profile.systemName,
+        ));
+      }
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+  }
+
+  void recordPtipoteActivityCompleted(String ptipoteId) {
+    final profile = ptipoteV2Profiles[ptipoteId];
+    final current = profile?.envelopeSymbiosis;
+    if (profile == null ||
+        current == null ||
+        profile.departurePending ||
+        activeCoBreedingSessionFor(ptipoteId) == null) {
+      return;
+    }
+    final now = DateTime.now();
+    final updated = EnvelopeSymbiosisService.addActivity(
+      current,
+      config: ptipoteStatsConfig.v2,
+      now: now,
+    );
+    if (updated == current) return;
+    ptipoteV2Profiles[ptipoteId] = profile.copyWith(
+      envelopeSymbiosis: updated,
+      updatedAt: now,
+    );
+    if (updated.symbiosisLevel > current.symbiosisLevel) {
+      reports.add(PtipoteMissionReport.system(
+        id: 'symbiosis-activity-level-$ptipoteId-${updated.symbiosisLevel}',
+        message: updated.maxLevelReached
+            ? '${profile.displayName.isNotEmpty ? profile.displayName : profile.systemName} a pleinement adopté son Enveloppe.'
+            : '${profile.displayName.isNotEmpty ? profile.displayName : profile.systemName} s’habitue à son Enveloppe.',
+        sourceBuildingId: 'house',
+        mailbox: Zone0MessageMailbox.companions,
+        subject: updated.maxLevelReached
+            ? 'Symbiose complète'
+            : 'Symbiose renforcée',
+        concerned: profile.displayName.isNotEmpty
+            ? profile.displayName
+            : profile.systemName,
+      ));
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  void _replacePtipoteArrivalProfile(PtipoteV2Profile profile) {
+    if (ptipoteV2Profiles[profile.ptipoteId] == profile) return;
+    ptipoteV2Profiles[profile.ptipoteId] = profile;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  void _recordPtipoteArrivalReport(PtipoteMissionReport report) {
+    if (reports.any((existing) => existing.id == report.id)) return;
+    reports.insert(0, report);
+  }
+
+  PtipoteEffectiveModifiers modifiersFor(
+    PtipoteFigurine figurine, {
+    int eligibleGroupPtipoteCount = 1,
+  }) {
+    return PtipoteModifierService.resolve(
+      profile: ptipoteV2ProfileFor(figurine),
+      config: ptipoteStatsConfig.v2,
+      mycelialGatherBonus:
+          lisiereForageConfig.myceliumExploration.mycelialTypeGatherBonus,
+      eligibleGroupPtipoteCount: eligibleGroupPtipoteCount,
+    );
+  }
+
+  int effectiveCarryCapacityFor(
+    PtipoteFigurine figurine, {
+    int eligibleGroupPtipoteCount = 1,
+  }) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    return PtipoteModifierService.effectiveCarryCapacity(
+      profile: profile,
+      modifiers: modifiersFor(
+        figurine,
+        eligibleGroupPtipoteCount: eligibleGroupPtipoteCount,
+      ),
+    );
+  }
+
+  /// Future Protocol editor / Co-élevage entry point. It is intentionally
+  /// limited to data changes in this first V2 foundation prompt.
+  void updatePtipoteV2Profile(PtipoteV2Profile profile) {
+    ptipoteV2Profiles[profile.ptipoteId] = profile.copyWith(
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  bool isInNursery(PtipoteFigurine figurine) =>
+      !ptipoteV2ProfileFor(figurine).isArrivalComplete;
+
+  bool canHatchFromNursery(PtipoteFigurine figurine) => isInNursery(figurine);
+
+  void hatchFromNursery(PtipoteFigurine figurine) {
+    hatchPtipoteArrival(figurine);
+  }
+
   bool isBusy(PtipoteFigurine figurine) {
-    return isOnMission(figurine.id) ||
+    return isInNursery(figurine) ||
+        activeCoBreedingSessions.any(
+          (session) =>
+              session.ptipoteId == figurine.id && session.departurePending,
+        ) ||
+        isOnMission(figurine.id) ||
         isResting(figurine) ||
         isWaitingForBed(figurine) ||
         isAssignedToTower(figurine.id) ||
@@ -14296,10 +15425,86 @@ class Zone0GameState extends ChangeNotifier {
           ..addAll(waitingForBedData.map((id) => '$id'));
       }
       final hatchedData = data['hatchedPtipoteIds'];
+      _legacyArrivalSnapshotPresent = data.containsKey('hatchedPtipoteIds');
       if (hatchedData is List) {
         hatchedPtipoteIds
           ..clear()
           ..addAll(hatchedData.map((id) => '$id'));
+      }
+      final v2ProfilesData = data['ptipoteV2Profiles'];
+      if (v2ProfilesData is Map) {
+        ptipoteV2Profiles
+          ..clear()
+          ..addEntries(
+            v2ProfilesData.entries.where((entry) => entry.value is Map).map(
+                  (entry) => MapEntry(
+                    '${entry.key}',
+                    PtipoteV2Profile.fromFirebase(
+                      '${entry.key}',
+                      entry.value as Map,
+                    ),
+                  ),
+                ),
+          );
+      }
+      final coBreedingData = data['coBreeding'];
+      if (coBreedingData is Map) {
+        coBreedingUnlocked = coBreedingData['unlocked'] == true;
+        coBreedingIntroMissionDismissed =
+            coBreedingData['introMissionDismissed'] == true;
+        coBreedingDevMode = coBreedingData['devMode'] == true;
+        final offer = coBreedingData['offer'];
+        coBreedingOffer =
+            offer is Map ? CoBreedingOffer.fromFirebase(offer) : null;
+        final envelopeOffer = coBreedingData['envelopeOffer'];
+        final envelopeOffers = coBreedingData['envelopeOffers'];
+        coBreedingEnvelopeOffers.clear();
+        if (envelopeOffers is Map) {
+          for (final entry in envelopeOffers.entries) {
+            if (entry.value is Map) {
+              final parsed = CoBreedingEnvelopeOffer.fromFirebase(
+                entry.value as Map,
+              );
+              if (parsed.ptipoteId.isNotEmpty) {
+                coBreedingEnvelopeOffers[parsed.ptipoteId] = parsed;
+              }
+            }
+          }
+        } else if (envelopeOffer is Map) {
+          // Prompt 4 alpha migration: retain the one previously stored offer.
+          final parsed = CoBreedingEnvelopeOffer.fromFirebase(envelopeOffer);
+          if (parsed.ptipoteId.isNotEmpty) {
+            coBreedingEnvelopeOffers[parsed.ptipoteId] = parsed;
+          }
+        }
+        final sessions = coBreedingData['sessions'];
+        if (sessions is List) {
+          coBreedingSessions
+            ..clear()
+            ..addAll(
+              sessions.whereType<Map>().map(CoBreedingSession.fromFirebase),
+            );
+        }
+        final rewards = coBreedingData['xpRewards'];
+        if (rewards is List) {
+          coBreedingXpRewards
+            ..clear()
+            ..addAll(
+              rewards.whereType<Map>().map(CoBreedingXpReward.fromFirebase),
+            );
+        }
+        final archive = coBreedingData['archive'];
+        if (archive is List) {
+          coBreedingArchive
+            ..clear()
+            ..addAll(
+              archive.whereType<Map>().map(CoBreedingArchive.fromFirebase),
+            );
+        }
+        completedCoBreedingCount = _readInt(
+          coBreedingData['completedCount'],
+          fallback: coBreedingArchive.length,
+        );
       }
 
       final autoPreferenceData = data['autoPreferenceOverrides'];
@@ -15273,6 +16478,7 @@ class Zone0GameState extends ChangeNotifier {
       final hadEnergyCorePattern = energyCorePatternDiscovered;
       final removedPrematureEnergyCore = _migratePrematureEnergyCorePattern();
       _loadedFromFirebase = true;
+      resolveCoBreedingSessions();
       _resolveEnergyCoreMilestones();
       resolveConstructionProjects();
       if (migratedPTibugState ||
@@ -18047,6 +19253,41 @@ class Zone0GameState extends ChangeNotifier {
 
     levelOverrides[figurineId] = level;
     xpOverrides[figurineId] = xp;
+    final sessionIndex = coBreedingSessions.indexWhere(
+      (session) => session.ptipoteId == figurineId,
+    );
+    if (sessionIndex >= 0 &&
+        level >= coBreedingConfig.levelEarlyDeparture &&
+        !coBreedingSessions[sessionIndex].departurePending) {
+      final updated = CoBreedingTimeService.markLevelCap(
+        coBreedingSessions[sessionIndex],
+        now: DateTime.now(),
+      );
+      coBreedingSessions[sessionIndex] = updated;
+      final profile = ptipoteV2Profiles[figurineId];
+      if (profile != null) {
+        ptipoteV2Profiles[figurineId] = profile.copyWith(
+          departurePending: true,
+          departureReason: CoBreedingDepartureReason.levelCapReached.name,
+          lifecycleStatus: PtipoteLifecycleStatus.departurePending,
+        );
+      }
+      reports.add(
+        PtipoteMissionReport.system(
+          id: 'co-breeding-level-cap-${updated.sessionId}',
+          message:
+              '${profile?.displayName.isNotEmpty == true ? profile!.displayName : profile?.systemName ?? 'Ce P’TIPOTE'} a terminé sa croissance.',
+          sourceBuildingId: 'house',
+          mailbox: Zone0MessageMailbox.companions,
+          subject: 'Co-élevage terminé',
+          concerned: profile?.displayName ?? profile?.systemName ?? 'P’TIPOTE',
+        ),
+      );
+    }
+    // XP is granted only when a real activity resolves. Reusing this central
+    // point makes every eligible activity worth one Symbiose credit, never one
+    // credit per produced object or per UI refresh.
+    if (xpGain > 0) recordPtipoteActivityCompleted(figurineId);
     unawaited(saveRuntimeToFirebase());
     return PtipoteXpGainResult(xp: xp, level: level, leveledUp: leveledUp);
   }
@@ -18108,6 +19349,26 @@ class Zone0GameState extends ChangeNotifier {
         'manualRestingIds': manualRestingIds.toList(),
         'waitingForBedIds': waitingForBedIds.toList(),
         'hatchedPtipoteIds': hatchedPtipoteIds.toList(),
+        'ptipoteV2Profiles': ptipoteV2Profiles.map(
+          (id, profile) => MapEntry(id, profile.toFirebase()),
+        ),
+        'coBreeding': <String, dynamic>{
+          'unlocked': coBreedingUnlocked,
+          'introMissionDismissed': coBreedingIntroMissionDismissed,
+          'devMode': coBreedingDevMode,
+          'offer': coBreedingOffer?.toFirebase(),
+          'envelopeOffers': coBreedingEnvelopeOffers.map(
+            (id, offer) => MapEntry(id, offer.toFirebase()),
+          ),
+          'sessions': coBreedingSessions
+              .map((session) => session.toFirebase())
+              .toList(),
+          'xpRewards':
+              coBreedingXpRewards.map((reward) => reward.toFirebase()).toList(),
+          'archive':
+              coBreedingArchive.map((entry) => entry.toFirebase()).toList(),
+          'completedCount': completedCoBreedingCount,
+        },
         'autoPreferenceOverrides': autoPreferenceOverrides.map(
           (key, value) => MapEntry(key, value.name),
         ),
@@ -24157,6 +25418,7 @@ class PtipoteMissionReport {
   }
 
   factory PtipoteMissionReport.system({
+    String? id,
     required String message,
     String? sourceBuildingId,
     Zone0MessageMailbox mailbox = Zone0MessageMailbox.companions,
@@ -24166,7 +25428,7 @@ class PtipoteMissionReport {
   }) {
     final now = DateTime.now();
     return PtipoteMissionReport(
-      id: 'system-${now.microsecondsSinceEpoch}',
+      id: id ?? 'system-${now.microsecondsSinceEpoch}',
       figurineName: 'Refuge',
       biomeLabel: 'Zone 0',
       durationLabel: 'instantané',

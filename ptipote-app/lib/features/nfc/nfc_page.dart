@@ -9,6 +9,7 @@ import '../../services/nfc_service.dart';
 import '../../services/user_profile_service.dart';
 import '../figurines/figurines_page.dart';
 import '../figurines/ptipote_image.dart';
+import '../game/zone0_game_state.dart';
 
 class NfcPage extends StatefulWidget {
   const NfcPage({
@@ -49,7 +50,6 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
   String _tagUid = '';
   String _rawSource = '';
   String _decodedText = '';
-  String? _pendingNickname;
   NfcDiagnosticEvent? _diagnostic;
   PendingTransfer? _pendingTransfer;
   Map<String, String> _fields = _emptyFields();
@@ -150,7 +150,6 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
       _firebaseLookupFailed = false;
       _adoptedInSession = false;
       _showAdoptionSuccess = false;
-      _pendingNickname = null;
       _pendingTransfer = null;
       _fields = _emptyFields();
     });
@@ -216,7 +215,6 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
       _firebaseLookupFailed = false;
       _adoptedInSession = false;
       _showAdoptionSuccess = false;
-      _pendingNickname = null;
       _fields = Map<String, String>.from(normalizedFields);
     });
 
@@ -315,7 +313,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
 
   Future<void> _saveFigurine() async {
     if (_adoptedInSession) {
-      Navigator.of(context).pushNamed(FigurinesPage.route);
+      Navigator.of(context).pushNamed('/game');
       return;
     }
 
@@ -354,18 +352,6 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
       return;
     }
 
-    final pendingNickname = _pendingNickname;
-    if (pendingNickname == null) {
-      final nickname = await _askNickname();
-      if (nickname == null) return;
-      setState(() {
-        _pendingNickname = nickname;
-        _fields = Map<String, String>.from(_fields)..['s'] = nickname;
-        _setStatus('Surnom prêt. Valide avec Bien adopter.', isError: false);
-      });
-      return;
-    }
-
     setState(() {
       _saving = true;
       _statusIsError = false;
@@ -376,24 +362,35 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
       final fields = Map<String, String>.from(_fields);
       fields['o'] = profile.ownerName;
       fields['on'] = profile.breederNumber;
-      fields['s'] = pendingNickname;
+      // The first player-facing name is now chosen after the egg hatches.
+      // NFC still needs a durable neutral name for its record and catalogue.
+      final systemName = _systemNameFor(fields);
+      fields['s'] = systemName;
 
       await _figurineService.saveScannedFigurine(
         tagUid: _tagUid,
-        nickname: pendingNickname,
+        nickname: systemName,
         rawSource: _rawSource,
         decodedText: _decodedText,
         fields: fields,
         ownerProfile: profile,
       );
+      final figurine = await _figurineService.getMyFigurineByTagUid(_tagUid);
+      if (figurine != null) {
+        final gameState = Zone0GameState.instance;
+        await gameState.loadFromFirebase();
+        gameState.sendPtipoteToIncubator(figurine);
+      }
       setState(() {
         _saving = false;
         _statusIsError = false;
-        _setStatus('Figurine enregistree dans ton compte.', isError: false);
+        _setStatus(
+          'Œuf envoyé dans la Couveuse de la Maison.',
+          isError: false,
+        );
         _alreadyRegistered = true;
         _adoptedInSession = true;
         _showAdoptionSuccess = true;
-        _pendingNickname = null;
         _firebaseLookupFailed = false;
         _fields = fields;
       });
@@ -410,45 +407,16 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
     }
   }
 
-  Future<String?> _askNickname() async {
-    final controller = TextEditingController(text: _fields['s'] ?? '');
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nommer ce PTIPOTE'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Surnom',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Enregistrer'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-
-    final nickname = result?.trim();
-    if (nickname == null) return null;
-    if (nickname.isEmpty) {
-      setState(() {
-        _statusIsError = true;
-        _status = 'Le surnom est requis pour lier la puce au compte.';
-      });
-      return null;
-    }
-    return nickname;
+  String _systemNameFor(Map<String, String> fields) {
+    final candidates = <String>[
+      fields['s'] ?? '',
+      fields['e'] ?? '',
+      fields['t'] ?? '',
+      'P’TIPOTE',
+    ];
+    return candidates
+        .map((value) => value.trim())
+        .firstWhere((value) => value.isNotEmpty && value != '-');
   }
 
   String _extractPayloadFromSource(String source) {
@@ -604,12 +572,11 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
 
   String get _saveButtonLabel {
     if (_showAdoptionSuccess) return 'Adoption réussie';
-    if (_adoptedInSession) return 'Voir Mes PTIPOTES';
+    if (_adoptedInSession) return 'Voir la Couveuse';
     if (_saving) return 'Enregistrement...';
     if (_checkingFirebase) return 'Vérification Firebase...';
     if (_alreadyRegistered) return 'Déjà adopté';
     if (_firebaseLookupFailed) return 'Vérification impossible';
-    if (_pendingNickname != null) return 'Bien adopter';
     return 'Adopter';
   }
 
@@ -719,9 +686,7 @@ class _NfcPageState extends State<NfcPage> with SingleTickerProviderStateMixin {
                   ? (_showAdoptionSuccess
                       ? _AdoptButtonStage.success
                       : _AdoptButtonStage.done)
-                  : _pendingNickname != null
-                      ? _AdoptButtonStage.confirm
-                      : _AdoptButtonStage.ready,
+                  : _AdoptButtonStage.ready,
               animation: _adoptPulseController,
               onPressed: _saveFigurine,
             ),

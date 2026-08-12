@@ -1,4 +1,5 @@
 import 'ptipote_stats_config.dart';
+import 'ptipote_v2.dart';
 
 class PtipoteFigurine {
   const PtipoteFigurine({
@@ -137,23 +138,25 @@ class PtipoteFigurine {
     final value = _normalize(
       fields['envelopeType'] ?? fields['envelope'] ?? fields['env'],
     );
-    if (value.contains('explor')) return PtipoteEnvelopeType.explorateur;
-    if (value.contains('product')) return PtipoteEnvelopeType.producteur;
-    if (value.contains('scien')) return PtipoteEnvelopeType.scientifique;
+    if (value.contains('explor')) return PtipoteEnvelopeType.exploration;
+    if (value.contains('product')) return PtipoteEnvelopeType.production;
+    if (value.contains('scien') || value.contains('analys')) {
+      return PtipoteEnvelopeType.analyste;
+    }
     if (value.contains('protect') ||
         value.contains('guerr') ||
         value.contains('warrior')) {
-      return PtipoteEnvelopeType.protecteur;
+      return PtipoteEnvelopeType.defense;
     }
     return PtipoteEnvelopeType.standard;
   }
 
   String get envelopeLabel => switch (envelopeType) {
         PtipoteEnvelopeType.standard => 'standard',
-        PtipoteEnvelopeType.explorateur => 'explorateur',
-        PtipoteEnvelopeType.producteur => 'producteur',
-        PtipoteEnvelopeType.scientifique => 'scientifique',
-        PtipoteEnvelopeType.protecteur => 'protecteur',
+        PtipoteEnvelopeType.exploration => 'Exploration',
+        PtipoteEnvelopeType.production => 'Production',
+        PtipoteEnvelopeType.analyste => 'Analyste',
+        PtipoteEnvelopeType.defense => 'Défense',
       };
 
   PtipoteBehaviorState get behaviorState {
@@ -267,6 +270,17 @@ class PtipoteFigurine {
   double get xpGainBonus {
     final envelopeMod = ptipoteStatsConfig.envelopeModifiers[envelopeType];
     return envelopeMod?.xpGainBonus ?? 0;
+  }
+
+  /// V2 leaves the NFC figure untouched. Zone 0 persists this associated
+  /// profile under its own runtime document, which also supports a future
+  /// co-bred P'TIPOTE without requiring an NFC tag.
+  PtipoteV2Profile legacyV2Profile({int baseCarryCapacity = 20}) {
+    return migrateLegacyPtipoteProfile(
+      ptipoteId: id,
+      legacyFields: fields,
+      defaultBaseCarryCapacity: baseCarryCapacity,
+    );
   }
 
   int addHappiness(int amount) {

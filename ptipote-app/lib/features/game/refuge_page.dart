@@ -8,9 +8,11 @@ import '../../services/figurine_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/user_profile_service.dart';
 import '../figurines/ptipote_figurine.dart';
+import '../figurines/co_breeding.dart';
 import '../figurines/ptipote_image.dart';
 import '../nfc/nfc_page.dart';
 import '../figurines/ptipote_stats_config.dart';
+import '../figurines/ptipote_v2.dart';
 import 'camp_heart_config.dart';
 import 'camp_generator_config.dart';
 import 'community_roles_config.dart';
@@ -2137,9 +2139,10 @@ class _MaisonPageState extends State<_MaisonPage>
                       StreamBuilder<List<PtipoteFigurine>>(
                         stream: _figurineService.watchMyFigurines(),
                         builder: (context, snapshot) {
-                          final figurines =
+                          final physical =
                               snapshot.data ?? const <PtipoteFigurine>[];
-                          _gameState.ensureNurseryAdmissions(figurines);
+                          _gameState.ensureNurseryAdmissions(physical);
+                          final figurines = _gameState.allPtipotes(physical);
                           final admitted = figurines
                               .where(
                                 (figurine) => !_gameState.isInNursery(figurine),
@@ -2147,7 +2150,7 @@ class _MaisonPageState extends State<_MaisonPage>
                               .toList();
                           if (snapshot.connectionState ==
                                   ConnectionState.waiting &&
-                              figurines.isEmpty) {
+                              physical.isEmpty) {
                             return const Center(
                               child: CircularProgressIndicator(),
                             );
@@ -2267,7 +2270,8 @@ class _MaisonPageState extends State<_MaisonPage>
       builder: (_) => StreamBuilder<List<PtipoteFigurine>>(
         stream: _figurineService.watchMyFigurines(),
         builder: (context, snapshot) {
-          final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+          final physical = snapshot.data ?? const <PtipoteFigurine>[];
+          final figurines = _gameState.allPtipotes(physical);
           return SafeArea(
             child: ListView(
               shrinkWrap: true,
@@ -2409,11 +2413,124 @@ class _MaisonPageState extends State<_MaisonPage>
   }
 }
 
-class _MaisonNurseryTab extends StatelessWidget {
+class _MaisonNurseryTab extends StatefulWidget {
   const _MaisonNurseryTab({required this.gameState, required this.onHatched});
 
   final Zone0GameState gameState;
   final VoidCallback onHatched;
+
+  @override
+  State<_MaisonNurseryTab> createState() => _MaisonNurseryTabState();
+}
+
+class _MaisonNurseryTabState extends State<_MaisonNurseryTab> {
+  bool _departureQueueOpen = false;
+
+  Zone0GameState get gameState => widget.gameState;
+  VoidCallback get onHatched => widget.onHatched;
+
+  Future<void> _openDepartureQueue(BuildContext context) async {
+    if (_departureQueueOpen) return;
+    _departureQueueOpen = true;
+    try {
+      await _runDepartureQueue(context);
+    } finally {
+      if (mounted) {
+        setState(() => _departureQueueOpen = false);
+      }
+    }
+  }
+
+  void _scheduleDepartureQueue(BuildContext context) {
+    if (_departureQueueOpen || gameState.pendingCoBreedingDepartures.isEmpty) {
+      return;
+    }
+    _departureQueueOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      try {
+        await _runDepartureQueue(context);
+      } finally {
+        if (mounted) {
+          setState(() => _departureQueueOpen = false);
+        }
+      }
+    });
+  }
+
+  Future<void> _runDepartureQueue(BuildContext context) async {
+    while (context.mounted) {
+      final session = gameState.prepareNextCoBreedingDeparture();
+      if (session == null) return;
+      final profile = gameState.ptipoteV2Profiles[session.ptipoteId];
+      if (profile == null) return;
+      final name = profile.displayName.isNotEmpty
+          ? profile.displayName
+          : profile.systemName;
+      final accepted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Un départ se prépare'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              SizedBox(
+                height: 130,
+                child: PtipoteImage(
+                  type: profile.typeId.name,
+                  species: profile.natureId,
+                  visualAssetKey:
+                      profile.isProtocol ? profile.visualAssetKey : '',
+                  height: 130,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '$name a fini sa croissance ici.\nIl s’en va aider d’autres camps.\nIl vous remercie pour votre accueil.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('L’accompagner'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true || !context.mounted) return;
+      final reward = gameState.finalizeCoBreedingDeparture(session.sessionId);
+      if (reward == null) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Co-élevage terminé'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                  'Bonus XP ${_ptipoteTypeName(reward.typeId)} · +${reward.ptipoteXpAmount} XP'),
+              Text('Éleveur · +${reward.breederXpAmount} XP'),
+              Text('Kernel · +${reward.kernelTrustAmount} Confiance'),
+              const SizedBox(height: 8),
+              const Text(
+                  'Le Bonus XP reste dans l’inventaire jusqu’au choix d’un P’TIPOTE possédé du même Type.'),
+            ],
+          ),
+          actions: <Widget>[
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Récupérer'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2422,11 +2539,17 @@ class _MaisonNurseryTab extends StatelessWidget {
       child: StreamBuilder<List<PtipoteFigurine>>(
         stream: figurineService.watchMyFigurines(),
         builder: (context, snapshot) {
-          final figurines = snapshot.data ?? const <PtipoteFigurine>[];
-          gameState.ensureNurseryAdmissions(figurines);
+          final physical = snapshot.data ?? const <PtipoteFigurine>[];
+          gameState.ensureNurseryAdmissions(physical);
+          gameState.resolveCoBreedingSessions();
+          _scheduleDepartureQueue(context);
+          final figurines = gameState.allPtipotes(physical);
           final eggs = figurines
               .where((figurine) => gameState.isInNursery(figurine))
               .toList();
+          for (final figurine in eggs) {
+            gameState.resumeInterruptedPtipoteArrival(figurine);
+          }
           return ListView(
             padding: const EdgeInsets.all(18),
             children: [
@@ -2438,7 +2561,7 @@ class _MaisonNurseryTab extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Les P’TIPOTES en attente d’une alcôve reposent ici sous forme d’œuf.',
+                'Tout nouveau P’TIPOTE attend ici sous forme d’œuf avant son rituel d’accueil.',
               ),
               const SizedBox(height: 12),
               FilledButton.icon(
@@ -2448,13 +2571,55 @@ class _MaisonNurseryTab extends StatelessWidget {
                 icon: const Icon(Icons.nfc),
                 label: const Text('Scanner un P’TIPOTE'),
               ),
+              if (gameState.shouldShowInitialPtipoteChoice(physical)) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _showInitialCoBreedingChoice(
+                    context,
+                    gameState,
+                  ),
+                  icon: const Icon(Icons.egg_alt_outlined),
+                  label: const Text('Co-élever un P’TIPOTE'),
+                ),
+              ],
+              if (gameState.isCoBreedingIntroMissionAvailable(physical)) ...[
+                const SizedBox(height: 14),
+                _CoBreedingIntroCard(gameState: gameState),
+              ] else if (gameState.coBreedingUnlocked) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _CoBreedingPage(gameState: gameState),
+                    ),
+                  ),
+                  icon: const Icon(Icons.groups_outlined),
+                  label: const Text('Ouvrir le Co-élevage'),
+                ),
+              ],
               const SizedBox(height: 18),
+              if (gameState.pendingCoBreedingDepartures.isNotEmpty) ...[
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.waving_hand_outlined),
+                    title: Text(
+                      '${gameState.pendingCoBreedingDepartures.length} départ(s) de Co-élevage en attente',
+                    ),
+                    subtitle: const Text('Les accompagner depuis la Maison.'),
+                    trailing: FilledButton(
+                      onPressed: () => _openDepartureQueue(context),
+                      child: const Text('Accompagner'),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               if (eggs.isEmpty)
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(18),
                     child: Text(
-                      'Aucun œuf en attente. Les prochains scans apparaîtront ici si la Maison est pleine.',
+                      'Couveuse vide. Les prochains P’TIPOTES arriveront ici avant de rejoindre le refuge.',
                     ),
                   ),
                 )
@@ -2466,14 +2631,28 @@ class _MaisonNurseryTab extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Icon(Icons.egg_alt_outlined, size: 54),
+                          Icon(
+                            Icons.egg_alt_outlined,
+                            size: 54,
+                            color: _eggColor(
+                              gameState.ptipoteV2ProfileFor(figurine).typeId,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           Text(
-                            figurine.displayName,
+                            'Œuf en attente',
                             textAlign: TextAlign.center,
                             style: const TextStyle(fontWeight: FontWeight.w900),
                           ),
-                          Text(figurine.type, textAlign: TextAlign.center),
+                          Text(
+                            gameState
+                                        .ptipoteV2ProfileFor(figurine)
+                                        .acquisitionOrigin ==
+                                    PtipoteAcquisitionOrigin.coBreeding
+                                ? 'Co-élevage'
+                                : 'Figurine',
+                            textAlign: TextAlign.center,
+                          ),
                           const SizedBox(height: 8),
                           if (gameState.canHatchFromNursery(figurine))
                             FilledButton(
@@ -2486,12 +2665,7 @@ class _MaisonNurseryTab extends StatelessWidget {
                                   onFinished: onHatched,
                                 ),
                               ),
-                              child: const Text('Faire éclore'),
-                            )
-                          else
-                            Text(
-                              'Une alcôve libre est nécessaire (${gameState.hatchedPtipoteIds.length}/${gameState.alcoveCapacity}).',
-                              textAlign: TextAlign.center,
+                              child: const Text('Tapoter l’œuf'),
                             ),
                         ],
                       ),
@@ -2541,6 +2715,406 @@ class _MaisonNurseryTab extends StatelessWidget {
   }
 }
 
+Future<void> _showInitialCoBreedingChoice(
+  BuildContext context,
+  Zone0GameState gameState,
+) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'Choisir un premier Type',
+              style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            const Text('Ce premier Co-élevage est gratuit.'),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: PtipoteTypeId.values.map((type) {
+                final label = switch (type) {
+                  PtipoteTypeId.vegetal => 'Végétal',
+                  PtipoteTypeId.mineral => 'Minéral',
+                  PtipoteTypeId.mycelial => 'Mycélien',
+                };
+                return FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _eggColor(type),
+                  ),
+                  onPressed: () {
+                    final result = gameState.startInitialCoBreeding(type);
+                    if (!result.success) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(result.message)),
+                      );
+                      return;
+                    }
+                    Navigator.of(sheetContext).pop();
+                    showDialog<void>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Co-élevage'),
+                        content: const Text(
+                          'Ce P’TIPOTE vous est confié temporairement. Aidez-le à grandir : il restera au maximum 7 jours et pourra repartir plus tôt au niveau 7.',
+                        ),
+                        actions: <Widget>[
+                          FilledButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Voir la Couveuse'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.egg_alt_outlined),
+                  label: Text(label),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _CoBreedingIntroCard extends StatelessWidget {
+  const _CoBreedingIntroCard({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                'Mission Kernel · Co-élevage',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Un P’TIPOTE cherche un éleveur pour terminer sa croissance avant de rejoindre un autre camp ou une ville.',
+              ),
+              const SizedBox(height: 10),
+              FilledButton(
+                onPressed: () {
+                  gameState.acceptCoBreedingIntroMission();
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _CoBreedingPage(gameState: gameState),
+                    ),
+                  );
+                },
+                child: const Text('Accepter la mission'),
+              ),
+              TextButton(
+                onPressed: gameState.dismissCoBreedingIntroMission,
+                child: const Text('Plus tard'),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _CoBreedingPage extends StatefulWidget {
+  const _CoBreedingPage({required this.gameState});
+
+  final Zone0GameState gameState;
+
+  @override
+  State<_CoBreedingPage> createState() => _CoBreedingPageState();
+}
+
+class _CoBreedingPageState extends State<_CoBreedingPage> {
+  Zone0GameState get gameState => widget.gameState;
+
+  @override
+  void initState() {
+    super.initState();
+    gameState.ensureCoBreedingOffer();
+  }
+
+  void _showResult(Zone0ActionResult result) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(result.message)));
+    if (result.success) setState(() {});
+  }
+
+  String _remaining(Duration duration) {
+    if (duration <= Duration.zero) return 'Prêt à repartir';
+    final days = duration.inDays;
+    final hours = duration.inHours.remainder(24);
+    return days > 0 ? '$days j $hours h restantes' : '$hours h restantes';
+  }
+
+  String _typeLabel(PtipoteTypeId type) => switch (type) {
+        PtipoteTypeId.vegetal => 'Végétal',
+        PtipoteTypeId.mineral => 'Minéral',
+        PtipoteTypeId.mycelial => 'Mycélien',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    gameState.resolveCoBreedingSessions();
+    final offer = gameState.ensureCoBreedingOffer();
+    final now = DateTime.now();
+    final eligibleProtocols = gameState.ptipoteV2Profiles.values
+        .where((profile) => gameState.isEligibleForEnvelope(profile.ptipoteId))
+        .toList();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Co-élevage')),
+      body: AnimatedBuilder(
+        animation: gameState,
+        builder: (context, _) => ListView(
+          padding: const EdgeInsets.all(18),
+          children: <Widget>[
+            Text(
+              'P’TIPOTES EN CO-ÉLEVAGE',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            Text(
+                '${gameState.activeCoBredCount} / ${gameState.coBreedingCapacity}'),
+            const SizedBox(height: 14),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const Text('P’TIPOTE DISPONIBLE',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 8),
+                    if (offer == null)
+                      const Text('Indisponible actuellement.')
+                    else ...<Widget>[
+                      Icon(Icons.egg_alt_outlined,
+                          color: _eggColor(offer.typeId), size: 52),
+                      Text(
+                          'Type ${_typeLabel(offer.typeId)} · ${offer.generation == PtipoteGeneration.protocol ? 'Protocole' : 'Vestige'}'),
+                      Text(
+                          'Nouvelle proposition dans ${_remaining(offer.expiresAt.difference(now))}'),
+                      const SizedBox(height: 8),
+                      FilledButton(
+                        onPressed: gameState.isCoBreedingCapacityReached
+                            ? null
+                            : () =>
+                                _showResult(gameState.acceptCoBreedingOffer()),
+                        child: Text(gameState.isCoBreedingCapacityReached
+                            ? 'Capacité atteinte'
+                            : 'Accueillir en Co-élevage'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            Card(
+              color: eligibleProtocols.isEmpty
+                  ? Theme.of(context).colorScheme.surfaceContainerHighest
+                  : null,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: eligibleProtocols.isEmpty
+                    ? const ListTile(
+                        leading: Icon(Icons.lock_outline),
+                        title: Text('ENVELOPPE DISPONIBLE'),
+                        subtitle: Text(
+                            'Débloqué avec un P’TIPOTE Protocole en Co-élevage niveau 3 sans Enveloppe.'),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: eligibleProtocols.map((profile) {
+                          final name = profile.displayName.isNotEmpty
+                              ? profile.displayName
+                              : profile.systemName;
+                          final envelopeOffer = gameState
+                              .ensureCoBreedingEnvelopeOffer(profile.ptipoteId);
+                          final compatible =
+                              gameState.availableCoBreedingEnvelopeTemplatesFor(
+                                  profile.ptipoteId);
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                Text('ENVELOPPE DISPONIBLE · $name',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w900)),
+                                Text(
+                                    'Niveau ${gameState.levelForId(profile.ptipoteId)} · offre compatible gratuite'),
+                                if (envelopeOffer != null)
+                                  FilledButton(
+                                    onPressed: () => _showResult(
+                                        gameState.acceptFreeCoBreedingEnvelope(
+                                            profile.ptipoteId)),
+                                    child: Text(
+                                        'Accueillir ${envelopeOffer.envelopeId} gratuitement'),
+                                  ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                    'Choisir exactement · 6 Bio-batteries'),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: compatible
+                                      .map((envelope) => OutlinedButton(
+                                            onPressed: () => _showResult(gameState
+                                                .chooseExactCoBreedingEnvelope(
+                                                    profile.ptipoteId,
+                                                    envelope.envelopeId)),
+                                            child: Text(envelope.displayName),
+                                          ))
+                                      .toList(),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+              ),
+            ),
+            if (gameState.activeCoBreedingSessions.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 18),
+              const Text('Sessions actives',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              ...gameState.activeCoBreedingSessions.map((session) {
+                final profile = gameState.ptipoteV2Profiles[session.ptipoteId];
+                final label = profile?.displayName.isNotEmpty == true
+                    ? profile!.displayName
+                    : profile?.systemName ?? 'P’TIPOTE';
+                return Card(
+                  child: ListTile(
+                    leading: Icon(Icons.egg_alt_outlined,
+                        color: _eggColor(session.typeId)),
+                    title: Text(label),
+                    subtitle: Text(session.departurePending
+                        ? 'Prêt à repartir'
+                        : _protocolSessionDetails(profile, session)),
+                    trailing: Text(
+                        'Niv. ${gameState.levelOverrides[session.ptipoteId] ?? 1}'),
+                  ),
+                );
+              }),
+            ],
+            if (gameState.breederLevel >= 3) ...<Widget>[
+              const SizedBox(height: 18),
+              const Text('Choisir un Type',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const Text(
+                  '5 Bio-batteries · sélection aléatoire dans le Type choisi.'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: PtipoteTypeId.values
+                    .map((type) => OutlinedButton.icon(
+                          onPressed: gameState.isCoBreedingCapacityReached
+                              ? null
+                              : () => _showResult(
+                                  gameState.chooseCoBreedingType(type)),
+                          icon: Icon(Icons.egg_alt_outlined,
+                              color: _eggColor(type)),
+                          label: Text(_typeLabel(type)),
+                        ))
+                    .toList(),
+              ),
+            ],
+            if (gameState.breederLevel >= 4) ...<Widget>[
+              const SizedBox(height: 18),
+              const Text('Catalogue',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const Text('Choisir exactement un P’TIPOTE · 8 Bio-batteries.'),
+              _catalogue(
+                  'VESTIGES',
+                  gameState.availableCoBreedingTemplates(
+                      generation: PtipoteGeneration.vestige)),
+              _catalogue(
+                  'PROTOCOLES',
+                  gameState.availableCoBreedingTemplates(
+                      generation: PtipoteGeneration.protocol)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _protocolSessionDetails(
+    PtipoteV2Profile? profile,
+    CoBreedingSession session,
+  ) {
+    final remaining = _remaining(Duration(seconds: session.remainingSeconds));
+    if (profile == null || !profile.isProtocol) {
+      return 'Co-élevage · $remaining';
+    }
+    final v2 = ptipoteStatsConfig.v2;
+    final envelope = profile.envelopeId;
+    if (envelope == null) {
+      return 'Protocole · Noyau seul · efficacité 50 % · $remaining';
+    }
+    final symbiosis = profile.envelopeSymbiosis;
+    final efficiency = (profile.effectiveProtocolEfficiency(v2) * 100).round();
+    final state = symbiosis?.maxLevelReached == true
+        ? 'Symbiose complète'
+        : 'Symbiose ${(symbiosis?.symbiosisProgressPercent ?? 0).toStringAsFixed(1)} %';
+    return 'Protocole · $envelope · $state · efficacité $efficiency % · $remaining';
+  }
+
+  Widget _catalogue(String title, List<CoBreedingTemplate> templates) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const SizedBox(height: 8),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ...templates.map((template) => Card(
+                child: ListTile(
+                  leading: Icon(Icons.egg_alt_outlined,
+                      color: _eggColor(template.typeId)),
+                  title: Text(template.systemName),
+                  subtitle: Text(_typeLabel(template.typeId)),
+                  trailing: TextButton(
+                    onPressed: gameState.isCoBreedingCapacityReached
+                        ? null
+                        : () => _showResult(gameState
+                            .chooseExactCoBreedingPtipote(template.templateId)),
+                    child: const Text('8 piles'),
+                  ),
+                ),
+              )),
+        ],
+      );
+}
+
+Color _eggColor(PtipoteTypeId type) {
+  final raw = PtipoteArrivalService.eggColorHex(type, ptipoteStatsConfig.v2)
+      .replaceFirst('#', '');
+  final parsed = int.tryParse(raw, radix: 16);
+  return parsed == null ? Colors.amber : Color(0xFF000000 | parsed);
+}
+
+String _ptipoteTypeName(PtipoteTypeId type) => switch (type) {
+      PtipoteTypeId.vegetal => 'Végétal',
+      PtipoteTypeId.mineral => 'Minéral',
+      PtipoteTypeId.mycelial => 'Mycélien',
+    };
+
 const List<List<int>> _rhythmTapPatterns = <List<int>>[
   <int>[0, 600, 1200],
   <int>[0, 550, 1100, 1650],
@@ -2566,22 +3140,38 @@ class _EggHatchDialog extends StatefulWidget {
 }
 
 class _EggHatchDialogState extends State<_EggHatchDialog> {
-  static const _tapTolerance = Duration(milliseconds: 1250);
   final List<Timer> _previewTimers = <Timer>[];
   final List<DateTime> _tapTimes = <DateTime>[];
-  int _stage = 0;
-  int _taps = 0;
   int _previewBeat = -1;
   bool _isPulsing = false;
-  bool _hatched = false;
+  bool _resolved = false;
   String? _feedback;
+  late final TextEditingController _nameController;
 
-  String get _displayName => widget.figurine?.displayName ?? 'Œuf de test';
-  String get _type => widget.figurine?.type ?? 'Démonstration';
+  PtipoteV2Profile? get _profile => widget.figurine == null
+      ? null
+      : widget.gameState.ptipoteV2ProfileFor(widget.figurine!);
+
+  List<int> get _rhythm => _profile?.rhythmPattern.isNotEmpty == true
+      ? _profile!.rhythmPattern
+      : _rhythmTapPatterns[1];
+
+  Duration get _tapTolerance => Duration(
+        milliseconds: ptipoteStatsConfig.v2.rhythmTimingToleranceMs,
+      );
+
+  bool get _isHatched => _profile?.arrivalState == PtipoteArrivalState.hatched;
+  bool get _isNaming => _profile?.arrivalState == PtipoteArrivalState.naming;
 
   @override
   void initState() {
     super.initState();
+    _nameController = TextEditingController(
+      text: _profile?.systemName ?? '',
+    );
+    if (!widget.isPractice && widget.figurine != null) {
+      widget.gameState.preparePtipoteArrivalRhythm(widget.figurine!);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _playPreview());
   }
 
@@ -2590,11 +3180,12 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
     for (final timer in _previewTimers) {
       timer.cancel();
     }
+    _nameController.dispose();
     super.dispose();
   }
 
   void _playPreview() {
-    if (_hatched) return;
+    if (_resolved || _isHatched || _isNaming) return;
     for (final timer in _previewTimers) {
       timer.cancel();
     }
@@ -2604,11 +3195,9 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
       _isPulsing = false;
       _feedback = null;
     });
-    for (var beat = 0;
-        beat < _rhythmTapPatterns[_stage + 1].length;
-        beat += 1) {
+    for (var beat = 0; beat < _rhythm.length; beat += 1) {
       _previewTimers.add(
-        Timer(Duration(milliseconds: _rhythmTapPatterns[_stage + 1][beat]), () {
+        Timer(Duration(milliseconds: _rhythm[beat]), () {
           _showPreviewBeat(beat);
         }),
       );
@@ -2629,56 +3218,86 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
   }
 
   void _tap() {
-    if (_hatched) return;
+    if (_resolved || _isHatched || _isNaming) return;
+    if (!widget.isPractice && widget.figurine != null) {
+      widget.gameState.beginPtipoteArrivalRhythm(widget.figurine!);
+    }
     final now = DateTime.now();
     if (_tapTimes.isNotEmpty) {
       final beatIndex = _tapTimes.length;
       final expectedGap = Duration(
-        milliseconds: _rhythmTapPatterns[_stage + 1][beatIndex] -
-            _rhythmTapPatterns[_stage + 1][beatIndex - 1],
+        milliseconds: _rhythm[beatIndex] - _rhythm[beatIndex - 1],
       );
       final actualGap = now.difference(_tapTimes.last);
       final drift = (actualGap - expectedGap).abs();
       if (drift > _tapTolerance) {
         setState(() {
           _tapTimes.clear();
-          _taps = 0;
           _feedback =
               'Le rythme ne correspond pas encore. Observe puis réessaie.';
         });
+        if (!widget.isPractice && widget.figurine != null) {
+          widget.gameState.failPtipoteArrivalRhythm(widget.figurine!);
+        }
         _playPreview();
         return;
       }
     }
     _tapTimes.add(now);
-    setState(() => _taps = _tapTimes.length);
-    if (_taps < _rhythmTapPatterns[_stage + 1].length) return;
-    if (_stage == _rhythmTapPatterns.length - 2) {
-      for (final timer in _previewTimers) {
-        timer.cancel();
-      }
-      if (!widget.isPractice && widget.figurine != null) {
-        widget.gameState.hatchFromNursery(widget.figurine!);
-      }
-      unawaited(HapticFeedback.mediumImpact());
-      setState(() => _hatched = true);
+    if (_tapTimes.length < _rhythm.length) {
+      setState(() {});
       return;
     }
-    setState(() {
-      _stage += 1;
-      _taps = 0;
-      _tapTimes.clear();
-    });
-    _playPreview();
+    _resolved = true;
+    for (final timer in _previewTimers) {
+      timer.cancel();
+    }
+    if (!widget.isPractice && widget.figurine != null) {
+      widget.gameState.hatchPtipoteArrival(widget.figurine!);
+    }
+    if (ptipoteStatsConfig.v2.rhythmHapticEnabled) {
+      unawaited(HapticFeedback.mediumImpact());
+    }
+    setState(() {});
+  }
+
+  Future<void> _completeNaming({required bool keepSystemName}) async {
+    final figurine = widget.figurine;
+    if (figurine == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+    final systemName = _profile?.systemName ?? figurine.displayName;
+    final selectedName = keepSystemName ? systemName : _nameController.text;
+    final finalName =
+        selectedName.trim().isEmpty ? systemName : selectedName.trim();
+    try {
+      if (finalName != figurine.displayName &&
+          figurine.canRename &&
+          !figurine.tagUid.startsWith('co-breeding-')) {
+        await FigurineService().renameMyFigurine(
+          figurine: figurine,
+          nickname: finalName,
+        );
+      }
+      if (!mounted) return;
+      widget.gameState.completePtipoteArrival(figurine, finalName);
+      Navigator.of(context).pop();
+      widget.onFinished?.call();
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+          () => _feedback = 'Le nom n’a pas pu être enregistré. Réessaie.');
+    }
   }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: Text(
-          _hatched
+          _isHatched || _isNaming
               ? widget.isPractice
                   ? 'Test terminé'
-                  : 'Bienvenue $_displayName'
+                  : 'L’œuf a éclos'
               : 'L’œuf réagit',
         ),
         content: GestureDetector(
@@ -2690,23 +3309,59 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
                 duration: const Duration(milliseconds: 180),
                 scale: _isPulsing ? 1.22 : 1,
                 child: Icon(
-                  _hatched ? Icons.auto_awesome : Icons.egg_alt_outlined,
+                  _isHatched || _isNaming
+                      ? Icons.auto_awesome
+                      : Icons.egg_alt_outlined,
                   size: 84,
-                  color: _hatched ? Colors.amber : null,
+                  color: _isHatched || _isNaming
+                      ? Colors.amber
+                      : _profile == null
+                          ? null
+                          : _eggColor(_profile!.typeId),
                 ),
               ),
               const SizedBox(height: 12),
-              if (_hatched) ...[
-                Text(
-                  _displayName,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-                Text(_type),
+              if (_isHatched || _isNaming) ...[
+                if (!widget.isPractice && widget.figurine != null)
+                  SizedBox(
+                    height: 116,
+                    child: PtipoteImage(
+                      type: widget.figurine!.type,
+                      species: widget.figurine!.species,
+                      visualAssetKey:
+                          _profile!.isProtocol ? _profile!.visualAssetKey : '',
+                      height: 116,
+                    ),
+                  ),
+                if (!widget.isPractice && _profile != null) ...[
+                  Text(
+                    _profile!.typeId == PtipoteTypeId.vegetal
+                        ? 'Type Végétal'
+                        : _profile!.typeId == PtipoteTypeId.mineral
+                            ? 'Type Minéral'
+                            : 'Type Mycélien',
+                  ),
+                  Text('Nature : ${_profile!.natureId}'),
+                  Text(
+                    _profile!.isProtocol ? 'Protocole' : 'Vestige',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+                if (_isNaming) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _nameController,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Nom du P’TIPOTE',
+                    ),
+                  ),
+                ],
               ] else ...[
                 const Text('Observe les pulsations, puis tape en rythme.'),
                 const SizedBox(height: 8),
-                Text(
-                    '$_taps / ${_rhythmTapPatterns[_stage + 1].length} tapotements'),
+                Text('${_tapTimes.length} / ${_rhythm.length} tapotements'),
                 if (_feedback != null) ...<Widget>[
                   const SizedBox(height: 6),
                   Text(_feedback!, textAlign: TextAlign.center),
@@ -2720,26 +3375,40 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
             ],
           ),
         ),
-        actions: _hatched
+        actions: _isHatched
             ? [
                 FilledButton(
                   onPressed: () {
-                    Navigator.of(context).pop();
-                    widget.onFinished?.call();
+                    if (widget.isPractice || widget.figurine == null) {
+                      Navigator.of(context).pop();
+                    } else {
+                      widget.gameState
+                          .beginPtipoteArrivalNaming(widget.figurine!);
+                      setState(() {});
+                    }
                   },
                   child: Text(
-                    widget.isPractice
-                        ? 'Fermer le test'
-                        : 'Faire un câlin à $_displayName',
+                    widget.isPractice ? 'Fermer le test' : 'Nommer ce P’TIPOTE',
                   ),
                 ),
               ]
-            : [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Plus tard'),
-                ),
-              ],
+            : _isNaming
+                ? [
+                    TextButton(
+                      onPressed: () => _completeNaming(keepSystemName: true),
+                      child: const Text('Garder ce nom'),
+                    ),
+                    FilledButton(
+                      onPressed: () => _completeNaming(keepSystemName: false),
+                      child: const Text('Confirmer'),
+                    ),
+                  ]
+                : [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Plus tard'),
+                    ),
+                  ],
       );
 }
 
@@ -5151,6 +5820,57 @@ class Zone0InventorySheet extends StatefulWidget {
 class _Zone0InventorySheetState extends State<Zone0InventorySheet> {
   final FigurineService _figurineService = FigurineService();
 
+  Future<void> _selectCoBreedingXpTarget(CoBreedingXpReward reward) async {
+    final physical = await _figurineService.watchMyFigurines().first;
+    final available =
+        widget.gameState.eligibleTargetsForCoBreedingXpReward(reward, physical);
+    if (!mounted) return;
+    if (available.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Aucun P’TIPOTE possédé compatible actuellement.'),
+      ));
+      return;
+    }
+    final target = await showModalBottomSheet<PtipoteFigurine>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            Text(
+              'Bonus XP ${_ptipoteTypeName(reward.compatibleTypeId)}',
+              style: Theme.of(sheetContext)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            Text('+${reward.xpAmount} XP · P’TIPOTE possédé de même Type.'),
+            const SizedBox(height: 12),
+            ...available.map(
+              (figurine) => ListTile(
+                leading: const Icon(Icons.pets_outlined),
+                title: Text(figurine.displayName),
+                subtitle: Text(_ptipoteTypeName(
+                    widget.gameState.ptipoteV2ProfileFor(figurine).typeId)),
+                onTap: () => Navigator.of(sheetContext).pop(figurine),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (target == null || !mounted) return;
+    final result = widget.gameState.consumeCoBreedingXpReward(
+      reward.itemId,
+      target,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
   Future<void> _selectConsumableTarget(CraftRecipe recipe) async {
     final figurines = await _figurineService.watchMyFigurines().first;
     final available = figurines
@@ -5226,6 +5946,33 @@ class _Zone0InventorySheetState extends State<Zone0InventorySheet> {
               const SizedBox(height: 12),
               _FirebaseSyncStatus(gameState: widget.gameState),
               const SizedBox(height: 12),
+              if (widget.gameState.coBreedingXpRewards
+                  .where((reward) => !reward.isConsumed)
+                  .isNotEmpty) ...<Widget>[
+                const Text('Bonus de Co-élevage',
+                    style: TextStyle(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                ...widget.gameState.coBreedingXpRewards
+                    .where((reward) => !reward.isConsumed)
+                    .map(
+                      (reward) => Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.auto_awesome_outlined),
+                          title: Text(
+                            'Bonus XP ${_ptipoteTypeName(reward.compatibleTypeId)}',
+                          ),
+                          subtitle: Text(
+                            '+${reward.xpAmount} XP · P’TIPOTE possédé de même Type',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => unawaited(
+                            _selectCoBreedingXpTarget(reward),
+                          ),
+                        ),
+                      ),
+                    ),
+                const SizedBox(height: 12),
+              ],
               GridView.count(
                 crossAxisCount: 3,
                 mainAxisSpacing: 10,

@@ -95,6 +95,78 @@ const PTIPOTE_STATS_FIELDS = [
   "baseForageEfficiency",
   "baseSafetyContribution",
   "baseMarketContribution",
+  // P'TIPOTE V2 foundation — all percentages are fractional values.
+  "v2DefaultBaseCarryCapacity",
+  "v2CoreOnlyEfficiency",
+  "v2NewEnvelopeEfficiency",
+  "v2HabituatedEnvelopeEfficiency",
+  "v2AdoptedEnvelopeEfficiency",
+  "v2MineralTowerDefenseBonus",
+  "v2MineralMissionSecurityBonus",
+  "v2MineralGatherBonus",
+  "v2VegetalCraftBonus",
+  "v2VegetalHeatMitigation",
+  "v2VegetalOrganicGatherBonus",
+  "v2MycelialCraftBonus",
+  "v2MycelialCommerceBonus",
+  "v2MycelialToxicMitigation",
+  "v2MycelialOrganicGatherBonus",
+  "v2MycelialWasteGatherBonus",
+  "v2DefenseSecurityBonus",
+  "v2DefenseDroneDefenseBonus",
+  "v2DefenseCarryCapacityBonus",
+  "v2ExplorationGatherBonus",
+  "v2ExplorationSecurityBonus",
+  "v2ExplorationAllWeatherMitigation",
+  "v2ProductionGatherBonus",
+  "v2ProductionCraftBonus",
+  "v2AnalystCraftBonus",
+  "v2AnalystSaleBonus",
+  "v2AnalystOwnCoreExplorationBonus",
+  "v2AnalystGroupCountCap",
+  // P'TIPOTE V2 arrival ritual.
+  "v2EnableIncubator",
+  "v2EnableRhythmHatching",
+  "v2EggVegetalColor",
+  "v2EggMineralColor",
+  "v2EggMycelialColor",
+  "v2ArrivalInitialLevel",
+  "v2ArrivalInitialXp",
+  "v2RhythmSequenceLength",
+  "v2RhythmTimingToleranceMs",
+  "v2RhythmMinIntervalMs",
+  "v2RhythmMaxIntervalMs",
+  "v2RhythmRetryPolicy",
+  "v2RhythmVisualCueEnabled",
+  "v2RhythmHapticEnabled",
+  "v2RhythmSoundEnabled",
+  // P'TIPOTE V2 co-breeding.
+  "v2CoBreedingEnabled",
+  "v2CoBreedingKernelUnlockLevel",
+  "v2CoBreedingMaxDurationHours",
+  "v2CoBreedingFinalProtectionWindowHours",
+  "v2CoBreedingOfflineGuaranteedRemainingHours",
+  "v2CoBreedingCapacityPerBreederLevel",
+  "v2CoBreedingLevelEarlyDeparture",
+  "v2CoBreedingOfferRotationHours",
+  "v2CoBreedingChooseTypeCost",
+  "v2CoBreedingChooseExactPtipoteCost",
+  "v2CoBreedingChooseExactEnvelopeCost",
+  "v2CoBreedingInitialFreeEnabled",
+  "v2EnvelopeUnlockPtipoteLevel",
+  "v2SymbiosisPercentPerHour",
+  "v2SymbiosisPercentPerActivity",
+  "v2SymbiosisMaxLevel",
+  "v2SymbiosisProgressRequiredPerLevel",
+  "v2CoBreedingCompletionRequireHouse",
+  "v2CoBreedingCompletionBlockNewActivity",
+  "v2CoBreedingCompletionArchive",
+  "v2CoBreedingXpRewardBase",
+  "v2CoBreedingXpRewardPerFinalLevel",
+  "v2CoBreedingBreederXpRewardBase",
+  "v2CoBreedingBreederXpRewardPerFinalLevel",
+  "v2CoBreedingKernelTrustRewardBase",
+  "v2CoBreedingKernelTrustRewardPerFinalLevel",
 ];
 
 const ids = [
@@ -390,11 +462,86 @@ async function loadPtipoteStatsConfig() {
   }
 }
 
+function ptipoteFieldLabel(field) {
+  const labels = {
+    v2DefaultBaseCarryCapacity: "V2 · Portage de base",
+    v2CoreOnlyEfficiency: "V2 · Efficacité Protocole / Noyau seul",
+    v2NewEnvelopeEfficiency: "V2 · Efficacité / Enveloppe nouvelle",
+    v2HabituatedEnvelopeEfficiency: "V2 · Efficacité / Enveloppe habituée",
+    v2AdoptedEnvelopeEfficiency: "V2 · Efficacité / Enveloppe adoptée",
+    v2MineralTowerDefenseBonus: "V2 Minéral · Défense Tour",
+    v2MineralMissionSecurityBonus: "V2 Minéral · Sécurité mission",
+    v2MineralGatherBonus: "V2 Minéral · Récolte Minéral",
+    v2VegetalCraftBonus: "V2 Végétal · Craft",
+    v2VegetalHeatMitigation: "V2 Végétal · Réduction chaleur",
+    v2VegetalOrganicGatherBonus: "V2 Végétal · Récolte Organique",
+    v2MycelialCraftBonus: "V2 Mycélien · Craft",
+    v2MycelialCommerceBonus: "V2 Mycélien · Commerce",
+    v2MycelialToxicMitigation: "V2 Mycélien · Réduction toxique",
+    v2MycelialOrganicGatherBonus: "V2 Mycélien · Récolte Organique",
+    v2MycelialWasteGatherBonus: "V2 Mycélien · Récolte Déchets",
+    v2DefenseSecurityBonus: "V2 Enveloppe Défense · Sécurité",
+    v2DefenseDroneDefenseBonus: "V2 Enveloppe Défense · Drones",
+    v2DefenseCarryCapacityBonus: "V2 Enveloppe Défense · Portage",
+    v2ExplorationGatherBonus: "V2 Enveloppe Exploration · Récolte",
+    v2ExplorationSecurityBonus: "V2 Enveloppe Exploration · Sécurité",
+    v2ExplorationAllWeatherMitigation: "V2 Enveloppe Exploration · Météo",
+    v2ProductionGatherBonus: "V2 Enveloppe Production · Récolte",
+    v2ProductionCraftBonus: "V2 Enveloppe Production · Craft",
+    v2AnalystCraftBonus: "V2 Enveloppe Analyste · Craft",
+    v2AnalystSaleBonus: "V2 Enveloppe Analyste · Vente",
+    v2AnalystOwnCoreExplorationBonus: "V2 Analyste · Bonus Noyau exploration",
+    v2AnalystGroupCountCap: "V2 Analyste · Plafond de groupe",
+    v2EnableIncubator: "V2 Accueil · Couveuse activée",
+    v2EnableRhythmHatching: "V2 Accueil · Rituel rythmique activé",
+    v2EggVegetalColor: "V2 Accueil · Couleur œuf Végétal (hex)",
+    v2EggMineralColor: "V2 Accueil · Couleur œuf Minéral (hex)",
+    v2EggMycelialColor: "V2 Accueil · Couleur œuf Mycélien (hex)",
+    v2ArrivalInitialLevel: "V2 Accueil · Niveau initial",
+    v2ArrivalInitialXp: "V2 Accueil · XP initiale",
+    v2RhythmSequenceLength: "V2 Rythme · Nombre d'impulsions",
+    v2RhythmTimingToleranceMs: "V2 Rythme · Tolérance (ms)",
+    v2RhythmMinIntervalMs: "V2 Rythme · Intervalle minimum (ms)",
+    v2RhythmMaxIntervalMs: "V2 Rythme · Intervalle maximum (ms)",
+    v2RhythmRetryPolicy: "V2 Rythme · Politique de nouvelle tentative",
+    v2RhythmVisualCueEnabled: "V2 Rythme · Signal visuel",
+    v2RhythmHapticEnabled: "V2 Rythme · Retour haptique",
+    v2RhythmSoundEnabled: "V2 Rythme · Son activé",
+    v2CoBreedingEnabled: "V2 Co-élevage · Activé",
+    v2CoBreedingKernelUnlockLevel: "V2 Co-élevage · Niveau Kernel requis",
+    v2CoBreedingMaxDurationHours: "V2 Co-élevage · Durée maximale (heures)",
+    v2CoBreedingFinalProtectionWindowHours: "V2 Co-élevage · Fenêtre de protection offline (heures)",
+    v2CoBreedingOfflineGuaranteedRemainingHours: "V2 Co-élevage · Temps garanti après absence (heures)",
+    v2CoBreedingCapacityPerBreederLevel: "V2 Co-élevage · Capacité par niveau Éleveur",
+    v2CoBreedingLevelEarlyDeparture: "V2 Co-élevage · Niveau de départ anticipé",
+    v2CoBreedingOfferRotationHours: "V2 Co-élevage · Rotation des offres (heures)",
+    v2CoBreedingChooseTypeCost: "V2 Co-élevage · Choisir un Type (Bio-batteries)",
+    v2CoBreedingChooseExactPtipoteCost: "V2 Co-élevage · Choisir un P’TIPOTE exact (Bio-batteries)",
+    v2CoBreedingChooseExactEnvelopeCost: "V2 Co-élevage · Choisir une Enveloppe exacte (Bio-batteries)",
+    v2CoBreedingInitialFreeEnabled: "V2 Co-élevage · Premier choix gratuit",
+    v2EnvelopeUnlockPtipoteLevel: "V2 Protocole · Niveau de déblocage Enveloppe",
+    v2SymbiosisPercentPerHour: "V2 Symbiose · Progression par heure (%)",
+    v2SymbiosisPercentPerActivity: "V2 Symbiose · Progression par activité (%)",
+    v2SymbiosisMaxLevel: "V2 Symbiose · Niveau maximum",
+    v2SymbiosisProgressRequiredPerLevel: "V2 Symbiose · Progression requise par palier (%)",
+    v2CoBreedingCompletionRequireHouse: "V2 Finalisation · Départ depuis la Maison",
+    v2CoBreedingCompletionBlockNewActivity: "V2 Finalisation · Bloquer les activités en attente",
+    v2CoBreedingCompletionArchive: "V2 Finalisation · Archiver le P’TIPOTE parti",
+    v2CoBreedingXpRewardBase: "V2 Récompense · Bonus XP P’TIPOTE de base (DEV)",
+    v2CoBreedingXpRewardPerFinalLevel: "V2 Récompense · Bonus XP par niveau final (DEV)",
+    v2CoBreedingBreederXpRewardBase: "V2 Récompense · XP Éleveur de base (DEV)",
+    v2CoBreedingBreederXpRewardPerFinalLevel: "V2 Récompense · XP Éleveur par niveau final (DEV)",
+    v2CoBreedingKernelTrustRewardBase: "V2 Récompense · Confiance Kernel de base (DEV)",
+    v2CoBreedingKernelTrustRewardPerFinalLevel: "V2 Récompense · Confiance Kernel par niveau final (DEV)",
+  };
+  return labels[field] || field;
+}
+
 function renderPtipoteStatsForm() {
   el.statPtipoteForm.innerHTML = PTIPOTE_STATS_FIELDS.map((field) => `
     <div class="stat-field">
-      <label for="stat-${field}">${escapeHtml(field)}</label>
-      <input id="stat-${field}" name="${escapeHtml(field)}" type="number" step="0.01" value="${escapeHtml(ptipoteStatsConfig[field] ?? "")}">
+      <label for="stat-${field}">${escapeHtml(ptipoteFieldLabel(field))}</label>
+      ${ptipoteStatInput(field)}
     </div>
   `).join("") + `
     <div class="stat-field stat-field-wide">
@@ -406,12 +553,29 @@ function renderPtipoteStatsForm() {
 
   el.statPtipoteForm.querySelectorAll("input").forEach((input) => {
     input.addEventListener("input", () => {
-      const value = Number(input.value);
-      ptipoteStatsConfig[input.name] = Number.isFinite(value) ? value : input.value;
+      if (input.type === "checkbox") {
+        ptipoteStatsConfig[input.name] = input.checked;
+      } else if (input.type === "number") {
+        const value = Number(input.value);
+        ptipoteStatsConfig[input.name] = Number.isFinite(value) ? value : input.value;
+      } else {
+        ptipoteStatsConfig[input.name] = input.value;
+      }
       renderXpRequiredPreview();
       el.statPtipoteStatus.textContent = "Modifications en attente. Clique sur Publier dans l'application.";
     });
   });
+}
+
+function ptipoteStatInput(field) {
+  const value = ptipoteStatsConfig[field] ?? "";
+  if (field.endsWith("Enabled")) {
+    return `<input id="stat-${field}" name="${escapeHtml(field)}" type="checkbox" ${value ? "checked" : ""}>`;
+  }
+  if (field.endsWith("Color") || field.endsWith("Policy")) {
+    return `<input id="stat-${field}" name="${escapeHtml(field)}" type="text" value="${escapeHtml(value)}">`;
+  }
+  return `<input id="stat-${field}" name="${escapeHtml(field)}" type="number" step="0.01" value="${escapeHtml(value)}">`;
 }
 
 function renderXpRequiredPreview() {
@@ -428,10 +592,15 @@ async function publishPtipoteStatsConfig() {
   if (!auth.currentUser || !currentDashboardRole) {
     throw new Error("Connexion admin ou dev requise.");
   }
-  const values = Object.fromEntries(
-    PTIPOTE_STATS_FIELDS.map((field) => [field, Number(ptipoteStatsConfig[field])]),
+  const values = Object.fromEntries(PTIPOTE_STATS_FIELDS.map((field) => {
+    const raw = ptipoteStatsConfig[field];
+    if (field.endsWith("Enabled")) return [field, Boolean(raw)];
+    if (field.endsWith("Color") || field.endsWith("Policy")) return [field, String(raw || "")];
+    return [field, Number(raw)];
+  }));
+  const invalidField = Object.entries(values).find(([field, value]) =>
+    !(field.endsWith("Enabled") || field.endsWith("Color") || field.endsWith("Policy")) && !Number.isFinite(value),
   );
-  const invalidField = Object.entries(values).find(([, value]) => !Number.isFinite(value));
   if (invalidField) {
     throw new Error(`Valeur invalide pour ${invalidField[0]}.`);
   }

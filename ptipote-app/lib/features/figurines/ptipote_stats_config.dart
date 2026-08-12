@@ -1,13 +1,15 @@
 import 'dart:math' as math;
 
+import 'ptipote_v2.dart';
+
 enum PtipoteElementType { vegetal, mineral, fungal }
 
 enum PtipoteEnvelopeType {
   standard,
-  explorateur,
-  producteur,
-  scientifique,
-  protecteur,
+  exploration,
+  production,
+  analyste,
+  defense,
 }
 
 enum PtipoteBehaviorState {
@@ -81,6 +83,7 @@ class PtipoteStatsConfig {
     required this.baseMarketContribution,
     required this.typeModifiers,
     required this.envelopeModifiers,
+    required this.v2,
   });
 
   final int maxVitality;
@@ -138,6 +141,7 @@ class PtipoteStatsConfig {
   final double baseMarketContribution;
   final Map<PtipoteElementType, PtipoteStatModifier> typeModifiers;
   final Map<PtipoteEnvelopeType, PtipoteStatModifier> envelopeModifiers;
+  final PtipoteV2Config v2;
 
   int xpRequiredForNextLevel(int currentLevel) {
     final safeLevel = math.max(1, currentLevel);
@@ -155,7 +159,7 @@ class PtipoteStatsConfig {
 
   /// Only the scalar values edited by the Dashboard are persisted remotely.
   /// Type and envelope modifiers remain versioned with the application for V1.
-  Map<String, num> toDashboardMap() => <String, num>{
+  Map<String, dynamic> toDashboardMap() => <String, dynamic>{
         'maxVitality': maxVitality,
         'vitalityRecoveryPerMinute': vitalityRecoveryPerMinute,
         'statRecoveryTimeMultiplier': statRecoveryTimeMultiplier,
@@ -208,6 +212,7 @@ class PtipoteStatsConfig {
         'baseForageEfficiency': baseForageEfficiency,
         'baseSafetyContribution': baseSafetyContribution,
         'baseMarketContribution': baseMarketContribution,
+        ...v2.toDashboardMap(),
       };
 
   factory PtipoteStatsConfig.fromDashboardMap(Map<String, dynamic> values) {
@@ -315,6 +320,7 @@ class PtipoteStatsConfig {
           decimal('baseMarketContribution', fallback.baseMarketContribution),
       typeModifiers: fallback.typeModifiers,
       envelopeModifiers: fallback.envelopeModifiers,
+      v2: _ptipoteV2Config(values, fallback.v2),
     );
   }
 }
@@ -407,21 +413,270 @@ const defaultPtipoteStatsConfig = PtipoteStatsConfig(
   },
   envelopeModifiers: <PtipoteEnvelopeType, PtipoteStatModifier>{
     PtipoteEnvelopeType.standard: PtipoteStatModifier(),
-    PtipoteEnvelopeType.explorateur: PtipoteStatModifier(
+    PtipoteEnvelopeType.exploration: PtipoteStatModifier(
       forageEfficiencyBonus: 0.05,
     ),
-    PtipoteEnvelopeType.producteur: PtipoteStatModifier(
+    PtipoteEnvelopeType.production: PtipoteStatModifier(
       marketContributionBonus: 0.05,
     ),
-    PtipoteEnvelopeType.scientifique: PtipoteStatModifier(
+    PtipoteEnvelopeType.analyste: PtipoteStatModifier(
       pollutionResistanceBonus: 0.10,
       xpGainBonus: 0.05,
     ),
-    PtipoteEnvelopeType.protecteur: PtipoteStatModifier(
+    PtipoteEnvelopeType.defense: PtipoteStatModifier(
       safetyContributionBonus: 0.10,
     ),
   },
+  v2: defaultPtipoteV2Config,
 );
+
+PtipoteV2Config _ptipoteV2Config(
+  Map<String, dynamic> values,
+  PtipoteV2Config fallback,
+) {
+  int integer(String key, int value) => (values[key] as num?)?.round() ?? value;
+  double decimal(String key, double value) =>
+      (values[key] as num?)?.toDouble() ?? value;
+  bool boolean(String key, bool value) {
+    final raw = values[key];
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    return value;
+  }
+
+  String text(String key, String value) {
+    final raw = '${values[key] ?? ''}'.trim();
+    return raw.isEmpty ? value : raw;
+  }
+
+  return PtipoteV2Config(
+    defaultBaseCarryCapacity: integer(
+      'v2DefaultBaseCarryCapacity',
+      fallback.defaultBaseCarryCapacity,
+    ).clamp(1, 9999),
+    coreOnlyEfficiency:
+        decimal('v2CoreOnlyEfficiency', fallback.coreOnlyEfficiency)
+            .clamp(0, 10)
+            .toDouble(),
+    newEnvelopeEfficiency:
+        decimal('v2NewEnvelopeEfficiency', fallback.newEnvelopeEfficiency)
+            .clamp(0, 10)
+            .toDouble(),
+    habituatedEnvelopeEfficiency: decimal(
+      'v2HabituatedEnvelopeEfficiency',
+      fallback.habituatedEnvelopeEfficiency,
+    ).clamp(0, 10).toDouble(),
+    adoptedEnvelopeEfficiency: decimal(
+            'v2AdoptedEnvelopeEfficiency', fallback.adoptedEnvelopeEfficiency)
+        .clamp(0, 10)
+        .toDouble(),
+    mineralTowerDefenseBonus: decimal(
+      'v2MineralTowerDefenseBonus',
+      fallback.mineralTowerDefenseBonus,
+    ),
+    mineralMissionSecurityBonus: decimal(
+      'v2MineralMissionSecurityBonus',
+      fallback.mineralMissionSecurityBonus,
+    ),
+    mineralGatherBonus:
+        decimal('v2MineralGatherBonus', fallback.mineralGatherBonus),
+    vegetalCraftBonus:
+        decimal('v2VegetalCraftBonus', fallback.vegetalCraftBonus),
+    vegetalHeatMitigation:
+        decimal('v2VegetalHeatMitigation', fallback.vegetalHeatMitigation),
+    vegetalOrganicGatherBonus: decimal(
+      'v2VegetalOrganicGatherBonus',
+      fallback.vegetalOrganicGatherBonus,
+    ),
+    mycelialCraftBonus:
+        decimal('v2MycelialCraftBonus', fallback.mycelialCraftBonus),
+    mycelialCommerceBonus:
+        decimal('v2MycelialCommerceBonus', fallback.mycelialCommerceBonus),
+    mycelialToxicMitigation: decimal(
+      'v2MycelialToxicMitigation',
+      fallback.mycelialToxicMitigation,
+    ),
+    mycelialOrganicGatherBonus: decimal(
+      'v2MycelialOrganicGatherBonus',
+      fallback.mycelialOrganicGatherBonus,
+    ),
+    mycelialWasteGatherBonus: decimal(
+      'v2MycelialWasteGatherBonus',
+      fallback.mycelialWasteGatherBonus,
+    ),
+    defenseSecurityBonus:
+        decimal('v2DefenseSecurityBonus', fallback.defenseSecurityBonus),
+    defenseDroneDefenseBonus: decimal(
+      'v2DefenseDroneDefenseBonus',
+      fallback.defenseDroneDefenseBonus,
+    ),
+    defenseCarryCapacityBonus: decimal(
+      'v2DefenseCarryCapacityBonus',
+      fallback.defenseCarryCapacityBonus,
+    ),
+    explorationGatherBonus: decimal(
+      'v2ExplorationGatherBonus',
+      fallback.explorationGatherBonus,
+    ),
+    explorationSecurityBonus: decimal(
+      'v2ExplorationSecurityBonus',
+      fallback.explorationSecurityBonus,
+    ),
+    explorationAllWeatherMitigation: decimal(
+      'v2ExplorationAllWeatherMitigation',
+      fallback.explorationAllWeatherMitigation,
+    ),
+    productionGatherBonus:
+        decimal('v2ProductionGatherBonus', fallback.productionGatherBonus),
+    productionCraftBonus:
+        decimal('v2ProductionCraftBonus', fallback.productionCraftBonus),
+    analystCraftBonus:
+        decimal('v2AnalystCraftBonus', fallback.analystCraftBonus),
+    analystSaleBonus: decimal('v2AnalystSaleBonus', fallback.analystSaleBonus),
+    analystOwnCoreExplorationBonus: decimal(
+      'v2AnalystOwnCoreExplorationBonus',
+      fallback.analystOwnCoreExplorationBonus,
+    ),
+    analystGroupCountCap:
+        integer('v2AnalystGroupCountCap', fallback.analystGroupCountCap)
+            .clamp(1, 999),
+    enableIncubator: boolean('v2EnableIncubator', fallback.enableIncubator),
+    enableRhythmHatching:
+        boolean('v2EnableRhythmHatching', fallback.enableRhythmHatching),
+    eggVegetalColor: text('v2EggVegetalColor', fallback.eggVegetalColor),
+    eggMineralColor: text('v2EggMineralColor', fallback.eggMineralColor),
+    eggMycelialColor: text('v2EggMycelialColor', fallback.eggMycelialColor),
+    arrivalInitialLevel:
+        integer('v2ArrivalInitialLevel', fallback.arrivalInitialLevel)
+            .clamp(1, 999),
+    arrivalInitialXp: integer('v2ArrivalInitialXp', fallback.arrivalInitialXp)
+        .clamp(0, 1 << 30),
+    rhythmSequenceLength:
+        integer('v2RhythmSequenceLength', fallback.rhythmSequenceLength)
+            .clamp(3, 5),
+    rhythmTimingToleranceMs: integer(
+      'v2RhythmTimingToleranceMs',
+      fallback.rhythmTimingToleranceMs,
+    ).clamp(100, 5000),
+    rhythmMinIntervalMs:
+        integer('v2RhythmMinIntervalMs', fallback.rhythmMinIntervalMs)
+            .clamp(100, 5000),
+    rhythmMaxIntervalMs:
+        integer('v2RhythmMaxIntervalMs', fallback.rhythmMaxIntervalMs)
+            .clamp(100, 5000),
+    rhythmRetryPolicy: text('v2RhythmRetryPolicy', fallback.rhythmRetryPolicy),
+    rhythmVisualCueEnabled: boolean(
+      'v2RhythmVisualCueEnabled',
+      fallback.rhythmVisualCueEnabled,
+    ),
+    rhythmHapticEnabled:
+        boolean('v2RhythmHapticEnabled', fallback.rhythmHapticEnabled),
+    rhythmSoundEnabled:
+        boolean('v2RhythmSoundEnabled', fallback.rhythmSoundEnabled),
+    coBreedingEnabled:
+        boolean('v2CoBreedingEnabled', fallback.coBreedingEnabled),
+    coBreedingKernelUnlockLevel: integer(
+      'v2CoBreedingKernelUnlockLevel',
+      fallback.coBreedingKernelUnlockLevel,
+    ).clamp(1, 99),
+    coBreedingMaxDurationHours: integer(
+      'v2CoBreedingMaxDurationHours',
+      fallback.coBreedingMaxDurationHours,
+    ).clamp(1, 24 * 31),
+    coBreedingFinalProtectionWindowHours: integer(
+      'v2CoBreedingFinalProtectionWindowHours',
+      fallback.coBreedingFinalProtectionWindowHours,
+    ).clamp(0, 24 * 31),
+    coBreedingOfflineGuaranteedRemainingHours: integer(
+      'v2CoBreedingOfflineGuaranteedRemainingHours',
+      fallback.coBreedingOfflineGuaranteedRemainingHours,
+    ).clamp(0, 24 * 31),
+    coBreedingCapacityPerBreederLevel: integer(
+      'v2CoBreedingCapacityPerBreederLevel',
+      fallback.coBreedingCapacityPerBreederLevel,
+    ).clamp(1, 99),
+    coBreedingLevelEarlyDeparture: integer(
+      'v2CoBreedingLevelEarlyDeparture',
+      fallback.coBreedingLevelEarlyDeparture,
+    ).clamp(1, 999),
+    coBreedingOfferRotationHours: integer(
+      'v2CoBreedingOfferRotationHours',
+      fallback.coBreedingOfferRotationHours,
+    ).clamp(1, 24 * 31),
+    coBreedingChooseTypeCost: integer(
+      'v2CoBreedingChooseTypeCost',
+      fallback.coBreedingChooseTypeCost,
+    ).clamp(0, 9999),
+    coBreedingChooseExactPtipoteCost: integer(
+      'v2CoBreedingChooseExactPtipoteCost',
+      fallback.coBreedingChooseExactPtipoteCost,
+    ).clamp(0, 9999),
+    coBreedingChooseExactEnvelopeCost: integer(
+      'v2CoBreedingChooseExactEnvelopeCost',
+      fallback.coBreedingChooseExactEnvelopeCost,
+    ).clamp(0, 9999),
+    coBreedingInitialFreeEnabled: boolean(
+      'v2CoBreedingInitialFreeEnabled',
+      fallback.coBreedingInitialFreeEnabled,
+    ),
+    envelopeUnlockPtipoteLevel: integer(
+      'v2EnvelopeUnlockPtipoteLevel',
+      fallback.envelopeUnlockPtipoteLevel,
+    ).clamp(1, 999),
+    symbiosisPercentPerHour: decimal(
+      'v2SymbiosisPercentPerHour',
+      fallback.symbiosisPercentPerHour,
+    ).clamp(0, 100).toDouble(),
+    symbiosisPercentPerActivity: decimal(
+      'v2SymbiosisPercentPerActivity',
+      fallback.symbiosisPercentPerActivity,
+    ).clamp(0, 100).toDouble(),
+    symbiosisMaxLevel: integer(
+      'v2SymbiosisMaxLevel',
+      fallback.symbiosisMaxLevel,
+    ).clamp(0, 10),
+    symbiosisProgressRequiredPerLevel: decimal(
+      'v2SymbiosisProgressRequiredPerLevel',
+      fallback.symbiosisProgressRequiredPerLevel,
+    ).clamp(1, 1000).toDouble(),
+    coBreedingCompletionRequireHouse: boolean(
+      'v2CoBreedingCompletionRequireHouse',
+      fallback.coBreedingCompletionRequireHouse,
+    ),
+    coBreedingCompletionBlockNewActivity: boolean(
+      'v2CoBreedingCompletionBlockNewActivity',
+      fallback.coBreedingCompletionBlockNewActivity,
+    ),
+    coBreedingCompletionArchive: boolean(
+      'v2CoBreedingCompletionArchive',
+      fallback.coBreedingCompletionArchive,
+    ),
+    coBreedingXpRewardBase: integer(
+      'v2CoBreedingXpRewardBase',
+      fallback.coBreedingXpRewardBase,
+    ).clamp(0, 999999),
+    coBreedingXpRewardPerFinalLevel: integer(
+      'v2CoBreedingXpRewardPerFinalLevel',
+      fallback.coBreedingXpRewardPerFinalLevel,
+    ).clamp(0, 999999),
+    coBreedingBreederXpRewardBase: integer(
+      'v2CoBreedingBreederXpRewardBase',
+      fallback.coBreedingBreederXpRewardBase,
+    ).clamp(0, 999999),
+    coBreedingBreederXpRewardPerFinalLevel: integer(
+      'v2CoBreedingBreederXpRewardPerFinalLevel',
+      fallback.coBreedingBreederXpRewardPerFinalLevel,
+    ).clamp(0, 999999),
+    coBreedingKernelTrustRewardBase: integer(
+      'v2CoBreedingKernelTrustRewardBase',
+      fallback.coBreedingKernelTrustRewardBase,
+    ).clamp(0, 999999),
+    coBreedingKernelTrustRewardPerFinalLevel: integer(
+      'v2CoBreedingKernelTrustRewardPerFinalLevel',
+      fallback.coBreedingKernelTrustRewardPerFinalLevel,
+    ).clamp(0, 999999),
+  );
+}
 
 PtipoteStatsConfig _activePtipoteStatsConfig = defaultPtipoteStatsConfig;
 

@@ -323,7 +323,7 @@ void main() {
             defaultWasteRecyclerConfig.biologicalMineralRatio +
             defaultWasteRecyclerConfig.biologicalOtherRatio,
         100);
-    expect(defaultWasteRecyclerConfig.otherOutputResource, 'Eau');
+    expect(defaultWasteRecyclerConfig.otherOutputResource, 'Autre');
     expect(
         defaultWasteRecyclerConfig.biologicalOrientationModuleCost['Mycélium'],
         5);

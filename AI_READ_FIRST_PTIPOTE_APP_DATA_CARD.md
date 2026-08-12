@@ -1,5 +1,45 @@
 # AI READ FIRST - PTIPOTE App Data Card
 
+## P'TIPOTE V2 — Socle Vestige / Protocole — 2026-08-11
+
+### Source de vérité
+
+- `ptipote-app/lib/features/figurines/ptipote_v2.dart` porte le modèle V2 commun, les valeurs par défaut et `PtipoteModifierService`.
+- `ptipote-app/lib/features/game/zone0_game_state.dart` conserve les profils dans `users/{uid}/game/zone0.ptipoteV2Profiles`, indexés par `ptipoteId`.
+- Les figurines NFC restent dans `users/{uid}/figurines/{figurineId}` et ne sont jamais réécrites par une migration Zone 0. Le profil V2 référence le même id, ce qui préserve NFC, nom, XP/niveau Zone 0 et affectations existantes.
+
+### Modèle commun
+
+- `acquisitionOrigin` décrit l'entrée dans le compte : `physicalScan`, `coBreeding`, `legacyMigration`.
+- `ownershipMode` décrit la possession : `owned` ou `coBred`.
+- `ptipoteGeneration` distingue `vestige` et `protocol`, indépendamment de l'origine.
+- Un Vestige est complet et ne possède pas de Noyau/Enveloppe. Les figurines historiques migrent vers Vestige par défaut.
+- Un Protocole prévoit `coreId`, `envelopeId`, `envelopeAcquisitionMode`, `protocolEfficiencyMultiplier` et les dates de co-élevage. Les mécaniques Œuf, Couveuse, 7 jours, éclosion et Symbiose restent volontairement hors de ce socle.
+- `typeId` est désormais `vegetal`, `mineral` ou `mycelial`; `natureId` conserve l'identité/variante visuelle legacy. Une donnée Type legacy inconnue reçoit Végétal avec `migrationWarning` DEV, sans écraser la Nature.
+
+### Noyaux, Enveloppes et visuels
+
+- `PtipoteCore` et `PtipoteEnvelope` préparent les compatibilités, bonus et assets. Les catégories sont Défense, Exploration, Production et **Analyste**; « Scientifique » est uniquement un alias legacy lu pendant migration.
+- Un Protocole peut fonctionner Noyau seul. Les efficacités configurables préparées sont 50 % (Noyau), 75 % (nouvelle Enveloppe), 100 % (habituée), 125 % (adoptée); aucune transition automatique n'est déclenchée ici.
+- Les visuels Protocole utilisent une clé combinée `nature_enveloppe`, jamais un paperdoll. Si l'asset combiné est absent, l'image Noyau est utilisée et un warning DEV est renvoyé.
+
+### Bonus et portage
+
+- `PtipoteModifierService` centralise les hooks de récolte, Craft, Commerce, Sécurité, météo, Drone et portage. Cette première étape prépare le calcul sans modifier rétrospectivement les missions déjà lancées.
+- Minéral : Tour/Sécurité/Minéral. Végétal : Craft/Chaleur/Organique. Mycélien : Craft/Commerce/Toxique/Organique/Déchets/Mycélium. Le bonus Mycélium réutilise `lisiereForageConfig.myceliumExploration.mycelialTypeGatherBonus` (+50 % par défaut), sans deuxième valeur.
+- Défense prévoit +30 % de portage; Exploration les hooks Récolte/Sécurité/Météo; Production Récolte/Craft; Analyste Craft/Vente et uniquement son propre bonus de Noyau d'exploration multiplié par le groupe éligible. Les Analystes ne se multiplient jamais entre eux.
+- La capacité de portage est une unité simple par ressource. `externalCarryCapacityBonus` est réservé aux futurs véhicules, sans cycle de retour/logistique dans cette update.
+
+### Structures préparées, sans gameplay actif
+
+- `moodId`, `passionId` et `PtipoteSkillProgress` sont persistables mais ne gagnent pas d'XP et n'appliquent aucun bonus.
+- Les dates/session/départ Co-élevage sont seulement des champs de données. Aucun départ, coût, récompense ou durée n'est calculé par le socle.
+
+### Dashboard et migration
+
+- L'onglet **Stat Ptipote** expose les valeurs V2 de Type, Enveloppe, efficacité Protocole, portage et plafond Analyste dans `gameConfigs/zone0.ptipoteStats`.
+- La migration est idempotente : un profil V2 n'est créé qu'une fois par id de figurine. Les nouveaux profils commencent avec des valeurs neutres de compétences/humeur/passion et sans Enveloppe.
+
 ## Recettes Craft - 2026-07-19
 
 - Les recettes sont publiées dans `gameConfigs/zone0.zone0Settings.craft.recipes`. `ingredients` est une liste de un à trois éléments : ressources (`Organique`, `Minéral`, `Débris`, `Eau`) ou objets déjà fabriqués, par exemple `Filtre` ou `Repas simple`.
@@ -1887,3 +1927,37 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 - Le Biofermenteur possède une unique spécialisation : **Forêt comestible** ou **Réseau mycélien**, jamais les deux. Réseau mycélien produit `8 Mycélium/jour` de base, indépendamment de la Biomasse : none `×1`, medium `×1,25`, rich `×1,5`. Chaque P’TIBUG avec le Trait `decomposeur` présent dans le même biome ajoute `+10 %`, avec un plafond par défaut de trois. Le résultat journalier final est arrondi une seule fois à l’entier supérieur, en faveur du joueur, puis ses fractions sont préservées hors ligne.
 - Forêt comestible ne reçoit que les Pollinisateurs et augmente uniquement l’Organique ; Réseau mycélien ne reçoit que le Trait mycélien et augmente uniquement le Mycélium. Aucun de ces bonus ne modifie la Lithoculture.
 - Le Kit de régénération reste un objet crafté utilisant le Mycélium canonique ; il consomme un Kit pour restaurer `+15 %` de Biomasse sans dépasser le maximum.
+
+## P’TIPOTE V2 — rituel d’accueil
+
+- Tout nouveau P’TIPOTE, qu’il provienne d’un scan physique ou d’un futur co-élevage, suit le même rituel : **Œuf → Couveuse de la Maison → tapotement rythmique → éclosion → nomination**. L’origine reste une donnée distincte, narrative pour le joueur et technique pour les sauvegardes.
+- Un entrant est enregistré avant son éclosion mais reste indisponible : il ne peut pas être affecté, vendre, partir en mission ni gagner d’XP. La Couveuse accepte plusieurs œufs et les présente par ordre d’arrivée ; chaque œuf conserve son `arrivalState`, sa couleur de Type et son rythme.
+- L’œuf révèle uniquement une couleur réglée par Type (Végétal, Minéral ou Mycélien). Nature, génération Vestige/Protocole, Noyau, Enveloppe, bonus et image finale restent masqués jusqu’à l’éclosion.
+- Le rythme est court, visuel et permissif. Son pattern déterministe est sauvegardé et reste identique jusqu’à réussite. Un échec est gratuit et immédiat ; une fermeture pendant le jeu revient proprement à l’état prêt, sans faire éclore ni dupliquer le P’TIPOTE.
+- Après réussite, un Vestige révèle son image habituelle ; un Protocole sans Enveloppe révèle son Noyau. Le joueur choisit ensuite son `displayName` ou garde le `systemName`. Une fois nommé, l’état devient `completed`, le P’TIPOTE devient utilisable et une seule entrée est inscrite au Journal.
+- Les P’TIPOTES legacy déjà actifs migrent directement vers `completed` : ils ne repassent jamais par un œuf. Un double scan ou une session de co-élevage déjà représentée retrouve l’arrivée existante au lieu de créer un second œuf.
+
+## P’TIPOTE V2 — Co-élevage
+
+- L’interface emploie toujours **Co-élevage**. Un nouveau joueur sans P’TIPOTE actif peut choisir Scanner ou Co-élever ; le premier choix par Type est gratuit et l’entrée tirée dans le pool public compatible rejoint immédiatement la Couveuse par le rituel commun.
+- Après l’introduction Kernel au niveau 2, la page Co-élevage reste déverrouillée. Sa capacité est égale au niveau Éleveur : une session par niveau. Une offre gratuite stable est proposée à chaque rotation ; elle ne change jamais lors d’un refresh et ne peut être consommée qu’une fois.
+- Au niveau Éleveur 3, le joueur peut choisir un **Type** pour 5 Bio-batteries. Au niveau 4, il peut choisir exactement un Vestige ou Noyau Protocole pour 8 Bio-batteries. Le choix d’Enveloppe à 6 Bio-batteries est préparé mais l’attribution et la Symbiose restent volontairement reportées au chantier suivant.
+- Les pools Vestiges et Protocoles sont distincts. Chaque entrée possède `publicEnabled`, `devEnabled`, un poids de tirage et un niveau Éleveur minimal. Les Protocoles sont DEV-only par défaut : aucune entrée DEV ne fuit vers le pool public.
+- Une session dure au plus 168 h. Elle marque `departurePending` au niveau 7 ou à expiration, bloque les nouvelles activités mais ne supprime pas encore le P’TIPOTE : le modal de départ et les récompenses seront ajoutés plus tard. Pendant la fenêtre finale de 48 h, une absence longue ne peut pas consommer les dernières 24 h avant une reconnexion ; cette protection est consommée une seule fois.
+
+## P’TIPOTE V2 — Protocoles, Enveloppes et Symbiose
+
+- Un **Protocole** reste pleinement utilisable sans Enveloppe : son Noyau conserve Type, Nature, XP, niveau et bonus propres. Ses bonus fonctionnels utilisent alors l’efficacité Noyau seul de **50 %** ; cette efficacité ne modifie jamais l’identité, le nom, l’XP ni la durée de Co-élevage.
+- Un Protocole en **Co-élevage** devient éligible à une Enveloppe au niveau 3, uniquement s’il est encore actif, sans Enveloppe et non prêt à repartir. L’Enveloppe temporaire est compatible avec son Noyau, ne demande ni Armature ni Cultivation et repart avec le P’TIPOTE en fin de session. Les Protocoles physiques gardent le routage séparé vers leur future Enveloppe `cultivated`.
+- L’offre gratuite d’Enveloppe est déterminée et sauvegardée pour le Protocole concerné, sur la même rotation que les offres de Co-élevage. Le joueur peut l’accepter gratuitement ou choisir exactement une Enveloppe compatible pour **6 Bio-batteries**. Les pools Enveloppes conservent `publicEnabled`, `devEnabled`, poids de tirage et compatibilité : un contenu DEV ne peut pas apparaître dans une offre publique.
+- Les catégories sont **Défense**, **Exploration**, **Production** et **Analyste** (l’ancien libellé Scientifique est migré). Défense garde notamment +30 % de portage ; Analyste ne multiplie que le bonus d’Exploration de son propre Noyau selon la taille du groupe.
+- Après attribution, la Symbiose commence avec une **Nouvelle Enveloppe** à 75 % d’efficacité. Elle progresse de **+1 % par heure** (hors ligne et avec fractions) et de **+1 % par activité réellement résolue**. À 100 %, elle devient Habituée (100 %) puis recommence une seule jauge ; au deuxième palier, elle devient Adoptée (125 %, maximum). Les surplus sont conservés, aucun palier ne se répète et la progression s’arrête à la fin/pending de la session.
+- Sans Enveloppe, un Protocole utilise l’asset de Noyau. Avec Enveloppe, il demande l’image combinée `nature_enveloppe`, sans paperdoll. Si cette image n’existe pas, l’application retombe sur le Noyau et signale le manque uniquement en DEV.
+
+## P’TIPOTE V2 — fin du Co-élevage
+
+- Une session devient `departurePending` au niveau 7 ou à expiration. Le P’TIPOTE termine l’activité déjà engagée, mais ne peut plus en commencer une autre. Il garde son slot tant que son départ n’a pas été accompagné depuis la **Maison**.
+- Les départs sont traités séquentiellement dans la Couveuse : message de remerciement, visuel actuel du P’TIPOTE, puis archivage. Un P’TIPOTE co-élevé ne devient jamais owned ; son profil, nom choisi, Type, Nature, niveau, XP, Noyau, Enveloppe, Symbiose et raison du départ restent dans l’historique local.
+- Chaque session finalisée donne exactement trois récompenses : un **Bonus XP** stockable du même Type, de l’XP Éleveur immédiate et de la Confiance Kernel immédiate. Les montants utilisent une base + un bonus par niveau final, uniquement configurables dans le Dashboard (valeurs DEV provisoires).
+- Le Bonus XP ne s’applique jamais automatiquement. Il cible uniquement un P’TIPOTE **owned**, actif et du même Type ; Vestige et Protocole owned sont tous deux valides. Il ne peut pas viser un P’TIPOTE coBred, n’est ni vendable ni échangeable, et reste stocké s’il n’existe aucune cible compatible.
+- La finalisation est idempotente par `sourceSessionId` : session, archive, récompense et gains Kernel sont écrits ensemble. Après un redémarrage, une récompense déjà attribuée n’est jamais recréée. L’Enveloppe temporaire d’un Protocole part avec lui et n’entre jamais dans l’inventaire.
