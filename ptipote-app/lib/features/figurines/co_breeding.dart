@@ -766,8 +766,29 @@ class CoBreedingTimeService {
             );
 }
 
+/// Every Éleveur level opens exactly one simultaneous Co-élevage slot.
+///
+/// [config] remains part of the signature for backward compatibility with the
+/// Dashboard configuration model, but it deliberately does not multiply the
+/// capacity: a level 4 Éleveur has four slots, never more.
 int getCoBreedingCapacity(int breederLevel, CoBreedingConfig config) =>
-    math.max(1, breederLevel) * math.max(1, config.capacityPerBreederLevel);
+    math.max(1, breederLevel);
+
+/// Returns the remaining global delay between two Co-élevage selections.
+/// The same value also drives the offer rotation, so it remains editable from
+/// the Dashboard without duplicating a second timer setting.
+Duration coBreedingSelectionCooldownFor({
+  required DateTime? lastSelectionAt,
+  required CoBreedingConfig config,
+  required DateTime now,
+}) {
+  if (lastSelectionAt == null) return Duration.zero;
+  final availableAt = lastSelectionAt.add(
+    Duration(hours: math.max(1, config.offerRotationHours)),
+  );
+  final remaining = availableAt.difference(now);
+  return remaining.isNegative ? Duration.zero : remaining;
+}
 
 PtipoteFigurine coBredFigurineFromProfile(PtipoteV2Profile profile) =>
     PtipoteFigurine(

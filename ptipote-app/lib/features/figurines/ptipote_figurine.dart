@@ -151,8 +151,29 @@ class PtipoteFigurine {
     return PtipoteEnvelopeType.standard;
   }
 
+  /// Early Vestige NFC records sometimes only contained their historical
+  /// species (`e`) and no canonical V2 Type. A Vestige never gains a Protocol
+  /// envelope from that fallback; we only keep its old species as the visible
+  /// envelope/form name so the player does not see a misleading “standard”.
+  bool get hasCanonicalType {
+    final value = _normalize(
+      fields['elementType'] ??
+          fields['element'] ??
+          fields['ptipoteType'] ??
+          fields['type'] ??
+          fields['t'],
+    );
+    return value.contains('miner') ||
+        value.contains('veget') ||
+        value.contains('plant') ||
+        value.contains('mycel') ||
+        value.contains('fung') ||
+        value.contains('fong');
+  }
+
   String get envelopeLabel => switch (envelopeType) {
-        PtipoteEnvelopeType.standard => 'standard',
+        PtipoteEnvelopeType.standard =>
+          !hasCanonicalType && species != '-' ? species : 'standard',
         PtipoteEnvelopeType.exploration => 'Exploration',
         PtipoteEnvelopeType.production => 'Production',
         PtipoteEnvelopeType.analyste => 'Analyste',

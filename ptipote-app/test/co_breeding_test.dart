@@ -8,6 +8,33 @@ void main() {
       expect(getCoBreedingCapacity(1, defaultCoBreedingConfig), 1);
       expect(getCoBreedingCapacity(2, defaultCoBreedingConfig), 2);
       expect(getCoBreedingCapacity(4, defaultCoBreedingConfig), 4);
+      expect(
+        getCoBreedingCapacity(
+          4,
+          const CoBreedingConfig(capacityPerBreederLevel: 3),
+        ),
+        4,
+      );
+    });
+
+    test('a selection imposes the configured 24-hour cooldown', () {
+      final selectedAt = DateTime.utc(2026, 8, 14, 10);
+      expect(
+        coBreedingSelectionCooldownFor(
+          lastSelectionAt: selectedAt,
+          config: defaultCoBreedingConfig,
+          now: selectedAt.add(const Duration(hours: 23)),
+        ),
+        const Duration(hours: 1),
+      );
+      expect(
+        coBreedingSelectionCooldownFor(
+          lastSelectionAt: selectedAt,
+          config: defaultCoBreedingConfig,
+          now: selectedAt.add(const Duration(hours: 24)),
+        ),
+        Duration.zero,
+      );
     });
 
     test('final offline protection preserves one 24-hour return window', () {

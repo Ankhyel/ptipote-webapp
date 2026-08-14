@@ -157,6 +157,13 @@ WasteRecyclerConfig _wasteRecycler(Object? value) {
         _int(raw['outputResourcesPerCycle'], base.outputResourcesPerCycle),
     energyUnitsPerBioBattery:
         _int(raw['energyUnitsPerBioBattery'], base.energyUnitsPerBioBattery),
+    energyUnitsPerBioBatteryByBuildingLevel: <int, int>{
+      for (final entry in base.energyUnitsPerBioBatteryByBuildingLevel.entries)
+        entry.key: _int(
+          _map(raw['energyUnitsPerBioBatteryByBuildingLevel'])?['${entry.key}'],
+          entry.value,
+        ),
+    },
     energyCostPerCycle:
         _int(raw['energyCostPerCycle'], base.energyCostPerCycle),
     outputStorageCapacity:
@@ -2099,6 +2106,17 @@ BuildingViabilityConfig _buildingViability(
     repairGain: _int(raw['repairGain'], base.repairGain),
     repairOrganicCost: _int(raw['repairOrganicCost'], base.repairOrganicCost),
     repairMineralCost: _int(raw['repairMineralCost'], base.repairMineralCost),
+    repairCostsByBuildingLevel: <int, Map<String, int>>{
+      for (final entry in base.repairCostsByBuildingLevel.entries)
+        entry.key: <String, int>{
+          for (final cost in entry.value.entries)
+            cost.key: _int(
+              _map(_map(raw['repairCostsByBuildingLevel'])?['${entry.key}'])?[
+                  cost.key],
+              cost.value,
+            ),
+        },
+    },
     restartOrganicCost:
         _int(raw['restartOrganicCost'], base.restartOrganicCost),
     restartMineralCost:

@@ -74,6 +74,7 @@ class BuildingViabilityConfig {
     required this.repairGain,
     required this.repairOrganicCost,
     required this.repairMineralCost,
+    required this.repairCostsByBuildingLevel,
     required this.restartOrganicCost,
     required this.restartMineralCost,
     required this.restartBioBatteryCost,
@@ -93,6 +94,10 @@ class BuildingViabilityConfig {
   final int repairGain;
   final int repairOrganicCost;
   final int repairMineralCost;
+
+  /// Per 10 % repaired. One level entry is shared by every building at that
+  /// level, so balancing never depends on an individual building id.
+  final Map<int, Map<String, int>> repairCostsByBuildingLevel;
   final int restartOrganicCost;
   final int restartMineralCost;
   final int restartBioBatteryCost;
@@ -104,6 +109,15 @@ class BuildingViabilityConfig {
 
   int damageFor(TowerWeatherType type, GlobalWeatherIntensity intensity) =>
       damageByWeatherAndIntensity[type]?[intensity] ?? 0;
+
+  Map<String, int> repairCostsForLevel(int level) {
+    final safeLevel = level < 1 ? 1 : level;
+    return Map<String, int>.from(
+      repairCostsByBuildingLevel[safeLevel] ??
+          repairCostsByBuildingLevel[6] ??
+          const <String, int>{},
+    );
+  }
 }
 
 class SecurityWellbeingBand {
@@ -367,6 +381,50 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
     repairGain: 15,
     repairOrganicCost: 5,
     repairMineralCost: 3,
+    repairCostsByBuildingLevel: <int, Map<String, int>>{
+      1: <String, int>{
+        'Organique': 1,
+        'Minéral': 3,
+        'Bio-batteries': 0,
+        'Bio-piles': 10,
+        'Kit de réparation domestique': 0,
+      },
+      2: <String, int>{
+        'Organique': 2,
+        'Minéral': 6,
+        'Bio-batteries': 0,
+        'Bio-piles': 10,
+        'Kit de réparation domestique': 0,
+      },
+      3: <String, int>{
+        'Organique': 3,
+        'Minéral': 9,
+        'Bio-batteries': 0,
+        'Bio-piles': 10,
+        'Kit de réparation domestique': 0,
+      },
+      4: <String, int>{
+        'Organique': 4,
+        'Minéral': 12,
+        'Bio-batteries': 0,
+        'Bio-piles': 10,
+        'Kit de réparation domestique': 0,
+      },
+      5: <String, int>{
+        'Organique': 5,
+        'Minéral': 15,
+        'Bio-batteries': 0,
+        'Bio-piles': 10,
+        'Kit de réparation domestique': 0,
+      },
+      6: <String, int>{
+        'Organique': 6,
+        'Minéral': 18,
+        'Bio-batteries': 0,
+        'Bio-piles': 10,
+        'Kit de réparation domestique': 0,
+      },
+    },
     restartOrganicCost: 8,
     restartMineralCost: 4,
     restartBioBatteryCost: 1,

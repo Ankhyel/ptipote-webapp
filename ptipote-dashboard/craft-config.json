@@ -296,6 +296,55 @@
       "stackLimit": 1
     },
     {
+      "id": "chloroCanals",
+      "displayName": "Chloro-canaux",
+      "craftSection": "atelier",
+      "ingredients": [
+        {"resource": "Organique", "amount": 5},
+        {"resource": "Minéral", "amount": 5}
+      ],
+      "contextIngredients": {},
+      "cuisineLevel": 0,
+      "atelierLevel": 1,
+      "kernelTrustLevel": 3,
+      "breederLevel": 1,
+      "builderLevel": 2,
+      "restorerLevel": 1,
+      "resultItem": "Chloro-canaux",
+      "resultAmount": 1,
+      "isConsumable": false,
+      "hungerRestore": 0,
+      "vitalityRestore": 0,
+      "durationMinutes": 8,
+      "energyCost": 0,
+      "stackLimit": 1
+    },
+    {
+      "id": "filterInstallation",
+      "displayName": "Installation filtrante",
+      "craftSection": "atelier",
+      "ingredients": [
+        {"resource": "Filtre", "amount": 1},
+        {"resource": "Organique", "amount": 4},
+        {"resource": "Minéral", "amount": 4}
+      ],
+      "contextIngredients": {},
+      "cuisineLevel": 0,
+      "atelierLevel": 1,
+      "kernelTrustLevel": 3,
+      "breederLevel": 1,
+      "builderLevel": 1,
+      "restorerLevel": 2,
+      "resultItem": "Installation filtrante",
+      "resultAmount": 1,
+      "isConsumable": false,
+      "hungerRestore": 0,
+      "vitalityRestore": 0,
+      "durationMinutes": 8,
+      "energyCost": 0,
+      "stackLimit": 1
+    },
+    {
       "id": "repairKit",
       "displayName": "Kit de réparation domestique",
       "craftSection": "atelier",

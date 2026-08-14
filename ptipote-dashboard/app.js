@@ -464,6 +464,11 @@ async function loadPtipoteStatsConfig() {
 
 function ptipoteFieldLabel(field) {
   const labels = {
+    energyUnitsPerBioBatteryByBuildingLevel: "Énergie gagnée par Bio-batterie, selon le niveau",
+    repairCostsByBuildingLevel: "Coûts de réparation par niveau",
+    "Bio-batteries": "Bio-batteries",
+    "Bio-piles": "Bio-piles",
+    "Kit de réparation domestique": "Kits de réparation",
     v2DefaultBaseCarryCapacity: "V2 · Portage de base",
     v2CoreOnlyEfficiency: "V2 · Efficacité Protocole / Noyau seul",
     v2NewEnvelopeEfficiency: "V2 · Efficacité / Enveloppe nouvelle",
@@ -840,7 +845,7 @@ async function loadRecyclerConfig() {
       ["Niveau initial / maximum", `${recyclerConfig.initialRecyclerLevel} / ${recyclerConfig.recyclerMaxLevel}`],
       ["Cuve de base", recyclerConfig.baseWasteTankCapacity],
       ["Coût niveau 1", `${recyclerConfig.baseWasteRequired} Déchets → ${recyclerConfig.outputResourcesPerCycle} ressources`],
-      ["Énergie / Bio-batterie", recyclerConfig.energyUnitsPerBioBattery],
+      ["Énergie / Bio-batterie", JSON.stringify(recyclerConfig.energyUnitsPerBioBatteryByBuildingLevel || { 1: recyclerConfig.energyUnitsPerBioBattery })],
       ["Coût par cycle", recyclerConfig.energyCostPerCycle],
       ["Stock sortie / attente", `${recyclerConfig.outputStorageCapacity} / ${recyclerConfig.pendingWasteCapacity}`],
       ["Temps par niveau", JSON.stringify(recyclerConfig.cycleMinutesByLevel)],
@@ -1777,16 +1782,28 @@ function renderWorkshopEditor() {
 
 function renderEnergyEditor() {
   const recycler = zone0Settings.wasteRecycler || {};
+  const viability = zone0Settings.towerOperations?.buildingViability || {};
   const energy = {
-    energyUnitsPerBioBattery: recycler.energyUnitsPerBioBattery,
+    energyUnitsPerBioBatteryByBuildingLevel:
+      recycler.energyUnitsPerBioBatteryByBuildingLevel || {},
+  };
+  const repairs = {
+    repairCostsByBuildingLevel: viability.repairCostsByBuildingLevel || {},
   };
   el.energySettingsForm.innerHTML = [
     configCard(
-      "Conversion des Bio-batteries",
+      "Conversion Bio-batterie → énergie par niveau",
       "wasteRecycler",
       energy,
       [],
-      { open: true, meta: "Gain appliqué par une Bio-batterie dans le Fablab, la Nurserie et chaque Distributeur." },
+      { open: true, meta: "Une valeur par niveau de bâtiment. Elle alimente le Fablab, la Nurserie, les Distributeurs et les installations territoriales." },
+    ),
+    configCard(
+      "Réparations par niveau de bâtiment",
+      "towerOperations",
+      repairs,
+      ["buildingViability"],
+      { open: true, meta: "Coût par tranche de 10 % de Viabilité : ressources, Bio-batteries, Bio-piles et Kits de réparation." },
     ),
   ].join("");
   bindZone0Inputs(el.energySettingsForm);
@@ -1943,7 +1960,7 @@ async function publishZone0Settings() {
   el.ptibugStatus.textContent = "Configuration P'TIBUG et prérequis de Patterns publiés. Les applications connectées se mettent à jour.";
   el.craftStatus.textContent = "Configuration Craft publiée. Les applications connectées se mettent à jour.";
   el.marketSettingsStatus.textContent = "Configuration publiée. Les applications connectées se mettent à jour.";
-  el.energySettingsStatus.textContent = "Conversion d’énergie publiée. Les applications connectées se mettent à jour.";
+  el.energySettingsStatus.textContent = "Réglages d’énergie et de réparation publiés. Les applications connectées se mettent à jour.";
 }
 
 async function handleAuthClick() {

@@ -91,6 +91,7 @@ class Zone0GameState extends ChangeNotifier {
   bool coBreedingUnlocked = false;
   bool coBreedingIntroMissionDismissed = false;
   bool coBreedingDevMode = false;
+  DateTime? lastCoBreedingSelectionAt;
   CoBreedingConfig get coBreedingConfig {
     final v2 = ptipoteStatsConfig.v2;
     return CoBreedingConfig(
@@ -540,19 +541,28 @@ class Zone0GameState extends ChangeNotifier {
       };
 
   Map<String, int> buildingRepairCosts(String buildingId, int requestedGain) {
-    final viability = viabilityForBuilding(buildingId);
-    final actualGain = math.min(
-      math.max(1, requestedGain),
-      viability.maximum - viability.current,
+    return buildingRepairCostsForLevel(
+      buildingRepairLevel(buildingId),
+      requestedGain,
     );
-    final steps = (actualGain / 10).ceil();
-    final level = buildingRepairLevel(buildingId);
+  }
+
+  Map<String, int> buildingRepairCostsForLevel(
+    int buildingLevel,
+    int requestedGain,
+  ) {
+    final steps = (math.max(1, requestedGain) / 10).ceil();
+    final perStep = towerOperationsConfig.buildingViability
+        .repairCostsForLevel(buildingLevel);
     return <String, int>{
-      'Minéral': 3 * steps * level,
-      'Organique': steps * level,
-      'Bio-batteries': 10 * steps * level,
+      for (final entry in perStep.entries) entry.key: entry.value * steps,
     };
   }
+
+  String _repairCostSummary(Map<String, int> costs) => costs.entries
+      .where((entry) => entry.value > 0)
+      .map((entry) => '${entry.value} ${entry.key}')
+      .join(' · ');
 
   void _awardPlayerBuildingRepairXp() {
     _addKernelAxisXp(KernelAxis.builder, 5);
@@ -569,18 +579,20 @@ class Zone0GameState extends ChangeNotifier {
     final actualGain =
         math.min(requestedGain, viability.maximum - viability.current).toInt();
     final costs = buildingRepairCosts(buildingId, actualGain);
-    final materials = <String, int>{
-      'Organique': costs['Organique']!,
-      'Minéral': costs['Minéral']!,
-    };
-    final batteries = costs['Bio-batteries']!;
+    final materials = Map<String, int>.fromEntries(costs.entries.where(
+      (entry) => entry.key != 'Bio-batteries' && entry.key != 'Bio-piles',
+    ));
+    final batteries = costs['Bio-batteries'] ?? 0;
+    final piles = costs['Bio-piles'] ?? 0;
     if (bioBatteries < batteries ||
+        bioPiles < piles ||
         !hasResources(materials) ||
         !removeResources(materials)) {
       return const Zone0ActionResult(
           success: false, message: 'Ressources insuffisantes pour réparer.');
     }
     bioBatteries -= batteries;
+    bioPiles -= piles;
     viability.restore(actualGain);
     _awardPlayerBuildingRepairXp();
     if (viability.current >= viability.maximum) {
@@ -590,8 +602,7 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
         success: true,
-        message:
-            '+$actualGain% de Viabilité · ${costs['Minéral']} Minéral · ${costs['Organique']} Organique · $batteries Bio-batteries.');
+        message: '+$actualGain% de Viabilité · ${_repairCostSummary(costs)}.');
   }
 
   Zone0ActionResult repairBuildingByMiniGame(String buildingId) {
@@ -694,21 +705,38 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult addFilterCartridgesToBuilding(
     String buildingId, {
     int quantity = 1,
+  }) =>
+      addStructuralConsumableToBuilding(
+        buildingId,
+        requiredInstallation: StructuralProtectionType.filtration,
+        itemName: 'Cartouche de filtration',
+        quantity: quantity,
+      );
+
+  /// Generic reserve for installations that consume an item before their own
+  /// durability can be affected. New structural systems only need to declare
+  /// their installation/item pair in the UI; the transfer remains atomic.
+  Zone0ActionResult addStructuralConsumableToBuilding(
+    String buildingId, {
+    required StructuralProtectionType requiredInstallation,
+    required String itemName,
+    int quantity = 1,
   }) {
     final state = viabilityForBuilding(buildingId);
-    if (!state.installedStructuralProtections
-        .contains(StructuralProtectionType.filtration)) {
+    if (!state.installedStructuralProtections.contains(requiredInstallation)) {
       return const Zone0ActionResult(
-          success: false, message: 'Installation filtrante requise.');
+          success: false, message: 'Installation requise.');
     }
     final safeQuantity = math.max(1, quantity);
-    if (resourceAmount('Cartouche de filtration') < safeQuantity ||
-        removeResource('Cartouche de filtration', safeQuantity) <= 0) {
-      return const Zone0ActionResult(
-          success: false, message: 'Cartouches de filtration insuffisantes.');
+    if (resourceAmount(itemName) < safeQuantity ||
+        removeResource(itemName, safeQuantity) <= 0) {
+      return Zone0ActionResult(
+        success: false,
+        message: '$itemName insuffisant${safeQuantity > 1 ? 's' : ''}.',
+      );
     }
     state.structuralConsumables.update(
-      'Cartouche de filtration',
+      itemName,
       (value) => value + safeQuantity,
       ifAbsent: () => safeQuantity,
     );
@@ -716,7 +744,8 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
         success: true,
-        message: '$safeQuantity cartouche(s) ajoutée(s) à la filtration.');
+        message:
+            '$safeQuantity $itemName ajouté${safeQuantity > 1 ? 's' : ''}.');
   }
 
   Zone0ActionResult addFilterCartridgesToHouse(
@@ -1842,19 +1871,24 @@ class Zone0GameState extends ChangeNotifier {
     final actualGain = math
         .min(requestedGain, house.maximumViability - house.currentViability)
         .toInt();
-    final steps = (actualGain / 10).ceil();
-    final costs = <String, int>{
-      'Organique': housingConfig.houseRepairOrganicCost * steps,
-      'Minéral': housingConfig.houseRepairMineralCost * steps,
-    };
-    final batteries = 10 * steps;
+    // Les maisons habitantes ne disposent pas encore de niveaux. Elles
+    // utilisent donc le palier 1, tout en passant par la même table centrale.
+    final costs = buildingRepairCostsForLevel(1, actualGain);
+    final materials = Map<String, int>.fromEntries(costs.entries.where(
+      (entry) => entry.key != 'Bio-batteries' && entry.key != 'Bio-piles',
+    ));
+    final batteries = costs['Bio-batteries'] ?? 0;
+    final piles = costs['Bio-piles'] ?? 0;
     if (bioBatteries < batteries ||
-        !hasResources(costs) ||
-        !removeResources(costs)) {
+        bioPiles < piles ||
+        !hasResources(materials) ||
+        !removeResources(materials)) {
       return const Zone0ActionResult(
           success: false,
           message: 'Ressources insuffisantes pour réparer cette maison.');
     }
+    bioBatteries -= batteries;
+    bioPiles -= piles;
     house.currentViability = math
         .min(house.maximumViability, house.currentViability + requestedGain)
         .toInt();
@@ -1864,7 +1898,7 @@ class Zone0GameState extends ChangeNotifier {
     return Zone0ActionResult(
         success: true,
         message:
-            'Maison réparée : +$actualGain% · ${costs['Minéral']} Minéral · ${costs['Organique']} Organique · $batteries Bio-batteries.');
+            'Maison réparée : +$actualGain% de Viabilité · ${_repairCostSummary(costs)}.');
   }
 
   Zone0ActionResult repairResidentHouseByMiniGame(String houseId) {
@@ -6412,8 +6446,20 @@ class Zone0GameState extends ChangeNotifier {
 
   int get breederLevel => kernelAxisLevel(KernelAxis.breeder);
 
-  int get coBreedingCapacity =>
-      getCoBreedingCapacity(breederLevel, coBreedingConfig);
+  /// One temporary companion per breeder level. This is intentionally not a
+  /// multiplier: Éleveur 10 means exactly ten possible Co-élevages.
+  int get coBreedingCapacity => math.max(1, breederLevel);
+
+  Duration coBreedingSelectionCooldownRemaining({DateTime? now}) {
+    return coBreedingSelectionCooldownFor(
+      lastSelectionAt: lastCoBreedingSelectionAt,
+      config: coBreedingConfig,
+      now: now ?? DateTime.now(),
+    );
+  }
+
+  bool get canSelectCoBreeding =>
+      coBreedingSelectionCooldownRemaining() == Duration.zero;
 
   List<CoBreedingSession> get activeCoBreedingSessions => coBreedingSessions
       .where(
@@ -6449,6 +6495,27 @@ class Zone0GameState extends ChangeNotifier {
 
   List<PtipoteFigurine> allPtipotes(List<PtipoteFigurine> physical) =>
       <PtipoteFigurine>[...physical, ...coBredFigurines()];
+
+  /// The single source used by every activity selector. Physical figures and
+  /// temporary Co-élevage profiles share the same activity engine once their
+  /// arrival ritual is completed. Eggs and P'TIPOTES preparing a departure
+  /// deliberately stay out of every Craft, Lisière, Tour and Marché picker.
+  List<PtipoteFigurine> ptipotesAvailableForActivities(
+    List<PtipoteFigurine> physical,
+  ) =>
+      allPtipotes(physical).where((figurine) {
+        final profile = ptipoteV2ProfileFor(figurine);
+        return profile.isArrivalComplete &&
+            profile.lifecycleStatus == PtipoteLifecycleStatus.active &&
+            !profile.departurePending;
+      }).toList();
+
+  /// Needs use the same living roster as activities. Co-élevage companions
+  /// are real P’TIPOTES after hatching, so hunger and rest must evolve too.
+  List<PtipoteFigurine> ptipotesWithNeeds(
+    List<PtipoteFigurine> physical,
+  ) =>
+      ptipotesAvailableForActivities(physical);
 
   bool shouldShowInitialPtipoteChoice(List<PtipoteFigurine> physical) =>
       allPtipotes(physical).isEmpty &&
@@ -6879,6 +6946,16 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Capacité de Co-élevage atteinte.',
       );
     }
+    final cooldown = coBreedingSelectionCooldownRemaining();
+    if (cooldown > Duration.zero) {
+      final hours = cooldown.inHours;
+      final minutes = cooldown.inMinutes.remainder(60);
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Prochain accueil de Co-élevage dans ${hours} h ${minutes} min.',
+      );
+    }
     if (bioBatteryCost > 0 && bioBatteries < bioBatteryCost) {
       return Zone0ActionResult(
         success: false,
@@ -6920,6 +6997,7 @@ class Zone0GameState extends ChangeNotifier {
       remainingSeconds: duration.inSeconds,
       lastPlayerActiveAt: now,
     ));
+    lastCoBreedingSelectionAt = now;
     sendPtipoteProfileToIncubator(profile,
         systemName: template.systemName, now: now);
     reports.add(PtipoteMissionReport.system(
@@ -9819,17 +9897,16 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Réserve d’énergie pleine.');
     }
+    final gain = energyFromBioBatteryForBuildingLevel(distributor.level);
     bioBatteries -= 1;
     distributor.energy = math.min(
       marketConfig.distributorEnergyCapacity,
-      distributor.energy + wasteRecyclerConfig.energyUnitsPerBioBattery,
+      distributor.energy + gain,
     );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
-        success: true,
-        message:
-            '+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie du Distributeur.');
+        success: true, message: '+$gain énergie du Distributeur.');
   }
 
   Zone0ActionResult setMarketDistributorType(MarketDistributorType type) {
@@ -10871,6 +10948,9 @@ class Zone0GameState extends ChangeNotifier {
         .fold(0, (total, stack) => total + stack.amount);
   }
 
+  int energyFromBioBatteryForBuildingLevel(int buildingLevel) =>
+      wasteRecyclerConfig.energyUnitsForBuildingLevel(buildingLevel);
+
   Zone0ActionResult openBioBattery() {
     if (bioBatteries <= 0) {
       return const Zone0ActionResult(
@@ -10879,12 +10959,13 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     bioBatteries -= 1;
-    energyUnits += wasteRecyclerConfig.energyUnitsPerBioBattery;
+    final gain = energyFromBioBatteryForBuildingLevel(fablabLevel);
+    energyUnits += gain;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: '+${wasteRecyclerConfig.energyUnitsPerBioBattery} Énergie.',
+      message: '+$gain Énergie.',
     );
   }
 
@@ -12416,15 +12497,18 @@ class Zone0GameState extends ChangeNotifier {
           success: false, message: 'Bio-batterie ou cuve indisponible.');
     }
     final operation = cultivationOperationForTank(tank.id);
+    final gainPerBattery = energyFromBioBatteryForBuildingLevel(
+      math.max(1, plaineNurseryLevel),
+    );
     final capacity = math.max(
-      wasteRecyclerConfig.energyUnitsPerBioBattery,
+      gainPerBattery,
       operation == null
           ? pTibugConfig.cultivation.energyCapacityFor(PTibugSpecies.arac)
           : _cultivationRateFor(operation, 'Énergie') *
               pTibugConfig.cultivation.targetAutonomyHours,
     );
-    final gain = math.min(wasteRecyclerConfig.energyUnitsPerBioBattery,
-        math.max(0, (capacity - tank.energyStored).floor()));
+    final gain = math.min(
+        gainPerBattery, math.max(0, (capacity - tank.energyStored).floor()));
     if (gain <= 0)
       return const Zone0ActionResult(
           success: false, message: 'Réserve d’énergie pleine.');
@@ -14759,15 +14843,15 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Bio-batterie indisponible.');
     }
+    final gain = energyFromBioBatteryForBuildingLevel(building.level);
     bioBatteries -= 1;
-    building.localEnergy += wasteRecyclerConfig.energyUnitsPerBioBattery;
+    building.localEnergy += gain;
     _resumePausedCultivationTanks();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message:
-          '+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie locale.',
+      message: '+$gain énergie locale.',
     );
   }
 
@@ -15453,6 +15537,8 @@ class Zone0GameState extends ChangeNotifier {
         coBreedingIntroMissionDismissed =
             coBreedingData['introMissionDismissed'] == true;
         coBreedingDevMode = coBreedingData['devMode'] == true;
+        lastCoBreedingSelectionAt =
+            _readDate(coBreedingData['lastSelectionAt']);
         final offer = coBreedingData['offer'];
         coBreedingOffer =
             offer is Map ? CoBreedingOffer.fromFirebase(offer) : null;
@@ -19356,6 +19442,9 @@ class Zone0GameState extends ChangeNotifier {
           'unlocked': coBreedingUnlocked,
           'introMissionDismissed': coBreedingIntroMissionDismissed,
           'devMode': coBreedingDevMode,
+          'lastSelectionAt': lastCoBreedingSelectionAt == null
+              ? null
+              : Timestamp.fromDate(lastCoBreedingSelectionAt!),
           'offer': coBreedingOffer?.toFirebase(),
           'envelopeOffers': coBreedingEnvelopeOffers.map(
             (id, offer) => MapEntry(id, offer.toFirebase()),
@@ -20434,12 +20523,15 @@ class MarketShop {
         'restaurant' => craftConfig.recipes.any(
             (recipe) => recipe.resultItem == resource && recipe.isConsumable,
           ),
-        'home' || 'ameublement' => resource.contains('Meuble') ||
-            resource.contains('Ventilation') ||
-            resource.contains('Lumière') ||
-            resource.contains('Cartouche') ||
-            resource.contains('Installation') ||
-            resource.contains('Kit de réparation'),
+        'home' || 'ameublement' => const <String>{
+              'Ventilation Termite',
+              'Chloro-canaux',
+              'Installation filtrante',
+              'Lumière solaire',
+              'Cartouche de filtration',
+              'Kit de réparation domestique',
+            }.contains(resource) ||
+            resource.contains('Meuble'),
         'equipment' => craftConfig.recipes.any(
             (recipe) =>
                 recipe.resultItem == resource &&
@@ -20447,7 +20539,10 @@ class MarketShop {
                 !resource.contains('Meuble') &&
                 !resource.contains('Ventilation') &&
                 !resource.contains('Lumière') &&
-                !resource.contains('Cartouche'),
+                !resource.contains('Cartouche') &&
+                !resource.contains('Chloro-canaux') &&
+                !resource.contains('Installation filtrante') &&
+                !resource.contains('Kit de réparation'),
           ),
         'ptibug' => resource.startsWith('P’TIBUG ') ||
             resource.startsWith('Capsule P’TIBUG ') ||

@@ -167,8 +167,11 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
     _zone0State.refreshKernelMissions(
       campHeartLevel: _campHeartState.campHeartLevel,
     );
-    final figurines = await _figurineService.watchMyFigurines().first;
-    _zone0State.recoverFigurineNeeds(figurines: figurines, tick: 1);
+    final physical = await _figurineService.watchMyFigurines().first;
+    _zone0State.recoverFigurineNeeds(
+      figurines: _zone0State.ptipotesWithNeeds(physical),
+      tick: 1,
+    );
     _refugeAsset = await _assetResolver.resolve('Camp');
     if (!mounted) return;
     _startSimulationTimer();
@@ -1998,10 +2001,10 @@ class _MaisonPageState extends State<_MaisonPage>
   void _recoverVitalityStep() {
     if (!mounted) return;
     _recoveryTick += 1;
-    _figurineService.watchMyFigurines().first.then((figurines) {
+    _figurineService.watchMyFigurines().first.then((physical) {
       if (!mounted) return;
       _gameState.recoverFigurineNeeds(
-        figurines: figurines,
+        figurines: _gameState.ptipotesWithNeeds(physical),
         tick: _recoveryTick,
       );
     });
@@ -2844,6 +2847,7 @@ class _CoBreedingPage extends StatefulWidget {
 class _CoBreedingPageState extends State<_CoBreedingPage> {
   Zone0GameState get gameState => widget.gameState;
   CoBreedingOffer? _offer;
+  Timer? _selectionTimer;
 
   @override
   void initState() {
@@ -2853,6 +2857,15 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
     // iOS exactly when an offer is accepted.
     gameState.resolveCoBreedingSessions();
     _offer = gameState.ensureCoBreedingOffer();
+    _selectionTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _selectionTimer?.cancel();
+    super.dispose();
   }
 
   void _showResult(Zone0ActionResult result) {
@@ -2880,6 +2893,11 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
   Widget build(BuildContext context) {
     final offer = _offer;
     final now = DateTime.now();
+    final selectionCooldown = gameState.coBreedingSelectionCooldownRemaining(
+      now: now,
+    );
+    final canSelect = !gameState.isCoBreedingCapacityReached &&
+        selectionCooldown == Duration.zero;
     final eligibleProtocols = gameState.ptipoteV2Profiles.values
         .where((profile) => gameState.isEligibleForEnvelope(profile.ptipoteId))
         .toList();
@@ -2899,6 +2917,11 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
             ),
             Text(
                 '${gameState.activeCoBredCount} / ${gameState.coBreedingCapacity}'),
+            if (selectionCooldown > Duration.zero)
+              Text(
+                'Nouvel accueil possible dans ${_remaining(selectionCooldown)}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             const SizedBox(height: 14),
             Card(
               child: Padding(
@@ -2920,13 +2943,15 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
                           'Nouvelle proposition dans ${_remaining(offer.expiresAt.difference(now))}'),
                       const SizedBox(height: 8),
                       FilledButton(
-                        onPressed: gameState.isCoBreedingCapacityReached
-                            ? null
-                            : () =>
-                                _showResult(gameState.acceptCoBreedingOffer()),
+                        onPressed: canSelect
+                            ? () =>
+                                _showResult(gameState.acceptCoBreedingOffer())
+                            : null,
                         child: Text(gameState.isCoBreedingCapacityReached
                             ? 'Capacité atteinte'
-                            : 'Accueillir en Co-élevage'),
+                            : selectionCooldown > Duration.zero
+                                ? 'Attente 24 h'
+                                : 'Accueillir en Co-élevage'),
                       ),
                     ],
                   ],
@@ -3032,10 +3057,11 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
                 runSpacing: 8,
                 children: PtipoteTypeId.values
                     .map((type) => OutlinedButton.icon(
-                          onPressed: gameState.isCoBreedingCapacityReached
-                              ? null
-                              : () => _showResult(
-                                  gameState.chooseCoBreedingType(type)),
+                          onPressed: canSelect
+                              ? () => _showResult(
+                                    gameState.chooseCoBreedingType(type),
+                                  )
+                              : null,
                           icon: Icon(Icons.egg_alt_outlined,
                               color: _eggColor(type)),
                           label: Text(_typeLabel(type)),
@@ -3051,11 +3077,13 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
               _catalogue(
                   'VESTIGES',
                   gameState.availableCoBreedingTemplates(
-                      generation: PtipoteGeneration.vestige)),
+                      generation: PtipoteGeneration.vestige),
+                  canSelect),
               _catalogue(
                   'PROTOCOLES',
                   gameState.availableCoBreedingTemplates(
-                      generation: PtipoteGeneration.protocol)),
+                      generation: PtipoteGeneration.protocol),
+                  canSelect),
             ],
           ],
         ),
@@ -3084,7 +3112,12 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
     return 'Protocole · $envelope · $state · efficacité $efficiency % · $remaining';
   }
 
-  Widget _catalogue(String title, List<CoBreedingTemplate> templates) => Column(
+  Widget _catalogue(
+    String title,
+    List<CoBreedingTemplate> templates,
+    bool canSelect,
+  ) =>
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           const SizedBox(height: 8),
@@ -3096,10 +3129,10 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
                   title: Text(template.systemName),
                   subtitle: Text(_typeLabel(template.typeId)),
                   trailing: TextButton(
-                    onPressed: gameState.isCoBreedingCapacityReached
-                        ? null
-                        : () => _showResult(gameState
-                            .chooseExactCoBreedingPtipote(template.templateId)),
+                    onPressed: canSelect
+                        ? () => _showResult(gameState
+                            .chooseExactCoBreedingPtipote(template.templateId))
+                        : null,
                     child: const Text('8 piles'),
                   ),
                 ),
@@ -3299,6 +3332,7 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+        scrollable: true,
         title: Text(
           _isHatched || _isNaming
               ? widget.isPractice
@@ -3306,79 +3340,90 @@ class _EggHatchDialogState extends State<_EggHatchDialog> {
                   : 'L’œuf a éclos'
               : 'L’œuf réagit',
         ),
-        content: GestureDetector(
-          onTap: _tap,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedScale(
-                duration: const Duration(milliseconds: 180),
-                scale: _isPulsing ? 1.22 : 1,
-                child: Icon(
-                  _isHatched || _isNaming
-                      ? Icons.auto_awesome
-                      : Icons.egg_alt_outlined,
-                  size: 84,
-                  color: _isHatched || _isNaming
-                      ? Colors.amber
-                      : _profile == null
-                          ? null
-                          : _eggColor(_profile!.typeId),
+        content: SingleChildScrollView(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: GestureDetector(
+            onTap: _tap,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedScale(
+                  duration: const Duration(milliseconds: 180),
+                  scale: _isPulsing ? 1.22 : 1,
+                  child: Icon(
+                    _isHatched || _isNaming
+                        ? Icons.auto_awesome
+                        : Icons.egg_alt_outlined,
+                    size: 84,
+                    color: _isHatched || _isNaming
+                        ? Colors.amber
+                        : _profile == null
+                            ? null
+                            : _eggColor(_profile!.typeId),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              if (_isHatched || _isNaming) ...[
-                if (!widget.isPractice && widget.figurine != null)
-                  SizedBox(
-                    height: 116,
-                    child: PtipoteImage(
-                      type: widget.figurine!.type,
-                      species: widget.figurine!.species,
-                      visualAssetKey:
-                          _profile!.isProtocol ? _profile!.visualAssetKey : '',
+                const SizedBox(height: 12),
+                if (_isHatched || _isNaming) ...[
+                  // The keyboard must never hide the field where the player
+                  // names the newborn P'TIPOTE. Keep the visual for revelation,
+                  // then give naming the full dialog height.
+                  if (!_isNaming &&
+                      !widget.isPractice &&
+                      widget.figurine != null)
+                    SizedBox(
                       height: 116,
+                      child: PtipoteImage(
+                        type: widget.figurine!.type,
+                        species: widget.figurine!.species,
+                        visualAssetKey: _profile!.isProtocol
+                            ? _profile!.visualAssetKey
+                            : '',
+                        height: 116,
+                      ),
                     ),
-                  ),
-                if (!widget.isPractice && _profile != null) ...[
-                  Text(
-                    _profile!.typeId == PtipoteTypeId.vegetal
-                        ? 'Type Végétal'
-                        : _profile!.typeId == PtipoteTypeId.mineral
-                            ? 'Type Minéral'
-                            : 'Type Mycélien',
-                  ),
-                  Text('Nature : ${_profile!.natureId}'),
-                  Text(
-                    _profile!.isProtocol ? 'Protocole' : 'Vestige',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ],
-                if (_isNaming) ...[
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _nameController,
-                    autofocus: true,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Nom du P’TIPOTE',
+                  if (!widget.isPractice && _profile != null) ...[
+                    Text(
+                      _profile!.typeId == PtipoteTypeId.vegetal
+                          ? 'Type Végétal'
+                          : _profile!.typeId == PtipoteTypeId.mineral
+                              ? 'Type Minéral'
+                              : 'Type Mycélien',
                     ),
+                    Text('Nature : ${_profile!.natureId}'),
+                    Text(
+                      _profile!.isProtocol ? 'Protocole' : 'Vestige',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                  if (_isNaming) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _nameController,
+                      autofocus: true,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Nom du P’TIPOTE',
+                      ),
+                    ),
+                  ],
+                ] else ...[
+                  const Text('Observe les pulsations, puis tape en rythme.'),
+                  const SizedBox(height: 8),
+                  Text('${_tapTimes.length} / ${_rhythm.length} tapotements'),
+                  if (_feedback != null) ...<Widget>[
+                    const SizedBox(height: 6),
+                    Text(_feedback!, textAlign: TextAlign.center),
+                  ],
+                  TextButton.icon(
+                    onPressed: _playPreview,
+                    icon: const Icon(Icons.replay),
+                    label: const Text('Revoir le rythme'),
                   ),
                 ],
-              ] else ...[
-                const Text('Observe les pulsations, puis tape en rythme.'),
-                const SizedBox(height: 8),
-                Text('${_tapTimes.length} / ${_rhythm.length} tapotements'),
-                if (_feedback != null) ...<Widget>[
-                  const SizedBox(height: 6),
-                  Text(_feedback!, textAlign: TextAlign.center),
-                ],
-                TextButton.icon(
-                  onPressed: _playPreview,
-                  icon: const Icon(Icons.replay),
-                  label: const Text('Revoir le rythme'),
-                ),
               ],
-            ],
+            ),
           ),
         ),
         actions: _isHatched
@@ -4079,7 +4124,7 @@ class _PtipoteDashboardCard extends StatelessWidget {
                   child: Column(
                     children: <Widget>[
                       _PtipoteIdentityField(
-                        label: 'Espèce',
+                        label: 'Nature',
                         value: figurine.species,
                       ),
                       const SizedBox(height: 8),
@@ -5355,7 +5400,7 @@ class _PtipoteInfoBubble extends StatelessWidget {
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
                     children: <Widget>[
-                      _InfoLine(label: 'Espèce', value: figurine.species),
+                      _InfoLine(label: 'Nature', value: figurine.species),
                       _InfoLine(label: 'Type', value: figurine.type),
                       _InfoLine(
                         label: 'Enveloppe',
@@ -5878,8 +5923,9 @@ class _Zone0InventorySheetState extends State<Zone0InventorySheet> {
   }
 
   Future<void> _selectConsumableTarget(CraftRecipe recipe) async {
-    final figurines = await _figurineService.watchMyFigurines().first;
-    final available = figurines
+    final physical = await _figurineService.watchMyFigurines().first;
+    final available = widget.gameState
+        .ptipotesAvailableForActivities(physical)
         .where((figurine) => !widget.gameState.isOnMission(figurine.id))
         .toList();
     if (!mounted) return;
@@ -6292,6 +6338,7 @@ Future<PtipoteFigurine?> _pickPtipoteForActivity({
   required Zone0GameState gameState,
   required List<PtipoteFigurine> figurines,
   required String title,
+  _PtipoteActionKind action = _PtipoteActionKind.craft,
 }) {
   return showModalBottomSheet<PtipoteFigurine>(
     context: context,
@@ -6313,30 +6360,100 @@ Future<PtipoteFigurine?> _pickPtipoteForActivity({
             if (figurines.isEmpty)
               const Text('Aucun P’TIPOTE trouvé.')
             else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: figurines.map((figurine) {
-                  final selectable = !gameState.isBusy(figurine) &&
-                      gameState.vitalityFor(figurine) >=
-                          ptipoteStatsConfig.minimumMissionVitality;
-                  final suffix = selectable
-                      ? 'V${gameState.vitalityFor(figurine)}'
-                      : _ptipoteActivityUnavailableReason(gameState, figurine);
-                  return ChoiceChip(
-                    label: Text('${figurine.displayName} · $suffix'),
-                    selected: false,
-                    onSelected: selectable
-                        ? (_) => Navigator.of(context).pop(figurine)
+              ...figurines.map((figurine) {
+                final selectable = !gameState.isBusy(figurine) &&
+                    gameState.vitalityFor(figurine) >=
+                        ptipoteStatsConfig.minimumMissionVitality;
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: const Icon(Icons.pets_outlined),
+                    title: Text(figurine.displayName),
+                    subtitle: Text(
+                      selectable
+                          ? _ptipoteActionBonusLabel(
+                              gameState,
+                              figurine,
+                              action,
+                            )
+                          : _ptipoteActivityUnavailableReason(
+                              gameState,
+                              figurine,
+                            ),
+                    ),
+                    trailing: selectable
+                        ? const Icon(Icons.chevron_right)
+                        : const Icon(Icons.block_outlined),
+                    onTap: selectable
+                        ? () => Navigator.of(context).pop(figurine)
                         : null,
-                  );
-                }).toList(),
-              ),
+                  ),
+                );
+              }),
           ],
         ),
       ),
     ),
   );
+}
+
+enum _PtipoteActionKind { harvest, craft, security, commerce }
+
+String _percent(double value) => '${(value * 100).round()} %';
+
+/// A single, contextual summary for every P’TIPOTE picker. This reads the
+/// modifier service, not widget-specific approximations, so the displayed
+/// choice always matches the bonus applied when the activity starts.
+String _ptipoteActionBonusLabel(
+  Zone0GameState gameState,
+  PtipoteFigurine figurine,
+  _PtipoteActionKind action, {
+  int groupCount = 1,
+}) {
+  final modifiers = gameState.modifiersFor(
+    figurine,
+    eligibleGroupPtipoteCount: groupCount,
+  );
+  final labels = <String>[];
+  switch (action) {
+    case _PtipoteActionKind.harvest:
+      final gather = modifiers.gather;
+      if (gather.organic != 0)
+        labels.add('Organique +${_percent(gather.organic)}');
+      if (gather.mineral != 0)
+        labels.add('Minéral +${_percent(gather.mineral)}');
+      if (gather.waste != 0) labels.add('Déchets +${_percent(gather.waste)}');
+      if (gather.mycelium != 0)
+        labels.add('Mycélium +${_percent(gather.mycelium)}');
+      if (gather.genericGather != 0) {
+        labels.add('Récolte +${_percent(gather.genericGather)}');
+      }
+      break;
+    case _PtipoteActionKind.craft:
+      if (modifiers.craftBonus != 0) {
+        labels.add('Craft +${_percent(modifiers.craftBonus)}');
+      }
+      break;
+    case _PtipoteActionKind.security:
+      if (modifiers.missionSecurityBonus != 0) {
+        labels.add('Sécurité +${_percent(modifiers.missionSecurityBonus)}');
+      }
+      if (modifiers.towerDefenseBonus != 0) {
+        labels.add('Défense Tour +${_percent(modifiers.towerDefenseBonus)}');
+      }
+      if (modifiers.droneDefenseBonus != 0) {
+        labels.add('Drones +${_percent(modifiers.droneDefenseBonus)}');
+      }
+      break;
+    case _PtipoteActionKind.commerce:
+      if (modifiers.commerceBonus != 0) {
+        labels.add('Vente +${_percent(modifiers.commerceBonus)}');
+      }
+      break;
+  }
+  return labels.isEmpty
+      ? 'Aucun bonus direct pour cette action.'
+      : 'Bonus : ${labels.join(' · ')}';
 }
 
 class MissionReportsSheet extends StatelessWidget {
@@ -6534,7 +6651,10 @@ class _LisierePageState extends State<LisierePage> {
               child: StreamBuilder<List<PtipoteFigurine>>(
                 stream: _figurineService.watchMyFigurines(),
                 builder: (context, snapshot) {
-                  final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+                  final figurines =
+                      widget.gameState.ptipotesAvailableForActivities(
+                    snapshot.data ?? const <PtipoteFigurine>[],
+                  );
                   _selectedFigurineIds.removeWhere((id) {
                     return figurines.any(
                       (figurine) =>
@@ -6665,8 +6785,34 @@ class _LisierePageState extends State<LisierePage> {
                                               ? ' · trop fatigué'
                                               : '';
                                   return ChoiceChip(
-                                    label: Text(
-                                      '${figurine.displayName} · V$vitality$suffix',
+                                    label: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          '${figurine.displayName} · V$vitality$suffix',
+                                        ),
+                                        if (suffix.isEmpty)
+                                          Text(
+                                            _ptipoteActionBonusLabel(
+                                              widget.gameState,
+                                              figurine,
+                                              _PtipoteActionKind.harvest,
+                                              groupCount: math.max(
+                                                1,
+                                                _selectedFigurineIds.contains(
+                                                  figurine.id,
+                                                )
+                                                    ? selectedFigurines.length
+                                                    : selectedFigurines.length +
+                                                        1,
+                                              ),
+                                            ),
+                                            style:
+                                                const TextStyle(fontSize: 11),
+                                          ),
+                                      ],
                                     ),
                                     selected: _selectedFigurineIds.contains(
                                       figurine.id,
@@ -8269,7 +8415,7 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                                 .message),
                     icon: const Icon(Icons.battery_charging_full_outlined),
                     label: Text(
-                      'Ouvrir une Bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)',
+                      'Ouvrir une Bio-batterie (+${gameState.energyFromBioBatteryForBuildingLevel(activeBuilding.level)} énergie)',
                     ),
                   ),
                   if (activeBuilding.kind == PTibugTerritoryKind.nursery)
@@ -8595,7 +8741,7 @@ class _BuildingViabilityCard extends StatelessWidget {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
             const Text(
-                'Par tranche de 10 % : 3 Minéral, 1 Organique et 10 Bio-batteries, multipliés par le niveau du bâtiment.'),
+                'Les coûts sont définis par niveau de bâtiment dans le Dashboard, par tranche de 10 % réparés.'),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () {
@@ -8612,6 +8758,10 @@ class _BuildingViabilityCard extends StatelessWidget {
               runSpacing: 8,
               children: choices.map((gain) {
                 final cost = gameState.buildingRepairCosts(buildingId, gain);
+                final costLabel = cost.entries
+                    .where((entry) => entry.value > 0)
+                    .map((entry) => '${entry.value} ${entry.key}')
+                    .join(' · ');
                 return FilledButton(
                   onPressed: () {
                     final result =
@@ -8619,8 +8769,7 @@ class _BuildingViabilityCard extends StatelessWidget {
                     Navigator.of(sheetContext).pop();
                     _showMessage(context, result.message);
                   },
-                  child: Text(
-                      '+$gain % · ${cost['Minéral']} M · ${cost['Organique']} O · ${cost['Bio-batteries']} ⚡'),
+                  child: Text('+$gain % · $costLabel'),
                 );
               }).toList(),
             ),
@@ -8903,6 +9052,13 @@ class _StructuralInstallationSlots extends StatelessWidget {
   final String buildingId;
   final ValueChanged<String> onMessage;
 
+  /// Extend this map for a future installation with a consumable reserve.
+  /// The slot will automatically appear directly below its installation grid.
+  static const Map<StructuralProtectionType, String> _consumableByInstallation =
+      <StructuralProtectionType, String>{
+    StructuralProtectionType.filtration: 'Cartouche de filtration',
+  };
+
   String _label(StructuralProtectionType type) => switch (type) {
         StructuralProtectionType.ventilationTermite => 'Ventilation Termite',
         StructuralProtectionType.chloroCanaux => 'Chloro-canaux',
@@ -8913,68 +9069,145 @@ class _StructuralInstallationSlots extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = gameState.viabilityForBuilding(buildingId);
     final slots = gameState.structuralProtectionSlotsFor(buildingId);
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 1.25,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10),
-      itemCount: slots,
-      itemBuilder: (context, index) {
-        final installed = index < state.installedStructuralProtections.length
-            ? state.installedStructuralProtections[index]
-            : null;
-        return InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () async {
-            if (installed != null) {
-              onMessage(gameState
-                  .removeStructuralProtection(buildingId, installed)
-                  .message);
-              return;
-            }
-            final type = await showModalBottomSheet<StructuralProtectionType>(
-              context: context,
-              showDragHandle: true,
-              builder: (context) => SafeArea(
-                  child: ListView(
-                      shrinkWrap: true,
-                      children: StructuralProtectionType.values
-                          .map((type) => ListTile(
-                                enabled:
-                                    gameState.resourceAmount(_label(type)) > 0,
-                                title: Text(_label(type)),
-                                subtitle: Text(
-                                    'Stock : ${gameState.resourceAmount(_label(type))}'),
-                                trailing: const Icon(Icons.add_circle_outline),
-                                onTap: () => Navigator.pop(context, type),
-                              ))
-                          .toList())),
+    final consumableInstallations = _consumableByInstallation.entries.where(
+      (entry) => state.installedStructuralProtections.contains(entry.key),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 1.25,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10),
+          itemCount: slots,
+          itemBuilder: (context, index) {
+            final installed =
+                index < state.installedStructuralProtections.length
+                    ? state.installedStructuralProtections[index]
+                    : null;
+            return InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () async {
+                if (installed != null) {
+                  onMessage(gameState
+                      .removeStructuralProtection(buildingId, installed)
+                      .message);
+                  return;
+                }
+                final type =
+                    await showModalBottomSheet<StructuralProtectionType>(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (context) => SafeArea(
+                      child: ListView(
+                          shrinkWrap: true,
+                          children: StructuralProtectionType.values
+                              .map((type) => ListTile(
+                                    enabled:
+                                        gameState.resourceAmount(_label(type)) >
+                                            0,
+                                    title: Text(_label(type)),
+                                    subtitle: Text(
+                                        'Stock : ${gameState.resourceAmount(_label(type))}'),
+                                    trailing:
+                                        const Icon(Icons.add_circle_outline),
+                                    onTap: () => Navigator.pop(context, type),
+                                  ))
+                              .toList())),
+                );
+                if (type != null) {
+                  onMessage(
+                    gameState
+                        .installStructuralProtection(buildingId, type)
+                        .message,
+                  );
+                }
+              },
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(14)),
+                child: Center(
+                    child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(installed == null ? '+' : _label(installed),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: installed == null ? 30 : 13)))),
+              ),
             );
-            if (type != null)
-              onMessage(gameState
-                  .installStructuralProtection(buildingId, type)
-                  .message);
           },
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-                border: Border.all(color: Theme.of(context).dividerColor),
-                borderRadius: BorderRadius.circular(14)),
-            child: Center(
-                child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(installed == null ? '+' : _label(installed),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: installed == null ? 30 : 13)))),
+        ),
+        for (final entry in consumableInstallations) ...<Widget>[
+          const SizedBox(height: 12),
+          _StructuralConsumableSlot(
+            itemName: entry.value,
+            stored: state.structuralConsumables[entry.value] ?? 0,
+            stock: gameState.resourceAmount(entry.value),
+            onAdd: (quantity) => onMessage(
+              gameState
+                  .addStructuralConsumableToBuilding(
+                    buildingId,
+                    requiredInstallation: entry.key,
+                    itemName: entry.value,
+                    quantity: quantity,
+                  )
+                  .message,
+            ),
           ),
-        );
-      },
+        ],
+      ],
     );
   }
+}
+
+/// Generic consumable reserve shown beneath an installation.  Other
+/// installations can reuse this slot when they gain a consumable later.
+class _StructuralConsumableSlot extends StatelessWidget {
+  const _StructuralConsumableSlot({
+    required this.itemName,
+    required this.stored,
+    required this.stock,
+    required this.onAdd,
+  });
+
+  final String itemName;
+  final int stored;
+  final int stock;
+  final ValueChanged<int> onAdd;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Consommable',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              Text('$itemName · réserve : $stored'),
+              Text('Inventaire : $stock'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: <int>[1, 5, 10]
+                    .map((quantity) => OutlinedButton(
+                          onPressed:
+                              stock >= quantity ? () => onAdd(quantity) : null,
+                          child: Text('+$quantity'),
+                        ))
+                    .toList(),
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 class _PTibugTerritoryStockSummary extends StatelessWidget {
@@ -10418,16 +10651,26 @@ class _CampHousingTab extends StatelessWidget {
                                               icon: const Icon(Icons.tune),
                                               label: const Text('Mini-jeu'),
                                             ),
-                                            ...<int>[10, 20, 30]
-                                                .map((gain) => FilledButton(
-                                                      onPressed: () =>
-                                                          Navigator.of(
-                                                                  sheetContext)
-                                                              .pop(gain),
-                                                      child: Text(
-                                                          '+$gain % · ${(gain ~/ 10) * 10} Minéral · ${(gain ~/ 10) * 3} Organique · ${(gain ~/ 10) * 10} ⚡'),
-                                                    ))
-                                                .toList(),
+                                            ...<int>[10, 20, 30].map((gain) {
+                                              final cost = gameState
+                                                  .buildingRepairCostsForLevel(
+                                                1,
+                                                gain,
+                                              );
+                                              final costLabel = cost.entries
+                                                  .where((entry) =>
+                                                      entry.value > 0)
+                                                  .map((entry) =>
+                                                      '${entry.value} ${entry.key}')
+                                                  .join(' · ');
+                                              return FilledButton(
+                                                onPressed: () =>
+                                                    Navigator.of(sheetContext)
+                                                        .pop(gain),
+                                                child: Text(
+                                                    '+$gain % · $costLabel'),
+                                              );
+                                            }).toList(),
                                           ],
                                         ),
                                       ],
@@ -11765,7 +12008,10 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
               child: StreamBuilder<List<PtipoteFigurine>>(
                 stream: widget.figurineService.watchMyFigurines(),
                 builder: (context, snapshot) {
-                  final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+                  final figurines =
+                      widget.gameState.ptipotesAvailableForActivities(
+                    snapshot.data ?? const <PtipoteFigurine>[],
+                  );
                   final activeTowerMissions = widget.gameState.towerMissions
                       .where(
                         (mission) =>
@@ -12025,6 +12271,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
       gameState: widget.gameState,
       figurines: figurines,
       title: 'Affecter à la Tour',
+      action: _PtipoteActionKind.security,
     );
     if (figurine == null || !mounted) return;
     final plan = await showModalBottomSheet<TowerMissionPlan>(
@@ -12093,7 +12340,10 @@ class _TowerExplorationTab extends StatelessWidget {
         child: StreamBuilder<List<PtipoteFigurine>>(
           stream: figurineService.watchMyFigurines(),
           builder: (context, snapshot) {
-            final available = (snapshot.data ?? const <PtipoteFigurine>[])
+            final available = gameState
+                .ptipotesAvailableForActivities(
+                  snapshot.data ?? const <PtipoteFigurine>[],
+                )
                 .where(
                   (item) =>
                       !gameState.isBusy(item) &&
@@ -12212,6 +12462,7 @@ class _TowerExplorationTab extends StatelessWidget {
                                       gameState: gameState,
                                       figurines: available,
                                       title: 'Explorer $label',
+                                      action: _PtipoteActionKind.harvest,
                                     );
                                     if (figurine != null && context.mounted) {
                                       final hours =
@@ -12246,6 +12497,7 @@ class _TowerExplorationTab extends StatelessWidget {
                                       gameState: gameState,
                                       figurines: available,
                                       title: 'Sécuriser $label',
+                                      action: _PtipoteActionKind.security,
                                     );
                                     if (figurine != null && context.mounted) {
                                       final plan =
@@ -13668,7 +13920,9 @@ class _MarketPageState extends State<MarketPage> {
         child: StreamBuilder<List<PtipoteFigurine>>(
           stream: _figurineService.watchMyFigurines(),
           builder: (context, snapshot) {
-            final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+            final figurines = widget.gameState.ptipotesAvailableForActivities(
+              snapshot.data ?? const <PtipoteFigurine>[],
+            );
             return ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
@@ -13835,6 +14089,7 @@ class _MarketPageState extends State<MarketPage> {
                                 gameState: widget.gameState,
                                 figurines: figurines,
                                 title: 'Affecter au Point info',
+                                action: _PtipoteActionKind.commerce,
                               );
                               if (figurine == null || !context.mounted) {
                                 return;
@@ -14218,7 +14473,7 @@ class _MarketPageState extends State<MarketPage> {
                                       .openBioBatteryForMarketDistributor()
                                       .message),
                                   child: Text(
-                                    'Ouvrir une Bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)',
+                                    'Ouvrir une Bio-batterie (+${widget.gameState.energyFromBioBatteryForBuildingLevel(widget.gameState.marketDistributor.level)} énergie)',
                                   ),
                                 )),
                                 if (widget.gameState.marketDistributor
@@ -14770,7 +15025,7 @@ class _MarketPageState extends State<MarketPage> {
                       .openBioBatteryForMarketDistributor(shopId: shopId)
                       .message),
                   child: Text(
-                    'Ouvrir une Bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)',
+                    'Ouvrir une Bio-batterie (+${widget.gameState.energyFromBioBatteryForBuildingLevel(distributor.level)} énergie)',
                   ),
                 ),
                 if (distributor.isBroken)
@@ -16022,7 +16277,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                             .message),
                     icon: const Icon(Icons.bolt_outlined),
                     label: Text(
-                        'Ouvrir une Bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)'),
+                        'Ouvrir une Bio-batterie (+${widget.gameState.energyFromBioBatteryForBuildingLevel(nursery.level)} énergie)'),
                   ),
                 ]),
                 const Text(
@@ -18458,8 +18713,11 @@ class _FablabEnergyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final energyPerBattery = gameState.energyFromBioBatteryForBuildingLevel(
+      gameState.fablabLevel,
+    );
     final capacity = math.max(
-      wasteRecyclerConfig.energyUnitsPerBioBattery,
+      energyPerBattery,
       ((gameState.energyUnits + 9) ~/ 10) * 10,
     );
     final level = (gameState.energyUnits / capacity).clamp(0.0, 1.0);
@@ -18500,7 +18758,7 @@ class _FablabEnergyCard extends StatelessWidget {
                     },
               icon: const Icon(Icons.bolt_outlined),
               label: Text(
-                'Ouvrir 1 bio-batterie (+${wasteRecyclerConfig.energyUnitsPerBioBattery} énergie)',
+                'Ouvrir 1 bio-batterie (+$energyPerBattery énergie)',
               ),
             ),
           ],
@@ -19068,7 +19326,9 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
     return StreamBuilder<List<PtipoteFigurine>>(
       stream: _figurineService.watchMyFigurines(),
       builder: (context, snapshot) {
-        final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+        final figurines = widget.gameState.ptipotesAvailableForActivities(
+          snapshot.data ?? const <PtipoteFigurine>[],
+        );
         return ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
@@ -19117,6 +19377,8 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                       !recipe.displayName.contains('Ventilation') &&
                       !recipe.displayName.contains('Lumière') &&
                       !recipe.displayName.contains('Cartouche') &&
+                      recipe.id != 'chloroCanals' &&
+                      recipe.id != 'filterInstallation' &&
                       recipe.id != 'repairKit' &&
                       recipe.id != 'biomassRegenerator'
                 ),
@@ -19127,6 +19389,8 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                       recipe.displayName.contains('Ventilation') ||
                       recipe.displayName.contains('Lumière') ||
                       recipe.displayName.contains('Cartouche') ||
+                      recipe.id == 'chloroCanals' ||
+                      recipe.id == 'filterInstallation' ||
                       recipe.id == 'repairKit' ||
                       recipe.id == 'biomassRegenerator'
                 ),
@@ -19276,7 +19540,9 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
     return StreamBuilder<List<PtipoteFigurine>>(
       stream: _figurineService.watchMyFigurines(),
       builder: (context, snapshot) {
-        final figurines = snapshot.data ?? const <PtipoteFigurine>[];
+        final figurines = widget.gameState.ptipotesAvailableForActivities(
+          snapshot.data ?? const <PtipoteFigurine>[],
+        );
         return ListView(
           padding: const EdgeInsets.all(18),
           children: <Widget>[

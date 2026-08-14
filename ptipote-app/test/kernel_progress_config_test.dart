@@ -18,6 +18,8 @@ void main() {
       'filterCartridge',
       'shadeSuit',
       'termiteVentilation',
+      'chloroCanals',
+      'filterInstallation',
       'solarLight',
     };
     final linkedRecipeIds = defaultKernelProgressConfig.plans
