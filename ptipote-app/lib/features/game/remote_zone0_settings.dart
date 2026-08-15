@@ -2141,6 +2141,50 @@ BuildingViabilityConfig _buildingViability(
             ),
         },
     },
+    repairMiniGames:
+        _repairMiniGames(raw['repairMiniGames'], base.repairMiniGames),
+  );
+}
+
+RepairMiniGamesConfig _repairMiniGames(
+    Object? value, RepairMiniGamesConfig base) {
+  final raw = _map(value);
+  if (raw == null) return base;
+  Map<int, Map<String, int>> table(
+      String key, Map<int, Map<String, int>> fallback) {
+    final source = _map(raw[key]);
+    return <int, Map<String, int>>{
+      for (final entry in fallback.entries)
+        entry.key: <String, int>{
+          for (final item in entry.value.entries)
+            item.key:
+                _int(_map(source?['${entry.key}'])?[item.key], item.value),
+        },
+    };
+  }
+
+  return RepairMiniGamesConfig(
+    enabled: raw['enabled'] is bool ? raw['enabled'] as bool : base.enabled,
+    colorMatchWeight: _int(raw['colorMatchWeight'], base.colorMatchWeight),
+    pipesWeight: _int(raw['pipesWeight'], base.pipesWeight),
+    waterSortWeight: _int(raw['waterSortWeight'], base.waterSortWeight),
+    retryFree:
+        raw['retryFree'] is bool ? raw['retryFree'] as bool : base.retryFree,
+    failurePenalty: raw['failurePenalty'] is bool
+        ? raw['failurePenalty'] as bool
+        : base.failurePenalty,
+    timerEnabled: raw['timerEnabled'] is bool
+        ? raw['timerEnabled'] as bool
+        : base.timerEnabled,
+    colorMatchByBuildingLevel:
+        table('colorMatchByBuildingLevel', base.colorMatchByBuildingLevel),
+    pipesByBuildingLevel:
+        table('pipesByBuildingLevel', base.pipesByBuildingLevel),
+    waterSortByBuildingLevel:
+        table('waterSortByBuildingLevel', base.waterSortByBuildingLevel),
+    straightWeight: _int(raw['straightWeight'], base.straightWeight),
+    curveWeight: _int(raw['curveWeight'], base.curveWeight),
+    teeWeight: _int(raw['teeWeight'], base.teeWeight),
   );
 }
 

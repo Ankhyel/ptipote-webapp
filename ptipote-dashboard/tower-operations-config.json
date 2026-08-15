@@ -88,6 +88,33 @@
       "heatWave": {"calm": 0, "moderate": 10, "strong": 24, "severe": 50},
       "heavyRain": {"calm": 0, "moderate": 10, "strong": 24, "severe": 50},
       "toxicCloud": {"calm": 0, "moderate": 10, "strong": 24, "severe": 50}
+    },
+    "repairMiniGames": {
+      "enabled": true,
+      "colorMatchWeight": 1,
+      "pipesWeight": 1,
+      "waterSortWeight": 1,
+      "retryFree": true,
+      "failurePenalty": false,
+      "timerEnabled": false,
+      "colorMatchByBuildingLevel": {
+        "1": {"totalColors": 3, "hiddenColors": 1},
+        "2": {"totalColors": 5, "hiddenColors": 2},
+        "3": {"totalColors": 7, "hiddenColors": 3}
+      },
+      "pipesByBuildingLevel": {
+        "1": {"gridWidth": 3, "gridHeight": 3, "availablePieces": 16},
+        "2": {"gridWidth": 4, "gridHeight": 4, "availablePieces": 14},
+        "3": {"gridWidth": 5, "gridHeight": 5, "availablePieces": 12}
+      },
+      "waterSortByBuildingLevel": {
+        "1": {"colorCount": 3, "bottleCount": 5, "capacityPerBottle": 4},
+        "2": {"colorCount": 4, "bottleCount": 6, "capacityPerBottle": 4},
+        "3": {"colorCount": 5, "bottleCount": 7, "capacityPerBottle": 4}
+      },
+      "straightWeight": 1,
+      "curveWeight": 1,
+      "teeWeight": 1
     }
   },
   "research": {

@@ -24,7 +24,7 @@
   "distributorDailyEnergyByLevel": {"1": 10, "2": 8, "3": 6},
   "distributorSlotsByLevel": {"1": 2, "2": 3, "3": 4},
   "distributorBreakDenominatorByLevel": {"1": 6, "2": 12, "3": 24},
-  "distributorRepairMinutesByLevel": {"1": 30, "2": 20, "3": 10},
+  "distributorRepairMinutesByLevel": {"1": 15, "2": 10, "3": 5},
   "distributorRepairCost": {"Organique": 1, "Minéral": 1},
   "specializedShopSlotsByMarketLevel": {"1": 1, "2": 2, "3": 4, "4": 4},
   "firstShopFree": true,

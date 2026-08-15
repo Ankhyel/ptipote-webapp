@@ -267,7 +267,8 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   distributorDailyEnergyByLevel: <int, int>{1: 10, 2: 8, 3: 6},
   distributorSlotsByLevel: <int, int>{1: 2, 2: 3, 3: 4},
   distributorBreakDenominatorByLevel: <int, int>{1: 6, 2: 12, 3: 24},
-  distributorRepairMinutesByLevel: <int, int>{1: 30, 2: 20, 3: 10},
+  // Intervention directe du P’TIPOTE : moitié du temps historique.
+  distributorRepairMinutesByLevel: <int, int>{1: 15, 2: 10, 3: 5},
   distributorRepairCost: <String, int>{'Organique': 1, 'Minéral': 1},
   confidenceSuccessGain: 5,
   confidenceFailurePenalty: 2,

@@ -41,6 +41,61 @@ class RefugePage extends StatefulWidget {
   State<RefugePage> createState() => _RefugePageState();
 }
 
+class _CultivationMatrixSelectionDialog extends StatefulWidget {
+  const _CultivationMatrixSelectionDialog({required this.matrices});
+  final List<PTibugAspectMatrix> matrices;
+  @override
+  State<_CultivationMatrixSelectionDialog> createState() =>
+      _CultivationMatrixSelectionDialogState();
+}
+
+class _CultivationMatrixSelectionDialogState
+    extends State<_CultivationMatrixSelectionDialog> {
+  final Set<String> _selected = <String>{};
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Aspect de la Cultivation'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            const Text(
+                'Choisissez jusqu’à deux Matrices. Deux copies du même aspect créent un clone ; deux aspects différents mélangent chaque caractéristique à 50 %. Une seule Matrice mélange chaque caractéristique avec de l’aléatoire.'),
+            const SizedBox(height: 8),
+            Flexible(
+                child: ListView(
+                    shrinkWrap: true,
+                    children: widget.matrices
+                        .map((matrix) => CheckboxListTile(
+                              value: _selected.contains(matrix.id),
+                              title:
+                                  Text('Matrice ${matrix.sourceDisplayName}'),
+                              subtitle: Text(
+                                  '${pTibugConfig.species[matrix.species]!.displayName} · ${matrix.primaryColorHex ?? 'aspect incomplet'}'),
+                              onChanged: (value) => setState(() {
+                                if (value == true && _selected.length < 2)
+                                  _selected.add(matrix.id);
+                                if (value != true) _selected.remove(matrix.id);
+                              }),
+                            ))
+                        .toList())),
+          ]),
+        ),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, const <String>[]),
+              child: const Text('Sans Matrice')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, _selected.toList()),
+              child: Text(_selected.isEmpty
+                  ? 'Valider'
+                  : 'Utiliser ${_selected.length} Matrice(s)')),
+        ],
+      );
+}
+
 class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
   static final _campHeartState = CampHeartState.placeholder();
   static final _zone0State = Zone0GameState.instance;
@@ -7431,6 +7486,12 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                       Text(
                           'Biofermenteur mycélien · niveau ${zone.buildingLevel}',
                           style: const TextStyle(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 8),
+                      _BuildingViabilityCard(
+                        gameState: state,
+                        buildingId: bioTarget,
+                      ),
+                      const SizedBox(height: 8),
                       Text(
                           'Production passive : ${state.biofermenterOrganicPerDay(biome).toStringAsFixed(1)} Organique/jour'),
                       const SizedBox(height: 4),
@@ -8689,40 +8750,25 @@ class _BuildingViabilityCard extends StatelessWidget {
         builder: (dialogContext) => AlertDialog(
           title: const Text('Réparer le bâtiment'),
           content: const Text(
-            'Choisis un mini-jeu gratuit de raccordement, ou une réparation immédiate avec des ressources.',
+            'Choisissez d’abord la quantité de Viabilité à restaurer. Vous pourrez ensuite payer normalement ou intervenir vous-même.',
           ),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('Annuler'),
             ),
-            OutlinedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                _showPaidRepairSheet(context);
-              },
-              child: const Text('Payer la réparation'),
-            ),
             FilledButton(
               onPressed: () {
                 Navigator.of(dialogContext).pop();
-                showModalBottomSheet<void>(
-                  context: context,
-                  isScrollControlled: true,
-                  showDragHandle: true,
-                  builder: (_) => _PipeRepairGameSheet(
-                    onSolved: () =>
-                        gameState.repairBuildingByMiniGame(buildingId),
-                  ),
-                );
+                _showRepairChoices(context);
               },
-              child: const Text('Mini-jeu'),
+              child: const Text('Choisir la réparation'),
             ),
           ],
         ),
       );
 
-  void _showPaidRepairSheet(BuildContext context) {
+  void _showRepairChoices(BuildContext context) {
     final missing = gameState.viabilityForBuilding(buildingId).maximum -
         gameState.viabilityForBuilding(buildingId).current;
     final choices = <int>{10, 20, 30, 50, 100, missing}
@@ -8737,11 +8783,11 @@ class _BuildingViabilityCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
           child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-            const Text('Réparation avec ressources',
+            const Text('Réparer le bâtiment',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
             const Text(
-                'Les coûts sont définis par niveau de bâtiment dans le Dashboard, par tranche de 10 % réparés.'),
+                'Les deux méthodes restaurent exactement la même quantité. Le mini-jeu remplace le coût, sans récompense supplémentaire.'),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () {
@@ -8753,31 +8799,64 @@ class _BuildingViabilityCard extends StatelessWidget {
               label: const Text('Utiliser un Kit de réparation · +15 %'),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: choices.map((gain) {
-                final cost = gameState.buildingRepairCosts(buildingId, gain);
-                final costLabel = cost.entries
-                    .where((entry) => entry.value > 0)
-                    .map((entry) => '${entry.value} ${entry.key}')
-                    .join(' · ');
-                return FilledButton(
-                  onPressed: () {
-                    final result =
-                        gameState.repairBuilding(buildingId, gain: gain);
-                    Navigator.of(sheetContext).pop();
-                    _showMessage(context, result.message);
-                  },
-                  child: Text('+$gain % · $costLabel'),
-                );
-              }).toList(),
-            ),
+            ...choices.map((gain) {
+              final cost = gameState.buildingRepairCosts(buildingId, gain);
+              final costLabel = gameState.buildingRepairCostLabel(cost);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text('+$gain % de Viabilité',
+                          style: const TextStyle(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 4),
+                      Row(children: <Widget>[
+                        Expanded(
+                            child: OutlinedButton(
+                          onPressed: () {
+                            final result = gameState.repairBuilding(buildingId,
+                                gain: gain);
+                            if (result.success)
+                              Navigator.of(sheetContext).pop();
+                            _showMessage(context, result.message);
+                          },
+                          child: Text('Réparer · $costLabel'),
+                        )),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: FilledButton(
+                          onPressed: () {
+                            final attempt = gameState
+                                .beginInteractiveRepair(buildingId, gain: gain);
+                            if (attempt == null) {
+                              _showMessage(context,
+                                  'Réparation interactive indisponible.');
+                              return;
+                            }
+                            Navigator.of(sheetContext).pop();
+                            _openRepairMiniGame(context, attempt);
+                          },
+                          child: const Text('Réparer soi-même'),
+                        )),
+                      ]),
+                    ]),
+              );
+            }),
           ]),
         ),
       ),
     );
   }
+
+  void _openRepairMiniGame(
+          BuildContext context, RepairMiniGameAttempt attempt) =>
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (_) =>
+            _RepairMiniGameSheet(gameState: gameState, attempt: attempt),
+      );
 
   void _showInstallations(BuildContext context) => showModalBottomSheet<void>(
         context: context,
@@ -8805,8 +8884,272 @@ class _BuildingViabilityCard extends StatelessWidget {
           .showSnackBar(SnackBar(content: Text(message)));
 }
 
-/// Chaque réparation gratuite lance avec la même probabilité un réseau de
-/// tuyaux 3×3 ou un raccordement de câbles colorés.
+class _RepairMiniGameSheet extends StatelessWidget {
+  const _RepairMiniGameSheet({required this.gameState, required this.attempt});
+  final Zone0GameState gameState;
+  final RepairMiniGameAttempt attempt;
+
+  Zone0ActionResult _complete() =>
+      gameState.completeInteractiveRepair(attempt.id);
+
+  @override
+  Widget build(BuildContext context) {
+    final child = switch (attempt.gameType) {
+      RepairMiniGameType.pipes => _PipeRepairGameSheet(onSolved: _complete),
+      RepairMiniGameType.colorMatch => _ColorMatchRepairGame(
+          seed: attempt.seed,
+          difficulty: towerOperationsConfig.buildingViability.repairMiniGames
+              .colorMatchForLevel(attempt.buildingLevel),
+          onSolved: _complete,
+        ),
+      RepairMiniGameType.waterSort => _WaterSortRepairGame(
+          seed: attempt.seed,
+          difficulty: towerOperationsConfig.buildingViability.repairMiniGames
+              .waterSortForLevel(attempt.buildingLevel),
+          onSolved: _complete,
+        ),
+    };
+    return SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+      Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Row(children: <Widget>[
+            Expanded(
+                child: Text(
+                    '${attempt.repairGain}% de Viabilité · niveau ${attempt.buildingLevel}',
+                    style: const TextStyle(fontWeight: FontWeight.w700))),
+            TextButton(
+                onPressed: () {
+                  gameState.cancelInteractiveRepair(attempt.id);
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Quitter')),
+          ])),
+      child,
+    ]));
+  }
+}
+
+class _ColorMatchRepairGame extends StatefulWidget {
+  const _ColorMatchRepairGame(
+      {required this.seed, required this.difficulty, required this.onSolved});
+  final int seed;
+  final Map<String, int> difficulty;
+  final Zone0ActionResult Function() onSolved;
+  @override
+  State<_ColorMatchRepairGame> createState() => _ColorMatchRepairGameState();
+}
+
+class _ColorMatchRepairGameState extends State<_ColorMatchRepairGame> {
+  static const _colors = <Color>[
+    Color(0xffC84A45),
+    Color(0xff3877C8),
+    Color(0xffD5A726),
+    Color(0xff54724A),
+    Color(0xff8E5DB5),
+    Color(0xffD2763E),
+    Color(0xff3A9C9C)
+  ];
+  late List<int> _target;
+  final List<int> _picked = <int>[];
+  bool _done = false;
+  @override
+  void initState() {
+    super.initState();
+    _reset();
+  }
+
+  void _reset() {
+    final r = math.Random(widget.seed);
+    final total = widget.difficulty['totalColors'] ?? 3;
+    final hidden = widget.difficulty['hiddenColors'] ?? 1;
+    final set = List<int>.generate(total, (i) => i % _colors.length)
+      ..shuffle(r);
+    _target = set.take(hidden).toList();
+    _picked.clear();
+    _done = false;
+  }
+
+  void _pick(int color) {
+    if (_done) return;
+    setState(() {
+      _picked.add(color);
+      if (_picked.length == _target.length) {
+        if (_picked.join(',') == _target.join(',')) {
+          final result = widget.onSolved();
+          _done = result.success;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(result.message)));
+          if (result.success) Navigator.of(context).pop();
+        } else {
+          _picked.clear();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'Le raccord ne correspond pas. Recommencez gratuitement.')));
+        }
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+      child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        const Text('Correspondance',
+            style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        const Text(
+            'Retrouvez les couleurs masquées dans le bon ordre. Les symboles rendent le jeu lisible sans dépendre uniquement de la couleur.'),
+        const SizedBox(height: 14),
+        Wrap(
+            spacing: 10,
+            children: List<Widget>.generate(
+                _target.length,
+                (i) => CircleAvatar(
+                    backgroundColor: const Color(0xffE8E5DC),
+                    child: Text('? ${i + 1}')))),
+        const SizedBox(height: 14),
+        Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: List<Widget>.generate(
+                widget.difficulty['totalColors'] ?? 3,
+                (i) => FilledButton(
+                    onPressed: () => _pick(i),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: _colors[i % _colors.length]),
+                    child: Text('${i + 1}')))),
+        TextButton(
+            onPressed: () => setState(_reset),
+            child: const Text('Recommencer')),
+      ]));
+}
+
+class _WaterSortRepairGame extends StatefulWidget {
+  const _WaterSortRepairGame(
+      {required this.seed, required this.difficulty, required this.onSolved});
+  final int seed;
+  final Map<String, int> difficulty;
+  final Zone0ActionResult Function() onSolved;
+  @override
+  State<_WaterSortRepairGame> createState() => _WaterSortRepairGameState();
+}
+
+class _WaterSortRepairGameState extends State<_WaterSortRepairGame> {
+  static const _colors = <Color>[
+    Color(0xffC84A45),
+    Color(0xff3877C8),
+    Color(0xffD5A726),
+    Color(0xff54724A),
+    Color(0xff8E5DB5)
+  ];
+  late int count;
+  late List<List<int>> bottles;
+  int? selected;
+  bool done = false;
+  @override
+  void initState() {
+    super.initState();
+    _reset();
+  }
+
+  void _reset() {
+    count = widget.difficulty['colorCount'] ?? 3;
+    bottles = List<List<int>>.generate(
+        count, (i) => List<int>.generate(4, (j) => (i + j) % count));
+    bottles.addAll(<List<int>>[<int>[], <int>[]]);
+    selected = null;
+    done = false;
+  }
+
+  bool get solved => bottles
+      .where((b) => b.isNotEmpty)
+      .every((b) => b.length == 4 && b.every((x) => x == b.first));
+  void tap(int index) {
+    setState(() {
+      if (selected == null) {
+        if (bottles[index].isNotEmpty) selected = index;
+        return;
+      }
+      final source = bottles[selected!];
+      final target = bottles[index];
+      if (index == selected) {
+        selected = null;
+        return;
+      }
+      if (target.length == 4 ||
+          (target.isNotEmpty && target.last != source.last)) {
+        selected = null;
+        return;
+      }
+      final color = source.last;
+      var run = 0;
+      for (var i = source.length - 1; i >= 0 && source[i] == color; i--) run++;
+      final moved = math.min(run, 4 - target.length);
+      for (var i = 0; i < moved; i++) target.add(source.removeLast());
+      selected = null;
+      if (solved && !done) {
+        final result = widget.onSolved();
+        done = result.success;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(result.message)));
+        if (result.success) Navigator.of(context).pop();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+          const Text('Fioles',
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
+          const Text(
+              'Versez une fiole sur une fiole vide ou de même couleur. Les couches identiques sont versées ensemble.'),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: List<Widget>.generate(
+              bottles.length,
+              (index) => GestureDetector(
+                onTap: () => tap(index),
+                child: Container(
+                  width: 46,
+                  height: 130,
+                  alignment: Alignment.bottomCenter,
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: selected == index
+                          ? Colors.blue
+                          : const Color(0xff807A68),
+                      width: selected == index ? 3 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: bottles[index]
+                        .map((color) => Container(
+                              height: 28,
+                              width: 42,
+                              color: _colors[color % _colors.length],
+                            ))
+                        .toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          TextButton(
+              onPressed: () => setState(_reset),
+              child: const Text('Recommencer')),
+        ]),
+      );
+}
+
+/// Prototype de canalisations réutilisé pour les réparations interactives.
 class _PipeRepairGameSheet extends StatefulWidget {
   const _PipeRepairGameSheet({required this.onSolved});
 
@@ -8846,7 +9189,9 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
   @override
   void initState() {
     super.initState();
-    _isCableGame = math.Random().nextBool();
+    // Le tirage global choisit déjà Canalisations : ce prototype ne mélange
+    // plus un quatrième jeu de câbles dans la tentative.
+    _isCableGame = false;
   }
 
   Set<int> _pipeConnections(int index) {
@@ -10657,12 +11002,10 @@ class _CampHousingTab extends StatelessWidget {
                                                 1,
                                                 gain,
                                               );
-                                              final costLabel = cost.entries
-                                                  .where((entry) =>
-                                                      entry.value > 0)
-                                                  .map((entry) =>
-                                                      '${entry.value} ${entry.key}')
-                                                  .join(' · ');
+                                              final costLabel = gameState
+                                                  .buildingRepairCostLabel(
+                                                cost,
+                                              );
                                               return FilledButton(
                                                 onPressed: () =>
                                                     Navigator.of(sheetContext)
@@ -11144,6 +11487,11 @@ class _CampHeartPageState extends State<CampHeartPage> {
                 padding: const EdgeInsets.all(16),
                 children: <Widget>[
                   _CampHeartHero(state: state),
+                  const SizedBox(height: 12),
+                  _BuildingViabilityCard(
+                    gameState: widget.gameState,
+                    buildingId: 'campHeart',
+                  ),
                   const SizedBox(height: 12),
                   _CampHeartProgressCard(state: state),
                   const SizedBox(height: 12),
@@ -12041,6 +12389,11 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
                   return ListView(
                     padding: const EdgeInsets.all(18),
                     children: <Widget>[
+                      _BuildingViabilityCard(
+                        gameState: widget.gameState,
+                        buildingId: 'securityTower',
+                      ),
+                      const SizedBox(height: 12),
                       _CommunityBuildingPosts(
                         gameState: widget.gameState,
                         roles: const <CommunityRoleType>[
@@ -13932,6 +14285,11 @@ class _MarketPageState extends State<MarketPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
+                        _BuildingViabilityCard(
+                          gameState: widget.gameState,
+                          buildingId: 'market',
+                        ),
+                        const SizedBox(height: 12),
                         Text(
                           'Marché niveau ${widget.gameState.marketLevel}',
                           style: const TextStyle(fontWeight: FontWeight.w900),
@@ -16670,49 +17028,11 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     PTibugArmature armature,
     String tankId,
   ) async {
-    final eligible = widget.gameState.pTibugAspectMatrices
-        .where((matrix) => matrix.species == armature.species)
-        .fold<Map<String, List<PTibugAspectMatrix>>>(
-            <String, List<PTibugAspectMatrix>>{}, (groups, matrix) {
-          groups
-              .putIfAbsent(matrix.sourcePTibugId, () => <PTibugAspectMatrix>[])
-              .add(matrix);
-          return groups;
-        })
-        .values
-        .where((group) => group.length >= 2)
-        .toList(growable: false);
+    final eligible = widget.gameState.pTibugAspectMatrices;
     final selected = await showDialog<List<String>?>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Aspect de la Cultivation'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Text(
-                  'Deux Matrices identiques sont consommées au lancement. Elles doivent provenir du même P’TIBUG.'),
-              const SizedBox(height: 8),
-              ListTile(
-                title: const Text('Sans Matrice'),
-                subtitle: const Text('Aspect aléatoire de l’espèce.'),
-                onTap: () => Navigator.of(dialogContext).pop(const <String>[]),
-              ),
-              ...eligible.map((group) => ListTile(
-                    title: Text('Aspect de ${group.first.sourceDisplayName}'),
-                    subtitle: Text(
-                        '${pTibugConfig.species[group.first.species]!.displayName} · ${group.length} Matrices disponibles'),
-                    onTap: () => Navigator.of(dialogContext)
-                        .pop(group.take(2).map((matrix) => matrix.id).toList()),
-                  )),
-            ],
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Annuler')),
-        ],
+      builder: (dialogContext) => _CultivationMatrixSelectionDialog(
+        matrices: eligible,
       ),
     );
     if (selected == null || !mounted) return;
@@ -17280,6 +17600,25 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         .where((item) => item.id == operation.resultPtibugId)
         .firstOrNull;
     if (bug == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('P’TIBUG sorti de la cuve'),
+        content: Text(
+          'Avant de le nommer :\n'
+          'Couleur : ${widget.gameState.pTibugColorNameFor(bug.primaryColorHex)}\n'
+          'Motif : ${bug.motifId ?? 'Aucun'}${bug.motifColorHex == null ? '' : ' · ${widget.gameState.pTibugColorNameFor(bug.motifColorHex)}'}\n'
+          'Animation : ${bug.animationName ?? 'Aucune'}\n'
+          'Trait visuel : ${bug.traitColorHex == null ? 'Aucun' : widget.gameState.pTibugColorNameFor(bug.traitColorHex)}',
+        ),
+        actions: <Widget>[
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Le nommer')),
+        ],
+      ),
+    );
+    if (!mounted) return;
     await _renamePTibug(bug, context, requiredForNewPTibug: true);
   }
 

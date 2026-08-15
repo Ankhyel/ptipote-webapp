@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'lisiere_forage_config.dart';
 
 enum TowerWeatherType { calm, toxicCloud, heatWave, heavyRain }
@@ -82,6 +84,7 @@ class BuildingViabilityConfig {
     required this.protectionCapPercent,
     required this.protectionReductionPercents,
     required this.damageByWeatherAndIntensity,
+    required this.repairMiniGames,
   });
 
   final int maximumViability;
@@ -106,6 +109,7 @@ class BuildingViabilityConfig {
   final List<int> protectionReductionPercents;
   final Map<TowerWeatherType, Map<GlobalWeatherIntensity, int>>
       damageByWeatherAndIntensity;
+  final RepairMiniGamesConfig repairMiniGames;
 
   int damageFor(TowerWeatherType type, GlobalWeatherIntensity intensity) =>
       damageByWeatherAndIntensity[type]?[intensity] ?? 0;
@@ -118,6 +122,55 @@ class BuildingViabilityConfig {
           const <String, int>{},
     );
   }
+}
+
+/// Toutes les règles des réparations interactives vivent ici afin que les
+/// écrans ne portent ni probabilités ni difficultés en dur.
+class RepairMiniGamesConfig {
+  const RepairMiniGamesConfig({
+    required this.enabled,
+    required this.colorMatchWeight,
+    required this.pipesWeight,
+    required this.waterSortWeight,
+    required this.retryFree,
+    required this.failurePenalty,
+    required this.timerEnabled,
+    required this.colorMatchByBuildingLevel,
+    required this.pipesByBuildingLevel,
+    required this.waterSortByBuildingLevel,
+    required this.straightWeight,
+    required this.curveWeight,
+    required this.teeWeight,
+  });
+  final bool enabled;
+  final int colorMatchWeight;
+  final int pipesWeight;
+  final int waterSortWeight;
+  final bool retryFree;
+  final bool failurePenalty;
+  final bool timerEnabled;
+  final Map<int, Map<String, int>> colorMatchByBuildingLevel;
+  final Map<int, Map<String, int>> pipesByBuildingLevel;
+  final Map<int, Map<String, int>> waterSortByBuildingLevel;
+  final int straightWeight;
+  final int curveWeight;
+  final int teeWeight;
+
+  Map<String, int> _forLevel(Map<int, Map<String, int>> table, int level) {
+    if (table.containsKey(level)) return Map<String, int>.from(table[level]!);
+    final fallback = table.keys.where((key) => key <= level).fold<int>(
+          table.keys.reduce(math.max),
+          math.max,
+        );
+    return Map<String, int>.from(table[fallback]!);
+  }
+
+  Map<String, int> colorMatchForLevel(int level) =>
+      _forLevel(colorMatchByBuildingLevel, level);
+  Map<String, int> pipesForLevel(int level) =>
+      _forLevel(pipesByBuildingLevel, level);
+  Map<String, int> waterSortForLevel(int level) =>
+      _forLevel(waterSortByBuildingLevel, level);
 }
 
 class SecurityWellbeingBand {
@@ -458,6 +511,57 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
         GlobalWeatherIntensity.severe: 50,
       },
     },
+    repairMiniGames: const RepairMiniGamesConfig(
+      enabled: true,
+      colorMatchWeight: 1,
+      pipesWeight: 1,
+      waterSortWeight: 1,
+      retryFree: true,
+      failurePenalty: false,
+      timerEnabled: false,
+      colorMatchByBuildingLevel: <int, Map<String, int>>{
+        1: <String, int>{'totalColors': 3, 'hiddenColors': 1},
+        2: <String, int>{'totalColors': 5, 'hiddenColors': 2},
+        3: <String, int>{'totalColors': 7, 'hiddenColors': 3},
+      },
+      pipesByBuildingLevel: <int, Map<String, int>>{
+        1: <String, int>{
+          'gridWidth': 3,
+          'gridHeight': 3,
+          'availablePieces': 16
+        },
+        2: <String, int>{
+          'gridWidth': 4,
+          'gridHeight': 4,
+          'availablePieces': 14
+        },
+        3: <String, int>{
+          'gridWidth': 5,
+          'gridHeight': 5,
+          'availablePieces': 12
+        },
+      },
+      waterSortByBuildingLevel: <int, Map<String, int>>{
+        1: <String, int>{
+          'colorCount': 3,
+          'bottleCount': 5,
+          'capacityPerBottle': 4
+        },
+        2: <String, int>{
+          'colorCount': 4,
+          'bottleCount': 6,
+          'capacityPerBottle': 4
+        },
+        3: <String, int>{
+          'colorCount': 5,
+          'bottleCount': 7,
+          'capacityPerBottle': 4
+        },
+      },
+      straightWeight: 1,
+      curveWeight: 1,
+      teeWeight: 1,
+    ),
   ),
   wellbeingBands: <SecurityWellbeingBand>[
     SecurityWellbeingBand(

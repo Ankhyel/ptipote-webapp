@@ -34,6 +34,28 @@ import 'workshop_config.dart';
 /// Older saved reports fall back to the P'TIPOTE/PTIBUG mailbox.
 enum Zone0MessageMailbox { companions, kernel, fablab }
 
+enum RepairMiniGameType { colorMatch, pipes, waterSort }
+
+/// Une tentative ne vit que le temps de l'écran : fermer totalement l'app
+/// annule proprement la réparation, mais les rebuilds gardent le même jeu.
+class RepairMiniGameAttempt {
+  RepairMiniGameAttempt({
+    required this.id,
+    required this.buildingId,
+    required this.repairGain,
+    required this.buildingLevel,
+    required this.gameType,
+    required this.seed,
+  });
+  final String id;
+  final String buildingId;
+  final int repairGain;
+  final int buildingLevel;
+  final RepairMiniGameType gameType;
+  final int seed;
+  bool completed = false;
+}
+
 String _ptibugDataFamilyLabel(PTibugDataFamily family) => switch (family) {
       PTibugDataFamily.organique => 'Organique',
       PTibugDataFamily.minerale => 'Minérale',
@@ -60,6 +82,8 @@ class Zone0GameState extends ChangeNotifier {
   final math.Random _random = math.Random();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final Map<String, RepairMiniGameAttempt> _repairMiniGameAttempts =
+      <String, RepairMiniGameAttempt>{};
 
   void _onRemoteConfigChanged() {
     _consumeManualWeatherTrigger();
@@ -430,6 +454,10 @@ class Zone0GameState extends ChangeNotifier {
       );
 
   int buildingLevelForViability(String buildingId) {
+    final biofermenterBiome = _biofermenterBiomeForTarget(buildingId);
+    if (biofermenterBiome != null) {
+      return territoryZone(biofermenterBiome).buildingLevel;
+    }
     final territory = territoryBuildingForId(buildingId);
     if (territory != null) return territory.level;
     return switch (buildingId) {
@@ -445,7 +473,9 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   ForageBiome buildingBiomeForViability(String buildingId) =>
-      territoryBuildingForId(buildingId)?.biome ?? ForageBiome.plaineRiche;
+      _biofermenterBiomeForTarget(buildingId) ??
+      territoryBuildingForId(buildingId)?.biome ??
+      ForageBiome.plaineRiche;
 
   int structuralProtectionSlotsFor(String buildingId) => math.max(
         0,
@@ -531,14 +561,8 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Diagnostic réussi : bâtiment remis en marche.');
   }
 
-  int buildingRepairLevel(String buildingId) => switch (buildingId) {
-        'atelier' => math.max(1, atelierLevel),
-        'cuisine' => math.max(1, cuisineLevel),
-        'recycler' => math.max(1, recyclerLevel),
-        'market' => math.max(1, marketLevel),
-        'tower' => math.max(1, securityTowerLevel),
-        _ => 1,
-      };
+  int buildingRepairLevel(String buildingId) =>
+      math.max(1, buildingLevelForViability(buildingId));
 
   Map<String, int> buildingRepairCosts(String buildingId, int requestedGain) {
     return buildingRepairCostsForLevel(
@@ -559,10 +583,48 @@ class Zone0GameState extends ChangeNotifier {
     };
   }
 
-  String _repairCostSummary(Map<String, int> costs) => costs.entries
-      .where((entry) => entry.value > 0)
-      .map((entry) => '${entry.value} ${entry.key}')
-      .join(' · ');
+  int get bioBatteryBalanceInPiles => bioBatteries * 100 + bioPiles;
+
+  bool canSpendBioBatteryPiles(int piles) =>
+      piles >= 0 && bioBatteryBalanceInPiles >= piles;
+
+  /// Bio-piles are cents, not a separate wallet. Every debit therefore uses
+  /// the combined balance and normalizes it back to batteries + remainder.
+  bool _spendBioBatteryPiles(int piles) {
+    if (!canSpendBioBatteryPiles(piles)) return false;
+    final remaining = bioBatteryBalanceInPiles - piles;
+    bioBatteries = remaining ~/ 100;
+    bioPiles = remaining % 100;
+    return true;
+  }
+
+  int _repairCurrencyCostInPiles(Map<String, int> costs) =>
+      (costs['Bio-batteries'] ?? 0) * 100 + (costs['Bio-piles'] ?? 0);
+
+  String _formatBioBatteryPiles(int piles) {
+    final batteries = piles ~/ 100;
+    final remainder = piles % 100;
+    if (remainder == 0)
+      return '$batteries Bio-batterie${batteries == 1 ? '' : 's'}';
+    return '$batteries,${remainder.toString().padLeft(2, '0')} Bio-batterie';
+  }
+
+  String _repairCostSummary(Map<String, int> costs) {
+    final resourceCosts = costs.entries
+        .where((entry) =>
+            entry.value > 0 &&
+            entry.key != 'Bio-batteries' &&
+            entry.key != 'Bio-piles')
+        .map((entry) => '${entry.value} ${entry.key}');
+    final currency = _repairCurrencyCostInPiles(costs);
+    return <String>[
+      ...resourceCosts,
+      if (currency > 0) _formatBioBatteryPiles(currency),
+    ].join(' · ');
+  }
+
+  String buildingRepairCostLabel(Map<String, int> costs) =>
+      _repairCostSummary(costs);
 
   void _awardPlayerBuildingRepairXp() {
     _addKernelAxisXp(KernelAxis.builder, 5);
@@ -582,17 +644,14 @@ class Zone0GameState extends ChangeNotifier {
     final materials = Map<String, int>.fromEntries(costs.entries.where(
       (entry) => entry.key != 'Bio-batteries' && entry.key != 'Bio-piles',
     ));
-    final batteries = costs['Bio-batteries'] ?? 0;
-    final piles = costs['Bio-piles'] ?? 0;
-    if (bioBatteries < batteries ||
-        bioPiles < piles ||
+    final currencyPiles = _repairCurrencyCostInPiles(costs);
+    if (!canSpendBioBatteryPiles(currencyPiles) ||
         !hasResources(materials) ||
         !removeResources(materials)) {
       return const Zone0ActionResult(
           success: false, message: 'Ressources insuffisantes pour réparer.');
     }
-    bioBatteries -= batteries;
-    bioPiles -= piles;
+    _spendBioBatteryPiles(currencyPiles);
     viability.restore(actualGain);
     _awardPlayerBuildingRepairXp();
     if (viability.current >= viability.maximum) {
@@ -605,6 +664,84 @@ class Zone0GameState extends ChangeNotifier {
         message: '+$actualGain% de Viabilité · ${_repairCostSummary(costs)}.');
   }
 
+  RepairMiniGameAttempt? repairMiniGameAttemptFor(String attemptId) =>
+      _repairMiniGameAttempts[attemptId];
+
+  RepairMiniGameAttempt? beginInteractiveRepair(String buildingId,
+      {required int gain, RepairMiniGameType? forcedGame}) {
+    final viability = viabilityForBuilding(buildingId);
+    if (!towerOperationsConfig.buildingViability.repairMiniGames.enabled ||
+        viability.current >= viability.maximum) return null;
+    final actualGain = math
+        .min(
+          ((gain / 10).ceil().clamp(1, 10) * 10).toInt(),
+          viability.maximum - viability.current,
+        )
+        .toInt();
+    if (actualGain <= 0) return null;
+    final cfg = towerOperationsConfig.buildingViability.repairMiniGames;
+    final weighted = <RepairMiniGameType, int>{
+      RepairMiniGameType.colorMatch: cfg.colorMatchWeight,
+      RepairMiniGameType.pipes: cfg.pipesWeight,
+      RepairMiniGameType.waterSort: cfg.waterSortWeight,
+    };
+    final total =
+        weighted.values.fold<int>(0, (sum, value) => sum + math.max(0, value));
+    var roll = total <= 0 ? 0 : _random.nextInt(total);
+    RepairMiniGameType selected = RepairMiniGameType.colorMatch;
+    if (forcedGame != null) {
+      selected = forcedGame;
+    } else {
+      for (final entry in weighted.entries) {
+        roll -= math.max(0, entry.value);
+        if (roll < 0) {
+          selected = entry.key;
+          break;
+        }
+      }
+    }
+    final id =
+        'repair-${DateTime.now().microsecondsSinceEpoch}-${_random.nextInt(1 << 20)}';
+    final attempt = RepairMiniGameAttempt(
+      id: id,
+      buildingId: buildingId,
+      repairGain: actualGain,
+      buildingLevel: buildingRepairLevel(buildingId),
+      gameType: selected,
+      seed: _random.nextInt(1 << 31),
+    );
+    _repairMiniGameAttempts[id] = attempt;
+    return attempt;
+  }
+
+  void cancelInteractiveRepair(String attemptId) =>
+      _repairMiniGameAttempts.remove(attemptId);
+
+  Zone0ActionResult completeInteractiveRepair(String attemptId) {
+    final attempt = _repairMiniGameAttempts[attemptId];
+    if (attempt == null || attempt.completed) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cette réparation a déjà été traitée.');
+    }
+    final viability = viabilityForBuilding(attempt.buildingId);
+    if (viability.current >= viability.maximum) {
+      return const Zone0ActionResult(
+          success: false, message: 'La Viabilité est déjà maximale.');
+    }
+    attempt.completed = true;
+    final gain = math
+        .min(attempt.repairGain, viability.maximum - viability.current)
+        .toInt();
+    viability.restore(gain);
+    // Le mini-jeu remplace uniquement le coût : aucune XP ni ressource bonus.
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true, message: 'Réparation terminée : +$gain% de Viabilité.');
+  }
+
+  /// Compatibilité avec l'ancien prototype de tuyaux : les nouveaux écrans
+  /// utilisent [completeInteractiveRepair] afin de respecter le gain choisi.
   Zone0ActionResult repairBuildingByMiniGame(String buildingId) {
     final viability = viabilityForBuilding(buildingId);
     if (viability.current >= viability.maximum) {
@@ -613,7 +750,6 @@ class Zone0GameState extends ChangeNotifier {
     }
     final gain = math.min(10, viability.maximum - viability.current).toInt();
     viability.restore(gain);
-    _awardPlayerBuildingRepairXp();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -850,6 +986,9 @@ class Zone0GameState extends ChangeNotifier {
       'house',
       'campHeart',
       ...activePTibugTerritories.map((building) => building.id),
+      ...lisiereTerritoryZones.values
+          .where((zone) => zone.buildingId == 'biofermenter')
+          .map((zone) => biofermenterTargetId(zone.biome)),
     };
     final config = towerOperationsConfig.buildingViability;
     final territoryIds =
@@ -1877,18 +2016,15 @@ class Zone0GameState extends ChangeNotifier {
     final materials = Map<String, int>.fromEntries(costs.entries.where(
       (entry) => entry.key != 'Bio-batteries' && entry.key != 'Bio-piles',
     ));
-    final batteries = costs['Bio-batteries'] ?? 0;
-    final piles = costs['Bio-piles'] ?? 0;
-    if (bioBatteries < batteries ||
-        bioPiles < piles ||
+    final currencyPiles = _repairCurrencyCostInPiles(costs);
+    if (!canSpendBioBatteryPiles(currencyPiles) ||
         !hasResources(materials) ||
         !removeResources(materials)) {
       return const Zone0ActionResult(
           success: false,
           message: 'Ressources insuffisantes pour réparer cette maison.');
     }
-    bioBatteries -= batteries;
-    bioPiles -= piles;
+    _spendBioBatteryPiles(currencyPiles);
     house.currentViability = math
         .min(house.maximumViability, house.currentViability + requestedGain)
         .toInt();
@@ -2345,12 +2481,14 @@ class Zone0GameState extends ChangeNotifier {
         'market' => 'Marché',
         'securityTower' => 'Tour',
         'campHeart' => 'Cœur du camp',
-        _ => territoryBuildingForId(buildingId)?.kind ==
-                PTibugTerritoryKind.nursery
-            ? 'Nurserie'
-            : territoryBuildingForId(buildingId) != null
-                ? 'Refuge P’TIBUG'
-                : 'Bâtiment',
+        _ => _biofermenterBiomeForTarget(buildingId) != null
+            ? 'Biofermenteur mycélien'
+            : territoryBuildingForId(buildingId)?.kind ==
+                    PTibugTerritoryKind.nursery
+                ? 'Nurserie'
+                : territoryBuildingForId(buildingId) != null
+                    ? 'Refuge P’TIBUG'
+                    : 'Bâtiment',
       };
 
   void _migrateBuildingViability() {
@@ -2379,6 +2517,9 @@ class Zone0GameState extends ChangeNotifier {
       'house',
       'campHeart',
       ...activePTibugTerritories.map((building) => building.id),
+      ...lisiereTerritoryZones.values
+          .where((zone) => zone.buildingId == 'biofermenter')
+          .map((zone) => biofermenterTargetId(zone.biome)),
     };
     for (final id in ids) {
       viabilityForBuilding(id);
@@ -11064,9 +11205,12 @@ class Zone0GameState extends ChangeNotifier {
     final zone = territoryZone(biome);
     final config = lisiereForageConfig.territoryBuildings.biofermenter;
     if (zone.buildingId != 'biofermenter' || zone.buildingLevel <= 0) return 0;
+    final buildingId = biofermenterTargetId(biome);
+    if (!isBuildingOperational(buildingId)) return 0;
     var result = (config.passiveOrganicPerDayByLevel[zone.buildingLevel] ?? 0) *
         config.passiveProductionMultiplier *
-        zone.vatEfficiencyMultiplier;
+        zone.vatEfficiencyMultiplier *
+        buildingProductionMultiplier(buildingId);
     if (zone.edibleForestInstalled && config.edibleForestEnabled) {
       result *= 1 +
           activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator;
@@ -11091,6 +11235,8 @@ class Zone0GameState extends ChangeNotifier {
     if (zone.buildingId != 'biofermenter' || !zone.mycelialNetworkInstalled) {
       return 0;
     }
+    final buildingId = biofermenterTargetId(biome);
+    if (!isBuildingOperational(buildingId)) return 0;
     final richness = lisiereForageConfig.biomes[biome]!.myceliumRichness;
     final biomeMultiplier = config.myceliumBiomeMultipliers[richness] ?? 1;
     final traitMultiplier = 1 +
@@ -11106,6 +11252,18 @@ class Zone0GameState extends ChangeNotifier {
     for (final biome in ForageBiome.values) {
       final zone = territoryZone(biome);
       if (zone.buildingId != 'biofermenter') continue;
+      final buildingId = biofermenterTargetId(biome);
+      if (!isBuildingOperational(buildingId)) {
+        // A disabled Biofermenter cannot catch up the time it spent broken.
+        // Its passive production and Lithoculture both resume after repair.
+        zone
+          ..lastProductionResolvedAt = current
+          ..lithocultureCycleStartedAt =
+              zone.lithocultureCycleStartedAt == null ? null : current
+          ..updatedAt = current;
+        changed = true;
+        continue;
+      }
       final config = lisiereForageConfig.territoryBuildings.biofermenter;
       final last = zone.lastProductionResolvedAt ?? current;
       final elapsedHours = current.difference(last).inMilliseconds /
@@ -11183,6 +11341,12 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
         success: false,
         message: 'Biofermenteur indisponible.',
+      );
+    }
+    if (!isBuildingOperational(biofermenterTargetId(biome))) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le Biofermenteur doit être réparé avant la Lithoculture.',
       );
     }
     final moved = math.min(amount, resourceAmount('Minéral'));
@@ -12543,16 +12707,12 @@ class Zone0GameState extends ChangeNotifier {
             pTibugAspectMatrices.where((matrix) => matrix.id == id).firstOrNull)
         .whereType<PTibugAspectMatrix>()
         .toList(growable: false);
-    if (aspectMatrixIds.isNotEmpty &&
-        (aspectMatrixIds.toSet().length != 2 ||
-            matrices.length != 2 ||
-            matrices.any((matrix) => matrix.species != armature.species) ||
-            matrices.map((matrix) => matrix.sourcePTibugId).toSet().length !=
-                1)) {
+    if (aspectMatrixIds.length > 2 ||
+        aspectMatrixIds.toSet().length != aspectMatrixIds.length ||
+        matrices.length != aspectMatrixIds.length) {
       return const Zone0ActionResult(
         success: false,
-        message:
-            'Deux Matrices du même P’TIBUG et de l’espèce de l’Armature sont requises.',
+        message: 'Sélectionnez au maximum deux Matrices disponibles.',
       );
     }
     final now = DateTime.now();
@@ -13138,17 +13298,7 @@ class Zone0GameState extends ChangeNotifier {
       styleVariant: config.styles[_random.nextInt(config.styles.length)],
       createdAt: DateTime.now(),
     );
-    final aspectMatrix = operation.aspectMatrices.firstOrNull;
-    if (aspectMatrix != null) {
-      createdBug
-        ..primaryColorHex = aspectMatrix.primaryColorHex
-        ..motifId = aspectMatrix.motifId
-        ..motifColorHex = aspectMatrix.motifColorHex
-        ..traitColorHex = aspectMatrix.traitColorHex
-        ..animationName = aspectMatrix.animationName;
-    } else {
-      _ensurePTibugAppearance(createdBug);
-    }
+    _applyCultivationAppearance(createdBug, operation.aspectMatrices);
     pTibugs.add(createdBug);
     operation.resultPtibugId = id;
     pTibugArmatures.remove(armature);
@@ -13162,6 +13312,34 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
         success: true, message: '$temporaryName rejoint la Collection.');
+  }
+
+  void _applyCultivationAppearance(
+      PTibug bug, List<PTibugAspectMatrix> matrices) {
+    if (matrices.isEmpty) {
+      _ensurePTibugAppearance(bug);
+      return;
+    }
+    final first = matrices.first;
+    final second = matrices.length > 1 ? matrices[1] : null;
+    PTibugAspectMatrix? pick(PTibugAspectMatrix? a, PTibugAspectMatrix? b) {
+      if (b == null) return _random.nextBool() ? a : null;
+      return _random.nextBool() ? a : b;
+    }
+
+    final primary = pick(first, second);
+    final motif = pick(first, second);
+    final motifColor = pick(first, second);
+    final traitColor = pick(first, second);
+    final animation = pick(first, second);
+    bug
+      ..primaryColorHex = primary?.primaryColorHex
+      ..motifId = motif?.motifId
+      ..motifColorHex = motifColor?.motifColorHex
+      ..traitColorHex = traitColor?.traitColorHex
+      ..animationName = animation?.animationName;
+    // Une caractéristique non héritée reste aléatoire plutôt que vide.
+    _ensurePTibugAppearance(bug);
   }
 
   Zone0ActionResult _completePTibugTankOperation(

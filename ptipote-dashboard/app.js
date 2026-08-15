@@ -466,6 +466,13 @@ function ptipoteFieldLabel(field) {
   const labels = {
     energyUnitsPerBioBatteryByBuildingLevel: "Énergie gagnée par Bio-batterie, selon le niveau",
     repairCostsByBuildingLevel: "Coûts de réparation par niveau",
+    repairMiniGames: "Mini-jeux de réparation",
+    colorMatchWeight: "Poids Correspondance",
+    pipesWeight: "Poids Canalisations",
+    waterSortWeight: "Poids Fioles",
+    colorMatchByBuildingLevel: "Correspondance par niveau",
+    pipesByBuildingLevel: "Canalisations par niveau",
+    waterSortByBuildingLevel: "Fioles par niveau",
     "Bio-batteries": "Bio-batteries",
     "Bio-piles": "Bio-piles",
     "Kit de réparation domestique": "Kits de réparation",
@@ -1803,7 +1810,7 @@ function renderEnergyEditor() {
       "towerOperations",
       repairs,
       ["buildingViability"],
-      { open: true, meta: "Coût par tranche de 10 % de Viabilité : ressources, Bio-batteries, Bio-piles et Kits de réparation." },
+      { open: true, meta: "Coût par tranche de 10 % de Viabilité. 100 Bio-piles = 1 Bio-batterie : les piles utilisent donc aussi la partie décimale disponible." },
     ),
   ].join("");
   bindZone0Inputs(el.energySettingsForm);
