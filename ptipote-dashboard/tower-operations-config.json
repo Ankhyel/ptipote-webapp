@@ -98,9 +98,10 @@
       "failurePenalty": false,
       "timerEnabled": false,
       "colorMatchByBuildingLevel": {
-        "1": {"totalColors": 3, "hiddenColors": 1},
-        "2": {"totalColors": 5, "hiddenColors": 2},
-        "3": {"totalColors": 7, "hiddenColors": 3}
+        "1": {"totalColors": 5, "hiddenColors": 2},
+        "2": {"totalColors": 6, "hiddenColors": 3},
+        "3": {"totalColors": 7, "hiddenColors": 4},
+        "4": {"totalColors": 8, "hiddenColors": 5}
       },
       "pipesByBuildingLevel": {
         "1": {"gridWidth": 3, "gridHeight": 3, "availablePieces": 16},

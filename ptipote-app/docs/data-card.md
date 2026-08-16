@@ -21,3 +21,17 @@ ne modifient pas la Viabilité. Une tentative réussie est identifiée par un
 `repairAttemptId` : elle ne peut appliquer la réparation qu'une seule fois.
 Les réparations autonomes des habitants et les Kits de réparation conservent
 leur fonctionnement existant.
+
+## Biofermenteur et Bassin de calcium
+
+Le Biofermenteur conserve sa réserve d'Organique verte, récoltée par le
+joueur. Sa Lithoculture reçoit jusqu'à `30 + 10 par niveau` Minéraux : chaque
+tranche de 10 démarre un cycle d'une heure qui ajoute 3 Organique à la réserve.
+
+Le **Bassin de calcium** est un module du seul biome **Bassin minéral**. Il
+ajoute une réserve d'Eau (`30 + 10/niveau`), une réserve d'Organique
+(`9 + 3/niveau`) et une réserve de Minéral. La pluie modérée, forte et sévère
+apporte respectivement 2, 5 et 10 Eau par heure. Chaque heure productive, le
+Bassin conserve ses Minéraux de la cuve, produit 1 Minéral par tranche de 10,
+et consomme 1 Organique ainsi que 2 Eau. Un P’TIBUG `mineur` ou
+`lithoculture` actif dans le biome ajoute +1 Minéral/h au cycle.

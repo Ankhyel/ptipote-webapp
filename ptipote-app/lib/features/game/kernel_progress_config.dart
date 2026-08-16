@@ -20,7 +20,14 @@ enum KernelProgressEventType {
   firstMyceliumProduced,
 }
 
-enum KernelPlanCategory { buildings, workshop, cuisine, ptibug, installations }
+enum KernelPlanCategory {
+  buildings,
+  workshop,
+  cuisine,
+  ptibug,
+  installations,
+  furniture,
+}
 
 enum KernelPlanState { unknown, discovered, ready, active }
 
@@ -446,7 +453,7 @@ const KernelProgressConfig defaultKernelProgressConfig = KernelProgressConfig(
       id: 'solar-light',
       title: 'Lumière solaire',
       description: 'Un éclairage autonome pour les espaces du refuge.',
-      category: KernelPlanCategory.installations,
+      category: KernelPlanCategory.furniture,
       iconName: 'light',
       origin: 'Développée après les premiers travaux de végétalisation.',
       kernelText:

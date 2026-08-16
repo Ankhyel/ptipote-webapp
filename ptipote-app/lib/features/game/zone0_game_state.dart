@@ -669,13 +669,19 @@ class Zone0GameState extends ChangeNotifier {
 
   RepairMiniGameAttempt? beginInteractiveRepair(String buildingId,
       {required int gain, RepairMiniGameType? forcedGame}) {
-    final viability = viabilityForBuilding(buildingId);
+    final houseId = buildingId.startsWith('resident-house:')
+        ? buildingId.substring(15)
+        : null;
+    final house = houseId == null ? null : residentHouseForId(houseId);
+    final viability = house == null ? viabilityForBuilding(buildingId) : null;
+    final current = house?.currentViability ?? viability!.current;
+    final maximum = house?.maximumViability ?? viability!.maximum;
     if (!towerOperationsConfig.buildingViability.repairMiniGames.enabled ||
-        viability.current >= viability.maximum) return null;
+        current >= maximum) return null;
     final actualGain = math
         .min(
           ((gain / 10).ceil().clamp(1, 10) * 10).toInt(),
-          viability.maximum - viability.current,
+          maximum - current,
         )
         .toInt();
     if (actualGain <= 0) return null;
@@ -706,7 +712,7 @@ class Zone0GameState extends ChangeNotifier {
       id: id,
       buildingId: buildingId,
       repairGain: actualGain,
-      buildingLevel: buildingRepairLevel(buildingId),
+      buildingLevel: house == null ? buildingRepairLevel(buildingId) : 1,
       gameType: selected,
       seed: _random.nextInt(1 << 31),
     );
@@ -723,16 +729,26 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Cette réparation a déjà été traitée.');
     }
-    final viability = viabilityForBuilding(attempt.buildingId);
-    if (viability.current >= viability.maximum) {
+    final houseId = attempt.buildingId.startsWith('resident-house:')
+        ? attempt.buildingId.substring(15)
+        : null;
+    final house = houseId == null ? null : residentHouseForId(houseId);
+    final viability =
+        house == null ? viabilityForBuilding(attempt.buildingId) : null;
+    final current = house?.currentViability ?? viability!.current;
+    final maximum = house?.maximumViability ?? viability!.maximum;
+    if (current >= maximum) {
       return const Zone0ActionResult(
           success: false, message: 'La Viabilité est déjà maximale.');
     }
     attempt.completed = true;
-    final gain = math
-        .min(attempt.repairGain, viability.maximum - viability.current)
-        .toInt();
-    viability.restore(gain);
+    final gain = math.min(attempt.repairGain, maximum - current).toInt();
+    if (house == null) {
+      viability!.restore(gain);
+    } else {
+      house.currentViability += gain;
+      house.updatedAt = DateTime.now();
+    }
     // Le mini-jeu remplace uniquement le coût : aucune XP ni ressource bonus.
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -2865,6 +2881,7 @@ class Zone0GameState extends ChangeNotifier {
       case 'installation filtrante':
         return 'technicalEquipment';
       case 'lumière solaire':
+        return 'furniture';
       case 'kit de réparation domestique':
       case 'second générateur domestique':
         return 'householdInstallation';
@@ -3010,6 +3027,8 @@ class Zone0GameState extends ChangeNotifier {
       switch (item.toLowerCase()) {
         case 'meuble simple':
           tags.addAll(<String>{'bed', 'functionalFurniture', 'decoration'});
+        case 'lumière solaire':
+          tags.addAll(<String>{'functionalFurniture', 'decoration'});
         case 'ventilation termite':
         case 'chloro-canaux':
         case 'installation filtrante':
@@ -3141,6 +3160,46 @@ class Zone0GameState extends ChangeNotifier {
         in residents.where((item) => item.houseId == house.id)) {
       _resolveResidentInteriorAndDesire(resident, DateTime.now());
     }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '$itemName installé dans ${house.displayName}.');
+  }
+
+  /// Household installations have their own four slots: three technical
+  /// installations plus one stackable consumable reserve (e.g. cartridges).
+  Zone0ActionResult installResidentHouseInstallation({
+    required String houseId,
+    required String itemName,
+  }) {
+    final house = residentHouseForId(houseId);
+    if (house == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Maison introuvable.');
+    }
+    // The fourth household slot is permanently reserved for a stack of
+    // filtration cartridges; only three physical installations may be fitted.
+    if (house.installedInstallationItems.length >=
+        math.max(0, house.installationSlots - 1)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Aucun emplacement d’installation disponible.');
+    }
+    final category = _residentItemCategory(itemName);
+    if (category != 'technicalEquipment' &&
+        category != 'householdInstallation') {
+      return const Zone0ActionResult(
+          success: false, message: 'Installation technique requise.');
+    }
+    if (!_consumeHouseholdInventoryItem(house, itemName) &&
+        (resourceAmount(itemName) < 1 || removeResource(itemName, 1) <= 0)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Installation absente de l’inventaire du foyer.');
+    }
+    house.installedInstallationItems.add(itemName);
+    house.updatedAt = DateTime.now();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -6773,6 +6832,17 @@ class Zone0GameState extends ChangeNotifier {
     }
     return null;
   }
+
+  /// Read-only lookup used by profiles. Unlike the activity eligibility
+  /// helper above it deliberately keeps a departure-pending session visible
+  /// until its House departure has actually been completed.
+  CoBreedingSession? coBreedingSessionFor(String ptipoteId) =>
+      coBreedingSessions
+          .where((session) =>
+              session.ptipoteId == ptipoteId &&
+              session.status != CoBreedingSessionStatus.completed &&
+              session.status != CoBreedingSessionStatus.archived)
+          .firstOrNull;
 
   /// Business-rule guard used by both the offer generator and the UI. A
   /// Vestige, a departing companion or an owned physical Protocol can never
@@ -11226,6 +11296,51 @@ class Zone0GameState extends ChangeNotifier {
     return 30 + (zone.buildingLevel - 1) * 10;
   }
 
+  int lithocultureTankCapacity(ForageBiome biome) {
+    final level = math.max(1, territoryZone(biome).buildingLevel);
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    return config.lithocultureTankBaseCapacity +
+        (level - 1) * config.lithocultureTankCapacityPerLevel;
+  }
+
+  int calciumOrganicCapacity(ForageBiome biome) {
+    final level = math.max(1, territoryZone(biome).buildingLevel);
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    return config.calciumOrganicBaseCapacity +
+        (level - 1) * config.calciumOrganicCapacityPerLevel;
+  }
+
+  int calciumWaterCapacity(ForageBiome biome) {
+    final level = math.max(1, territoryZone(biome).buildingLevel);
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    return config.calciumWaterBaseCapacity +
+        (level - 1) * config.calciumWaterCapacityPerLevel;
+  }
+
+  int calciumMineralReserveCapacity(ForageBiome biome) {
+    final level = math.max(1, territoryZone(biome).buildingLevel);
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    return config.calciumMineralReserveBaseCapacity +
+        (level - 1) * config.calciumMineralReserveCapacityPerLevel;
+  }
+
+  bool canInstallCalciumBasin(ForageBiome biome) =>
+      biome == ForageBiome.bassinMineral &&
+      lisiereForageConfig.territoryBuildings.biofermenter.calciumBasinEnabled;
+
+  int activeCalciumMinerPTibugsForBiofermenter(ForageBiome biome) {
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    return pTibugs
+        .where((bug) =>
+            bug.lifecycleStatus == PTibugLifecycleStatus.active &&
+            bug.refugeBiome == biome &&
+            bug.assignedBuildingId != null &&
+            config.calciumEligibleTraitIds.any((traitId) =>
+                bug.biologicalTraitId == traitId ||
+                bug.secondTraitId == traitId))
+        .length;
+  }
+
   /// The ceiling is applied once to the complete daily formula, then the
   /// continuous resolver preserves hourly fractions. This favours the player
   /// without compounding rounding on each multiplier or refresh.
@@ -11297,6 +11412,49 @@ class Zone0GameState extends ChangeNotifier {
           addResources(<String, int>{'Mycélium': myceliumWhole});
         }
         changed = true;
+
+        if (zone.calciumBasinInstalled) {
+          final weather = activeGlobalWeatherEvent;
+          final rainRate = weather != null &&
+                  weather.status == GlobalWeatherEventStatus.active &&
+                  weather.type == TowerWeatherType.heavyRain &&
+                  weather.isBiomeAffected(biome)
+              ? switch (weather.intensity) {
+                  GlobalWeatherIntensity.moderate => 2,
+                  GlobalWeatherIntensity.strong => 5,
+                  GlobalWeatherIntensity.severe => 10,
+                  GlobalWeatherIntensity.calm => 0,
+                }
+              : 0;
+          if (rainRate > 0) {
+            zone.calciumWaterTank = math.min(
+              calciumWaterCapacity(biome),
+              zone.calciumWaterTank + (elapsedHours * rainRate).floor(),
+            );
+          }
+          final exactHours = elapsedHours + zone.calciumProductionHourRemainder;
+          final wholeHours = exactHours.floor();
+          zone.calciumProductionHourRemainder = exactHours - wholeHours;
+          for (var hour = 0; hour < wholeHours; hour++) {
+            final base = zone.lithocultureMineralTank ~/
+                config.lithocultureMineralPerCycle;
+            if (base <= 0 ||
+                zone.calciumOrganicTank < config.calciumOrganicPerActiveHour ||
+                zone.calciumWaterTank < config.calciumWaterPerActiveHour) {
+              break;
+            }
+            final output = base +
+                activeCalciumMinerPTibugsForBiofermenter(biome) *
+                    config.calciumMinerTraitBonusPerPTibug;
+            final room = calciumMineralReserveCapacity(biome) -
+                zone.calciumMineralReserve;
+            if (room <= 0) break;
+            zone
+              ..calciumMineralReserve += math.min(room, output)
+              ..calciumOrganicTank -= config.calciumOrganicPerActiveHour
+              ..calciumWaterTank -= config.calciumWaterPerActiveHour;
+          }
+        }
       }
       while (zone.lithocultureCycleStartedAt != null) {
         final finishedAt = zone.lithocultureCycleStartedAt!.add(
@@ -11349,7 +11507,14 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Le Biofermenteur doit être réparé avant la Lithoculture.',
       );
     }
-    final moved = math.min(amount, resourceAmount('Minéral'));
+    final moved = math.min(
+      amount,
+      math.min(
+        resourceAmount('Minéral'),
+        math.max(
+            0, lithocultureTankCapacity(biome) - zone.lithocultureMineralTank),
+      ),
+    );
     if (moved <= 0) {
       return const Zone0ActionResult(
         success: false,
@@ -11388,6 +11553,47 @@ class Zone0GameState extends ChangeNotifier {
           ? 'Inventaire plein : l’Organique reste dans le Biofermenteur.'
           : 'Organique récolté.',
     );
+  }
+
+  Zone0ActionResult retrieveCalciumBasinMineral(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    if (!zone.calciumBasinInstalled || zone.calciumMineralReserve <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun Minéral à récolter.');
+    }
+    final result =
+        addResources(<String, int>{'Minéral': zone.calciumMineralReserve});
+    zone.calciumMineralReserve = result.pending['Minéral'] ?? 0;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: result.addedAny,
+      message: result.hasPending
+          ? 'Inventaire plein : le Minéral reste dans le Bassin de calcium.'
+          : 'Minéral récolté.',
+    );
+  }
+
+  Zone0ActionResult transferOrganicToCalciumBasin(
+      ForageBiome biome, int amount) {
+    final zone = territoryZone(biome);
+    final moved = math.min(
+        amount,
+        math.min(
+            resourceAmount('Organique'),
+            math.max(
+                0, calciumOrganicCapacity(biome) - zone.calciumOrganicTank)));
+    if (!zone.calciumBasinInstalled || moved <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Bassin de calcium ou espace indisponible.');
+    }
+    removeResource('Organique', moved);
+    zone.calciumOrganicTank += moved;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '$moved Organique versé dans le Bassin de calcium.');
   }
 
   int getLithocultureMineralCostPerOrganic(ForageBiome biome) =>
@@ -11807,6 +12013,10 @@ class Zone0GameState extends ChangeNotifier {
       return lisiereForageConfig
           .territoryBuildings.biofermenter.mycelialNetworkCost;
     }
+    if (_calciumBasinBiomeForTarget(targetId) != null) {
+      return lisiereForageConfig
+          .territoryBuildings.biofermenter.calciumBasinCost;
+    }
     if (_isRefugeTarget(targetId)) {
       return pTibugConfig.territory.refugeRequirementsForLevel(targetLevel);
     }
@@ -11837,14 +12047,17 @@ class Zone0GameState extends ChangeNotifier {
                 : _mycelialNetworkBiomeForTarget(targetId) != null
                     ? lisiereForageConfig.territoryBuildings.biofermenter
                         .mycelialNetworkConstructionMinutes
-                    : targetId == 'housing'
-                        ? housingConfig.housingDurationMinutes
-                        : _isRefugeTarget(targetId)
-                            ? pTibugConfig.territory.refugeMinutesForLevel(
-                                _buildingLevel(targetId) + 1)
-                            : buildingConstructionConfig
-                                .project(targetId)
-                                .durationMinutes,
+                    : _calciumBasinBiomeForTarget(targetId) != null
+                        ? lisiereForageConfig.territoryBuildings.biofermenter
+                            .calciumBasinConstructionMinutes
+                        : targetId == 'housing'
+                            ? housingConfig.housingDurationMinutes
+                            : _isRefugeTarget(targetId)
+                                ? pTibugConfig.territory.refugeMinutesForLevel(
+                                    _buildingLevel(targetId) + 1)
+                                : buildingConstructionConfig
+                                    .project(targetId)
+                                    .durationMinutes,
       );
 
   int _buildingLevel(String targetId) {
@@ -11857,6 +12070,10 @@ class Zone0GameState extends ChangeNotifier {
     final networkBiome = _mycelialNetworkBiomeForTarget(targetId);
     if (networkBiome != null) {
       return territoryZone(networkBiome).mycelialNetworkInstalled ? 1 : 0;
+    }
+    final calciumBiome = _calciumBasinBiomeForTarget(targetId);
+    if (calciumBiome != null) {
+      return territoryZone(calciumBiome).calciumBasinInstalled ? 1 : 0;
     }
     if (_isRefugeTarget(targetId)) {
       return territoryBuildingForId(targetId)?.level ?? 0;
@@ -11881,6 +12098,7 @@ class Zone0GameState extends ChangeNotifier {
     if (_biofermenterBiomeForTarget(targetId) != null) return 4;
     if (_edibleForestBiomeForTarget(targetId) != null) return 1;
     if (_mycelialNetworkBiomeForTarget(targetId) != null) return 1;
+    if (_calciumBasinBiomeForTarget(targetId) != null) return 1;
     if (_isRefugeTarget(targetId))
       return pTibugConfig.territory.refugeMaximumLevel;
     return switch (targetId) {
@@ -11905,6 +12123,8 @@ class Zone0GameState extends ChangeNotifier {
       'edibleForest-${biome.name}';
   String mycelialNetworkTargetId(ForageBiome biome) =>
       'mycelialNetwork-${biome.name}';
+  String calciumBasinTargetId(ForageBiome biome) =>
+      'calciumBasin-${biome.name}';
   ForageBiome? _biofermenterBiomeForTarget(String targetId) {
     const prefix = 'biofermenter-';
     if (!targetId.startsWith(prefix)) return null;
@@ -11926,6 +12146,14 @@ class Zone0GameState extends ChangeNotifier {
     if (!targetId.startsWith(prefix)) return null;
     final name = targetId.substring(prefix.length);
     return ForageBiome.values.where((item) => item.name == name).firstOrNull;
+  }
+
+  ForageBiome? _calciumBasinBiomeForTarget(String targetId) {
+    const prefix = 'calciumBasin-';
+    if (!targetId.startsWith(prefix)) return null;
+    return ForageBiome.values
+        .where((item) => item.name == targetId.substring(prefix.length))
+        .firstOrNull;
   }
 
   int projectBioBatteryRequirement(String targetId) {
@@ -12076,6 +12304,18 @@ class Zone0GameState extends ChangeNotifier {
         return const Zone0ActionResult(
           success: false,
           message: 'La Forêt comestible est déjà en cours d’installation.',
+        );
+      }
+    }
+    final calciumBiome = _calciumBasinBiomeForTarget(targetId);
+    if (calciumBiome != null) {
+      final zone = territoryZone(calciumBiome);
+      if (!canInstallCalciumBasin(calciumBiome) ||
+          zone.buildingId != 'biofermenter') {
+        return const Zone0ActionResult(
+          success: false,
+          message:
+              'Le Bassin de calcium est réservé au Biofermenteur du Bassin minéral.',
         );
       }
     }
@@ -12268,6 +12508,14 @@ class Zone0GameState extends ChangeNotifier {
         if (networkBiome != null) {
           territoryZone(networkBiome)
             ..mycelialNetworkInstalled = true
+            ..lastProductionResolvedAt = now
+            ..updatedAt = now;
+          break;
+        }
+        final calciumBiome = _calciumBasinBiomeForTarget(project.targetId);
+        if (calciumBiome != null) {
+          territoryZone(calciumBiome)
+            ..calciumBasinInstalled = true
             ..lastProductionResolvedAt = now
             ..updatedAt = now;
           break;
@@ -15855,12 +16103,10 @@ class Zone0GameState extends ChangeNotifier {
           ..addAll(
             (marketData['stock'] as List? ?? const <dynamic>[])
                 .whereType<Map>()
-                .map(
-                  (item) => Zone0InventoryStack(
-                    resource: '${item['resource'] ?? ''}',
-                    amount: _readInt(item['amount']),
-                  ),
-                )
+                // Keep the stack id and the nursery source ids.  Rebuilding
+                // only `{resource, amount}` made a saved market pile lose its
+                // identity on reload and was the root of ghost / zero piles.
+                .map(Zone0InventoryStack.fromFirebase)
                 .where((item) => item.resource.isNotEmpty && item.amount > 0),
           );
         marketRequests
@@ -22967,6 +23213,8 @@ class ResidentHouse {
     int? weatherProtectionSlots,
     int? furnitureSlots,
     List<String>? installedFurnitureItems,
+    this.installationSlots = 4,
+    List<String>? installedInstallationItems,
     Map<String, int>? householdInventory,
     Map<String, int>? structuralConsumables,
     this.baseGeneratorInstalled = true,
@@ -22992,6 +23240,7 @@ class ResidentHouse {
             weatherProtectionSlots ?? housingConfig.houseProtectionSlots,
         furnitureSlots = furnitureSlots ?? housingConfig.residentFurnitureSlots,
         installedFurnitureItems = installedFurnitureItems ?? <String>[],
+        installedInstallationItems = installedInstallationItems ?? <String>[],
         householdInventory = householdInventory ?? <String, int>{},
         structuralConsumables = structuralConsumables ?? <String, int>{},
         reservedArrivalCandidateIds = reservedArrivalCandidateIds ?? <String>[],
@@ -23034,6 +23283,14 @@ class ResidentHouse {
         ),
         installedFurnitureItems:
             (data['installedFurnitureItems'] as List? ?? const <dynamic>[])
+                .map((item) => '$item')
+                .toList(),
+        installationSlots: Zone0GameState.instance._readInt(
+          data['installationSlots'],
+          fallback: 4,
+        ),
+        installedInstallationItems:
+            (data['installedInstallationItems'] as List? ?? const <dynamic>[])
                 .map((item) => '$item')
                 .toList(),
         householdInventory: (data['householdInventory'] as Map? ?? const {})
@@ -23093,6 +23350,8 @@ class ResidentHouse {
   int weatherProtectionSlots;
   int furnitureSlots;
   final List<String> installedFurnitureItems;
+  int installationSlots;
+  final List<String> installedInstallationItems;
   final Map<String, int> householdInventory;
   final Map<String, int> structuralConsumables;
   bool baseGeneratorInstalled;
@@ -23148,6 +23407,8 @@ class ResidentHouse {
         'weatherProtectionSlots': weatherProtectionSlots,
         'furnitureSlots': furnitureSlots,
         'installedFurnitureItems': installedFurnitureItems,
+        'installationSlots': installationSlots,
+        'installedInstallationItems': installedInstallationItems,
         'householdInventory': householdInventory,
         'structuralConsumables': structuralConsumables,
         'baseGeneratorInstalled': baseGeneratorInstalled,
@@ -24732,12 +24993,17 @@ class LisiereTerritoryZone {
     this.buildingLevel = 0,
     this.edibleForestInstalled = false,
     this.mycelialNetworkInstalled = false,
+    this.calciumBasinInstalled = false,
     this.vatCount = 1,
     this.vatEfficiencyMultiplier = 1,
     this.organicProductionRemainder = 0,
     this.organicReserve = 0,
     this.lithocultureMineralTank = 0,
     this.lithocultureCycleStartedAt,
+    this.calciumOrganicTank = 0,
+    this.calciumWaterTank = 0,
+    this.calciumMineralReserve = 0,
+    this.calciumProductionHourRemainder = 0,
     this.myceliumProductionRemainder = 0,
     this.lastProductionResolvedAt,
     this.updatedAt,
@@ -24765,6 +25031,7 @@ class LisiereTerritoryZone {
         buildingLevel: ForageMission._readStaticInt(data['buildingLevel']),
         edibleForestInstalled: data['edibleForestInstalled'] == true,
         mycelialNetworkInstalled: data['mycelialNetworkInstalled'] == true,
+        calciumBasinInstalled: data['calciumBasinInstalled'] == true,
         vatCount: math.max(1, ForageMission._readStaticInt(data['vatCount'])),
         vatEfficiencyMultiplier:
             (data['vatEfficiencyMultiplier'] as num?)?.toDouble() ?? 1,
@@ -24775,6 +25042,14 @@ class LisiereTerritoryZone {
             ForageMission._readStaticInt(data['lithocultureMineralTank']),
         lithocultureCycleStartedAt:
             ForageMission._readDate(data['lithocultureCycleStartedAt']),
+        calciumOrganicTank:
+            ForageMission._readStaticInt(data['calciumOrganicTank']),
+        calciumWaterTank:
+            ForageMission._readStaticInt(data['calciumWaterTank']),
+        calciumMineralReserve:
+            ForageMission._readStaticInt(data['calciumMineralReserve']),
+        calciumProductionHourRemainder:
+            (data['calciumProductionHourRemainder'] as num?)?.toDouble() ?? 0,
         myceliumProductionRemainder:
             (data['myceliumProductionRemainder'] as num?)?.toDouble() ?? 0,
         lastProductionResolvedAt:
@@ -24788,12 +25063,17 @@ class LisiereTerritoryZone {
   int buildingLevel;
   bool edibleForestInstalled;
   bool mycelialNetworkInstalled;
+  bool calciumBasinInstalled;
   int vatCount;
   double vatEfficiencyMultiplier;
   double organicProductionRemainder;
   int organicReserve;
   int lithocultureMineralTank;
   DateTime? lithocultureCycleStartedAt;
+  int calciumOrganicTank;
+  int calciumWaterTank;
+  int calciumMineralReserve;
+  double calciumProductionHourRemainder;
   double myceliumProductionRemainder;
   DateTime? lastProductionResolvedAt;
   DateTime? updatedAt;
@@ -24805,6 +25085,7 @@ class LisiereTerritoryZone {
         'buildingLevel': buildingLevel,
         'edibleForestInstalled': edibleForestInstalled,
         'mycelialNetworkInstalled': mycelialNetworkInstalled,
+        'calciumBasinInstalled': calciumBasinInstalled,
         'vatCount': vatCount,
         'vatEfficiencyMultiplier': vatEfficiencyMultiplier,
         'organicProductionRemainder': organicProductionRemainder,
@@ -24813,6 +25094,10 @@ class LisiereTerritoryZone {
         'lithocultureCycleStartedAt': lithocultureCycleStartedAt == null
             ? null
             : Timestamp.fromDate(lithocultureCycleStartedAt!),
+        'calciumOrganicTank': calciumOrganicTank,
+        'calciumWaterTank': calciumWaterTank,
+        'calciumMineralReserve': calciumMineralReserve,
+        'calciumProductionHourRemainder': calciumProductionHourRemainder,
         'myceliumProductionRemainder': myceliumProductionRemainder,
         'lastProductionResolvedAt': lastProductionResolvedAt == null
             ? null

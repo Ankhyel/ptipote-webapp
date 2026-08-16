@@ -374,7 +374,9 @@ const defaultCraftConfig = CraftConfig(
       hungerRestore: 0,
       vitalityRestore: 0,
       durationMinutes: 8,
-      isEquipment: true,
+      // La lumière est un élément d'aménagement du foyer, pas une
+      // installation structurelle soumise aux emplacements techniques.
+      isEquipment: false,
       stackLimit: 1,
     ),
     CraftRecipe(

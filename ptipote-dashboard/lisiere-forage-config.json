@@ -187,7 +187,7 @@
       "passiveProductionMultiplier": 1,
       "vatCount": 1,
       "vatEfficiencyMultiplier": 1,
-      "lithoculture": {"mineralPerCycle": 10, "organicPerCycle": 3, "cycleMinutes": 60},
+      "lithoculture": {"mineralPerCycle": 10, "organicPerCycle": 3, "cycleMinutes": 60, "tankBaseCapacity": 30, "tankCapacityPerLevel": 10},
       "normalMineralPerOrganic": 3,
       "mineralBasinMineralPerOrganic": 2,
       "wasteCanReplaceMineral": true,
@@ -195,6 +195,7 @@
       "maxWasteSharePerBatch": 1,
       "edibleForest": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 10, "Mycélium": 10}, "pollinatorTraitId": "pollinisateur", "bonusPerPollinator": 0.1, "maxPollinatorsCounted": 3, "affectsPassiveProductionOnly": true},
       "mycelialNetwork": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 10, "Mycélium": 10}, "baseMyceliumPerDay": 8, "biomeMultipliers": {"none": 1.0, "medium": 1.25, "rich": 1.5}, "mycelialTraitId": "decomposeur", "mycelialTraitBonusPerPTibug": 0.1, "maxMycelialPTibugsCounted": 3, "roundFinalProductionUp": true},
+      "calciumBasin": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 20, "Mycélium": 10}, "organicBaseCapacity": 9, "organicCapacityPerLevel": 3, "waterBaseCapacity": 30, "waterCapacityPerLevel": 10, "mineralReserveBaseCapacity": 30, "mineralReserveCapacityPerLevel": 10, "mineralPerTenStoredPerHour": 1, "organicPerActiveHour": 1, "waterPerActiveHour": 2, "minerTraitBonusPerPTibug": 1, "eligibleTraitIds": ["mineur", "lithoculture"]},
       "futureScarabeHook": {"enabled": false, "mineralToOrganicConversionRate": 4}
     }
   }

@@ -520,9 +520,10 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
       failurePenalty: false,
       timerEnabled: false,
       colorMatchByBuildingLevel: <int, Map<String, int>>{
-        1: <String, int>{'totalColors': 3, 'hiddenColors': 1},
-        2: <String, int>{'totalColors': 5, 'hiddenColors': 2},
-        3: <String, int>{'totalColors': 7, 'hiddenColors': 3},
+        1: <String, int>{'totalColors': 5, 'hiddenColors': 2},
+        2: <String, int>{'totalColors': 6, 'hiddenColors': 3},
+        3: <String, int>{'totalColors': 7, 'hiddenColors': 4},
+        4: <String, int>{'totalColors': 8, 'hiddenColors': 5},
       },
       pipesByBuildingLevel: <int, Map<String, int>>{
         1: <String, int>{

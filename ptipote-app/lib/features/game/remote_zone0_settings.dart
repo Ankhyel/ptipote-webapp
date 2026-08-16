@@ -1583,6 +1583,7 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
   final upgrades = _map(bio?['upgradeCosts']);
   final forest = _map(bio?['edibleForest']);
   final network = _map(bio?['mycelialNetwork']);
+  final calcium = _map(bio?['calciumBasin']);
   final scarabe = _map(bio?['futureScarabeHook']);
   final lithoculture = _map(bio?['lithoculture']);
   final durations = _map(bio?['constructionMinutesByLevel']);
@@ -1692,6 +1693,62 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
         network?['maxMycelialPTibugsCounted'],
         baseBio.maxMycelialPTibugsCounted,
       ),
+      calciumBasinEnabled: calcium?['enabled'] is bool
+          ? calcium!['enabled'] as bool
+          : baseBio.calciumBasinEnabled,
+      calciumBasinCost: <String, int>{
+        for (final entry in baseBio.calciumBasinCost.entries)
+          entry.key: _int(_map(calcium?['cost'])?[entry.key], entry.value),
+      },
+      calciumBasinConstructionMinutes: _int(
+        calcium?['constructionMinutes'],
+        baseBio.calciumBasinConstructionMinutes,
+      ),
+      lithocultureTankBaseCapacity: _int(
+        lithoculture?['tankBaseCapacity'],
+        baseBio.lithocultureTankBaseCapacity,
+      ),
+      lithocultureTankCapacityPerLevel: _int(
+        lithoculture?['tankCapacityPerLevel'],
+        baseBio.lithocultureTankCapacityPerLevel,
+      ),
+      calciumOrganicBaseCapacity: _int(
+          calcium?['organicBaseCapacity'], baseBio.calciumOrganicBaseCapacity),
+      calciumOrganicCapacityPerLevel: _int(
+        calcium?['organicCapacityPerLevel'],
+        baseBio.calciumOrganicCapacityPerLevel,
+      ),
+      calciumWaterBaseCapacity:
+          _int(calcium?['waterBaseCapacity'], baseBio.calciumWaterBaseCapacity),
+      calciumWaterCapacityPerLevel: _int(
+        calcium?['waterCapacityPerLevel'],
+        baseBio.calciumWaterCapacityPerLevel,
+      ),
+      calciumMineralReserveBaseCapacity: _int(
+        calcium?['mineralReserveBaseCapacity'],
+        baseBio.calciumMineralReserveBaseCapacity,
+      ),
+      calciumMineralReserveCapacityPerLevel: _int(
+        calcium?['mineralReserveCapacityPerLevel'],
+        baseBio.calciumMineralReserveCapacityPerLevel,
+      ),
+      calciumMineralPerTenStoredPerHour: _int(
+        calcium?['mineralPerTenStoredPerHour'],
+        baseBio.calciumMineralPerTenStoredPerHour,
+      ),
+      calciumOrganicPerActiveHour: _int(calcium?['organicPerActiveHour'],
+          baseBio.calciumOrganicPerActiveHour),
+      calciumWaterPerActiveHour: _int(
+          calcium?['waterPerActiveHour'], baseBio.calciumWaterPerActiveHour),
+      calciumMinerTraitBonusPerPTibug: _int(
+        calcium?['minerTraitBonusPerPTibug'],
+        baseBio.calciumMinerTraitBonusPerPTibug,
+      ),
+      calciumEligibleTraitIds: (calcium?['eligibleTraitIds'] as List?)
+              ?.map((value) => '$value')
+              .where((value) => value.isNotEmpty)
+              .toList() ??
+          baseBio.calciumEligibleTraitIds,
     ),
   );
 }

@@ -40,7 +40,7 @@ void main() {
       expect(games.pipesWeight, 1);
       expect(games.waterSortWeight, 1);
       expect(games.colorMatchForLevel(2),
-          <String, int>{'totalColors': 5, 'hiddenColors': 2});
+          <String, int>{'totalColors': 6, 'hiddenColors': 3});
       expect(games.pipesForLevel(3)['availablePieces'], 12);
       expect(games.waterSortForLevel(3)['bottleCount'], 7);
       expect(games.waterSortForLevel(99), games.waterSortForLevel(3));

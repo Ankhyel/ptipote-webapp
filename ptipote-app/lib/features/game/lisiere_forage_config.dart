@@ -132,6 +132,22 @@ class BiofermenterConfig {
     required this.mycelialTraitId,
     required this.mycelialTraitBonusPerPTibug,
     required this.maxMycelialPTibugsCounted,
+    required this.calciumBasinEnabled,
+    required this.calciumBasinCost,
+    required this.calciumBasinConstructionMinutes,
+    required this.lithocultureTankBaseCapacity,
+    required this.lithocultureTankCapacityPerLevel,
+    required this.calciumOrganicBaseCapacity,
+    required this.calciumOrganicCapacityPerLevel,
+    required this.calciumWaterBaseCapacity,
+    required this.calciumWaterCapacityPerLevel,
+    required this.calciumMineralReserveBaseCapacity,
+    required this.calciumMineralReserveCapacityPerLevel,
+    required this.calciumMineralPerTenStoredPerHour,
+    required this.calciumOrganicPerActiveHour,
+    required this.calciumWaterPerActiveHour,
+    required this.calciumMinerTraitBonusPerPTibug,
+    required this.calciumEligibleTraitIds,
   });
   final Map<int, double> passiveOrganicPerDayByLevel;
   final Map<String, int> constructionCost;
@@ -167,6 +183,22 @@ class BiofermenterConfig {
   final String mycelialTraitId;
   final double mycelialTraitBonusPerPTibug;
   final int maxMycelialPTibugsCounted;
+  final bool calciumBasinEnabled;
+  final Map<String, int> calciumBasinCost;
+  final int calciumBasinConstructionMinutes;
+  final int lithocultureTankBaseCapacity;
+  final int lithocultureTankCapacityPerLevel;
+  final int calciumOrganicBaseCapacity;
+  final int calciumOrganicCapacityPerLevel;
+  final int calciumWaterBaseCapacity;
+  final int calciumWaterCapacityPerLevel;
+  final int calciumMineralReserveBaseCapacity;
+  final int calciumMineralReserveCapacityPerLevel;
+  final int calciumMineralPerTenStoredPerHour;
+  final int calciumOrganicPerActiveHour;
+  final int calciumWaterPerActiveHour;
+  final int calciumMinerTraitBonusPerPTibug;
+  final List<String> calciumEligibleTraitIds;
 }
 
 class BiomassTierConfig {
@@ -566,6 +598,26 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       mycelialTraitId: 'decomposeur',
       mycelialTraitBonusPerPTibug: .10,
       maxMycelialPTibugsCounted: 3,
+      calciumBasinEnabled: true,
+      calciumBasinCost: const <String, int>{
+        'Organique': 20,
+        'Minéral': 20,
+        'Mycélium': 10,
+      },
+      calciumBasinConstructionMinutes: 60,
+      lithocultureTankBaseCapacity: 30,
+      lithocultureTankCapacityPerLevel: 10,
+      calciumOrganicBaseCapacity: 9,
+      calciumOrganicCapacityPerLevel: 3,
+      calciumWaterBaseCapacity: 30,
+      calciumWaterCapacityPerLevel: 10,
+      calciumMineralReserveBaseCapacity: 30,
+      calciumMineralReserveCapacityPerLevel: 10,
+      calciumMineralPerTenStoredPerHour: 1,
+      calciumOrganicPerActiveHour: 1,
+      calciumWaterPerActiveHour: 2,
+      calciumMinerTraitBonusPerPTibug: 1,
+      calciumEligibleTraitIds: const <String>['mineur', 'lithoculture'],
     ),
   ),
   myceliumExploration: const MyceliumExplorationConfig(
