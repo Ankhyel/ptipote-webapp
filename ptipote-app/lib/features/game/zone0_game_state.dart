@@ -9,6 +9,7 @@ import '../../services/notification_service.dart';
 import '../figurines/ptipote_figurine.dart';
 import '../figurines/co_breeding.dart';
 import '../figurines/ptipote_stats_config.dart';
+import '../figurines/ptipote_daily_life.dart';
 import '../figurines/ptipote_v2.dart';
 import 'building_construction_config.dart';
 import 'camp_heart_config.dart';
@@ -99,6 +100,10 @@ class Zone0GameState extends ChangeNotifier {
   final Set<String> wellRestedRewardedIds = <String>{};
   final Map<String, int> xpOverrides = <String, int>{};
   final Map<String, int> levelOverrides = <String, int>{};
+
+  /// Installed furniture of the shared P'TIPOTE Maison.  Resident homes keep
+  /// using their own [ResidentHouse.householdInventory] and furniture slots.
+  final List<String> ptipoteHomeFurnitureItems = <String>[];
 
   /// V2 game profiles are deliberately separate from the NFC figurine data.
   /// This gives physical scans and future co-bred companions one common game
@@ -2677,6 +2682,8 @@ class Zone0GameState extends ChangeNotifier {
         'Chloro-canaux',
         'Installation filtrante',
         'Lumière solaire',
+        'Jardin bioponique',
+        'Bassin thermal',
         'Kit de réparation domestique',
         'Second générateur domestique',
       }.contains(item);
@@ -2881,6 +2888,8 @@ class Zone0GameState extends ChangeNotifier {
       case 'installation filtrante':
         return 'technicalEquipment';
       case 'lumière solaire':
+      case 'jardin bioponique':
+      case 'bassin thermal':
         return 'furniture';
       case 'kit de réparation domestique':
       case 'second générateur domestique':
@@ -3028,6 +3037,8 @@ class Zone0GameState extends ChangeNotifier {
         case 'meuble simple':
           tags.addAll(<String>{'bed', 'functionalFurniture', 'decoration'});
         case 'lumière solaire':
+        case 'jardin bioponique':
+        case 'bassin thermal':
           tags.addAll(<String>{'functionalFurniture', 'decoration'});
         case 'ventilation termite':
         case 'chloro-canaux':
@@ -3374,10 +3385,10 @@ class Zone0GameState extends ChangeNotifier {
         CommunityRoleType.fablabMaker => math.max(0, atelierLevel),
         // Un emplacement d'habitant par niveau, comme Cuisine et Atelier.
         CommunityRoleType.marketCounter => isMarketBuilt ? marketLevel : 0,
-        // La Lisière n'a pas de niveau : elle offre donc ses huit postes
-        // d'observation dès qu'elle est accessible.
+        // La Lisière n'a pas de niveau : quatre postes d'observation restent
+        // volontairement lisibles et suffisants pour sa première version.
         CommunityRoleType.lisiereObserver =>
-          isBiomeUnlocked(ForageBiome.plaineRiche) ? 8 : 0,
+          isBiomeUnlocked(ForageBiome.plaineRiche) ? 4 : 0,
         CommunityRoleType.securityWatch ||
         CommunityRoleType.weatherWatch =>
           securityTowerSlots,
@@ -6365,6 +6376,174 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  int energyMaxFor(PtipoteFigurine figurine) => ptipoteDailyLifeConfig
+      .maxEnergyForLevel(ptipoteStatsConfig.maxVitality, levelFor(figurine));
+
+  int hungerMaxFor(PtipoteFigurine figurine) => ptipoteDailyLifeConfig
+      .maxHungerForLevel(ptipoteStatsConfig.maxHunger, levelFor(figurine));
+
+  /// Current attachment is calculated from the last saved source timestamp,
+  /// so time away from the app never needs hourly writes to Firebase.
+  double attachmentFor(PtipoteFigurine figurine, {DateTime? now}) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    final current = now ?? DateTime.now();
+    final last =
+        profile.attachmentLastUpdatedAt ?? profile.updatedAt ?? current;
+    final elapsedHours = math.max(0, current.difference(last).inSeconds / 3600);
+    return (profile.attachmentValue -
+            elapsedHours * ptipoteDailyLifeConfig.attachmentDecayPerHour)
+        .clamp(0, ptipoteDailyLifeConfig.attachmentMax)
+        .toDouble();
+  }
+
+  void _setAttachment(
+    PtipoteFigurine figurine,
+    double value, {
+    DateTime? now,
+  }) {
+    final current = now ?? DateTime.now();
+    final profile = ptipoteV2ProfileFor(figurine);
+    ptipoteV2Profiles[figurine.id] = profile.copyWith(
+      attachmentValue:
+          value.clamp(0, ptipoteDailyLifeConfig.attachmentMax).toDouble(),
+      attachmentLastUpdatedAt: current,
+      updatedAt: current,
+    );
+  }
+
+  void addAttachment(PtipoteFigurine figurine, double gain) {
+    _setAttachment(figurine, attachmentFor(figurine) + gain);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  Set<String> get _materialHappinessFurnitureTypes => <String>{
+        'Meuble simple',
+        'Lumière solaire',
+        'Jardin bioponique',
+        'Bassin thermal',
+      };
+
+  /// The fridge is an existing/future household installation.  Keeping the
+  /// check name-based makes legacy saves and the later crafted Frigo share the
+  /// same autonomy gate without creating a parallel inventory.
+  bool get hasWorkingPtipoteFridge => ptipoteHomeFurnitureItems.any((item) {
+        final normalized = item.toLowerCase();
+        return normalized.contains('frigo') || normalized.contains('réfrig');
+      });
+
+  PtipoteHappinessBreakdown happinessBreakdownFor(
+    PtipoteFigurine figurine, {
+    Iterable<PtipoteFigurine> companions = const <PtipoteFigurine>[],
+  }) {
+    final installed = ptipoteHomeFurnitureItems
+        .where(_materialHappinessFurnitureTypes.contains)
+        .toSet()
+        .length;
+    final hasCompanion = companions.isNotEmpty
+        ? companions.any((item) => item.id != figurine.id)
+        : ptipoteV2Profiles.values.any((profile) =>
+            profile.ptipoteId != figurine.id &&
+            profile.isArrivalComplete &&
+            profile.lifecycleStatus == PtipoteLifecycleStatus.active &&
+            !profile.departurePending);
+    final company =
+        hasCompanion ? ptipoteDailyLifeConfig.otherPtipoteBonus : 0.0;
+    return PtipoteHappinessBreakdown(
+      furniture: ptipoteDailyLifeConfig.materialFurnitureBonus(installed),
+      company: company,
+      homeLevel: ptipoteDailyLifeConfig.homeBonus(houseLevel),
+      hunger: ptipoteDailyLifeConfig.vitalBonusFor(
+          hungerFor(figurine), hungerMaxFor(figurine)),
+      sleep: ptipoteDailyLifeConfig.vitalBonusFor(
+          restFor(figurine), ptipoteStatsConfig.maxRest),
+      attachment: attachmentFor(figurine),
+    );
+  }
+
+  double happinessFor(
+    PtipoteFigurine figurine, {
+    Iterable<PtipoteFigurine> companions = const <PtipoteFigurine>[],
+  }) =>
+      happinessBreakdownFor(figurine, companions: companions).total;
+
+  double getArtisanTimeReduction(PtipoteFigurine figurine) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    return ptipoteDailyLifeConfig.artisanReduction(
+      profile.artisanLevel,
+      levelFor(figurine),
+    );
+  }
+
+  double getVendorSaleBonus(PtipoteFigurine figurine) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    return ptipoteDailyLifeConfig.vendorBonus(
+          profile.vendorLevel,
+          levelFor(figurine),
+        ) +
+        modifiersFor(figurine).commerceBonus;
+  }
+
+  double vendorSaleBonusForId(String ptipoteId) {
+    final profile = ptipoteV2Profiles[ptipoteId];
+    if (profile == null) return 0;
+    return ptipoteDailyLifeConfig.vendorBonus(
+          profile.vendorLevel,
+          levelOverrides[ptipoteId] ?? 1,
+        ) +
+        PtipoteModifierService.resolve(
+          profile: profile,
+          config: ptipoteStatsConfig.v2,
+          mycelialGatherBonus:
+              lisiereForageConfig.myceliumExploration.mycelialTypeGatherBonus,
+        ).commerceBonus;
+  }
+
+  void setPtipoteAssignedJob(PtipoteFigurine figurine, String? jobId) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    ptipoteV2Profiles[figurine.id] = profile.copyWith(
+      assignedJobId: jobId,
+      clearAssignedJobId: jobId == null,
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  Zone0ActionResult installPtipoteHomeFurniture(String itemName) {
+    if (!_materialHappinessFurnitureTypes.contains(itemName)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce produit ne peut pas être installé dans la Maison.',
+      );
+    }
+    if (resourceAmount(itemName) <= 0 || removeResource(itemName, 1) <= 0) {
+      return Zone0ActionResult(
+        success: false,
+        message: '$itemName absent de l’inventaire.',
+      );
+    }
+    ptipoteHomeFurnitureItems.add(itemName);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    unawaited(saveInventoryToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '$itemName installé dans la Maison.',
+    );
+  }
+
+  void completePtipoteTraining(PtipoteFigurine figurine) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    final xp =
+        ptipoteDailyLifeConfig.movementXpPerLevel * profile.trainingGameLevel;
+    addMissionXp(figurine.id, xp);
+    addAttachment(figurine, ptipoteDailyLifeConfig.trainingAttachmentGain);
+  }
+
+  void completePtipoteWalk(PtipoteFigurine figurine) =>
+      addAttachment(figurine, ptipoteDailyLifeConfig.walkAttachmentGain);
+
   void _synchronizePtipoteProgress(PtipoteFigurine figurine) {
     final canonicalLevel = levelFor(figurine);
     if (levelOverrides[figurine.id] != canonicalLevel) {
@@ -6458,28 +6637,52 @@ class Zone0GameState extends ChangeNotifier {
   bool ensurePtipoteV2Profiles(List<PtipoteFigurine> figurines) {
     var changed = false;
     for (final figurine in figurines) {
-      if (ptipoteV2Profiles.containsKey(figurine.id)) continue;
-      final legacy = figurine.legacyV2Profile(
-        baseCarryCapacity: ptipoteStatsConfig.v2.defaultBaseCarryCapacity,
-      );
-      // A legacy runtime which had no arrival data contained only active
-      // companions. If it did keep the former nursery list, preserve its
-      // pending entries as eggs instead of silently activating them.
-      ptipoteV2Profiles[figurine.id] = _legacyArrivalSnapshotPresent &&
-              !hatchedPtipoteIds.contains(figurine.id)
-          ? PtipoteArrivalService.sendPtipoteToIncubator(
-              profile: legacy.copyWith(
-                arrivalState: PtipoteArrivalState.pendingEgg,
-              ),
-              config: ptipoteStatsConfig.v2,
-              systemName: figurine.displayName,
-            )
-          : legacy.copyWith(
-              systemName: figurine.displayName,
-              displayName: figurine.displayName,
-              arrivalState: PtipoteArrivalState.completed,
-            );
-      changed = true;
+      if (!ptipoteV2Profiles.containsKey(figurine.id)) {
+        final legacy = figurine.legacyV2Profile(
+          baseCarryCapacity: ptipoteStatsConfig.v2.defaultBaseCarryCapacity,
+        );
+        // A legacy runtime which had no arrival data contained only active
+        // companions. If it did keep the former nursery list, preserve its
+        // pending entries as eggs instead of silently activating them.
+        ptipoteV2Profiles[figurine.id] = _legacyArrivalSnapshotPresent &&
+                !hatchedPtipoteIds.contains(figurine.id)
+            ? PtipoteArrivalService.sendPtipoteToIncubator(
+                profile: legacy.copyWith(
+                  arrivalState: PtipoteArrivalState.pendingEgg,
+                ),
+                config: ptipoteStatsConfig.v2,
+                systemName: figurine.displayName,
+              )
+            : legacy.copyWith(
+                systemName: figurine.displayName,
+                displayName: figurine.displayName,
+                arrivalState: PtipoteArrivalState.completed,
+              );
+        changed = true;
+      }
+      final profile = ptipoteV2Profiles[figurine.id]!;
+      if (profile.capacityMigrationVersion < 1) {
+        final oldEnergy = ptipoteStatsConfig.maxVitality;
+        final oldHunger = ptipoteStatsConfig.maxHunger;
+        final energyRatio = vitalityFor(figurine) / math.max(1, oldEnergy);
+        final hungerRatio = hungerFor(figurine) / math.max(1, oldHunger);
+        vitalityOverrides[figurine.id] = (energyRatio * energyMaxFor(figurine))
+            .round()
+            .clamp(0, energyMaxFor(figurine));
+        hungerOverrides[figurine.id] = (hungerRatio * hungerMaxFor(figurine))
+            .round()
+            .clamp(0, hungerMaxFor(figurine));
+        ptipoteV2Profiles[figurine.id] = profile.copyWith(
+          attachmentValue: profile.attachmentLastUpdatedAt == null
+              ? ptipoteDailyLifeConfig.legacyAttachmentInitialValue
+              : profile.attachmentValue,
+          attachmentLastUpdatedAt:
+              profile.attachmentLastUpdatedAt ?? DateTime.now(),
+          capacityMigrationVersion: 1,
+          updatedAt: DateTime.now(),
+        );
+        changed = true;
+      }
     }
     return changed;
   }
@@ -6693,8 +6896,23 @@ class Zone0GameState extends ChangeNotifier {
       .map(coBredFigurineFromProfile)
       .toList();
 
-  List<PtipoteFigurine> allPtipotes(List<PtipoteFigurine> physical) =>
-      <PtipoteFigurine>[...physical, ...coBredFigurines()];
+  /// Combines the NFC roster with Co-élevage profiles without ever exposing a
+  /// P'TIPOTE twice.  A profile can legitimately refer to a scanned figure
+  /// after a legacy migration, so the stable figurine id is the authority --
+  /// not the display name (which is allowed to be empty while naming).
+  List<PtipoteFigurine> allPtipotes(List<PtipoteFigurine> physical) {
+    final result = <PtipoteFigurine>[...physical];
+    final knownIds = <String>{
+      for (final figurine in physical)
+        if (figurine.id.trim().isNotEmpty) figurine.id,
+    };
+    for (final figurine in coBredFigurines()) {
+      if (figurine.id.trim().isNotEmpty && knownIds.add(figurine.id)) {
+        result.add(figurine);
+      }
+    }
+    return result;
+  }
 
   /// The single source used by every activity selector. Physical figures and
   /// temporary Co-élevage profiles share the same activity engine once their
@@ -7605,7 +7823,9 @@ class Zone0GameState extends ChangeNotifier {
         isWaitingForBed(figurine) ||
         isAssignedToTower(figurine.id) ||
         isAssignedToWorkshop(figurine.id) ||
-        isAssignedToMarket(figurine.id);
+        isAssignedToMarket(figurine.id) ||
+        constructionProjects.values.any((project) =>
+            project.isInProgress && project.assignedPtipoteId == figurine.id);
   }
 
   double calculateWorkshopEfficiency(
@@ -7616,7 +7836,8 @@ class Zone0GameState extends ChangeNotifier {
         levelFor(figurine) * workshopConfig.levelSpeedBonusPercent;
     return (workshopConfig.ptipoteCraftTimeReductionPercent +
             figurineBonus.clamp(0, workshopConfig.maxLevelSpeedBonusPercent) +
-            workshopConfig.buildingSpeedBonusForLevel(buildingLevel))
+            workshopConfig.buildingSpeedBonusForLevel(buildingLevel) +
+            getArtisanTimeReduction(figurine))
         .clamp(0, 0.50);
   }
 
@@ -9278,9 +9499,14 @@ class Zone0GameState extends ChangeNotifier {
         );
       }
     }
-    _creditMarketBioPiles(request.rewardBioPiles);
+    final vendorBonus = responder == MarketRequestResponder.ptipote &&
+            marketAssignedPtipoteId != null
+        ? vendorSaleBonusForId(marketAssignedPtipoteId!)
+        : 0.0;
+    final creditedPiles = (request.rewardBioPiles * (1 + vendorBonus)).round();
+    _creditMarketBioPiles(creditedPiles);
     if (responder == MarketRequestResponder.ptipote) {
-      marketBioPilesEarnedThisAssignment += request.rewardBioPiles;
+      marketBioPilesEarnedThisAssignment += creditedPiles;
       marketArticlesSoldThisAssignment += request.requestedQuantity;
       if (marketAssignedPtipoteId != null) {
         addMissionXp(marketAssignedPtipoteId!, 5);
@@ -9299,7 +9525,7 @@ class Zone0GameState extends ChangeNotifier {
     return Zone0ActionResult(
       success: true,
       message:
-          'Vente réalisée : ${request.requestedQuantity} ${request.requestedItemId} · +${request.rewardBioPiles} bio-pile(s).',
+          'Vente réalisée : ${request.requestedQuantity} ${request.requestedItemId} · +$creditedPiles bio-pile(s).',
     );
   }
 
@@ -10597,7 +10823,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool isHappy(PtipoteFigurine figurine) {
-    return moodFor(figurine) == PtipoteMood.happy;
+    return happinessFor(figurine) >= 70;
   }
 
   bool isFed(PtipoteFigurine figurine) {
@@ -10643,11 +10869,11 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   PtipoteMood moodFor(PtipoteFigurine figurine) {
-    final count = satisfiedNeedCount(figurine);
-    if (count >= ptipoteStatsConfig.happyNeedsRequired) {
+    final happiness = happinessFor(figurine);
+    if (happiness >= 70) {
       return PtipoteMood.happy;
     }
-    if (count >= ptipoteStatsConfig.okayNeedsRequired) {
+    if (happiness >= 35) {
       return PtipoteMood.okay;
     }
     return PtipoteMood.unwell;
@@ -10681,7 +10907,7 @@ class Zone0GameState extends ChangeNotifier {
   Duration vitalityRecoveryRemaining(PtipoteFigurine figurine) {
     final missing = math.max(
       0,
-      ptipoteStatsConfig.maxVitality - vitalityFor(figurine),
+      energyMaxFor(figurine) - vitalityFor(figurine),
     );
     if (missing == 0) return Duration.zero;
     if (isResting(figurine)) {
@@ -10723,6 +10949,10 @@ class Zone0GameState extends ChangeNotifier {
     if (isOnMission(figurine.id)) return;
     if (!canCuddle(figurine)) return;
     lastCuddleAt[figurine.id] = DateTime.now();
+    _setAttachment(
+      figurine,
+      attachmentFor(figurine) + ptipoteDailyLifeConfig.hugAttachmentGain,
+    );
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
   }
@@ -10732,7 +10962,7 @@ class Zone0GameState extends ChangeNotifier {
     manualRestingIds.remove(figurine.id);
     waitingForBedIds.remove(figurine.id);
     final wakeVitality = math.min(
-      ptipoteStatsConfig.maxVitality,
+      energyMaxFor(figurine),
       ptipoteStatsConfig.minVitalityBeforeAutoRest + 1,
     );
     vitalityOverrides[figurine.id] = math.max(
@@ -10749,6 +10979,9 @@ class Zone0GameState extends ChangeNotifier {
   }) {
     var changed = false;
     if (_syncBedAssignments(figurines)) {
+      changed = true;
+    }
+    if (_resolvePtipoteLevelAutonomy(figurines)) {
       changed = true;
     }
     if (resolveDueTowerMissions()) {
@@ -10822,6 +11055,15 @@ class Zone0GameState extends ChangeNotifier {
       final resting = isResting(figurine);
       final happy = isHappy(figurine);
       final hunger = hungerFor(figurine);
+      // Autonomy intentionally never bypasses the real food stock: level 3
+      // only lets a companion use a working fridge, it does not create food.
+      if (levelFor(figurine) >= 3 &&
+          hunger <= ptipoteDailyLifeConfig.autoEatThreshold &&
+          hasWorkingPtipoteFridge &&
+          availableConsumableRecipes.isNotEmpty) {
+        consumeConsumable(figurine, availableConsumableRecipes.first);
+        changed = true;
+      }
       var vitalityGain = 0;
       final recoveryTick = math.max(
         1,
@@ -10859,13 +11101,12 @@ class Zone0GameState extends ChangeNotifier {
         }
       }
 
-      if (vitalityGain > 0 &&
-          currentVitality < ptipoteStatsConfig.maxVitality) {
+      if (vitalityGain > 0 && currentVitality < energyMaxFor(figurine)) {
         final nextVitality = math.min(
-          ptipoteStatsConfig.maxVitality,
+          energyMaxFor(figurine),
           currentVitality + vitalityGain,
         );
-        if (nextVitality >= ptipoteStatsConfig.maxVitality &&
+        if (nextVitality >= energyMaxFor(figurine) &&
             restFor(figurine) >= ptipoteStatsConfig.maxRest) {
           vitalityOverrides.remove(figurine.id);
           manualRestingIds.remove(figurine.id);
@@ -11001,10 +11242,10 @@ class Zone0GameState extends ChangeNotifier {
           );
           changed = true;
         }
-        if (currentVitality < ptipoteStatsConfig.maxVitality) {
+        if (currentVitality < energyMaxFor(figurine)) {
           currentVitality = math
               .min(
-                ptipoteStatsConfig.maxVitality,
+                energyMaxFor(figurine),
                 currentVitality +
                     recoveryMinutes *
                         ptipoteStatsConfig.vitalityRecoveryPerMinute,
@@ -11046,11 +11287,10 @@ class Zone0GameState extends ChangeNotifier {
                   (1 - ptipoteStatsConfig.indigestionVitalityRecoveryPenalty))
               .floor();
         }
-        if (vitalityGain > 0 &&
-            currentVitality < ptipoteStatsConfig.maxVitality) {
+        if (vitalityGain > 0 && currentVitality < energyMaxFor(figurine)) {
           currentVitality = math
               .min(
-                ptipoteStatsConfig.maxVitality,
+                energyMaxFor(figurine),
                 currentVitality + vitalityGain,
               )
               .toInt();
@@ -11130,7 +11370,9 @@ class Zone0GameState extends ChangeNotifier {
       }
       if (manualRestingIds.contains(figurine.id) ||
           vitalityFor(figurine) <=
-              ptipoteStatsConfig.minVitalityBeforeAutoRest) {
+              ptipoteStatsConfig.minVitalityBeforeAutoRest ||
+          (levelFor(figurine) >= 2 &&
+              restFor(figurine) <= ptipoteDailyLifeConfig.autoSleepThreshold)) {
         manualRestingIds.add(figurine.id);
         candidates.add(figurine.id);
       }
@@ -11151,6 +11393,28 @@ class Zone0GameState extends ChangeNotifier {
       ..clear()
       ..addAll(nextWaiting);
     return true;
+  }
+
+  /// Jobs remain assigned by the player.  This resolver only returns a level
+  /// 4 P'TIPOTE to an actually available system; it never invents a craft or
+  /// a Lisière mission.  Craft/Lisière therefore keep their explicit queues
+  /// as the future hand-off points, while the existing Tower assignment can
+  /// already be resumed safely.
+  bool _resolvePtipoteLevelAutonomy(List<PtipoteFigurine> figurines) {
+    var changed = false;
+    for (final figurine in figurines) {
+      if (levelFor(figurine) < 4 || isBusy(figurine)) continue;
+      if (restFor(figurine) <= ptipoteDailyLifeConfig.autoSleepThreshold ||
+          hungerFor(figurine) <= ptipoteDailyLifeConfig.autoEatThreshold) {
+        continue;
+      }
+      final job = ptipoteV2ProfileFor(figurine).assignedJobId;
+      if (job == 'tower' && isSecurityTowerBuilt && !hasActiveTowerMission) {
+        towerAssignedIds.add(figurine.id);
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   int resourceAmount(String resource) {
@@ -12265,6 +12529,7 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult startConstructionProject(
     String targetId, {
     int? campHeartLevel,
+    PtipoteFigurine? constructor,
   }) {
     final biofermenterBiome = _biofermenterBiomeForTarget(targetId);
     if (biofermenterBiome != null && !isBiomeUnlocked(biofermenterBiome)) {
@@ -12394,6 +12659,12 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Les travaux sont déjà en cours.',
       );
     }
+    if (constructor != null && isBusy(constructor)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'P’TIPOTE indisponible pour cette construction.',
+      );
+    }
     if (!project.isReady ||
         project.depositedBioBatteries <
             projectBioBatteryRequirement(targetId)) {
@@ -12404,7 +12675,21 @@ class Zone0GameState extends ChangeNotifier {
     }
     final now = DateTime.now();
     project.startedAt = now;
-    project.endsAt = now.add(project.constructionDuration);
+    final artisanReduction =
+        constructor == null ? 0.0 : getArtisanTimeReduction(constructor);
+    final finalDuration = Duration(
+      seconds: math.max(
+        1,
+        (project.constructionDuration.inSeconds * (1 - artisanReduction))
+            .round(),
+      ),
+    );
+    project
+      ..assignedPtipoteId = constructor?.id
+      ..assignedPtipoteName = constructor?.displayName
+      ..artisanTimeReductionSnapshot = artisanReduction
+      ..constructionDuration = finalDuration
+      ..endsAt = now.add(finalDuration);
     project.state = project.currentLevel == 0
         ? ConstructionProjectState.underConstruction
         : ConstructionProjectState.upgrading;
@@ -12413,8 +12698,7 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message:
-          'Travaux lancés. Fin dans ${project.constructionDuration.inMinutes} min.',
+      message: 'Travaux lancés. Fin dans ${finalDuration.inMinutes} min.',
     );
   }
 
@@ -15778,11 +16062,11 @@ class Zone0GameState extends ChangeNotifier {
       figurineId: figurine.id,
     );
     hungerOverrides[figurine.id] = math.min(
-      ptipoteStatsConfig.maxOverfedHunger,
+      math.max(ptipoteStatsConfig.maxOverfedHunger, hungerMaxFor(figurine)),
       hungerFor(figurine) + recipe.hungerRestore,
     );
     vitalityOverrides[figurine.id] = math.min(
-      ptipoteStatsConfig.maxVitality,
+      energyMaxFor(figurine),
       vitalityFor(figurine) + recipe.vitalityRestore,
     );
     emitKernelProgressEvent(KernelProgressEventType.ptipoteFed);
@@ -15956,6 +16240,12 @@ class Zone0GameState extends ChangeNotifier {
                   ),
                 ),
           );
+      }
+      final ptipoteFurnitureData = data['ptipoteHomeFurnitureItems'];
+      if (ptipoteFurnitureData is List) {
+        ptipoteHomeFurnitureItems
+          ..clear()
+          ..addAll(ptipoteFurnitureData.map((item) => '$item'));
       }
       final coBreedingData = data['coBreeding'];
       if (coBreedingData is Map) {
@@ -19862,6 +20152,7 @@ class Zone0GameState extends ChangeNotifier {
         'ptipoteV2Profiles': ptipoteV2Profiles.map(
           (id, profile) => MapEntry(id, profile.toFirebase()),
         ),
+        'ptipoteHomeFurnitureItems': ptipoteHomeFurnitureItems,
         'coBreeding': <String, dynamic>{
           'unlocked': coBreedingUnlocked,
           'introMissionDismissed': coBreedingIntroMissionDismissed,
@@ -21480,6 +21771,9 @@ class ConstructionProject {
     this.endsAt,
     this.completedAt,
     this.notificationCreated = false,
+    this.assignedPtipoteId,
+    this.assignedPtipoteName,
+    this.artisanTimeReductionSnapshot = 0,
   }) : depositedMaterials = depositedMaterials ?? <String, int>{};
 
   factory ConstructionProject.fromFirebase(Map<dynamic, dynamic> data) {
@@ -21515,6 +21809,10 @@ class ConstructionProject {
       endsAt: Zone0GameState.instance._readDate(data['endsAt']),
       completedAt: Zone0GameState.instance._readDate(data['completedAt']),
       notificationCreated: data['notificationCreated'] == true,
+      assignedPtipoteId: data['assignedPtipoteId'] as String?,
+      assignedPtipoteName: data['assignedPtipoteName'] as String?,
+      artisanTimeReductionSnapshot:
+          (data['artisanTimeReductionSnapshot'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -21532,6 +21830,9 @@ class ConstructionProject {
   DateTime? endsAt;
   DateTime? completedAt;
   bool notificationCreated;
+  String? assignedPtipoteId;
+  String? assignedPtipoteName;
+  double artisanTimeReductionSnapshot;
 
   bool get isInProgress =>
       state == ConstructionProjectState.underConstruction ||
@@ -21563,6 +21864,9 @@ class ConstructionProject {
     startedAt = null;
     endsAt = null;
     completedAt = null;
+    assignedPtipoteId = null;
+    assignedPtipoteName = null;
+    artisanTimeReductionSnapshot = 0;
     state = ConstructionProjectState.available;
   }
 
@@ -21605,6 +21909,9 @@ class ConstructionProject {
         'completedAt':
             completedAt == null ? null : Timestamp.fromDate(completedAt!),
         'notificationCreated': notificationCreated,
+        'assignedPtipoteId': assignedPtipoteId,
+        'assignedPtipoteName': assignedPtipoteName,
+        'artisanTimeReductionSnapshot': artisanTimeReductionSnapshot,
       };
 }
 

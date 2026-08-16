@@ -167,6 +167,17 @@ const PTIPOTE_STATS_FIELDS = [
   "v2CoBreedingBreederXpRewardPerFinalLevel",
   "v2CoBreedingKernelTrustRewardBase",
   "v2CoBreedingKernelTrustRewardPerFinalLevel",
+  // P'TIPOTE V3 daily life.
+  "v3AutoSleepThreshold", "v3AutoEatThreshold",
+  "v3EnergyMaxBonusPerLevel", "v3HungerMaxBonusPerLevel",
+  "v3MaterialMax", "v3VitalMax", "v3AttachmentMax",
+  "v3FurnitureBonusPerUniqueType", "v3FurnitureMax", "v3OtherPtipoteBonus", "v3HomeLevelBonusPerLevel", "v3HomeLevelBonusMax",
+  "v3VitalLowThreshold", "v3VitalHighThreshold", "v3VitalMidBonus", "v3VitalHighBonus",
+  "v3AttachmentDecayPerHour", "v3HugAttachmentGain", "v3TrainingAttachmentGain", "v3WalkAttachmentGain",
+  "v3MovementLives", "v3MovementSequenceLength", "v3MovementInputWindowMs", "v3MovementBaseIntervalMs", "v3MovementIntervalReductionPerLevelMs", "v3MovementXpPerLevel",
+  "v3HideAndSeekWeight", "v3CatchMeWeight",
+  "v3ArtisanLevel1BaseReduction", "v3ArtisanLevel2BaseReduction", "v3ArtisanLevel3BaseReduction", "v3ArtisanPtipoteLevelReduction",
+  "v3VendorLevel1BaseBonus", "v3VendorLevel2BaseBonus", "v3VendorLevel3BaseBonus", "v3VendorPtipoteLevelBonus", "v3LegacyAttachmentInitialValue",
 ];
 
 const ids = [
@@ -545,6 +556,18 @@ function ptipoteFieldLabel(field) {
     v2CoBreedingBreederXpRewardPerFinalLevel: "V2 Récompense · XP Éleveur par niveau final (DEV)",
     v2CoBreedingKernelTrustRewardBase: "V2 Récompense · Confiance Kernel de base (DEV)",
     v2CoBreedingKernelTrustRewardPerFinalLevel: "V2 Récompense · Confiance Kernel par niveau final (DEV)",
+    v3AutoSleepThreshold: "V3 Autonomie · Seuil sommeil automatique (%)",
+    v3AutoEatThreshold: "V3 Autonomie · Seuil alimentation automatique (%)",
+    v3EnergyMaxBonusPerLevel: "V3 Capacités · Énergie max par niveau",
+    v3HungerMaxBonusPerLevel: "V3 Capacités · Faim max par niveau",
+    v3MaterialMax: "V3 Bonheur · Maximum matériel", v3VitalMax: "V3 Bonheur · Maximum vital", v3AttachmentMax: "V3 Bonheur · Maximum attachement",
+    v3FurnitureBonusPerUniqueType: "V3 Matériel · Bonus par type de meuble", v3FurnitureMax: "V3 Matériel · Maximum mobilier", v3OtherPtipoteBonus: "V3 Matériel · Bonus autre P’TIPOTE", v3HomeLevelBonusPerLevel: "V3 Matériel · Bonus niveau Maison", v3HomeLevelBonusMax: "V3 Matériel · Maximum niveau Maison",
+    v3VitalLowThreshold: "V3 Vital · Seuil bas (%)", v3VitalHighThreshold: "V3 Vital · Seuil haut (%)", v3VitalMidBonus: "V3 Vital · Bonus moyen", v3VitalHighBonus: "V3 Vital · Bonus haut",
+    v3AttachmentDecayPerHour: "V3 Attachement · Décroissance / heure", v3HugAttachmentGain: "V3 Attachement · Câlin", v3TrainingAttachmentGain: "V3 Attachement · Entraînement", v3WalkAttachmentGain: "V3 Attachement · Promenade",
+    v3MovementLives: "V3 Entraînement · Vies", v3MovementSequenceLength: "V3 Entraînement · Flèches à réussir", v3MovementInputWindowMs: "V3 Entraînement · Fenêtre de réponse (ms)", v3MovementBaseIntervalMs: "V3 Entraînement · Intervalle niveau 1 (ms)", v3MovementIntervalReductionPerLevelMs: "V3 Entraînement · Réduction par niveau (ms)", v3MovementXpPerLevel: "V3 Entraînement · XP par niveau",
+    v3HideAndSeekWeight: "V3 Promenade · Poids Cache-cache", v3CatchMeWeight: "V3 Promenade · Poids Attrape-moi",
+    v3ArtisanLevel1BaseReduction: "V3 Artisan N1 · Réduction durée", v3ArtisanLevel2BaseReduction: "V3 Artisan N2 · Réduction durée", v3ArtisanLevel3BaseReduction: "V3 Artisan N3 · Réduction durée", v3ArtisanPtipoteLevelReduction: "V3 Artisan · Réduction par niveau P’TIPOTE",
+    v3VendorLevel1BaseBonus: "V3 Vendeur N1 · Bonus vente", v3VendorLevel2BaseBonus: "V3 Vendeur N2 · Bonus vente", v3VendorLevel3BaseBonus: "V3 Vendeur N3 · Bonus vente", v3VendorPtipoteLevelBonus: "V3 Vendeur · Bonus par niveau P’TIPOTE", v3LegacyAttachmentInitialValue: "V3 Migration · Attachement initial neutre",
   };
   return labels[field] || field;
 }

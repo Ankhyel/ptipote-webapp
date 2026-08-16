@@ -39,6 +39,7 @@ class CraftRecipe {
     this.energyCost = 0,
     this.bioBatteryCost = 0,
     this.stackLimit = 1,
+    this.requiredJobLevel = const <String, int>{},
   });
 
   final String id;
@@ -62,6 +63,9 @@ class CraftRecipe {
   final int energyCost;
   final int bioBatteryCost;
   final int stackLimit;
+
+  /// Generic hook for later profession-gated crafts/upgrades. Empty in V1.
+  final Map<String, int> requiredJobLevel;
 }
 
 const defaultCraftConfig = CraftConfig(
@@ -424,6 +428,46 @@ const defaultCraftConfig = CraftConfig(
       durationMinutes: 5,
       energyCost: 1,
       stackLimit: 10,
+    ),
+    CraftRecipe(
+      id: 'bioponicGarden',
+      displayName: 'Jardin bioponique',
+      craftSection: CraftSection.atelier,
+      ingredients: <String, int>{'Organique': 6, 'Minéral': 2, 'Mycélium': 2},
+      contextIngredients: <String, int>{},
+      cuisineLevel: 0,
+      atelierLevel: 1,
+      kernelTrustLevel: 1,
+      breederLevel: 1,
+      builderLevel: 1,
+      restorerLevel: 1,
+      resultItem: 'Jardin bioponique',
+      resultAmount: 1,
+      isConsumable: false,
+      hungerRestore: 0,
+      vitalityRestore: 0,
+      durationMinutes: 8,
+      stackLimit: 1,
+    ),
+    CraftRecipe(
+      id: 'thermalBasin',
+      displayName: 'Bassin thermal',
+      craftSection: CraftSection.atelier,
+      ingredients: <String, int>{'Minéral': 6, 'Organique': 4, 'Mycélium': 2},
+      contextIngredients: <String, int>{},
+      cuisineLevel: 0,
+      atelierLevel: 1,
+      kernelTrustLevel: 1,
+      breederLevel: 1,
+      builderLevel: 1,
+      restorerLevel: 1,
+      resultItem: 'Bassin thermal',
+      resultAmount: 1,
+      isConsumable: false,
+      hungerRestore: 0,
+      vitalityRestore: 0,
+      durationMinutes: 8,
+      stackLimit: 1,
     ),
     CraftRecipe(
       id: 'energyCore',

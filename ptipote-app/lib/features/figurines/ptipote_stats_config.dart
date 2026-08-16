@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'ptipote_v2.dart';
+import 'ptipote_daily_life.dart';
 
 enum PtipoteElementType { vegetal, mineral, fungal }
 
@@ -688,4 +689,5 @@ void applyRemotePtipoteStatsConfig(Map<String, dynamic>? values) {
   _activePtipoteStatsConfig = values == null
       ? defaultPtipoteStatsConfig
       : PtipoteStatsConfig.fromDashboardMap(values);
+  applyRemotePtipoteDailyLifeConfig(values);
 }

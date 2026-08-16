@@ -276,6 +276,13 @@ class PtipoteV2Profile {
     this.moodUpdatedAt,
     this.passionId,
     this.skills = const <String, PtipoteSkillProgress>{},
+    this.attachmentValue = 25,
+    this.attachmentLastUpdatedAt,
+    this.assignedJobId,
+    this.artisanLevel = 0,
+    this.vendorLevel = 0,
+    this.trainingGameLevel = 1,
+    this.capacityMigrationVersion = 0,
     this.baseCarryCapacity = 20,
     this.externalCarryCapacityBonus = 0,
     this.visualAssetKey = '',
@@ -314,6 +321,17 @@ class PtipoteV2Profile {
   final DateTime? moodUpdatedAt;
   final String? passionId;
   final Map<String, PtipoteSkillProgress> skills;
+
+  /// Relationnel V3: persisted as a timestamped source, never as happiness.
+  final double attachmentValue;
+  final DateTime? attachmentLastUpdatedAt;
+
+  /// Explicit player assignment.  V4 may add more job ids without a migration.
+  final String? assignedJobId;
+  final int artisanLevel;
+  final int vendorLevel;
+  final int trainingGameLevel;
+  final int capacityMigrationVersion;
   final int baseCarryCapacity;
   final int externalCarryCapacityBonus;
   final String visualAssetKey;
@@ -377,6 +395,14 @@ class PtipoteV2Profile {
     String? passionId,
     bool clearPassionId = false,
     Map<String, PtipoteSkillProgress>? skills,
+    double? attachmentValue,
+    DateTime? attachmentLastUpdatedAt,
+    String? assignedJobId,
+    bool clearAssignedJobId = false,
+    int? artisanLevel,
+    int? vendorLevel,
+    int? trainingGameLevel,
+    int? capacityMigrationVersion,
     int? baseCarryCapacity,
     int? externalCarryCapacityBonus,
     String? visualAssetKey,
@@ -423,6 +449,16 @@ class PtipoteV2Profile {
       moodUpdatedAt: moodUpdatedAt ?? this.moodUpdatedAt,
       passionId: clearPassionId ? null : passionId ?? this.passionId,
       skills: skills ?? this.skills,
+      attachmentValue: attachmentValue ?? this.attachmentValue,
+      attachmentLastUpdatedAt:
+          attachmentLastUpdatedAt ?? this.attachmentLastUpdatedAt,
+      assignedJobId:
+          clearAssignedJobId ? null : assignedJobId ?? this.assignedJobId,
+      artisanLevel: artisanLevel ?? this.artisanLevel,
+      vendorLevel: vendorLevel ?? this.vendorLevel,
+      trainingGameLevel: trainingGameLevel ?? this.trainingGameLevel,
+      capacityMigrationVersion:
+          capacityMigrationVersion ?? this.capacityMigrationVersion,
       baseCarryCapacity: baseCarryCapacity ?? this.baseCarryCapacity,
       externalCarryCapacityBonus:
           externalCarryCapacityBonus ?? this.externalCarryCapacityBonus,
@@ -469,6 +505,13 @@ class PtipoteV2Profile {
         'moodUpdatedAt': moodUpdatedAt?.toIso8601String(),
         'passionId': passionId,
         'skills': skills.map((key, value) => MapEntry(key, value.toFirebase())),
+        'attachmentValue': attachmentValue,
+        'attachmentLastUpdatedAt': attachmentLastUpdatedAt?.toIso8601String(),
+        'assignedJobId': assignedJobId,
+        'artisanLevel': artisanLevel,
+        'vendorLevel': vendorLevel,
+        'trainingGameLevel': trainingGameLevel,
+        'capacityMigrationVersion': capacityMigrationVersion,
         'baseCarryCapacity': baseCarryCapacity,
         'externalCarryCapacityBonus': externalCarryCapacityBonus,
         'visualAssetKey': visualAssetKey,
@@ -570,6 +613,17 @@ class PtipoteV2Profile {
       moodUpdatedAt: _readDate(value['moodUpdatedAt']),
       passionId: _nullableText(value['passionId']),
       skills: skills,
+      attachmentValue:
+          ((value['attachmentValue'] as num?)?.toDouble() ?? 25).clamp(0, 50),
+      attachmentLastUpdatedAt: _readDate(value['attachmentLastUpdatedAt']),
+      assignedJobId: _nullableText(value['assignedJobId']),
+      artisanLevel: ((value['artisanLevel'] as num?)?.round() ?? 0).clamp(0, 3),
+      vendorLevel: ((value['vendorLevel'] as num?)?.round() ?? 0).clamp(0, 3),
+      trainingGameLevel:
+          ((value['trainingGameLevel'] as num?)?.round() ?? 1).clamp(1, 99),
+      capacityMigrationVersion:
+          ((value['capacityMigrationVersion'] as num?)?.round() ?? 0)
+              .clamp(0, 99),
       baseCarryCapacity:
           ((value['baseCarryCapacity'] as num?)?.round() ?? 20).clamp(1, 9999),
       externalCarryCapacityBonus:

@@ -12,6 +12,7 @@ import '../figurines/co_breeding.dart';
 import '../figurines/ptipote_image.dart';
 import '../nfc/nfc_page.dart';
 import '../figurines/ptipote_stats_config.dart';
+import '../figurines/ptipote_daily_life.dart';
 import '../figurines/ptipote_v2.dart';
 import 'camp_heart_config.dart';
 import 'camp_generator_config.dart';
@@ -2064,7 +2065,7 @@ class _MaisonPageState extends State<_MaisonPage>
       vsync: this,
       duration: const Duration(seconds: 1),
     )..repeat();
-    _tabs = TabController(length: 5, vsync: this);
+    _tabs = TabController(length: 6, vsync: this);
     _vitalityRecoveryTimer = Timer.periodic(
       // Two simulation ticks represent one real minute.  The needs resolver
       // deliberately uses that cadence (see `* 2` in recoverFigurineNeeds),
@@ -2214,6 +2215,7 @@ class _MaisonPageState extends State<_MaisonPage>
           tabs: const <Widget>[
             Tab(text: 'P’TIPOTES', icon: Icon(Icons.pets_outlined)),
             Tab(text: 'Couveuse', icon: Icon(Icons.egg_alt_outlined)),
+            Tab(text: 'Entraînement', icon: Icon(Icons.sports_martial_arts)),
             Tab(text: 'Amélioration', icon: Icon(Icons.upgrade_outlined)),
             Tab(text: 'Générateur', icon: Icon(Icons.battery_charging_full)),
             Tab(text: 'Infos', icon: Icon(Icons.info_outline)),
@@ -2345,6 +2347,10 @@ class _MaisonPageState extends State<_MaisonPage>
             gameState: _gameState,
             onHatched: () => _tabs.animateTo(0),
           ),
+          _MaisonTrainingTab(
+            gameState: _gameState,
+            figurineService: _figurineService,
+          ),
           _HouseUpgradeTab(gameState: _gameState),
           _CampGeneratorView(
             gameState: _gameState,
@@ -2419,6 +2425,12 @@ class _MaisonPageState extends State<_MaisonPage>
                         hunger: _gameState.hungerFor(figurine),
                         rest: _gameState.restFor(figurine),
                         energy: _gameState.vitalityFor(figurine),
+                        energyMax: _gameState.energyMaxFor(figurine),
+                        hungerMax: _gameState.hungerMaxFor(figurine),
+                        happiness: _gameState.happinessFor(figurine),
+                        attachment: _gameState.attachmentFor(figurine),
+                        happinessBreakdown:
+                            _gameState.happinessBreakdownFor(figurine),
                         activity: _ptipoteActivityLabel(figurine),
                         countdown: _coBreedingCountdown(figurine) ??
                             _ptipoteActivityCountdown(figurine),
@@ -2553,6 +2565,333 @@ class _MaisonPageState extends State<_MaisonPage>
     final roundedMinutes = (remaining.inMinutes ~/ 10) * 10;
     return '⏳ J-1 · ${roundedMinutes ~/ 60} h ${roundedMinutes % 60} min';
   }
+}
+
+class _MaisonTrainingTab extends StatelessWidget {
+  const _MaisonTrainingTab(
+      {required this.gameState, required this.figurineService});
+  final Zone0GameState gameState;
+  final FigurineService figurineService;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<PtipoteFigurine>>(
+        stream: figurineService.watchMyFigurines(),
+        builder: (context, snapshot) {
+          final ptipotes = gameState.ptipotesAvailableForActivities(
+            snapshot.data ?? const <PtipoteFigurine>[],
+          );
+          return SafeArea(
+              child: ListView(
+                  padding: const EdgeInsets.all(18),
+                  children: <Widget>[
+                Text('Salle d’entraînement',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                const Text(
+                    'Entraînement 1 · Mouvement. Les deux autres emplacements seront ajoutés plus tard.'),
+                const SizedBox(height: 16),
+                if (ptipotes.isEmpty)
+                  const Card(
+                      child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('Aucun P’TIPOTE disponible.')))
+                else
+                  ...ptipotes.map((figurine) => Card(
+                          child: ListTile(
+                        leading: const Icon(Icons.sports_martial_arts),
+                        title: Text(figurine.displayName),
+                        subtitle: Text(
+                            'Niveau jeu ${gameState.ptipoteV2ProfileFor(figurine).trainingGameLevel} · réussite : XP + Attachement'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => showModalBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            showDragHandle: true,
+                            builder: (_) => _TrainingChoiceSheet(
+                                gameState: gameState, figurine: figurine)),
+                      ))),
+                const SizedBox(height: 20),
+                Text('Mobilier de la Maison',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w900)),
+                const Text(
+                    'Chaque type différent installé augmente les besoins matériels.'),
+                const SizedBox(height: 8),
+                ...const <String>[
+                  'Meuble simple',
+                  'Lumière solaire',
+                  'Jardin bioponique',
+                  'Bassin thermal'
+                ].map((item) => ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.chair_outlined),
+                      title: Text(item),
+                      subtitle: Text(
+                          'Stock ${gameState.resourceAmount(item)} · installés ${gameState.ptipoteHomeFurnitureItems.where((installed) => installed == item).length}'),
+                      trailing: OutlinedButton(
+                          onPressed: gameState.resourceAmount(item) > 0
+                              ? () {
+                                  final result = gameState
+                                      .installPtipoteHomeFurniture(item);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(result.message)));
+                                }
+                              : null,
+                          child: const Text('Installer')),
+                    )),
+              ]));
+        },
+      );
+}
+
+class _TrainingChoiceSheet extends StatelessWidget {
+  const _TrainingChoiceSheet({required this.gameState, required this.figurine});
+  final Zone0GameState gameState;
+  final PtipoteFigurine figurine;
+  @override
+  Widget build(BuildContext context) => SafeArea(
+          child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
+        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+          Text(figurine.displayName,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 12),
+          ListTile(
+              leading: const Icon(Icons.keyboard_arrow_up),
+              title: const Text('Entraînement · Mouvement'),
+              subtitle:
+                  const Text('10 flèches · 3 vies · +20 Attachement si réussi'),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => _MovementTrainingPage(
+                      gameState: gameState, figurine: figurine)))),
+          ListTile(
+              leading: const Icon(Icons.park_outlined),
+              title: const Text('Promenade'),
+              subtitle:
+                  const Text('Cache-cache ou Attrape-moi · +30 Attachement'),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => _WalkMiniGamePage(
+                      gameState: gameState, figurine: figurine)))),
+        ]),
+      ));
+}
+
+enum _MovementDirection { up, down, left, right }
+
+class _MovementTrainingPage extends StatefulWidget {
+  const _MovementTrainingPage(
+      {required this.gameState, required this.figurine});
+  final Zone0GameState gameState;
+  final PtipoteFigurine figurine;
+  @override
+  State<_MovementTrainingPage> createState() => _MovementTrainingPageState();
+}
+
+class _MovementTrainingPageState extends State<_MovementTrainingPage> {
+  final math.Random _random = math.Random();
+  Timer? _timeout;
+  _MovementDirection? _expected;
+  int _lives = 3;
+  int _completed = 0;
+  bool _accepting = false;
+  bool _finished = false;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _next());
+  }
+
+  @override
+  void dispose() {
+    _timeout?.cancel();
+    super.dispose();
+  }
+
+  void _next() {
+    if (!mounted || _finished) return;
+    final level =
+        widget.gameState.ptipoteV2ProfileFor(widget.figurine).trainingGameLevel;
+    final delay = math.max(
+        200,
+        ptipoteDailyLifeConfig.movementBaseIntervalMs -
+            (level - 1) *
+                ptipoteDailyLifeConfig.movementIntervalReductionPerLevelMs);
+    setState(() {
+      _expected = null;
+      _accepting = false;
+    });
+    Future<void>.delayed(Duration(milliseconds: delay), () {
+      if (!mounted || _finished) return;
+      setState(() {
+        _expected = _MovementDirection.values[_random.nextInt(4)];
+        _accepting = true;
+      });
+      _timeout = Timer(
+          Duration(milliseconds: ptipoteDailyLifeConfig.movementInputWindowMs),
+          () => _mistake());
+    });
+  }
+
+  void _input(_MovementDirection direction) {
+    if (!_accepting || _finished) return;
+    _timeout?.cancel();
+    if (direction != _expected) {
+      _mistake();
+      return;
+    }
+    setState(() {
+      _accepting = false;
+      _completed += 1;
+    });
+    if (_completed >= ptipoteDailyLifeConfig.movementSequenceLength) {
+      _finished = true;
+      widget.gameState.completePtipoteTraining(widget.figurine);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Entraînement réussi : XP et Attachement gagnés.')));
+      Navigator.of(context).pop();
+      return;
+    }
+    _next();
+  }
+
+  void _mistake() {
+    _timeout?.cancel();
+    if (!mounted || _finished) return;
+    setState(() {
+      _accepting = false;
+      _expected = null;
+      _lives -= 1;
+    });
+    if (_lives <= 0) {
+      _finished = true;
+      return;
+    }
+    _next();
+  }
+
+  IconData _icon(_MovementDirection direction) => switch (direction) {
+        _MovementDirection.up => Icons.keyboard_arrow_up,
+        _MovementDirection.down => Icons.keyboard_arrow_down,
+        _MovementDirection.left => Icons.keyboard_arrow_left,
+        _MovementDirection.right => Icons.keyboard_arrow_right
+      };
+  @override
+  Widget build(BuildContext context) => Scaffold(
+      appBar: AppBar(title: const Text('Mouvement')),
+      body: Center(
+          child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Text(
+                        'Vies : $_lives · $_completed / ${ptipoteDailyLifeConfig.movementSequenceLength}',
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 32),
+                    Icon(
+                        _expected == null
+                            ? Icons.hourglass_top
+                            : _icon(_expected!),
+                        size: 100,
+                        color: _expected == null
+                            ? Colors.grey
+                            : Theme.of(context).colorScheme.primary),
+                    const SizedBox(height: 28),
+                    Wrap(
+                        alignment: WrapAlignment.center,
+                        children: _MovementDirection.values
+                            .map((direction) => IconButton.filled(
+                                iconSize: 42,
+                                onPressed:
+                                    _accepting ? () => _input(direction) : null,
+                                icon: Icon(_icon(direction))))
+                            .toList()),
+                    if (_finished && _lives <= 0) ...<Widget>[
+                      const SizedBox(height: 24),
+                      const Text('Pas cette fois. Aucune récompense.'),
+                      TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Retour'))
+                    ],
+                  ]))));
+}
+
+class _WalkMiniGamePage extends StatefulWidget {
+  const _WalkMiniGamePage({required this.gameState, required this.figurine});
+  final Zone0GameState gameState;
+  final PtipoteFigurine figurine;
+  @override
+  State<_WalkMiniGamePage> createState() => _WalkMiniGamePageState();
+}
+
+class _WalkMiniGamePageState extends State<_WalkMiniGamePage> {
+  final math.Random _random = math.Random();
+  late final bool _catchMe = _random.nextDouble() *
+          (ptipoteDailyLifeConfig.hideAndSeekWeight +
+              ptipoteDailyLifeConfig.catchMeWeight) >=
+      ptipoteDailyLifeConfig.hideAndSeekWeight;
+  late int _target = _random.nextInt(4);
+  void _win() {
+    widget.gameState.completePtipoteWalk(widget.figurine);
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Promenade réussie : +30 Attachement.')));
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+      appBar: AppBar(title: Text(_catchMe ? 'Attrape-moi' : 'Cache-cache')),
+      body: Center(
+          child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Text(
+                        _catchMe
+                            ? 'Attrape ${widget.figurine.displayName} au bon endroit !'
+                            : 'Où se cache ${widget.figurine.displayName} ?',
+                        textAlign: TextAlign.center),
+                    const SizedBox(height: 24),
+                    Wrap(
+                      spacing: 14,
+                      runSpacing: 14,
+                      children: List<Widget>.generate(
+                        4,
+                        (index) => FilledButton.tonal(
+                          onPressed: () {
+                            if (index == _target) {
+                              _win();
+                            } else {
+                              setState(() => _target = _random.nextInt(4));
+                            }
+                          },
+                          child: SizedBox(
+                            width: 64,
+                            height: 64,
+                            child: Center(
+                              child: Icon(
+                                index == _target && !_catchMe
+                                    ? Icons.pets
+                                    : Icons.park_outlined,
+                                size: 30,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text('Aucune pénalité : essaie à nouveau.'),
+                  ]))));
 }
 
 class _MaisonNurseryTab extends StatefulWidget {
@@ -4220,6 +4559,11 @@ class _PtipoteDashboardCard extends StatelessWidget {
     required this.hunger,
     required this.rest,
     required this.energy,
+    required this.energyMax,
+    required this.hungerMax,
+    required this.happiness,
+    required this.attachment,
+    required this.happinessBreakdown,
     required this.activity,
     required this.countdown,
     required this.onRename,
@@ -4231,6 +4575,11 @@ class _PtipoteDashboardCard extends StatelessWidget {
   final int hunger;
   final int rest;
   final int energy;
+  final int energyMax;
+  final int hungerMax;
+  final double happiness;
+  final double attachment;
+  final PtipoteHappinessBreakdown happinessBreakdown;
   final String activity;
   final String countdown;
   final VoidCallback onRename;
@@ -4337,18 +4686,92 @@ class _PtipoteDashboardCard extends StatelessWidget {
               runSpacing: 8,
               children: <Widget>[
                 _PtipoteStatusChip(
-                    icon: Icons.restaurant_outlined, label: 'Faim $hunger'),
+                    icon: Icons.restaurant_outlined,
+                    label: 'Faim $hunger/$hungerMax'),
                 _PtipoteStatusChip(
                     icon: Icons.bedtime_outlined, label: 'Sommeil $rest'),
                 _PtipoteStatusChip(
-                    icon: Icons.bolt_outlined, label: 'Énergie $energy'),
+                    icon: Icons.bolt_outlined,
+                    label: 'Énergie $energy/$energyMax'),
               ],
+            ),
+            const SizedBox(height: 12),
+            _PtipoteGauge(label: 'Énergie', value: energy, max: energyMax),
+            _PtipoteGauge(label: 'Faim', value: hunger, max: hungerMax),
+            _PtipoteGauge(label: 'Sommeil', value: rest, max: 100),
+            _PtipoteGauge(label: 'Attachement', value: attachment, max: 50),
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => _showHappinessDetail(context),
+              child:
+                  _PtipoteGauge(label: 'Bonheur', value: happiness, max: 100),
             ),
           ],
         ),
       ),
     );
   }
+
+  void _showHappinessDetail(BuildContext context) {
+    final data = happinessBreakdown;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text('BONHEUR ${happiness.toStringAsFixed(1)} / 100',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 12),
+                Text(
+                    'BESOINS MATÉRIELS ${data.material.toStringAsFixed(1)} / 30'),
+                Text(
+                    'Mobilier +${data.furniture.toStringAsFixed(1)} · Compagnie +${data.company.toStringAsFixed(1)} · Foyer +${data.homeLevel.toStringAsFixed(1)}'),
+                const SizedBox(height: 8),
+                Text('BESOINS VITAUX ${data.vital.toStringAsFixed(1)} / 20'),
+                Text(
+                    'Faim +${data.hunger.toStringAsFixed(1)} · Sommeil +${data.sleep.toStringAsFixed(1)}'),
+                const SizedBox(height: 8),
+                Text('ATTACHEMENT ${data.attachment.toStringAsFixed(1)} / 50'),
+                const Text('Décroissance : -1 / h.'),
+              ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _PtipoteGauge extends StatelessWidget {
+  const _PtipoteGauge(
+      {required this.label, required this.value, required this.max});
+  final String label;
+  final num value;
+  final num max;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 7),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                  '$label ${value.toStringAsFixed(value is int ? 0 : 1)} / ${max.toStringAsFixed(max is int ? 0 : 1)}',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 3),
+              ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                      value:
+                          max <= 0 ? 0 : (value / max).clamp(0, 1).toDouble(),
+                      minHeight: 8)),
+            ]),
+      );
 }
 
 class _PtipoteIdentityField extends StatelessWidget {
@@ -6828,12 +7251,10 @@ class _LisierePageState extends State<LisierePage> {
                   return ListView(
                     padding: const EdgeInsets.all(16),
                     children: <Widget>[
-                      _CommunityBuildingPosts(
-                        gameState: widget.gameState,
-                        roles: const <CommunityRoleType>[
-                          CommunityRoleType.lisiereObserver,
-                        ],
-                      ),
+                      // The current expeditions are the first thing to see
+                      // when opening the Lisière. Resident posts stay at the
+                      // bottom, after the mission setup.
+                      _ActiveMissionsCard(gameState: widget.gameState),
                       const SizedBox(height: 12),
                       _ForageChoiceCard(
                         title: 'Type de mission',
@@ -7075,7 +7496,12 @@ class _LisierePageState extends State<LisierePage> {
                           ),
                         ),
                       const SizedBox(height: 16),
-                      _ActiveMissionsCard(gameState: widget.gameState),
+                      _CommunityBuildingPosts(
+                        gameState: widget.gameState,
+                        roles: const <CommunityRoleType>[
+                          CommunityRoleType.lisiereObserver,
+                        ],
+                      ),
                     ],
                   );
                 },
@@ -9195,10 +9621,17 @@ class _ColorMatchRepairGameState extends State<_ColorMatchRepairGame> {
     setState(() {
       final cable = _selectedCable;
       if (cable == null) return;
+      // A correct cable remains visibly selected and energized once connected.
+      // An incorrect socket still clears the selection so the player can try
+      // another cable without accidentally replacing an established link.
+      if (cable != _sockets[socket]) {
+        _selectedCable = null;
+        return;
+      }
       _connections.remove(cable);
       _connections.removeWhere((_, target) => target == socket);
       _connections[cable] = socket;
-      _selectedCable = null;
+      _selectedCable = cable;
       if (_connections.length == _sockets.length) {
         if (_connections.entries
             .every((entry) => entry.key == _sockets[entry.value])) {
@@ -9228,12 +9661,21 @@ class _ColorMatchRepairGameState extends State<_ColorMatchRepairGame> {
                   children: List<Widget>.generate(
                       _sockets.length,
                       (i) => OutlinedButton(
-                            onPressed: () => setState(() => _selectedCable = i),
+                            onPressed: _connections.containsKey(i)
+                                ? null
+                                : () => setState(() => _selectedCable = i),
                             style: OutlinedButton.styleFrom(
-                                backgroundColor: _selectedCable == i
+                                backgroundColor: _selectedCable == i ||
+                                        _connections.containsKey(i)
                                     ? _colors[i % _colors.length]
                                         .withValues(alpha: .2)
-                                    : null),
+                                    : null,
+                                side: BorderSide(
+                                  color: _connections.containsKey(i)
+                                      ? Colors.blue
+                                      : _colors[i % _colors.length],
+                                  width: _connections.containsKey(i) ? 3 : 1,
+                                )),
                             child: Text('Câble ${i + 1}',
                                 style: TextStyle(
                                     color: _colors[i % _colors.length])),
@@ -9246,10 +9688,20 @@ class _ColorMatchRepairGameState extends State<_ColorMatchRepairGame> {
                       (i) => OutlinedButton(
                             onPressed: () => _connect(i),
                             style: OutlinedButton.styleFrom(
-                                backgroundColor: _visible[i]
-                                    ? _colors[_sockets[i]]
-                                        .withValues(alpha: .15)
-                                    : null),
+                                backgroundColor: _connections.containsValue(i)
+                                    ? _colors[_sockets[i]].withValues(alpha: .2)
+                                    : _visible[i]
+                                        ? _colors[_sockets[i]]
+                                            .withValues(alpha: .15)
+                                        : null,
+                                side: BorderSide(
+                                  color: _connections.containsValue(i)
+                                      ? Colors.blue
+                                      : _visible[i]
+                                          ? _colors[_sockets[i]]
+                                          : const Color(0xff807A68),
+                                  width: _connections.containsValue(i) ? 3 : 1,
+                                )),
                             child: Text(
                                 _visible[i] ? 'Prise ${i + 1}' : 'Prise ?',
                                 style: TextStyle(
@@ -9412,30 +9864,99 @@ class _PipeRepairGameSheet extends StatefulWidget {
 
 class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
   static const Color _circuitColor = Color(0xff54724A);
-  late final List<int?> _board;
-  late final List<int> _reserve;
-  static const List<String> _cableColors = <String>['rouge', 'bleu', 'jaune'];
-  static const Map<String, Color> _cableColorValues = <String, Color>{
-    'rouge': Color(0xffC84A45),
-    'bleu': Color(0xff3877C8),
-    'jaune': Color(0xffD5A726),
-  };
-
-  final List<int> _rotations = <int>[0, 0, 0, 0, 0, 0, 0, 0, 0];
+  late int _size;
+  late List<int?> _board;
+  late List<int> _reserve;
+  late List<int> _rotations;
+  late int _entryIndex;
+  late int _entrySide;
+  late int _exitIndex;
+  late int _exitSide;
   int? _selectedReserve;
-  final List<String> _socketOrder = <String>['jaune', 'rouge', 'bleu'];
-  final Map<String, String> _cableConnections = <String, String>{};
-  String? _selectedCable;
   bool _completed = false;
 
   @override
   void initState() {
     super.initState();
-    _board = List<int?>.filled(9, null);
+    _size = (widget.difficulty['gridWidth'] ?? 3).clamp(3, 5);
+    _board = List<int?>.filled(_size * _size, null);
+    _rotations = List<int>.filled(_size * _size, 0);
     final random = math.Random(widget.seed);
+    final endpoints = _endpointsFor(random);
+    _entryIndex = endpoints.$1;
+    _entrySide = endpoints.$2;
+    _exitIndex = endpoints.$3;
+    _exitSide = endpoints.$4;
     final amount = widget.difficulty['availablePieces'] ?? 16;
-    _reserve = List<int>.generate(amount, (index) => index % 3)
-      ..shuffle(random);
+    final mandatory = _solutionPieceKinds();
+    _reserve = <int>[...mandatory];
+    while (_reserve.length < amount) {
+      // Straight, 90° elbow (both left/right orientations are available via
+      // rotation), and T pieces. Keep a deliberately mixed reserve.
+      _reserve.add(random.nextInt(3));
+    }
+    _reserve.shuffle(random);
+  }
+
+  /// (index, side) pairs use 0=N, 1=E, 2=S, 3=W.  The side is the opening
+  /// from the board tile to the exterior. The arrow is rendered outward, so
+  /// its rear always touches the tile as requested.
+  (int, int, int, int) _endpointsFor(math.Random random) {
+    final candidates = <(int, int)>[];
+    for (var index = 0; index < _size * _size; index++) {
+      final row = index ~/ _size;
+      final col = index % _size;
+      if (row == 0) candidates.add((index, 0));
+      if (col == _size - 1) candidates.add((index, 1));
+      if (row == _size - 1) candidates.add((index, 2));
+      if (col == 0) candidates.add((index, 3));
+    }
+    final entry = candidates[random.nextInt(candidates.length)];
+    var exit = candidates[random.nextInt(candidates.length)];
+    while (exit.$1 == entry.$1 || _manhattan(exit.$1, entry.$1) < 2) {
+      exit = candidates[random.nextInt(candidates.length)];
+    }
+    return (entry.$1, entry.$2, exit.$1, exit.$2);
+  }
+
+  int _manhattan(int first, int second) =>
+      ((first ~/ _size) - (second ~/ _size)).abs() +
+      ((first % _size) - (second % _size)).abs();
+
+  List<int> _solutionPieceKinds() {
+    // A concrete Manhattan route guarantees that the reserve contains a
+    // solution without revealing it to the player.
+    final path = <int>[_entryIndex];
+    var row = _entryIndex ~/ _size;
+    var col = _entryIndex % _size;
+    final targetRow = _exitIndex ~/ _size;
+    final targetCol = _exitIndex % _size;
+    while (col != targetCol) {
+      col += col < targetCol ? 1 : -1;
+      path.add(row * _size + col);
+    }
+    while (row != targetRow) {
+      row += row < targetRow ? 1 : -1;
+      path.add(row * _size + col);
+    }
+    return List<int>.generate(path.length, (i) {
+      final sides = <int>{
+        i == 0 ? _entrySide : _sideBetween(path[i], path[i - 1]),
+        i == path.length - 1 ? _exitSide : _sideBetween(path[i], path[i + 1]),
+      };
+      return (sides.contains(0) && sides.contains(2)) ||
+              (sides.contains(1) && sides.contains(3))
+          ? 0
+          : 1;
+    });
+  }
+
+  int _sideBetween(int from, int to) {
+    final delta = to - from;
+    if (delta == -_size) return 0;
+    if (delta == 1) return 1;
+    if (delta == _size) return 2;
+    return 3;
   }
 
   Set<int> _pipeConnections(int index) {
@@ -9450,24 +9971,25 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
   }
 
   bool get _pipeSolved {
-    const entryIndex = 3;
-    const exitIndex = 6;
-    if (!_pipeConnections(entryIndex).contains(3)) return false;
-    final pending = <int>[entryIndex];
-    final visited = <int>{entryIndex};
+    if (!_pipeConnections(_entryIndex).contains(_entrySide)) return false;
+    final pending = <int>[_entryIndex];
+    final visited = <int>{_entryIndex};
     while (pending.isNotEmpty) {
       final index = pending.removeLast();
       final connections = _pipeConnections(index);
-      if (index == exitIndex && connections.contains(2)) return true;
-      final row = index ~/ 3;
-      final column = index % 3;
+      if (index == _exitIndex && connections.contains(_exitSide)) return true;
+      final row = index ~/ _size;
+      final column = index % _size;
       for (final side in connections) {
         final nextRow = row + const <int>[-1, 0, 1, 0][side];
         final nextColumn = column + const <int>[0, 1, 0, -1][side];
-        if (nextRow < 0 || nextRow >= 3 || nextColumn < 0 || nextColumn >= 3) {
+        if (nextRow < 0 ||
+            nextRow >= _size ||
+            nextColumn < 0 ||
+            nextColumn >= _size) {
           continue;
         }
-        final next = nextRow * 3 + nextColumn;
+        final next = nextRow * _size + nextColumn;
         if (_pipeConnections(next).contains((side + 2) % 4) &&
             visited.add(next)) {
           pending.add(next);
@@ -9477,11 +9999,28 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
     return false;
   }
 
-  bool get _cablesSolved =>
-      _cableConnections.length == _cableColors.length &&
-      _cableColors.every((color) => _cableConnections[color] == color);
-
   bool get _solved => _pipeSolved;
+
+  Set<int> get _energizedPipes {
+    if (!_pipeConnections(_entryIndex).contains(_entrySide)) return <int>{};
+    final pending = <int>[_entryIndex];
+    final visited = <int>{_entryIndex};
+    while (pending.isNotEmpty) {
+      final index = pending.removeLast();
+      final row = index ~/ _size;
+      final col = index % _size;
+      for (final side in _pipeConnections(index)) {
+        final nextRow = row + const <int>[-1, 0, 1, 0][side];
+        final nextCol = col + const <int>[0, 1, 0, -1][side];
+        if (nextRow < 0 || nextRow >= _size || nextCol < 0 || nextCol >= _size)
+          continue;
+        final next = nextRow * _size + nextCol;
+        if (_pipeConnections(next).contains((side + 2) % 4) &&
+            visited.add(next)) pending.add(next);
+      }
+    }
+    return visited;
+  }
 
   void _finishRepair() {
     final result = widget.onSolved();
@@ -9515,30 +10054,25 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
       );
 
   Widget _pipeBoard() => SizedBox(
-        width: 248,
+        width: _size * 70.0 + 46,
         child: Column(
           children: <Widget>[
-            Row(children: <Widget>[
-              const Icon(Icons.input, color: _circuitColor),
-              const SizedBox(width: 6),
-              Expanded(
-                child: GridView.count(
-                  crossAxisCount: 3,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisSpacing: 5,
-                  mainAxisSpacing: 5,
-                  children: List<Widget>.generate(9, _pipeTile),
-                ),
+            Stack(children: <Widget>[
+              GridView.count(
+                crossAxisCount: _size,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisSpacing: 5,
+                mainAxisSpacing: 5,
+                children: List<Widget>.generate(_size * _size, _pipeTile),
               ),
+              ...<_EndpointMarker>[
+                _EndpointMarker(
+                    index: _entryIndex, side: _entrySide, input: true),
+                _EndpointMarker(
+                    index: _exitIndex, side: _exitSide, input: false),
+              ].map(_endpointMarker),
             ]),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: EdgeInsets.only(left: 42, top: 4),
-                child: Icon(Icons.output, color: _circuitColor),
-              ),
-            ),
             const SizedBox(height: 8),
             const Text('Réserve de tuyaux'),
             Wrap(
@@ -9573,8 +10107,31 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
         ),
       );
 
+  Widget _endpointMarker(_EndpointMarker marker) {
+    final row = marker.index ~/ _size;
+    final col = marker.index % _size;
+    const extent = 64.0;
+    final icon = switch (marker.side) {
+      0 => Icons.arrow_upward,
+      1 => Icons.arrow_forward,
+      2 => Icons.arrow_downward,
+      _ => Icons.arrow_back,
+    };
+    return Positioned(
+      left: col * 69.0 + (marker.side == 3 ? -28 : 18),
+      top: row * 69.0 +
+          (marker.side == 0
+              ? -28
+              : marker.side == 2
+                  ? extent
+                  : 18),
+      child: Icon(icon, color: _circuitColor, size: 25),
+    );
+  }
+
   Widget _pipeTile(int index) {
     final piece = _board[index];
+    final energized = _energizedPipes.contains(index);
     return InkWell(
       onTap: () => setState(() {
         if (piece == null && _selectedReserve != null) {
@@ -9588,9 +10145,13 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
         aspectRatio: 1,
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xffE8E5DC),
+            color: energized
+                ? Colors.blue.withValues(alpha: .18)
+                : const Color(0xffE8E5DC),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xff807A68)),
+            border: Border.all(
+                color: energized ? Colors.blue : const Color(0xff807A68),
+                width: energized ? 3 : 1),
           ),
           child: piece == null
               ? const Icon(Icons.add, color: Color(0xff807A68))
@@ -9600,82 +10161,22 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
                       piece == 0
                           ? Icons.vertical_align_center
                           : piece == 1
-                              ? Icons.turn_right
+                              ? Icons.turn_left
                               : Icons.call_split,
                       size: 36,
-                      color: _circuitColor)),
+                      color: energized ? Colors.blue : _circuitColor)),
         ),
       ),
     );
   }
+}
 
-  Widget _cableBoard() => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              children: _cableColors
-                  .map((color) => _cableEndpoint(color, isSource: true))
-                  .toList(),
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.only(top: 50),
-            child: Icon(Icons.compare_arrows, color: _circuitColor),
-          ),
-          Expanded(
-            child: Column(
-              children: _socketOrder
-                  .map((color) => _cableEndpoint(color, isSource: false))
-                  .toList(),
-            ),
-          ),
-        ],
-      );
-
-  String? _assignedCableForSocket(String socket) {
-    for (final entry in _cableConnections.entries) {
-      if (entry.value == socket) return entry.key;
-    }
-    return null;
-  }
-
-  Widget _cableEndpoint(String color, {required bool isSource}) {
-    final assignedCable = _assignedCableForSocket(color);
-    final selected = isSource && _selectedCable == color;
-    final connected =
-        isSource ? _cableConnections.containsKey(color) : assignedCable != null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: OutlinedButton.icon(
-        style: OutlinedButton.styleFrom(
-          backgroundColor: selected
-              ? _cableColorValues[color]!.withValues(alpha: .18)
-              : null,
-          side: BorderSide(color: _cableColorValues[color]!),
-        ),
-        onPressed: () => setState(() {
-          if (isSource) {
-            _selectedCable = _selectedCable == color ? null : color;
-            return;
-          }
-          final cable = _selectedCable;
-          if (cable == null) return;
-          _cableConnections.remove(cable);
-          _cableConnections.removeWhere((_, target) => target == color);
-          _cableConnections[cable] = color;
-          _selectedCable = null;
-        }),
-        icon: Icon(isSource ? Icons.cable : Icons.power,
-            color: _cableColorValues[color]),
-        label: Text(
-          isSource
-              ? 'Câble $color${connected ? ' ✓' : ''}'
-              : 'Prise $color${connected ? ' ✓' : ''}',
-        ),
-      ),
-    );
-  }
+class _EndpointMarker {
+  const _EndpointMarker(
+      {required this.index, required this.side, required this.input});
+  final int index;
+  final int side;
+  final bool input;
 }
 
 class _StructuralInstallationSlots extends StatelessWidget {
@@ -10415,29 +10916,85 @@ class _ActiveMissionsCard extends StatelessWidget {
             else
               ...active.map((mission) {
                 final biome = lisiereForageConfig.biomes[mission.biome]!;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          '${mission.type == ForageMissionType.research ? '🔎 Recherche' : '🪵 Récolte'} · ${mission.figurineName} · ${biome.label}',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                return InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => _showMissionDetails(context, mission),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.forest_outlined, size: 20),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '${mission.type == ForageMissionType.research ? '🔎 Recherche' : '🪵 Récolte'} · ${mission.memberNames.join(', ')} · ${biome.label}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                      Text(_countdownLabel(mission.endTime)),
-                      TextButton.icon(
-                        onPressed: () =>
-                            _confirmEmergencyReturn(context, mission),
-                        icon: const Icon(Icons.keyboard_return_outlined),
-                        label: const Text('Retour'),
-                      ),
-                    ],
+                        Text(_countdownLabel(mission.endTime)),
+                        TextButton.icon(
+                          onPressed: () =>
+                              _confirmEmergencyReturn(context, mission),
+                          icon: const Icon(Icons.keyboard_return_outlined),
+                          label: const Text('Retour'),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               }),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showMissionDetails(BuildContext context, ForageMission mission) {
+    final biome = lisiereForageConfig.biomes[mission.biome]!;
+    final duration = lisiereForageConfig.durations[mission.duration]!;
+    final intensity = lisiereForageConfig.intensities[mission.intensity]!;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                    mission.type == ForageMissionType.research
+                        ? 'Mission de recherche'
+                        : 'Mission de récolte',
+                    style: const TextStyle(
+                        fontSize: 21, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 10),
+                Text('Biome : ${biome.label}'),
+                Text('P’TIPOTES : ${mission.memberNames.join(', ')}'),
+                Text(
+                    'Temps restant : ${_countdownLabel(mission.endTime)} · durée ${duration.label}'),
+                Text('Intensité : ${intensity.label}'),
+                const SizedBox(height: 8),
+                Text(
+                    'Gain potentiel : ${_formatRewards(mission.expectedRewards)}'),
+                Text('XP prévue : +${mission.xpGain}'),
+                Text('Risque : ${mission.riskPercent}% · ${mission.riskLabel}'),
+                Text(
+                    'Sécurité au départ : ${mission.securityAtLaunch}% · réduction Tour -${mission.securityReduction}%'),
+                Text(
+                    'Coût de vitalité : ${mission.vitalityCostByMember.values.isEmpty ? mission.vitalityCost : mission.vitalityCostByMember.values.reduce(math.max)}'),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(sheetContext).pop();
+                    _confirmEmergencyReturn(context, mission);
+                  },
+                  icon: const Icon(Icons.keyboard_return_outlined),
+                  label: const Text('Retour d’urgence'),
+                ),
+              ]),
         ),
       ),
     );
@@ -17999,12 +18556,66 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('P’TIBUG sorti de la cuve'),
-        content: Text(
-          'Avant de le nommer :\n'
-          'Couleur : ${widget.gameState.pTibugColorNameFor(bug.primaryColorHex)}\n'
-          'Motif : ${bug.motifId ?? 'Aucun'}${bug.motifColorHex == null ? '' : ' · ${widget.gameState.pTibugColorNameFor(bug.motifColorHex)}'}\n'
-          'Animation : ${bug.animationName ?? 'Aucune'}\n'
-          'Trait visuel : ${bug.traitColorHex == null ? 'Aucun' : widget.gameState.pTibugColorNameFor(bug.traitColorHex)}',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Center(
+                child: Container(
+                  width: 94,
+                  height: 94,
+                  decoration: BoxDecoration(
+                    color: _pTibugPrimaryColor(bug).withValues(alpha: .20),
+                    shape: BoxShape.circle,
+                    border:
+                        Border.all(color: _pTibugPrimaryColor(bug), width: 3),
+                  ),
+                  child: Stack(alignment: Alignment.center, children: <Widget>[
+                    Icon(_territorySpeciesIcon(bug.species),
+                        size: 52, color: _pTibugPrimaryColor(bug)),
+                    if (bug.motifId != null)
+                      Positioned(
+                        right: 8,
+                        bottom: 8,
+                        child: Icon(_pTibugMotifIcon(bug.motifId),
+                            size: 22,
+                            color: _pTibugColorFromHex(bug.motifColorHex,
+                                fallback: Colors.white)),
+                      ),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text('Avant de le nommer, voici son apparence :'),
+              const SizedBox(height: 8),
+              _ptibugAppearanceLine(
+                color: _pTibugPrimaryColor(bug),
+                label: 'Couleur',
+                value: widget.gameState.pTibugColorNameFor(bug.primaryColorHex),
+              ),
+              _ptibugAppearanceLine(
+                color: _pTibugColorFromHex(bug.motifColorHex,
+                    fallback: const Color(0xff807A68)),
+                label: 'Motif',
+                value:
+                    '${bug.motifId ?? 'Aucun'}${bug.motifColorHex == null ? '' : ' · ${widget.gameState.pTibugColorNameFor(bug.motifColorHex)}'}',
+              ),
+              _ptibugAppearanceLine(
+                icon: _pTibugAnimationIcon(bug.animationName),
+                label: 'Animation',
+                value: bug.animationName ?? 'Aucune',
+              ),
+              _ptibugAppearanceLine(
+                color: _pTibugColorFromHex(bug.traitColorHex,
+                    fallback: const Color(0xff807A68)),
+                label: 'Trait visuel',
+                value: bug.traitColorHex == null
+                    ? 'Aucun'
+                    : widget.gameState.pTibugColorNameFor(bug.traitColorHex),
+              ),
+            ],
+          ),
         ),
         actions: <Widget>[
           FilledButton(
@@ -18016,6 +18627,31 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     if (!mounted) return;
     await _renamePTibug(bug, context, requiredForNewPTibug: true);
   }
+
+  Widget _ptibugAppearanceLine({
+    Color? color,
+    IconData? icon,
+    required String label,
+    required String value,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(children: <Widget>[
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color?.withValues(alpha: .2),
+              shape: BoxShape.circle,
+              border: Border.all(color: color ?? const Color(0xff807A68)),
+            ),
+            child: icon == null ? null : Icon(icon, size: 14),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text('$label : $value')),
+        ]),
+      );
 
   String _cultivationOperationTitle(PTibugCultivationOperation operation) {
     final target = operation.targetPtibugId == null

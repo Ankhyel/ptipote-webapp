@@ -1962,3 +1962,28 @@ La Maison possède un coffre logique, pas une seconde monnaie : les premières 5
 - Chaque session finalisée donne exactement trois récompenses : un **Bonus XP** stockable du même Type, de l’XP Éleveur immédiate et de la Confiance Kernel immédiate. Les montants utilisent une base + un bonus par niveau final, uniquement configurables dans le Dashboard (valeurs DEV provisoires).
 - Le Bonus XP ne s’applique jamais automatiquement. Il cible uniquement un P’TIPOTE **owned**, actif et du même Type ; Vestige et Protocole owned sont tous deux valides. Il ne peut pas viser un P’TIPOTE coBred, n’est ni vendable ni échangeable, et reste stocké s’il n’existe aucune cible compatible.
 - La finalisation est idempotente par `sourceSessionId` : session, archive, récompense et gains Kernel sont écrits ensemble. Après un redémarrage, une récompense déjà attribuée n’est jamais recréée. L’Enveloppe temporaire d’un Protocole part avec lui et n’entre jamais dans l’inventaire.
+
+## P’TIPOTE V3 — quotidien, autonomie et métiers
+
+- Les autonomies restent limitées : N2 dort à 30 % de Sommeil si une alcôve
+  est disponible ; N3 mange à 20 % de Faim seulement avec un Frigo fonctionnel
+  et de la nourriture existante ; N4 garde le hook de retour vers l’emploi
+  assigné Tour/Craft/Lisière. Aucun niveau 5–10, véhicule ou logistique n’est
+  introduit.
+- Énergie max = base + 15 par niveau après N1 ; Faim max = base + 5 par niveau
+  après N1. La migration conserve la proportion actuelle au lieu de remplir
+  gratuitement les jauges.
+- Bonheur est calculé, non stocké : matériel /30, vital /20, attachement /50.
+  Attachement est horodaté, décroît de 1/h hors ligne, et monte avec Câlin +5,
+  Entraînement +20 et Promenade +30. Les détails expliquent toujours la source
+  de chaque bonus.
+- Jardin bioponique et Bassin thermal sont des meubles finis communs aux
+  P’TIPOTES et aux foyers habitants. Le premier coûte 6 Organique, 2 Minéral,
+  2 Mycélium ; le second 6 Minéral, 4 Organique, 2 Mycélium. Ils comptent
+  chacun comme un type unique de mobilier, sans effet de production/soin V1.
+- Salle d’entraînement : Mouvement utilise ↑↓←→, 3 vies, 10 validations,
+  fenêtre d’1 s, intervalle 2 s réduit de 50 ms/niveau et XP = 10×niveau.
+  Promenade tire Cache-cache ou Attrape-moi, sans XP ni pénalité.
+- Artisan N0 peut Craft/Construire ; N1/N2/N3 = -5/-10/-15 % +1 % par niveau
+  P’TIPOTE, snapshoté au lancement. Vendeur N1/N2/N3 = +5/+10/+15 % +1 % par
+  niveau P’TIPOTE. `requiredJobLevel` reste disponible pour les futurs objets.

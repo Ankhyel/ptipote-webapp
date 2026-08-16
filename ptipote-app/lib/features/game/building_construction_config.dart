@@ -19,12 +19,16 @@ class BuildingProjectDefinition {
     required this.label,
     required this.baseRequirements,
     required this.durationMinutes,
+    this.requiredJobLevel = const <String, int>{},
   });
 
   final String id;
   final String label;
   final Map<String, int> baseRequirements;
   final int durationMinutes;
+
+  /// Hook for future construction unlocks, e.g. {'artisan': 2}.
+  final Map<String, int> requiredJobLevel;
 
   Map<String, int> requirements(double mineralMultiplier) =>
       baseRequirements.map((resource, amount) => MapEntry(
