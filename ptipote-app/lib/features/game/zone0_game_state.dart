@@ -5206,8 +5206,7 @@ class Zone0GameState extends ChangeNotifier {
   bool isAssignedToMarket(String figurineId) =>
       marketAssignedPtipoteId == figurineId;
 
-  /// Le stock n'augmente plus avec le niveau global du Marché : la boutique
-  /// principale commence avec trois piles et s'améliore séparément plus tard.
+  /// Chaque magasin possède exactement trois emplacements produit en V2.
   int get marketSlotLimit => 3;
 
   /// La boutique principale est conservée sur les champs historiques afin de
@@ -10256,13 +10255,12 @@ class Zone0GameState extends ChangeNotifier {
     // répond après une minute avant que le P’TIPOTE prenne le relais.
     changed = _resolveMarketDistributor(current) || changed;
     changed = _resolveMarketInformationPoint(current) || changed;
-    // Le P’TIPOTE du Point info conserve une fenêtre de trois minutes : le
-    // joueur peut donc répondre immédiatement et le Distributeur en une minute.
+    // La Zone centrale couvre tous les magasins avec son délai propre.
     if (marketAssignedPtipoteId != null) {
       for (final request
           in marketRequests.where((item) => item.isOpen).toList()) {
         if (current
-            .isBefore(request.createdAt.add(const Duration(minutes: 3)))) {
+            .isBefore(request.createdAt.add(const Duration(minutes: 6)))) {
           continue;
         }
         final result = sellMarketRequest(
@@ -22220,7 +22218,8 @@ class MarketShop {
         _ => false,
       };
 
-  int get stockSlots => level >= 2 ? 6 : 3;
+  /// Un magasin V2 garde trois slots produits quel que soit son niveau.
+  int get stockSlots => 3;
   int get distributorSlots => level >= 2 ? 2 : 1;
 
   factory MarketShop.fromFirebase(Map<dynamic, dynamic> data) => MarketShop(

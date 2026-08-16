@@ -279,7 +279,8 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   licenseDirectedRatioPercent: 80,
   // Progression V5 : les emplacements sont rares et communs aux commerces
   // du joueur comme aux commerces habitants.
-  specializedShopSlotsByMarketLevel: <int, int>{1: 1, 2: 2, 3: 4, 4: 4},
+  // Physical shops, independent from the three product slots in each shop.
+  specializedShopSlotsByMarketLevel: <int, int>{1: 3, 2: 4, 3: 5, 4: 6},
   firstShopFree: true,
   residentsPerHourlyRequest: 3,
   requestJitterMinPercent: 10,
@@ -340,7 +341,8 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   residentClaimVacancyDays: 1,
   residentClaimWarningHours: 24,
   requestBookLevel: 3,
-  informationPointLevel: 3,
+  // V2 central zone: it supersedes the old Information Point terminology.
+  informationPointLevel: 2,
   distributorMarketLevels: <int, int>{1: 2, 2: 3, 3: 4},
   residentShopServiceCapacity: 6,
   residentShopReservePiles: 30,
