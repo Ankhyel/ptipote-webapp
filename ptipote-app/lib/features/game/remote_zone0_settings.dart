@@ -48,6 +48,7 @@ double _double(Object? value, double fallback) =>
     value is num && value.isFinite ? value.toDouble() : fallback;
 String _string(Object? value, String fallback) =>
     value is String && value.trim().isNotEmpty ? value : fallback;
+bool _bool(Object? value, bool fallback) => value is bool ? value : fallback;
 
 Map<String, int> _resourceMap(Object? value, Map<String, int> fallback) {
   final raw = _map(value);
@@ -57,6 +58,24 @@ Map<String, int> _resourceMap(Object? value, Map<String, int> fallback) {
     if (entry.value is num && (entry.value as num).isFinite) {
       result[entry.key] = _int(entry.value, result[entry.key] ?? 0);
     }
+  }
+  return result;
+}
+
+Map<int, Map<String, int>> _dataRequirementsByLevel(
+  Object? value,
+  Map<int, Map<String, int>> fallback,
+) {
+  final raw = _map(value);
+  final result = <int, Map<String, int>>{
+    for (final entry in fallback.entries)
+      entry.key: Map<String, int>.from(entry.value),
+  };
+  if (raw == null) return result;
+  for (final entry in raw.entries) {
+    final level = int.tryParse(entry.key);
+    if (level == null || level < 1) continue;
+    result[level] = _resourceMap(entry.value, result[level] ?? const {});
   }
   return result;
 }
@@ -82,6 +101,16 @@ BuildingConstructionConfig _buildingConstruction(Object? value) {
               project?['baseRequirements'],
               entry.value.baseRequirements,
             ),
+            requiredData: _resourceMap(
+              project?['requiredData'],
+              entry.value.requiredData,
+            ),
+            requiredDataByLevel: _dataRequirementsByLevel(
+              project?['requiredDataByLevel'],
+              entry.value.requiredDataByLevel,
+            ),
+            bypassBiomimicryRequirement:
+                project?['bypassBiomimicryRequirement'] == true,
             durationMinutes:
                 _int(project?['durationMinutes'], entry.value.durationMinutes),
           );
@@ -129,6 +158,8 @@ WasteRecyclerConfig _wasteRecycler(Object? value) {
   final cycleMinutes = _map(raw['cycleMinutesByLevel']);
   final outputSplits = raw['outputSplits'] as List?;
   final orientationCost = _map(raw['biologicalOrientationModuleCost']);
+  final organicModuleCost = _map(raw['organicRecyclerModuleCost']);
+  final mineralModuleCost = _map(raw['mineralRecyclerModuleCost']);
   return WasteRecyclerConfig(
     wasteGenerationCycleMinutes: _int(
         raw['wasteGenerationCycleMinutes'], base.wasteGenerationCycleMinutes),
@@ -223,6 +254,16 @@ WasteRecyclerConfig _wasteRecycler(Object? value) {
       for (final entry in base.biologicalOrientationModuleCost.entries)
         entry.key: _int(orientationCost?[entry.key], entry.value),
     },
+    organicRecyclerModuleCost: <String, int>{
+      for (final entry in base.organicRecyclerModuleCost.entries)
+        entry.key: _int(organicModuleCost?[entry.key], entry.value),
+    },
+    mineralRecyclerModuleCost: <String, int>{
+      for (final entry in base.mineralRecyclerModuleCost.entries)
+        entry.key: _int(mineralModuleCost?[entry.key], entry.value),
+    },
+    recyclerModuleRefundPercent: _int(
+        raw['recyclerModuleRefundPercent'], base.recyclerModuleRefundPercent),
   );
 }
 
@@ -503,6 +544,17 @@ TowerResearchConfig _towerResearch(Object? value, TowerResearchConfig base) {
   final raw = _map(value);
   if (raw == null) return base;
   return TowerResearchConfig(
+    researchEnabled: _bool(raw['researchEnabled'], base.researchEnabled),
+    researchRequiresPtipote:
+        _bool(raw['researchRequiresPtipote'], base.researchRequiresPtipote),
+    toxicCloudGuaranteeEnabled: _bool(
+      raw['toxicCloudGuaranteeEnabled'],
+      base.toxicCloudGuaranteeEnabled,
+    ),
+    toxicCapsuleGuaranteedAmount: _int(
+      raw['toxicCapsuleGuaranteedAmount'],
+      base.toxicCapsuleGuaranteedAmount,
+    ),
     harvestCellChanceByOrdinal: _levelMap(
         raw['harvestCellChanceByOrdinal'], base.harvestCellChanceByOrdinal),
     researchCellChanceByOrdinal: _levelMap(
@@ -829,6 +881,10 @@ PTibugConfig _ptibug(Object? value) {
         rawAspectMatrixExtractor?['nurseryEnergyCostPerModule'],
         base.aspectMatrixExtractor.nurseryEnergyCostPerModule,
       ),
+    ),
+    ptibugPresenceInsectoidBonusWeight: _int(
+      raw['ptibugPresenceInsectoidBonusWeight'],
+      base.ptibugPresenceInsectoidBonusWeight,
     ),
     species: <PTibugSpecies, PTibugSpeciesConfig>{
       for (final entry in base.species.entries)

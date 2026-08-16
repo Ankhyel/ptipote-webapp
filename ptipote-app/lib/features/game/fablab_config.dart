@@ -76,7 +76,7 @@ const FablabConfig defaultFablabConfig = FablabConfig(
   constructionCostLevel1Mineral: 4,
   baseGlobalStockCapacity: 100,
   stockCapacityBonusPerFablabLevel: 100,
-  fablabStorageByLevel: <int, int>{1: 100, 2: 200, 3: 300, 4: 400},
+  fablabStorageByLevel: <int, int>{1: 100, 2: 200, 3: 300, 4: 350},
   houseStorageByLevel: <int, int>{1: 100, 2: 125, 3: 150, 4: 200},
   recyclerInputByLevel: <int, int>{1: 18, 2: 16, 3: 14, 4: 12},
   recyclerVatOneCapacityByLevel: <int, int>{1: 20, 2: 40, 3: 40, 4: 60},

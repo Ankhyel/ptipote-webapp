@@ -279,6 +279,10 @@ class TowerOperationsConfig {
 
 class TowerResearchConfig {
   const TowerResearchConfig({
+    required this.researchEnabled,
+    required this.researchRequiresPtipote,
+    required this.toxicCloudGuaranteeEnabled,
+    required this.toxicCapsuleGuaranteedAmount,
     required this.harvestCellChanceByOrdinal,
     required this.researchCellChanceByOrdinal,
     required this.harvestValueSevenEightChance,
@@ -294,6 +298,10 @@ class TowerResearchConfig {
     required this.fullRevealPercent,
   });
 
+  final bool researchEnabled;
+  final bool researchRequiresPtipote;
+  final bool toxicCloudGuaranteeEnabled;
+  final int toxicCapsuleGuaranteedAmount;
   final Map<int, int> harvestCellChanceByOrdinal;
   final Map<int, int> researchCellChanceByOrdinal;
   final int harvestValueSevenEightChance;
@@ -630,6 +638,10 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
     ),
   ],
   research: TowerResearchConfig(
+    researchEnabled: true,
+    researchRequiresPtipote: true,
+    toxicCloudGuaranteeEnabled: true,
+    toxicCapsuleGuaranteedAmount: 1,
     harvestCellChanceByOrdinal: const <int, int>{
       1: 50,
       2: 25,

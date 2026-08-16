@@ -1664,9 +1664,6 @@ class _KernelDataCellsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final unopened = gameState.pTibugDataCells
-        .where((cell) => !cell.isOpened)
-        .toList(growable: false);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1677,19 +1674,17 @@ class _KernelDataCellsCard extends StatelessWidget {
               children: <Widget>[
                 const Expanded(
                   child: Text(
-                    'Cellules de données',
+                    'Capsules de données',
                     style: TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ),
-                if (unopened.isNotEmpty)
-                  Chip(label: Text('${unopened.length} à analyser')),
               ],
             ),
             const SizedBox(height: 8),
             Text(
-              unopened.isEmpty
-                  ? 'Aucune cellule non analysée. Les missions de Lisière peuvent en rapporter.'
-                  : 'Analysez les cellules trouvées en Lisière pour alimenter les recherches P\'TIBUG.',
+              gameState.researchUnlocked
+                  ? 'Les missions de la Tour ajoutent directement les Données à cette réserve.'
+                  : 'La Tour de recherche doit être débloquée avant toute découverte de Capsule.',
             ),
             const SizedBox(height: 12),
             Wrap(
@@ -1705,24 +1700,6 @@ class _KernelDataCellsCard extends StatelessWidget {
                   )
                   .toList(growable: false),
             ),
-            if (unopened.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: () => showModalBottomSheet<void>(
-                  context: context,
-                  showDragHandle: true,
-                  isScrollControlled: true,
-                  builder: (sheetContext) => _KernelDataCellsSheet(
-                    gameState: gameState,
-                    onCellOpened: () {
-                      Navigator.of(sheetContext).pop();
-                    },
-                  ),
-                ),
-                icon: const Icon(Icons.science_outlined),
-                label: const Text('Analyser les cellules'),
-              ),
-            ],
           ],
         ),
       ),
@@ -2577,87 +2554,131 @@ class _MaisonTrainingTab extends StatelessWidget {
   final Zone0GameState gameState;
   final FigurineService figurineService;
 
-  @override
-  Widget build(BuildContext context) => StreamBuilder<List<PtipoteFigurine>>(
-        stream: figurineService.watchMyFigurines(),
-        builder: (context, snapshot) {
-          final ptipotes = gameState.ptipotesAvailableForActivities(
-            snapshot.data ?? const <PtipoteFigurine>[],
-          );
-          return SafeArea(
-              child: ListView(
-                  padding: const EdgeInsets.all(18),
-                  children: <Widget>[
-                Text('Activités',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 8),
-                const Text(
-                    'Promenade relationnelle et Salle d’entraînement · Mouvement.'),
-                const SizedBox(height: 16),
-                if (ptipotes.isEmpty)
-                  const Card(
-                      child: Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Text('Aucun P’TIPOTE disponible.')))
-                else
-                  ...ptipotes.map((figurine) => Card(
-                          child: ListTile(
-                        leading: const Icon(Icons.sports_martial_arts),
-                        title: Text(figurine.displayName),
-                        subtitle: Text(
-                            'Niveau jeu ${gameState.ptipoteV2ProfileFor(figurine).trainingGameLevel} · réussite : XP + Attachement'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => showModalBottomSheet<void>(
-                            context: context,
-                            isScrollControlled: true,
-                            showDragHandle: true,
-                            builder: (_) => _TrainingChoiceSheet(
-                                gameState: gameState, figurine: figurine)),
-                      ))),
-              ]));
-        },
-      );
-}
+  Future<void> _selectPtipote(BuildContext context, String activity) async {
+    final all = await figurineService.watchMyFigurines().first;
+    final available = gameState.ptipotesAvailableForActivities(all);
+    if (!context.mounted) return;
+    final figurine = await showModalBottomSheet<PtipoteFigurine>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
+          children: <Widget>[
+            Text('Choisir un P’TIPOTE',
+                style: Theme.of(sheetContext)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            if (available.isEmpty)
+              const ListTile(title: Text('Aucun P’TIPOTE disponible.')),
+            ...available.map((ptipote) => ListTile(
+                  leading: PtipoteImage(
+                      type: ptipote.type, species: ptipote.species, height: 42),
+                  title: Text(ptipote.displayName),
+                  subtitle: Text('Niveau ${gameState.levelFor(ptipote)}'),
+                  onTap: () => Navigator.pop(sheetContext, ptipote),
+                )),
+          ],
+        ),
+      ),
+    );
+    if (figurine == null || !context.mounted) return;
+    final page = switch (activity) {
+      'movement' =>
+        _MovementTrainingPage(gameState: gameState, figurine: figurine),
+      'hide' => _WalkMiniGamePage(
+          gameState: gameState, figurine: figurine, catchMe: false),
+      _ => _WalkMiniGamePage(
+          gameState: gameState, figurine: figurine, catchMe: true),
+    };
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => page));
+  }
 
-class _TrainingChoiceSheet extends StatelessWidget {
-  const _TrainingChoiceSheet({required this.gameState, required this.figurine});
-  final Zone0GameState gameState;
-  final PtipoteFigurine figurine;
+  Widget _activityCard(BuildContext context,
+          {required IconData icon,
+          required String title,
+          required String subtitle,
+          required String activity}) =>
+      Card(
+        child: ListTile(
+          leading: Icon(icon),
+          title: Text(title),
+          subtitle: Text(subtitle),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _selectPtipote(context, activity),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) => SafeArea(
-          child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
-        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-          Text(figurine.displayName,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 12),
-          ListTile(
-              leading: const Icon(Icons.directions_walk),
-              title: const Text('Promenade'),
-              subtitle:
-                  const Text('Cache-cache ou Attrape-moi · +30 Attachement'),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => _WalkMiniGamePage(
-                      gameState: gameState, figurine: figurine)))),
-          ListTile(
-              leading: const Icon(Icons.keyboard_arrow_up),
-              title: const Text('Entraînement · Mouvement'),
-              subtitle:
-                  const Text('10 flèches · 3 vies · +20 Attachement si réussi'),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => _MovementTrainingPage(
-                      gameState: gameState, figurine: figurine)))),
-        ]),
-      ));
+          child: ListView(padding: const EdgeInsets.all(18), children: <Widget>[
+        Text('Activités',
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 16),
+        Text('Entraînement',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w900)),
+        _activityCard(context,
+            icon: Icons.sports_martial_arts,
+            title: 'Entraînement au mouvement',
+            subtitle: 'XP +20 Attachement si réussi',
+            activity: 'movement'),
+        const SizedBox(height: 16),
+        Text('Promenade',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w900)),
+        _activityCard(context,
+            icon: Icons.search,
+            title: 'Cache-cache',
+            subtitle: '+30 Attachement',
+            activity: 'hide'),
+        _activityCard(context,
+            icon: Icons.directions_run,
+            title: 'Attrape-moi si tu peux',
+            subtitle: '+30 Attachement',
+            activity: 'catch'),
+      ]));
 }
 
 enum _MovementDirection { up, down, left, right }
+
+Future<void> _showActivityReward(
+  BuildContext context,
+  PtipoteFigurine figurine, {
+  required int xp,
+  required double attachment,
+}) =>
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Activité terminée'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+          PtipoteImage(
+              type: figurine.type, species: figurine.species, height: 92),
+          const SizedBox(height: 8),
+          Text(figurine.displayName,
+              style: const TextStyle(fontWeight: FontWeight.w900)),
+          if (xp > 0) Text('+$xp XP'),
+          Text('+${attachment.toStringAsFixed(0)} Attachement'),
+        ]),
+        actions: <Widget>[
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Continuer'))
+        ],
+      ),
+    );
 
 class _MovementTrainingPage extends StatefulWidget {
   const _MovementTrainingPage(
@@ -2726,9 +2747,17 @@ class _MovementTrainingPageState extends State<_MovementTrainingPage> {
     if (_completed >= ptipoteDailyLifeConfig.movementSequenceLength) {
       _finished = true;
       widget.gameState.completePtipoteTraining(widget.figurine);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Entraînement réussi : XP et Attachement gagnés.')));
-      Navigator.of(context).pop();
+      _showActivityReward(
+        context,
+        widget.figurine,
+        xp: ptipoteDailyLifeConfig.movementXpPerLevel *
+            widget.gameState
+                .ptipoteV2ProfileFor(widget.figurine)
+                .trainingGameLevel,
+        attachment: ptipoteDailyLifeConfig.trainingAttachmentGain,
+      ).then((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
       return;
     }
     _next();
@@ -2830,19 +2859,21 @@ class _MovementTrainingPageState extends State<_MovementTrainingPage> {
 }
 
 class _WalkMiniGamePage extends StatefulWidget {
-  const _WalkMiniGamePage({required this.gameState, required this.figurine});
+  const _WalkMiniGamePage({
+    required this.gameState,
+    required this.figurine,
+    required this.catchMe,
+  });
   final Zone0GameState gameState;
   final PtipoteFigurine figurine;
+  final bool catchMe;
   @override
   State<_WalkMiniGamePage> createState() => _WalkMiniGamePageState();
 }
 
 class _WalkMiniGamePageState extends State<_WalkMiniGamePage> {
   final math.Random _random = math.Random();
-  late final bool _catchMe = _random.nextDouble() *
-          (ptipoteDailyLifeConfig.hideAndSeekWeight +
-              ptipoteDailyLifeConfig.catchMeWeight) >=
-      ptipoteDailyLifeConfig.hideAndSeekWeight;
+  late final bool _catchMe = widget.catchMe;
   late int _target = _random.nextInt(5);
   Timer? _roundTimer;
   Timer? _catchTimer;
@@ -2914,9 +2945,11 @@ class _WalkMiniGamePageState extends State<_WalkMiniGamePage> {
 
   void _win() {
     widget.gameState.completePtipoteWalk(widget.figurine);
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Promenade réussie : +30 Attachement.')));
-    Navigator.of(context).pop();
+    _showActivityReward(context, widget.figurine,
+            xp: 0, attachment: ptipoteDailyLifeConfig.walkAttachmentGain)
+        .then((_) {
+      if (mounted) Navigator.of(context).pop();
+    });
   }
 
   @override
@@ -7112,6 +7145,98 @@ Future<PtipoteFigurine?> _pickPtipoteForActivity({
   );
 }
 
+/// Shared Lisière-style group picker used by Research. It deliberately uses
+/// the same availability and bonus rules as activity selection, while keeping
+/// the minimum group size at one.
+Future<List<PtipoteFigurine>?> _pickPtipoteGroupForResearch({
+  required BuildContext context,
+  required Zone0GameState gameState,
+  required List<PtipoteFigurine> figurines,
+}) {
+  final selectedIds = <String>{};
+  return showModalBottomSheet<List<PtipoteFigurine>>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setSheetState) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: .72,
+          minChildSize: .42,
+          maxChildSize: .94,
+          builder: (context, controller) => SafeArea(
+            child: ListView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+              children: <Widget>[
+                Text(
+                  'Envoyer en Recherche',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                const Text('Sélectionnez au moins un P’TIPOTE disponible.'),
+                const SizedBox(height: 12),
+                ...figurines.map((figurine) {
+                  final selectable = !gameState.isBusy(figurine) &&
+                      gameState.vitalityFor(figurine) >=
+                          ptipoteStatsConfig.minimumMissionVitality;
+                  final selected = selectedIds.contains(figurine.id);
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: CheckboxListTile(
+                      value: selected,
+                      enabled: selectable,
+                      secondary: const Icon(Icons.pets_outlined),
+                      title: Text(figurine.displayName),
+                      subtitle: Text(
+                        selectable
+                            ? _ptipoteActionBonusLabel(
+                                gameState,
+                                figurine,
+                                _PtipoteActionKind.harvest,
+                              )
+                            : _ptipoteActivityUnavailableReason(
+                                gameState,
+                                figurine,
+                              ),
+                      ),
+                      onChanged: !selectable
+                          ? null
+                          : (value) => setSheetState(() {
+                                if (value ?? false) {
+                                  selectedIds.add(figurine.id);
+                                } else {
+                                  selectedIds.remove(figurine.id);
+                                }
+                              }),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: selectedIds.isEmpty
+                      ? null
+                      : () => Navigator.of(context).pop(
+                            figurines
+                                .where((item) => selectedIds.contains(item.id))
+                                .toList(growable: false),
+                          ),
+                  icon: const Icon(Icons.travel_explore_outlined),
+                  label: Text('Lancer avec ${selectedIds.length} P’TIPOTE(s)'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
 Future<PtipoteFigurine?> _pickPermanentFabLabWorker({
   required BuildContext context,
   required Zone0GameState gameState,
@@ -7464,44 +7589,12 @@ class _LisierePageState extends State<LisierePage> {
                       // bottom, after the mission setup.
                       _ActiveMissionsCard(gameState: widget.gameState),
                       const SizedBox(height: 12),
-                      _ForageChoiceCard(
-                        title: 'Type de mission',
-                        child: Wrap(
-                          spacing: 8,
-                          children: ForageMissionType.values.map((type) {
-                            final config =
-                                lisiereForageConfig.missionTypes[type]!;
-                            return ChoiceChip(
-                              label: Text(config.label),
-                              selected: _missionType == type,
-                              onSelected: (_) =>
-                                  setState(() => _missionType = type),
-                            );
-                          }).toList(),
-                        ),
-                      ),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          _missionType == ForageMissionType.research
-                              ? widget.gameState.isTowerResearchUnlocked
-                                  ? 'Explorer le biome pour découvrir des Cellules de données. Chaque heure augmente le savoir de la zone de 5 % : la Tour de recherche permet de mieux comprendre les données disponibles.'
-                                  : 'Explorer le biome pour découvrir des Cellules de données. Vous devez avoir une Tour de recherche pour comprendre quelles données s’y trouvent.'
-                              : 'Prélever les ressources naturelles du biome.',
+                        child: const Text(
+                          'Prélever les ressources naturelles du biome. Les Capsules de données se recherchent depuis la Tour de recherche.',
                         ),
                       ),
-                      if (_missionType == ForageMissionType.research &&
-                          widget.gameState.capsuleDiscoveryMultiplierFor(
-                                _biome,
-                              ) <
-                              1)
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 12),
-                          child: Text(
-                            'Connaissances locales sous 50 % : les chances de trouver des Capsules sont divisées par deux.',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
                       _ForageChoiceCard(
                         title: 'Biome',
                         child: Wrap(
@@ -11364,14 +11457,6 @@ class _ForageEstimateCard extends StatelessWidget {
     final organicBonus = gameState.organicBonusForBiome(biome);
     final biomass = gameState.biomassFor(biome);
     final biomassState = gameState.biomassVisualStateFor(biome);
-    final typeConfig = lisiereForageConfig.missionTypes[missionType]!;
-    final cellCount =
-        (pTibugConfig.maxCellsForMissionHours(durationConfig.theoreticalHours) *
-                typeConfig.maximumCellsMultiplier)
-            .ceil();
-    final cellChanceLabel = missionType == ForageMissionType.research
-        ? '$cellCount tentative${cellCount > 1 ? 's' : ''} de Cellule selon le biome'
-        : 'Cellules occasionnelles (${(typeConfig.cellChanceMultiplier * 100).round()} % des chances habituelles)';
 
     return Card(
       child: Padding(
@@ -11392,7 +11477,9 @@ class _ForageEstimateCard extends StatelessWidget {
             Text(
               'Coût de Vigueur estimé : -${gameState.biomassMissionConsumptionFor(intensity, missionType, theoreticalHours: durationConfig.theoreticalHours)}% · après mission ${math.max(0, biomass - gameState.biomassMissionConsumptionFor(intensity, missionType, theoreticalHours: durationConfig.theoreticalHours))}%',
             ),
-            Text('Cellules de données : $cellChanceLabel'),
+            const Text(
+              'Capsules de données : disponibles uniquement depuis la Tour de recherche.',
+            ),
             Text(
               'Déchets du biome : $wasteLevel / $wasteMaximum · '
               'x${wasteMultiplier.toStringAsFixed(2)}',
@@ -14049,6 +14136,7 @@ class _SecurityTowerPageState extends State<SecurityTowerPage> {
             _TowerResearchTab(
               gameState: widget.gameState,
               campHeartLevel: widget.campHeartLevel,
+              figurineService: widget.figurineService,
             ),
             _TowerWeatherTab(
               gameState: widget.gameState,
@@ -14475,10 +14563,12 @@ class _TowerResearchTab extends StatelessWidget {
   const _TowerResearchTab({
     required this.gameState,
     required this.campHeartLevel,
+    required this.figurineService,
   });
 
   final Zone0GameState gameState;
   final int campHeartLevel;
+  final FigurineService figurineService;
 
   @override
   Widget build(BuildContext context) {
@@ -14488,7 +14578,7 @@ class _TowerResearchTab extends StatelessWidget {
         targetId: 'towerResearchModule',
         title: 'Débloquer la Tour de recherche',
         description:
-            'Elle analyse les chances de découverte des Cellules de données en Lisière et les modifie selon la météo actuelle.',
+            'Elle permet d’envoyer des P’TIPOTES en mission afin de récupérer des Capsules de données selon la météo actuelle.',
         currentEffects: const <String>[
           'Recherche de données : verrouillée',
         ],
@@ -14513,7 +14603,7 @@ class _TowerResearchTab extends StatelessWidget {
                       style: TextStyle(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
                   const Text(
-                    'Touchez un biome pour lancer une analyse. 1 h de recherche ajoute 5% de connaissances et a 10% de chance de trouver une Cellule réelle du biome.',
+                    'Touchez un biome, choisissez au moins un P’TIPOTE, puis lancez une mission. Les Capsules de données rejoignent directement le Kernel au retour.',
                   ),
                   const SizedBox(height: 6),
                   const Text('Les connaissances locales perdent 2% par jour.'),
@@ -14522,7 +14612,10 @@ class _TowerResearchTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          _TowerResearchMap3x3(gameState: gameState),
+          _TowerResearchMap3x3(
+            gameState: gameState,
+            figurineService: figurineService,
+          ),
           const SizedBox(height: 12),
           ...ForageBiome.values
               .where(gameState.isBiomeUnlocked)
@@ -14533,6 +14626,7 @@ class _TowerResearchTab extends StatelessWidget {
                       context,
                       gameState: gameState,
                       biome: biome,
+                      figurineService: figurineService,
                     ),
                   )),
         ],
@@ -14542,8 +14636,12 @@ class _TowerResearchTab extends StatelessWidget {
 }
 
 class _TowerResearchMap3x3 extends StatelessWidget {
-  const _TowerResearchMap3x3({required this.gameState});
+  const _TowerResearchMap3x3({
+    required this.gameState,
+    required this.figurineService,
+  });
   final Zone0GameState gameState;
+  final FigurineService figurineService;
 
   @override
   Widget build(BuildContext context) {
@@ -14592,20 +14690,21 @@ class _TowerResearchMap3x3 extends StatelessWidget {
           );
         }
         final unlocked = gameState.isBiomeUnlocked(biome);
-        final active = gameState.activeBiomeResearchFor(biome);
+        final activeEndsAt = gameState.activeResearchEndsAtFor(biome);
         return _ResearchMapCell(
           label: lisiereForageConfig.biomes[biome]!.label,
-          icon: active == null
+          icon: activeEndsAt == null
               ? Icons.manage_search_outlined
               : Icons.hourglass_top,
           enabled: unlocked,
           progress: gameState.biomeResearchProgressFor(biome),
-          subtitle: active == null ? null : _countdownLabel(active.endsAt),
+          subtitle: activeEndsAt == null ? null : _countdownLabel(activeEndsAt),
           onTap: unlocked
               ? () => _showTowerResearchBiomeSheet(
                     context,
                     gameState: gameState,
                     biome: biome,
+                    figurineService: figurineService,
                   )
               : null,
         );
@@ -14681,16 +14780,16 @@ class _TowerResearchBiomeSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = gameState.biomeResearchProgressFor(biome);
-    final active = gameState.activeBiomeResearchFor(biome);
+    final activeEndsAt = gameState.activeResearchEndsAtFor(biome);
     return Card(
       child: ListTile(
         onTap: onTap,
         leading: const Icon(Icons.manage_search_outlined),
         title: Text(lisiereForageConfig.biomes[biome]!.label,
             style: const TextStyle(fontWeight: FontWeight.w900)),
-        subtitle: Text(active == null
+        subtitle: Text(activeEndsAt == null
             ? 'Connaissances : $progress%'
-            : 'Recherche en cours · retour ${_countdownLabel(active.endsAt)}'),
+            : 'Recherche en cours · retour ${_countdownLabel(activeEndsAt)}'),
         trailing: const Icon(Icons.chevron_right),
       ),
     );
@@ -14701,10 +14800,11 @@ Future<void> _showTowerResearchBiomeSheet(
   BuildContext context, {
   required Zone0GameState gameState,
   required ForageBiome biome,
+  required FigurineService figurineService,
 }) async {
   final progress = gameState.biomeResearchProgressFor(biome);
   final config = towerOperationsConfig.research;
-  final active = gameState.activeBiomeResearchFor(biome);
+  final activeEndsAt = gameState.activeResearchEndsAtFor(biome);
   final families = gameState
       .towerResearchFamilyWeightsFor(biome)
       .entries
@@ -14742,28 +14842,24 @@ Future<void> _showTowerResearchBiomeSheet(
               ),
             const SizedBox(height: 14),
             if (progress >= config.cellChanceRevealPercent) ...<Widget>[
-              const Text('Chances de trouver des Cellules',
+              const Text('Chances de trouver des Capsules',
                   style: TextStyle(fontWeight: FontWeight.w900)),
-              Text(
-                  'Récolte : ${chances(config.harvestCellChanceByOrdinal, 3)}'),
               Text(
                   'Recherche : ${chances(config.researchCellChanceByOrdinal, 5)}'),
               const SizedBox(height: 12),
             ] else
               const Text(
-                  'À 25%, les chances de trouver des Cellules seront révélées.'),
+                  'À 25%, les chances de trouver des Capsules seront révélées.'),
             if (progress >= config.valueChanceRevealPercent) ...<Widget>[
-              const Text('Valeur totale des Cellules',
+              const Text('Quantité de Données des Capsules',
                   style: TextStyle(fontWeight: FontWeight.w900)),
-              Text(
-                  'Récolte : valeur 5–6 : 100% · 7–8 : ${config.harvestValueSevenEightChance}% · 9 : ${config.harvestValueNineChance}%'),
               Text(
                   'Recherche : valeur 5–6 : 100% · 7–8 : ${config.researchValueSevenEightChance}% · 9 : ${config.researchValueNineChance}%'),
               const SizedBox(height: 12),
             ] else
               const Text('À 50%, les probabilités de valeur seront révélées.'),
             if (progress >= config.familyRevealPercent) ...<Widget>[
-              const Text('Types de Cellules du biome',
+              const Text('Types de Capsules du biome',
                   style: TextStyle(fontWeight: FontWeight.w900)),
               Wrap(
                 spacing: 8,
@@ -14782,12 +14878,12 @@ Future<void> _showTowerResearchBiomeSheet(
               const SizedBox(height: 12),
             ] else
               Text(
-                  'À ${config.familyRevealPercent}%, les types de Cellules seront révélés.'),
-            if (active != null)
+                  'À ${config.familyRevealPercent}%, les types de Capsules seront révélés.'),
+            if (activeEndsAt != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
-                    'Recherche en cours · retour ${_countdownLabel(active.endsAt)}'),
+                    'Recherche en cours · retour ${_countdownLabel(activeEndsAt)}'),
               )
             else ...<Widget>[
               const SizedBox(height: 16),
@@ -14797,20 +14893,52 @@ Future<void> _showTowerResearchBiomeSheet(
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: <int>[1, 2, 4, 8]
-                    .map((hours) => FilledButton.tonal(
-                          onPressed: () {
-                            final result = gameState.startTowerBiomeResearch(
-                              biome: biome,
-                              hours: hours,
+                children: <ForageDuration>[
+                  ForageDuration.oneHour,
+                  ForageDuration.twoHours,
+                  ForageDuration.sixHours,
+                  ForageDuration.tenHours,
+                ]
+                    .map((duration) => FilledButton.tonal(
+                          onPressed: () async {
+                            final figurines =
+                                await figurineService.watchMyFigurines().first;
+                            if (!context.mounted) return;
+                            final selected = await _pickPtipoteGroupForResearch(
+                              context: context,
+                              gameState: gameState,
+                              figurines: gameState
+                                  .ptipotesAvailableForActivities(figurines),
                             );
-                            Navigator.of(sheetContext).pop();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(result.message)),
-                            );
+                            if (selected == null ||
+                                selected.isEmpty ||
+                                !context.mounted) {
+                              return;
+                            }
+                            try {
+                              gameState.startTowerResearchMission(
+                                figurines: selected,
+                                biome: biome,
+                                duration: duration,
+                                intensity: ForageIntensity.normal,
+                              );
+                              Navigator.of(sheetContext).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '${selected.map((item) => item.displayName).join(', ')} part${selected.length > 1 ? 'ent' : ''} en Recherche.',
+                                  ),
+                                ),
+                              );
+                            } on StateError catch (error) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(error.message)),
+                              );
+                            }
                           },
                           child: Text(
-                              '${hours}h · +${hours * config.progressPerHour}%'),
+                            '${lisiereForageConfig.durations[duration]!.label} · +${lisiereForageConfig.durations[duration]!.theoreticalHours * config.progressPerHour}%',
+                          ),
                         ))
                     .toList(),
               ),
@@ -15450,6 +15578,14 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
         widget.campHeartState?.campHeartLevel ?? widget.campHeartLevel ?? 0;
     final blockedReason = _resolvedBlockedReason(campHeartLevel);
     final footer = _resolvedFooter(campHeartLevel);
+    final requiredData = widget.gameState.projectRequiredData(
+      widget.targetId,
+      targetLevel: project.targetLevel,
+    );
+    final dataIssue = widget.gameState.projectDataRequirementIssue(
+      widget.targetId,
+      targetLevel: project.targetLevel,
+    );
     return SafeArea(
       child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
@@ -15533,6 +15669,42 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                   onWithdraw: () {},
                   showWithdraw: false,
                 ),
+              if (requiredData.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 6),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('DONNÉES',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                ),
+                const SizedBox(height: 6),
+                ...requiredData.entries.map(
+                  (entry) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '${_kernelDataFamilyLabel(entry.key)} ${widget.gameState.pTibugDataReserve[entry.key] ?? 0} / ${entry.value}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: (widget.gameState.pTibugDataReserve[entry.key] ??
+                                    0) >=
+                                entry.value
+                            ? null
+                            : Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ),
+                if (dataIssue != null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      dataIssue,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
               if (footer != null) ...<Widget>[
                 const SizedBox(height: 8),
                 Text(
@@ -15544,6 +15716,7 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
               FilledButton.icon(
                 onPressed: blockedReason == null &&
                         project.isReady &&
+                        dataIssue == null &&
                         !project.isInProgress &&
                         project.state != ConstructionProjectState.maxLevel
                     ? () {
@@ -18502,7 +18675,9 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     PTibugArmature armature,
     String tankId,
   ) async {
-    final eligible = widget.gameState.pTibugAspectMatrices;
+    final eligible = widget.gameState.pTibugAspectMatrices
+        .where((matrix) => matrix.species == armature.species)
+        .toList(growable: false);
     final selected = await showDialog<List<String>?>(
       context: context,
       builder: (dialogContext) => _CultivationMatrixSelectionDialog(
@@ -21036,6 +21211,11 @@ class FablabRecyclerView extends StatelessWidget {
   final Zone0GameState gameState;
   final int campHeartLevel;
 
+  static void _showAction(BuildContext context, Zone0ActionResult result) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final needed = gameState.recyclerWasteRequired;
@@ -21100,26 +21280,32 @@ class FablabRecyclerView extends StatelessWidget {
                         children: <Widget>[
                           Text(
                               'Cuve ${vatIndex + 1} · ${vat.storedWaste}/$capacity'),
-                          if (enabled) ...<Widget>[
-                            ChoiceChip(
-                                label: const Text('Aucun'),
-                                selected: vat.moduleType == null,
-                                onSelected: (_) => gameState
-                                    .setRecyclerVatModule(vatIndex, null)),
-                            ChoiceChip(
-                                label: const Text('Organique'),
-                                selected: vat.moduleType ==
-                                    RecyclerModuleType.organic,
-                                onSelected: (_) =>
-                                    gameState.setRecyclerVatModule(
-                                        vatIndex, RecyclerModuleType.organic)),
-                            ChoiceChip(
-                                label: const Text('Minéral'),
-                                selected: vat.moduleType ==
-                                    RecyclerModuleType.mineral,
-                                onSelected: (_) =>
-                                    gameState.setRecyclerVatModule(
-                                        vatIndex, RecyclerModuleType.mineral)),
+                          if (enabled && vat.moduleType == null) ...<Widget>[
+                            OutlinedButton(
+                              onPressed: () => _showAction(
+                                  context,
+                                  gameState.installRecyclerVatModule(
+                                      vatIndex, RecyclerModuleType.organic)),
+                              child: const Text(
+                                  'Installer Organique · 40 O. · 10 M.'),
+                            ),
+                            OutlinedButton(
+                              onPressed: () => _showAction(
+                                  context,
+                                  gameState.installRecyclerVatModule(
+                                      vatIndex, RecyclerModuleType.mineral)),
+                              child: const Text(
+                                  'Installer Minéral · 10 O. · 40 M.'),
+                            ),
+                          ] else if (enabled) ...<Widget>[
+                            Text(
+                                'Module ${vat.moduleType == RecyclerModuleType.organic ? 'Organique' : 'Minéral'}'),
+                            OutlinedButton(
+                              onPressed: () => _showAction(context,
+                                  gameState.removeRecyclerVatModule(vatIndex)),
+                              child: const Text(
+                                  'Défaire le module · récupération 50 %'),
+                            ),
                           ] else
                             const Text('Module indisponible'),
                         ]),

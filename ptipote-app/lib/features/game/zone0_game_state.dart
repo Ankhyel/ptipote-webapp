@@ -424,7 +424,8 @@ class Zone0GameState extends ChangeNotifier {
   /// Empêche les actions de simulation d'écraser les données avant le chargement.
   bool get hasLoadedFromFirebase => _loadedFromFirebase;
 
-  bool get isFablabBuilt => fablabLevel >= fablabConfig.cuisineUnlockLevel;
+  bool get isFablabBuilt =>
+      fablabLevel >= fablabConfig.cuisineUnlockLevel || fabLab.level > 0;
   int get fabLabStorageCapacity =>
       isFablabBuilt ? fablabConfig.fablabStorageForLevel(fablabLevel) : 0;
   int get houseStorageCapacity => fablabConfig.houseStorageForLevel(houseLevel);
@@ -444,6 +445,11 @@ class Zone0GameState extends ChangeNotifier {
       isSecurityTowerBuilt && towerWeatherModuleInstalled;
   bool get isTowerResearchUnlocked =>
       isSecurityTowerBuilt && towerResearchModuleInstalled;
+
+  /// Public/domain name for the single functional entry point to Research.
+  /// Existing saves retain the tower-module fields; this computed flag keeps
+  /// that migration-safe representation while preventing cosmetic unlocks.
+  bool get researchUnlocked => isTowerResearchUnlocked;
   bool get isMarketBuilt => marketLevel >= 1;
   bool get isPlaineNurseryBuilt => plaineNurseryLevel >= 1;
 
@@ -3535,14 +3541,30 @@ class Zone0GameState extends ChangeNotifier {
   double capsuleDiscoveryMultiplierFor(ForageBiome biome) =>
       biomeResearchProgressFor(biome) < 50 ? .5 : 1;
 
-  bool isBiomeResearching(ForageBiome biome) => towerBiomeResearch.any(
-        (research) => research.biome == biome && research.isActive,
-      );
+  /// A legacy Tower research may still exist while a save is migrated, but
+  /// every new research run is a normal shared mission. Keeping this lookup
+  /// central prevents the Tower from starting two research runs in one biome.
+  bool isBiomeResearching(ForageBiome biome) =>
+      activeBiomeResearchFor(biome) != null ||
+      activeResearchMissionFor(biome) != null;
 
   TowerBiomeResearch? activeBiomeResearchFor(ForageBiome biome) =>
       towerBiomeResearch
           .where((research) => research.biome == biome && research.isActive)
           .firstOrNull;
+
+  ForageMission? activeResearchMissionFor(ForageBiome biome) => missions
+      .where(
+        (mission) =>
+            mission.biome == biome &&
+            mission.type == ForageMissionType.research &&
+            mission.status == ForageMissionStatus.active,
+      )
+      .firstOrNull;
+
+  DateTime? activeResearchEndsAtFor(ForageBiome biome) =>
+      activeResearchMissionFor(biome)?.endTime ??
+      activeBiomeResearchFor(biome)?.endsAt;
 
   Zone0ActionResult startTowerBiomeResearch({
     required ForageBiome biome,
@@ -3610,13 +3632,66 @@ class Zone0GameState extends ChangeNotifier {
   Map<PTibugDataFamily, int> towerResearchFamilyWeightsFor(
     ForageBiome biome,
   ) {
-    final weights =
-        pTibugConfig.biomes[_ptibugBiomeForForageBiome(biome)]!.dataWeights;
-    return <PTibugDataFamily, int>{
-      for (final family in PTibugDataFamily.values)
-        family: weights[family] ?? 0,
-    };
+    return _researchCapsuleWeightsFor(biome);
   }
+
+  /// One population in the built local Refuge/Nursery is enough. This is a
+  /// biome-presence bonus, never a bonus per P'TIBUG.
+  bool hasLocalPTibugPopulationForResearch(ForageBiome biome) => pTibugs.any(
+        (bug) =>
+            bug.lifecycleStatus == PTibugLifecycleStatus.active &&
+            bug.refugeBiome == biome &&
+            (territoryBuildingForId(bug.assignedBuildingId)?.isBuilt ?? false),
+      );
+
+  Map<PTibugDataFamily, int> _researchCapsuleWeightsFor(ForageBiome biome) {
+    final biomeId = _ptibugBiomeForForageBiome(biome);
+    final weights = Map<PTibugDataFamily, int>.from(
+      pTibugConfig.biomes[biomeId]!.dataWeights,
+    );
+    if (hasLocalPTibugPopulationForResearch(biome)) {
+      weights[PTibugDataFamily.comportementInsectoide] =
+          (weights[PTibugDataFamily.comportementInsectoide] ?? 0) +
+              pTibugConfig.ptibugPresenceInsectoidBonusWeight;
+    }
+    return _normalizeResearchCapsuleWeights(weights);
+  }
+
+  Map<PTibugDataFamily, int> _normalizeResearchCapsuleWeights(
+    Map<PTibugDataFamily, int> raw,
+  ) {
+    final total = raw.values.fold<int>(0, (sum, value) => sum + value);
+    if (total <= 0) return <PTibugDataFamily, int>{};
+    final normalized = <PTibugDataFamily, int>{};
+    final fractions = <PTibugDataFamily, double>{};
+    var assigned = 0;
+    for (final family in PTibugDataFamily.values) {
+      final exact = (raw[family] ?? 0) * 100 / total;
+      final value = exact.floor();
+      normalized[family] = value;
+      fractions[family] = exact - value;
+      assigned += value;
+    }
+    final leftovers = 100 - assigned;
+    final order = PTibugDataFamily.values.toList()
+      ..sort((a, b) => (fractions[b] ?? 0).compareTo(fractions[a] ?? 0));
+    for (var index = 0; index < leftovers; index += 1) {
+      normalized[order[index % order.length]] =
+          (normalized[order[index % order.length]] ?? 0) + 1;
+    }
+    return normalized;
+  }
+
+  /// Dashboard/DEV diagnostic: base tables must always be authored at 100.
+  List<String> get researchBiomeCapsuleWeightWarnings => [
+        for (final entry in pTibugConfig.biomes.entries)
+          if (entry.value.dataWeights.values.fold<int>(
+                0,
+                (sum, weight) => sum + weight,
+              ) !=
+              100)
+            '${entry.value.displayName} : les poids de Capsules doivent totaliser 100.',
+      ];
 
   String get towerWeatherHudLabel {
     final weather = activeGlobalWeatherEvent;
@@ -12504,25 +12579,14 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   bool installRecyclerBiologicalOrientation() {
-    if (recyclerBiologicalOrientationInstalled ||
-        !hasResources(wasteRecyclerConfig.biologicalOrientationModuleCost)) {
-      return false;
-    }
-    removeResources(wasteRecyclerConfig.biologicalOrientationModuleCost);
-    recyclerBiologicalOrientationInstalled = true;
-    fabLab.recyclerVats.first.moduleType = RecyclerModuleType.organic;
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
-    return true;
+    return installRecyclerVatModule(0, RecyclerModuleType.organic).success;
   }
 
   bool setRecyclerBiologicalOrientation(bool active) {
-    if (active && !recyclerBiologicalOrientationInstalled) return false;
-    recyclerBiologicalOrientationActive = active;
-    fabLab.recyclerVats.first.moduleType =
-        active ? RecyclerModuleType.organic : null;
-    notifyListeners();
-    unawaited(saveRuntimeToFirebase());
+    // Legacy entry point: a module can no longer be toggled off or changed
+    // for free. Dismantling is the only way to clear a vat.
+    if (!active || !recyclerBiologicalOrientationInstalled) return false;
+    recyclerBiologicalOrientationActive = true;
     return true;
   }
 
@@ -12538,7 +12602,43 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Ce module n’est pas encore disponible pour cette cuve.',
       );
     }
-    fabLab.recyclerVats[vatIndex].moduleType = moduleType;
+    if (moduleType == null) return removeRecyclerVatModule(vatIndex);
+    return installRecyclerVatModule(vatIndex, moduleType);
+  }
+
+  Map<String, int> recyclerModuleCost(RecyclerModuleType type) =>
+      Map<String, int>.from(type == RecyclerModuleType.organic
+          ? wasteRecyclerConfig.organicRecyclerModuleCost
+          : wasteRecyclerConfig.mineralRecyclerModuleCost);
+
+  Zone0ActionResult installRecyclerVatModule(
+    int vatIndex,
+    RecyclerModuleType moduleType,
+  ) {
+    if (vatIndex < 0 ||
+        vatIndex >= fabLab.recyclerVats.length ||
+        !fablabConfig.recyclerVatSupportsModule(vatIndex, recyclerLevel)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Ce module n’est pas encore disponible pour cette cuve.');
+    }
+    final vat = fabLab.recyclerVats[vatIndex];
+    if (vat.moduleType != null) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Défaites d’abord le module installé sur cette cuve.');
+    }
+    final cost = recyclerModuleCost(moduleType);
+    if (!hasResources(cost)) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Ressources insuffisantes pour installer ce module.');
+    }
+    removeResources(cost);
+    vat.moduleType = moduleType;
+    vat.installedModuleCost
+      ..clear()
+      ..addAll(cost);
     if (vatIndex == 0) {
       recyclerBiologicalOrientationInstalled = moduleType != null;
       recyclerBiologicalOrientationActive =
@@ -12547,7 +12647,40 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-        success: true, message: 'Module de cuve mis à jour.');
+        success: true, message: 'Module de cuve installé.');
+  }
+
+  Zone0ActionResult removeRecyclerVatModule(int vatIndex) {
+    if (vatIndex < 0 || vatIndex >= fabLab.recyclerVats.length) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cuve introuvable.');
+    }
+    final vat = fabLab.recyclerVats[vatIndex];
+    if (vat.moduleType == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun module installé.');
+    }
+    final source = vat.installedModuleCost.isEmpty
+        ? recyclerModuleCost(vat.moduleType!)
+        : vat.installedModuleCost;
+    final refund = <String, int>{
+      for (final entry in source.entries)
+        entry.key: entry.value *
+            wasteRecyclerConfig.recyclerModuleRefundPercent ~/
+            100,
+    };
+    addResources(refund);
+    vat.moduleType = null;
+    vat.installedModuleCost.clear();
+    if (vatIndex == 0) {
+      recyclerBiologicalOrientationInstalled = false;
+      recyclerBiologicalOrientationActive = false;
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true,
+        message: 'Module défait : 50 % des matériaux ont été récupérés.');
   }
 
   List<int> _recyclerRatios({RecyclerModuleType? moduleType}) {
@@ -12827,6 +12960,72 @@ class Zone0GameState extends ChangeNotifier {
         constructionDuration: _projectDuration(targetId),
       );
     });
+  }
+
+  /// Data costs remain separate from deposited physical materials. They are
+  /// consumed atomically when work starts, which prevents half-funded
+  /// constructions while keeping the existing progressive material deposits.
+  Map<PTibugDataFamily, int> projectRequiredData(
+    String targetId, {
+    int? targetLevel,
+  }) {
+    final definition = buildingConstructionConfig.projects[targetId];
+    if (definition == null) return const <PTibugDataFamily, int>{};
+    return <PTibugDataFamily, int>{
+      for (final entry
+          in definition.dataRequirementsForLevel(targetLevel ?? 1).entries)
+        if (_dataFamilyForName(entry.key) case final family?)
+          family: math.max(0, entry.value),
+    }..removeWhere((_, amount) => amount <= 0);
+  }
+
+  String? projectDataRequirementIssue(String targetId, {int? targetLevel}) {
+    final costs = projectRequiredData(targetId, targetLevel: targetLevel);
+    if (costs.isEmpty) return null;
+    if (!isTowerResearchUnlocked) {
+      return 'La Tour de recherche doit être construite pour fournir les Données requises.';
+    }
+    final missing = costs.entries.where(
+      (entry) => (pTibugDataReserve[entry.key] ?? 0) < entry.value,
+    );
+    if (missing.isEmpty) return null;
+    return 'Données insuffisantes : ${missing.map((entry) => '${_ptibugDataFamilyLabel(entry.key)} ${(pTibugDataReserve[entry.key] ?? 0)}/${entry.value}').join(' · ')}';
+  }
+
+  /// Dashboard/DEV validator: every post-onboarding building project must
+  /// declare visible Biomimétisme data. It reports configuration mistakes
+  /// instead of silently injecting a hidden cost into the UI.
+  List<String> validateBuildingDataRequirements() {
+    final issues = <String>[];
+    for (final definition in buildingConstructionConfig.projects.values) {
+      if (definition.bypassBiomimicryRequirement) continue;
+      final declaredLevels = definition.requiredDataByLevel.isEmpty
+          ? <int>[1]
+          : definition.requiredDataByLevel.keys;
+      if (declaredLevels.any(
+        (level) =>
+            (definition.dataRequirementsForLevel(level)['biomimetisme'] ?? 0) <=
+            0,
+      )) {
+        issues.add('${definition.id}: BIOMIMÉTISME requis manquant.');
+      }
+      for (final level in declaredLevels) {
+        for (final entry
+            in definition.dataRequirementsForLevel(level).entries) {
+          if (_dataFamilyForName(entry.key) == null) {
+            issues.add(
+              '${definition.id} N$level: type de Donnée inconnu (${entry.key}).',
+            );
+          }
+          if (entry.value < 0) {
+            issues.add(
+              '${definition.id} N$level: coût de Donnée négatif (${entry.key}).',
+            );
+          }
+        }
+      }
+    }
+    return issues;
   }
 
   Map<String, int> _projectRequirements(String targetId, int targetLevel) {
@@ -13255,6 +13454,17 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Tous les matériaux sont requis.',
       );
     }
+    final dataIssue =
+        projectDataRequirementIssue(targetId, targetLevel: project.targetLevel);
+    if (dataIssue != null) {
+      return Zone0ActionResult(success: false, message: dataIssue);
+    }
+    final requiredData =
+        projectRequiredData(targetId, targetLevel: project.targetLevel);
+    // Validation happened above before any state mutation. Data is now part
+    // of the same logical start transaction as the already-reserved
+    // materials, so it cannot be charged for a blocked project.
+    _consumePTibugData(requiredData);
     final now = DateTime.now();
     project.startedAt = now;
     final artisanReduction =
@@ -13333,6 +13543,7 @@ class Zone0GameState extends ChangeNotifier {
         ensureWeatherForecast();
       case 'towerResearchModule':
         towerResearchModuleInstalled = true;
+        _settleLegacyDataCellsToCapsules(at: now);
       case 'market':
         marketLevel = project.currentLevel;
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
@@ -13835,6 +14046,12 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
         success: false,
         message: 'Sélectionnez au maximum deux Matrices disponibles.',
+      );
+    }
+    if (matrices.any((matrix) => matrix.species != armature.species)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Les Matrices doivent être compatibles avec l’Armature.',
       );
     }
     final now = DateTime.now();
@@ -18076,6 +18293,8 @@ class Zone0GameState extends ChangeNotifier {
       }
     }
 
+    changed = _settleLegacyDataCellsToCapsules(at: now) || changed;
+
     for (var index = 0; index < pTibugCapsules.length; index += 1) {
       final capsule = pTibugCapsules[index];
       if (capsule.originRefugeId != null &&
@@ -18088,6 +18307,23 @@ class Zone0GameState extends ChangeNotifier {
         creatorPlayerId: capsule.creatorPlayerId ?? 'legacy-player',
         certificationId: capsule.certificationId ?? 'legacy-${capsule.id}',
       );
+      changed = true;
+    }
+    return changed;
+  }
+
+  /// One-way, idempotent migration from unopened legacy Cells to direct
+  /// Capsules/data. The legacy record remains as history but can never be
+  /// opened again, which prevents duplicate grants after a reload.
+  bool _settleLegacyDataCellsToCapsules({required DateTime at}) {
+    if (!researchUnlocked) return false;
+    var changed = false;
+    for (final cell in pTibugDataCells.where((item) => !item.isOpened)) {
+      for (final entry in cell.entries) {
+        pTibugDataReserve[entry.family] =
+            (pTibugDataReserve[entry.family] ?? 0) + entry.value(pTibugConfig);
+      }
+      cell.openedAt = at;
       changed = true;
     }
     return changed;
@@ -18108,6 +18344,16 @@ class Zone0GameState extends ChangeNotifier {
     required Map<String, int> xpGainByMember,
     ForageMissionType type = ForageMissionType.harvest,
   }) {
+    if (figurines.isEmpty) {
+      throw ArgumentError.value(
+        figurines,
+        'figurines',
+        'Une mission nécessite au moins un P’TIPOTE.',
+      );
+    }
+    if (type == ForageMissionType.research && !researchUnlocked) {
+      throw StateError('La Tour de recherche doit être active.');
+    }
     final start = DateTime.now();
     final durationConfig = lisiereForageConfig.durations[duration]!;
     final intensityConfig = lisiereForageConfig.intensities[intensity]!;
@@ -18185,6 +18431,66 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return mission;
+  }
+
+  /// Research is a mission context of the existing Lisière engine. Only the
+  /// Tower UI may call this entry point; it still produces a normal
+  /// ForageMission so availability, offline resolution, group XP and weather
+  /// handling remain identical.
+  ForageMission startTowerResearchMission({
+    required List<PtipoteFigurine> figurines,
+    required ForageBiome biome,
+    required ForageDuration duration,
+    required ForageIntensity intensity,
+  }) {
+    if (!researchUnlocked) {
+      throw StateError('La Tour de recherche est verrouillée.');
+    }
+    if (!towerOperationsConfig.research.researchEnabled) {
+      throw StateError('Les missions de Recherche sont désactivées.');
+    }
+    if (!isBiomeUnlocked(biome)) {
+      throw StateError('Ce biome doit être exploré avant la Recherche.');
+    }
+    if (isBiomeResearching(biome)) {
+      throw StateError('Une recherche est déjà en cours dans ce biome.');
+    }
+    final durationConfig = lisiereForageConfig.durations[duration]!;
+    final intensityConfig = lisiereForageConfig.intensities[intensity]!;
+    final typeConfig =
+        lisiereForageConfig.missionTypes[ForageMissionType.research]!;
+    final vitality = math.max(
+      1,
+      (durationConfig.baseVitalityCost * intensityConfig.vitalityMultiplier)
+          .round(),
+    );
+    final xp = math.max(1, lisiereForageConfig.xpGainByDuration[duration] ?? 1);
+    final waste = math.max(
+      0,
+      (typeConfig.wastePerHour *
+              durationConfig.theoreticalHours *
+              intensityConfig.rewardMultiplier)
+          .round(),
+    );
+    return startForageMission(
+      figurines: figurines,
+      biome: biome,
+      duration: duration,
+      intensity: intensity,
+      type: ForageMissionType.research,
+      expectedRewards: waste == 0 ? const <String, int>{} : {'Déchets': waste},
+      vitalityCostByMember: <String, int>{
+        for (final figurine in figurines) figurine.id: vitality,
+      },
+      xpGainByMember: <String, int>{
+        for (final figurine in figurines) figurine.id: xp,
+      },
+      riskPercent: 0,
+      riskLabel: 'Recherche contrôlée',
+      baseRiskPercent: 0,
+      securityAtLaunch: biomeSecurity[biome]?.localSecurity ?? 0,
+      securityReduction: 0,
+    );
   }
 
   Zone0ActionResult startBiomeExploration({
@@ -18323,11 +18629,11 @@ class Zone0GameState extends ChangeNotifier {
       );
       state.lastResearchDecayAt = current;
       final cells = _createTowerResearchCells(research, completedAt: current);
-      pTibugDataCells.addAll(cells);
+      final capsules = _grantLegacyResearchCapsules(cells);
       research.completedAt = current;
       reports.add(PtipoteMissionReport.system(
         message:
-            'Recherche de ${lisiereForageConfig.biomes[research.biome]!.label} : ${state.researchProgress}% de données locales${cells.isEmpty ? '' : ' · ${cells.length} Cellule(s) trouvée(s)'}.',
+            'Recherche de ${lisiereForageConfig.biomes[research.biome]!.label} : ${state.researchProgress}% de données locales${capsules.isEmpty ? '' : ' · Capsules de données obtenues : ${capsules.entries.map((entry) => '${_ptibugDataFamilyLabel(entry.key)} +${entry.value}').join(' · ')}'}.',
       ));
       changed = true;
     }
@@ -18617,46 +18923,9 @@ class Zone0GameState extends ChangeNotifier {
 
   void _generateMerchantOffers() {
     merchantOffers.clear();
-    final families = List<PTibugDataFamily>.from(PTibugDataFamily.values)
-      ..shuffle(_random);
-    final firstDominant = families.first;
-    final secondDominant = families[1];
-    final thirdDominant = families[2];
-    final firstCell = _createMerchantDataCell(
-      neutral: false,
-      dominant: firstDominant,
-    );
-    final secondCell = _createMerchantDataCell(
-      neutral: false,
-      dominant: secondDominant,
-    );
-    final thirdCell = _createMerchantDataCell(
-      neutral: false,
-      dominant: thirdDominant,
-    );
-    merchantOffers.addAll(<MerchantOffer>[
-      MerchantOffer(
-        planName: 'Cellule ${_ptibugDataFamilyLabel(firstDominant)}',
-        price: _merchantDataCellPrice(firstCell),
-        kind: MerchantOfferKind.specializedDataCell,
-        dominantDataFamily: firstDominant,
-        dataCell: firstCell,
-      ),
-      MerchantOffer(
-        planName: 'Cellule ${_ptibugDataFamilyLabel(secondDominant)}',
-        price: _merchantDataCellPrice(secondCell),
-        kind: MerchantOfferKind.specializedDataCell,
-        dominantDataFamily: secondDominant,
-        dataCell: secondCell,
-      ),
-      MerchantOffer(
-        planName: 'Cellule ${_ptibugDataFamilyLabel(thirdDominant)}',
-        price: _merchantDataCellPrice(thirdCell),
-        kind: MerchantOfferKind.specializedDataCell,
-        dominantDataFamily: thirdDominant,
-        dataCell: thirdCell,
-      ),
-    ]);
+    // Capsules are earned only by Research missions from the Tower. The
+    // Sourcier now offers finished goods exclusively; legacy cell offers are
+    // removed by [_refreshMerchantOffersForCurrentRules].
     final products = towerOperationsConfig.merchantOfferPrices.entries
         .toList(growable: false)
       ..shuffle(_random);
@@ -18724,8 +18993,7 @@ class Zone0GameState extends ChangeNotifier {
       towerOperationsConfig.merchantWorkshopMaximumQuantity,
     );
     final matchesCurrentRules = patterns == 0 &&
-        cells.length == 3 &&
-        cells.every((offer) => offer.dataCell != null) &&
+        cells.isEmpty &&
         products.length == desiredProductCount &&
         products.every(
           (offer) =>
@@ -18851,6 +19119,14 @@ class Zone0GameState extends ChangeNotifier {
         success: false,
         message:
             'Les Patterns sont désormais découverts directement par le Kernel.',
+      );
+    }
+    if (offer.kind == MerchantOfferKind.specializedDataCell ||
+        offer.kind == MerchantOfferKind.neutralDataCell) {
+      return const Zone0ActionResult(
+        success: false,
+        message:
+            'Les Capsules de données s’obtiennent uniquement à la Tour de recherche.',
       );
     }
     final selectedQuantity = offer.kind == MerchantOfferKind.workshopItem
@@ -19902,13 +20178,19 @@ class Zone0GameState extends ChangeNotifier {
     if (mission.biome == ForageBiome.plaineRiche) {
       plaineMissionsCompleted += 1;
     }
-    final dataCells = _createDataCellsForMission(
-      mission: mission,
-      duration: duration,
-      completedAt: completedAt,
-    );
-    if (dataCells.isNotEmpty) {
-      pTibugDataCells.addAll(dataCells);
+    var grantedResearchData = const <PTibugDataFamily, int>{};
+    if (mission.type == ForageMissionType.research &&
+        !mission.researchRewardGranted) {
+      final dataCells = _createDataCellsForMission(
+        mission: mission,
+        duration: duration,
+        completedAt: completedAt,
+      );
+      grantedResearchData = _grantResearchCapsules(
+        mission: mission,
+        cells: dataCells,
+      );
+      mission.researchRewardGranted = true;
     }
     final localState = biomeSecurity[mission.biome];
     if (localState != null) {
@@ -20007,8 +20289,8 @@ class Zone0GameState extends ChangeNotifier {
       'Vigueur : $biomassBefore% → ${math.max(0, biomassBefore - biomassCost)}% (-$biomassCost%).',
       if (emergencyReturn)
         'Retour d’urgence : le butin est calculé au temps écoulé, avec +5% de risque événement.',
-      if (dataCells.isNotEmpty)
-        '${dataCells.length} Cellule${dataCells.length > 1 ? 's' : ''} de données à analyser dans le Kernel.',
+      if (grantedResearchData.isNotEmpty)
+        'Capsules de données obtenues : ${grantedResearchData.entries.map((entry) => '${_ptibugDataFamilyLabel(entry.key)} +${entry.value}').join(' · ')}.',
       ...memberStateLabels,
     ].join(' ');
     reports.add(
@@ -20040,7 +20322,7 @@ class Zone0GameState extends ChangeNotifier {
         summary:
             '${mission.type == ForageMissionType.research ? 'Recherche' : 'Récolte'} : '
             '${rewards.isEmpty ? 'aucune ressource matérielle' : rewards.entries.map((entry) => '${entry.value} ${entry.key}').join(', ')}'
-            '${dataCells.isEmpty ? '' : ' · ${dataCells.length} Cellule(s)'}'
+            '${grantedResearchData.isEmpty ? '' : ' · ${grantedResearchData.entries.map((entry) => '${_ptibugDataFamilyLabel(entry.key)} +${entry.value}').join(', ')}'}'
             ' · Vigueur -$biomassCost%'
             '${incident == 'aucun' ? '' : ' · événement : $incident'}.',
       ),
@@ -20322,6 +20604,11 @@ class Zone0GameState extends ChangeNotifier {
     required ForageDurationConfig duration,
     required DateTime completedAt,
   }) {
+    // Normal Lisière harvesting never creates scientific Capsules. Legacy
+    // P'TIBUG cells still exist for migration and their own systems only.
+    if (mission.type != ForageMissionType.research || !researchUnlocked) {
+      return const <PTibugDataCell>[];
+    }
     if (pTibugDataCells.any((cell) => cell.sourceMissionId == mission.id)) {
       return const <PTibugDataCell>[];
     }
@@ -20342,17 +20629,12 @@ class Zone0GameState extends ChangeNotifier {
           .round()
           .clamp(0, 100);
       if (_random.nextInt(100) >= chance) continue;
-      final weights = Map<PTibugDataFamily, int>.from(biome.dataWeights);
+      final weights = _researchCapsuleWeightsFor(mission.biome);
       final toxineWeightBonus =
           _activePTibugEffect('Poids Toxine', biome: biomeId);
       if (toxineWeightBonus > 0) {
         weights[PTibugDataFamily.toxine] =
             (weights[PTibugDataFamily.toxine] ?? 0) + toxineWeightBonus;
-      }
-      if (biomeId == PTibugBiome.savaneTropicale && plaineNurseryLevel > 0) {
-        weights[PTibugDataFamily.comportementInsectoide] =
-            (weights[PTibugDataFamily.comportementInsectoide] ?? 0) +
-                biome.nurseryInsectBehaviourWeight;
       }
       final dominant = _pickWeightedDataFamily(weights);
       final entries = <PTibugDataCellEntry>[];
@@ -20373,7 +20655,7 @@ class Zone0GameState extends ChangeNotifier {
         PTibugDataCell(
           id: 'cell-${mission.id}-$attempt',
           displayName:
-              'Cellule ${_ptibugDataFamilyLabel(dominant)} · ${biome.displayName}',
+              'Capsule ${_ptibugDataFamilyLabel(dominant)} · ${biome.displayName}',
           sourceBiomeId: biomeId.name,
           sourceMissionId: mission.id,
           dominantFamily: dominant,
@@ -20384,6 +20666,72 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     return cells;
+  }
+
+  /// Research rewards are granted directly to the Data reserve. The
+  /// PTibugDataCell shape is retained only as an internal weighted-roll
+  /// container and for legacy migration; there is no open/reveal step.
+  Map<PTibugDataFamily, int> _grantResearchCapsules({
+    required ForageMission mission,
+    required List<PTibugDataCell> cells,
+  }) {
+    if (mission.type != ForageMissionType.research || !researchUnlocked) {
+      return const <PTibugDataFamily, int>{};
+    }
+    final granted = <PTibugDataFamily, int>{};
+    for (final cell in cells) {
+      for (final entry in cell.entries) {
+        granted[entry.family] =
+            (granted[entry.family] ?? 0) + entry.value(pTibugConfig);
+      }
+    }
+    // Toxic Cloud is a deterministic environmental guarantee, not another
+    // random table entry. It is additive to the normal research outcome.
+    if (towerOperationsConfig.research.toxicCloudGuaranteeEnabled &&
+        activeGlobalWeatherEvent?.type == TowerWeatherType.toxicCloud) {
+      granted[PTibugDataFamily.toxine] = math.max(
+        math.max(
+          1,
+          towerOperationsConfig.research.toxicCapsuleGuaranteedAmount,
+        ),
+        granted[PTibugDataFamily.toxine] ?? 0,
+      );
+    }
+    for (final entry in granted.entries) {
+      pTibugDataReserve[entry.key] =
+          (pTibugDataReserve[entry.key] ?? 0) + entry.value;
+    }
+    return granted;
+  }
+
+  /// Legacy Tower-only research is allowed to finish after a migration, but
+  /// it must use the same direct Capsule reward model as current missions.
+  Map<PTibugDataFamily, int> _grantLegacyResearchCapsules(
+    List<PTibugDataCell> cells,
+  ) {
+    if (!researchUnlocked) return const <PTibugDataFamily, int>{};
+    final granted = <PTibugDataFamily, int>{};
+    for (final cell in cells) {
+      for (final entry in cell.entries) {
+        granted[entry.family] =
+            (granted[entry.family] ?? 0) + entry.value(pTibugConfig);
+      }
+    }
+    if (towerOperationsConfig.research.toxicCloudGuaranteeEnabled &&
+        activeGlobalWeatherEvent?.type == TowerWeatherType.toxicCloud) {
+      granted[PTibugDataFamily.toxine] = math.max(
+        math.max(
+          1,
+          towerOperationsConfig.research.toxicCapsuleGuaranteedAmount,
+        ),
+        granted[PTibugDataFamily.toxine] ?? 0,
+      );
+    }
+    for (final entry in granted.entries) {
+      pTibugDataReserve[entry.key] =
+          (pTibugDataReserve[entry.key] ?? 0) + entry.value;
+    }
+    return granted;
   }
 
   int _pickDataCellValue(ForageMissionType type) {
@@ -20412,7 +20760,7 @@ class Zone0GameState extends ChangeNotifier {
     for (var attempt = 0; attempt < research.theoreticalHours; attempt += 1) {
       if (_random.nextInt(100) >=
           towerOperationsConfig.research.cellChancePerHour) continue;
-      final weights = Map<PTibugDataFamily, int>.from(biome.dataWeights);
+      final weights = _researchCapsuleWeightsFor(research.biome);
       final dominant = _pickWeightedDataFamily(weights);
       final targetValue = _pickDataCellValue(ForageMissionType.research);
       final entries = List<PTibugDataCellEntry>.generate(
@@ -20428,7 +20776,7 @@ class Zone0GameState extends ChangeNotifier {
       cells.add(PTibugDataCell(
         id: 'tower-cell-${research.id}-$attempt',
         displayName:
-            'Cellule ${_ptibugDataFamilyLabel(dominant)} · ${biome.displayName}',
+            'Capsule ${_ptibugDataFamilyLabel(dominant)} · ${biome.displayName}',
         sourceBiomeId: biomeId.name,
         sourceMissionId: research.id,
         dominantFamily: dominant,
@@ -26711,6 +27059,7 @@ class ForageMission {
       '${data['status'] ?? ''}',
       ForageMissionStatus.active,
     );
+    mission.researchRewardGranted = data['researchRewardGranted'] == true;
     return mission;
   }
 
@@ -26739,6 +27088,7 @@ class ForageMission {
   final Map<String, int> xpGainByMember;
   final Map<String, PtipoteAutoAssignmentPreference> autoPreferenceByMember;
   ForageMissionStatus status = ForageMissionStatus.active;
+  bool researchRewardGranted = false;
 
   Map<String, dynamic> toFirebase() {
     return <String, dynamic>{
@@ -26767,6 +27117,7 @@ class ForageMission {
         (key, value) => MapEntry(key, value.name),
       ),
       'status': status.name,
+      'researchRewardGranted': researchRewardGranted,
     };
   }
 

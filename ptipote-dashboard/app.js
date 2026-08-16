@@ -1548,7 +1548,7 @@ function renderPTibugEditor() {
       ["researchPatterns", patternId],
       { meta: "Maîtrise, familles de données et biomes conseillés" },
     )),
-    ptibugEditorHeading("Biomes et production locale", "Risques, Cellules de données, pondérations Arac et bonus de Refuges P'TIBUG."),
+    ptibugEditorHeading("Biomes et production locale", "Risques, Capsules de données, pondérations Arac et bonus de Refuges P'TIBUG."),
     ...Object.entries(biomes).map(([biomeId, biome]) => configCard(
       `Biome · ${biome.displayName || biomeId}`,
       "ptibug",
@@ -1772,7 +1772,7 @@ function renderTowerEditor() {
   el.securityTowerConfigList.innerHTML = [
     configCard("Tour de sécurité", "tower", zone0Settings.tower, [], { open: true, meta: "Construction, emplacements et sécurité" }),
     configCard("Rondes, exploration et météo", "towerOperations", operationsWithoutWeather, [], { meta: "Sécurité locale, marchand et calendrier météo" }),
-    configCard("Recherche de Cellules", "towerOperations", research, ["research"], { open: true, meta: "Probabilités de Cellules, valeur, progression et décroissance des connaissances par biome" }),
+    configCard("Recherche et Capsules", "towerOperations", research, ["research"], { open: true, meta: "Probabilités de Capsules, valeur, progression et décroissance des connaissances par biome" }),
     configCard("Viabilité des bâtiments", "towerOperations", buildingViability, ["buildingViability"], { open: true, meta: "Dégâts météo, mode dégradé, réparation et protections structurelles" }),
     ...weatherEvents.map((weather, index) => configCard(
       weather.label || `Intempérie ${index + 1}`,
@@ -1812,7 +1812,7 @@ function renderWorkshopEditor() {
     configCard("Arrivées, visions et autonomie des maisons", "housing", residentHousing, [], { meta: "Candidatures narratives, soutiens aux grands chantiers, budget du foyer, protections, mobilier, second générateur et réparations lentes." }),
     configCard("Passions et rôles communautaires", "communityRoles", zone0Settings.communityRoles || {}, [], { meta: "Poids de passion, slots habitants, efficacité lente, Cuisine, Lisière, Sécurité, météo et préparation P’TIBUG" }),
     configCard("Économie interne des habitants", "residentEconomy", zone0Settings.residentEconomy || {}, [], { meta: "Piles, production domestique, distribution, prix, réserves, lots, répartition 50/25/25 et règlements." }),
-    configCard("Coûts de construction des bâtiments", "buildingConstruction", zone0Settings.buildingConstruction || {}, [], { meta: "Prix en Organique et Minéral, multiplicateur minéral et durée de chaque bâtiment." }),
+    configCard("Coûts de construction des bâtiments", "buildingConstruction", zone0Settings.buildingConstruction || {}, [], { meta: "Ressources physiques, Données requises (requiredData), exceptions d’onboarding et durée de chaque bâtiment." }),
     configCard("Bio-générateur du Camp", "campGenerator", zone0Settings.campGenerator || {}, [], { meta: "Capacités, coûts par cycle et production de Bio-batteries." }),
     configCard("Recycleur", "wasteRecycler", zone0Settings.wasteRecycler || {}, [], { meta: "Coûts d’énergie, volumes de déchets, rendements et cycles." }),
   ].join("");

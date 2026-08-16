@@ -53,7 +53,8 @@ class FabLabRecyclerVatState {
     this.moduleType,
     this.cycleStartedAt,
     this.batchRatios,
-  });
+    Map<String, int>? installedModuleCost,
+  }) : installedModuleCost = installedModuleCost ?? <String, int>{};
 
   factory FabLabRecyclerVatState.fromFirebase(Map<dynamic, dynamic>? data) =>
       FabLabRecyclerVatState(
@@ -64,18 +65,23 @@ class FabLabRecyclerVatState {
             ?.whereType<num>()
             .map((value) => value.toInt())
             .toList(),
+        installedModuleCost: (data?['installedModuleCost'] as Map? ?? const {})
+            .map((key, value) =>
+                MapEntry('$key', (value as num?)?.toInt() ?? 0)),
       );
 
   int storedWaste;
   RecyclerModuleType? moduleType;
   DateTime? cycleStartedAt;
   List<int>? batchRatios;
+  final Map<String, int> installedModuleCost;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
         'storedWaste': storedWaste,
         'moduleType': moduleType?.name,
         'cycleStartedAt': cycleStartedAt?.millisecondsSinceEpoch,
         'batchRatios': batchRatios,
+        'installedModuleCost': installedModuleCost,
       };
 }
 

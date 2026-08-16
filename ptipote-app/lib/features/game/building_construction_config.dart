@@ -19,6 +19,9 @@ class BuildingProjectDefinition {
     required this.label,
     required this.baseRequirements,
     required this.durationMinutes,
+    this.requiredData = const <String, int>{},
+    this.requiredDataByLevel = const <int, Map<String, int>>{},
+    this.bypassBiomimicryRequirement = false,
     this.requiredJobLevel = const <String, int>{},
   });
 
@@ -26,6 +29,18 @@ class BuildingProjectDefinition {
   final String label;
   final Map<String, int> baseRequirements;
   final int durationMinutes;
+
+  /// Scientific data is a direct, configurable construction cost. Keys are
+  /// the stable PTibugDataFamily names (biomimetisme, organique, ...).
+  final Map<String, int> requiredData;
+
+  /// Optional per-target-level overrides. Without one, [requiredData]
+  /// remains the shared cost for all levels of this project.
+  final Map<int, Map<String, int>> requiredDataByLevel;
+
+  /// Only onboarding may bypass Biomimétisme: the initial research tower
+  /// cannot require data before the player has a way to earn any.
+  final bool bypassBiomimicryRequirement;
 
   /// Hook for future construction unlocks, e.g. {'artisan': 2}.
   final Map<String, int> requiredJobLevel;
@@ -37,6 +52,9 @@ class BuildingProjectDefinition {
                 ? (amount * mineralMultiplier).ceil()
                 : amount,
           ));
+
+  Map<String, int> dataRequirementsForLevel(int level) =>
+      requiredDataByLevel[level] ?? requiredData;
 }
 
 const BuildingConstructionConfig defaultBuildingConstructionConfig =
@@ -49,24 +67,38 @@ const BuildingConstructionConfig defaultBuildingConstructionConfig =
       label: 'Fablab',
       baseRequirements: <String, int>{'Organique': 8, 'Minéral': 4},
       durationMinutes: 1,
+      requiredData: <String, int>{'biomimetisme': 1},
     ),
     'cuisine': BuildingProjectDefinition(
       id: 'cuisine',
       label: 'Cuisine',
       baseRequirements: <String, int>{'Organique': 6, 'Minéral': 12},
       durationMinutes: 1,
+      requiredData: <String, int>{'biomimetisme': 1, 'organique': 1},
     ),
     'atelier': BuildingProjectDefinition(
       id: 'atelier',
       label: 'Atelier',
       baseRequirements: <String, int>{'Organique': 8, 'Minéral': 16},
       durationMinutes: 1,
+      requiredData: <String, int>{
+        'biomimetisme': 1,
+        'organique': 1,
+        'minerale': 1,
+        'energie': 1,
+      },
     ),
     'recycler': BuildingProjectDefinition(
       id: 'recycler',
       label: 'Recycleur',
       baseRequirements: <String, int>{'Organique': 10, 'Minéral': 18},
       durationMinutes: 1,
+      requiredData: <String, int>{
+        'biomimetisme': 1,
+        'organique': 1,
+        'minerale': 1,
+        'energie': 1,
+      },
     ),
     'securityTower': BuildingProjectDefinition(
       id: 'securityTower',
@@ -81,12 +113,14 @@ const BuildingConstructionConfig defaultBuildingConstructionConfig =
       label: 'Tour météo',
       baseRequirements: <String, int>{'Organique': 6, 'Minéral': 8},
       durationMinutes: 1,
+      requiredData: <String, int>{'biomimetisme': 1, 'energie': 1},
     ),
     'towerResearchModule': BuildingProjectDefinition(
       id: 'towerResearchModule',
       label: 'Tour de recherche',
       baseRequirements: <String, int>{'Organique': 6, 'Minéral': 8},
       durationMinutes: 1,
+      bypassBiomimicryRequirement: true,
     ),
     'market': BuildingProjectDefinition(
       id: 'market',

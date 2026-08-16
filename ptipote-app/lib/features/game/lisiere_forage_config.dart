@@ -522,16 +522,16 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
     ForageMissionType.harvest: ForageMissionTypeConfig(
       label: 'Récolte',
       vigorMultiplier: 1,
-      // Les Cellules restent une trouvaille occasionnelle pendant une
-      // Récolte : moitié moins de chances que le réglage précédent.
-      cellChanceMultiplier: .125,
+      // Les Capsules ne sont jamais obtenues en Récolte. The technical field
+      // remains for save/dashboard compatibility with the shared engine.
+      cellChanceMultiplier: 0,
       maximumCellsMultiplier: 1,
       wastePerHour: 1,
     ),
     ForageMissionType.research: ForageMissionTypeConfig(
       label: 'Recherche',
       vigorMultiplier: .20,
-      // La Recherche est la voie active d'acquisition des Cellules.
+      // La Recherche de la Tour est la voie active d'acquisition des Capsules.
       cellChanceMultiplier: 1.5,
       maximumCellsMultiplier: 1,
       wastePerHour: 2,

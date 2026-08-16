@@ -34,6 +34,9 @@ class WasteRecyclerConfig {
     required this.biologicalOtherRatio,
     required this.otherOutputResource,
     required this.biologicalOrientationModuleCost,
+    required this.organicRecyclerModuleCost,
+    required this.mineralRecyclerModuleCost,
+    required this.recyclerModuleRefundPercent,
   });
 
   final int wasteGenerationCycleMinutes;
@@ -72,6 +75,9 @@ class WasteRecyclerConfig {
   final int biologicalOtherRatio;
   final String otherOutputResource;
   final Map<String, int> biologicalOrientationModuleCost;
+  final Map<String, int> organicRecyclerModuleCost;
+  final Map<String, int> mineralRecyclerModuleCost;
+  final int recyclerModuleRefundPercent;
 
   int tankCapacity(int level) =>
       baseWasteTankCapacity + (level - 1) * wasteTankCapacityPerLevel;
@@ -154,6 +160,9 @@ const WasteRecyclerConfig defaultWasteRecyclerConfig = WasteRecyclerConfig(
     'Minéral': 10,
     'Mycélium': 5
   },
+  organicRecyclerModuleCost: <String, int>{'Organique': 40, 'Minéral': 10},
+  mineralRecyclerModuleCost: <String, int>{'Organique': 10, 'Minéral': 40},
+  recyclerModuleRefundPercent: 50,
 );
 
 WasteRecyclerConfig wasteRecyclerConfig = defaultWasteRecyclerConfig;

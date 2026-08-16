@@ -416,6 +416,7 @@ class PTibugConfig {
     required this.valuation,
     required this.appearance,
     required this.aspectMatrixExtractor,
+    required this.ptibugPresenceInsectoidBonusWeight,
   });
 
   final Map<String, int> nurseryRequirements;
@@ -460,6 +461,9 @@ class PTibugConfig {
   final PTibugValuationConfig valuation;
   final PTibugAppearanceConfig appearance;
   final PTibugAspectMatrixExtractorConfig aspectMatrixExtractor;
+
+  /// Added once per biome when a built Refuge/Nursery actually hosts P'TIBUG.
+  final int ptibugPresenceInsectoidBonusWeight;
 
   int slotsForLevel(int level) => territory.nurseryCapacityForLevel(level);
   int moduleSlotsForLevel(int level) =>
@@ -755,6 +759,7 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
     organicCostPerModule: 10,
     nurseryEnergyCostPerModule: 3,
   ),
+  ptibugPresenceInsectoidBonusWeight: 10,
   species: <PTibugSpecies, PTibugSpeciesConfig>{
     PTibugSpecies.scarabe: PTibugSpeciesConfig(
       displayName: 'Scarabé',
@@ -1181,9 +1186,12 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       risks: <String>['Glissements', 'Vents', 'Anciennes structures'],
       weatherTypes: <String>['heavyRain'],
       dataWeights: <PTibugDataFamily, int>{
-        PTibugDataFamily.minerale: 45,
-        PTibugDataFamily.biomimetisme: 30,
+        PTibugDataFamily.biomimetisme: 10,
+        PTibugDataFamily.organique: 5,
+        PTibugDataFamily.minerale: 50,
         PTibugDataFamily.energie: 25,
+        PTibugDataFamily.mycelienne: 5,
+        PTibugDataFamily.toxine: 5,
       },
       localProductionBonus: <PTibugSpecies, Map<String, int>>{
         PTibugSpecies.scarabe: <String, int>{'Minéral': 1},
@@ -1205,9 +1213,11 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       ],
       weatherTypes: <String>['heavyRain', 'toxicCloud'],
       dataWeights: <PTibugDataFamily, int>{
-        PTibugDataFamily.organique: 40,
-        PTibugDataFamily.mycelienne: 35,
-        PTibugDataFamily.biomimetisme: 25,
+        PTibugDataFamily.biomimetisme: 30,
+        PTibugDataFamily.organique: 20,
+        PTibugDataFamily.energie: 10,
+        PTibugDataFamily.mycelienne: 25,
+        PTibugDataFamily.comportementInsectoide: 15,
       },
       localProductionBonus: <PTibugSpecies, Map<String, int>>{
         PTibugSpecies.hyme: <String, int>{'Organique': 1},
@@ -1224,9 +1234,12 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       risks: <String>['Chaleur', 'Sécheresse', 'Incendies locaux'],
       weatherTypes: <String>['heatWave'],
       dataWeights: <PTibugDataFamily, int>{
-        PTibugDataFamily.organique: 40,
-        PTibugDataFamily.energie: 30,
-        PTibugDataFamily.biomimetisme: 30,
+        PTibugDataFamily.biomimetisme: 25,
+        PTibugDataFamily.organique: 20,
+        PTibugDataFamily.minerale: 5,
+        PTibugDataFamily.energie: 20,
+        PTibugDataFamily.mycelienne: 10,
+        PTibugDataFamily.comportementInsectoide: 20,
       },
       localProductionBonus: <PTibugSpecies, Map<String, int>>{
         PTibugSpecies.hyme: <String, int>{'Organique': 1},
@@ -1247,9 +1260,12 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       ],
       weatherTypes: <String>['heatWave', 'heavyRain'],
       dataWeights: <PTibugDataFamily, int>{
-        PTibugDataFamily.organique: 35,
-        PTibugDataFamily.biomimetisme: 30,
-        PTibugDataFamily.comportementInsectoide: 35,
+        PTibugDataFamily.biomimetisme: 20,
+        PTibugDataFamily.organique: 20,
+        PTibugDataFamily.minerale: 5,
+        PTibugDataFamily.energie: 30,
+        PTibugDataFamily.comportementInsectoide: 20,
+        PTibugDataFamily.toxine: 5,
       },
       localProductionBonus: <PTibugSpecies, Map<String, int>>{
         PTibugSpecies.hyme: <String, int>{'Organique': 1},
@@ -1271,9 +1287,12 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       ],
       weatherTypes: <String>['heavyRain', 'toxicCloud'],
       dataWeights: <PTibugDataFamily, int>{
-        PTibugDataFamily.mycelienne: 40,
-        PTibugDataFamily.toxine: 35,
-        PTibugDataFamily.organique: 25,
+        PTibugDataFamily.biomimetisme: 25,
+        PTibugDataFamily.organique: 15,
+        PTibugDataFamily.energie: 5,
+        PTibugDataFamily.mycelienne: 25,
+        PTibugDataFamily.comportementInsectoide: 10,
+        PTibugDataFamily.toxine: 20,
       },
       localProductionBonus: <PTibugSpecies, Map<String, int>>{
         PTibugSpecies.hyme: <String, int>{'Organique': 1},
@@ -1286,13 +1305,16 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
     ),
     PTibugBiome.maraisSales: PTibugBiomeConfig(
-      displayName: 'Marais salés',
+      displayName: 'Bassin minéral',
       risks: <String>['Corrosion', 'Toxines', 'Sol fragile', 'Forte salinité'],
       weatherTypes: <String>['toxicCloud', 'heavyRain'],
       dataWeights: <PTibugDataFamily, int>{
-        PTibugDataFamily.toxine: 40,
-        PTibugDataFamily.minerale: 30,
-        PTibugDataFamily.energie: 30,
+        PTibugDataFamily.biomimetisme: 10,
+        PTibugDataFamily.organique: 5,
+        PTibugDataFamily.minerale: 50,
+        PTibugDataFamily.energie: 20,
+        PTibugDataFamily.comportementInsectoide: 5,
+        PTibugDataFamily.toxine: 10,
       },
       localProductionBonus: <PTibugSpecies, Map<String, int>>{
         PTibugSpecies.scarabe: <String, int>{'Minéral': 1},
@@ -1305,13 +1327,16 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       },
     ),
     PTibugBiome.semiDesertGarrigueTropicale: PTibugBiomeConfig(
-      displayName: 'Semi-désert / Garrigue tropicale',
+      displayName: 'Semi-désert',
       risks: <String>['Chaleur', 'Poussières', 'Vent', 'Manque d’ombre'],
       weatherTypes: <String>['heatWave'],
       dataWeights: <PTibugDataFamily, int>{
-        PTibugDataFamily.minerale: 40,
-        PTibugDataFamily.energie: 35,
-        PTibugDataFamily.biomimetisme: 25,
+        PTibugDataFamily.biomimetisme: 10,
+        PTibugDataFamily.organique: 5,
+        PTibugDataFamily.minerale: 30,
+        PTibugDataFamily.energie: 40,
+        PTibugDataFamily.comportementInsectoide: 5,
+        PTibugDataFamily.toxine: 10,
       },
       localProductionBonus: <PTibugSpecies, Map<String, int>>{
         PTibugSpecies.scarabe: <String, int>{'Minéral': 1},
@@ -1327,9 +1352,12 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
       risks: <String>['Corrosion', 'Embruns', 'Vents', 'Ruissellement'],
       weatherTypes: <String>['heavyRain'],
       dataWeights: <PTibugDataFamily, int>{
-        PTibugDataFamily.energie: 40,
-        PTibugDataFamily.toxine: 30,
-        PTibugDataFamily.minerale: 30,
+        PTibugDataFamily.biomimetisme: 25,
+        PTibugDataFamily.organique: 15,
+        PTibugDataFamily.minerale: 15,
+        PTibugDataFamily.energie: 30,
+        PTibugDataFamily.comportementInsectoide: 5,
+        PTibugDataFamily.toxine: 10,
       },
       localProductionBonus: const <PTibugSpecies, Map<String, int>>{},
       nurseryInsectBehaviourWeight: 10,

@@ -52,7 +52,7 @@
     "harvest": {
       "label": "Récolte",
       "vigorMultiplier": 1.0,
-      "cellChanceMultiplier": 0.25,
+      "cellChanceMultiplier": 0.0,
       "maximumCellsMultiplier": 1.0,
       "wastePerHour": 1
     },
