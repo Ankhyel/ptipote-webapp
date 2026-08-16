@@ -2219,7 +2219,7 @@ class _MaisonPageState extends State<_MaisonPage>
           tabs: const <Widget>[
             Tab(text: 'P’TIPOTES', icon: Icon(Icons.pets_outlined)),
             Tab(text: 'Couveuse', icon: Icon(Icons.egg_alt_outlined)),
-            Tab(text: 'Entraînement', icon: Icon(Icons.sports_martial_arts)),
+            Tab(text: 'Activités', icon: Icon(Icons.directions_walk)),
             Tab(text: 'Amélioration', icon: Icon(Icons.upgrade_outlined)),
             Tab(text: 'Générateur', icon: Icon(Icons.battery_charging_full)),
             Tab(text: 'Infos', icon: Icon(Icons.info_outline)),
@@ -2588,14 +2588,14 @@ class _MaisonTrainingTab extends StatelessWidget {
               child: ListView(
                   padding: const EdgeInsets.all(18),
                   children: <Widget>[
-                Text('Salle d’entraînement',
+                Text('Activités',
                     style: Theme.of(context)
                         .textTheme
                         .titleLarge
                         ?.copyWith(fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
                 const Text(
-                    'Entraînement 1 · Mouvement. Les deux autres emplacements seront ajoutés plus tard.'),
+                    'Promenade relationnelle et Salle d’entraînement · Mouvement.'),
                 const SizedBox(height: 16),
                 if (ptipotes.isEmpty)
                   const Card(
@@ -2617,37 +2617,6 @@ class _MaisonTrainingTab extends StatelessWidget {
                             builder: (_) => _TrainingChoiceSheet(
                                 gameState: gameState, figurine: figurine)),
                       ))),
-                const SizedBox(height: 20),
-                Text('Mobilier de la Maison',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w900)),
-                const Text(
-                    'Chaque type différent installé augmente les besoins matériels.'),
-                const SizedBox(height: 8),
-                ...const <String>[
-                  'Meuble simple',
-                  'Lumière solaire',
-                  'Jardin bioponique',
-                  'Bassin thermal'
-                ].map((item) => ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.chair_outlined),
-                      title: Text(item),
-                      subtitle: Text(
-                          'Stock ${gameState.resourceAmount(item)} · installés ${gameState.ptipoteHomeFurnitureItems.where((installed) => installed == item).length}'),
-                      trailing: OutlinedButton(
-                          onPressed: gameState.resourceAmount(item) > 0
-                              ? () {
-                                  final result = gameState
-                                      .installPtipoteHomeFurniture(item);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(result.message)));
-                                }
-                              : null,
-                          child: const Text('Installer')),
-                    )),
               ]));
         },
       );
@@ -2669,20 +2638,20 @@ class _TrainingChoiceSheet extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
           ListTile(
+              leading: const Icon(Icons.directions_walk),
+              title: const Text('Promenade'),
+              subtitle:
+                  const Text('Cache-cache ou Attrape-moi · +30 Attachement'),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => _WalkMiniGamePage(
+                      gameState: gameState, figurine: figurine)))),
+          ListTile(
               leading: const Icon(Icons.keyboard_arrow_up),
               title: const Text('Entraînement · Mouvement'),
               subtitle:
                   const Text('10 flèches · 3 vies · +20 Attachement si réussi'),
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => _MovementTrainingPage(
-                      gameState: gameState, figurine: figurine)))),
-          ListTile(
-              leading: const Icon(Icons.park_outlined),
-              title: const Text('Promenade'),
-              subtitle:
-                  const Text('Cache-cache ou Attrape-moi · +30 Attachement'),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => _WalkMiniGamePage(
                       gameState: gameState, figurine: figurine)))),
         ]),
       ));
@@ -2701,11 +2670,11 @@ class _MovementTrainingPage extends StatefulWidget {
 
 class _MovementTrainingPageState extends State<_MovementTrainingPage> {
   final math.Random _random = math.Random();
-  Timer? _timeout;
+  Timer? _travelTimer;
   _MovementDirection? _expected;
   int _lives = 3;
   int _completed = 0;
-  bool _accepting = false;
+  double _travel = 0;
   bool _finished = false;
   @override
   void initState() {
@@ -2715,44 +2684,43 @@ class _MovementTrainingPageState extends State<_MovementTrainingPage> {
 
   @override
   void dispose() {
-    _timeout?.cancel();
+    _travelTimer?.cancel();
     super.dispose();
   }
 
   void _next() {
     if (!mounted || _finished) return;
-    final level =
-        widget.gameState.ptipoteV2ProfileFor(widget.figurine).trainingGameLevel;
-    final delay = math.max(
-        200,
-        ptipoteDailyLifeConfig.movementBaseIntervalMs -
-            (level - 1) *
-                ptipoteDailyLifeConfig.movementIntervalReductionPerLevelMs);
+    _travelTimer?.cancel();
     setState(() {
-      _expected = null;
-      _accepting = false;
+      _expected = _MovementDirection.values[_random.nextInt(4)];
+      _travel = 0;
     });
-    Future<void>.delayed(Duration(milliseconds: delay), () {
-      if (!mounted || _finished) return;
-      setState(() {
-        _expected = _MovementDirection.values[_random.nextInt(4)];
-        _accepting = true;
-      });
-      _timeout = Timer(
-          Duration(milliseconds: ptipoteDailyLifeConfig.movementInputWindowMs),
-          () => _mistake());
+    // Un indicateur traverse l'écran en environ cinq secondes. La fenêtre de
+    // réussite est la bande centrale qui couvre un cinquième de sa largeur.
+    const ticks = 100;
+    _travelTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (!mounted || _finished) return timer.cancel();
+      setState(() => _travel = math.min(1, _travel + 1 / ticks));
+      if (_travel >= 1) {
+        timer.cancel();
+        _mistake();
+      }
     });
   }
 
   void _input(_MovementDirection direction) {
-    if (!_accepting || _finished) return;
-    _timeout?.cancel();
-    if (direction != _expected) {
+    if (_expected == null || _finished) return;
+    const centerStart = .4;
+    const centerEnd = .6;
+    if (direction != _expected ||
+        _travel < centerStart ||
+        _travel > centerEnd) {
       _mistake();
       return;
     }
+    _travelTimer?.cancel();
     setState(() {
-      _accepting = false;
+      _expected = null;
       _completed += 1;
     });
     if (_completed >= ptipoteDailyLifeConfig.movementSequenceLength) {
@@ -2767,10 +2735,9 @@ class _MovementTrainingPageState extends State<_MovementTrainingPage> {
   }
 
   void _mistake() {
-    _timeout?.cancel();
+    _travelTimer?.cancel();
     if (!mounted || _finished) return;
     setState(() {
-      _accepting = false;
       _expected = null;
       _lives -= 1;
     });
@@ -2799,25 +2766,42 @@ class _MovementTrainingPageState extends State<_MovementTrainingPage> {
                     Text(
                         'Vies : $_lives · $_completed / ${ptipoteDailyLifeConfig.movementSequenceLength}',
                         style: const TextStyle(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 32),
-                    Icon(
-                        _expected == null
-                            ? Icons.hourglass_top
-                            : _icon(_expected!),
-                        size: 100,
-                        color: _expected == null
-                            ? Colors.grey
-                            : Theme.of(context).colorScheme.primary),
-                    const SizedBox(height: 28),
-                    Wrap(
-                        alignment: WrapAlignment.center,
-                        children: _MovementDirection.values
-                            .map((direction) => IconButton.filled(
-                                iconSize: 42,
-                                onPressed:
-                                    _accepting ? () => _input(direction) : null,
-                                icon: Icon(_icon(direction))))
-                            .toList()),
+                    const SizedBox(height: 24),
+                    LayoutBuilder(builder: (context, constraints) {
+                      final left = (1 - _travel) * (constraints.maxWidth - 42);
+                      return SizedBox(
+                        height: 90,
+                        child: Stack(children: <Widget>[
+                          Align(
+                            alignment: Alignment.center,
+                            child: Container(
+                              width: constraints.maxWidth / 5,
+                              height: 72,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withValues(alpha: .12),
+                                border: Border.all(
+                                    color:
+                                        Theme.of(context).colorScheme.primary),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                          if (_expected != null)
+                            Positioned(
+                              left: left,
+                              top: 18,
+                              child: Icon(_icon(_expected!),
+                                  size: 48,
+                                  color: Theme.of(context).colorScheme.primary),
+                            ),
+                        ]),
+                      );
+                    }),
+                    const SizedBox(height: 20),
+                    _directionPad(),
                     if (_finished && _lives <= 0) ...<Widget>[
                       const SizedBox(height: 24),
                       const Text('Pas cette fois. Aucune récompense.'),
@@ -2826,6 +2810,23 @@ class _MovementTrainingPageState extends State<_MovementTrainingPage> {
                           child: const Text('Retour'))
                     ],
                   ]))));
+
+  Widget _directionPad() =>
+      Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        _directionButton(_MovementDirection.up),
+        Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
+          _directionButton(_MovementDirection.left),
+          const SizedBox(width: 62, height: 62),
+          _directionButton(_MovementDirection.right),
+        ]),
+        _directionButton(_MovementDirection.down),
+      ]);
+
+  Widget _directionButton(_MovementDirection direction) => IconButton.filled(
+        iconSize: 40,
+        onPressed: _finished ? null : () => _input(direction),
+        icon: Icon(_icon(direction)),
+      );
 }
 
 class _WalkMiniGamePage extends StatefulWidget {
@@ -2842,7 +2843,75 @@ class _WalkMiniGamePageState extends State<_WalkMiniGamePage> {
           (ptipoteDailyLifeConfig.hideAndSeekWeight +
               ptipoteDailyLifeConfig.catchMeWeight) >=
       ptipoteDailyLifeConfig.hideAndSeekWeight;
-  late int _target = _random.nextInt(4);
+  late int _target = _random.nextInt(5);
+  Timer? _roundTimer;
+  Timer? _catchTimer;
+  int _points = 0;
+  bool _betweenRounds = false;
+  double _catchSize = .5;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_catchMe) {
+      _startCatchMe();
+    } else {
+      _startHideRound();
+    }
+  }
+
+  @override
+  void dispose() {
+    _roundTimer?.cancel();
+    _catchTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startHideRound() {
+    _roundTimer?.cancel();
+    _roundTimer = Timer(const Duration(seconds: 5), () {
+      if (!mounted || _betweenRounds) return;
+      setState(() => _target = _random.nextInt(5));
+      _startHideRound();
+    });
+  }
+
+  void _foundHideTarget() {
+    _roundTimer?.cancel();
+    setState(() {
+      _points += 1;
+      _betweenRounds = true;
+    });
+    if (_points >= 3) {
+      _win();
+      return;
+    }
+    Future<void>.delayed(const Duration(milliseconds: 380), () {
+      if (!mounted) return;
+      setState(() {
+        _betweenRounds = false;
+        _target = _random.nextInt(5);
+      });
+      _startHideRound();
+    });
+  }
+
+  void _startCatchMe() {
+    _catchTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _catchSize -= .02);
+      if (_catchSize < .1) {
+        _catchTimer?.cancel();
+      }
+    });
+  }
+
+  void _catchBoost() {
+    if (_catchSize < .1 || _catchSize > .8) return;
+    setState(() => _catchSize = math.min(1, _catchSize + .01));
+    if (_catchSize > .8) _win();
+  }
+
   void _win() {
     widget.gameState.completePtipoteWalk(widget.figurine);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2865,37 +2934,66 @@ class _WalkMiniGamePageState extends State<_WalkMiniGamePage> {
                             : 'Où se cache ${widget.figurine.displayName} ?',
                         textAlign: TextAlign.center),
                     const SizedBox(height: 24),
-                    Wrap(
-                      spacing: 14,
-                      runSpacing: 14,
-                      children: List<Widget>.generate(
-                        4,
-                        (index) => FilledButton.tonal(
-                          onPressed: () {
-                            if (index == _target) {
-                              _win();
-                            } else {
-                              setState(() => _target = _random.nextInt(4));
-                            }
-                          },
-                          child: SizedBox(
-                            width: 64,
-                            height: 64,
-                            child: Center(
-                              child: Icon(
-                                index == _target && !_catchMe
-                                    ? Icons.pets
-                                    : Icons.park_outlined,
-                                size: 30,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    if (_catchMe) _catchMeBoard() else _hideAndSeekBoard(),
                     const SizedBox(height: 18),
                     const Text('Aucune pénalité : essaie à nouveau.'),
                   ]))));
+
+  Widget _hideAndSeekBoard() => ColoredBox(
+        color: _betweenRounds ? Colors.black : Colors.transparent,
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 14,
+          alignment: WrapAlignment.center,
+          children: List<Widget>.generate(5, (index) {
+            final sizes = <double>[86, 112, 74, 102, 92];
+            return InkWell(
+              onTap: _betweenRounds
+                  ? null
+                  : () {
+                      if (index == _target) {
+                        _foundHideTarget();
+                      } else {
+                        setState(() => _target = _random.nextInt(5));
+                      }
+                    },
+              child: Container(
+                width: sizes[index],
+                height: sizes[index],
+                decoration: BoxDecoration(
+                    color: const Color(0xffE8E5DC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all()),
+                child: index == _target && !_betweenRounds
+                    ? PtipoteImage(
+                        type: widget.figurine.type,
+                        species: widget.figurine.species,
+                        height: sizes[index] - 16)
+                    : const Icon(Icons.crop_square_outlined, size: 36),
+              ),
+            );
+          }),
+        ),
+      );
+
+  Widget _catchMeBoard() => Column(children: <Widget>[
+        SizedBox(
+            height: 160,
+            child: Center(
+                child: _catchSize < .1
+                    ? const Text('Trop loin ! Réessaie sans pénalité.')
+                    : Transform.scale(
+                        scale: _catchSize,
+                        child: PtipoteImage(
+                            type: widget.figurine.type,
+                            species: widget.figurine.species,
+                            height: 150)))),
+        const SizedBox(height: 26),
+        FilledButton.icon(
+            onPressed: _catchSize < .1 ? null : _catchBoost,
+            icon: const Icon(Icons.front_hand_outlined),
+            label: const Text('Attrape-moi !')),
+      ]);
 }
 
 class _MaisonNurseryTab extends StatefulWidget {
@@ -4141,6 +4239,53 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
               ),
               const SizedBox(height: 12),
               _BuildingViabilityCard(gameState: state, buildingId: 'house'),
+              const SizedBox(height: 12),
+              Text('Meubles intérieurs',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      )),
+              const Text(
+                  'Installez librement les meubles depuis le stock de la Maison.'),
+              const SizedBox(height: 8),
+              GridView.count(
+                crossAxisCount: 2,
+                childAspectRatio: 1.35,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: const <String>[
+                  'Meuble simple',
+                  'Lumière solaire',
+                  'Jardin bioponique',
+                  'Bassin thermal',
+                ].map((item) {
+                  final installed = state.ptipoteHomeFurnitureItems
+                      .where((value) => value == item)
+                      .length;
+                  final stock = state.resourceAmount(item);
+                  return OutlinedButton(
+                    onPressed: stock <= 0
+                        ? null
+                        : () {
+                            final result =
+                                state.installPtipoteHomeFurniture(item);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(result.message)));
+                          },
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        const Icon(Icons.add_circle_outline),
+                        const SizedBox(height: 4),
+                        Text(item, textAlign: TextAlign.center),
+                        Text('$installed installé(s) · stock $stock',
+                            style: const TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
               const SizedBox(height: 12),
               Card(
                 child: Padding(
@@ -6908,13 +7053,17 @@ Future<PtipoteFigurine?> _pickPtipoteForActivity({
 }) {
   return showModalBottomSheet<PtipoteFigurine>(
     context: context,
+    isScrollControlled: true,
     showDragHandle: true,
-    builder: (context) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    builder: (context) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: .72,
+      minChildSize: .42,
+      maxChildSize: .94,
+      builder: (context, controller) => SafeArea(
+        child: ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
           children: <Widget>[
             Text(
               title,
@@ -6975,13 +7124,17 @@ Future<PtipoteFigurine?> _pickPermanentFabLabWorker({
       .toList();
   return showModalBottomSheet<PtipoteFigurine>(
     context: context,
+    isScrollControlled: true,
     showDragHandle: true,
-    builder: (context) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    builder: (context) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: .62,
+      minChildSize: .35,
+      maxChildSize: .9,
+      builder: (context, controller) => SafeArea(
+        child: ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
           children: <Widget>[
             Text(
               'Choisir un poste permanent',
@@ -9751,7 +9904,9 @@ class _ColorMatchRepairGameState extends State<_ColorMatchRepairGame> {
     final r = math.Random(widget.seed);
     final total = (widget.difficulty['totalColors'] ?? 5).clamp(5, 8);
     final hidden = (widget.difficulty['hiddenColors'] ?? 2).clamp(0, total);
-    _sockets = List<int>.generate(total, (i) => i % _colors.length)..shuffle(r);
+    // The match is the cable identity, not its display color. At level five
+    // two cables may share a color, but each still has exactly one socket.
+    _sockets = List<int>.generate(total, (i) => i)..shuffle(r);
     _visible = List<bool>.generate(total, (i) => i < total - hidden);
     _connections.clear();
     _selectedCable = null;
@@ -9831,16 +9986,18 @@ class _ColorMatchRepairGameState extends State<_ColorMatchRepairGame> {
                             onPressed: () => _connect(i),
                             style: OutlinedButton.styleFrom(
                                 backgroundColor: _connections.containsValue(i)
-                                    ? _colors[_sockets[i]].withValues(alpha: .2)
+                                    ? _colors[_sockets[i] % _colors.length]
+                                        .withValues(alpha: .2)
                                     : _visible[i]
-                                        ? _colors[_sockets[i]]
+                                        ? _colors[_sockets[i] % _colors.length]
                                             .withValues(alpha: .15)
                                         : null,
                                 side: BorderSide(
                                   color: _connections.containsValue(i)
                                       ? Colors.blue
                                       : _visible[i]
-                                          ? _colors[_sockets[i]]
+                                          ? _colors[
+                                              _sockets[i] % _colors.length]
                                           : const Color(0xff807A68),
                                   width: _connections.containsValue(i) ? 3 : 1,
                                 )),
@@ -9848,7 +10005,7 @@ class _ColorMatchRepairGameState extends State<_ColorMatchRepairGame> {
                                 _visible[i] ? 'Prise ${i + 1}' : 'Prise ?',
                                 style: TextStyle(
                                     color: _visible[i]
-                                        ? _colors[_sockets[i]]
+                                        ? _colors[_sockets[i] % _colors.length]
                                         : null)),
                           )))),
         ]),
@@ -10095,7 +10252,7 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
     while (_reserve.length < amount) {
       // Straight, 90° elbow (both left/right orientations are available via
       // rotation), and T pieces. Keep a deliberately mixed reserve.
-      _reserve.add(random.nextInt(3));
+      _reserve.add(random.nextInt(4));
     }
     _reserve.shuffle(random);
   }
@@ -10167,7 +10324,8 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
     final base = switch (piece) {
       0 => const <int>{0, 2},
       1 => const <int>{0, 1},
-      _ => const <int>{0, 1, 3}
+      2 => const <int>{0, 1, 3},
+      _ => const <int>{0, 3},
     };
     return base.map((side) => (side + _rotations[index]) % 4).toSet();
   }
@@ -10255,78 +10413,107 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
         ),
       );
 
-  Widget _pipeBoard() => SizedBox(
-        width: _size * 70.0 + 46,
-        child: Column(
-          children: <Widget>[
-            Stack(children: <Widget>[
-              GridView.count(
-                crossAxisCount: _size,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 5,
-                mainAxisSpacing: 5,
-                children: List<Widget>.generate(_size * _size, _pipeTile),
+  Widget _pipeBoard() => LayoutBuilder(
+        builder: (context, constraints) {
+          // Keep space around the grid so the inlet and outlet remain visible,
+          // including on a level 3 puzzle (5 x 5) on a narrow phone.
+          final gridWidth = math.min(
+            _size * 70.0,
+            math.max(180.0, constraints.maxWidth - 52),
+          );
+          final tileExtent = (gridWidth - ((_size - 1) * 5)) / _size;
+          return Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.all(26),
+                child: SizedBox(
+                  width: gridWidth,
+                  child: Stack(clipBehavior: Clip.none, children: <Widget>[
+                    GridView.count(
+                      crossAxisCount: _size,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisSpacing: 5,
+                      mainAxisSpacing: 5,
+                      children: List<Widget>.generate(_size * _size, _pipeTile),
+                    ),
+                    ...<_EndpointMarker>[
+                      _EndpointMarker(
+                          index: _entryIndex, side: _entrySide, input: true),
+                      _EndpointMarker(
+                          index: _exitIndex, side: _exitSide, input: false),
+                    ].map((marker) => _endpointMarker(marker, tileExtent)),
+                  ]),
+                ),
               ),
-              ...<_EndpointMarker>[
-                _EndpointMarker(
-                    index: _entryIndex, side: _entrySide, input: true),
-                _EndpointMarker(
-                    index: _exitIndex, side: _exitSide, input: false),
-              ].map(_endpointMarker),
-            ]),
-            const SizedBox(height: 8),
-            const Text('Réserve de tuyaux'),
-            Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              children: List<Widget>.generate(
-                  _reserve.length,
-                  (index) => InkWell(
-                        onTap: () => setState(() => _selectedReserve = index),
-                        child: Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: _selectedReserve == index
-                                ? _circuitColor.withValues(alpha: .22)
-                                : const Color(0xffE8E5DC),
-                            border: Border.all(color: _circuitColor),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                              _reserve[index] == 0
-                                  ? Icons.vertical_align_center
-                                  : _reserve[index] == 1
-                                      ? Icons.turn_right
-                                      : Icons.call_split,
+              const SizedBox(height: 8),
+              const Text('Réserve de tuyaux'),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: List<Widget>.generate(
+                    _reserve.length,
+                    (index) => InkWell(
+                          onTap: () => setState(() => _selectedReserve = index),
+                          child: Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: _selectedReserve == index
+                                  ? _circuitColor.withValues(alpha: .22)
+                                  : const Color(0xffE8E5DC),
+                              border: Border.all(color: _circuitColor),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: _PipeGlyph(
+                              connections: switch (_reserve[index]) {
+                                0 => const <int>{0, 2},
+                                1 => const <int>{0, 1},
+                                2 => const <int>{0, 1, 3},
+                                _ => const <int>{0, 3},
+                              },
                               color: _circuitColor,
-                              size: 20),
-                        ),
-                      )),
-            ),
-          ],
-        ),
+                            ),
+                          ),
+                        )),
+              ),
+            ],
+          );
+        },
       );
 
-  Widget _endpointMarker(_EndpointMarker marker) {
+  Widget _endpointMarker(_EndpointMarker marker, double tileExtent) {
     final row = marker.index ~/ _size;
     final col = marker.index % _size;
-    const extent = 64.0;
-    final icon = switch (marker.side) {
+    // Entrée : la flèche vient de l'extérieur vers la case. Sortie : elle
+    // quitte la case. Le sens n'est jamais confondu avec une connexion.
+    final outward = switch (marker.side) {
       0 => Icons.arrow_upward,
       1 => Icons.arrow_forward,
       2 => Icons.arrow_downward,
       _ => Icons.arrow_back,
     };
+    final icon = marker.input
+        ? switch (marker.side) {
+            0 => Icons.arrow_downward,
+            1 => Icons.arrow_back,
+            2 => Icons.arrow_upward,
+            _ => Icons.arrow_forward,
+          }
+        : outward;
     return Positioned(
-      left: col * 69.0 + (marker.side == 3 ? -28 : 18),
-      top: row * 69.0 +
+      left: col * (tileExtent + 5) +
+          (marker.side == 3
+              ? -27
+              : marker.side == 1
+                  ? tileExtent + 2
+                  : (tileExtent - 25) / 2),
+      top: row * (tileExtent + 5) +
           (marker.side == 0
-              ? -28
+              ? -27
               : marker.side == 2
-                  ? extent
-                  : 18),
+                  ? tileExtent + 2
+                  : (tileExtent - 25) / 2),
       child: Icon(icon, color: _circuitColor, size: 25),
     );
   }
@@ -10357,16 +10544,10 @@ class _PipeRepairGameSheetState extends State<_PipeRepairGameSheet> {
           ),
           child: piece == null
               ? const Icon(Icons.add, color: Color(0xff807A68))
-              : Transform.rotate(
-                  angle: _rotations[index] * math.pi / 2,
-                  child: Icon(
-                      piece == 0
-                          ? Icons.vertical_align_center
-                          : piece == 1
-                              ? Icons.turn_left
-                              : Icons.call_split,
-                      size: 36,
-                      color: energized ? Colors.blue : _circuitColor)),
+              : _PipeGlyph(
+                  connections: _pipeConnections(index),
+                  color: energized ? Colors.blue : _circuitColor,
+                ),
         ),
       ),
     );
@@ -10379,6 +10560,48 @@ class _EndpointMarker {
   final int index;
   final int side;
   final bool input;
+}
+
+/// Rendu géométrique : les branches sortent uniquement dans les directions
+/// réellement connectées. Il remplace les icônes ambiguës à doubles flèches.
+class _PipeGlyph extends StatelessWidget {
+  const _PipeGlyph({required this.connections, required this.color});
+  final Set<int> connections;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        painter: _PipeGlyphPainter(connections, color),
+        child: const SizedBox.expand(),
+      );
+}
+
+class _PipeGlyphPainter extends CustomPainter {
+  const _PipeGlyphPainter(this.connections, this.color);
+  final Set<int> connections;
+  final Color color;
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = math.max(3, size.shortestSide * .085)
+      ..strokeCap = StrokeCap.round;
+    for (final side in connections) {
+      final end = switch (side) {
+        0 => Offset(center.dx, size.height * .18),
+        1 => Offset(size.width * .82, center.dy),
+        2 => Offset(center.dx, size.height * .82),
+        _ => Offset(size.width * .18, center.dy),
+      };
+      canvas.drawLine(center, end, paint);
+    }
+    canvas.drawCircle(center, paint.strokeWidth / 2, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PipeGlyphPainter oldDelegate) =>
+      oldDelegate.connections != connections || oldDelegate.color != color;
 }
 
 class _StructuralInstallationSlots extends StatelessWidget {
@@ -15228,119 +15451,127 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
     final blockedReason = _resolvedBlockedReason(campHeartLevel);
     final footer = _resolvedFooter(campHeartLevel);
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
           18,
           12,
           18,
           18 + MediaQuery.viewInsetsOf(context).bottom,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              widget.title,
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 8),
-            Text(widget.description),
-            if (blockedReason != null) ...<Widget>[
-              const SizedBox(height: 8),
+        child: Padding(
+          padding: EdgeInsets.zero,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
               Text(
-                blockedReason,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontWeight: FontWeight.w800,
-                ),
+                widget.title,
+                style: Theme.of(
+                  context,
+                )
+                    .textTheme
+                    .headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w900),
               ),
-            ],
-            const SizedBox(height: 14),
-            if (project.state == ConstructionProjectState.maxLevel)
-              const Text(
-                'Niveau maximum atteint.',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              )
-            else if (project.isInProgress)
-              Text(
-                _countdownLabel(project.endsAt!),
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              )
-            else
-              ...project.requirements.entries.map(
-                (entry) => _ConstructionMaterialProgress(
-                  resource: entry.key,
-                  deposited: project.depositedMaterials[entry.key] ?? 0,
-                  required: entry.value,
-                  // Le prerequis du Coeur bloque le lancement, pas la
-                  // preparation progressive des materiaux.
+              const SizedBox(height: 8),
+              Text(widget.description),
+              if (blockedReason != null) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  blockedReason,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              if (project.state == ConstructionProjectState.maxLevel)
+                const Text(
+                  'Niveau maximum atteint.',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                )
+              else if (project.isInProgress)
+                Text(
+                  _countdownLabel(project.endsAt!),
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                )
+              else
+                ...project.requirements.entries.map(
+                  (entry) => _ConstructionMaterialProgress(
+                    resource: entry.key,
+                    deposited: project.depositedMaterials[entry.key] ?? 0,
+                    required: entry.value,
+                    // Le prerequis du Coeur bloque le lancement, pas la
+                    // preparation progressive des materiaux.
+                    enabled: project.canEditMaterials,
+                    onDeposit: (amount) =>
+                        widget.gameState.depositProjectMaterial(
+                      widget.targetId,
+                      entry.key,
+                      amount,
+                    ),
+                    onWithdraw: () => widget.gameState.withdrawProjectMaterial(
+                      widget.targetId,
+                      entry.key,
+                    ),
+                  ),
+                ),
+              if (widget.gameState
+                      .projectBioBatteryRequirement(widget.targetId) >
+                  0)
+                _ConstructionMaterialProgress(
+                  resource: 'Bio-batteries',
+                  deposited: project.depositedBioBatteries,
+                  required: widget.gameState
+                      .projectBioBatteryRequirement(widget.targetId),
                   enabled: project.canEditMaterials,
                   onDeposit: (amount) =>
-                      widget.gameState.depositProjectMaterial(
+                      widget.gameState.depositProjectBioBattery(
                     widget.targetId,
-                    entry.key,
-                    amount,
+                    amount: amount,
                   ),
-                  onWithdraw: () => widget.gameState.withdrawProjectMaterial(
-                    widget.targetId,
-                    entry.key,
-                  ),
+                  onWithdraw: () {},
+                  showWithdraw: false,
+                ),
+              if (footer != null) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  footer,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: blockedReason == null &&
+                        project.isReady &&
+                        !project.isInProgress &&
+                        project.state != ConstructionProjectState.maxLevel
+                    ? () {
+                        final result =
+                            widget.gameState.startConstructionProject(
+                          widget.targetId,
+                          campHeartLevel: campHeartLevel,
+                        );
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text(result.message)));
+                      }
+                    : null,
+                icon: const Icon(Icons.construction_outlined),
+                label: Text(
+                  project.isInProgress
+                      ? 'Travaux en cours'
+                      : project.state == ConstructionProjectState.maxLevel
+                          ? 'Niveau maximum'
+                          : 'Commencer les travaux',
                 ),
               ),
-            if (widget.gameState.projectBioBatteryRequirement(widget.targetId) >
-                0)
-              _ConstructionMaterialProgress(
-                resource: 'Bio-batteries',
-                deposited: project.depositedBioBatteries,
-                required: widget.gameState
-                    .projectBioBatteryRequirement(widget.targetId),
-                enabled: project.canEditMaterials,
-                onDeposit: (amount) =>
-                    widget.gameState.depositProjectBioBattery(
-                  widget.targetId,
-                  amount: amount,
-                ),
-                onWithdraw: () {},
-                showWithdraw: false,
-              ),
-            if (footer != null) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                footer,
-                style: const TextStyle(fontWeight: FontWeight.w800),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Fermer'),
               ),
             ],
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: blockedReason == null &&
-                      project.isReady &&
-                      !project.isInProgress &&
-                      project.state != ConstructionProjectState.maxLevel
-                  ? () {
-                      final result = widget.gameState.startConstructionProject(
-                        widget.targetId,
-                        campHeartLevel: campHeartLevel,
-                      );
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text(result.message)));
-                    }
-                  : null,
-              icon: const Icon(Icons.construction_outlined),
-              label: Text(
-                project.isInProgress
-                    ? 'Travaux en cours'
-                    : project.state == ConstructionProjectState.maxLevel
-                        ? 'Niveau maximum'
-                        : 'Commencer les travaux',
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Fermer'),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -17841,6 +18072,11 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           title: const Text('Nurserie P’TIBUG'),
           actions: <Widget>[
             IconButton(
+              tooltip: 'Filtres de collection',
+              icon: const Icon(Icons.filter_list_outlined),
+              onPressed: _showCollectionFilters,
+            ),
+            IconButton(
               tooltip: 'Inventaire de la Nurserie',
               icon: const Icon(Icons.inventory_2_outlined),
               onPressed: _showNurseryObjectInventory,
@@ -18979,20 +19215,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
 
   Widget _collection() {
     final all = List<PTibug>.from(widget.gameState.pTibugs);
-    final colors = all
-        .map((bug) => bug.primaryColorHex)
-        .whereType<String>()
-        .where((value) => value.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
-    final animations = all
-        .map((bug) => bug.animationName)
-        .whereType<String>()
-        .where((value) => value.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
     final bugs = all.where((bug) {
       final hasMotif = bug.motifId != null &&
           bug.motifId!.isNotEmpty &&
@@ -19019,92 +19241,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         const SizedBox(height: 4),
         const Text('Tape un P’TIBUG pour consulter et ajuster son équipement.'),
         const SizedBox(height: 10),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Text('Filtres',
-                    style: TextStyle(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 6),
-                Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
-                  FilterChip(
-                    label: Text(_collectionLevelDescending
-                        ? 'Niveau décroissant'
-                        : 'Niveau croissant'),
-                    selected: true,
-                    onSelected: (_) => setState(() =>
-                        _collectionLevelDescending =
-                            !_collectionLevelDescending),
-                  ),
-                  ...PTibugSpecies.values.map((species) => FilterChip(
-                        label: Text(pTibugConfig.species[species]!.displayName),
-                        selected: _collectionSpecies.contains(species),
-                        onSelected: (selected) => setState(() {
-                          selected
-                              ? _collectionSpecies.add(species)
-                              : _collectionSpecies.remove(species);
-                        }),
-                      )),
-                  ChoiceChip(
-                    label: const Text('Tous motifs'),
-                    selected: _collectionMotif == _CollectionMotifFilter.all,
-                    onSelected: (_) => setState(
-                        () => _collectionMotif = _CollectionMotifFilter.all),
-                  ),
-                  ChoiceChip(
-                    label: const Text('Avec motif'),
-                    selected:
-                        _collectionMotif == _CollectionMotifFilter.withMotif,
-                    onSelected: (_) => setState(() =>
-                        _collectionMotif = _CollectionMotifFilter.withMotif),
-                  ),
-                  ChoiceChip(
-                    label: const Text('Sans motif'),
-                    selected:
-                        _collectionMotif == _CollectionMotifFilter.withoutMotif,
-                    onSelected: (_) => setState(() =>
-                        _collectionMotif = _CollectionMotifFilter.withoutMotif),
-                  ),
-                ]),
-                const SizedBox(height: 6),
-                Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
-                  ChoiceChip(
-                    label: const Text('Toutes couleurs'),
-                    selected: _collectionColor == null,
-                    onSelected: (_) => setState(() => _collectionColor = null),
-                  ),
-                  ...colors.map((color) => ChoiceChip(
-                        avatar: CircleAvatar(
-                            radius: 7,
-                            backgroundColor: _pTibugColorFromHex(color)),
-                        label: Text(_matrixColorName(color)),
-                        selected: _collectionColor == color,
-                        onSelected: (_) =>
-                            setState(() => _collectionColor = color),
-                      )),
-                ]),
-                const SizedBox(height: 6),
-                Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
-                  ChoiceChip(
-                    label: const Text('Toutes animations'),
-                    selected: _collectionAnimation == null,
-                    onSelected: (_) =>
-                        setState(() => _collectionAnimation = null),
-                  ),
-                  ...animations.map((animation) => ChoiceChip(
-                        avatar: Icon(_pTibugAnimationIcon(animation), size: 16),
-                        label: Text(animation),
-                        selected: _collectionAnimation == animation,
-                        onSelected: (_) =>
-                            setState(() => _collectionAnimation = animation),
-                      )),
-                ]),
-              ],
-            ),
-          ),
-        ),
         if (all.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 16),
@@ -19277,6 +19413,141 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _showCollectionFilters() async {
+    final all = widget.gameState.pTibugs;
+    final colors = all
+        .map((bug) => bug.primaryColorHex)
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final animations = all
+        .map((bug) => bug.animationName)
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .72,
+        minChildSize: .38,
+        maxChildSize: .92,
+        builder: (_, controller) => StatefulBuilder(
+          builder: (_, refreshSheet) => ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
+            children: <Widget>[
+              const Text('Filtres de collection',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 12),
+              FilterChip(
+                label: Text(_collectionLevelDescending
+                    ? 'Niveau décroissant'
+                    : 'Niveau croissant'),
+                selected: true,
+                onSelected: (_) {
+                  setState(() =>
+                      _collectionLevelDescending = !_collectionLevelDescending);
+                  refreshSheet(() {});
+                },
+              ),
+              const SizedBox(height: 12),
+              const Text('Espèces',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: PTibugSpecies.values
+                    .map((species) => FilterChip(
+                          label:
+                              Text(pTibugConfig.species[species]!.displayName),
+                          selected: _collectionSpecies.contains(species),
+                          onSelected: (selected) {
+                            setState(() => selected
+                                ? _collectionSpecies.add(species)
+                                : _collectionSpecies.remove(species));
+                            refreshSheet(() {});
+                          },
+                        ))
+                    .toList(),
+              ),
+              const SizedBox(height: 12),
+              const Text('Motif',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                for (final entry in <(_CollectionMotifFilter, String)>[
+                  (_CollectionMotifFilter.all, 'Tous motifs'),
+                  (_CollectionMotifFilter.withMotif, 'Avec motif'),
+                  (_CollectionMotifFilter.withoutMotif, 'Sans motif'),
+                ])
+                  ChoiceChip(
+                    label: Text(entry.$2),
+                    selected: _collectionMotif == entry.$1,
+                    onSelected: (_) {
+                      setState(() => _collectionMotif = entry.$1);
+                      refreshSheet(() {});
+                    },
+                  ),
+              ]),
+              const SizedBox(height: 12),
+              const Text('Couleur',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                ChoiceChip(
+                  label: const Text('Toutes couleurs'),
+                  selected: _collectionColor == null,
+                  onSelected: (_) {
+                    setState(() => _collectionColor = null);
+                    refreshSheet(() {});
+                  },
+                ),
+                ...colors.map((color) => ChoiceChip(
+                      avatar: CircleAvatar(
+                          radius: 7,
+                          backgroundColor: _pTibugColorFromHex(color)),
+                      label: Text(_matrixColorName(color)),
+                      selected: _collectionColor == color,
+                      onSelected: (_) {
+                        setState(() => _collectionColor = color);
+                        refreshSheet(() {});
+                      },
+                    )),
+              ]),
+              const SizedBox(height: 12),
+              const Text('Animation',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                ChoiceChip(
+                  label: const Text('Toutes animations'),
+                  selected: _collectionAnimation == null,
+                  onSelected: (_) {
+                    setState(() => _collectionAnimation = null);
+                    refreshSheet(() {});
+                  },
+                ),
+                ...animations.map((animation) => ChoiceChip(
+                      avatar: Icon(_pTibugAnimationIcon(animation), size: 16),
+                      label: Text(animation),
+                      selected: _collectionAnimation == animation,
+                      onSelected: (_) {
+                        setState(() => _collectionAnimation = animation);
+                        refreshSheet(() {});
+                      },
+                    )),
+              ]),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -19710,6 +19981,65 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
     );
   }
 
+  /// Depuis la fiche d'un P’TIBUG, l'action garde cette cible et ouvre
+  /// directement l'inventaire des Modules disponibles : le joueur ne doit pas
+  /// sélectionner le même P’TIBUG une seconde fois.
+  Future<void> _pickModuleForPTibug(PTibug bug) async {
+    final slotsUsed = widget.gameState.pTibugModuleInstances
+        .where((item) => item.equippedPTibugId == bug.id)
+        .length;
+    if (slotsUsed >= widget.gameState.maxModulesPerPTibug) {
+      _message('Tous les emplacements de Module sont occupés.');
+      return;
+    }
+    final available = widget.gameState.pTibugModuleInstances
+        .where((item) => !item.isEquipped)
+        .toList();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .65,
+        minChildSize: .36,
+        maxChildSize: .9,
+        builder: (_, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
+          children: <Widget>[
+            Text('Modules de ${widget.gameState.pTibugBiologicalNameFor(bug)}',
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            Text(
+                '$slotsUsed/${widget.gameState.maxModulesPerPTibug} emplacements occupés'),
+            const SizedBox(height: 10),
+            if (available.isEmpty)
+              const ListTile(
+                  title: Text('Aucun Module disponible dans l’inventaire.')),
+            ...available.map((instance) => Card(
+                  child: ListTile(
+                    leading: Icon(_moduleIcon(instance.type)),
+                    title: Text(
+                        '${_moduleTitle(instance.type)} niveau ${instance.qualityLevel}'),
+                    subtitle: Text(_moduleDescription(instance.type)),
+                    trailing: const Icon(Icons.add_circle_outline),
+                    onTap: () {
+                      final result = widget.gameState.equipPTibugModuleInstance(
+                        bug: bug,
+                        moduleInstanceId: instance.id,
+                      );
+                      if (result.success) Navigator.of(sheetContext).pop();
+                      _message(result.message);
+                    },
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
   (PTibugModuleInstance, PTibugModuleInstance)? _firstFusionPair() {
     final available = widget.gameState.pTibugModuleInstances
         .where((item) =>
@@ -19968,7 +20298,7 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                   OutlinedButton.icon(
                     onPressed: () {
                       Navigator.of(sheetContext).pop();
-                      _pickPTibugForModule(availableInstances.first.id);
+                      _pickModuleForPTibug(bug);
                     },
                     icon: const Icon(Icons.add_circle_outline),
                     label: const Text('Équiper un Module disponible'),
