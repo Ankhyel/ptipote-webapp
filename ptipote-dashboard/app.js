@@ -841,6 +841,8 @@ function renderFablabConfig() {
     ["Construction Minéral niv. 1", fablabConfig.constructionCostLevel1Mineral],
     ["Capacité stock de base", fablabConfig.baseGlobalStockCapacity],
     ["Bonus stock par niveau", fablabConfig.stockCapacityBonusPerFablabLevel],
+    ["Stock FabLab N1→N4", JSON.stringify(fablabConfig.fablabStorageByLevel || {})],
+    ["Stock Maison N1→N4", JSON.stringify(fablabConfig.houseStorageByLevel || {})],
     ["Niveau max Fablab", fablabConfig.fablabMaxLevel],
     ["Niveau max Cuisine", fablabConfig.cuisineMaxLevel],
     ["Niveau max Atelier", fablabConfig.atelierMaxLevel],
@@ -852,6 +854,13 @@ function renderFablabConfig() {
     ["Cuisine active niveau", fablabConfig.cuisineUnlockLevel],
     ["Atelier requis Cœur", fablabConfig.atelierUnlockCampHeartLevel],
     ["Recycleur requis Cœur", fablabConfig.recyclerUnlockCampHeartLevel],
+    ["Recycleur intrants N1→N4", JSON.stringify(fablabConfig.recyclerInputByLevel || {})],
+    ["Cuve 1 N1→N4", JSON.stringify(fablabConfig.recyclerVatOneCapacityByLevel || {})],
+    ["Cuve 2 N3→N4", JSON.stringify(fablabConfig.recyclerVatTwoCapacityByLevel || {})],
+    ["Minimum module spécialisé /10", fablabConfig.recyclerSpecializedMinimumOutOfTen],
+    ["Cuisine N1→N4 · postes/manuel/quantités/file", JSON.stringify(fablabConfig.kitchenRoomLevels || {})],
+    ["Atelier N1→N4 · postes/catégories/quantités/file", JSON.stringify(fablabConfig.workshopRoomLevels || {})],
+    ["Réassort Marché", "Salle N4 uniquement, recettes explicitement autorisées"],
   ];
   el.fablabConfigList.innerHTML = rows.map(([label, value]) => `
     <div class="stage-row">

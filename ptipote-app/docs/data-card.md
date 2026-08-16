@@ -66,3 +66,29 @@ apporte respectivement 2, 5 et 10 Eau par heure. Chaque heure productive, le
 Bassin conserve ses Minéraux de la cuve, produit 1 Minéral par tranche de 10,
 et consomme 1 Organique ainsi que 2 Eau. Un P’TIBUG `mineur` ou
 `lithoculture` actif dans le biome ajoute +1 Minéral/h au cycle.
+
+## FabLab V2 — bâtiment unique et salles
+
+- Le **FabLab** est le seul bâtiment physique : il porte sa Viabilité, ses
+  réparations météo/mini-jeux et le stockage commun. Cuisine, Atelier et
+  Recycleur sont des salles internes, sans Viabilité, météo ni stock propres.
+  Une salle est construite de N0 à N1 puis améliorée, sans jamais dépasser le
+  niveau du FabLab.
+- Stockage FabLab N1→N4 : **100 / 200 / 300 / 400**. Stockage Maison N1→N4 :
+  **100 / 125 / 150 / 200**. La capacité de camp est dérivée de Maison +
+  FabLab ; un stock legacy au-dessus du plafond est conservé mais bloque les
+  nouveaux dépôts jusqu’au retour sous la capacité.
+- Cuisine et Atelier ont un créneau manuel et 1/2/3/4 postes P’TIPOTE aux
+  niveaux 1→4. Un P’TIPOTE en poste reste dans sa salle après un ordre et peut
+  être retiré explicitement avec **Rentrer**. Les quantités sont 1/5/10, +25
+  au N2 et +50 au N3 ; la file visible contient 0/1/2/3 ordres. Le réassort
+  Marché est réservé au N4 et doit être autorisé recette par recette.
+- Le Recycleur produit seulement **Organique** et **Minéral** : N1 18→10,
+  N2 16→10, N3 14→10, N4 12→10. Ses cuves sont 20 ; 40 ; 40+20 ; 60+40. À N3
+  la Cuve 1 reçoit un module, à N4 les deux. Un module Organique ou Minéral
+  garantit au moins 6 unités ciblées sur 10, les quatre restantes restant
+  toujours Organique ou Minéral.
+- La migration est versionnée et idempotente : le FabLab devient au minimum le
+  maximum des anciennes salles, aucun niveau/craft/stock n’est supprimé. Les
+  anciennes Viabilités de salle sont ramenées à une Viabilité FabLab unique de
+  façon conservatrice, sans cumuler artificiellement les dégâts.

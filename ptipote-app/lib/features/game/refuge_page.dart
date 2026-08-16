@@ -19,6 +19,7 @@ import 'camp_generator_config.dart';
 import 'community_roles_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
+import 'fablab_v2.dart';
 import 'game_asset_resolver.dart';
 import 'housing_config.dart';
 import 'kernel_config.dart';
@@ -63,22 +64,25 @@ class _CultivationMatrixSelectionDialogState
                 'Choisissez jusqu’à deux Matrices. Deux copies du même aspect créent un clone ; deux aspects différents mélangent chaque caractéristique à 50 %. Une seule Matrice mélange chaque caractéristique avec de l’aléatoire.'),
             const SizedBox(height: 8),
             Flexible(
-                child: ListView(
-                    shrinkWrap: true,
-                    children: widget.matrices
-                        .map((matrix) => CheckboxListTile(
-                              value: _selected.contains(matrix.id),
-                              title:
-                                  Text('Matrice ${matrix.sourceDisplayName}'),
-                              subtitle: Text(
-                                  '${pTibugConfig.species[matrix.species]!.displayName} · ${matrix.primaryColorHex ?? 'aspect incomplet'}'),
-                              onChanged: (value) => setState(() {
-                                if (value == true && _selected.length < 2)
-                                  _selected.add(matrix.id);
-                                if (value != true) _selected.remove(matrix.id);
-                              }),
-                            ))
-                        .toList())),
+              child: ListView(
+                shrinkWrap: true,
+                children: widget.matrices
+                    .map(
+                      (matrix) => _AspectMatrixPresentation(
+                        matrix: matrix,
+                        selected: _selected.contains(matrix.id),
+                        onTap: () => setState(() {
+                          if (_selected.contains(matrix.id)) {
+                            _selected.remove(matrix.id);
+                          } else if (_selected.length < 2) {
+                            _selected.add(matrix.id);
+                          }
+                        }),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
           ]),
         ),
         actions: <Widget>[
@@ -6959,6 +6963,54 @@ Future<PtipoteFigurine?> _pickPtipoteForActivity({
   );
 }
 
+Future<PtipoteFigurine?> _pickPermanentFabLabWorker({
+  required BuildContext context,
+  required Zone0GameState gameState,
+  required List<PtipoteFigurine> figurines,
+  required FabLabRoom room,
+}) {
+  final workers = figurines
+      .where((figurine) =>
+          gameState.permanentWorkersFor(room).contains(figurine.id))
+      .toList();
+  return showModalBottomSheet<PtipoteFigurine>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Choisir un poste permanent',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 12),
+            if (workers.isEmpty)
+              const Text(
+                  'Aucun P’TIPOTE permanent n’est affecté à cette salle.')
+            else
+              ...workers.map(
+                (figurine) => ListTile(
+                  leading: const Icon(Icons.pets_outlined),
+                  title: Text(figurine.displayName),
+                  subtitle:
+                      const Text('Restera dans la salle après cet ordre.'),
+                  onTap: () => Navigator.of(context).pop(figurine),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 enum _PtipoteActionKind { harvest, craft, security, commerce }
 
 String _percent(double value) => '${(value * 100).round()} %';
@@ -7106,12 +7158,15 @@ class MissionReportsSheet extends StatelessWidget {
         Zone0MessageMailbox.companions => 'Messages P’TIPOTE & P’TIBUG',
         Zone0MessageMailbox.kernel => 'Messages Kernel',
         Zone0MessageMailbox.fablab => 'Messages Fablab',
+        Zone0MessageMailbox.lisiere => 'Historique des bâtiments',
       };
 
   String get _emptyLabel => switch (mailbox) {
         Zone0MessageMailbox.companions => 'Aucun message P’TIPOTE ou P’TIBUG.',
         Zone0MessageMailbox.kernel => 'Aucun message du Kernel.',
         Zone0MessageMailbox.fablab => 'Aucune fin de craft.',
+        Zone0MessageMailbox.lisiere =>
+          'Aucune récolte ou amélioration récente.',
       };
 
   String _subjectFor(PtipoteMissionReport report) {
@@ -7932,6 +7987,20 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
             onPressed: () => Navigator.of(context).pop(),
           ),
           title: Text('Bâtiment · ${lisiereForageConfig.biomes[biome]!.label}'),
+          actions: <Widget>[
+            IconButton(
+              tooltip: 'Historique du bâtiment',
+              icon: const Icon(Icons.mail_outline),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                showDragHandle: true,
+                builder: (_) => MissionReportsSheet(
+                  gameState: widget.gameState,
+                  mailbox: Zone0MessageMailbox.lisiere,
+                ),
+              ),
+            ),
+          ],
         ),
         body: SafeArea(child: _buildDetail(context)),
       ),
@@ -7998,6 +8067,10 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                       Text(
                           'Biofermenteur mycélien · niveau ${zone.buildingLevel}',
                           style: const TextStyle(fontWeight: FontWeight.w900)),
+                      Text(
+                        'Module : ${zone.mycelialNetworkInstalled ? 'Réseau mycélien' : zone.edibleForestInstalled ? 'Forêt comestible' : zone.calciumBasinInstalled ? 'Bassin de calcium' : 'aucun'}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                       const SizedBox(height: 8),
                       _BuildingViabilityCard(
                         gameState: state,
@@ -8030,6 +8103,30 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                           'Forêt comestible : ${zone.edibleForestInstalled ? '+${(state.activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator * 100).round()} % · ${state.activePollinatorsForBiofermenter(biome)}/${config.maxPollinatorsCounted} Pollinisateurs' : 'non installée'}'),
                       Text(
                           'Réseau mycélien : ${zone.mycelialNetworkInstalled ? '${state.biofermenterMyceliumPerDay(biome)} Mycélium/jour · ${state.activeMycelialPTibugsForBiofermenter(biome)}/${config.maxMycelialPTibugsCounted} P’TIBUG mycéliens' : 'non installé'}'),
+                      if (zone.mycelialNetworkInstalled) ...<Widget>[
+                        const SizedBox(height: 4),
+                        Text(
+                            'Réserve mycélienne : ${zone.myceliumReserve}/${state.biofermenterMyceliumReserveCapacity(biome)}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w800)),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            minHeight: 9,
+                            value: state.biofermenterMyceliumReserveCapacity(
+                                        biome) ==
+                                    0
+                                ? 0
+                                : (zone.myceliumReserve /
+                                        state
+                                            .biofermenterMyceliumReserveCapacity(
+                                                biome))
+                                    .clamp(0, 1),
+                            color: Colors.purple.shade500,
+                            backgroundColor: Colors.purple.shade100,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       const Text('Lithoculture',
                           style: TextStyle(fontWeight: FontWeight.w900)),
@@ -8146,6 +8243,22 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                             'Récolter l’Organique (${zone.organicReserve})',
                           ),
                         ),
+                        if (zone.mycelialNetworkInstalled)
+                          OutlinedButton.icon(
+                            onPressed: zone.myceliumReserve <= 0
+                                ? null
+                                : () {
+                                    final result = state
+                                        .retrieveBiofermenterMycelium(biome);
+                                    setState(() {});
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                            content: Text(result.message)));
+                                  },
+                            icon: const Icon(Icons.auto_awesome_outlined),
+                            label: Text(
+                                'Récolter le Mycélium (${zone.myceliumReserve})'),
+                          ),
                         if (state.canInstallCalciumBasin(biome) &&
                             !zone.calciumBasinInstalled)
                           OutlinedButton(
@@ -8364,10 +8477,27 @@ class _LisiereBuildingsMap extends StatelessWidget {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: <Widget>[
+                            if (built)
+                              IconButton(
+                                tooltip: 'Récolter',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: zone.organicReserve <= 0
+                                    ? null
+                                    : () {
+                                        final result = gameState
+                                            .retrieveBiofermenterOrganic(biome);
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                              content: Text(result.message)),
+                                        );
+                                      },
+                                icon: const Icon(Icons.inventory_2_outlined),
+                              ),
                             Icon(
                               unlocked
                                   ? built
-                                      ? Icons.precision_manufacturing_outlined
+                                      ? Icons.factory_outlined
                                       : Icons.add_home_work_outlined
                                   : Icons.lock_outline,
                               color: built
@@ -8399,17 +8529,21 @@ class _LisiereBuildingsMap extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            if (built)
-                              IconButton(
-                                tooltip: 'Récolter',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: zone.organicReserve <= 0
-                                    ? null
-                                    : () {
-                                        gameState
-                                            .retrieveBiofermenterOrganic(biome);
-                                      },
-                                icon: const Icon(Icons.inventory_2_outlined),
+                            if (built &&
+                                (zone.mycelialNetworkInstalled ||
+                                    zone.edibleForestInstalled ||
+                                    zone.calciumBasinInstalled))
+                              Text(
+                                zone.mycelialNetworkInstalled
+                                    ? 'Réseau mycélien'
+                                    : zone.edibleForestInstalled
+                                        ? 'Forêt comestible'
+                                        : 'Bassin de calcium',
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 8, fontWeight: FontWeight.w700),
                               ),
                             if (built)
                               _CompactViabilityBar(
@@ -8846,6 +8980,9 @@ class _PTibugTerritoryMapCell extends StatelessWidget {
     final label = lisiereForageConfig.biomes[biome]!.label;
     final viability =
         built ? gameState.viabilityForBuilding(building!.id) : null;
+    final activeCount =
+        built ? gameState.pTibugsForTerritory(building!.id).length : 0;
+    final capacity = built ? gameState.pTibugTerritoryCapacity(building!) : 0;
     return DragTarget<PTibug>(
       onWillAcceptWithDetails: (_) => unlocked && built,
       onAcceptWithDetails: (details) => onAssign(details.data),
@@ -8898,6 +9035,11 @@ class _PTibugTerritoryMapCell extends StatelessWidget {
                 if (viability != null) ...<Widget>[
                   const SizedBox(height: 4),
                   _MapViabilityBar(state: viability),
+                  Text(
+                    '$activeCount/$capacity P’TIBUG',
+                    style: const TextStyle(
+                        fontSize: 9, fontWeight: FontWeight.w800),
+                  ),
                 ],
               ],
             ),
@@ -9746,17 +9888,77 @@ class _WaterSortRepairGameState extends State<_WaterSortRepairGame> {
 
   void _reset() {
     count = widget.difficulty['colorCount'] ?? 3;
-    final random =
-        math.Random(widget.seed + DateTime.now().microsecondsSinceEpoch);
-    final palette = List<int>.generate(count, (index) => index)
-      ..shuffle(random);
-    bottles = List<List<int>>.generate(count, (i) {
-      final rotation = random.nextInt(count);
-      return List<int>.generate(4, (j) => palette[(i + j + rotation) % count]);
-    });
-    bottles.addAll(<List<int>>[<int>[], <int>[]]);
+    // Chaque couleur doit exister exactement quatre fois. Le mélange n'est
+    // retenu que s'il est résoluble : un shuffle visuel seul pouvait produire
+    // des parties impossibles à terminer.
+    final seed = widget.seed + DateTime.now().microsecondsSinceEpoch;
+    List<List<int>>? puzzle;
+    for (var attempt = 0; attempt < 40 && puzzle == null; attempt++) {
+      final random = math.Random(seed + attempt * 7919);
+      final layers = <int>[
+        for (var color = 0; color < count; color++)
+          ...List<int>.filled(4, color),
+      ]..shuffle(random);
+      final candidate = <List<int>>[
+        for (var index = 0; index < count; index++)
+          layers.sublist(index * 4, index * 4 + 4),
+        <int>[],
+        <int>[],
+      ];
+      if (_isSolvable(candidate)) puzzle = candidate;
+    }
+    // Configuration de repli connue et équilibrée. Elle conserve toujours
+    // quatre couches par couleur, même si le contrôle DEV détecte un échec.
+    bottles = puzzle ??
+        <List<int>>[
+          for (var bottle = 0; bottle < count; bottle++)
+            List<int>.generate(4, (layer) => (bottle + layer) % count),
+          <int>[],
+          <int>[],
+        ];
     selected = null;
     done = false;
+  }
+
+  bool _isSolvable(List<List<int>> initial) {
+    final seen = <String>{};
+    var visited = 0;
+    bool search(List<List<int>> state) {
+      if (state.where((bottle) => bottle.isNotEmpty).every((bottle) =>
+          bottle.length == 4 && bottle.every((v) => v == bottle.first))) {
+        return true;
+      }
+      if (++visited > 70000) return false;
+      final key = state.map((bottle) => bottle.join()).join('|');
+      if (!seen.add(key)) return false;
+      for (var from = 0; from < state.length; from++) {
+        final source = state[from];
+        if (source.isEmpty) continue;
+        final color = source.last;
+        var run = 0;
+        for (var i = source.length - 1; i >= 0 && source[i] == color; i--) {
+          run++;
+        }
+        for (var to = 0; to < state.length; to++) {
+          if (to == from) continue;
+          final target = state[to];
+          if (target.length == 4 ||
+              (target.isNotEmpty && target.last != color)) {
+            continue;
+          }
+          final moved = math.min(run, 4 - target.length);
+          if (moved == 0) continue;
+          final next = state.map((bottle) => List<int>.from(bottle)).toList();
+          for (var i = 0; i < moved; i++) {
+            next[to].add(next[from].removeLast());
+          }
+          if (search(next)) return true;
+        }
+      }
+      return false;
+    }
+
+    return search(initial.map((bottle) => List<int>.from(bottle)).toList());
   }
 
   bool get solved => bottles
@@ -10591,6 +10793,126 @@ IconData _pTibugAnimationIcon(String? animationName) => switch (animationName) {
       'Sauteuse' => Icons.north_east_outlined,
       'Tisseuse' => Icons.hub_outlined,
       _ => Icons.motion_photos_on_outlined,
+    };
+
+IconData _matrixSpeciesIcon(PTibugSpecies species) => switch (species) {
+      PTibugSpecies.scarabe => Icons.shield_outlined,
+      PTibugSpecies.hyme => Icons.hive_outlined,
+      PTibugSpecies.arac => Icons.hub_outlined,
+    };
+
+/// Présentation unique d'une Matrice : inventaire, création et Cultivation
+/// montrent ainsi les mêmes informations physiques, pas un simple nom texte.
+class _AspectMatrixPresentation extends StatelessWidget {
+  const _AspectMatrixPresentation({
+    required this.matrix,
+    this.selected = false,
+    this.onTap,
+  });
+
+  final PTibugAspectMatrix matrix;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = _pTibugColorFromHex(matrix.primaryColorHex);
+    final isDark = matrix.primaryColorHex?.toUpperCase() == '#1E1E1E';
+    final species = pTibugConfig.species[matrix.species]!.displayName;
+    final labels = <Widget>[
+      _matrixBadge(
+        primary,
+        'Couleur ${_matrixColorName(matrix.primaryColorHex)}',
+      ),
+      if (matrix.motifId != null && matrix.motifId!.isNotEmpty)
+        _matrixIconBadge(
+            _pTibugMotifIcon(matrix.motifId), 'Motif ${matrix.motifId}'),
+      if (matrix.motifId != null && matrix.motifColorHex != null)
+        _matrixBadge(
+          _pTibugColorFromHex(matrix.motifColorHex),
+          'Motif ${_matrixColorName(matrix.motifColorHex)}',
+        ),
+      if (matrix.animationName != null && matrix.animationName!.isNotEmpty)
+        _matrixIconBadge(
+          _pTibugAnimationIcon(matrix.animationName),
+          matrix.animationName!,
+        ),
+    ];
+    return Card(
+      color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              CircleAvatar(
+                radius: 23,
+                backgroundColor: primary,
+                foregroundColor: isDark ? Colors.white : Colors.black87,
+                child: Icon(_matrixSpeciesIcon(matrix.species)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('Matrice $species',
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                    Text('Source : ${matrix.sourceDisplayName}'),
+                    const SizedBox(height: 5),
+                    Wrap(spacing: 8, runSpacing: 4, children: labels),
+                  ],
+                ),
+              ),
+              if (selected) const Icon(Icons.check_circle, color: Colors.blue),
+              if (!selected && onTap != null) const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Widget _matrixBadge(Color color, String label) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.black26),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 12)),
+      ],
+    );
+
+Widget _matrixIconBadge(IconData icon, String label) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(icon, size: 15),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 12)),
+      ],
+    );
+
+String _matrixColorName(String? colorHex) => switch (colorHex?.toUpperCase()) {
+      '#1E1E1E' => 'Noir',
+      '#FFFFFF' => 'Blanc',
+      '#D94B4B' => 'Rouge',
+      '#4A90E2' => 'Bleu',
+      '#F2C94C' => 'Jaune',
+      '#F2994A' => 'Orange',
+      '#9B51E0' => 'Violet',
+      '#6FCF97' => 'Vert',
+      _ => colorHex ?? 'inconnue',
     };
 
 class _BiomeBuildingsTab extends StatelessWidget {
@@ -14681,7 +15003,7 @@ class FablabConstructionSheet extends StatelessWidget {
       description:
           'Le Fablab permet au refuge de cuisiner, fabriquer et recycler progressivement ses ressources.',
       footer:
-          'Atelier niveau 1 : +${fablabConfig.stockCapacityBonusPerFablabLevel} unités de stock.',
+          'FabLab niveau 1 : ${fablabConfig.fablabStorageForLevel(1)} unités de stockage global.',
     );
   }
 }
@@ -17364,10 +17686,17 @@ class PTibugNurseryPage extends StatefulWidget {
   State<PTibugNurseryPage> createState() => _PTibugNurseryPageState();
 }
 
+enum _CollectionMotifFilter { all, withMotif, withoutMotif }
+
 class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
   Timer? _timer;
   bool _starterChoiceDialogVisible = false;
   bool _initialDetailShown = false;
+  bool _collectionLevelDescending = false;
+  final Set<PTibugSpecies> _collectionSpecies = <PTibugSpecies>{};
+  String? _collectionColor;
+  String? _collectionAnimation;
+  _CollectionMotifFilter _collectionMotif = _CollectionMotifFilter.all;
 
   @override
   void initState() {
@@ -17678,46 +18007,60 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         builder: (sheetContext) {
           final capsules = widget.gameState.nurseryInventoryCapsules;
           final matrices = widget.gameState.nurseryInventoryMatrices;
-          return SafeArea(
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
-              children: <Widget>[
-                const Text('Inventaire de la Nurserie',
-                    style:
-                        TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-                const Text('Capsules P’TIBUG et Matrices uniquement'),
-                const SizedBox(height: 12),
-                if (capsules.isNotEmpty) ...<Widget>[
-                  const Text('Capsules P’TIBUG',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
-                  ...capsules.map((capsule) => ListTile(
-                        leading: const Icon(Icons.inventory_2_outlined),
-                        title: Text('Capsule P’TIBUG · ${capsule.displayName}'),
-                        subtitle: Text(
-                            '${pTibugConfig.species[capsule.species]!.displayName} · niveau ${capsule.level}'),
-                      )),
+          var sortBySpecies = true;
+          return StatefulBuilder(builder: (context, setSheetState) {
+            final sorted = List<PTibugAspectMatrix>.from(matrices)
+              ..sort((a, b) => sortBySpecies
+                  ? a.species.name.compareTo(b.species.name)
+                  : (a.primaryColorHex ?? '')
+                      .compareTo(b.primaryColorHex ?? ''));
+            return SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+                children: <Widget>[
+                  const Text('Inventaire de la Nurserie',
+                      style:
+                          TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                  const Text('Capsules P’TIBUG et Matrices uniquement'),
+                  const SizedBox(height: 12),
+                  if (capsules.isNotEmpty) ...<Widget>[
+                    const Text('Capsules P’TIBUG',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
+                    ...capsules.map((capsule) => ListTile(
+                          leading: const Icon(Icons.inventory_2_outlined),
+                          title:
+                              Text('Capsule P’TIBUG · ${capsule.displayName}'),
+                          subtitle: Text(
+                              '${pTibugConfig.species[capsule.species]!.displayName} · niveau ${capsule.level}'),
+                        )),
+                  ],
+                  if (matrices.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Row(children: <Widget>[
+                      const Expanded(
+                        child: Text('Matrices d’aspect',
+                            style: TextStyle(fontWeight: FontWeight.w900)),
+                      ),
+                      ChoiceChip(
+                        label: Text(sortBySpecies ? 'Espèce' : 'Couleur'),
+                        selected: true,
+                        onSelected: (_) =>
+                            setSheetState(() => sortBySpecies = !sortBySpecies),
+                      ),
+                    ]),
+                    ...sorted.map(
+                        (matrix) => _AspectMatrixPresentation(matrix: matrix)),
+                  ],
+                  if (capsules.isEmpty && matrices.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12),
+                      child: Text('Aucune Capsule ni Matrice disponible.'),
+                    ),
                 ],
-                if (matrices.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 8),
-                  const Text('Matrices d’aspect',
-                      style: TextStyle(fontWeight: FontWeight.w900)),
-                  ...matrices.map((matrix) => ListTile(
-                        leading: const Icon(Icons.auto_awesome_motion_outlined),
-                        title: Text(
-                            'Matrice ${pTibugConfig.species[matrix.species]!.displayName} · ${matrix.sourceDisplayName}'),
-                        subtitle: const Text(
-                            'Utilisable en Cultivation ou au Magasin P’TIBUG'),
-                      )),
-                ],
-                if (capsules.isEmpty && matrices.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 12),
-                    child: Text('Aucune Capsule ni Matrice disponible.'),
-                  ),
-              ],
-            ),
-          );
+              ),
+            );
+          });
         },
       );
 
@@ -17775,67 +18118,10 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
               'Les Matrices extraites servent à la Cultivation et peuvent aussi être déposées au Magasin P’TIBUG pour les contrats du Sourcier.',
             ),
           ),
-        ...matrices.map(
-          (matrix) {
-            final source = _sourceForAspectMatrix(matrix);
-            final primary = matrix.primaryColorHex ?? source?.primaryColorHex;
-            final motif = matrix.motifId ?? source?.motifId;
-            final motifColor = matrix.motifColorHex ?? source?.motifColorHex;
-            final animation = matrix.animationName ?? source?.animationName;
-            return Card(
-              child: ListTile(
-                onTap: () => _showAspectMatrixDetails(matrix),
-                leading: CircleAvatar(
-                  backgroundColor: _pTibugColorFromHex(primary),
-                  child: Icon(
-                    _speciesIcon(matrix.species),
-                    color: primary?.toUpperCase() == '#1E1E1E'
-                        ? Colors.white
-                        : Colors.black87,
-                  ),
-                ),
-                title: Text(
-                  'Matrice ${pTibugConfig.species[matrix.species]!.displayName}',
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Source : ${matrix.sourceDisplayName} · ${matrix.createdAt.day}/${matrix.createdAt.month}',
-                    ),
-                    const SizedBox(height: 5),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: <Widget>[
-                        _aspectColorBadge(
-                          primary,
-                          'Couleur ${widget.gameState.pTibugColorNameFor(primary)}',
-                        ),
-                        if (motif != null)
-                          _aspectIconBadge(
-                            _pTibugMotifIcon(motif),
-                            'Motif $motif',
-                          ),
-                        if (motif != null)
-                          _aspectColorBadge(
-                            motifColor,
-                            'Motif ${widget.gameState.pTibugColorNameFor(motifColor)}',
-                          ),
-                        if (animation != null)
-                          _aspectIconBadge(
-                            _pTibugAnimationIcon(animation),
-                            animation,
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-                trailing: const Icon(Icons.chevron_right),
-              ),
-            );
-          },
-        ),
+        ...matrices.map((matrix) => _AspectMatrixPresentation(
+              matrix: matrix,
+              onTap: () => _showAspectMatrixDetails(matrix),
+            )),
       ],
     );
   }
@@ -18691,183 +18977,308 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
         KernelPlanState.active => 'Actif',
       };
 
-  Widget _collection() => ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          const Text('Collection',
-              style: TextStyle(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 4),
-          const Text(
-              'Tape un P’TIBUG pour consulter et ajuster son équipement.'),
-          const SizedBox(height: 10),
-          if (widget.gameState.pTibugs.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 16),
-              child: Text('Aucun P’TIBUG créé pour le moment.'),
-            ),
-          ...widget.gameState.pTibugs.map(
-            (bug) => Card(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => _showPTibugLoadout(bug),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          CircleAvatar(
-                            backgroundColor:
-                                _pTibugPrimaryColor(bug).withValues(alpha: .18),
-                            child: Icon(_speciesIcon(bug.species),
-                                color: _pTibugPrimaryColor(bug)),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              widget.gameState.pTibugBiologicalNameFor(bug),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 17,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            'Niv. ${bug.level}',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        widget.gameState.pTibugIdentityLabelFor(bug),
-                      ),
-                      Text(
-                          'Aspect : ${widget.gameState.pTibugAppearanceLabelFor(bug)}'),
-                      Text(
-                        'XP ${bug.xp} · Réserve ${bug.storedAmount}/${widget.gameState.pTibugCapacityFor(bug)}',
-                      ),
-                      if (_hasSmartSensor(bug))
-                        Text(
-                          'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}',
-                        ),
-                      const SizedBox(height: 8),
-                      if (bug.biologicalTraitId != null)
-                        _LoadoutPill(
-                          icon: Icons.biotech_outlined,
-                          label:
-                              '${pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!)?.displayName ?? bug.biologicalTraitId} ${bug.biologicalTraitLevel}',
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      if (bug.biologicalTraitId != null)
-                        const SizedBox(height: 8),
-                      if (bug.isRenewed && bug.secondTraitId == null)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 2),
-                          child: Text(
-                            '✨ Niveau atteint : ce P’TIBUG peut recevoir un second Trait.',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        )
-                      else if (bug.level >= 3 &&
-                          bug.biologicalTraitLevel >= 3 &&
-                          !bug.isRenewed)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 2),
-                          child: Text(
-                            '✨ Niveau atteint : une Évolution ouvrira un second Trait.',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: <Widget>[
-                          _LoadoutPill(
-                            icon: Icons.auto_awesome_outlined,
-                            label: _traitLabel(bug.traitDataId),
-                            color: _traitColor(
-                              _traitFor(bug)?.grade,
-                              _traitFor(bug),
-                            ),
-                          ),
-                          ...List<Widget>.generate(
-                            widget.gameState.maxModulesPerPTibug,
-                            (index) {
-                              final equippedInstances =
-                                  widget.gameState.pTibugModuleInstances
-                                      .where(
-                                        (instance) =>
-                                            instance.equippedPTibugId == bug.id,
-                                      )
-                                      .toList();
-                              final moduleInstance =
-                                  index < equippedInstances.length
-                                      ? equippedInstances[index]
-                                      : null;
-                              final module = index < bug.equippedModules.length
-                                  ? bug.equippedModules[index]
-                                  : null;
-                              return _LoadoutPill(
-                                icon: moduleInstance == null && module == null
-                                    ? Icons.add_circle_outline
-                                    : _moduleIcon(
-                                        moduleInstance?.type ?? module!),
-                                label: moduleInstance != null
-                                    ? '${_moduleTitle(moduleInstance.type)} ${moduleInstance.qualityLevel}'
-                                    : module == null
-                                        ? 'Module libre'
-                                        : _moduleTitle(module),
-                                color: moduleInstance == null && module == null
-                                    ? Theme.of(context).colorScheme.outline
-                                    : Theme.of(context).colorScheme.secondary,
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        widget.gameState.isPTibugInCultivation(bug)
-                            ? 'En cuve · ${_cultivationStatusFor(bug)}'
-                            : bug.assignedBuildingId == null
-                                ? 'Inactif · ${bug.inactiveReason ?? 'en attente d’affectation'}'
-                                : '${widget.gameState.territoryBuildingForId(bug.assignedBuildingId)?.kind == PTibugTerritoryKind.nursery ? 'Nurserie de la Savane tropicale' : 'Refuge'} · ${bug.inactiveReason ?? (bug.nextProductionAt == null ? 'cycle en attente' : 'prochain cycle ${_countdownLabel(bug.nextProductionAt!)}')}',
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed:
-                            bug.storedAmount == 0 && bug.storedDataCells.isEmpty
-                                ? null
-                                : () => _message(
-                                      widget.gameState
-                                          .collectPTibugProductionFor(bug)
-                                          .message,
-                                    ),
-                        icon: const Icon(Icons.inventory_2_outlined),
-                        label: const Text('Récolter'),
-                      ),
-                      const SizedBox(height: 8),
-                      FilledButton.icon(
-                        onPressed: widget.gameState.isPTibugInCultivation(bug)
-                            ? () => _exitPTibugCultivation(bug)
-                            : () => _showTerritoryAssignment(bug),
-                        icon: Icon(widget.gameState.isPTibugInCultivation(bug)
-                            ? Icons.logout_outlined
-                            : Icons.swap_horiz_outlined),
-                        label: Text(widget.gameState.isPTibugInCultivation(bug)
-                            ? 'Sortir de cuve'
-                            : 'Affecter'),
-                      ),
-                    ],
+  Widget _collection() {
+    final all = List<PTibug>.from(widget.gameState.pTibugs);
+    final colors = all
+        .map((bug) => bug.primaryColorHex)
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final animations = all
+        .map((bug) => bug.animationName)
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final bugs = all.where((bug) {
+      final hasMotif = bug.motifId != null &&
+          bug.motifId!.isNotEmpty &&
+          bug.motifId!.toLowerCase() != 'aucun';
+      return (_collectionSpecies.isEmpty ||
+              _collectionSpecies.contains(bug.species)) &&
+          (_collectionColor == null ||
+              bug.primaryColorHex == _collectionColor) &&
+          (_collectionAnimation == null ||
+              bug.animationName == _collectionAnimation) &&
+          (_collectionMotif == _CollectionMotifFilter.all ||
+              (_collectionMotif == _CollectionMotifFilter.withMotif &&
+                  hasMotif) ||
+              (_collectionMotif == _CollectionMotifFilter.withoutMotif &&
+                  !hasMotif));
+    }).toList()
+      ..sort((a, b) => _collectionLevelDescending
+          ? b.level.compareTo(a.level)
+          : a.level.compareTo(b.level));
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: <Widget>[
+        const Text('Collection', style: TextStyle(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 4),
+        const Text('Tape un P’TIBUG pour consulter et ajuster son équipement.'),
+        const SizedBox(height: 10),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text('Filtres',
+                    style: TextStyle(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                  FilterChip(
+                    label: Text(_collectionLevelDescending
+                        ? 'Niveau décroissant'
+                        : 'Niveau croissant'),
+                    selected: true,
+                    onSelected: (_) => setState(() =>
+                        _collectionLevelDescending =
+                            !_collectionLevelDescending),
                   ),
+                  ...PTibugSpecies.values.map((species) => FilterChip(
+                        label: Text(pTibugConfig.species[species]!.displayName),
+                        selected: _collectionSpecies.contains(species),
+                        onSelected: (selected) => setState(() {
+                          selected
+                              ? _collectionSpecies.add(species)
+                              : _collectionSpecies.remove(species);
+                        }),
+                      )),
+                  ChoiceChip(
+                    label: const Text('Tous motifs'),
+                    selected: _collectionMotif == _CollectionMotifFilter.all,
+                    onSelected: (_) => setState(
+                        () => _collectionMotif = _CollectionMotifFilter.all),
+                  ),
+                  ChoiceChip(
+                    label: const Text('Avec motif'),
+                    selected:
+                        _collectionMotif == _CollectionMotifFilter.withMotif,
+                    onSelected: (_) => setState(() =>
+                        _collectionMotif = _CollectionMotifFilter.withMotif),
+                  ),
+                  ChoiceChip(
+                    label: const Text('Sans motif'),
+                    selected:
+                        _collectionMotif == _CollectionMotifFilter.withoutMotif,
+                    onSelected: (_) => setState(() =>
+                        _collectionMotif = _CollectionMotifFilter.withoutMotif),
+                  ),
+                ]),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                  ChoiceChip(
+                    label: const Text('Toutes couleurs'),
+                    selected: _collectionColor == null,
+                    onSelected: (_) => setState(() => _collectionColor = null),
+                  ),
+                  ...colors.map((color) => ChoiceChip(
+                        avatar: CircleAvatar(
+                            radius: 7,
+                            backgroundColor: _pTibugColorFromHex(color)),
+                        label: Text(_matrixColorName(color)),
+                        selected: _collectionColor == color,
+                        onSelected: (_) =>
+                            setState(() => _collectionColor = color),
+                      )),
+                ]),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                  ChoiceChip(
+                    label: const Text('Toutes animations'),
+                    selected: _collectionAnimation == null,
+                    onSelected: (_) =>
+                        setState(() => _collectionAnimation = null),
+                  ),
+                  ...animations.map((animation) => ChoiceChip(
+                        avatar: Icon(_pTibugAnimationIcon(animation), size: 16),
+                        label: Text(animation),
+                        selected: _collectionAnimation == animation,
+                        onSelected: (_) =>
+                            setState(() => _collectionAnimation = animation),
+                      )),
+                ]),
+              ],
+            ),
+          ),
+        ),
+        if (all.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 16),
+            child: Text('Aucun P’TIBUG créé pour le moment.'),
+          ),
+        if (all.isNotEmpty && bugs.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 16),
+            child: Text('Aucun P’TIBUG ne correspond aux filtres.'),
+          ),
+        ...bugs.map(
+          (bug) => Card(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _showPTibugLoadout(bug),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        CircleAvatar(
+                          backgroundColor:
+                              _pTibugPrimaryColor(bug).withValues(alpha: .18),
+                          child: Icon(_speciesIcon(bug.species),
+                              color: _pTibugPrimaryColor(bug)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            widget.gameState.pTibugBiologicalNameFor(bug),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 17,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          'Niv. ${bug.level}',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      widget.gameState.pTibugIdentityLabelFor(bug),
+                    ),
+                    Text(
+                        'Aspect : ${widget.gameState.pTibugAppearanceLabelFor(bug)}'),
+                    Text(
+                      'XP ${bug.xp} · Réserve ${bug.storedAmount}/${widget.gameState.pTibugCapacityFor(bug)}',
+                    ),
+                    if (_hasSmartSensor(bug))
+                      Text(
+                        'Cellules : ${bug.storedDataCells.length}/${pTibugConfig.territory.dataCellStorageCapacity}',
+                      ),
+                    const SizedBox(height: 8),
+                    if (bug.biologicalTraitId != null)
+                      _LoadoutPill(
+                        icon: Icons.biotech_outlined,
+                        label:
+                            '${pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!)?.displayName ?? bug.biologicalTraitId} ${bug.biologicalTraitLevel}',
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    if (bug.biologicalTraitId != null)
+                      const SizedBox(height: 8),
+                    if (bug.isRenewed && bug.secondTraitId == null)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Text(
+                          '✨ Niveau atteint : ce P’TIBUG peut recevoir un second Trait.',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      )
+                    else if (bug.level >= 3 &&
+                        bug.biologicalTraitLevel >= 3 &&
+                        !bug.isRenewed)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Text(
+                          '✨ Niveau atteint : une Évolution ouvrira un second Trait.',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: <Widget>[
+                        _LoadoutPill(
+                          icon: Icons.auto_awesome_outlined,
+                          label: _traitLabel(bug.traitDataId),
+                          color: _traitColor(
+                            _traitFor(bug)?.grade,
+                            _traitFor(bug),
+                          ),
+                        ),
+                        ...List<Widget>.generate(
+                          widget.gameState.maxModulesPerPTibug,
+                          (index) {
+                            final equippedInstances =
+                                widget.gameState.pTibugModuleInstances
+                                    .where(
+                                      (instance) =>
+                                          instance.equippedPTibugId == bug.id,
+                                    )
+                                    .toList();
+                            final moduleInstance =
+                                index < equippedInstances.length
+                                    ? equippedInstances[index]
+                                    : null;
+                            final module = index < bug.equippedModules.length
+                                ? bug.equippedModules[index]
+                                : null;
+                            return _LoadoutPill(
+                              icon: moduleInstance == null && module == null
+                                  ? Icons.add_circle_outline
+                                  : _moduleIcon(
+                                      moduleInstance?.type ?? module!),
+                              label: moduleInstance != null
+                                  ? '${_moduleTitle(moduleInstance.type)} ${moduleInstance.qualityLevel}'
+                                  : module == null
+                                      ? 'Module libre'
+                                      : _moduleTitle(module),
+                              color: moduleInstance == null && module == null
+                                  ? Theme.of(context).colorScheme.outline
+                                  : Theme.of(context).colorScheme.secondary,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      widget.gameState.isPTibugInCultivation(bug)
+                          ? 'En cuve · ${_cultivationStatusFor(bug)}'
+                          : bug.assignedBuildingId == null
+                              ? 'Inactif · ${bug.inactiveReason ?? 'en attente d’affectation'}'
+                              : '${widget.gameState.territoryBuildingForId(bug.assignedBuildingId)?.kind == PTibugTerritoryKind.nursery ? 'Nurserie de la Savane tropicale' : 'Refuge'} · ${bug.inactiveReason ?? (bug.nextProductionAt == null ? 'cycle en attente' : 'prochain cycle ${_countdownLabel(bug.nextProductionAt!)}')}',
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed:
+                          bug.storedAmount == 0 && bug.storedDataCells.isEmpty
+                              ? null
+                              : () => _message(
+                                    widget.gameState
+                                        .collectPTibugProductionFor(bug)
+                                        .message,
+                                  ),
+                      icon: const Icon(Icons.inventory_2_outlined),
+                      label: const Text('Récolter'),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: widget.gameState.isPTibugInCultivation(bug)
+                          ? () => _exitPTibugCultivation(bug)
+                          : () => _showTerritoryAssignment(bug),
+                      icon: Icon(widget.gameState.isPTibugInCultivation(bug)
+                          ? Icons.logout_outlined
+                          : Icons.swap_horiz_outlined),
+                      label: Text(widget.gameState.isPTibugInCultivation(bug)
+                          ? 'Sortir de cuve'
+                          : 'Affecter'),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 
   void _exitPTibugCultivation(PTibug bug) {
     final operation = widget.gameState.cultivationOperationForPTibug(bug.id);
@@ -19861,7 +20272,7 @@ class FablabPage extends StatelessWidget {
       initialIndex: initialTabIndex.clamp(0, 4),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Fablab'),
+          title: Text('FabLab · N${gameState.fablabLevel}'),
           actions: <Widget>[
             _MailboxButton(
               tooltip: 'Messages Fablab',
@@ -19930,7 +20341,7 @@ class FablabPage extends StatelessWidget {
               const _BuildingInformationTab(
                 title: 'Fablab',
                 description:
-                    'Le Fablab regroupe trois unités indépendantes : Cuisine, Atelier et Recycleur. Chaque unité possède sa propre fonction, son niveau et son projet d’amélioration. Le Fablab ne possède pas de niveau moyen.',
+                    'Le FabLab est un seul bâtiment physique : sa Viabilité, ses réparations et son stockage sont communs. Cuisine, Atelier et Recycleur sont des salles internes ; leur niveau ne peut jamais dépasser celui du FabLab.',
               ),
             ],
           ),
@@ -19963,15 +20374,21 @@ class _FablabUpgradeOverview extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Les unités progressent séparément. Les projets en cours ne bloquent pas leur fonctionnement au niveau actuel.',
+            'Le FabLab porte la Viabilité et les réparations. Cuisine, Atelier et Recycleur sont des salles internes et ne peuvent pas dépasser son niveau.',
           ),
           const SizedBox(height: 14),
-          _BuildingViabilityCard(gameState: gameState, buildingId: 'atelier'),
-          const SizedBox(height: 10),
-          _BuildingViabilityCard(gameState: gameState, buildingId: 'cuisine'),
-          const SizedBox(height: 10),
-          _BuildingViabilityCard(gameState: gameState, buildingId: 'recycler'),
+          _BuildingViabilityCard(gameState: gameState, buildingId: 'fablab'),
           const SizedBox(height: 14),
+          _FablabUnitUpgradeCard(
+            gameState: gameState,
+            targetId: 'fablab',
+            title: 'FabLab',
+            level: gameState.fablabLevel,
+            description:
+                'Bâtiment physique : stock global, Viabilité, réparations et plafond de niveau des salles.',
+            nextEffect:
+                'Prochain niveau : stockage FabLab ${fablabConfig.fablabStorageForLevel((gameState.fablabLevel + 1).clamp(1, 4))}.',
+          ),
           _FablabUnitUpgradeCard(
             gameState: gameState,
             targetId: 'cuisine',
@@ -19979,8 +20396,10 @@ class _FablabUpgradeOverview extends StatelessWidget {
             level: gameState.cuisineLevel,
             description:
                 'Augmente les emplacements de préparation et prépare les recettes futures.',
-            nextEffect:
-                'Prochain niveau : ${gameState.kitchenSlots + 1} emplacement(s) P’TIPOTE.',
+            nextEffect: gameState.cuisineLevel >= gameState.fablabLevel
+                ? 'FabLab N${gameState.fablabLevel + 1} requis.'
+                : 'Prochain niveau : ${gameState.kitchenSlots + 1} poste(s) P’TIPOTE.',
+            enabled: gameState.canUpgradeFabLabRoom(FabLabRoom.kitchen),
           ),
           _FablabUnitUpgradeCard(
             gameState: gameState,
@@ -19988,9 +20407,11 @@ class _FablabUpgradeOverview extends StatelessWidget {
             title: 'Atelier',
             level: gameState.atelierLevel,
             description:
-                'Augmente le stock global et les emplacements de craft P’TIPOTE.',
-            nextEffect:
-                'Prochain niveau : stock ${gameState.globalStockCapacity + fablabConfig.stockCapacityBonusPerFablabLevel}.',
+                'Augmente les postes, recettes et capacité de liste de production.',
+            nextEffect: gameState.atelierLevel >= gameState.fablabLevel
+                ? 'FabLab N${gameState.fablabLevel + 1} requis.'
+                : 'Prochain niveau : ${gameState.workshopSlots + 1} poste(s) P’TIPOTE.',
+            enabled: gameState.canUpgradeFabLabRoom(FabLabRoom.workshop),
           ),
           _FablabUnitUpgradeCard(
             gameState: gameState,
@@ -20003,7 +20424,8 @@ class _FablabUpgradeOverview extends StatelessWidget {
                 ? 'Prochain niveau : traitement plus efficace.'
                 : 'Débloqué au Cœur du Camp niveau ${fablabConfig.recyclerUnlockCampHeartLevel}.',
             enabled:
-                campHeartLevel >= fablabConfig.recyclerUnlockCampHeartLevel,
+                campHeartLevel >= fablabConfig.recyclerUnlockCampHeartLevel &&
+                    gameState.canUpgradeFabLabRoom(FabLabRoom.recycler),
           ),
         ],
       ),
@@ -20076,6 +20498,118 @@ class _FablabUnitUpgradeCard extends StatelessWidget {
   }
 }
 
+class _FabLabHeader extends StatelessWidget {
+  const _FabLabHeader({required this.gameState});
+  final Zone0GameState gameState;
+
+  @override
+  Widget build(BuildContext context) {
+    final viability = gameState.viabilityForBuilding('fablab');
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('FabLab · niveau ${gameState.fablabLevel}',
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              Text(
+                  'Viabilité : ${viability.current}/${viability.maximum}% · Stock : ${gameState.inventoryUsedAmount}/${gameState.globalStockCapacity}'),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(
+                  value: viability.current / viability.maximum),
+              const SizedBox(height: 4),
+              Text(
+                  'Maison ${gameState.houseStorageCapacity} + FabLab ${gameState.fabLabStorageCapacity}',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ]),
+      ),
+    );
+  }
+}
+
+class _FabLabPermanentPosts extends StatelessWidget {
+  const _FabLabPermanentPosts({
+    required this.gameState,
+    required this.room,
+    required this.figurines,
+  });
+  final Zone0GameState gameState;
+  final FabLabRoom room;
+  final List<PtipoteFigurine> figurines;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = gameState.fabLabRoom(room);
+    final capacity = room == FabLabRoom.recycler
+        ? 0
+        : fablabConfig.roomWorkersFor(room, state.level);
+    final names = <String, PtipoteFigurine>{
+      for (final item in figurines) item.id: item
+    };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Postes P’TIPOTE',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              if (capacity == 0)
+                const Text(
+                    'Construisez ou améliorez cette salle pour ouvrir les postes permanents.')
+              else ...<Widget>[
+                ...List<Widget>.generate(capacity, (index) {
+                  final ids = state.permanentWorkerIds.toList(growable: false);
+                  final id = index < ids.length ? ids[index] : null;
+                  final figurine = id == null ? null : names[id];
+                  return ListTile(
+                    dense: true,
+                    leading: Icon(figurine == null
+                        ? Icons.person_outline
+                        : Icons.pets_outlined),
+                    title: Text(figurine?.displayName ?? 'Poste libre'),
+                    subtitle: Text(figurine == null
+                        ? 'Aucun P’TIPOTE assigné'
+                        : 'En attente dans la salle'),
+                    trailing: figurine == null
+                        ? null
+                        : TextButton(
+                            onPressed: () => gameState
+                                .removePermanentFabLabWorker(room, id!),
+                            child: const Text('Rentrer'),
+                          ),
+                  );
+                }),
+                if (state.permanentWorkerIds.length < capacity)
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final selected = await _pickPtipoteForActivity(
+                        context: context,
+                        gameState: gameState,
+                        figurines: figurines,
+                        title:
+                            'Affecter à ${room == FabLabRoom.kitchen ? 'la Cuisine' : 'l’Atelier'}',
+                      );
+                      if (selected != null && context.mounted) {
+                        final result = gameState.assignPermanentFabLabWorker(
+                            room, selected);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)));
+                      }
+                    },
+                    icon: const Icon(Icons.person_add_alt_1_outlined),
+                    label: const Text('Affecter'),
+                  ),
+              ],
+            ]),
+      ),
+    );
+  }
+}
+
 class _FablabEnergyCard extends StatelessWidget {
   const _FablabEnergyCard({required this.gameState});
 
@@ -20142,22 +20676,21 @@ class _FablabQuantitySelector extends StatelessWidget {
   const _FablabQuantitySelector({
     required this.quantity,
     required this.level,
+    required this.room,
     required this.onChanged,
   });
 
   final int quantity;
   final int level;
+  final FabLabRoom room;
   final ValueChanged<int> onChanged;
 
   @override
   Widget build(BuildContext context) => SegmentedButton<int>(
-        segments: <ButtonSegment<int>>[
-          const ButtonSegment(value: 1, label: Text('x1')),
-          const ButtonSegment(value: 5, label: Text('x5')),
-          const ButtonSegment(value: 10, label: Text('x10')),
-          if (level >= 3) const ButtonSegment(value: 50, label: Text('x50')),
-          if (level >= 4) const ButtonSegment(value: -1, label: Text('∞')),
-        ],
+        segments: fablabConfig
+            .quantitiesFor(room, level)
+            .map((value) => ButtonSegment(value: value, label: Text('x$value')))
+            .toList(),
         selected: <int>{quantity},
         onSelectionChanged: (selected) => onChanged(selected.first),
       );
@@ -20193,6 +20726,8 @@ class FablabRecyclerView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
+        _FabLabHeader(gameState: gameState),
+        const SizedBox(height: 12),
         _FablabEnergyCard(gameState: gameState),
         const SizedBox(height: 12),
         _FablabActiveCraftsPanel(gameState: gameState),
@@ -20217,24 +20752,49 @@ class FablabRecyclerView extends StatelessWidget {
                   '${wasteRecyclerConfig.cycleMinutes(gameState.recyclerLevel)} min par cycle · ${wasteRecyclerConfig.energyCostPerCycle} Énergie',
                 ),
                 const SizedBox(height: 6),
-                Text(gameState.recyclerBiologicalOrientationActive
-                    ? 'Orientation biologique active : ${wasteRecyclerConfig.biologicalOrganicRatio} % Organique · ${wasteRecyclerConfig.biologicalMineralRatio} % Minéral'
-                    : 'Ratio aléatoire : 20 à 50 % Organique · le reste en Minéral (ou inversement).'),
-                OutlinedButton(
-                  onPressed: () {
-                    if (!gameState.recyclerBiologicalOrientationInstalled) {
-                      gameState.installRecyclerBiologicalOrientation();
-                    } else {
-                      gameState.setRecyclerBiologicalOrientation(
-                          !gameState.recyclerBiologicalOrientationActive);
-                    }
-                  },
-                  child: Text(!gameState.recyclerBiologicalOrientationInstalled
-                      ? 'Installer l’orientation (${wasteRecyclerConfig.biologicalOrientationModuleCost.entries.map((item) => '${item.value} ${item.key}').join(' · ')})'
-                      : gameState.recyclerBiologicalOrientationActive
-                          ? 'Désactiver l’orientation biologique'
-                          : 'Activer l’orientation biologique'),
-                ),
+                const Text(
+                    'Sorties : Organique et Minéral uniquement. Sans module, la répartition est aléatoire 50 / 50.'),
+                const SizedBox(height: 8),
+                ...List<Widget>.generate(2, (vatIndex) {
+                  final capacity = fablabConfig.recyclerVatCapacityFor(
+                      vatIndex, gameState.recyclerLevel);
+                  if (capacity <= 0) return const SizedBox.shrink();
+                  final vat = gameState.fabLab.recyclerVats[vatIndex];
+                  final enabled = fablabConfig.recyclerVatSupportsModule(
+                      vatIndex, gameState.recyclerLevel);
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                        spacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: <Widget>[
+                          Text(
+                              'Cuve ${vatIndex + 1} · ${vat.storedWaste}/$capacity'),
+                          if (enabled) ...<Widget>[
+                            ChoiceChip(
+                                label: const Text('Aucun'),
+                                selected: vat.moduleType == null,
+                                onSelected: (_) => gameState
+                                    .setRecyclerVatModule(vatIndex, null)),
+                            ChoiceChip(
+                                label: const Text('Organique'),
+                                selected: vat.moduleType ==
+                                    RecyclerModuleType.organic,
+                                onSelected: (_) =>
+                                    gameState.setRecyclerVatModule(
+                                        vatIndex, RecyclerModuleType.organic)),
+                            ChoiceChip(
+                                label: const Text('Minéral'),
+                                selected: vat.moduleType ==
+                                    RecyclerModuleType.mineral,
+                                onSelected: (_) =>
+                                    gameState.setRecyclerVatModule(
+                                        vatIndex, RecyclerModuleType.mineral)),
+                          ] else
+                            const Text('Module indisponible'),
+                        ]),
+                  );
+                }),
               ],
             ),
           ),
@@ -20505,6 +21065,169 @@ class _FablabActiveCraftsPanel extends StatelessWidget {
   }
 }
 
+class _FabLabProductionQueuePanel extends StatelessWidget {
+  const _FabLabProductionQueuePanel({
+    required this.gameState,
+    required this.room,
+  });
+
+  final Zone0GameState gameState;
+  final FabLabRoom room;
+
+  @override
+  Widget build(BuildContext context) {
+    final orders = gameState.productionQueueFor(room);
+    final capacity = gameState.productionQueueCapacityFor(room);
+    if (capacity == 0) {
+      return const Text('Liste de production disponible au niveau 2.');
+    }
+    final roomLabel = room == FabLabRoom.kitchen ? 'Cuisine' : 'Atelier';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Liste de production · ${orders.length}/$capacity',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text('$roomLabel : les ordres sans intrants restent en attente.'),
+            const SizedBox(height: 8),
+            ...orders.map((order) {
+              final recipe = craftConfig.recipes.firstWhere(
+                (item) => item.id == order.recipeId,
+                orElse: () => defaultCraftConfig.simpleMealRecipe,
+              );
+              final status = switch (order.status) {
+                WorkshopOrderStatus.queued => 'En attente de démarrage',
+                WorkshopOrderStatus.blocked => 'En attente de ressources',
+                WorkshopOrderStatus.active => 'En cours',
+                _ => 'Terminé',
+              };
+              return ListTile(
+                dense: true,
+                leading: const Icon(Icons.playlist_play_outlined),
+                title:
+                    Text('${recipe.displayName} × ${order.requestedQuantity}'),
+                subtitle:
+                    Text('$status · ${order.assignedPtipoteName ?? 'Poste'}'),
+                trailing: IconButton(
+                  tooltip: 'Annuler',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => gameState.cancelWorkshopOrder(order.id),
+                ),
+              );
+            }),
+            if (orders.isEmpty) const Text('Aucun ordre programmé.'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FabLabMarketRestockPanel extends StatelessWidget {
+  const _FabLabMarketRestockPanel({
+    required this.gameState,
+    required this.room,
+  });
+
+  final Zone0GameState gameState;
+  final FabLabRoom room;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!gameState.fabLabMarketRestockAvailable(room)) {
+      return const SizedBox.shrink();
+    }
+    final state = gameState.fabLabRoom(room);
+    final recipes = craftConfig.recipes.where((recipe) =>
+        (room == FabLabRoom.kitchen
+            ? recipe.craftSection == CraftSection.cuisine
+            : recipe.craftSection == CraftSection.atelier) &&
+        (room == FabLabRoom.kitchen
+            ? recipe.cuisineLevel <= gameState.cuisineLevel
+            : recipe.atelierLevel <= gameState.atelierLevel));
+    return Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.storefront_outlined),
+        title: const Text('Réassort automatique du Marché'),
+        subtitle:
+            const Text('Choisissez explicitement les recettes et leur cible.'),
+        children: recipes.map((recipe) {
+          final enabled = state.marketRestockRecipeIds.contains(recipe.id);
+          final target = state.marketRestockTargets[recipe.id] ?? 10;
+          return SwitchListTile(
+            title: Text(recipe.displayName),
+            subtitle: Text('Cible Marché : $target'),
+            value: enabled,
+            onChanged: (value) {
+              gameState.setFabLabMarketRestock(
+                recipe: recipe,
+                enabled: value,
+                targetStockQuantity: target,
+              );
+            },
+            secondary: IconButton(
+              tooltip: 'Modifier la cible',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _showFabLabRestockTargetDialog(
+                context: context,
+                gameState: gameState,
+                recipe: recipe,
+                enabled: enabled,
+                initialTarget: target,
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+Future<void> _showFabLabRestockTargetDialog({
+  required BuildContext context,
+  required Zone0GameState gameState,
+  required CraftRecipe recipe,
+  required bool enabled,
+  required int initialTarget,
+}) async {
+  final controller = TextEditingController(text: '$initialTarget');
+  final target = await showDialog<int>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Cible Marché · ${recipe.displayName}'),
+      content: TextField(
+        controller: controller,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(labelText: 'Quantité cible'),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(
+            math.max(0, int.tryParse(controller.text) ?? initialTarget),
+          ),
+          child: const Text('Valider'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  if (target == null) return;
+  gameState.setFabLabMarketRestock(
+    recipe: recipe,
+    enabled: enabled,
+    targetStockQuantity: target,
+  );
+}
+
 class _FablabActiveCraftCard extends StatelessWidget {
   const _FablabActiveCraftCard._({
     required this.title,
@@ -20702,6 +21425,8 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
+            _FabLabHeader(gameState: widget.gameState),
+            const SizedBox(height: 12),
             _FablabEnergyCard(gameState: widget.gameState),
             const SizedBox(height: 12),
             _CommunityBuildingPosts(
@@ -20711,7 +21436,23 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
               ],
             ),
             const SizedBox(height: 12),
+            _FabLabPermanentPosts(
+              gameState: widget.gameState,
+              room: FabLabRoom.workshop,
+              figurines: figurines,
+            ),
+            const SizedBox(height: 12),
             _FablabActiveCraftsPanel(gameState: widget.gameState),
+            const SizedBox(height: 12),
+            _FabLabProductionQueuePanel(
+              gameState: widget.gameState,
+              room: FabLabRoom.workshop,
+            ),
+            const SizedBox(height: 12),
+            _FabLabMarketRestockPanel(
+              gameState: widget.gameState,
+              room: FabLabRoom.workshop,
+            ),
             const SizedBox(height: 12),
             Text(
               'Atelier',
@@ -20722,15 +21463,17 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
             Text(
               'Atelier niv. ${widget.gameState.atelierLevel} · '
               '${widget.gameState.activePtipoteWorkshopOrders}/${widget.gameState.workshopSlots} emplacement(s) P’TIPOTE · '
-              '${widget.gameState.activeManualWorkshopOrders}/1 créneau manuel. Chaque niveau ajoute un emplacement P’TIPOTE.',
+              '${widget.gameState.activeManualWorkshopOrders}/${widget.gameState.manualWorkshopSlots} créneau manuel. Chaque niveau ajoute un emplacement P’TIPOTE.',
             ),
             const SizedBox(height: 12),
-            if (widget.gameState.activeManualWorkshopOrders < 1 ||
+            if (widget.gameState.activeManualWorkshopOrders <
+                    widget.gameState.manualWorkshopSlots ||
                 widget.gameState.activePtipoteWorkshopOrders <
                     widget.gameState.workshopSlots) ...<Widget>[
               _FablabQuantitySelector(
                 quantity: _quantity,
                 level: widget.gameState.atelierLevel,
+                room: FabLabRoom.workshop,
                 onChanged: (value) => setState(() => _quantity = value),
               ),
               const SizedBox(height: 10),
@@ -20776,6 +21519,9 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                     children: craftConfig.recipes
                         .where((recipe) =>
                             recipe.craftSection == CraftSection.atelier)
+                        .where((recipe) =>
+                            recipe.atelierLevel <=
+                            widget.gameState.atelierLevel)
                         .where(widget.gameState.isWorkshopRecipeActive)
                         .where(section.matches)
                         .map((recipe) => _WorkshopRecipeCard(
@@ -20784,7 +21530,7 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                               quantity: _quantity,
                               manualAvailable:
                                   widget.gameState.activeManualWorkshopOrders <
-                                      1,
+                                      widget.gameState.manualWorkshopSlots,
                               ptipoteAvailable:
                                   widget.gameState.activePtipoteWorkshopOrders <
                                       widget.gameState.workshopSlots,
@@ -20799,6 +21545,30 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                                 if (figurine != null && context.mounted)
                                   _start(recipe, figurine);
                               },
+                              queueAvailable:
+                                  widget.gameState.productionQueueCapacityFor(
+                                        FabLabRoom.workshop,
+                                      ) >
+                                      0,
+                              onQueue: () async {
+                                final worker = await _pickPermanentFabLabWorker(
+                                  context: context,
+                                  gameState: widget.gameState,
+                                  figurines: figurines,
+                                  room: FabLabRoom.workshop,
+                                );
+                                if (worker != null && context.mounted) {
+                                  final result = widget.gameState
+                                      .enqueueFabLabProductionOrder(
+                                    recipe: recipe,
+                                    quantity: _quantity,
+                                    worker: worker,
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(result.message)),
+                                  );
+                                }
+                              },
                             ))
                         .toList(),
                   )),
@@ -20809,6 +21579,7 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
               ),
             const SizedBox(height: 18),
             ExpansionTile(
+              initiallyExpanded: true,
               leading: const Icon(Icons.auto_awesome_outlined),
               title: const Text('Armatures P’TIBUG'),
               subtitle: const Text(
@@ -20917,6 +21688,8 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
         return ListView(
           padding: const EdgeInsets.all(18),
           children: <Widget>[
+            _FabLabHeader(gameState: widget.gameState),
+            const SizedBox(height: 12),
             _FablabEnergyCard(gameState: widget.gameState),
             const SizedBox(height: 12),
             _CommunityBuildingPosts(
@@ -20924,7 +21697,23 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
               roles: const <CommunityRoleType>[CommunityRoleType.kitchenCook],
             ),
             const SizedBox(height: 12),
+            _FabLabPermanentPosts(
+              gameState: widget.gameState,
+              room: FabLabRoom.kitchen,
+              figurines: figurines,
+            ),
+            const SizedBox(height: 12),
             _FablabActiveCraftsPanel(gameState: widget.gameState),
+            const SizedBox(height: 12),
+            _FabLabProductionQueuePanel(
+              gameState: widget.gameState,
+              room: FabLabRoom.kitchen,
+            ),
+            const SizedBox(height: 12),
+            _FabLabMarketRestockPanel(
+              gameState: widget.gameState,
+              room: FabLabRoom.kitchen,
+            ),
             const SizedBox(height: 12),
             Text(
               'Cuisine niveau ${widget.gameState.cuisineLevel}',
@@ -20934,17 +21723,20 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Eau disponible gratuitement. ${widget.gameState.activePtipoteKitchenOrders}/${widget.gameState.kitchenSlots} emplacement(s) P’TIPOTE · ${widget.gameState.activeManualKitchenOrders}/1 créneau manuel.',
+              'Eau disponible gratuitement. ${widget.gameState.activePtipoteKitchenOrders}/${widget.gameState.kitchenSlots} emplacement(s) P’TIPOTE · ${widget.gameState.activeManualKitchenOrders}/${widget.gameState.manualKitchenSlots} créneau manuel.',
             ),
             const SizedBox(height: 12),
             _FablabQuantitySelector(
               quantity: _quantity,
               level: widget.gameState.cuisineLevel,
+              room: FabLabRoom.kitchen,
               onChanged: (value) => setState(() => _quantity = value),
             ),
             const SizedBox(height: 12),
             ...craftConfig.recipes
                 .where((recipe) => recipe.craftSection == CraftSection.cuisine)
+                .where((recipe) =>
+                    recipe.cuisineLevel <= widget.gameState.cuisineLevel)
                 .map(
                   (recipe) => _CuisineRecipeCard(
                     recipe: recipe,
@@ -20959,7 +21751,8 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
                           recipe.resultItem: recipe.resultAmount * _quantity,
                         }),
                     manualAvailable:
-                        widget.gameState.activeManualKitchenOrders < 1,
+                        widget.gameState.activeManualKitchenOrders <
+                            widget.gameState.manualKitchenSlots,
                     ptipoteAvailable:
                         widget.gameState.activePtipoteKitchenOrders <
                             widget.gameState.kitchenSlots,
@@ -20973,6 +21766,27 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
                       );
                       if (figurine != null && context.mounted) {
                         _start(recipe, figurine);
+                      }
+                    },
+                    queueAvailable: widget.gameState.productionQueueCapacityFor(
+                          FabLabRoom.kitchen,
+                        ) >
+                        0,
+                    onQueue: () async {
+                      final worker = await _pickPermanentFabLabWorker(
+                        context: context,
+                        gameState: widget.gameState,
+                        figurines: figurines,
+                        room: FabLabRoom.kitchen,
+                      );
+                      if (worker != null && context.mounted) {
+                        final result =
+                            widget.gameState.enqueueFabLabProductionOrder(
+                          recipe: recipe,
+                          quantity: _quantity,
+                          worker: worker,
+                        );
+                        setState(() => _lastResult = result.message);
                       }
                     },
                   ),
@@ -21019,7 +21833,8 @@ class _PTibugArmatureAtelierCard extends StatelessWidget {
         gameState.isPTibugPatternActive('ptibug-species-${species.name}');
     final materials = gameState.hasResources(config.creationCost);
     final batteries = gameState.bioBatteries >= config.creationBioBatteryCost;
-    final manualAvailable = gameState.activeManualWorkshopOrders < 1;
+    final manualAvailable =
+        gameState.activeManualWorkshopOrders < gameState.manualWorkshopSlots;
     final ptipoteAvailable =
         gameState.activePtipoteWorkshopOrders < gameState.workshopSlots;
     final details = config.creationCost.entries
@@ -21105,7 +21920,8 @@ class _PTibugModuleAtelierCard extends StatelessWidget {
     final cost = pTibugConfig.moduleCraftCostFor(module);
     final energy = pTibugConfig.moduleCraftEnergyFor(module);
     final hasMaterials = gameState.hasResources(cost);
-    final manualAvailable = gameState.activeManualWorkshopOrders < 1;
+    final manualAvailable =
+        gameState.activeManualWorkshopOrders < gameState.manualWorkshopSlots;
     final ptipoteAvailable =
         gameState.activePtipoteWorkshopOrders < gameState.workshopSlots;
     final hasEnergy = gameState.energyUnits >= energy + 1;
@@ -21212,6 +22028,8 @@ class _WorkshopRecipeCard extends StatelessWidget {
     required this.ptipoteAvailable,
     required this.onPrepare,
     required this.onAssign,
+    this.queueAvailable = false,
+    this.onQueue,
   });
 
   final CraftRecipe recipe;
@@ -21221,6 +22039,8 @@ class _WorkshopRecipeCard extends StatelessWidget {
   final bool ptipoteAvailable;
   final VoidCallback onPrepare;
   final Future<void> Function() onAssign;
+  final bool queueAvailable;
+  final Future<void> Function()? onQueue;
 
   @override
   Widget build(BuildContext context) => _CraftProductionRecipeCard(
@@ -21234,6 +22054,8 @@ class _WorkshopRecipeCard extends StatelessWidget {
         ptipoteAvailable: ptipoteAvailable,
         onPrepare: onPrepare,
         onAssign: onAssign,
+        queueAvailable: queueAvailable,
+        onQueue: onQueue,
       );
 }
 
@@ -21247,6 +22069,8 @@ class _CuisineRecipeCard extends StatelessWidget {
     required this.ptipoteAvailable,
     required this.onPrepare,
     required this.onAssign,
+    this.queueAvailable = false,
+    this.onQueue,
   });
 
   final CraftRecipe recipe;
@@ -21257,6 +22081,8 @@ class _CuisineRecipeCard extends StatelessWidget {
   final bool ptipoteAvailable;
   final VoidCallback onPrepare;
   final Future<void> Function() onAssign;
+  final bool queueAvailable;
+  final Future<void> Function()? onQueue;
 
   @override
   Widget build(BuildContext context) => _CraftProductionRecipeCard(
@@ -21270,6 +22096,8 @@ class _CuisineRecipeCard extends StatelessWidget {
         ptipoteAvailable: ptipoteAvailable,
         onPrepare: onPrepare,
         onAssign: onAssign,
+        queueAvailable: queueAvailable,
+        onQueue: onQueue,
       );
 }
 
@@ -21285,6 +22113,8 @@ class _CraftProductionRecipeCard extends StatelessWidget {
     required this.ptipoteAvailable,
     required this.onPrepare,
     required this.onAssign,
+    this.queueAvailable = false,
+    this.onQueue,
   });
 
   final CraftRecipe recipe;
@@ -21297,6 +22127,8 @@ class _CraftProductionRecipeCard extends StatelessWidget {
   final bool ptipoteAvailable;
   final VoidCallback onPrepare;
   final Future<void> Function() onAssign;
+  final bool queueAvailable;
+  final Future<void> Function()? onQueue;
 
   @override
   Widget build(BuildContext context) {
@@ -21414,6 +22246,10 @@ class _CraftProductionRecipeCard extends StatelessWidget {
       secondaryActionIcon: Icons.person_add_alt_1,
       secondaryActionEnabled: canPrepare && ptipoteAvailable,
       onSecondaryAction: onAssign,
+      tertiaryActionLabel: queueAvailable ? 'Ajouter à la liste' : null,
+      tertiaryActionIcon: Icons.playlist_add_outlined,
+      tertiaryActionEnabled: queueAvailable,
+      onTertiaryAction: onQueue,
     );
   }
 }
@@ -21438,6 +22274,10 @@ class _ProductionRecipeCard extends StatelessWidget {
     this.secondaryActionIcon,
     this.secondaryActionEnabled = false,
     this.onSecondaryAction,
+    this.tertiaryActionLabel,
+    this.tertiaryActionIcon,
+    this.tertiaryActionEnabled = false,
+    this.onTertiaryAction,
     this.highlightedDetails = const <InlineSpan>[],
   });
 
@@ -21459,6 +22299,10 @@ class _ProductionRecipeCard extends StatelessWidget {
   final IconData? secondaryActionIcon;
   final bool secondaryActionEnabled;
   final Future<void> Function()? onSecondaryAction;
+  final String? tertiaryActionLabel;
+  final IconData? tertiaryActionIcon;
+  final bool tertiaryActionEnabled;
+  final Future<void> Function()? onTertiaryAction;
   final List<InlineSpan> highlightedDetails;
 
   @override
@@ -21561,6 +22405,16 @@ class _ProductionRecipeCard extends StatelessWidget {
                       : null,
                   icon: Icon(secondaryActionIcon),
                   label: Text(secondaryActionLabel!),
+                ),
+              ],
+              if (tertiaryActionLabel != null) ...<Widget>[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: tertiaryActionEnabled && onTertiaryAction != null
+                      ? onTertiaryAction
+                      : null,
+                  icon: Icon(tertiaryActionIcon),
+                  label: Text(tertiaryActionLabel!),
                 ),
               ],
             ],

@@ -18,6 +18,7 @@ import 'community_roles_config.dart';
 import 'housing_config.dart';
 import 'craft_config.dart';
 import 'fablab_config.dart';
+import 'fablab_v2.dart';
 import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
 import 'lisiere_forage_config.dart';
@@ -33,7 +34,7 @@ import 'workshop_config.dart';
 
 /// Keeps player-facing messages in the building that owns the activity.
 /// Older saved reports fall back to the P'TIPOTE/PTIBUG mailbox.
-enum Zone0MessageMailbox { companions, kernel, fablab }
+enum Zone0MessageMailbox { companions, kernel, fablab, lisiere }
 
 enum RepairMiniGameType { colorMatch, pipes, waterSort }
 
@@ -276,6 +277,11 @@ class Zone0GameState extends ChangeNotifier {
   // Compatibility level. New code should read atelierLevel for stock and slots.
   int atelierLevel = 0;
   int cuisineLevel = 0;
+
+  /// V2 owns the common FabLab level, rooms, permanent posts and recycler
+  /// vats. Legacy scalar fields above are mirrored solely for old save/UI
+  /// compatibility while the migration remains active in production.
+  FabLabBuilding fabLab = FabLabBuilding();
   int houseLevel = 1;
   // Existing saves started with three drawn alcoves. Keep that capacity during
   // migration even though new House level 1 starts with two.
@@ -418,7 +424,21 @@ class Zone0GameState extends ChangeNotifier {
   /// Empêche les actions de simulation d'écraser les données avant le chargement.
   bool get hasLoadedFromFirebase => _loadedFromFirebase;
 
-  bool get isFablabBuilt => atelierLevel >= fablabConfig.cuisineUnlockLevel;
+  bool get isFablabBuilt => fablabLevel >= fablabConfig.cuisineUnlockLevel;
+  int get fabLabStorageCapacity =>
+      isFablabBuilt ? fablabConfig.fablabStorageForLevel(fablabLevel) : 0;
+  int get houseStorageCapacity => fablabConfig.houseStorageForLevel(houseLevel);
+
+  FabLabRoomState fabLabRoom(FabLabRoom room) => fabLab.room(room);
+  int fabLabRoomLevel(FabLabRoom room) => fabLabRoom(room).level;
+
+  bool canUpgradeFabLabRoom(FabLabRoom room) =>
+      fabLabRoom(room).level < fablabLevel && fabLabRoom(room).level < 4;
+
+  String fabLabRoomUpgradeMessage(FabLabRoom room) =>
+      fabLabRoom(room).level >= fablabLevel && fabLabRoom(room).level < 4
+          ? 'Améliorez d’abord le FabLab.'
+          : 'Amélioration disponible.';
   bool get isSecurityTowerBuilt => securityTowerLevel >= 1;
   bool get isTowerWeatherUnlocked =>
       isSecurityTowerBuilt && towerWeatherModuleInstalled;
@@ -448,15 +468,24 @@ class Zone0GameState extends ChangeNotifier {
   bool isTerritoryUnderConstruction(PTibugTerritoryBuilding building) =>
       constructionProjects[building.id]?.isInProgress ?? false;
 
-  BuildingViabilityState viabilityForBuilding(String buildingId) =>
-      buildingViabilities.putIfAbsent(
-        buildingId,
-        () => BuildingViabilityState.fresh(
-          buildingId,
-          maximum: towerOperationsConfig.buildingViability.maximumViability,
-          initial: towerOperationsConfig.buildingViability.initialViability,
-        ),
-      );
+  /// Internal FabLab rooms share the physical FabLab structure. Routing here
+  /// protects every weather, repair and craft caller, including legacy UI.
+  String canonicalBuildingId(String buildingId) =>
+      const <String>{'cuisine', 'atelier', 'recycler'}.contains(buildingId)
+          ? 'fablab'
+          : buildingId;
+
+  BuildingViabilityState viabilityForBuilding(String buildingId) {
+    final canonical = canonicalBuildingId(buildingId);
+    return buildingViabilities.putIfAbsent(
+      canonical,
+      () => BuildingViabilityState.fresh(
+        canonical,
+        maximum: towerOperationsConfig.buildingViability.maximumViability,
+        initial: towerOperationsConfig.buildingViability.initialViability,
+      ),
+    );
+  }
 
   int buildingLevelForViability(String buildingId) {
     final biofermenterBiome = _biofermenterBiomeForTarget(buildingId);
@@ -466,9 +495,7 @@ class Zone0GameState extends ChangeNotifier {
     final territory = territoryBuildingForId(buildingId);
     if (territory != null) return territory.level;
     return switch (buildingId) {
-      'fablab' || 'atelier' => atelierLevel,
-      'cuisine' => cuisineLevel,
-      'recycler' => recyclerLevel,
+      'fablab' || 'atelier' || 'cuisine' || 'recycler' => fablabLevel,
       'generator' || 'house' => houseLevel,
       'market' => marketLevel,
       'securityTower' => securityTowerLevel,
@@ -489,10 +516,10 @@ class Zone0GameState extends ChangeNotifier {
       );
 
   bool isBuildingOperational(String buildingId) =>
-      !viabilityForBuilding(buildingId).isDisabled;
+      !viabilityForBuilding(canonicalBuildingId(buildingId)).isDisabled;
 
   bool isBuildingDegraded(String buildingId) =>
-      viabilityForBuilding(buildingId).isDegraded(
+      viabilityForBuilding(canonicalBuildingId(buildingId)).isDegraded(
         towerOperationsConfig.buildingViability.degradedThreshold,
       );
 
@@ -2512,6 +2539,85 @@ class Zone0GameState extends ChangeNotifier {
                     : 'Bâtiment',
       };
 
+  /// One-shot, idempotent bridge from the three legacy physical buildings to
+  /// the V2 FabLab.  Resources/crafts are not touched; only ownership of
+  /// levels and structural viability changes.
+  void _migrateFabLabV2() {
+    final legacyMaximum = math
+        .max(
+          fablabLevel,
+          math.max(atelierLevel, math.max(cuisineLevel, recyclerLevel)),
+        )
+        .clamp(0, fablabConfig.fablabMaxLevel);
+    if (fabLab.migrationVersion < 2) {
+      fabLab.level = math.max(fabLab.level, legacyMaximum).clamp(
+            0,
+            fablabConfig.fablabMaxLevel,
+          );
+      final kitchen = fabLab.room(FabLabRoom.kitchen);
+      final workshop = fabLab.room(FabLabRoom.workshop);
+      final recycler = fabLab.room(FabLabRoom.recycler);
+      kitchen.level =
+          math.max(kitchen.level, cuisineLevel).clamp(0, fabLab.level);
+      workshop.level =
+          math.max(workshop.level, atelierLevel).clamp(0, fabLab.level);
+      recycler.level =
+          math.max(recycler.level, recyclerLevel).clamp(0, fabLab.level);
+      if (fabLab.recyclerVats.first.storedWaste == 0) {
+        fabLab.recyclerVats.first.storedWaste = recyclerWasteTank;
+      }
+      if (fabLab.recyclerVats.first.cycleStartedAt == null &&
+          recyclerCycleStartedAt != null) {
+        fabLab.recyclerVats.first
+          ..cycleStartedAt = recyclerCycleStartedAt
+          ..batchRatios = recyclerActiveBatch?.ratios;
+      }
+      if (recyclerBiologicalOrientationInstalled &&
+          fabLab.recyclerVats.first.moduleType == null) {
+        fabLab.recyclerVats.first.moduleType = RecyclerModuleType.organic;
+      }
+      // Conservative viability migration: retain the existing FabLab state;
+      // otherwise use the arithmetic mean of old room structures rather than
+      // stacking their damage. This never destroys a room by migration.
+      final legacyStates = <BuildingViabilityState>[
+        for (final id in <String>['atelier', 'cuisine', 'recycler'])
+          if (buildingViabilities[id] != null) buildingViabilities[id]!,
+      ];
+      if (buildingViabilities['fablab'] == null && legacyStates.isNotEmpty) {
+        final maximum = legacyStates.first.maximum;
+        final average = (legacyStates
+                    .map((state) => state.current)
+                    .reduce((a, b) => a + b) /
+                legacyStates.length)
+            .round()
+            .clamp(0, maximum);
+        buildingViabilities['fablab'] = BuildingViabilityState(
+          buildingId: 'fablab',
+          current: average,
+          maximum: maximum,
+          lastViabilityUpdateAt: legacyStates
+              .map((state) => state.lastViabilityUpdateAt)
+              .whereType<DateTime>()
+              .fold<DateTime?>(
+                  null,
+                  (latest, value) =>
+                      latest == null || value.isAfter(latest) ? value : latest),
+        );
+      }
+      buildingViabilities
+        ..remove('atelier')
+        ..remove('cuisine')
+        ..remove('recycler');
+      fabLab.migrationVersion = 2;
+    }
+    fablabLevel = fabLab.level;
+    cuisineLevel = fabLab.room(FabLabRoom.kitchen).level;
+    atelierLevel = fabLab.room(FabLabRoom.workshop).level;
+    recyclerLevel = fabLab.room(FabLabRoom.recycler).level;
+    recyclerWasteTank = fabLab.recyclerVats.first.storedWaste;
+    recyclerCycleStartedAt = fabLab.recyclerVats.first.cycleStartedAt;
+  }
+
   void _migrateBuildingViability() {
     final legacyGenerator = buildingViabilities['generator'];
     if (buildingViabilities['house'] == null && legacyGenerator != null) {
@@ -2578,11 +2684,12 @@ class Zone0GameState extends ChangeNotifier {
   bool get hasPendingStarterPTibugChoice => false;
   bool isRecyclerUnlocked(int campHeartLevel) =>
       isFablabBuilt &&
-      campHeartLevel >= wasteRecyclerConfig.recyclerUnlockCampHeartLevel;
+      campHeartLevel >= wasteRecyclerConfig.recyclerUnlockCampHeartLevel &&
+      fabLabRoomLevel(FabLabRoom.recycler) > 0;
   int get recyclerWasteRequired =>
-      wasteRecyclerConfig.wasteRequired(recyclerLevel);
+      fablabConfig.recyclerInputForLevel(recyclerLevel);
   int get recyclerTankCapacity =>
-      wasteRecyclerConfig.tankCapacity(recyclerLevel);
+      fablabConfig.recyclerVatCapacityFor(0, recyclerLevel);
   int get recyclerOutputAmount =>
       recyclerOutputOrganic + recyclerOutputMineral + recyclerOutputOther;
   int get recyclerOutputCapacity =>
@@ -4893,11 +5000,106 @@ class Zone0GameState extends ChangeNotifier {
       .where((order) => order.assignedPtipoteId != null)
       .length;
 
-  int get workshopSlots => workshopConfig.slotsForLevel(atelierLevel);
+  int get workshopSlots =>
+      fablabConfig.roomWorkersFor(FabLabRoom.workshop, atelierLevel);
 
-  int get kitchenSlots => workshopConfig.slotsForLevel(cuisineLevel);
+  int get kitchenSlots =>
+      fablabConfig.roomWorkersFor(FabLabRoom.kitchen, cuisineLevel);
+
+  int get manualWorkshopSlots =>
+      fablabConfig.roomConfigFor(FabLabRoom.workshop, atelierLevel).manualSlots;
+
+  int get manualKitchenSlots =>
+      fablabConfig.roomConfigFor(FabLabRoom.kitchen, cuisineLevel).manualSlots;
+
+  int productionQueueCapacityFor(FabLabRoom room) =>
+      fablabConfig.queueCapacityFor(room, fabLabRoomLevel(room));
+
+  List<WorkshopCraftOrder> productionQueueFor(FabLabRoom room) {
+    final area = room == FabLabRoom.kitchen
+        ? WorkshopOrderArea.kitchen
+        : WorkshopOrderArea.workshop;
+    return workshopOrders
+        .where(
+          (order) =>
+              order.area == area &&
+              order.source != WorkshopOrderSource.manual &&
+              (order.status == WorkshopOrderStatus.queued ||
+                  order.status == WorkshopOrderStatus.blocked ||
+                  order.status == WorkshopOrderStatus.active),
+        )
+        .toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+  }
+
+  Set<String> permanentWorkersFor(FabLabRoom room) =>
+      fabLabRoom(room).permanentWorkerIds;
+
+  bool isPermanentFabLabWorker(String figurineId) => FabLabRoom.values.any(
+        (room) => fabLabRoom(room).permanentWorkerIds.contains(figurineId),
+      );
+
+  Zone0ActionResult assignPermanentFabLabWorker(
+    FabLabRoom room,
+    PtipoteFigurine figurine,
+  ) {
+    if (room == FabLabRoom.recycler) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Le Recycleur ne possède pas de poste P’TIPOTE.');
+    }
+    final state = fabLabRoom(room);
+    final capacity = fablabConfig.roomWorkersFor(room, state.level);
+    if (capacity <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Construisez d’abord cette salle.');
+    }
+    if (state.permanentWorkerIds.contains(figurine.id)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ce P’TIPOTE est déjà en poste.');
+    }
+    if (state.permanentWorkerIds.length >= capacity) {
+      return const Zone0ActionResult(
+          success: false, message: 'Tous les postes de la salle sont occupés.');
+    }
+    if (isBusy(figurine) || isPermanentFabLabWorker(figurine.id)) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIPOTE occupé.');
+    }
+    state.permanentWorkerIds.add(figurine.id);
+    ptipoteV2Profiles[figurine.id] = ptipoteV2ProfileFor(figurine).copyWith(
+      assignedJobId: room == FabLabRoom.kitchen ? 'kitchen' : 'workshop',
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return Zone0ActionResult(
+        success: true,
+        message: '${figurine.displayName} est maintenant en poste.');
+  }
+
+  Zone0ActionResult removePermanentFabLabWorker(
+      FabLabRoom room, String figurineId) {
+    if (!fabLabRoom(room).permanentWorkerIds.remove(figurineId)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun P’TIPOTE en poste.');
+    }
+    final profile = ptipoteV2Profiles[figurineId];
+    if (profile != null) {
+      ptipoteV2Profiles[figurineId] = profile.copyWith(
+        assignedJobId: null,
+        clearAssignedJobId: true,
+        updatedAt: DateTime.now(),
+      );
+    }
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'P’TIPOTE rentré de son poste.');
+  }
 
   bool isAssignedToWorkshop(String figurineId) =>
+      isPermanentFabLabWorker(figurineId) ||
       activeWorkshopOrders.any(
         (order) => order.assignedPtipoteId == figurineId,
       ) ||
@@ -5398,8 +5600,11 @@ class Zone0GameState extends ChangeNotifier {
       isEquipmentResource(resource) ? 1 : marketConfig.stackQuantityLimit;
 
   int get globalStockCapacity {
-    return fablabConfig.baseGlobalStockCapacity +
-        atelierLevel * fablabConfig.stockCapacityBonusPerFablabLevel;
+    // CampStorageService V1: capacities are derived from the physical House
+    // and FabLab, never from an internal room. Existing stacks may sit above
+    // this limit after migration; deposits are then blocked by the usual
+    // capacity guard without deleting anything.
+    return houseStorageCapacity + fabLabStorageCapacity;
   }
 
   int get inventorySlotLimit {
@@ -7857,6 +8062,12 @@ class Zone0GameState extends ChangeNotifier {
           success: false,
           message: 'Atelier hors service : remise en marche requise.');
     }
+    if (fabLabRoomLevel(FabLabRoom.workshop) <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Construisez d’abord l’Atelier du FabLab.',
+      );
+    }
     if (recipe.craftSection != CraftSection.atelier) {
       return const Zone0ActionResult(
         success: false,
@@ -7873,7 +8084,7 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Le Kernel n’a pas encore activé ce Plan.',
       );
     }
-    if (figurine == null && activeManualWorkshopOrders >= 1) {
+    if (figurine == null && activeManualWorkshopOrders >= manualWorkshopSlots) {
       return const Zone0ActionResult(
         success: false,
         message: 'Le créneau manuel de l’Atelier est occupé.',
@@ -7891,35 +8102,13 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Tous les emplacements P’TIPOTE sont occupés.',
       );
     }
-    if (quantity == -1 && figurine == null) {
+    if (!fablabConfig
+        .quantitiesFor(FabLabRoom.workshop, atelierLevel)
+        .contains(quantity)) {
       return const Zone0ActionResult(
         success: false,
-        message:
-            'Le lot ∞ est réservé à une fabrication confiée à un P’TIPOTE.',
+        message: 'Cette quantité n’est pas encore disponible dans l’Atelier.',
       );
-    }
-    if (quantity == -1 && atelierLevel < 4) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Le lot ∞ se débloque avec l’Atelier niveau 4.',
-      );
-    }
-    if (quantity == 50 && atelierLevel < 3) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Le lot x50 se débloque avec l’Atelier niveau 3.',
-      );
-    }
-    if (quantity == -1) {
-      final materialLimit = recipe.ingredients.entries
-          .map((entry) => resourceAmount(entry.key) ~/ math.max(1, entry.value))
-          .fold<int>(1 << 30, math.min);
-      final batteryLimit = recipe.bioBatteryCost <= 0
-          ? 1 << 30
-          : bioBatteries ~/ recipe.bioBatteryCost;
-      final energyLimit =
-          recipe.energyCost <= 0 ? 1 << 30 : energyUnits ~/ recipe.energyCost;
-      quantity = math.min(materialLimit, math.min(batteryLimit, energyLimit));
     }
     if (quantity <= 0) {
       return const Zone0ActionResult(
@@ -8018,6 +8207,12 @@ class Zone0GameState extends ChangeNotifier {
           success: false,
           message: 'Cuisine hors service : remise en marche requise.');
     }
+    if (fabLabRoomLevel(FabLabRoom.kitchen) <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Construisez d’abord la Cuisine du FabLab.',
+      );
+    }
     if (recipe.craftSection != CraftSection.cuisine) {
       return const Zone0ActionResult(
         success: false,
@@ -8034,7 +8229,7 @@ class Zone0GameState extends ChangeNotifier {
     if (requirements != null) {
       return Zone0ActionResult(success: false, message: requirements);
     }
-    if (figurine == null && activeManualKitchenOrders >= 1) {
+    if (figurine == null && activeManualKitchenOrders >= manualKitchenSlots) {
       return const Zone0ActionResult(
         success: false,
         message: 'Le créneau manuel de la Cuisine est occupé.',
@@ -8059,34 +8254,13 @@ class Zone0GameState extends ChangeNotifier {
         message: 'P’TIPOTE occupé.',
       );
     }
-    if (quantity == -1 && figurine == null) {
+    if (!fablabConfig
+        .quantitiesFor(FabLabRoom.kitchen, cuisineLevel)
+        .contains(quantity)) {
       return const Zone0ActionResult(
         success: false,
-        message: 'Le mode ∞ est réservé à un craft confié à un P’TIPOTE.',
+        message: 'Cette quantité n’est pas encore disponible dans la Cuisine.',
       );
-    }
-    if (quantity == -1 && cuisineLevel < 4) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Le mode ∞ se débloque au niveau 4 de la Cuisine.',
-      );
-    }
-    if (quantity == 50 && cuisineLevel < 3) {
-      return const Zone0ActionResult(
-        success: false,
-        message: 'Le lot x50 se débloque au niveau 3 de la Cuisine.',
-      );
-    }
-    if (quantity == -1) {
-      final materialLimit = recipe.ingredients.entries
-          .map((entry) => resourceAmount(entry.key) ~/ entry.value)
-          .fold<int>(1 << 30, math.min);
-      final batteryLimit = recipe.bioBatteryCost <= 0
-          ? 1 << 30
-          : bioBatteries ~/ recipe.bioBatteryCost;
-      final energyLimit =
-          recipe.energyCost <= 0 ? 1 << 30 : energyUnits ~/ recipe.energyCost;
-      quantity = math.min(materialLimit, math.min(batteryLimit, energyLimit));
     }
     if (quantity <= 0) {
       return const Zone0ActionResult(
@@ -8170,10 +8344,297 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  /// Adds a finite order to the visible room queue. Nothing is consumed here:
+  /// resources, energy and batteries are atomically reserved only when the
+  /// permanent worker can actually start the order.
+  Zone0ActionResult enqueueFabLabProductionOrder({
+    required CraftRecipe recipe,
+    required int quantity,
+    required PtipoteFigurine worker,
+    WorkshopOrderSource source = WorkshopOrderSource.productionQueue,
+  }) {
+    final room = recipe.craftSection == CraftSection.cuisine
+        ? FabLabRoom.kitchen
+        : FabLabRoom.workshop;
+    final area = room == FabLabRoom.kitchen
+        ? WorkshopOrderArea.kitchen
+        : WorkshopOrderArea.workshop;
+    if (!isFablabBuilt || fabLabRoomLevel(room) <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Construisez d’abord cette salle.',
+      );
+    }
+    if (!permanentWorkersFor(room).contains(worker.id)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Affectez d’abord ce P’TIPOTE à un poste permanent.',
+      );
+    }
+    if (!fablabConfig
+        .quantitiesFor(room, fabLabRoomLevel(room))
+        .contains(quantity)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cette quantité n’est pas encore disponible dans la salle.',
+      );
+    }
+    if (_recipeRequirementsMessage(recipe) != null ||
+        !isWorkshopRecipeActive(recipe)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Cette recette n’est pas encore disponible.',
+      );
+    }
+    final queue = productionQueueFor(room);
+    if (queue.length >= productionQueueCapacityFor(room)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'La liste de production est pleine.',
+      );
+    }
+    final speedBonus = craftSpeedBonus(worker, fabLabRoomLevel(room));
+    final unitSeconds = math.max(
+      1,
+      (Duration(minutes: recipe.durationMinutes).inSeconds *
+              (1 - speedBonus) *
+              buildingCraftDurationMultiplier(
+                room == FabLabRoom.kitchen ? 'cuisine' : 'atelier',
+              ))
+          .round(),
+    );
+    final now = DateTime.now();
+    workshopOrders.add(
+      WorkshopCraftOrder(
+        id: 'queue-${room.name}-${now.microsecondsSinceEpoch}',
+        area: area,
+        recipeId: recipe.id,
+        requestedQuantity: quantity,
+        completedQuantity: 0,
+        assignedPtipoteId: worker.id,
+        assignedPtipoteName: worker.displayName,
+        startTime: now,
+        nextCompletionTime: now,
+        unitDurationSeconds: unitSeconds,
+        reservedResources: <String, int>{},
+        source: source,
+        status: WorkshopOrderStatus.queued,
+      ),
+    );
+    _activateQueuedFabLabOrders();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '${recipe.displayName} ajouté à la liste de production.',
+    );
+  }
+
+  bool fabLabMarketRestockAvailable(FabLabRoom room) =>
+      fablabConfig.roomSupportsMarketRestock(room, fabLabRoomLevel(room));
+
+  Zone0ActionResult setFabLabMarketRestock({
+    required CraftRecipe recipe,
+    required bool enabled,
+    required int targetStockQuantity,
+  }) {
+    final room = recipe.craftSection == CraftSection.cuisine
+        ? FabLabRoom.kitchen
+        : FabLabRoom.workshop;
+    if (!fabLabMarketRestockAvailable(room)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le réassort du Marché est débloqué au niveau 4.',
+      );
+    }
+    final state = fabLabRoom(room);
+    if (enabled) {
+      state.marketRestockRecipeIds.add(recipe.id);
+      state.marketRestockTargets[recipe.id] = math.max(0, targetStockQuantity);
+    } else {
+      state.marketRestockRecipeIds.remove(recipe.id);
+      state.marketRestockTargets.remove(recipe.id);
+    }
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return const Zone0ActionResult(
+      success: true,
+      message: 'Réassort Marché mis à jour.',
+    );
+  }
+
+  bool _resolveFabLabMarketRestock({DateTime? now}) {
+    var changed = false;
+    for (final room in <FabLabRoom>[FabLabRoom.kitchen, FabLabRoom.workshop]) {
+      if (!fabLabMarketRestockAvailable(room)) continue;
+      final state = fabLabRoom(room);
+      if (state.permanentWorkerIds.isEmpty) continue;
+      for (final recipeId in state.marketRestockRecipeIds.toList()) {
+        CraftRecipe? recipe;
+        for (final candidate in craftConfig.recipes) {
+          if (candidate.id == recipeId) {
+            recipe = candidate;
+            break;
+          }
+        }
+        if (recipe == null ||
+            (room == FabLabRoom.kitchen &&
+                recipe.craftSection != CraftSection.cuisine) ||
+            (room == FabLabRoom.workshop &&
+                recipe.craftSection != CraftSection.atelier)) {
+          continue;
+        }
+        final target = math.max(0, state.marketRestockTargets[recipeId] ?? 0);
+        final stocked = marketStock
+            .where((stack) => stack.resource == recipe!.resultItem)
+            .fold<int>(0, (sum, stack) => sum + stack.amount);
+        final planned = productionQueueFor(room)
+            .where((order) =>
+                order.source == WorkshopOrderSource.marketRestock &&
+                order.recipeId == recipeId)
+            .fold<int>(
+              0,
+              (sum, order) =>
+                  sum +
+                  (order.requestedQuantity - order.completedQuantity) *
+                      recipe!.resultAmount,
+            );
+        final missing = target - stocked - planned;
+        if (missing <= 0 ||
+            productionQueueFor(room).length >=
+                productionQueueCapacityFor(room)) {
+          continue;
+        }
+        final options = fablabConfig.quantitiesFor(room, fabLabRoomLevel(room));
+        final quantity = options
+            .where((option) => option * recipe!.resultAmount <= missing)
+            .fold<int>(0, math.max);
+        if (quantity <= 0) continue;
+        final workerId = state.permanentWorkerIds.first;
+        final profile = ptipoteV2Profiles[workerId];
+        final workerLevel = levelOverrides[workerId] ?? 1;
+        final artisan = ptipoteDailyLifeConfig.artisanReduction(
+          profile?.artisanLevel ?? 0,
+          workerLevel,
+        );
+        final speed = (workshopConfig.ptipoteCraftTimeReductionPercent +
+                workerLevel * workshopConfig.levelSpeedBonusPercent +
+                workshopConfig
+                    .buildingSpeedBonusForLevel(fabLabRoomLevel(room)) +
+                artisan)
+            .clamp(0, .50);
+        final unitSeconds = math.max(
+          1,
+          (Duration(minutes: recipe.durationMinutes).inSeconds *
+                  (1 - speed) *
+                  buildingCraftDurationMultiplier(
+                    room == FabLabRoom.kitchen ? 'cuisine' : 'atelier',
+                  ))
+              .round(),
+        );
+        final current = now ?? DateTime.now();
+        workshopOrders.add(
+          WorkshopCraftOrder(
+            id: 'restock-${room.name}-${current.microsecondsSinceEpoch}',
+            area: room == FabLabRoom.kitchen
+                ? WorkshopOrderArea.kitchen
+                : WorkshopOrderArea.workshop,
+            recipeId: recipe.id,
+            requestedQuantity: quantity,
+            completedQuantity: 0,
+            assignedPtipoteId: workerId,
+            assignedPtipoteName: profile?.displayName ?? 'P’TIPOTE',
+            startTime: current,
+            nextCompletionTime: current,
+            unitDurationSeconds: unitSeconds,
+            reservedResources: <String, int>{},
+            source: WorkshopOrderSource.marketRestock,
+            status: WorkshopOrderStatus.queued,
+          ),
+        );
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   bool resolveWorkshopOrder({DateTime? now}) {
     var changed = false;
     for (final order in List<WorkshopCraftOrder>.from(workshopOrders)) {
       changed = _resolveWorkshopOrder(order, now: now) || changed;
+    }
+    changed = _activateQueuedFabLabOrders(now: now) || changed;
+    changed = _resolveFabLabMarketRestock(now: now) || changed;
+    changed = _activateQueuedFabLabOrders(now: now) || changed;
+    return changed;
+  }
+
+  bool _activateQueuedFabLabOrders({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = false;
+    for (final room in <FabLabRoom>[FabLabRoom.kitchen, FabLabRoom.workshop]) {
+      final buildingId = room == FabLabRoom.kitchen ? 'cuisine' : 'atelier';
+      if (!isBuildingOperational(buildingId)) continue;
+      for (final order in productionQueueFor(room)) {
+        if (order.status == WorkshopOrderStatus.active) continue;
+        final workerId = order.assignedPtipoteId;
+        if (workerId == null || !permanentWorkersFor(room).contains(workerId)) {
+          if (order.status != WorkshopOrderStatus.blocked) {
+            order.status = WorkshopOrderStatus.blocked;
+            changed = true;
+          }
+          continue;
+        }
+        final workerBusy = activeWorkshopOrders.any(
+          (active) =>
+              active.id != order.id && active.assignedPtipoteId == workerId,
+        );
+        if (workerBusy) continue;
+        CraftRecipe? recipe;
+        for (final candidate in craftConfig.recipes) {
+          if (candidate.id == order.recipeId) {
+            recipe = candidate;
+            break;
+          }
+        }
+        if (recipe == null) {
+          order.status = WorkshopOrderStatus.cancelled;
+          changed = true;
+          continue;
+        }
+        final costs = buildingCraftCosts(
+          buildingId,
+          recipe.ingredients.map(
+            (key, value) => MapEntry(key, value * order.requestedQuantity),
+          ),
+        );
+        final output = <String, int>{
+          recipe.resultItem: recipe.resultAmount * order.requestedQuantity,
+        };
+        final bioBatteryCost = recipe.bioBatteryCost * order.requestedQuantity;
+        final energyCost = recipe.energyCost * order.requestedQuantity;
+        if (!hasResources(costs) ||
+            !hasInventoryCapacityFor(output) ||
+            bioBatteries < bioBatteryCost ||
+            energyUnits < energyCost) {
+          if (order.status != WorkshopOrderStatus.blocked) {
+            order.status = WorkshopOrderStatus.blocked;
+            changed = true;
+          }
+          continue;
+        }
+        if (!removeResources(costs)) continue;
+        bioBatteries -= bioBatteryCost;
+        energyUnits -= energyCost;
+        order.reservedResources
+          ..clear()
+          ..addAll(costs);
+        order.nextCompletionTime = current.add(
+          Duration(seconds: order.unitDurationSeconds),
+        );
+        order.status = WorkshopOrderStatus.active;
+        changed = true;
+      }
     }
     return changed;
   }
@@ -8279,7 +8740,10 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult cancelWorkshopOrder(String orderId) {
     final order =
         workshopOrders.where((item) => item.id == orderId).firstOrNull;
-    if (order == null || order.status != WorkshopOrderStatus.active) {
+    if (order == null ||
+        (order.status != WorkshopOrderStatus.active &&
+            order.status != WorkshopOrderStatus.queued &&
+            order.status != WorkshopOrderStatus.blocked)) {
       return const Zone0ActionResult(
         success: false,
         message: 'Aucune commande active.',
@@ -8288,7 +8752,7 @@ class Zone0GameState extends ChangeNotifier {
     resolveWorkshopOrder();
     final remaining = order.requestedQuantity - order.completedQuantity;
     final ingredients = _orderIngredients(order);
-    if (remaining > 0) {
+    if (remaining > 0 && order.reservedResources.isNotEmpty) {
       addResources(
         ingredients.map((key, value) => MapEntry(key, value * remaining)),
       );
@@ -11444,7 +11908,8 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
-  Zone0ActionResult transferWasteToRecycler(int amount, int campHeartLevel) {
+  Zone0ActionResult transferWasteToRecycler(int amount, int campHeartLevel,
+      {int vatIndex = 0}) {
     if (!isRecyclerUnlocked(campHeartLevel)) {
       return Zone0ActionResult(
         success: false,
@@ -11452,12 +11917,18 @@ class Zone0GameState extends ChangeNotifier {
             'Débloqué au Cœur du Camp niveau ${wasteRecyclerConfig.recyclerUnlockCampHeartLevel}.',
       );
     }
-    if (recyclerLevel == 0) {
-      recyclerLevel = wasteRecyclerConfig.initialRecyclerLevel;
+    if (vatIndex < 0 ||
+        vatIndex >= fabLab.recyclerVats.length ||
+        fablabConfig.recyclerVatCapacityFor(vatIndex, recyclerLevel) <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cette cuve n’est pas disponible.');
     }
+    final vat = fabLab.recyclerVats[vatIndex];
+    final capacity =
+        fablabConfig.recyclerVatCapacityFor(vatIndex, recyclerLevel);
     final moved = math.min(
       math.min(amount, resourceAmount('Déchets')),
-      recyclerTankCapacity - recyclerWasteTank,
+      capacity - vat.storedWaste,
     );
     if (moved <= 0) {
       return const Zone0ActionResult(
@@ -11466,7 +11937,8 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     removeResource('Déchets', moved);
-    recyclerWasteTank += moved;
+    vat.storedWaste += moved;
+    if (vatIndex == 0) recyclerWasteTank = vat.storedWaste;
     resolveWasteAndRecycler(campHeartLevel: campHeartLevel);
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -11559,6 +12031,11 @@ class Zone0GameState extends ChangeNotifier {
     }
     return 30 + (zone.buildingLevel - 1) * 10;
   }
+
+  /// Le Réseau conserve son Mycélium jusqu'à la récolte, comme la réserve
+  /// organique. Cela rend sa jauge lisible et évite les crédits invisibles.
+  int biofermenterMyceliumReserveCapacity(ForageBiome biome) =>
+      biofermenterOrganicReserveCapacity(biome);
 
   int lithocultureTankCapacity(ForageBiome biome) {
     final level = math.max(1, territoryZone(biome).buildingLevel);
@@ -11670,11 +12147,17 @@ class Zone0GameState extends ChangeNotifier {
         final myceliumExact =
             elapsedHours * biofermenterMyceliumPerDay(biome) / 24 +
                 zone.myceliumProductionRemainder;
-        final myceliumWhole = myceliumExact.floor();
-        zone.myceliumProductionRemainder = myceliumExact - myceliumWhole;
-        if (myceliumWhole > 0) {
-          addResources(<String, int>{'Mycélium': myceliumWhole});
-        }
+        final myceliumRequested = myceliumExact.floor();
+        final myceliumRoom = math.max(
+          0,
+          biofermenterMyceliumReserveCapacity(biome) - zone.myceliumReserve,
+        );
+        final myceliumWhole = math.min(myceliumRequested, myceliumRoom);
+        zone
+          ..myceliumProductionRemainder = myceliumWhole == myceliumRequested
+              ? myceliumExact - myceliumWhole
+              : 0
+          ..myceliumReserve += myceliumWhole;
         changed = true;
 
         if (zone.calciumBasinInstalled) {
@@ -11806,9 +12289,20 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Aucun Organique à récolter.',
       );
     }
-    final result =
-        addResources(<String, int>{'Organique': zone.organicReserve});
+    final harvested = zone.organicReserve;
+    final result = addResources(<String, int>{'Organique': harvested});
     zone.organicReserve = result.pending['Organique'] ?? 0;
+    if (result.addedAny) {
+      reports.add(PtipoteMissionReport.system(
+        message: '${harvested - zone.organicReserve} Organique récolté.',
+        sourceBuildingId: biofermenterTargetId(biome),
+        mailbox: Zone0MessageMailbox.lisiere,
+        subject: 'Récolte Biofermenteur',
+        concerned: lisiereForageConfig.biomes[biome]!.label,
+        summary:
+            '${harvested - zone.organicReserve} Organique transféré vers le stock du camp.',
+      ));
+    }
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
@@ -11816,6 +12310,38 @@ class Zone0GameState extends ChangeNotifier {
       message: result.hasPending
           ? 'Inventaire plein : l’Organique reste dans le Biofermenteur.'
           : 'Organique récolté.',
+    );
+  }
+
+  Zone0ActionResult retrieveBiofermenterMycelium(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    if (!zone.mycelialNetworkInstalled || zone.myceliumReserve <= 0) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucun Mycélium à récolter.',
+      );
+    }
+    final harvested = zone.myceliumReserve;
+    final result = addResources(<String, int>{'Mycélium': harvested});
+    zone.myceliumReserve = result.pending['Mycélium'] ?? 0;
+    if (result.addedAny) {
+      reports.add(PtipoteMissionReport.system(
+        message: '${harvested - zone.myceliumReserve} Mycélium récolté.',
+        sourceBuildingId: biofermenterTargetId(biome),
+        mailbox: Zone0MessageMailbox.lisiere,
+        subject: 'Récolte Réseau mycélien',
+        concerned: lisiereForageConfig.biomes[biome]!.label,
+        summary:
+            '${harvested - zone.myceliumReserve} Mycélium transféré vers le stock du camp.',
+      ));
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: result.addedAny,
+      message: result.hasPending
+          ? 'Inventaire plein : le Mycélium reste dans le Biofermenteur.'
+          : 'Mycélium récolté.',
     );
   }
 
@@ -11984,6 +12510,7 @@ class Zone0GameState extends ChangeNotifier {
     }
     removeResources(wasteRecyclerConfig.biologicalOrientationModuleCost);
     recyclerBiologicalOrientationInstalled = true;
+    fabLab.recyclerVats.first.moduleType = RecyclerModuleType.organic;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return true;
@@ -11992,18 +12519,49 @@ class Zone0GameState extends ChangeNotifier {
   bool setRecyclerBiologicalOrientation(bool active) {
     if (active && !recyclerBiologicalOrientationInstalled) return false;
     recyclerBiologicalOrientationActive = active;
+    fabLab.recyclerVats.first.moduleType =
+        active ? RecyclerModuleType.organic : null;
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return true;
   }
 
-  List<int> _recyclerRatios() {
-    if (recyclerBiologicalOrientationActive) {
-      return <int>[
-        wasteRecyclerConfig.biologicalOrganicRatio,
-        wasteRecyclerConfig.biologicalMineralRatio,
-        0,
-      ];
+  Zone0ActionResult setRecyclerVatModule(
+    int vatIndex,
+    RecyclerModuleType? moduleType,
+  ) {
+    if (vatIndex < 0 ||
+        vatIndex >= fabLab.recyclerVats.length ||
+        !fablabConfig.recyclerVatSupportsModule(vatIndex, recyclerLevel)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Ce module n’est pas encore disponible pour cette cuve.',
+      );
+    }
+    fabLab.recyclerVats[vatIndex].moduleType = moduleType;
+    if (vatIndex == 0) {
+      recyclerBiologicalOrientationInstalled = moduleType != null;
+      recyclerBiologicalOrientationActive =
+          moduleType == RecyclerModuleType.organic;
+    }
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Module de cuve mis à jour.');
+  }
+
+  List<int> _recyclerRatios({RecyclerModuleType? moduleType}) {
+    // The returned percentages are only a legacy batch snapshot. Actual V2
+    // module guarantees are resolved as six fixed materials plus four draws.
+    final specializedPercent =
+        (fablabConfig.recyclerSpecializedMinimumOutOfTen.clamp(0, 10) * 10)
+            .toInt();
+    if (moduleType == RecyclerModuleType.organic ||
+        (moduleType == null && recyclerBiologicalOrientationActive)) {
+      return <int>[specializedPercent, 100 - specializedPercent, 0];
+    }
+    if (moduleType == RecyclerModuleType.mineral) {
+      return <int>[100 - specializedPercent, specializedPercent, 0];
     }
     final splits = wasteRecyclerConfig.outputSplits;
     if (splits.isEmpty) {
@@ -12033,60 +12591,70 @@ class Zone0GameState extends ChangeNotifier {
     changed = _resolveCampWaste(current) || changed;
     if (!isRecyclerUnlocked(campHeartLevel) ||
         !isBuildingOperational('recycler')) return changed;
-    if (recyclerLevel == 0) {
-      recyclerLevel = wasteRecyclerConfig.initialRecyclerLevel;
-      changed = true;
-    }
     var completedCycles = 0;
     var producedOrganic = 0;
     var producedMineral = 0;
-    while (recyclerCycleStartedAt != null) {
-      final finishedAt = recyclerCycleStartedAt!.add(
-        Duration(minutes: wasteRecyclerConfig.cycleMinutes(recyclerLevel)),
-      );
-      if (finishedAt.isAfter(current)) break;
-      final ratios = recyclerActiveBatch?.ratios ?? _recyclerRatios();
-      final units = wasteRecyclerConfig.outputResourcesPerCycle;
-      final organic = units * ratios[0] ~/ 100;
-      // Old 40/40/20 snapshots are resolved as matter-only output: the
-      // retired third share is credited as Minéral instead of Eau.
-      final mineral = units - organic;
-      recyclerOutputOrganic += organic;
-      recyclerOutputMineral += mineral;
-      recyclerOutputOther = 0;
-      completedCycles += 1;
-      producedOrganic += organic;
-      producedMineral += mineral;
-      recyclerCycleStartedAt = finishedAt;
-      recyclerActiveBatch = null;
-      changed = true;
-      if (recyclerOutputAmount + wasteRecyclerConfig.outputResourcesPerCycle >
-          recyclerOutputCapacity) {
-        recyclerCycleStartedAt = null;
-      } else if (recyclerWasteTank < recyclerWasteRequired ||
-          energyUnits < wasteRecyclerConfig.energyCostPerCycle) {
-        recyclerCycleStartedAt = null;
-      } else {
-        recyclerWasteTank -= recyclerWasteRequired;
-        _wasteReport(finishedAt).wasteRecycled += recyclerWasteRequired;
+    final outputPerCycle = wasteRecyclerConfig.outputResourcesPerCycle;
+    final inputPerCycle = recyclerWasteRequired;
+    final cycleDuration =
+        Duration(minutes: wasteRecyclerConfig.cycleMinutes(recyclerLevel));
+    for (var index = 0; index < fabLab.recyclerVats.length; index++) {
+      if (fablabConfig.recyclerVatCapacityFor(index, recyclerLevel) <= 0) {
+        continue;
+      }
+      final vat = fabLab.recyclerVats[index];
+      while (vat.cycleStartedAt != null) {
+        final finishedAt = vat.cycleStartedAt!.add(cycleDuration);
+        if (finishedAt.isAfter(current)) break;
+        final ratios =
+            vat.batchRatios ?? _recyclerRatios(moduleType: vat.moduleType);
+        final organic = outputPerCycle * ratios.first ~/ 100;
+        // Legacy 40/40/20 snapshots and all V2 batches are matter-only:
+        // any retired third share is deliberately folded into Minéral.
+        final mineral = outputPerCycle - organic;
+        recyclerOutputOrganic += organic;
+        recyclerOutputMineral += mineral;
+        recyclerOutputOther = 0;
+        completedCycles += 1;
+        producedOrganic += organic;
+        producedMineral += mineral;
+        vat
+          ..cycleStartedAt = null
+          ..batchRatios = null;
+        changed = true;
+        if (recyclerOutputAmount + outputPerCycle > recyclerOutputCapacity ||
+            vat.storedWaste < inputPerCycle ||
+            energyUnits < wasteRecyclerConfig.energyCostPerCycle) {
+          break;
+        }
+        vat
+          ..storedWaste -= inputPerCycle
+          ..cycleStartedAt = finishedAt
+          ..batchRatios = _recyclerRatios(moduleType: vat.moduleType);
+        _wasteReport(finishedAt).wasteRecycled += inputPerCycle;
         energyUnits -= wasteRecyclerConfig.energyCostPerCycle;
-        recyclerActiveBatch = RecyclerBatchSnapshot.fromRatios(
-            _recyclerRatios(), recyclerBiologicalOrientationActive);
+      }
+      if (vat.cycleStartedAt == null &&
+          recyclerOutputAmount + outputPerCycle <= recyclerOutputCapacity &&
+          vat.storedWaste >= inputPerCycle &&
+          energyUnits >= wasteRecyclerConfig.energyCostPerCycle) {
+        vat
+          ..storedWaste -= inputPerCycle
+          ..cycleStartedAt = current
+          ..batchRatios = _recyclerRatios(moduleType: vat.moduleType);
+        _wasteReport(current).wasteRecycled += inputPerCycle;
+        energyUnits -= wasteRecyclerConfig.energyCostPerCycle;
+        changed = true;
       }
     }
-    if (recyclerCycleStartedAt == null &&
-        recyclerOutputAmount + wasteRecyclerConfig.outputResourcesPerCycle <=
-            recyclerOutputCapacity &&
-        recyclerWasteTank >= recyclerWasteRequired &&
-        energyUnits >= wasteRecyclerConfig.energyCostPerCycle) {
-      recyclerWasteTank -= recyclerWasteRequired;
-      _wasteReport(current).wasteRecycled += recyclerWasteRequired;
-      energyUnits -= wasteRecyclerConfig.energyCostPerCycle;
-      recyclerCycleStartedAt = current;
-      recyclerActiveBatch = RecyclerBatchSnapshot.fromRatios(
-          _recyclerRatios(), recyclerBiologicalOrientationActive);
-      changed = true;
-    }
+    // Legacy fields remain a read-compatible mirror of the first vat.
+    final primaryVat = fabLab.recyclerVats.first;
+    recyclerWasteTank = primaryVat.storedWaste;
+    recyclerCycleStartedAt = primaryVat.cycleStartedAt;
+    recyclerActiveBatch = primaryVat.batchRatios == null
+        ? null
+        : RecyclerBatchSnapshot.fromRatios(
+            primaryVat.batchRatios!, primaryVat.moduleType != null);
     if (completedCycles > 0) {
       reports.add(
         PtipoteMissionReport.system(
@@ -12343,7 +12911,7 @@ class Zone0GameState extends ChangeNotifier {
       return territoryBuildingForId(targetId)?.level ?? 0;
     }
     return switch (targetId) {
-      'fablab' => atelierLevel,
+      'fablab' => fablabLevel,
       'cuisine' => cuisineLevel,
       'atelier' => atelierLevel,
       'recycler' => recyclerLevel,
@@ -12366,10 +12934,12 @@ class Zone0GameState extends ChangeNotifier {
     if (_isRefugeTarget(targetId))
       return pTibugConfig.territory.refugeMaximumLevel;
     return switch (targetId) {
-      'fablab' => 1,
+      'fablab' => fablabConfig.fablabMaxLevel,
       'cuisine' => fablabConfig.cuisineMaxLevel,
       'atelier' => fablabConfig.atelierMaxLevel,
-      'recycler' => wasteRecyclerConfig.recyclerMaxLevel,
+      // The Recycler is a room: it cannot have a separate progression above
+      // the physical FabLab, even if an old remote configuration still says 5.
+      'recycler' => fablabConfig.fablabMaxLevel,
       'securityTower' => 3,
       'towerWeatherModule' => 1,
       'towerResearchModule' => 1,
@@ -12531,6 +13101,18 @@ class Zone0GameState extends ChangeNotifier {
     int? campHeartLevel,
     PtipoteFigurine? constructor,
   }) {
+    final fabLabRoom = switch (targetId) {
+      'cuisine' => FabLabRoom.kitchen,
+      'atelier' => FabLabRoom.workshop,
+      'recycler' => FabLabRoom.recycler,
+      _ => null,
+    };
+    if (fabLabRoom != null && fabLabRoomLevel(fabLabRoom) >= fablabLevel) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Améliorez d’abord le FabLab.',
+      );
+    }
     final biofermenterBiome = _biofermenterBiomeForTarget(targetId);
     if (biofermenterBiome != null && !isBiomeUnlocked(biofermenterBiome)) {
       return const Zone0ActionResult(
@@ -12727,18 +13309,19 @@ class Zone0GameState extends ChangeNotifier {
     if (!project.completeAt(now)) return;
     switch (project.targetId) {
       case 'fablab':
-        atelierLevel = project.currentLevel;
-        fablabLevel = atelierLevel;
-        cuisineLevel = math.max(cuisineLevel, 1);
+        fablabLevel = project.currentLevel;
+        fabLab.level = fablabLevel;
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
         refreshKernelMissions();
       case 'cuisine':
         cuisineLevel = project.currentLevel;
+        fabLabRoom(FabLabRoom.kitchen).level = cuisineLevel;
       case 'atelier':
         atelierLevel = project.currentLevel;
-        fablabLevel = atelierLevel;
+        fabLabRoom(FabLabRoom.workshop).level = atelierLevel;
       case 'recycler':
         recyclerLevel = project.currentLevel;
+        fabLabRoom(FabLabRoom.recycler).level = recyclerLevel;
       case 'securityTower':
         securityTowerLevel = project.currentLevel;
         refugeSafety = math.max(
@@ -12838,6 +13421,11 @@ class Zone0GameState extends ChangeNotifier {
         'atelier',
         'recycler',
       }.contains(project.targetId);
+      final isLisiereProject =
+          _biofermenterBiomeForTarget(project.targetId) != null ||
+              _edibleForestBiomeForTarget(project.targetId) != null ||
+              _mycelialNetworkBiomeForTarget(project.targetId) != null ||
+              _calciumBasinBiomeForTarget(project.targetId) != null;
       reports.add(
         PtipoteMissionReport.system(
           message:
@@ -12845,7 +13433,9 @@ class Zone0GameState extends ChangeNotifier {
           sourceBuildingId: project.targetId,
           mailbox: isFablabUnit
               ? Zone0MessageMailbox.fablab
-              : Zone0MessageMailbox.companions,
+              : isLisiereProject
+                  ? Zone0MessageMailbox.lisiere
+                  : Zone0MessageMailbox.companions,
           subject: 'Fin de chantier',
           concerned: 'Joueur',
           summary:
@@ -15757,10 +16347,11 @@ class Zone0GameState extends ChangeNotifier {
     }
 
     fablabLevel = 1;
+    fabLab.level = 1;
     emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
     reports.add(
       PtipoteMissionReport.system(
-        message: 'Le Fablab est prêt. La Cuisine est maintenant disponible.',
+        message: 'Le Fablab est prêt. Construisez maintenant la Cuisine.',
       ),
     );
     refreshKernelMissions();
@@ -15769,7 +16360,8 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
       success: true,
-      message: 'Le Fablab est prêt. La Cuisine peut maintenant être utilisée.',
+      message:
+          'Le Fablab est prêt. La Cuisine peut maintenant être construite.',
     );
   }
 
@@ -17058,6 +17650,9 @@ class Zone0GameState extends ChangeNotifier {
         }
         final fablabData = buildingsData['fablab'];
         if (fablabData is Map) {
+          if (fablabData['v2'] is Map) {
+            fabLab = FabLabBuilding.fromFirebase(fablabData['v2'] as Map);
+          }
           fablabLevel = _readInt(
             fablabData['currentLevel'],
           ).clamp(0, fablabConfig.fablabMaxLevel);
@@ -17230,13 +17825,11 @@ class Zone0GameState extends ChangeNotifier {
       // Migration for saves created before the Fablab units were independent.
       if (atelierLevel == 0 && fablabLevel > 0) atelierLevel = fablabLevel;
       if (cuisineLevel == 0 && atelierLevel > 0) cuisineLevel = 1;
+      _migrateFabLabV2();
       // Old saves predate independent Fablab units and construction projects.
       // Keep every acquired level, then let a future project target the next
       // level. No material is retroactively charged or discarded.
-      recyclerLevel = recyclerLevel.clamp(
-        0,
-        wasteRecyclerConfig.recyclerMaxLevel,
-      );
+      recyclerLevel = recyclerLevel.clamp(0, fablabConfig.fablabMaxLevel);
       securityTowerLevel = securityTowerLevel.clamp(0, 3);
       marketLevel = marketLevel.clamp(0, 5);
       // New saves always expose the real number of places built. Do not keep
@@ -20427,6 +21020,7 @@ class Zone0GameState extends ChangeNotifier {
             'currentLevel': fablabLevel,
             'atelierLevel': atelierLevel,
             'cuisineLevel': cuisineLevel,
+            'v2': fabLab.toFirebase(),
             'maxLevel': fablabConfig.fablabMaxLevel,
             'requiredCampHeartLevel': 0,
             'stockCapacityBonusPerLevel':
@@ -20782,7 +21376,9 @@ enum ForageMissionStatus { active, completed }
 
 enum TowerMissionStatus { active, completed }
 
-enum WorkshopOrderStatus { active, completed, cancelled }
+enum WorkshopOrderStatus { queued, blocked, active, completed, cancelled }
+
+enum WorkshopOrderSource { manual, productionQueue, marketRestock }
 
 enum MarketRequestStatus {
   noted,
@@ -21619,6 +22215,7 @@ class WorkshopCraftOrder {
     required this.nextCompletionTime,
     required this.unitDurationSeconds,
     required this.reservedResources,
+    this.source = WorkshopOrderSource.manual,
     this.status = WorkshopOrderStatus.active,
   });
 
@@ -21631,8 +22228,12 @@ class WorkshopCraftOrder {
         '${data['area'] ?? ''}',
         WorkshopOrderArea.workshop,
       ),
-      requestedQuantity: Zone0GameState.instance._readInt(
-        data['requestedQuantity'],
+      // Legacy “infinite” crafts were persisted as a non-positive quantity.
+      // Keep the batch already underway, then stop after one final unit rather
+      // than silently recreating an endless production loop.
+      requestedQuantity: math.max(
+        Zone0GameState.instance._readInt(data['requestedQuantity']),
+        Zone0GameState.instance._readInt(data['completedQuantity']) + 1,
       ),
       completedQuantity: Zone0GameState.instance._readInt(
         data['completedQuantity'],
@@ -21666,6 +22267,11 @@ class WorkshopCraftOrder {
         '${data['status'] ?? ''}',
         WorkshopOrderStatus.active,
       ),
+      source: ForageMission._enumByName(
+        WorkshopOrderSource.values,
+        '${data['source'] ?? ''}',
+        WorkshopOrderSource.manual,
+      ),
     );
   }
 
@@ -21680,6 +22286,7 @@ class WorkshopCraftOrder {
   DateTime nextCompletionTime;
   final int unitDurationSeconds;
   final Map<String, int> reservedResources;
+  final WorkshopOrderSource source;
   WorkshopOrderStatus status;
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -21694,6 +22301,7 @@ class WorkshopCraftOrder {
         'nextCompletionTime': Timestamp.fromDate(nextCompletionTime),
         'unitDurationSeconds': unitDurationSeconds,
         'reservedResources': reservedResources,
+        'source': source.name,
         'status': status.name,
       };
 }
@@ -25312,6 +25920,7 @@ class LisiereTerritoryZone {
     this.calciumMineralReserve = 0,
     this.calciumProductionHourRemainder = 0,
     this.myceliumProductionRemainder = 0,
+    this.myceliumReserve = 0,
     this.lastProductionResolvedAt,
     this.updatedAt,
   });
@@ -25359,6 +25968,7 @@ class LisiereTerritoryZone {
             (data['calciumProductionHourRemainder'] as num?)?.toDouble() ?? 0,
         myceliumProductionRemainder:
             (data['myceliumProductionRemainder'] as num?)?.toDouble() ?? 0,
+        myceliumReserve: ForageMission._readStaticInt(data['myceliumReserve']),
         lastProductionResolvedAt:
             ForageMission._readDate(data['lastProductionResolvedAt']),
         updatedAt: ForageMission._readDate(data['updatedAt']),
@@ -25382,6 +25992,7 @@ class LisiereTerritoryZone {
   int calciumMineralReserve;
   double calciumProductionHourRemainder;
   double myceliumProductionRemainder;
+  int myceliumReserve;
   DateTime? lastProductionResolvedAt;
   DateTime? updatedAt;
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -25406,6 +26017,7 @@ class LisiereTerritoryZone {
         'calciumMineralReserve': calciumMineralReserve,
         'calciumProductionHourRemainder': calciumProductionHourRemainder,
         'myceliumProductionRemainder': myceliumProductionRemainder,
+        'myceliumReserve': myceliumReserve,
         'lastProductionResolvedAt': lastProductionResolvedAt == null
             ? null
             : Timestamp.fromDate(lastProductionResolvedAt!),
@@ -26330,6 +26942,9 @@ class PtipoteMissionReport {
     );
     if (stored.isNotEmpty) return stored.first;
     if (sourceBuildingId == 'kernel') return Zone0MessageMailbox.kernel;
+    if (sourceBuildingId?.startsWith('biofermenter-') == true) {
+      return Zone0MessageMailbox.lisiere;
+    }
     if (const <String>{
       'fablab',
       'cuisine',

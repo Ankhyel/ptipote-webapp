@@ -2329,6 +2329,32 @@ FablabConfig _fablab(Object? value) {
       raw['stockCapacityBonusPerFablabLevel'],
       b.stockCapacityBonusPerFablabLevel,
     ),
+    fablabStorageByLevel:
+        _levelMap(raw['fablabStorageByLevel'], b.fablabStorageByLevel),
+    houseStorageByLevel:
+        _levelMap(raw['houseStorageByLevel'], b.houseStorageByLevel),
+    recyclerInputByLevel:
+        _levelMap(raw['recyclerInputByLevel'], b.recyclerInputByLevel),
+    recyclerVatOneCapacityByLevel: _levelMap(
+      raw['recyclerVatOneCapacityByLevel'],
+      b.recyclerVatOneCapacityByLevel,
+    ),
+    recyclerVatTwoCapacityByLevel: _levelMap(
+      raw['recyclerVatTwoCapacityByLevel'],
+      b.recyclerVatTwoCapacityByLevel,
+    ),
+    recyclerSpecializedMinimumOutOfTen: _int(
+      raw['recyclerSpecializedMinimumOutOfTen'],
+      b.recyclerSpecializedMinimumOutOfTen,
+    ),
+    kitchenRoomLevels: _fablabRoomLevels(
+      raw['kitchenRoomLevels'],
+      b.kitchenRoomLevels,
+    ),
+    workshopRoomLevels: _fablabRoomLevels(
+      raw['workshopRoomLevels'],
+      b.workshopRoomLevels,
+    ),
     fablabMaxLevel: _int(raw['fablabMaxLevel'], b.fablabMaxLevel),
     cuisineMaxLevel: _int(raw['cuisineMaxLevel'], b.cuisineMaxLevel),
     atelierMaxLevel: _int(raw['atelierMaxLevel'], b.atelierMaxLevel),
@@ -2350,6 +2376,41 @@ FablabConfig _fablab(Object? value) {
       b.simpleMealOutputAmount,
     ),
   );
+}
+
+Map<int, FablabRoomLevelConfig> _fablabRoomLevels(
+  Object? value,
+  Map<int, FablabRoomLevelConfig> fallback,
+) {
+  final raw = _map(value);
+  if (raw == null) return fallback;
+  return <int, FablabRoomLevelConfig>{
+    for (var level = 1; level <= 4; level++)
+      level: () {
+        final base = fallback[level] ?? fallback[4]!;
+        final item = _map(raw['$level']);
+        final quantities = item?['quantities'] is List
+            ? (item!['quantities'] as List)
+                .whereType<num>()
+                .map((number) => number.toInt())
+                .where((number) => number > 0)
+                .toList()
+            : base.quantities;
+        return FablabRoomLevelConfig(
+          workers: _int(item?['workers'], base.workers),
+          manualSlots: _int(item?['manualSlots'], base.manualSlots),
+          quantities: quantities.isEmpty ? base.quantities : quantities,
+          recipeTier: _int(item?['recipeTier'], base.recipeTier),
+          queueCapacity: _int(item?['queueCapacity'], base.queueCapacity),
+          marketRestock: item?['marketRestock'] is bool
+              ? item!['marketRestock'] as bool
+              : base.marketRestock,
+          categories: item?['categories'] is List
+              ? (item!['categories'] as List).map((entry) => '$entry').toList()
+              : base.categories,
+        );
+      }(),
+  };
 }
 
 WorkshopConfig _workshop(Object? value) {
