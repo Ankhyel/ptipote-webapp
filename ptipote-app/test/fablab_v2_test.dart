@@ -6,7 +6,10 @@ void main() {
   group('FabLab V2 configuration', () {
     test('uses the validated shared-storage tables', () {
       expect(defaultFablabConfig.fablabStorageForLevel(1), 100);
-      expect(defaultFablabConfig.fablabStorageForLevel(4), 400);
+      expect(defaultFablabConfig.fablabStorageForLevel(4), 350);
+      // Legacy saves can still carry the pre-V2 FabLab N5. It maps to the
+      // highest current storage tier instead of dropping the FabLab capacity.
+      expect(defaultFablabConfig.fablabStorageForLevel(5), 350);
       expect(defaultFablabConfig.houseStorageForLevel(1), 100);
       expect(defaultFablabConfig.houseStorageForLevel(4), 200);
     });

@@ -442,10 +442,17 @@ class Zone0GameState extends ChangeNotifier {
   /// Empêche les actions de simulation d'écraser les données avant le chargement.
   bool get hasLoadedFromFirebase => _loadedFromFirebase;
 
-  bool get isFablabBuilt =>
-      fablabLevel >= fablabConfig.cuisineUnlockLevel || fabLab.level > 0;
-  int get fabLabStorageCapacity =>
-      isFablabBuilt ? fablabConfig.fablabStorageForLevel(fablabLevel) : 0;
+  /// The migration briefly had two level sources: the legacy scalar and the
+  /// V2 building record.  Saved games can therefore legitimately contain one
+  /// of the two while the other is still at zero.  Storage must never depend
+  /// on which representation happened to be written last.
+  int get effectiveFabLabLevel =>
+      math.max(fablabLevel, fabLab.level).clamp(0, fablabConfig.fablabMaxLevel);
+
+  bool get isFablabBuilt => effectiveFabLabLevel > 0;
+  int get fabLabStorageCapacity => isFablabBuilt
+      ? fablabConfig.fablabStorageForLevel(effectiveFabLabLevel)
+      : 0;
   int get houseStorageCapacity => fablabConfig.houseStorageForLevel(houseLevel);
 
   FabLabRoomState fabLabRoom(FabLabRoom room) => fabLab.room(room);
@@ -2566,18 +2573,28 @@ class Zone0GameState extends ChangeNotifier {
   /// One-shot, idempotent bridge from the three legacy physical buildings to
   /// the V2 FabLab.  Resources/crafts are not touched; only ownership of
   /// levels and structural viability changes.
-  void _migrateFabLabV2() {
+  /// Returns whether an old or partially migrated save was reconciled.
+  ///
+  /// A first V2 rollout could mark a save as migrated before copying its
+  /// legacy `currentLevel` into `v2.level`.  We deliberately reconcile both
+  /// representations on every load: this is idempotent and restores the
+  /// missing FabLab share of the global stock capacity without touching stock.
+  bool _migrateFabLabV2() {
+    var changed = false;
     final legacyMaximum = math
         .max(
           fablabLevel,
           math.max(atelierLevel, math.max(cuisineLevel, recyclerLevel)),
         )
         .clamp(0, fablabConfig.fablabMaxLevel);
+    final resolvedFabLabLevel = math
+        .max(fabLab.level, legacyMaximum)
+        .clamp(0, fablabConfig.fablabMaxLevel);
+    if (fabLab.level != resolvedFabLabLevel) {
+      fabLab.level = resolvedFabLabLevel;
+      changed = true;
+    }
     if (fabLab.migrationVersion < 2) {
-      fabLab.level = math.max(fabLab.level, legacyMaximum).clamp(
-            0,
-            fablabConfig.fablabMaxLevel,
-          );
       final kitchen = fabLab.room(FabLabRoom.kitchen);
       final workshop = fabLab.room(FabLabRoom.workshop);
       final recycler = fabLab.room(FabLabRoom.recycler);
@@ -2633,6 +2650,32 @@ class Zone0GameState extends ChangeNotifier {
         ..remove('cuisine')
         ..remove('recycler');
       fabLab.migrationVersion = 2;
+      changed = true;
+    } else {
+      // Reconcile the old room levels too when a previous migration was
+      // interrupted after its version marker had been persisted.
+      final roomLegacyLevels = <FabLabRoom, int>{
+        FabLabRoom.kitchen: cuisineLevel,
+        FabLabRoom.workshop: atelierLevel,
+        FabLabRoom.recycler: recyclerLevel,
+      };
+      for (final entry in roomLegacyLevels.entries) {
+        final room = fabLab.room(entry.key);
+        final resolvedLevel = math.max(room.level, entry.value).clamp(
+              0,
+              fabLab.level,
+            );
+        if (room.level != resolvedLevel) {
+          room.level = resolvedLevel;
+          changed = true;
+        }
+      }
+    }
+    if (fablabLevel != fabLab.level ||
+        cuisineLevel != fabLab.room(FabLabRoom.kitchen).level ||
+        atelierLevel != fabLab.room(FabLabRoom.workshop).level ||
+        recyclerLevel != fabLab.room(FabLabRoom.recycler).level) {
+      changed = true;
     }
     fablabLevel = fabLab.level;
     cuisineLevel = fabLab.room(FabLabRoom.kitchen).level;
@@ -2640,6 +2683,7 @@ class Zone0GameState extends ChangeNotifier {
     recyclerLevel = fabLab.room(FabLabRoom.recycler).level;
     recyclerWasteTank = fabLab.recyclerVats.first.storedWaste;
     recyclerCycleStartedAt = fabLab.recyclerVats.first.cycleStartedAt;
+    return changed;
   }
 
   void _migrateBuildingViability() {
@@ -18283,7 +18327,7 @@ class Zone0GameState extends ChangeNotifier {
       // Migration for saves created before the Fablab units were independent.
       if (atelierLevel == 0 && fablabLevel > 0) atelierLevel = fablabLevel;
       if (cuisineLevel == 0 && atelierLevel > 0) cuisineLevel = 1;
-      _migrateFabLabV2();
+      final migratedFabLab = _migrateFabLabV2();
       // Old saves predate independent Fablab units and construction projects.
       // Keep every acquired level, then let a future project target the next
       // level. No material is retroactively charged or discarded.
@@ -18332,11 +18376,13 @@ class Zone0GameState extends ChangeNotifier {
       resolveCoBreedingSessions();
       _resolveEnergyCoreMilestones();
       resolveConstructionProjects();
-      if (migratedPTibugState ||
+      if (migratedFabLab ||
+          migratedPTibugState ||
           discoveredSourcierPatterns ||
           refreshedMerchantOffers ||
           removedPrematureEnergyCore ||
           hadEnergyCorePattern != energyCorePatternDiscovered) {
+        if (migratedFabLab) unawaited(saveBuildingsToFirebase());
         unawaited(saveRuntimeToFirebase());
       }
     });
