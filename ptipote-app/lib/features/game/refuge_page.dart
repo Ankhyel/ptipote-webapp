@@ -12253,7 +12253,6 @@ class _CampHousingTab extends StatelessWidget {
               'Les maisons produisent des bio-piles, puis les répartissent équitablement entre leurs occupants. Les habitants achètent seulement des produits finis : les besoins sans produit, magasin ou budget restent visibles pour le futur Marché.',
             ),
           ),
-          const SizedBox(height: 10),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -15963,11 +15962,6 @@ class _MarketPageState extends State<MarketPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        _BuildingViabilityCard(
-                          gameState: widget.gameState,
-                          buildingId: 'market',
-                        ),
-                        const SizedBox(height: 12),
                         Text(
                           'Marché niveau ${widget.gameState.marketLevel}',
                           style: const TextStyle(fontWeight: FontWeight.w900),
@@ -16003,44 +15997,29 @@ class _MarketPageState extends State<MarketPage> {
                         ),
                         if (!widget.gameState.isMarketInformationPointUnlocked)
                           Text(
-                            'Point Information : niveau ${marketConfig.informationPointLevel} requis.',
+                            'Zone centrale : niveau ${marketConfig.informationPointLevel} requis.',
                             style: const TextStyle(fontSize: 12),
                           ),
-                        Wrap(
-                          spacing: 8,
-                          children: <Widget>[
-                            OutlinedButton.icon(
-                              onPressed: () => _showBuildingProject(
-                                context,
-                                gameState: widget.gameState,
-                                targetId: 'market',
-                                title: 'Améliorer le Marché',
-                                description:
-                                    'Le Marché reste ouvert pendant les travaux. Les nouveaux emplacements seront ajoutés à la fin.',
-                                campHeartLevel: widget.campHeartLevel,
-                              ),
-                              icon: const Icon(Icons.upgrade_outlined),
-                              label: const Text('Amélioration'),
-                            ),
-                            TextButton.icon(
-                              onPressed: () => showModalBottomSheet<void>(
-                                context: context,
-                                builder: (_) => const _BuildingInformationTab(
-                                  title: 'Marché',
-                                  description:
-                                      'Chaque vente répond à une demande habitant visible dans cette page. Le stock ne déclenche jamais de vente seul. Le Point info accueille un P’TIPOTE pour soutenir les futurs magasins spécialisés.',
-                                ),
-                              ),
-                              icon: const Icon(Icons.info_outline),
-                              label: const Text('Infos'),
-                            ),
-                          ],
-                        ),
                         TextButton.icon(
-                          onPressed: _confirmMarketShopReset,
-                          icon: const Icon(Icons.restart_alt_outlined),
-                          label: const Text('Réinitialiser mes boutiques'),
+                          onPressed: () => showModalBottomSheet<void>(
+                            context: context,
+                            builder: (_) => const _BuildingInformationTab(
+                              title: 'Marché',
+                              description:
+                                  'Chaque vente répond à une demande habitant visible dans cette page. Le stock ne déclenche jamais de vente seul. La Zone centrale accueille un P’TIPOTE pour soutenir l’ensemble des magasins.',
+                            ),
+                          ),
+                          icon: const Icon(Icons.info_outline),
+                          label: const Text('Infos'),
                         ),
+                        if (widget.gameState.isMarketInformationPointUnlocked)
+                          _marketCentralCapabilities(),
+                        if (widget.gameState.isMarketInformationPointUnlocked)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 10),
+                            child: Text('Emplacement P’TIPOTE central',
+                                style: TextStyle(fontWeight: FontWeight.w900)),
+                          ),
                         if (widget.gameState.isMarketInformationPointUnlocked &&
                             widget.gameState.marketAssignedPtipoteId != null)
                           if (figurines
@@ -16103,6 +16082,36 @@ class _MarketPageState extends State<MarketPage> {
                                                 child:
                                                     const Text('Faire rentrer'),
                                               ),
+                                              if (widget.gameState
+                                                      .hasMarketTeamwork &&
+                                                  widget.gameState
+                                                          .marketSecondaryAssignedPtipoteId ==
+                                                      null)
+                                                TextButton(
+                                                  onPressed: () async {
+                                                    final figurine =
+                                                        await _pickPtipoteForActivity(
+                                                      context: context,
+                                                      gameState:
+                                                          widget.gameState,
+                                                      figurines: figurines,
+                                                      title:
+                                                          'Affecter à la Zone centrale',
+                                                      action: _PtipoteActionKind
+                                                          .commerce,
+                                                    );
+                                                    if (figurine == null ||
+                                                        !context.mounted) {
+                                                      return;
+                                                    }
+                                                    _message(widget.gameState
+                                                        .assignToMarket(
+                                                            figurine)
+                                                        .message);
+                                                  },
+                                                  child: const Text(
+                                                      'Ajouter un équipier'),
+                                                ),
                                             ]),
                                       ),
                                     ]),
@@ -16124,7 +16133,7 @@ class _MarketPageState extends State<MarketPage> {
                                 context: context,
                                 gameState: widget.gameState,
                                 figurines: figurines,
-                                title: 'Affecter au Point info',
+                                title: 'Affecter à la Zone centrale',
                                 action: _PtipoteActionKind.commerce,
                               );
                               if (figurine == null || !context.mounted) {
@@ -16137,32 +16146,36 @@ class _MarketPageState extends State<MarketPage> {
                               );
                             },
                             icon: const Icon(Icons.person_add_alt_1),
-                            label: const Text('Affecter au Point info'),
+                            label: const Text('Affecter à la Zone centrale'),
                           ),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(height: 10),
-                if (widget.gameState.isMarketRequestBookUnlocked)
-                  SegmentedButton<int>(
-                    segments: const <ButtonSegment<int>>[
-                      ButtonSegment(
-                          value: 0,
-                          icon: Icon(Icons.storefront_outlined),
-                          label: Text('Vente')),
-                      ButtonSegment(
-                          value: 1,
-                          icon: Icon(Icons.menu_book_outlined),
-                          label: Text('Livre des demandes')),
-                    ],
-                    selected: <int>{_marketTab},
-                    onSelectionChanged: (value) =>
-                        setState(() => _marketTab = value.first),
-                  ),
-                if (widget.gameState.isMarketRequestBookUnlocked)
-                  const SizedBox(height: 10),
-                if (_marketTab == 1) _marketRequestBook(),
+                SegmentedButton<int>(
+                  segments: <ButtonSegment<int>>[
+                    const ButtonSegment(
+                        value: 0,
+                        icon: Icon(Icons.storefront_outlined),
+                        label: Text('Vente')),
+                    const ButtonSegment(
+                        value: 1,
+                        icon: Icon(Icons.construction_outlined),
+                        label: Text('Gestion')),
+                    ButtonSegment(
+                        value: 2,
+                        enabled: widget.gameState.isMarketRequestBookUnlocked,
+                        icon: const Icon(Icons.menu_book_outlined),
+                        label: const Text('Demandes')),
+                  ],
+                  selected: <int>{_marketTab},
+                  onSelectionChanged: (value) =>
+                      setState(() => _marketTab = value.first),
+                ),
+                const SizedBox(height: 10),
+                if (_marketTab == 1) _marketManagementTab(),
+                if (_marketTab == 2) _marketRequestBook(),
                 if (_marketTab == 0) ...<Widget>[
                   Card(
                     child: Padding(
@@ -16396,6 +16409,11 @@ class _MarketPageState extends State<MarketPage> {
                     ),
                   ),
                   const SizedBox(height: 10),
+                  if (widget
+                      .gameState.savedMerchantOffers.isNotEmpty) ...<Widget>[
+                    _savedMerchantOffersDropdown(),
+                    const SizedBox(height: 10),
+                  ],
                   _sourcierContractsSection(),
                   if (widget.gameState.marketContracts.isNotEmpty)
                     const SizedBox(height: 10),
@@ -16568,7 +16586,7 @@ class _MarketPageState extends State<MarketPage> {
                   const SizedBox(height: 12),
                   _activeMarketRequestsSection(),
                   const SizedBox(height: 12),
-                  _marketShopsSection(),
+                  _marketShopsSection(figurines),
                 ],
               ],
             );
@@ -16696,6 +16714,172 @@ class _MarketPageState extends State<MarketPage> {
     );
   }
 
+  /// Les capacités de la Zone centrale sont visibles avant son emplacement
+  /// P'TIPOTE : le niveau débloque leur accès, leur construction détaillée
+  /// reste regroupée dans l'onglet Gestion.
+  Widget _marketCentralCapabilities() {
+    final level = widget.gameState.marketLevel;
+    final capabilities = <String>['Vente centrale'];
+    if (level >= 2) {
+      capabilities.addAll(<String>[
+        'Distributeurs',
+        'Réparation',
+        'Recharge',
+      ]);
+    }
+    if (level >= 3) {
+      capabilities.addAll(<String>[
+        'Logistique',
+        'Optimisation logistique',
+        'Local technique',
+      ]);
+    }
+    if (level >= 4) {
+      capabilities.addAll(<String>[
+        'Assistant commerçant',
+        'Travail d’équipe',
+        'Bio-logiciel technique',
+        'Merchandising',
+      ]);
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text('Zone centrale · capacités déverrouillées',
+              style: TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 5),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: capabilities
+                .map((label) => Chip(
+                      avatar: const Icon(Icons.check_circle_outline, size: 16),
+                      label: Text(label),
+                    ))
+                .toList(growable: false),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _marketManagementTab() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Bâtiment et installations',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 10),
+                  _BuildingViabilityCard(
+                    gameState: widget.gameState,
+                    buildingId: 'market',
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () => _showBuildingProject(
+                      context,
+                      gameState: widget.gameState,
+                      targetId: 'market',
+                      title: 'Améliorer le Marché',
+                      description:
+                          'Le Marché reste ouvert pendant les travaux. Les nouveaux emplacements seront ajoutés à la fin.',
+                      campHeartLevel: widget.campHeartLevel,
+                    ),
+                    icon: const Icon(Icons.upgrade_outlined),
+                    label: const Text('Améliorer le Marché'),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Réparation et installations structurelles se gèrent ici.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _marketCentralUpgradesCard(),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Gestion des boutiques',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'La réinitialisation rend les stocks à la Maison dans la limite de capacité avant de retirer les boutiques.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: _confirmMarketShopReset,
+                    icon: const Icon(Icons.restart_alt_outlined),
+                    label: const Text('Réinitialiser mes boutiques'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+
+  Widget _marketCentralUpgradesCard() => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Améliorations de la Zone centrale',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              const Text(
+                'Une amélioration s’ajoute à la même Zone centrale : elle ne crée ni bâtiment ni poste supplémentaire, sauf Travail d’équipe.',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              ...MarketCentralUpgrade.values.map((upgrade) {
+                final installed =
+                    widget.gameState.hasMarketCentralUpgrade(upgrade);
+                final available =
+                    widget.gameState.marketLevel >= upgrade.requiredMarketLevel;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(installed
+                      ? Icons.check_circle_outline
+                      : Icons.build_outlined),
+                  title: Text(upgrade.label),
+                  subtitle: Text(installed
+                      ? 'Installée'
+                      : available
+                          ? 'Disponible au niveau actuel'
+                          : 'Marché niveau ${upgrade.requiredMarketLevel} requis'),
+                  trailing: installed
+                      ? const Text('Actif')
+                      : OutlinedButton(
+                          onPressed: available
+                              ? () => _message(widget.gameState
+                                  .buildMarketCentralUpgrade(upgrade)
+                                  .message)
+                              : null,
+                          child: const Text('Installer'),
+                        ),
+                );
+              }),
+            ],
+          ),
+        ),
+      );
+
   /// The selling view only shows live requests. The completed/expired history
   /// remains in the separate Book tab, while this section stays visible even
   /// when every sale slot is empty.
@@ -16797,7 +16981,7 @@ class _MarketPageState extends State<MarketPage> {
     );
   }
 
-  Widget _marketShopsSection() {
+  Widget _marketShopsSection(List<PtipoteFigurine> figurines) {
     const labels = <String, String>{
       'restaurant': 'Restaurant',
       'home': 'Magasin du foyer',
@@ -16900,6 +17084,8 @@ class _MarketPageState extends State<MarketPage> {
                     )
                   : const Text('Max.'),
             ),
+            _marketShopSellerCard(
+                Zone0GameState.primaryMarketShopId, figurines),
             _marketShopStockGrid(Zone0GameState.primaryMarketShopId),
             const SizedBox(height: 8),
             _shopDistributorCard(Zone0GameState.primaryMarketShopId),
@@ -16947,6 +17133,7 @@ class _MarketPageState extends State<MarketPage> {
                     ),
                     if (shop.ownershipType !=
                         MarketShopOwnershipType.residentCommunity) ...<Widget>[
+                      _marketShopSellerCard(shop.id, figurines),
                       Align(
                         alignment: Alignment.centerLeft,
                         child: OutlinedButton.icon(
@@ -16984,6 +17171,48 @@ class _MarketPageState extends State<MarketPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _marketShopSellerCard(
+    String shopId,
+    List<PtipoteFigurine> figurines,
+  ) {
+    final sellerId = widget.gameState.marketStoreAssignedPtipoteIds[shopId];
+    final sellerName = widget.gameState.marketStoreAssignedPtipoteNames[shopId];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: sellerId == null
+          ? OutlinedButton.icon(
+              onPressed: () async {
+                final figurine = await _pickPtipoteForActivity(
+                  context: context,
+                  gameState: widget.gameState,
+                  figurines: figurines,
+                  title: 'Affecter un vendeur',
+                  action: _PtipoteActionKind.commerce,
+                );
+                if (figurine == null || !mounted) return;
+                _message(widget.gameState
+                    .assignToMarketShop(shopId, figurine)
+                    .message);
+              },
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              label: Text(
+                  'Affecter un vendeur · réponse ${marketConfig.storeSellerResponseMinutes} min'),
+            )
+          : ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.storefront_outlined),
+              title: Text('Vendeur : ${sellerName ?? 'P’TIPOTE'}'),
+              subtitle: Text(
+                  'Poste permanent · réponse ${marketConfig.storeSellerResponseMinutes} min'),
+              trailing: TextButton(
+                onPressed: () => _message(
+                    widget.gameState.removeFromMarketShop(shopId).message),
+                child: const Text('Faire rentrer'),
+              ),
+            ),
     );
   }
 
@@ -17612,6 +17841,33 @@ class _MarketPageState extends State<MarketPage> {
       ),
     );
   }
+
+  Widget _savedMerchantOffersDropdown() => Card(
+        child: ExpansionTile(
+          leading: const Icon(Icons.bookmark_added_outlined),
+          title: const Text('Offres conservées par l’Assistant'),
+          subtitle: Text(
+              '${widget.gameState.savedMerchantOffers.length} offre(s) du Sourcier en attente'),
+          children: widget.gameState.savedMerchantOffers.map((offer) {
+            final quantity = offer.kind == MerchantOfferKind.workshopItem
+                ? math.max(1, offer.remainingItemAmount)
+                : 1;
+            final title = offer.itemName ?? offer.planName;
+            final price = offer.priceForQuantity(quantity);
+            return ListTile(
+              title: Text(title),
+              subtitle: Text(
+                  '${quantity > 1 ? '$quantity unités · ' : ''}$price Bio-batteries'),
+              trailing: FilledButton(
+                onPressed: () => _message(widget.gameState
+                    .buyMerchantOffer(offer, quantity: quantity)
+                    .message),
+                child: Text(quantity > 1 ? 'Acheter $quantity' : 'Acheter'),
+              ),
+            );
+          }).toList(growable: false),
+        ),
+      );
 
   Widget _sourcierContractsSection() {
     final contracts = widget.gameState.marketContracts

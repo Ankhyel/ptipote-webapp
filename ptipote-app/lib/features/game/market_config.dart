@@ -71,6 +71,19 @@ class MarketConfig {
     required this.residentShopStockTarget,
     required this.requestMinimumMarketLevelByItem,
     required this.constructionMinutesByLevel,
+    required this.storeSellerResponseMinutes,
+    required this.centralSellerBaseResponseMinutes,
+    required this.centralSellerOptimizedResponseMinutes,
+    required this.centralSellerBioSoftwareResponseMinutes,
+    required this.distributorBaseRepairMinutes,
+    required this.localTechnicalRepairReduction,
+    required this.bioSoftwareRepairReduction,
+    required this.repairRequiredVendorLevel,
+    required this.rechargeRequiredVendorLevel,
+    required this.logisticsRequiredVendorLevel,
+    required this.merchandisingRequiredVendorLevel,
+    required this.baseDistributorProfitBonus,
+    required this.ptipoteLevelBonusPerLevel,
   });
 
   final Map<String, int> constructionCost;
@@ -149,6 +162,19 @@ class MarketConfig {
   final int residentShopStockTarget;
   final Map<String, int> requestMinimumMarketLevelByItem;
   final Map<int, int> constructionMinutesByLevel;
+  final int storeSellerResponseMinutes;
+  final int centralSellerBaseResponseMinutes;
+  final int centralSellerOptimizedResponseMinutes;
+  final int centralSellerBioSoftwareResponseMinutes;
+  final int distributorBaseRepairMinutes;
+  final double localTechnicalRepairReduction;
+  final double bioSoftwareRepairReduction;
+  final int repairRequiredVendorLevel;
+  final int rechargeRequiredVendorLevel;
+  final int logisticsRequiredVendorLevel;
+  final int merchandisingRequiredVendorLevel;
+  final double baseDistributorProfitBonus;
+  final double ptipoteLevelBonusPerLevel;
 
   int requestMinimumMarketLevelFor(String item) =>
       requestMinimumMarketLevelByItem[item] ?? 1;
@@ -277,10 +303,11 @@ const MarketConfig defaultMarketConfig = MarketConfig(
   licenseCostBioBatteries: 30,
   licenseChangeCostBioBatteries: 10,
   licenseDirectedRatioPercent: 80,
-  // Progression V5 : les emplacements sont rares et communs aux commerces
-  // du joueur comme aux commerces habitants.
+  // Progression Marché : les emplacements sont communs aux commerces du
+  // joueur comme aux commerces habitants. Les deux emplacements ajoutés
+  // laissent davantage de place sans toucher aux trois produits par magasin.
   // Physical shops, independent from the three product slots in each shop.
-  specializedShopSlotsByMarketLevel: <int, int>{1: 3, 2: 4, 3: 5, 4: 6},
+  specializedShopSlotsByMarketLevel: <int, int>{1: 5, 2: 6, 3: 7, 4: 8},
   firstShopFree: true,
   residentsPerHourlyRequest: 3,
   requestJitterMinPercent: 10,
@@ -363,6 +390,19 @@ const MarketConfig defaultMarketConfig = MarketConfig(
     'Lumière solaire': 3,
   },
   constructionMinutesByLevel: <int, int>{1: 6, 2: 30, 3: 60, 4: 120},
+  storeSellerResponseMinutes: 3,
+  centralSellerBaseResponseMinutes: 6,
+  centralSellerOptimizedResponseMinutes: 4,
+  centralSellerBioSoftwareResponseMinutes: 3,
+  distributorBaseRepairMinutes: 20,
+  localTechnicalRepairReduction: .50,
+  bioSoftwareRepairReduction: .75,
+  repairRequiredVendorLevel: 2,
+  rechargeRequiredVendorLevel: 2,
+  logisticsRequiredVendorLevel: 3,
+  merchandisingRequiredVendorLevel: 4,
+  baseDistributorProfitBonus: .10,
+  ptipoteLevelBonusPerLevel: .01,
 );
 
 MarketConfig marketConfig = defaultMarketConfig;

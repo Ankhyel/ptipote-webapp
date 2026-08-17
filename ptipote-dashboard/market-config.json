@@ -45,7 +45,7 @@
   "distributorBreakDenominatorByLevel": {"1": 6, "2": 12, "3": 24},
   "distributorRepairMinutesByLevel": {"1": 15, "2": 10, "3": 5},
   "distributorRepairCost": {"Organique": 1, "Minéral": 1},
-  "specializedShopSlotsByMarketLevel": {"1": 3, "2": 4, "3": 5, "4": 6},
+  "specializedShopSlotsByMarketLevel": {"1": 5, "2": 6, "3": 7, "4": 8},
   "firstShopFree": true,
   "confidenceSuccessGain": 5,
   "confidenceFailurePenalty": 2,

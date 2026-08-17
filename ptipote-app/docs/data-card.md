@@ -92,3 +92,27 @@ et consomme 1 Organique ainsi que 2 Eau. Un P’TIBUG `mineur` ou
   maximum des anciennes salles, aucun niveau/craft/stock n’est supprimé. Les
   anciennes Viabilités de salle sont ramenées à une Viabilité FabLab unique de
   façon conservatrice, sans cumuler artificiellement les dégâts.
+
+## Marché N1 à N4
+
+- Le Marché possède **5 / 6 / 7 / 8** emplacements de magasins aux niveaux
+  N1 à N4. Chaque magasin possède trois emplacements de produit, un vendeur
+  P’TIPOTE permanent et, lorsqu’il est installé, son propre Distributeur.
+  Le vendeur dédié traite les demandes de son magasin après 3 minutes.
+- La **Zone centrale** est disponible au N2. Elle couvre les magasins non
+  couverts après 6 min, puis 4 min avec Optimisation logistique et 3 min avec
+  Bio-logiciel technique. Travail d’équipe ouvre un second poste au N4.
+- Ses améliorations sont des capacités d’une même infrastructure :
+  Distributeur, Réparation, Recharge (N2), Logistique, Optimisation et Local
+  technique (N3), puis Assistant commerçant, Travail d’équipe, Bio-logiciel
+  et Merchandiser (N4). Réparation/Recharge nécessitent Vendeur N2 ;
+  Logistique Vendeur N3 ; Merchandising Vendeur N4.
+- La Logistique respecte une réserve minimale définie par produit. Les
+  Distributeurs sont réparés en 20 min, 10 min avec Local technique et 5 min
+  avec Bio-logiciel : les réductions ne se cumulent pas. Merchandiser ajoute
+  aux seules ventes de Distributeur 10 % + 1 % par niveau P’TIPOTE ; avec deux
+  employés centraux, seul le meilleur bonus est retenu.
+- Avec **Assistant commerçant** installé et un P’TIPOTE présent à la Zone
+  centrale, les offres non achetées du Sourcier sont sauvegardées à son départ.
+  Elles restent dans un panneau déroulant sous sa carte : le joueur choisit
+  lui-même de les acheter ou de les laisser en attente.

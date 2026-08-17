@@ -2821,6 +2821,44 @@ MarketConfig _market(Object? value) {
       raw['constructionMinutesByLevel'],
       b.constructionMinutesByLevel,
     ),
+    storeSellerResponseMinutes:
+        _int(raw['storeSellerResponseMinutes'], b.storeSellerResponseMinutes),
+    centralSellerBaseResponseMinutes: _int(
+      raw['centralSellerBaseResponseMinutes'],
+      b.centralSellerBaseResponseMinutes,
+    ),
+    centralSellerOptimizedResponseMinutes: _int(
+      raw['centralSellerOptimizedResponseMinutes'],
+      b.centralSellerOptimizedResponseMinutes,
+    ),
+    centralSellerBioSoftwareResponseMinutes: _int(
+      raw['centralSellerBioSoftwareResponseMinutes'],
+      b.centralSellerBioSoftwareResponseMinutes,
+    ),
+    distributorBaseRepairMinutes: _int(
+        raw['distributorBaseRepairMinutes'], b.distributorBaseRepairMinutes),
+    localTechnicalRepairReduction: _double(
+      raw['localTechnicalRepairReduction'],
+      b.localTechnicalRepairReduction,
+    ),
+    bioSoftwareRepairReduction: _double(
+      raw['bioSoftwareRepairReduction'],
+      b.bioSoftwareRepairReduction,
+    ),
+    repairRequiredVendorLevel:
+        _int(raw['repairRequiredVendorLevel'], b.repairRequiredVendorLevel),
+    rechargeRequiredVendorLevel:
+        _int(raw['rechargeRequiredVendorLevel'], b.rechargeRequiredVendorLevel),
+    logisticsRequiredVendorLevel: _int(
+        raw['logisticsRequiredVendorLevel'], b.logisticsRequiredVendorLevel),
+    merchandisingRequiredVendorLevel: _int(
+      raw['merchandisingRequiredVendorLevel'],
+      b.merchandisingRequiredVendorLevel,
+    ),
+    baseDistributorProfitBonus: _double(
+        raw['baseDistributorProfitBonus'], b.baseDistributorProfitBonus),
+    ptipoteLevelBonusPerLevel:
+        _double(raw['ptipoteLevelBonusPerLevel'], b.ptipoteLevelBonusPerLevel),
   );
 }
 
