@@ -20,6 +20,7 @@ class FablabRoomLevelConfig {
 
 class FablabConfig {
   const FablabConfig({
+    required this.schemaVersion,
     required this.constructionCostLevel1Organic,
     required this.constructionCostLevel1Mineral,
     required this.baseGlobalStockCapacity,
@@ -42,6 +43,9 @@ class FablabConfig {
     required this.simpleMealOutputAmount,
   });
 
+  /// Version of the Dashboard payload. Version 2 introduced the unified
+  /// Maison + FabLab storage tables and the four-level physical FabLab.
+  final int schemaVersion;
   final int constructionCostLevel1Organic;
   final int constructionCostLevel1Mineral;
   final int baseGlobalStockCapacity;
@@ -72,6 +76,7 @@ class FablabConfig {
 }
 
 const FablabConfig defaultFablabConfig = FablabConfig(
+  schemaVersion: 2,
   constructionCostLevel1Organic: 8,
   constructionCostLevel1Mineral: 4,
   baseGlobalStockCapacity: 100,

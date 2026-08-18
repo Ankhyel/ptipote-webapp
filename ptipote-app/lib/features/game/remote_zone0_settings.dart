@@ -2368,7 +2368,14 @@ FablabConfig _fablab(Object? value) {
   final raw = _map(value);
   const b = defaultFablabConfig;
   if (raw == null) return b;
+  // The first FabLab payload had five legacy levels and an obsolete capacity
+  // table. It is still published for some existing players. Do not let that
+  // old Dashboard document override the V2 migration and reduce a Maison N4
+  // + FabLab N4 back to the former 200-unit cap.
+  final schemaVersion = _int(raw['schemaVersion'], 1);
+  final usesUnifiedStorageSchema = schemaVersion >= b.schemaVersion;
   return FablabConfig(
+    schemaVersion: usesUnifiedStorageSchema ? schemaVersion : b.schemaVersion,
     constructionCostLevel1Organic: _int(
       raw['constructionCostLevel1Organic'],
       b.constructionCostLevel1Organic,
@@ -2385,10 +2392,12 @@ FablabConfig _fablab(Object? value) {
       raw['stockCapacityBonusPerFablabLevel'],
       b.stockCapacityBonusPerFablabLevel,
     ),
-    fablabStorageByLevel:
-        _levelMap(raw['fablabStorageByLevel'], b.fablabStorageByLevel),
-    houseStorageByLevel:
-        _levelMap(raw['houseStorageByLevel'], b.houseStorageByLevel),
+    fablabStorageByLevel: usesUnifiedStorageSchema
+        ? _levelMap(raw['fablabStorageByLevel'], b.fablabStorageByLevel)
+        : b.fablabStorageByLevel,
+    houseStorageByLevel: usesUnifiedStorageSchema
+        ? _levelMap(raw['houseStorageByLevel'], b.houseStorageByLevel)
+        : b.houseStorageByLevel,
     recyclerInputByLevel:
         _levelMap(raw['recyclerInputByLevel'], b.recyclerInputByLevel),
     recyclerVatOneCapacityByLevel: _levelMap(
@@ -2411,7 +2420,9 @@ FablabConfig _fablab(Object? value) {
       raw['workshopRoomLevels'],
       b.workshopRoomLevels,
     ),
-    fablabMaxLevel: _int(raw['fablabMaxLevel'], b.fablabMaxLevel),
+    fablabMaxLevel: usesUnifiedStorageSchema
+        ? _int(raw['fablabMaxLevel'], b.fablabMaxLevel)
+        : b.fablabMaxLevel,
     cuisineMaxLevel: _int(raw['cuisineMaxLevel'], b.cuisineMaxLevel),
     atelierMaxLevel: _int(raw['atelierMaxLevel'], b.atelierMaxLevel),
     cuisineUnlockLevel: _int(raw['cuisineUnlockLevel'], b.cuisineUnlockLevel),

@@ -837,6 +837,7 @@ async function loadFablabConfig() {
 
 function renderFablabConfig() {
   const rows = [
+    ["Schéma stockage", `V${fablabConfig.schemaVersion || 1}`],
     ["Construction Organique niv. 1", fablabConfig.constructionCostLevel1Organic],
     ["Construction Minéral niv. 1", fablabConfig.constructionCostLevel1Mineral],
     ["Capacité stock de base", fablabConfig.baseGlobalStockCapacity],

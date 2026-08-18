@@ -1,4 +1,5 @@
 {
+  "schemaVersion": 2,
   "constructionCostLevel1Organic": 8,
   "constructionCostLevel1Mineral": 4,
   "baseGlobalStockCapacity": 100,

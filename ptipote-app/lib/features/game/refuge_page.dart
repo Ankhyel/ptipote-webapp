@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../services/figurine_service.dart';
 import '../../services/notification_service.dart';
@@ -113,6 +114,7 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
   bool _simulationStarted = false;
   bool _energyWarning600Dismissed = false;
   bool _energyWarning699Dismissed = false;
+  String _buildLabel = 'Version…';
 
   static const _buildings = <_RefugeBuilding>[
     _RefugeBuilding(
@@ -177,6 +179,7 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _zone0State.addListener(_onZone0StateChanged);
     unawaited(_warmAssets());
+    unawaited(_loadBuildInfo());
   }
 
   @override
@@ -199,6 +202,20 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
 
   void _onZone0StateChanged() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _loadBuildInfo() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() {
+        _buildLabel = 'v${info.version} · build ${info.buildNumber}';
+      });
+    } on Object {
+      // The label is a diagnostic aid only. Keep the screen usable on a
+      // platform where package metadata is unavailable (for example a test).
+      if (mounted) setState(() => _buildLabel = 'Version indisponible');
+    }
   }
 
   Future<void> _warmAssets() async {
@@ -424,104 +441,125 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
           if (snapshot.data?.canSeeDiagnostics != true) {
             return const SizedBox.shrink();
           }
-          return FloatingActionButton.extended(
+          return FloatingActionButton.small(
             onPressed: _confirmDeveloperReset,
-            icon: const Icon(Icons.restart_alt),
-            label: const Text('Repartir de zéro'),
+            tooltip: 'Repartir de zéro',
+            child: const Icon(Icons.restart_alt),
           );
         },
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-              child: _CampHud(
-                gameState: _zone0State,
-                campHeartLevel: _campHeartState.campHeartLevel,
-              ),
-            ),
-            if (_zone0State.bioBatteries >= 699 && !_energyWarning699Dismissed)
-              _EnergyStorageWarning(
-                message:
-                    'Attention : à partir de là, l’énergie provenant des Cœurs d’énergie descellés en trop sera perdue.',
-                onClose: () =>
-                    setState(() => _energyWarning699Dismissed = true),
-              )
-            else if (_zone0State.bioBatteries >= 600 &&
-                !_energyWarning600Dismissed)
-              _EnergyStorageWarning(
-                message:
-                    'Attention : limite presque atteinte. Crée un Cœur d’énergie à l’Atelier avant de ne plus pouvoir en stocker.',
-                onClose: () =>
-                    setState(() => _energyWarning600Dismissed = true),
-              ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: DecoratedBox(
-                    decoration: const BoxDecoration(color: Color(0xFFDAC7A6)),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: <Widget>[
-                        if (_refugeAsset != null)
-                          Image.asset(
-                            _refugeAsset!,
-                            fit: BoxFit.cover,
-                            alignment: Alignment.center,
-                          )
-                        else
-                          const _MissingGameImage(screenName: 'Camp'),
-                        const DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: <Color>[
-                                Color(0x00000000),
-                                Color(0x33000000),
-                              ],
+            Column(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                  child: _CampHud(
+                    gameState: _zone0State,
+                    campHeartLevel: _campHeartState.campHeartLevel,
+                  ),
+                ),
+                if (_zone0State.bioBatteries >= 699 &&
+                    !_energyWarning699Dismissed)
+                  _EnergyStorageWarning(
+                    message:
+                        'Attention : à partir de là, l’énergie provenant des Cœurs d’énergie descellés en trop sera perdue.',
+                    onClose: () =>
+                        setState(() => _energyWarning699Dismissed = true),
+                  )
+                else if (_zone0State.bioBatteries >= 600 &&
+                    !_energyWarning600Dismissed)
+                  _EnergyStorageWarning(
+                    message:
+                        'Attention : limite presque atteinte. Crée un Cœur d’énergie à l’Atelier avant de ne plus pouvoir en stocker.',
+                    onClose: () =>
+                        setState(() => _energyWarning600Dismissed = true),
+                  ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: DecoratedBox(
+                        decoration:
+                            const BoxDecoration(color: Color(0xFFDAC7A6)),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: <Widget>[
+                            if (_refugeAsset != null)
+                              Image.asset(
+                                _refugeAsset!,
+                                fit: BoxFit.cover,
+                                alignment: Alignment.center,
+                              )
+                            else
+                              const _MissingGameImage(screenName: 'Camp'),
+                            const DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: <Color>[
+                                    Color(0x00000000),
+                                    Color(0x33000000),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
+                            if (_zone0State.isTowerWeatherUnlocked)
+                              Positioned(
+                                top: 12,
+                                left: 12,
+                                child:
+                                    _CampWeatherBadge(gameState: _zone0State),
+                              ),
+                            ..._buildings.map(
+                              (building) => _BuildingHotspot(
+                                building: building,
+                                campHeartState: _campHeartState,
+                                notificationCount: _zone0State
+                                        .unreadBuildingNotificationCount(
+                                      building.name,
+                                    ) +
+                                    (building.name == 'Kernel'
+                                        ? _zone0State
+                                            .unreadKernelMissionNotificationCount(
+                                            _campHeartState.campHeartLevel,
+                                          )
+                                        : 0),
+                                gameState: _zone0State,
+                                onTap: () => _handleBuildingTap(building),
+                              ),
+                            ),
+                          ],
                         ),
-                        if (_zone0State.isTowerWeatherUnlocked)
-                          Positioned(
-                            top: 12,
-                            left: 12,
-                            child: _CampWeatherBadge(gameState: _zone0State),
-                          ),
-                        ..._buildings.map(
-                          (building) => _BuildingHotspot(
-                            building: building,
-                            campHeartState: _campHeartState,
-                            notificationCount: _zone0State
-                                    .unreadBuildingNotificationCount(
-                                  building.name,
-                                ) +
-                                (building.name == 'Kernel'
-                                    ? _zone0State
-                                        .unreadKernelMissionNotificationCount(
-                                        _campHeartState.campHeartLevel,
-                                      )
-                                    : 0),
-                            gameState: _zone0State,
-                            onTap: () => _handleBuildingTap(building),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                  child: Text(
+                    'Prototype dev : tape un bâtiment pour ouvrir sa page.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-              child: Text(
-                'Prototype dev : tape un bâtiment pour ouvrir sa page.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
+            Positioned(
+              right: 12,
+              bottom: 8,
+              child: IgnorePointer(
+                child: Text(
+                  _buildLabel,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: const Color(0xFF6B6256),
+                        fontSize: 9,
+                      ),
+                ),
               ),
             ),
           ],

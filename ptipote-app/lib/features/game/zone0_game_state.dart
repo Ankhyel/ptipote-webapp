@@ -450,14 +450,39 @@ class Zone0GameState extends ChangeNotifier {
   /// V2 building record.  Saved games can therefore legitimately contain one
   /// of the two while the other is still at zero.  Storage must never depend
   /// on which representation happened to be written last.
-  int get effectiveFabLabLevel =>
-      math.max(fablabLevel, fabLab.level).clamp(0, fablabConfig.fablabMaxLevel);
+  int get effectiveFabLabLevel {
+    // Some pre-V2 saves kept advanced room levels while their physical
+    // FabLab field still said N1 (or was empty). A room can never be above
+    // its FabLab, so the highest persisted room level is the safe legacy
+    // fallback until the next Firebase reconciliation writes the V2 record.
+    final legacyRoomMaximum = math.max(
+      cuisineLevel,
+      math.max(atelierLevel, recyclerLevel),
+    );
+    return math
+        .max(math.max(fablabLevel, fabLab.level), legacyRoomMaximum)
+        .clamp(0, fablabConfig.fablabMaxLevel);
+  }
 
   bool get isFablabBuilt => effectiveFabLabLevel > 0;
   int get fabLabStorageCapacity => isFablabBuilt
       ? fablabConfig.fablabStorageForLevel(effectiveFabLabLevel)
       : 0;
-  int get houseStorageCapacity => fablabConfig.houseStorageForLevel(houseLevel);
+
+  int get effectiveHouseLevel {
+    // The earlier Maison save stored its alcove capacity reliably, but not
+    // always its current level. Infer the highest compatible house tier so a
+    // legacy Maison N4 (six alcoves) never falls back to N1 storage.
+    final levelFromAlcoves = housingConfig.alcovesByHouseLevel.entries
+        .where((entry) => entry.value <= alcoveCapacity)
+        .fold<int>(1, (maximum, entry) => math.max(maximum, entry.key));
+    return math
+        .max(houseLevel, levelFromAlcoves)
+        .clamp(1, housingConfig.houseMaxLevel);
+  }
+
+  int get houseStorageCapacity =>
+      fablabConfig.houseStorageForLevel(effectiveHouseLevel);
 
   FabLabRoomState fabLabRoom(FabLabRoom room) => fabLab.room(room);
   int fabLabRoomLevel(FabLabRoom room) => fabLabRoom(room).level;
@@ -5824,7 +5849,7 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Map<String, int> get storageCapacitySnapshot => <String, int>{
-        'houseLevel': houseLevel,
+        'houseLevel': effectiveHouseLevel,
         'fabLabLevel': effectiveFabLabLevel,
         'houseCapacity': houseStorageCapacity,
         'fabLabCapacity': fabLabStorageCapacity,
@@ -5841,6 +5866,13 @@ class Zone0GameState extends ChangeNotifier {
     return expected.entries.any(
       (entry) => _readInt(stored[entry.key], fallback: -1) != entry.value,
     );
+  }
+
+  bool _migrateHouseLevelFromAlcoves() {
+    final resolvedLevel = effectiveHouseLevel;
+    if (houseLevel == resolvedLevel) return false;
+    houseLevel = resolvedLevel;
+    return true;
   }
 
   int get inventorySlotLimit {
@@ -18352,6 +18384,7 @@ class Zone0GameState extends ChangeNotifier {
       if (atelierLevel == 0 && fablabLevel > 0) atelierLevel = fablabLevel;
       if (cuisineLevel == 0 && atelierLevel > 0) cuisineLevel = 1;
       final migratedFabLab = _migrateFabLabV2();
+      final migratedHouse = _migrateHouseLevelFromAlcoves();
       // Do not trust a legacy capacity stored in Firebase. The only source of
       // truth is the two loaded building levels and the current Dashboard
       // table. We still persist the resulting snapshot below for diagnostics
@@ -18406,13 +18439,14 @@ class Zone0GameState extends ChangeNotifier {
       _resolveEnergyCoreMilestones();
       resolveConstructionProjects();
       if (migratedFabLab ||
+          migratedHouse ||
           storageCapacityOutdated ||
           migratedPTibugState ||
           discoveredSourcierPatterns ||
           refreshedMerchantOffers ||
           removedPrematureEnergyCore ||
           hadEnergyCorePattern != energyCorePatternDiscovered) {
-        if (migratedFabLab || storageCapacityOutdated) {
+        if (migratedFabLab || migratedHouse || storageCapacityOutdated) {
           unawaited(saveBuildingsToFirebase());
         }
         unawaited(saveRuntimeToFirebase());
