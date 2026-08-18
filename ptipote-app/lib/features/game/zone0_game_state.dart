@@ -91,6 +91,10 @@ class Zone0GameState extends ChangeNotifier {
     _consumeManualWeatherTrigger();
     _refreshKernelPlanReadiness();
     notifyListeners();
+    // Capacity is derived from the Dashboard tables and building levels. Keep
+    // the diagnostic snapshot in the player document current when a designer
+    // changes one of those tables remotely.
+    unawaited(saveBuildingsToFirebase());
     unawaited(saveRuntimeToFirebase());
   }
 
@@ -5817,6 +5821,26 @@ class Zone0GameState extends ChangeNotifier {
     // this limit after migration; deposits are then blocked by the usual
     // capacity guard without deleting anything.
     return houseStorageCapacity + fabLabStorageCapacity;
+  }
+
+  Map<String, int> get storageCapacitySnapshot => <String, int>{
+        'houseLevel': houseLevel,
+        'fabLabLevel': effectiveFabLabLevel,
+        'houseCapacity': houseStorageCapacity,
+        'fabLabCapacity': fabLabStorageCapacity,
+        'globalCapacity': globalStockCapacity,
+      };
+
+  /// The stored snapshot is intentionally not used to calculate capacity.
+  /// It exists to reconcile legacy Firebase documents and to make the
+  /// effective Maison + FabLab calculation inspectable in the Dashboard.
+  bool _storageCapacityNeedsReconciliation(Map<String, dynamic> data) {
+    final stored = data['storage'];
+    if (stored is! Map) return true;
+    final expected = storageCapacitySnapshot;
+    return expected.entries.any(
+      (entry) => _readInt(stored[entry.key], fallback: -1) != entry.value,
+    );
   }
 
   int get inventorySlotLimit {
@@ -18328,6 +18352,11 @@ class Zone0GameState extends ChangeNotifier {
       if (atelierLevel == 0 && fablabLevel > 0) atelierLevel = fablabLevel;
       if (cuisineLevel == 0 && atelierLevel > 0) cuisineLevel = 1;
       final migratedFabLab = _migrateFabLabV2();
+      // Do not trust a legacy capacity stored in Firebase. The only source of
+      // truth is the two loaded building levels and the current Dashboard
+      // table. We still persist the resulting snapshot below for diagnostics
+      // and for old clients which display it.
+      final storageCapacityOutdated = _storageCapacityNeedsReconciliation(data);
       // Old saves predate independent Fablab units and construction projects.
       // Keep every acquired level, then let a future project target the next
       // level. No material is retroactively charged or discarded.
@@ -18377,12 +18406,15 @@ class Zone0GameState extends ChangeNotifier {
       _resolveEnergyCoreMilestones();
       resolveConstructionProjects();
       if (migratedFabLab ||
+          storageCapacityOutdated ||
           migratedPTibugState ||
           discoveredSourcierPatterns ||
           refreshedMerchantOffers ||
           removedPrematureEnergyCore ||
           hadEnergyCorePattern != energyCorePatternDiscovered) {
-        if (migratedFabLab) unawaited(saveBuildingsToFirebase());
+        if (migratedFabLab || storageCapacityOutdated) {
+          unawaited(saveBuildingsToFirebase());
+        }
         unawaited(saveRuntimeToFirebase());
       }
     });
@@ -21672,6 +21704,10 @@ class Zone0GameState extends ChangeNotifier {
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde bâtiments', () {
       return _zone0Doc(user.uid).set(<String, dynamic>{
+        // Snapshot only: all gameplay checks still use [globalStockCapacity],
+        // derived from the live building levels. Persisting it repairs old
+        // documents that still expose their former 200-unit cap.
+        'storage': storageCapacitySnapshot,
         'buildings': <String, dynamic>{
           'fablab': <String, dynamic>{
             'buildingId': 'fablab',
@@ -21686,6 +21722,7 @@ class Zone0GameState extends ChangeNotifier {
             'requiredCampHeartLevel': 0,
             'stockCapacityBonusPerLevel':
                 fablabConfig.stockCapacityBonusPerFablabLevel,
+            'storageCapacity': fabLabStorageCapacity,
             'isVisible': true,
           },
           'securityTower': <String, dynamic>{
@@ -21720,6 +21757,7 @@ class Zone0GameState extends ChangeNotifier {
             'maxLevel': housingConfig.houseMaxLevel,
             'alcoveCapacity': alcoveCapacity,
             'protectedBatteryChestLevel': protectedBatteryChestLevel,
+            'storageCapacity': houseStorageCapacity,
             'isVisible': true,
           },
           'housing': <String, dynamic>{
