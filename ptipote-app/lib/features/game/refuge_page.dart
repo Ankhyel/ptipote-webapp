@@ -3680,7 +3680,7 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
                                         gameState.acceptFreeCoBreedingEnvelope(
                                             profile.ptipoteId)),
                                     child: Text(
-                                        'Accueillir ${envelopeOffer.envelopeId} gratuitement'),
+                                        'Accueillir ${protocolEnvelopeDefinitionForId(envelopeOffer.envelopeId)?.displayName ?? envelopeOffer.envelopeId} gratuitement'),
                                   ),
                                 const SizedBox(height: 4),
                                 const Text(
@@ -3791,7 +3791,9 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
     final state = symbiosis?.maxLevelReached == true
         ? 'Symbiose complète'
         : 'Symbiose ${(symbiosis?.symbiosisProgressPercent ?? 0).toStringAsFixed(1)} %';
-    return 'Protocole · $envelope · $state · efficacité $efficiency % · $remaining';
+    final envelopeName =
+        protocolEnvelopeDefinitionForId(envelope)?.displayName ?? envelope;
+    return 'Protocole · $envelopeName · $state · efficacité $efficiency % · $remaining';
   }
 
   Widget _catalogue(
@@ -3809,7 +3811,11 @@ class _CoBreedingPageState extends State<_CoBreedingPage> {
                   leading: Icon(Icons.egg_alt_outlined,
                       color: _eggColor(template.typeId)),
                   title: Text(template.systemName),
-                  subtitle: Text(_typeLabel(template.typeId)),
+                  subtitle: Text(
+                    template.generation == PtipoteGeneration.protocol
+                        ? '${_typeLabel(template.typeId)} · Noyau'
+                        : _typeLabel(template.typeId),
+                  ),
                   trailing: TextButton(
                     onPressed: canSelect
                         ? () => _showResult(gameState

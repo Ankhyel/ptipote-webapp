@@ -42,7 +42,7 @@ void main() {
       expect(profile.ptipoteGeneration, PtipoteGeneration.protocol);
       expect(profile.ownershipMode, PtipoteOwnershipMode.coBred);
       expect(profile.coreId, 'core_spore');
-      expect(profile.envelopeId, 'defense');
+      expect(profile.envelopeId, 'warrior_standard');
       expect(profile.typeId, PtipoteTypeId.mycelial);
     });
   });
@@ -130,7 +130,75 @@ void main() {
   });
 
   group('Protocol assets and compatibility', () {
+    test('exposes exactly the Card Builder Protocol catalogue', () {
+      expect(ptipoteProtocolCoreDefinitions, hasLength(9));
+      expect(
+        ptipoteProtocolCoreDefinitions.map((core) => core.coreId),
+        containsAll(<String>[
+          'veg_photosynthese',
+          'veg_poison',
+          'veg_croissance',
+          'myc_filtration',
+          'myc_decomposition',
+          'myc_controle',
+          'min_protection',
+          'min_resonance',
+          'min_calcification',
+        ]),
+      );
+      expect(ptipoteProtocolEnvelopeDefinitions, hasLength(8));
+      expect(
+        ptipoteProtocolEnvelopeDefinitions
+            .map((envelope) => envelope.envelopeId),
+        containsAll(<String>[
+          'warrior_standard',
+          'explorer_standard',
+          'scientist_share',
+          'scientist_biopiratage',
+          'producer_porter',
+          'producer_solar',
+          'producer_hill',
+          'producer_mountain',
+        ]),
+      );
+      expect(
+        ptipoteProtocolCoreDefinitions.map((core) => core.drawWeight).toSet(),
+        <int>{1},
+      );
+      expect(
+        ptipoteProtocolEnvelopeDefinitions
+            .map((envelope) => envelope.drawWeight)
+            .toSet(),
+        <int>{1},
+      );
+    });
+
+    test('migrates only derivable generic core data', () {
+      final migrated = PtipoteV2Profile.fromFirebase('old-protocol', {
+        'ptipoteGeneration': 'protocol',
+        'typeId': 'vegetal',
+        'natureId': 'poison',
+        'coreId': 'core_poison',
+      });
+      final unknown = PtipoteV2Profile.fromFirebase('unknown-protocol', {
+        'ptipoteGeneration': 'protocol',
+        'typeId': 'vegetal',
+        'natureId': 'legacy_unknown',
+        'coreId': 'core_legacy_unknown',
+      });
+
+      expect(migrated.coreId, 'veg_poison');
+      expect(unknown.coreId, 'core_legacy_unknown');
+    });
+
     test('uses a combined nature/envelope asset and falls back to core', () {
+      expect(
+        protocolVisualAssetKey(
+          coreId: 'veg_poison',
+          envelopeId: 'warrior_standard',
+        ),
+        'veg_poison_warrior_standard',
+      );
       final found = PtipoteModifierService.resolveProtocolVisualAsset(
         natureId: 'Forêt Étoilée',
         coreAssetKey: 'foret_etoilee_core',

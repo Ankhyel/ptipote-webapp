@@ -80,7 +80,8 @@ void main() {
       expect(profile.effectiveProtocolEfficiency(defaultPtipoteV2Config), 0.5);
     });
 
-    test('migrates the former Scientifique envelope to Analyste', () {
+    test('migrates the former Scientifique envelope to an Analyste variant',
+        () {
       final profile = PtipoteV2Profile.fromFirebase(
         'legacy-analyst',
         <String, dynamic>{
@@ -90,7 +91,7 @@ void main() {
         },
       );
 
-      expect(profile.envelopeId, 'analyst');
+      expect(profile.envelopeId, 'scientist_share');
       expect(profile.envelopeSymbiosis, isNotNull);
     });
   });

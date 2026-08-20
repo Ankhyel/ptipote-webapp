@@ -4,6 +4,30 @@ import 'package:ptipote_app/features/figurines/ptipote_v2.dart';
 
 void main() {
   group('Co-élevage', () {
+    test('Protocol offers use concrete cores and all source envelopes', () {
+      expect(defaultCoBreedingProtocols, hasLength(9));
+      expect(defaultCoBreedingEnvelopeTemplates, hasLength(8));
+      for (final protocol in defaultCoBreedingProtocols) {
+        expect(protocol.coreId, isNotNull);
+        expect(protocol.compatibleEnvelopeIds, hasLength(8));
+      }
+      expect(
+        defaultCoBreedingProtocols
+            .where((item) => item.typeId == PtipoteTypeId.vegetal),
+        hasLength(3),
+      );
+      expect(
+        defaultCoBreedingProtocols
+            .where((item) => item.typeId == PtipoteTypeId.mycelial),
+        hasLength(3),
+      );
+      expect(
+        defaultCoBreedingProtocols
+            .where((item) => item.typeId == PtipoteTypeId.mineral),
+        hasLength(3),
+      );
+    });
+
     test('capacity follows breeder level', () {
       expect(getCoBreedingCapacity(1, defaultCoBreedingConfig), 1);
       expect(getCoBreedingCapacity(2, defaultCoBreedingConfig), 2);

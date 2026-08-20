@@ -7812,6 +7812,12 @@ class Zone0GameState extends ChangeNotifier {
       if (type != null && template.typeId != type) return false;
       if (generation != null && template.generation != generation) return false;
       if (template.minBreederLevel > breederLevel) return false;
+      if (template.generation == PtipoteGeneration.protocol) {
+        final v2 = ptipoteStatsConfig.v2;
+        if (useDev ? !v2.protocolsDevEnabled : !v2.protocolsPublicEnabled) {
+          return false;
+        }
+      }
       return useDev ? template.devEnabled : template.publicEnabled;
     }).toList();
   }
@@ -7923,6 +7929,12 @@ class Zone0GameState extends ChangeNotifier {
     if (template == null) return const <CoBreedingEnvelopeTemplate>[];
     return defaultCoBreedingEnvelopeTemplates.where((envelope) {
       if (envelope.minBreederLevel > breederLevel) return false;
+      final v2 = ptipoteStatsConfig.v2;
+      if (coBreedingDevMode
+          ? !v2.protocolEnvelopeDevEnabled
+          : !v2.protocolEnvelopePublicEnabled) {
+        return false;
+      }
       if (!template.compatibleEnvelopeIds.contains(envelope.envelopeId)) {
         return false;
       }
@@ -8045,8 +8057,11 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     final now = DateTime.now();
-    final assetKey = '${normalizePtipoteAssetKey(profile.natureId)}_'
-        '${normalizePtipoteAssetKey(envelopeId)}';
+    final assetKey = protocolVisualAssetKey(
+      coreId: profile.coreId,
+      envelopeId: envelopeId,
+      fallback: profile.visualAssetKey,
+    );
     final symbiosis = PtipoteEnvelopeSymbiosis(
       envelopeId: envelopeId,
       symbiosisLevel: 0,
@@ -8227,6 +8242,13 @@ class Zone0GameState extends ChangeNotifier {
     final sessionId = 'co-${now.microsecondsSinceEpoch}-${template.templateId}';
     final ptipoteId = 'co-ptipote-$sessionId';
     final duration = Duration(hours: coBreedingConfig.maxDurationHours);
+    final protocolCore = template.generation == PtipoteGeneration.protocol
+        ? protocolCoreFor(
+            coreId: template.coreId,
+            natureId: template.natureId,
+            typeId: template.typeId,
+          )
+        : null;
     final profile = PtipoteV2Profile(
       ptipoteId: ptipoteId,
       acquisitionOrigin: PtipoteAcquisitionOrigin.coBreeding,
@@ -8235,6 +8257,7 @@ class Zone0GameState extends ChangeNotifier {
       typeId: template.typeId,
       natureId: template.natureId,
       coreId: template.coreId,
+      visualAssetKey: protocolCore?.baseImageAsset ?? '',
       systemName: template.systemName,
       baseCarryCapacity: ptipoteStatsConfig.v2.defaultBaseCarryCapacity,
       coBreedingSessionId: sessionId,

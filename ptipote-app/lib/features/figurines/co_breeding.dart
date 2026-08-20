@@ -110,7 +110,7 @@ class CoBreedingTemplate {
 }
 
 /// The V1 pools are intentionally small and transparent. Their toggles and
-/// weights are content data, not rarity tiers. Protocoles remain DEV-only.
+/// weights are content data, not rarity tiers.
 const List<CoBreedingTemplate> defaultCoBreedingVestiges = <CoBreedingTemplate>[
   CoBreedingTemplate(
     templateId: 'vestige-liane',
@@ -135,44 +135,26 @@ const List<CoBreedingTemplate> defaultCoBreedingVestiges = <CoBreedingTemplate>[
   ),
 ];
 
-const List<CoBreedingTemplate> defaultCoBreedingProtocols =
-    <CoBreedingTemplate>[
-  CoBreedingTemplate(
-    templateId: 'protocol-liane',
-    systemName: 'Noyau Liane',
-    typeId: PtipoteTypeId.vegetal,
-    natureId: 'liane',
-    generation: PtipoteGeneration.protocol,
-    coreId: 'core-liane',
-    compatibleEnvelopeIds: <String>[
-      'defense',
-      'exploration',
-      'production',
-      'analyst',
-    ],
-    publicEnabled: false,
-  ),
-  CoBreedingTemplate(
-    templateId: 'protocol-cristal',
-    systemName: 'Noyau Cristal',
-    typeId: PtipoteTypeId.mineral,
-    natureId: 'cristal',
-    generation: PtipoteGeneration.protocol,
-    coreId: 'core-cristal',
-    compatibleEnvelopeIds: <String>['defense', 'exploration'],
-    publicEnabled: false,
-  ),
-  CoBreedingTemplate(
-    templateId: 'protocol-mycelle',
-    systemName: 'Noyau Mycelle',
-    typeId: PtipoteTypeId.mycelial,
-    natureId: 'mycelle',
-    generation: PtipoteGeneration.protocol,
-    coreId: 'core-mycelle',
-    compatibleEnvelopeIds: <String>['production', 'analyst'],
-    publicEnabled: false,
-  ),
-];
+/// Each real Protocol points to a concrete Card Builder core. Every source
+/// envelope is compatible with every core in this V1 content pass.
+final List<CoBreedingTemplate> defaultCoBreedingProtocols =
+    ptipoteProtocolCoreDefinitions
+        .map(
+          (core) => CoBreedingTemplate(
+            templateId: 'protocol-${core.coreId}',
+            systemName: core.displayName,
+            typeId: core.typeId,
+            natureId: core.natureId,
+            generation: PtipoteGeneration.protocol,
+            coreId: core.coreId,
+            compatibleEnvelopeIds: core.compatibleEnvelopeIds.toList(),
+            publicEnabled: core.publicEnabled,
+            devEnabled: core.devEnabled,
+            drawWeight: core.drawWeight,
+            minBreederLevel: core.minBreederLevel,
+          ),
+        )
+        .toList(growable: false);
 
 /// Separate from the P'TIPOTE pool so a DEV envelope can be tested without
 /// leaking into public Co-élevage offers.
@@ -198,33 +180,21 @@ class CoBreedingEnvelopeTemplate {
   final int minBreederLevel;
 }
 
-const List<CoBreedingEnvelopeTemplate> defaultCoBreedingEnvelopeTemplates =
-    <CoBreedingEnvelopeTemplate>[
-  CoBreedingEnvelopeTemplate(
-    envelopeId: 'defense',
-    displayName: 'Défense',
-    category: PtipoteEnvelopeCategory.defense,
-    compatibleEnvelopeIds: <String>['defense'],
-  ),
-  CoBreedingEnvelopeTemplate(
-    envelopeId: 'exploration',
-    displayName: 'Exploration',
-    category: PtipoteEnvelopeCategory.exploration,
-    compatibleEnvelopeIds: <String>['exploration'],
-  ),
-  CoBreedingEnvelopeTemplate(
-    envelopeId: 'production',
-    displayName: 'Production',
-    category: PtipoteEnvelopeCategory.production,
-    compatibleEnvelopeIds: <String>['production'],
-  ),
-  CoBreedingEnvelopeTemplate(
-    envelopeId: 'analyst',
-    displayName: 'Analyste',
-    category: PtipoteEnvelopeCategory.analyst,
-    compatibleEnvelopeIds: <String>['analyst'],
-  ),
-];
+final List<CoBreedingEnvelopeTemplate> defaultCoBreedingEnvelopeTemplates =
+    ptipoteProtocolEnvelopeDefinitions
+        .map(
+          (envelope) => CoBreedingEnvelopeTemplate(
+            envelopeId: envelope.envelopeId,
+            displayName: envelope.displayName,
+            category: envelope.envelopeCategory,
+            compatibleEnvelopeIds: <String>[envelope.envelopeId],
+            publicEnabled: envelope.publicEnabled,
+            devEnabled: envelope.devEnabled,
+            drawWeight: envelope.drawWeight,
+            minBreederLevel: envelope.minBreederLevel,
+          ),
+        )
+        .toList(growable: false);
 
 class CoBreedingEnvelopeOffer {
   const CoBreedingEnvelopeOffer({

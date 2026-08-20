@@ -43,6 +43,27 @@ let lisiereForageConfig = {};
 let securityTowerConfig = {};
 let fablabConfig = {};
 let recyclerConfig = {};
+const PROTOCOL_CORE_CATALOGUE = [
+  ["veg_photosynthese", "Végétal", "Photosynthèse"],
+  ["veg_poison", "Végétal", "Poison"],
+  ["veg_croissance", "Végétal", "Croissance"],
+  ["myc_filtration", "Mycélien", "Filtration"],
+  ["myc_decomposition", "Mycélien", "Décomposition"],
+  ["myc_controle", "Mycélien", "Contrôle"],
+  ["min_protection", "Minéral", "Protection"],
+  ["min_resonance", "Minéral", "Résonance"],
+  ["min_calcification", "Minéral", "Calcification"],
+];
+const PROTOCOL_ENVELOPE_CATALOGUE = [
+  ["warrior_standard", "Guerrier", "Standard", "Défense"],
+  ["explorer_standard", "Explorateur", "Standard", "Exploration"],
+  ["scientist_share", "Analyste", "Partage", "Analyste"],
+  ["scientist_biopiratage", "Analyste", "Bio-piratage", "Analyste"],
+  ["producer_porter", "Producteur", "Porteur", "Production"],
+  ["producer_solar", "Producteur", "Solaire", "Production"],
+  ["producer_hill", "Producteur", "Colline", "Production"],
+  ["producer_mountain", "Producteur", "Montagne", "Production"],
+];
 const PTIPOTE_STATS_FIELDS = [
   "maxVitality",
   "vitalityRecoveryPerMinute",
@@ -161,6 +182,10 @@ const PTIPOTE_STATS_FIELDS = [
   "v2CoBreedingCompletionRequireHouse",
   "v2CoBreedingCompletionBlockNewActivity",
   "v2CoBreedingCompletionArchive",
+  "v2ProtocolsPublicEnabled",
+  "v2ProtocolsDevEnabled",
+  "v2ProtocolEnvelopesPublicEnabled",
+  "v2ProtocolEnvelopesDevEnabled",
   "v2CoBreedingXpRewardBase",
   "v2CoBreedingXpRewardPerFinalLevel",
   "v2CoBreedingBreederXpRewardBase",
@@ -550,6 +575,10 @@ function ptipoteFieldLabel(field) {
     v2CoBreedingCompletionRequireHouse: "V2 Finalisation · Départ depuis la Maison",
     v2CoBreedingCompletionBlockNewActivity: "V2 Finalisation · Bloquer les activités en attente",
     v2CoBreedingCompletionArchive: "V2 Finalisation · Archiver le P’TIPOTE parti",
+    v2ProtocolsPublicEnabled: "V2 Protocoles · Pool public activé",
+    v2ProtocolsDevEnabled: "V2 Protocoles · Pool DEV activé",
+    v2ProtocolEnvelopesPublicEnabled: "V2 Enveloppes · Pool public activé",
+    v2ProtocolEnvelopesDevEnabled: "V2 Enveloppes · Pool DEV activé",
     v2CoBreedingXpRewardBase: "V2 Récompense · Bonus XP P’TIPOTE de base (DEV)",
     v2CoBreedingXpRewardPerFinalLevel: "V2 Récompense · Bonus XP par niveau final (DEV)",
     v2CoBreedingBreederXpRewardBase: "V2 Récompense · XP Éleveur de base (DEV)",
@@ -579,6 +608,15 @@ function renderPtipoteStatsForm() {
       ${ptipoteStatInput(field)}
     </div>
   `).join("") + `
+    <div class="stat-field stat-field-wide">
+      <label>P’TIPOTES &gt; PROTOCOLES &gt; NOYAUX</label>
+      <p>${PROTOCOL_CORE_CATALOGUE.map(([id, type, name]) => `${escapeHtml(type)} · ${escapeHtml(name)} <small>(${escapeHtml(id)})</small>`).join("<br>")}</p>
+    </div>
+    <div class="stat-field stat-field-wide">
+      <label>P’TIPOTES &gt; PROTOCOLES &gt; ENVELOPPES</label>
+      <p>${PROTOCOL_ENVELOPE_CATALOGUE.map(([id, family, variant, effect]) => `${escapeHtml(family)} · ${escapeHtml(variant)} — ${escapeHtml(effect)} <small>(${escapeHtml(id)})</small>`).join("<br>")}</p>
+      <p>Compatibilité : tous les Noyaux · poids uniforme 1 · aucune rareté. Les interrupteurs de pool public/DEV se règlent ci-dessus.</p>
+    </div>
     <div class="stat-field stat-field-wide">
       <label>XP requis par niveau</label>
       <p id="xpRequiredPreview"></p>

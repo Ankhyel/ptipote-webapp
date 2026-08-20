@@ -83,6 +83,25 @@ Bassin conserve ses Minéraux de la cuve, produit 1 Minéral par tranche de 10,
 et consomme 1 Organique ainsi que 2 Eau. Un P’TIBUG `mineur` ou
 `lithoculture` actif dans le biome ajoute +1 Minéral/h au cycle.
 
+## P’TIPOTES Protocoles — Noyaux et Enveloppes
+
+- Un **Vestige** reste un P’TIPOTE sans Noyau ni Enveloppe. Un **Protocole**
+  porte un Noyau concret : Végétal (Photosynthèse, Poison, Croissance),
+  Mycélien (Filtration, Décomposition, Contrôle) ou Minéral (Protection,
+  Résonance, Calcification). Les bonus mobiles restent liés au **Type** ; une
+  Nature ne crée pas de bonus caché.
+- Les huit Enveloppes source sont Guerrier Standard, Explorateur Standard,
+  Analyste Partage, Analyste Bio-piratage, Producteur Porteur, Solaire,
+  Colline et Montagne. Scientifique est affiché **Analyste**. Toutes sont
+  compatibles avec tous les Noyaux dans cette version ; leur famille donne
+  Défense, Exploration, Analyste ou Production.
+- Un Protocole est à 50 % avec Noyau seul, puis passe par 75 / 100 / 125 %
+  selon sa Symbiose d’Enveloppe. L’Enveloppe se débloque toujours au niveau 3
+  et reste temporaire en Co-élevage : elle part avec le P’TIPOTE au départ.
+- Les pools public et DEV des Protocoles/Enveloppes sont activables dans le
+  Dashboard. Tous les Noyaux et toutes les Enveloppes y ont le même poids :
+  il n’existe ni rareté ni bonus par variante.
+
 ## FabLab V2 — bâtiment unique et salles
 
 - Le **FabLab** est le seul bâtiment physique : il porte sa Viabilité, ses

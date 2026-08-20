@@ -652,6 +652,22 @@ PtipoteV2Config _ptipoteV2Config(
       'v2CoBreedingCompletionArchive',
       fallback.coBreedingCompletionArchive,
     ),
+    protocolsPublicEnabled: boolean(
+      'v2ProtocolsPublicEnabled',
+      fallback.protocolsPublicEnabled,
+    ),
+    protocolsDevEnabled: boolean(
+      'v2ProtocolsDevEnabled',
+      fallback.protocolsDevEnabled,
+    ),
+    protocolEnvelopePublicEnabled: boolean(
+      'v2ProtocolEnvelopesPublicEnabled',
+      fallback.protocolEnvelopePublicEnabled,
+    ),
+    protocolEnvelopeDevEnabled: boolean(
+      'v2ProtocolEnvelopesDevEnabled',
+      fallback.protocolEnvelopeDevEnabled,
+    ),
     coBreedingXpRewardBase: integer(
       'v2CoBreedingXpRewardBase',
       fallback.coBreedingXpRewardBase,

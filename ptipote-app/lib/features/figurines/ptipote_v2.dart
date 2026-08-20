@@ -49,7 +49,10 @@ class PtipoteCore {
     required this.compatibleEnvelopeIds,
     this.baseBonuses = const <String, double>{},
     this.enabled = true,
+    this.publicEnabled = true,
     this.devEnabled = true,
+    this.drawWeight = 1,
+    this.minBreederLevel = 1,
     this.createdAt,
     this.updatedAt,
   });
@@ -62,7 +65,10 @@ class PtipoteCore {
   final Set<String> compatibleEnvelopeIds;
   final Map<String, double> baseBonuses;
   final bool enabled;
+  final bool publicEnabled;
   final bool devEnabled;
+  final int drawWeight;
+  final int minBreederLevel;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -75,7 +81,10 @@ class PtipoteCore {
         'compatibleEnvelopeIds': compatibleEnvelopeIds.toList(),
         'baseBonuses': baseBonuses,
         'enabled': enabled,
+        'publicEnabled': publicEnabled,
         'devEnabled': devEnabled,
+        'drawWeight': drawWeight,
+        'minBreederLevel': minBreederLevel,
       };
 
   factory PtipoteCore.fromFirebase(Map<dynamic, dynamic> value) {
@@ -100,8 +109,16 @@ class PtipoteCore {
             )
           : const <String, double>{},
       enabled: value['enabled'] is bool ? value['enabled'] as bool : true,
+      publicEnabled: value['publicEnabled'] is bool
+          ? value['publicEnabled'] as bool
+          : true,
       devEnabled:
           value['devEnabled'] is bool ? value['devEnabled'] as bool : true,
+      drawWeight:
+          ((value['drawWeight'] as num?)?.round() ?? 1).clamp(1, 999).toInt(),
+      minBreederLevel: ((value['minBreederLevel'] as num?)?.round() ?? 1)
+          .clamp(1, 99)
+          .toInt(),
     );
   }
 }
@@ -116,7 +133,10 @@ class PtipoteEnvelope {
     this.bonuses = const <String, double>{},
     this.combinedAssetSuffix = '',
     this.enabled = true,
+    this.publicEnabled = true,
     this.devEnabled = true,
+    this.drawWeight = 1,
+    this.minBreederLevel = 3,
     this.createdAt,
     this.updatedAt,
   });
@@ -129,7 +149,10 @@ class PtipoteEnvelope {
   final Map<String, double> bonuses;
   final String combinedAssetSuffix;
   final bool enabled;
+  final bool publicEnabled;
   final bool devEnabled;
+  final int drawWeight;
+  final int minBreederLevel;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -142,7 +165,10 @@ class PtipoteEnvelope {
         'bonuses': bonuses,
         'combinedAssetSuffix': combinedAssetSuffix,
         'enabled': enabled,
+        'publicEnabled': publicEnabled,
         'devEnabled': devEnabled,
+        'drawWeight': drawWeight,
+        'minBreederLevel': minBreederLevel,
       };
 }
 
@@ -541,6 +567,18 @@ class PtipoteV2Profile {
     Map<dynamic, dynamic> value,
   ) {
     final timestamp = DateTime.now();
+    final generation = _enumByName(
+      PtipoteGeneration.values,
+      value['ptipoteGeneration'],
+      PtipoteGeneration.vestige,
+    );
+    final typeId = _enumByName(
+      PtipoteTypeId.values,
+      value['typeId'],
+      PtipoteTypeId.vegetal,
+    );
+    final natureId =
+        normalizePtipoteAssetKey('${value['natureId'] ?? 'unknown'}');
     final envelopeId = _canonicalEnvelopeId(
       _nullableText(value['envelopeId']),
     );
@@ -548,6 +586,28 @@ class PtipoteV2Profile {
         ? PtipoteEnvelopeSymbiosis.fromFirebase(
             value['envelopeSymbiosis'] as Map)
         : null;
+    final envelopeSymbiosis = storedSymbiosis != null &&
+            envelopeId != null &&
+            storedSymbiosis.envelopeId != envelopeId
+        ? PtipoteEnvelopeSymbiosis(
+            envelopeId: envelopeId,
+            symbiosisLevel: storedSymbiosis.symbiosisLevel,
+            symbiosisProgressPercent: storedSymbiosis.symbiosisProgressPercent,
+            startedAt: storedSymbiosis.startedAt,
+            lastCalculatedAt: storedSymbiosis.lastCalculatedAt,
+            lastActivityBonusAt: storedSymbiosis.lastActivityBonusAt,
+            maxLevelReached: storedSymbiosis.maxLevelReached,
+            createdAt: storedSymbiosis.createdAt,
+            updatedAt: storedSymbiosis.updatedAt,
+          )
+        : storedSymbiosis;
+    final coreId = generation == PtipoteGeneration.protocol
+        ? _canonicalProtocolCoreId(
+            _nullableText(value['coreId']),
+            typeId: typeId,
+            natureId: natureId,
+          )
+        : _nullableText(value['coreId']);
     final rawSkills = value['skills'];
     final skills = <String, PtipoteSkillProgress>{};
     if (rawSkills is Map) {
@@ -584,23 +644,15 @@ class PtipoteV2Profile {
         value['ownershipMode'],
         PtipoteOwnershipMode.owned,
       ),
-      ptipoteGeneration: _enumByName(
-        PtipoteGeneration.values,
-        value['ptipoteGeneration'],
-        PtipoteGeneration.vestige,
-      ),
-      typeId: _enumByName(
-        PtipoteTypeId.values,
-        value['typeId'],
-        PtipoteTypeId.vegetal,
-      ),
-      natureId: '${value['natureId'] ?? 'unknown'}',
-      coreId: _nullableText(value['coreId']),
+      ptipoteGeneration: generation,
+      typeId: typeId,
+      natureId: natureId.isEmpty ? 'unknown' : natureId,
+      coreId: coreId,
       envelopeId: envelopeId,
       envelopeAcquisitionMode: _nullableText(value['envelopeAcquisitionMode']),
       // Existing equipped Protocols become a coherent "new envelope" state
       // rather than losing their equipment or receiving a silent bonus.
-      envelopeSymbiosis: storedSymbiosis ??
+      envelopeSymbiosis: envelopeSymbiosis ??
           (envelopeId == null
               ? null
               : PtipoteEnvelopeSymbiosis(
@@ -654,7 +706,13 @@ class PtipoteV2Profile {
       externalCarryCapacityBonus:
           ((value['externalCarryCapacityBonus'] as num?)?.round() ?? 0)
               .clamp(0, 9999),
-      visualAssetKey: '${value['visualAssetKey'] ?? ''}',
+      visualAssetKey: generation == PtipoteGeneration.protocol
+          ? protocolVisualAssetKey(
+              coreId: coreId,
+              envelopeId: envelopeId,
+              fallback: '${value['visualAssetKey'] ?? ''}',
+            )
+          : '${value['visualAssetKey'] ?? ''}',
       coBreedingSessionId: _nullableText(value['coBreedingSessionId']),
       coBreedingStartedAt: _readDate(value['coBreedingStartedAt']),
       coBreedingExpiresAt: _readDate(value['coBreedingExpiresAt']),
@@ -829,6 +887,10 @@ class PtipoteV2Config {
     required this.coBreedingCompletionRequireHouse,
     required this.coBreedingCompletionBlockNewActivity,
     required this.coBreedingCompletionArchive,
+    required this.protocolsPublicEnabled,
+    required this.protocolsDevEnabled,
+    required this.protocolEnvelopePublicEnabled,
+    required this.protocolEnvelopeDevEnabled,
     required this.coBreedingXpRewardBase,
     required this.coBreedingXpRewardPerFinalLevel,
     required this.coBreedingBreederXpRewardBase,
@@ -900,6 +962,13 @@ class PtipoteV2Config {
   final bool coBreedingCompletionRequireHouse;
   final bool coBreedingCompletionBlockNewActivity;
   final bool coBreedingCompletionArchive;
+
+  /// Pool switches intentionally apply to the whole content pack: every
+  /// concrete core/envelope keeps the same weight, with no rarity system.
+  final bool protocolsPublicEnabled;
+  final bool protocolsDevEnabled;
+  final bool protocolEnvelopePublicEnabled;
+  final bool protocolEnvelopeDevEnabled;
   final int coBreedingXpRewardBase;
   final int coBreedingXpRewardPerFinalLevel;
   final int coBreedingBreederXpRewardBase;
@@ -978,6 +1047,11 @@ class PtipoteV2Config {
         'v2CoBreedingCompletionBlockNewActivity':
             coBreedingCompletionBlockNewActivity ? 1 : 0,
         'v2CoBreedingCompletionArchive': coBreedingCompletionArchive ? 1 : 0,
+        'v2ProtocolsPublicEnabled': protocolsPublicEnabled ? 1 : 0,
+        'v2ProtocolsDevEnabled': protocolsDevEnabled ? 1 : 0,
+        'v2ProtocolEnvelopesPublicEnabled':
+            protocolEnvelopePublicEnabled ? 1 : 0,
+        'v2ProtocolEnvelopesDevEnabled': protocolEnvelopeDevEnabled ? 1 : 0,
         'v2CoBreedingXpRewardBase': coBreedingXpRewardBase,
         'v2CoBreedingXpRewardPerFinalLevel': coBreedingXpRewardPerFinalLevel,
         'v2CoBreedingBreederXpRewardBase': coBreedingBreederXpRewardBase,
@@ -1053,6 +1127,10 @@ const defaultPtipoteV2Config = PtipoteV2Config(
   coBreedingCompletionRequireHouse: true,
   coBreedingCompletionBlockNewActivity: true,
   coBreedingCompletionArchive: true,
+  protocolsPublicEnabled: true,
+  protocolsDevEnabled: true,
+  protocolEnvelopePublicEnabled: true,
+  protocolEnvelopeDevEnabled: true,
   // Provisional V1 rewards: a base plus final-level scaling, all Dashboard
   // controlled and deliberately identical for Vestiges and Protocoles.
   coBreedingXpRewardBase: 10,
@@ -1314,41 +1392,201 @@ class PtipoteArrivalService {
   }
 }
 
-/// Versioned V2 envelope catalogue. Compatibility stays permissive until the
-/// Protocol content pack supplies explicit core/envelope pairings.
-const ptipoteV2EnvelopeDefinitions = <PtipoteEnvelopeCategory, PtipoteEnvelope>{
-  PtipoteEnvelopeCategory.defense: PtipoteEnvelope(
-    envelopeId: 'defense',
-    displayName: 'Défense',
-    envelopeCategory: PtipoteEnvelopeCategory.defense,
-    combinedAssetSuffix: 'defense',
-  ),
-  PtipoteEnvelopeCategory.exploration: PtipoteEnvelope(
-    envelopeId: 'exploration',
-    displayName: 'Exploration',
-    envelopeCategory: PtipoteEnvelopeCategory.exploration,
-    combinedAssetSuffix: 'exploration',
-  ),
-  PtipoteEnvelopeCategory.production: PtipoteEnvelope(
-    envelopeId: 'production',
-    displayName: 'Production',
-    envelopeCategory: PtipoteEnvelopeCategory.production,
-    combinedAssetSuffix: 'production',
-  ),
-  PtipoteEnvelopeCategory.analyst: PtipoteEnvelope(
-    envelopeId: 'analyst',
-    displayName: 'Analyste',
-    envelopeCategory: PtipoteEnvelopeCategory.analyst,
-    combinedAssetSuffix: 'analyst',
-  ),
+/// Canonical Protocol catalogue. These identifiers mirror the Card Builder
+/// data exactly; the game only owns the runtime metadata (pools, weights and
+/// visuals), never a second list of gameplay effects per Nature.
+const ptipoteProtocolCoreDefinitions = <PtipoteCore>[
+  PtipoteCore(
+      coreId: 'veg_photosynthese',
+      displayName: 'Photosynthèse',
+      natureId: 'photosynthese',
+      typeId: PtipoteTypeId.vegetal,
+      baseImageAsset: 'veg_photosynthese',
+      compatibleEnvelopeIds: _allProtocolEnvelopeIds),
+  PtipoteCore(
+      coreId: 'veg_poison',
+      displayName: 'Poison',
+      natureId: 'poison',
+      typeId: PtipoteTypeId.vegetal,
+      baseImageAsset: 'veg_poison',
+      compatibleEnvelopeIds: _allProtocolEnvelopeIds),
+  PtipoteCore(
+      coreId: 'veg_croissance',
+      displayName: 'Croissance',
+      natureId: 'croissance',
+      typeId: PtipoteTypeId.vegetal,
+      baseImageAsset: 'veg_croissance',
+      compatibleEnvelopeIds: _allProtocolEnvelopeIds),
+  PtipoteCore(
+      coreId: 'myc_filtration',
+      displayName: 'Filtration',
+      natureId: 'filtration',
+      typeId: PtipoteTypeId.mycelial,
+      baseImageAsset: 'myc_filtration',
+      compatibleEnvelopeIds: _allProtocolEnvelopeIds),
+  PtipoteCore(
+      coreId: 'myc_decomposition',
+      displayName: 'Décomposition',
+      natureId: 'decomposition',
+      typeId: PtipoteTypeId.mycelial,
+      baseImageAsset: 'myc_decomposition',
+      compatibleEnvelopeIds: _allProtocolEnvelopeIds),
+  PtipoteCore(
+      coreId: 'myc_controle',
+      displayName: 'Contrôle',
+      natureId: 'controle',
+      typeId: PtipoteTypeId.mycelial,
+      baseImageAsset: 'myc_controle',
+      compatibleEnvelopeIds: _allProtocolEnvelopeIds),
+  PtipoteCore(
+      coreId: 'min_protection',
+      displayName: 'Protection',
+      natureId: 'protection',
+      typeId: PtipoteTypeId.mineral,
+      baseImageAsset: 'min_protection',
+      compatibleEnvelopeIds: _allProtocolEnvelopeIds),
+  PtipoteCore(
+      coreId: 'min_resonance',
+      displayName: 'Résonance',
+      natureId: 'resonance',
+      typeId: PtipoteTypeId.mineral,
+      baseImageAsset: 'min_resonance',
+      compatibleEnvelopeIds: _allProtocolEnvelopeIds),
+  PtipoteCore(
+      coreId: 'min_calcification',
+      displayName: 'Calcification',
+      natureId: 'calcification',
+      typeId: PtipoteTypeId.mineral,
+      baseImageAsset: 'min_calcification',
+      compatibleEnvelopeIds: _allProtocolEnvelopeIds),
+];
+
+const _allProtocolEnvelopeIds = <String>{
+  'warrior_standard',
+  'explorer_standard',
+  'scientist_share',
+  'scientist_biopiratage',
+  'producer_porter',
+  'producer_solar',
+  'producer_hill',
+  'producer_mountain',
 };
+
+/// Concrete Envelope variants. Categories deliberately remain the only
+/// gameplay source, so variants change identity/visuals, not hidden bonuses.
+const ptipoteProtocolEnvelopeDefinitions = <PtipoteEnvelope>[
+  PtipoteEnvelope(
+      envelopeId: 'warrior_standard',
+      displayName: 'Guerrier · Standard',
+      envelopeCategory: PtipoteEnvelopeCategory.defense,
+      combinedAssetSuffix: 'warrior_standard'),
+  PtipoteEnvelope(
+      envelopeId: 'explorer_standard',
+      displayName: 'Explorateur · Standard',
+      envelopeCategory: PtipoteEnvelopeCategory.exploration,
+      combinedAssetSuffix: 'explorer_standard'),
+  PtipoteEnvelope(
+      envelopeId: 'scientist_share',
+      displayName: 'Analyste · Partage',
+      envelopeCategory: PtipoteEnvelopeCategory.analyst,
+      combinedAssetSuffix: 'scientist_share'),
+  PtipoteEnvelope(
+      envelopeId: 'scientist_biopiratage',
+      displayName: 'Analyste · Bio-piratage',
+      envelopeCategory: PtipoteEnvelopeCategory.analyst,
+      combinedAssetSuffix: 'scientist_biopiratage'),
+  PtipoteEnvelope(
+      envelopeId: 'producer_porter',
+      displayName: 'Producteur · Porteur',
+      envelopeCategory: PtipoteEnvelopeCategory.production,
+      combinedAssetSuffix: 'producer_porter'),
+  PtipoteEnvelope(
+      envelopeId: 'producer_solar',
+      displayName: 'Producteur · Solaire',
+      envelopeCategory: PtipoteEnvelopeCategory.production,
+      combinedAssetSuffix: 'producer_solar'),
+  PtipoteEnvelope(
+      envelopeId: 'producer_hill',
+      displayName: 'Producteur · Colline',
+      envelopeCategory: PtipoteEnvelopeCategory.production,
+      combinedAssetSuffix: 'producer_hill'),
+  PtipoteEnvelope(
+      envelopeId: 'producer_mountain',
+      displayName: 'Producteur · Montagne',
+      envelopeCategory: PtipoteEnvelopeCategory.production,
+      combinedAssetSuffix: 'producer_mountain'),
+];
+
+/// Legacy category map retained for callers that need one representative
+/// variant. New offer flows use [ptipoteProtocolEnvelopeDefinitions].
+final ptipoteV2EnvelopeDefinitions = <PtipoteEnvelopeCategory, PtipoteEnvelope>{
+  for (final envelope in ptipoteProtocolEnvelopeDefinitions)
+    envelope.envelopeCategory: envelope,
+};
+
+PtipoteCore? protocolCoreDefinitionForId(String? coreId) {
+  final normalized = normalizePtipoteAssetKey(coreId ?? '');
+  for (final core in ptipoteProtocolCoreDefinitions) {
+    if (core.coreId == normalized) return core;
+  }
+  return null;
+}
+
+/// Migrates only legacy placeholder identifiers when their concrete Nature
+/// makes the target unambiguous. Unknown data deliberately remains unchanged:
+/// a migration must never invent a random Protocol Nature.
+String? _canonicalProtocolCoreId(
+  String? value, {
+  required PtipoteTypeId typeId,
+  required String natureId,
+}) {
+  final raw = _nullableText(value);
+  final exact = protocolCoreDefinitionForId(raw);
+  if (exact != null) return exact.coreId;
+  final normalizedNature = normalizePtipoteAssetKey(natureId);
+  final byNature = ptipoteProtocolCoreDefinitions.where(
+    (core) => core.typeId == typeId && core.natureId == normalizedNature,
+  );
+  if (byNature.length == 1) return byNature.single.coreId;
+  return raw;
+}
+
+PtipoteEnvelope? protocolEnvelopeDefinitionForId(String? envelopeId) {
+  final canonical = _canonicalEnvelopeId(envelopeId);
+  if (canonical == null) return null;
+  for (final envelope in ptipoteProtocolEnvelopeDefinitions) {
+    if (envelope.envelopeId == canonical) return envelope;
+  }
+  return null;
+}
+
+/// Card Builder export convention: the core and the envelope are standalone
+/// images, while their prepared Protocol visual is named `core_envelope`.
+/// Legacy/unknown data keeps its stored fallback rather than being guessed.
+String protocolVisualAssetKey({
+  required String? coreId,
+  String? envelopeId,
+  String fallback = '',
+}) {
+  final core = protocolCoreDefinitionForId(coreId);
+  if (core == null) return fallback;
+  final envelope = protocolEnvelopeDefinitionForId(envelopeId);
+  if (envelope == null) return core.baseImageAsset;
+  return '${core.baseImageAsset}_${envelope.combinedAssetSuffix}';
+}
 
 PtipoteCore protocolCoreFor({
   required String natureId,
   required PtipoteTypeId typeId,
+  String? coreId,
   String baseImageAsset = '',
 }) {
+  final byId = protocolCoreDefinitionForId(coreId);
+  if (byId != null) return byId;
   final normalizedNature = normalizePtipoteAssetKey(natureId);
+  for (final core in ptipoteProtocolCoreDefinitions) {
+    if (core.typeId == typeId && core.natureId == normalizedNature) return core;
+  }
   return PtipoteCore(
     coreId: 'core_$normalizedNature',
     displayName:
@@ -1356,7 +1594,7 @@ PtipoteCore protocolCoreFor({
     natureId: normalizedNature.isEmpty ? 'unknown' : normalizedNature,
     typeId: typeId,
     baseImageAsset: baseImageAsset,
-    compatibleEnvelopeIds: ptipoteV2EnvelopeDefinitions.values
+    compatibleEnvelopeIds: ptipoteProtocolEnvelopeDefinitions
         .map((envelope) => envelope.envelopeId)
         .toSet(),
   );
@@ -1481,15 +1719,29 @@ class PtipoteModifierService {
     required Set<String> availableAssetKeys,
   }) {
     final normalizedNature = normalizePtipoteAssetKey(natureId);
-    final normalizedEnvelope = normalizePtipoteAssetKey(envelopeId ?? '');
-    final combined = normalizedEnvelope.isEmpty
-        ? coreAssetKey
-        : '${normalizedNature}_$normalizedEnvelope';
-    if (availableAssetKeys.contains(combined)) {
-      return PtipoteVisualAssetResolution(assetKey: combined);
+    final rawEnvelope = normalizePtipoteAssetKey(envelopeId ?? '');
+    final normalizedCore = normalizePtipoteAssetKey(coreAssetKey);
+    final normalizedEnvelope =
+        normalizePtipoteAssetKey(_canonicalEnvelopeId(envelopeId) ?? '');
+    final candidates = <String>{
+      if (normalizedCore.isNotEmpty && normalizedEnvelope.isNotEmpty)
+        '${normalizedCore}_$normalizedEnvelope',
+      if (normalizedEnvelope.isNotEmpty)
+        '${normalizedNature}_$normalizedEnvelope',
+      // Existing assets can retain their old category suffix during the
+      // content migration without making the visual resolver fail.
+      if (rawEnvelope.isNotEmpty) '${normalizedNature}_$rawEnvelope',
+    };
+    for (final combined in candidates) {
+      if (availableAssetKeys.contains(combined)) {
+        return PtipoteVisualAssetResolution(assetKey: combined);
+      }
     }
+    final fallbackCore = coreAssetKey.trim().isEmpty
+        ? 'protocol_$normalizedNature'
+        : coreAssetKey;
     return PtipoteVisualAssetResolution(
-      assetKey: coreAssetKey,
+      assetKey: fallbackCore,
       warning: normalizedEnvelope.isEmpty
           ? null
           : 'Missing protocol combined asset: $normalizedNature + $normalizedEnvelope',
@@ -1536,6 +1788,8 @@ class PtipoteModifierService {
       type == PtipoteTypeId.mycelial ? config.mycelialCommerceBonus : 0;
 
   static PtipoteEnvelopeCategory _envelopeCategory(String id) {
+    final definition = protocolEnvelopeDefinitionForId(id);
+    if (definition != null) return definition.envelopeCategory;
     final normalized = normalizePtipoteAssetKey(id);
     if (normalized.contains('defense') || normalized.contains('protect')) {
       return PtipoteEnvelopeCategory.defense;
@@ -1635,7 +1889,13 @@ PtipoteV2Profile migrateLegacyPtipoteProfile({
         isProtocol ? PtipoteGeneration.protocol : PtipoteGeneration.vestige,
     typeId: typeId,
     natureId: natureId,
-    coreId: isProtocol ? legacyFields['coreId'] ?? 'core_$natureId' : null,
+    coreId: isProtocol
+        ? _canonicalProtocolCoreId(
+            legacyFields['coreId'],
+            typeId: typeId,
+            natureId: natureId,
+          )
+        : null,
     envelopeId: envelopeId,
     envelopeAcquisitionMode: isProtocol
         ? _nullableText(legacyFields['envelopeAcquisitionMode']) ?? 'legacy'
@@ -1699,9 +1959,20 @@ String? _canonicalEnvelopeId(String? value) {
   final raw = _nullableText(value);
   if (raw == null) return null;
   final normalized = normalizePtipoteAssetKey(raw);
-  if (normalized == 'scientifique' || normalized == 'scientific') {
-    return 'analyst';
-  }
+  const legacy = <String, String>{
+    'defense': 'warrior_standard',
+    'protection': 'warrior_standard',
+    'exploration': 'explorer_standard',
+    'explorateur': 'explorer_standard',
+    'production': 'producer_porter',
+    'producteur': 'producer_porter',
+    'analyst': 'scientist_share',
+    'analyste': 'scientist_share',
+    'scientifique': 'scientist_share',
+    'scientific': 'scientist_share',
+  };
+  final migrated = legacy[normalized];
+  if (migrated != null) return migrated;
   return normalized;
 }
 
