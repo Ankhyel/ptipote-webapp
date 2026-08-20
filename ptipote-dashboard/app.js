@@ -1076,6 +1076,7 @@ const ZONE0_SECTION_SOURCES = {
   residentEconomy: "resident-economy-config.json",
   ptibug: "ptibug-config.json",
   buildingConstruction: "building-construction-config.json",
+  logistics: "logistics-config.json",
   campGenerator: "camp-generator-config.json",
   wasteRecycler: "waste-recycler-config.json",
 };
@@ -1096,6 +1097,7 @@ const ZONE0_SECTION_LABELS = {
   residentEconomy: "Économie interne des habitants",
   ptibug: "P'TIBUG et Nurserie",
   buildingConstruction: "Constructions des bâtiments",
+  logistics: "Bâtiment Logistique",
   campGenerator: "Bio-générateur du Camp",
   wasteRecycler: "Recycleur",
 };

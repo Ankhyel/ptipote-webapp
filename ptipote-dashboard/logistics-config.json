@@ -1,0 +1,14 @@
+{
+  "requiredCampHeartLevel": 2,
+  "autoRepairEnabled": true,
+  "defaultRepairThreshold": 70,
+  "minimumRepairThreshold": 1,
+  "maximumRepairThreshold": 99,
+  "autoRepairDurationMinutes": 20,
+  "levels": {
+    "1": {"storageBonus": 100, "repairKitCapacity": 5, "ptipoteSlots": 1, "queueEnabled": false, "queueCapacity": 0, "parallelConstructionCapacity": 0},
+    "2": {"storageBonus": 200, "repairKitCapacity": 10, "ptipoteSlots": 1, "queueEnabled": false, "queueCapacity": 0, "parallelConstructionCapacity": 0},
+    "3": {"storageBonus": 300, "repairKitCapacity": 20, "ptipoteSlots": 1, "queueEnabled": true, "queueCapacity": 3, "parallelConstructionCapacity": 1},
+    "4": {"storageBonus": 400, "repairKitCapacity": 30, "ptipoteSlots": 2, "queueEnabled": true, "queueCapacity": 3, "parallelConstructionCapacity": 2}
+  }
+}

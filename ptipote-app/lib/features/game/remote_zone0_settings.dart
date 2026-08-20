@@ -7,6 +7,7 @@ import 'fablab_config.dart';
 import 'housing_config.dart';
 import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
+import 'logistics_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
@@ -37,6 +38,7 @@ void applyRemoteZone0Settings(Map<String, dynamic>? raw) {
       _buildingConstruction(raw?['buildingConstruction']);
   campGeneratorConfig = _campGenerator(raw?['campGenerator']);
   wasteRecyclerConfig = _wasteRecycler(raw?['wasteRecycler']);
+  logisticsConfig = _logistics(raw?['logistics']);
 }
 
 Map<String, dynamic>? _map(Object? value) =>
@@ -85,11 +87,31 @@ BuildingConstructionConfig _buildingConstruction(Object? value) {
   const base = defaultBuildingConstructionConfig;
   if (raw == null) return base;
   final projects = _map(raw['projects']);
+  final constructorReductions = _map(raw['constructorReductionByLevel']);
   return BuildingConstructionConfig(
     mineralCostMultiplier:
         _double(raw['mineralCostMultiplier'], base.mineralCostMultiplier),
     defaultDurationMinutes:
         _int(raw['defaultDurationMinutes'], base.defaultDurationMinutes),
+    globalBaseDurationMultiplier: _double(
+      raw['globalBaseDurationMultiplier'],
+      base.globalBaseDurationMultiplier,
+    ),
+    ptipoteMaterialReduction: _double(
+      raw['ptipoteMaterialReduction'],
+      base.ptipoteMaterialReduction,
+    ),
+    ptipoteLevelTimeReductionPerLevel: _double(
+      raw['ptipoteLevelTimeReductionPerLevel'],
+      base.ptipoteLevelTimeReductionPerLevel,
+    ),
+    constructorReductionByLevel: <int, double>{
+      for (final entry in base.constructorReductionByLevel.entries)
+        entry.key: _double(
+          constructorReductions?['${entry.key}'],
+          entry.value,
+        ),
+    },
     projects: <String, BuildingProjectDefinition>{
       for (final entry in base.projects.entries)
         entry.key: () {
@@ -111,8 +133,70 @@ BuildingConstructionConfig _buildingConstruction(Object? value) {
             ),
             bypassBiomimicryRequirement:
                 project?['bypassBiomimicryRequirement'] == true,
+            unattendedEnergyCost: _int(
+              project?['unattendedEnergyCost'],
+              entry.value.unattendedEnergyCost,
+            ),
+            unattendedEnergyCostByLevel: _levelMap(
+              project?['unattendedEnergyCostByLevel'],
+              entry.value.unattendedEnergyCostByLevel,
+            ),
             durationMinutes:
                 _int(project?['durationMinutes'], entry.value.durationMinutes),
+          );
+        }(),
+    },
+  );
+}
+
+LogisticsConfig _logistics(Object? value) {
+  final raw = _map(value);
+  const base = defaultLogisticsConfig;
+  if (raw == null) return base;
+  final levels = _map(raw['levels']);
+  return LogisticsConfig(
+    requiredCampHeartLevel: _int(
+      raw['requiredCampHeartLevel'],
+      base.requiredCampHeartLevel,
+    ),
+    autoRepairEnabled: _bool(raw['autoRepairEnabled'], base.autoRepairEnabled),
+    defaultRepairThreshold: _int(
+      raw['defaultRepairThreshold'],
+      base.defaultRepairThreshold,
+    ),
+    minimumRepairThreshold: _int(
+      raw['minimumRepairThreshold'],
+      base.minimumRepairThreshold,
+    ),
+    maximumRepairThreshold: _int(
+      raw['maximumRepairThreshold'],
+      base.maximumRepairThreshold,
+    ),
+    autoRepairDurationMinutes: _int(
+      raw['autoRepairDurationMinutes'],
+      base.autoRepairDurationMinutes,
+    ),
+    levels: <int, LogisticsLevelConfig>{
+      for (final entry in base.levels.entries)
+        entry.key: () {
+          final level = _map(levels?['${entry.key}']);
+          return LogisticsLevelConfig(
+            storageBonus:
+                _int(level?['storageBonus'], entry.value.storageBonus),
+            repairKitCapacity: _int(
+              level?['repairKitCapacity'],
+              entry.value.repairKitCapacity,
+            ),
+            ptipoteSlots:
+                _int(level?['ptipoteSlots'], entry.value.ptipoteSlots),
+            queueEnabled:
+                _bool(level?['queueEnabled'], entry.value.queueEnabled),
+            queueCapacity:
+                _int(level?['queueCapacity'], entry.value.queueCapacity),
+            parallelConstructionCapacity: _int(
+              level?['parallelConstructionCapacity'],
+              entry.value.parallelConstructionCapacity,
+            ),
           );
         }(),
     },

@@ -25,6 +25,7 @@ import 'game_asset_resolver.dart';
 import 'housing_config.dart';
 import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
+import 'logistics_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
@@ -169,6 +170,14 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
       left: 0.18,
       top: 0.56,
       width: 0.25,
+      height: 0.10,
+    ),
+    _RefugeBuilding(
+      name: 'Logistics',
+      title: 'Logistique',
+      left: 0.56,
+      top: 0.76,
+      width: 0.28,
       height: 0.10,
     ),
   ];
@@ -323,6 +332,12 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
               campHeartLevel: _campHeartState.campHeartLevel,
             );
           }
+          if (building.name == 'Logistics') {
+            return LogisticsPage(
+              gameState: _zone0State,
+              campHeartLevel: _campHeartState.campHeartLevel,
+            );
+          }
           if (building.name == 'Nursery') {
             return PTibugNurseryPage(
               gameState: _zone0State,
@@ -369,6 +384,21 @@ class _RefugePageState extends State<RefugePage> with WidgetsBindingObserver {
         isScrollControlled: true,
         builder: (_) => _MarketConstructionSheet(
           gameState: _zone0State,
+          campHeartLevel: _campHeartState.campHeartLevel,
+        ),
+      );
+      return;
+    }
+    if (building.name == 'Logistics' && !_zone0State.isLogisticsBuilt) {
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (_) => _ConstructionProjectSheet(
+          gameState: _zone0State,
+          targetId: 'logistics',
+          title: 'Bâtiment Logistique',
+          description: 'Centralise les travaux, la maintenance et les Kits.',
           campHeartLevel: _campHeartState.campHeartLevel,
         ),
       );
@@ -2450,6 +2480,7 @@ class _MaisonPageState extends State<_MaisonPage>
                         attachment: _gameState.attachmentFor(figurine),
                         happinessBreakdown:
                             _gameState.happinessBreakdownFor(figurine),
+                        jobLevels: _gameState.ptipoteJobLevels(figurine),
                         activity: _ptipoteActivityLabel(figurine),
                         countdown: _coBreedingCountdown(figurine) ??
                             _ptipoteActivityCountdown(figurine),
@@ -4398,11 +4429,20 @@ class _HouseUpgradeTabState extends State<_HouseUpgradeTab> {
                           ),
                         ),
                         FilledButton.icon(
-                          onPressed: project.isReady
-                              ? () => state.startConstructionProject('house')
-                              : null,
+                          onPressed: () => showModalBottomSheet<void>(
+                            context: context,
+                            showDragHandle: true,
+                            isScrollControlled: true,
+                            builder: (_) => _ConstructionProjectSheet(
+                              gameState: state,
+                              targetId: 'house',
+                              title: 'Améliorer la Maison',
+                              description:
+                                  'Choisissez une construction automatisée ou un Constructeur.',
+                            ),
+                          ),
                           icon: const Icon(Icons.construction_outlined),
-                          label: const Text('Commencer les travaux'),
+                          label: const Text('Choisir le chantier'),
                         ),
                       ],
                     ],
@@ -4516,6 +4556,7 @@ class _BuildingHotspot extends StatelessWidget {
         'Tour' => 'securityTower',
         'FabLab' => 'fablab',
         'Market' => 'market',
+        'Logistics' => 'logistics',
         _ => null,
       };
 }
@@ -4784,6 +4825,7 @@ class _PtipoteDashboardCard extends StatelessWidget {
     required this.happiness,
     required this.attachment,
     required this.happinessBreakdown,
+    required this.jobLevels,
     required this.activity,
     required this.countdown,
     required this.onRename,
@@ -4800,6 +4842,7 @@ class _PtipoteDashboardCard extends StatelessWidget {
   final double happiness;
   final double attachment;
   final PtipoteHappinessBreakdown happinessBreakdown;
+  final Map<String, int> jobLevels;
   final String activity;
   final String countdown;
   final VoidCallback onRename;
@@ -4926,6 +4969,21 @@ class _PtipoteDashboardCard extends StatelessWidget {
               child:
                   _PtipoteGauge(label: 'Bonheur', value: happiness, max: 100),
             ),
+            if (jobLevels.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 12),
+              const Text('MÉTIERS',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: jobLevels.entries
+                    .map((entry) => Chip(
+                          label:
+                              Text('${_jobLabel(entry.key)} N${entry.value}'),
+                        ))
+                    .toList(),
+              ),
+            ],
           ],
         ),
       ),
@@ -4966,6 +5024,13 @@ class _PtipoteDashboardCard extends StatelessWidget {
       ),
     );
   }
+
+  String _jobLabel(String id) => switch (id) {
+        'artisan' => 'Artisan',
+        'vendor' => 'Vendeur',
+        'constructor' => 'Constructeur',
+        _ => id,
+      };
 }
 
 class _PtipoteGauge extends StatelessWidget {
@@ -15590,6 +15655,8 @@ class _ConstructionProjectSheet extends StatefulWidget {
 }
 
 class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
+  final FigurineService _figurineService = FigurineService();
+  PtipoteFigurine? _constructor;
   @override
   void initState() {
     super.initState();
@@ -15749,6 +15816,73 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
               ],
+              if (!project.isInProgress &&
+                  project.state !=
+                      ConstructionProjectState.maxLevel) ...<Widget>[
+                const SizedBox(height: 8),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('MODE DE CONSTRUCTION',
+                      style: TextStyle(fontWeight: FontWeight.w900)),
+                ),
+                const SizedBox(height: 4),
+                Text(_constructor == null
+                    ? 'Sans P’TIPOTE · Énergie ${project.unattendedEnergyCostSnapshot > 0 ? project.unattendedEnergyCostSnapshot : widget.gameState.projectUnattendedEnergyCost(widget.targetId, targetLevel: project.targetLevel)}'
+                    : 'Avec ${_constructor!.displayName} · matériaux -20 % · énergie 0'),
+                StreamBuilder<List<PtipoteFigurine>>(
+                  stream: _figurineService.watchMyFigurines(),
+                  builder: (context, snapshot) => Wrap(
+                    spacing: 8,
+                    children: <Widget>[
+                      OutlinedButton(
+                        onPressed: () {
+                          final result = widget.gameState
+                              .configureProjectConstructionMode(
+                                  widget.targetId);
+                          if (result.success)
+                            setState(() => _constructor = null);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(result.message)));
+                        },
+                        child: const Text('Sans P’TIPOTE'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final figurine = await _pickPtipoteForActivity(
+                            context: context,
+                            gameState: widget.gameState,
+                            figurines:
+                                widget.gameState.ptipotesAvailableForActivities(
+                              snapshot.data ?? const <PtipoteFigurine>[],
+                            ),
+                            title: 'Choisir un Constructeur',
+                          );
+                          if (figurine == null || !mounted) return;
+                          final result =
+                              widget.gameState.configureProjectConstructionMode(
+                            widget.targetId,
+                            constructor: figurine,
+                          );
+                          if (result.success)
+                            setState(() => _constructor = figurine);
+                          if (mounted)
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(result.message)));
+                        },
+                        icon: const Icon(Icons.pets_outlined),
+                        label: const Text('Avec P’TIPOTE'),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_constructor != null) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Constructeur N${widget.gameState.constructorLevelFor(_constructor!)} · Niveau ${widget.gameState.levelFor(_constructor!)} · durée -${(widget.gameState.getConstructorTimeReduction(_constructor!) * 100).round()} %',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ],
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: blockedReason == null &&
@@ -15761,6 +15895,7 @@ class _ConstructionProjectSheetState extends State<_ConstructionProjectSheet> {
                             widget.gameState.startConstructionProject(
                           widget.targetId,
                           campHeartLevel: campHeartLevel,
+                          constructor: _constructor,
                         );
                         ScaffoldMessenger.of(
                           context,
@@ -15884,6 +16019,283 @@ class _ConstructionMaterialProgress extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// V1 of the Logistics screen deliberately stays a central board: no vehicle,
+/// routing or transport simulation is introduced here.
+class LogisticsPage extends StatelessWidget {
+  const LogisticsPage({
+    super.key,
+    required this.gameState,
+    required this.campHeartLevel,
+  });
+
+  final Zone0GameState gameState;
+  final int campHeartLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    final figurineService = FigurineService();
+    return Scaffold(
+      appBar: AppBar(title: Text('Logistique · N${gameState.logisticsLevel}')),
+      body: StreamBuilder<List<PtipoteFigurine>>(
+        stream: figurineService.watchMyFigurines(),
+        builder: (context, snapshot) => AnimatedBuilder(
+          animation: gameState,
+          builder: (context, _) {
+            final allFigurines = snapshot.data ?? const <PtipoteFigurine>[];
+            final all = gameState.ptipotesAvailableForActivities(allFigurines);
+            String ptipoteName(String id) =>
+                allFigurines
+                    .where((figurine) => figurine.id == id)
+                    .map((figurine) => figurine.displayName)
+                    .firstOrNull ??
+                'P’TIPOTE';
+            final projectEntries = gameState.constructionProjects.values
+                .where((item) => item.isInProgress)
+                .toList();
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: <Widget>[
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text('BÂTIMENT LOGISTIQUE',
+                            style: TextStyle(fontWeight: FontWeight.w900)),
+                        Text(
+                            '+${gameState.logisticsStorageCapacity} stockage camp'),
+                        Text(
+                            'Kits Logistique : ${gameState.logisticsRepairKitStored} / ${gameState.logisticsRepairKitCapacity}'),
+                        Wrap(
+                          spacing: 8,
+                          children: <Widget>[
+                            TextButton(
+                              onPressed: () =>
+                                  gameState.depositLogisticsRepairKits(),
+                              child: const Text('+ Kit'),
+                            ),
+                            TextButton(
+                              onPressed: () =>
+                                  gameState.withdrawLogisticsRepairKits(),
+                              child: const Text('Retirer'),
+                            ),
+                          ],
+                        ),
+                        Text(
+                            'Maintenance : ${gameState.logisticsMaintenancePtipoteIds.length} / ${gameState.logisticsPtipoteSlotCapacity}'),
+                        const SizedBox(height: 8),
+                        Text(
+                            'Réparation automatique sous ${gameState.logisticsAutoRepairThreshold}%'),
+                        Slider(
+                          value:
+                              gameState.logisticsAutoRepairThreshold.toDouble(),
+                          min:
+                              logisticsConfig.minimumRepairThreshold.toDouble(),
+                          max:
+                              logisticsConfig.maximumRepairThreshold.toDouble(),
+                          divisions: logisticsConfig.maximumRepairThreshold -
+                              logisticsConfig.minimumRepairThreshold,
+                          label: '${gameState.logisticsAutoRepairThreshold}%',
+                          onChanged: (value) => gameState
+                              .setLogisticsAutoRepairThreshold(value.round()),
+                        ),
+                        if (gameState.logisticsMaintenancePtipoteIds.length <
+                            gameState.logisticsPtipoteSlotCapacity)
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              final selected = await _pickPtipoteForActivity(
+                                context: context,
+                                gameState: gameState,
+                                figurines: all,
+                                title: 'Affecter à la Maintenance',
+                              );
+                              if (selected == null || !context.mounted) return;
+                              final result = gameState
+                                  .assignLogisticsMaintenance(selected);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(result.message)),
+                              );
+                            },
+                            icon: const Icon(Icons.person_add_alt_1_outlined),
+                            label: const Text('Affecter à la Maintenance'),
+                          ),
+                        if (gameState.logisticsMaintenancePtipoteIds.isNotEmpty)
+                          ...gameState.logisticsMaintenancePtipoteIds.map(
+                            (id) => ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.build_circle_outlined),
+                              title: Text(ptipoteName(id)),
+                              subtitle: const Text('Poste de maintenance'),
+                              trailing: TextButton(
+                                onPressed: () {
+                                  final result =
+                                      gameState.removeLogisticsMaintenance(id);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(result.message)),
+                                  );
+                                },
+                                child: const Text('Rentrer'),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text('TRAVAUX EN COURS',
+                            style: TextStyle(fontWeight: FontWeight.w900)),
+                        if (projectEntries.isEmpty)
+                          const Text('Aucun chantier en cours.')
+                        else
+                          ...projectEntries.map((project) => ListTile(
+                                dense: true,
+                                leading:
+                                    const Icon(Icons.construction_outlined),
+                                title: Text(project.targetType),
+                                subtitle: Text(
+                                  '${project.assignedPtipoteName ?? 'Automatisé'} · fin ${_countdownLabel(project.endsAt!)}',
+                                ),
+                              )),
+                        ...gameState.logisticsMaintenanceJobs
+                            .where((job) => !job.completed)
+                            .map((job) => ListTile(
+                                  dense: true,
+                                  leading: const Icon(Icons.build_outlined),
+                                  title: Text('Réparation · ${job.buildingId}'),
+                                  subtitle: Text(
+                                    '${ptipoteName(job.ptipoteId)} · fin ${_countdownLabel(job.endsAt)}',
+                                  ),
+                                )),
+                      ],
+                    ),
+                  ),
+                ),
+                if (gameState.logisticsQueueEnabled)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'LISTE CONSTRUCTION · ${gameState.logisticsConstructionQueue.length}/${gameState.logisticsQueueCapacity}',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          Text(
+                              'Jusqu’à ${gameState.logisticsParallelConstructionCapacity} chantier(s) Logistique simultané(s).'),
+                          const Text(
+                              'Les ordres bloqués restent visibles et ne sont jamais sautés.'),
+                          ...gameState.logisticsConstructionQueue.map(
+                            (entry) => ListTile(
+                              dense: true,
+                              title: Text(
+                                  '${entry.targetType} · N${entry.targetLevel}'),
+                              subtitle: Text(
+                                '${entry.constructorPtipoteName ?? 'Automatisé'} · '
+                                '${entry.status == LogisticsQueueStatus.blocked ? 'En attente de ressources, Données ou prérequis' : 'En attente'}',
+                              ),
+                              trailing: Wrap(
+                                spacing: 0,
+                                children: <Widget>[
+                                  IconButton(
+                                    tooltip: 'Monter',
+                                    onPressed: gameState
+                                                .logisticsConstructionQueue
+                                                .first
+                                                .id ==
+                                            entry.id
+                                        ? null
+                                        : () => gameState
+                                            .moveLogisticsConstructionQueueEntry(
+                                                entry.id, -1),
+                                    icon:
+                                        const Icon(Icons.arrow_upward_outlined),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Descendre',
+                                    onPressed: gameState
+                                                .logisticsConstructionQueue
+                                                .last
+                                                .id ==
+                                            entry.id
+                                        ? null
+                                        : () => gameState
+                                            .moveLogisticsConstructionQueueEntry(
+                                                entry.id, 1),
+                                    icon: const Icon(
+                                        Icons.arrow_downward_outlined),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Retirer',
+                                    onPressed: () => gameState
+                                        .removeLogisticsConstructionQueueEntry(
+                                            entry.id),
+                                    icon: const Icon(Icons.close_outlined),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          ...gameState.constructionProjects.values
+                              .where((project) =>
+                                  !project.isInProgress &&
+                                  project.isReady &&
+                                  !gameState.logisticsConstructionQueue.any(
+                                    (entry) =>
+                                        entry.targetId == project.targetId,
+                                  ))
+                              .map(
+                                (project) => TextButton.icon(
+                                  onPressed: () {
+                                    final result =
+                                        gameState.queueConstructionProject(
+                                            project.targetId);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(result.message)),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.playlist_add_outlined),
+                                  label: Text('Ajouter ${project.targetType}'),
+                                ),
+                              ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (gameState.logisticsLevel < 4)
+                  FilledButton.icon(
+                    onPressed: () => showModalBottomSheet<void>(
+                      context: context,
+                      showDragHandle: true,
+                      isScrollControlled: true,
+                      builder: (_) => _ConstructionProjectSheet(
+                        gameState: gameState,
+                        targetId: 'logistics',
+                        title: 'Améliorer le Logistique',
+                        description:
+                            'Augmente le stockage et les capacités de maintenance.',
+                        campHeartLevel: campHeartLevel,
+                      ),
+                    ),
+                    icon: const Icon(Icons.upgrade_outlined),
+                    label: const Text('Améliorer'),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -21320,7 +21732,7 @@ class _FabLabHeader extends StatelessWidget {
                   value: viability.current / viability.maximum),
               const SizedBox(height: 4),
               Text(
-                  'Maison ${gameState.houseStorageCapacity} + FabLab ${gameState.fabLabStorageCapacity}',
+                  'Maison ${gameState.houseStorageCapacity} + FabLab ${gameState.fabLabStorageCapacity}${gameState.isLogisticsBuilt ? ' + Logistique ${gameState.logisticsStorageCapacity}' : ''}',
                   style: Theme.of(context).textTheme.bodySmall),
             ]),
       ),

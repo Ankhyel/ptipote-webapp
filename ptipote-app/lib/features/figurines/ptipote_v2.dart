@@ -5,6 +5,8 @@
 /// owns game progression and future co-breeding state.
 library;
 
+import 'dart:math' as math;
+
 enum PtipoteAcquisitionOrigin { physicalScan, coBreeding, legacyMigration }
 
 enum PtipoteGeneration { vestige, protocol }
@@ -281,6 +283,7 @@ class PtipoteV2Profile {
     this.assignedJobId,
     this.artisanLevel = 0,
     this.vendorLevel = 0,
+    this.jobLevels = const <String, int>{},
     this.trainingGameLevel = 1,
     this.capacityMigrationVersion = 0,
     this.baseCarryCapacity = 20,
@@ -328,6 +331,10 @@ class PtipoteV2Profile {
 
   /// Explicit player assignment.  V4 may add more job ids without a migration.
   final String? assignedJobId;
+
+  /// Generic job progression. Legacy Artisan and Vendeur fields remain for
+  /// save compatibility; new jobs such as Constructeur use this map.
+  final Map<String, int> jobLevels;
   final int artisanLevel;
   final int vendorLevel;
   final int trainingGameLevel;
@@ -401,6 +408,7 @@ class PtipoteV2Profile {
     bool clearAssignedJobId = false,
     int? artisanLevel,
     int? vendorLevel,
+    Map<String, int>? jobLevels,
     int? trainingGameLevel,
     int? capacityMigrationVersion,
     int? baseCarryCapacity,
@@ -456,6 +464,7 @@ class PtipoteV2Profile {
           clearAssignedJobId ? null : assignedJobId ?? this.assignedJobId,
       artisanLevel: artisanLevel ?? this.artisanLevel,
       vendorLevel: vendorLevel ?? this.vendorLevel,
+      jobLevels: jobLevels ?? this.jobLevels,
       trainingGameLevel: trainingGameLevel ?? this.trainingGameLevel,
       capacityMigrationVersion:
           capacityMigrationVersion ?? this.capacityMigrationVersion,
@@ -510,6 +519,7 @@ class PtipoteV2Profile {
         'assignedJobId': assignedJobId,
         'artisanLevel': artisanLevel,
         'vendorLevel': vendorLevel,
+        'jobLevels': jobLevels,
         'trainingGameLevel': trainingGameLevel,
         'capacityMigrationVersion': capacityMigrationVersion,
         'baseCarryCapacity': baseCarryCapacity,
@@ -548,6 +558,20 @@ class PtipoteV2Profile {
         }
       }
     }
+    final storedJobLevels = <String, int>{
+      if (value['jobLevels'] is Map)
+        for (final entry in (value['jobLevels'] as Map).entries)
+          if ((entry.value as num?) != null)
+            '${entry.key}': ((entry.value as num).round()).clamp(0, 99).toInt(),
+    };
+    final legacyArtisan =
+        ((value['artisanLevel'] as num?)?.round() ?? 0).clamp(0, 3).toInt();
+    final legacyVendor =
+        ((value['vendorLevel'] as num?)?.round() ?? 0).clamp(0, 3).toInt();
+    storedJobLevels['artisan'] =
+        math.max(storedJobLevels['artisan'] ?? 0, legacyArtisan);
+    storedJobLevels['vendor'] =
+        math.max(storedJobLevels['vendor'] ?? 0, legacyVendor);
     return PtipoteV2Profile(
       ptipoteId: '${value['ptipoteId'] ?? fallbackId}',
       acquisitionOrigin: _enumByName(
@@ -617,8 +641,9 @@ class PtipoteV2Profile {
           ((value['attachmentValue'] as num?)?.toDouble() ?? 25).clamp(0, 50),
       attachmentLastUpdatedAt: _readDate(value['attachmentLastUpdatedAt']),
       assignedJobId: _nullableText(value['assignedJobId']),
-      artisanLevel: ((value['artisanLevel'] as num?)?.round() ?? 0).clamp(0, 3),
-      vendorLevel: ((value['vendorLevel'] as num?)?.round() ?? 0).clamp(0, 3),
+      artisanLevel: legacyArtisan,
+      vendorLevel: legacyVendor,
+      jobLevels: storedJobLevels,
       trainingGameLevel:
           ((value['trainingGameLevel'] as num?)?.round() ?? 1).clamp(1, 99),
       capacityMigrationVersion:

@@ -188,10 +188,11 @@ void main() {
         'purchase:resident-1:meal:day-1');
   });
 
-  test('la progression V5 du Marché limite les emplacements', () {
-    expect(defaultMarketConfig.shopSlotsForMarketLevel(1), 1);
-    expect(defaultMarketConfig.shopSlotsForMarketLevel(2), 2);
-    expect(defaultMarketConfig.shopSlotsForMarketLevel(3), 4);
+  test('la progression du Marché limite les emplacements', () {
+    expect(defaultMarketConfig.shopSlotsForMarketLevel(1), 5);
+    expect(defaultMarketConfig.shopSlotsForMarketLevel(2), 6);
+    expect(defaultMarketConfig.shopSlotsForMarketLevel(3), 7);
+    expect(defaultMarketConfig.shopSlotsForMarketLevel(4), 8);
     expect(defaultMarketConfig.residentClaimVacancyDays, 1);
     expect(defaultMarketConfig.residentClaimWarningHours, 24);
     expect(defaultMarketConfig.constructionMinutesForLevel(1), 6);

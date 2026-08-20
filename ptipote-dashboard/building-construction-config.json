@@ -1,6 +1,10 @@
 {
   "mineralCostMultiplier": 1.3,
   "defaultDurationMinutes": 1,
+  "globalBaseDurationMultiplier": 2.0,
+  "ptipoteMaterialReduction": 0.2,
+  "ptipoteLevelTimeReductionPerLevel": 0.01,
+  "constructorReductionByLevel": {"0": 0, "1": 0.15, "2": 0.2, "3": 0.25, "4": 0.3},
   "projects": {
     "fablab": {"id":"fablab","label":"Fablab","baseRequirements":{"Organique":8,"Minéral":4},"requiredData":{"biomimetisme":1},"durationMinutes":1},
     "cuisine": {"id":"cuisine","label":"Cuisine","baseRequirements":{"Organique":6,"Minéral":12},"requiredData":{"biomimetisme":1,"organique":1},"durationMinutes":1},
@@ -12,6 +16,7 @@
     "market": {"id":"market","label":"Marché","baseRequirements":{"Organique":6,"Minéral":6},"durationMinutes":1},
     "house": {"id":"house","label":"Maison","baseRequirements":{"Organique":5,"Minéral":9},"durationMinutes":1},
     "housing": {"id":"housing","label":"Logement","baseRequirements":{"Organique":30,"Minéral":60},"durationMinutes":60},
+    "logistics": {"id":"logistics","label":"Bâtiment Logistique","baseRequirements":{"Organique":20,"Minéral":20},"requiredData":{"biomimetisme":2,"energie":1},"unattendedEnergyCost":2,"durationMinutes":60},
     "plaineNursery": {"id":"plaineNursery","label":"Nurserie P’TIBUG","baseRequirements":{"Organique":20,"Minéral":35},"durationMinutes":1}
   }
 }

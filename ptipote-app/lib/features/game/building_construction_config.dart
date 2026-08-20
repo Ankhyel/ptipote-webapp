@@ -1,14 +1,33 @@
+import 'dart:math' as math;
+
 /// Central V1 settings for communal construction projects.
 class BuildingConstructionConfig {
   const BuildingConstructionConfig({
     required this.mineralCostMultiplier,
     required this.defaultDurationMinutes,
+    required this.globalBaseDurationMultiplier,
+    required this.ptipoteMaterialReduction,
+    required this.ptipoteLevelTimeReductionPerLevel,
+    required this.constructorReductionByLevel,
     required this.projects,
   });
 
   final double mineralCostMultiplier;
   final int defaultDurationMinutes;
+
+  /// Applied to new construction/upgrade projects only. Existing project
+  /// snapshots retain their original completion timestamp during migration.
+  final double globalBaseDurationMultiplier;
+  final double ptipoteMaterialReduction;
+  final double ptipoteLevelTimeReductionPerLevel;
+  final Map<int, double> constructorReductionByLevel;
   final Map<String, BuildingProjectDefinition> projects;
+
+  double constructorReduction(int jobLevel, int ptipoteLevel) =>
+      ((constructorReductionByLevel[jobLevel.clamp(0, 4).toInt()] ?? 0) +
+              ptipoteLevel.clamp(0, 99) * ptipoteLevelTimeReductionPerLevel)
+          .clamp(0, .95)
+          .toDouble();
 
   BuildingProjectDefinition project(String id) => projects[id]!;
 }
@@ -23,6 +42,8 @@ class BuildingProjectDefinition {
     this.requiredDataByLevel = const <int, Map<String, int>>{},
     this.bypassBiomimicryRequirement = false,
     this.requiredJobLevel = const <String, int>{},
+    this.unattendedEnergyCost = 1,
+    this.unattendedEnergyCostByLevel = const <int, int>{},
   });
 
   final String id;
@@ -45,6 +66,10 @@ class BuildingProjectDefinition {
   /// Hook for future construction unlocks, e.g. {'artisan': 2}.
   final Map<String, int> requiredJobLevel;
 
+  /// Energy consumed by automated construction when no P'TIPOTE is assigned.
+  final int unattendedEnergyCost;
+  final Map<int, int> unattendedEnergyCostByLevel;
+
   Map<String, int> requirements(double mineralMultiplier) =>
       baseRequirements.map((resource, amount) => MapEntry(
             resource,
@@ -55,12 +80,25 @@ class BuildingProjectDefinition {
 
   Map<String, int> dataRequirementsForLevel(int level) =>
       requiredDataByLevel[level] ?? requiredData;
+
+  int unattendedEnergyCostForLevel(int level) =>
+      math.max(0, unattendedEnergyCostByLevel[level] ?? unattendedEnergyCost);
 }
 
 const BuildingConstructionConfig defaultBuildingConstructionConfig =
     BuildingConstructionConfig(
   mineralCostMultiplier: 1.30,
   defaultDurationMinutes: 1,
+  globalBaseDurationMultiplier: 2,
+  ptipoteMaterialReduction: .20,
+  ptipoteLevelTimeReductionPerLevel: .01,
+  constructorReductionByLevel: <int, double>{
+    0: 0,
+    1: .15,
+    2: .20,
+    3: .25,
+    4: .30,
+  },
   projects: <String, BuildingProjectDefinition>{
     'fablab': BuildingProjectDefinition(
       id: 'fablab',
@@ -139,6 +177,14 @@ const BuildingConstructionConfig defaultBuildingConstructionConfig =
       label: 'Logement',
       baseRequirements: <String, int>{'Organique': 30, 'Minéral': 60},
       durationMinutes: 60,
+    ),
+    'logistics': BuildingProjectDefinition(
+      id: 'logistics',
+      label: 'Bâtiment Logistique',
+      baseRequirements: <String, int>{'Organique': 20, 'Minéral': 20},
+      durationMinutes: 60,
+      requiredData: <String, int>{'biomimetisme': 2, 'energie': 1},
+      unattendedEnergyCost: 2,
     ),
     'plaineNursery': BuildingProjectDefinition(
       id: 'plaineNursery',

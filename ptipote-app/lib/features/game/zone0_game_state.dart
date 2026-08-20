@@ -21,6 +21,7 @@ import 'fablab_config.dart';
 import 'fablab_v2.dart';
 import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
+import 'logistics_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
@@ -291,6 +292,14 @@ class Zone0GameState extends ChangeNotifier {
   /// compatibility while the migration remains active in production.
   FabLabBuilding fabLab = FabLabBuilding();
   int houseLevel = 1;
+  int logisticsLevel = 0;
+  int logisticsAutoRepairThreshold = logisticsConfig.defaultRepairThreshold;
+  int logisticsRepairKitStored = 0;
+  final List<String> logisticsMaintenancePtipoteIds = <String>[];
+  final List<LogisticsMaintenanceJob> logisticsMaintenanceJobs =
+      <LogisticsMaintenanceJob>[];
+  final List<LogisticsConstructionQueueEntry> logisticsConstructionQueue =
+      <LogisticsConstructionQueueEntry>[];
   // Existing saves started with three drawn alcoves. Keep that capacity during
   // migration even though new House level 1 starts with two.
   int alcoveCapacity = 3;
@@ -484,6 +493,25 @@ class Zone0GameState extends ChangeNotifier {
   int get houseStorageCapacity =>
       fablabConfig.houseStorageForLevel(effectiveHouseLevel);
 
+  bool get isLogisticsBuilt => logisticsLevel > 0;
+  int get logisticsStorageCapacity => isLogisticsBuilt
+      ? logisticsConfig.forLevel(logisticsLevel).storageBonus
+      : 0;
+  int get logisticsRepairKitCapacity => isLogisticsBuilt
+      ? logisticsConfig.forLevel(logisticsLevel).repairKitCapacity
+      : 0;
+  int get logisticsPtipoteSlotCapacity => isLogisticsBuilt
+      ? logisticsConfig.forLevel(logisticsLevel).ptipoteSlots
+      : 0;
+  bool get logisticsQueueEnabled =>
+      isLogisticsBuilt && logisticsConfig.forLevel(logisticsLevel).queueEnabled;
+  int get logisticsQueueCapacity => isLogisticsBuilt
+      ? logisticsConfig.forLevel(logisticsLevel).queueCapacity
+      : 0;
+  int get logisticsParallelConstructionCapacity => isLogisticsBuilt
+      ? logisticsConfig.forLevel(logisticsLevel).parallelConstructionCapacity
+      : 0;
+
   FabLabRoomState fabLabRoom(FabLabRoom room) => fabLab.room(room);
   int fabLabRoomLevel(FabLabRoom room) => fabLabRoom(room).level;
 
@@ -558,6 +586,7 @@ class Zone0GameState extends ChangeNotifier {
       'fablab' || 'atelier' || 'cuisine' || 'recycler' => fablabLevel,
       'generator' || 'house' => houseLevel,
       'market' => marketLevel,
+      'logistics' => logisticsLevel,
       'securityTower' => securityTowerLevel,
       'campHeart' => _lastKnownCampHeartLevel,
       _ => 1,
@@ -888,6 +917,268 @@ class Zone0GameState extends ChangeNotifier {
       success: true,
       message: 'Kit de réparation utilisé : +$gain% de Viabilité.',
     );
+  }
+
+  Zone0ActionResult assignLogisticsMaintenance(PtipoteFigurine figurine) {
+    if (!isLogisticsBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Construisez le Bâtiment Logistique.');
+    }
+    if (logisticsMaintenancePtipoteIds.contains(figurine.id)) {
+      return const Zone0ActionResult(success: false, message: 'Déjà affecté.');
+    }
+    if (logisticsMaintenancePtipoteIds.length >= logisticsPtipoteSlotCapacity) {
+      return const Zone0ActionResult(success: false, message: 'Poste complet.');
+    }
+    if (isBusy(figurine)) {
+      return const Zone0ActionResult(
+          success: false, message: 'P’TIPOTE indisponible.');
+    }
+    logisticsMaintenancePtipoteIds.add(figurine.id);
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: '${figurine.displayName} est en maintenance.',
+    );
+  }
+
+  Zone0ActionResult removeLogisticsMaintenance(String ptipoteId) {
+    if (!logisticsMaintenancePtipoteIds.remove(ptipoteId)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Poste introuvable.');
+    }
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return const Zone0ActionResult(success: true, message: 'P’TIPOTE libéré.');
+  }
+
+  Zone0ActionResult setLogisticsAutoRepairThreshold(int threshold) {
+    if (!isLogisticsBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Logistique non construite.');
+    }
+    logisticsAutoRepairThreshold = threshold
+        .clamp(
+          logisticsConfig.minimumRepairThreshold,
+          logisticsConfig.maximumRepairThreshold,
+        )
+        .toInt();
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: 'Réparation automatique sous $logisticsAutoRepairThreshold %.',
+    );
+  }
+
+  Zone0ActionResult depositLogisticsRepairKits({int amount = 1}) {
+    if (!isLogisticsBuilt) {
+      return const Zone0ActionResult(
+          success: false, message: 'Logistique non construite.');
+    }
+    final accepted = math.min(
+      amount,
+      math.min(
+        resourceAmount('Kit de réparation domestique'),
+        logisticsRepairKitCapacity - logisticsRepairKitStored,
+      ),
+    );
+    if (accepted <= 0 ||
+        removeResource('Kit de réparation domestique', accepted) <= 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun Kit à stocker.');
+    }
+    logisticsRepairKitStored += accepted;
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$accepted Kit(s) stocké(s).');
+  }
+
+  Zone0ActionResult withdrawLogisticsRepairKits({int amount = 1}) {
+    final withdrawn = math.min(amount, logisticsRepairKitStored);
+    if (withdrawn <= 0 ||
+        !hasInventoryCapacityFor(
+            <String, int>{'Kit de réparation domestique': withdrawn})) {
+      return const Zone0ActionResult(
+          success: false, message: 'Retrait impossible.');
+    }
+    logisticsRepairKitStored -= withdrawn;
+    addResources(<String, int>{'Kit de réparation domestique': withdrawn});
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return Zone0ActionResult(
+        success: true, message: '$withdrawn Kit(s) récupéré(s).');
+  }
+
+  Zone0ActionResult queueConstructionProject(String targetId) {
+    if (!logisticsQueueEnabled) {
+      return const Zone0ActionResult(
+          success: false, message: 'Liste Logistique disponible au niveau 3.');
+    }
+    final project = projectFor(targetId);
+    if (project.isInProgress || !project.isReady) {
+      return const Zone0ActionResult(
+          success: false, message: 'Préparez d’abord entièrement ce chantier.');
+    }
+    if (logisticsConstructionQueue.length >= logisticsQueueCapacity) {
+      return const Zone0ActionResult(
+          success: false, message: 'Liste complète.');
+    }
+    if (logisticsConstructionQueue.any((order) => order.targetId == targetId)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Déjà dans la liste.');
+    }
+    logisticsConstructionQueue.add(LogisticsConstructionQueueEntry(
+      id: 'construction-queue-${DateTime.now().microsecondsSinceEpoch}-$targetId',
+      targetId: targetId,
+      targetType: project.targetType,
+      targetLevel: project.targetLevel,
+      requiredResources: Map<String, int>.from(project.requirements),
+      requiredData:
+          projectRequiredData(targetId, targetLevel: project.targetLevel)
+              .map((key, value) => MapEntry(key.name, value)),
+      constructorPtipoteId: project.plannedConstructorId,
+      constructorPtipoteName: project.plannedConstructorName,
+      constructorLevel: project.plannedConstructorLevel,
+      ptipoteLevel: project.plannedPtipoteLevel,
+      constructorTimeReduction: project.plannedConstructorTimeReduction,
+      createdAt: DateTime.now(),
+    ));
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Chantier ajouté à la liste.');
+  }
+
+  Zone0ActionResult removeLogisticsConstructionQueueEntry(String entryId) {
+    final index =
+        logisticsConstructionQueue.indexWhere((item) => item.id == entryId);
+    if (index < 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ordre introuvable.');
+    }
+    logisticsConstructionQueue.removeAt(index);
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Ordre retiré de la liste.');
+  }
+
+  Zone0ActionResult moveLogisticsConstructionQueueEntry(
+      String entryId, int direction) {
+    final index =
+        logisticsConstructionQueue.indexWhere((item) => item.id == entryId);
+    final destination = index + direction;
+    if (index < 0 ||
+        destination < 0 ||
+        destination >= logisticsConstructionQueue.length) {
+      return const Zone0ActionResult(
+          success: false, message: 'Déplacement impossible.');
+    }
+    final entry = logisticsConstructionQueue.removeAt(index);
+    logisticsConstructionQueue.insert(destination, entry);
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return const Zone0ActionResult(success: true, message: 'Ordre déplacé.');
+  }
+
+  bool _resolveLogisticsConstructionQueue(DateTime now) {
+    if (!logisticsQueueEnabled || logisticsConstructionQueue.isEmpty)
+      return false;
+    var changed = false;
+    final running = constructionProjects.values
+        .where((project) =>
+            project.isInProgress && project.startedFromLogisticsQueue)
+        .length;
+    var remainingCapacity = logisticsParallelConstructionCapacity - running;
+    while (remainingCapacity > 0 && logisticsConstructionQueue.isNotEmpty) {
+      // The first blocked order intentionally stops the queue: projects are
+      // never silently skipped just because a later one happens to be ready.
+      final first = logisticsConstructionQueue.first;
+      final project = projectFor(first.targetId);
+      if (!project.isReady ||
+          projectDataRequirementIssue(first.targetId,
+                  targetLevel: project.targetLevel) !=
+              null) {
+        first.status = LogisticsQueueStatus.blocked;
+        break;
+      }
+      final result = startConstructionProject(
+        first.targetId,
+        campHeartLevel: _lastKnownCampHeartLevel,
+        constructor: null,
+        fromLogisticsQueue: true,
+      );
+      if (!result.success) {
+        first.status = LogisticsQueueStatus.blocked;
+        break;
+      }
+      logisticsConstructionQueue.removeAt(0);
+      remainingCapacity -= 1;
+      changed = true;
+    }
+    return changed;
+  }
+
+  /// Maintenance is deliberately small and deterministic: the lowest
+  /// viability eligible building receives the first available worker. A Kit
+  /// is reserved at launch, then the existing +15 Viability effect is applied
+  /// exactly once when the tracked job completes.
+  bool resolveLogisticsMaintenance({DateTime? now}) {
+    if (!isLogisticsBuilt || !logisticsConfig.autoRepairEnabled) return false;
+    final current = now ?? DateTime.now();
+    var changed = false;
+    for (final job in logisticsMaintenanceJobs.where((job) => !job.completed)) {
+      if (job.endsAt.isAfter(current)) continue;
+      viabilityForBuilding(job.buildingId).restore(job.repairGain);
+      job.completed = true;
+      changed = true;
+    }
+    final availableWorkers = logisticsMaintenancePtipoteIds.where(
+      (id) => !logisticsMaintenanceJobs.any(
+        (job) => !job.completed && job.ptipoteId == id,
+      ),
+    );
+    final candidates = buildingViabilities.values
+        .where((item) =>
+            item.buildingId != 'logistics' &&
+            item.current < logisticsAutoRepairThreshold &&
+            !item.isDisabled &&
+            !logisticsMaintenanceJobs.any(
+              (job) => !job.completed && job.buildingId == item.buildingId,
+            ))
+        .toList()
+      ..sort((a, b) => a.current == b.current
+          ? a.buildingId.compareTo(b.buildingId)
+          : a.current.compareTo(b.current));
+    var kits = logisticsRepairKitStored;
+    for (final workerId in availableWorkers) {
+      if (candidates.isEmpty || kits <= 0) break;
+      final building = candidates.removeAt(0);
+      if (logisticsRepairKitStored <= 0) break;
+      logisticsRepairKitStored -= 1;
+      kits -= 1;
+      logisticsMaintenanceJobs.add(LogisticsMaintenanceJob(
+        id: 'maintenance-${current.microsecondsSinceEpoch}-$workerId-${building.buildingId}',
+        ptipoteId: workerId,
+        buildingId: building.buildingId,
+        startedAt: current,
+        endsAt: current.add(
+          Duration(
+              minutes: math.max(1, logisticsConfig.autoRepairDurationMinutes)),
+        ),
+        repairGain: math.min(15, building.maximum - building.current),
+      ));
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+      unawaited(saveBuildingsToFirebase());
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
   }
 
   int structuralProtectionReductionPercent(
@@ -5845,7 +6136,9 @@ class Zone0GameState extends ChangeNotifier {
     // and FabLab, never from an internal room. Existing stacks may sit above
     // this limit after migration; deposits are then blocked by the usual
     // capacity guard without deleting anything.
-    return houseStorageCapacity + fabLabStorageCapacity;
+    return houseStorageCapacity +
+        fabLabStorageCapacity +
+        logisticsStorageCapacity;
   }
 
   Map<String, int> get storageCapacitySnapshot => <String, int>{
@@ -5853,6 +6146,8 @@ class Zone0GameState extends ChangeNotifier {
         'fabLabLevel': effectiveFabLabLevel,
         'houseCapacity': houseStorageCapacity,
         'fabLabCapacity': fabLabStorageCapacity,
+        'logisticsLevel': logisticsLevel,
+        'logisticsCapacity': logisticsStorageCapacity,
         'globalCapacity': globalStockCapacity,
       };
 
@@ -6943,15 +7238,79 @@ class Zone0GameState extends ChangeNotifier {
   double getArtisanTimeReduction(PtipoteFigurine figurine) {
     final profile = ptipoteV2ProfileFor(figurine);
     return ptipoteDailyLifeConfig.artisanReduction(
-      profile.artisanLevel,
+      ptipoteJobLevel(figurine, 'artisan'),
       levelFor(figurine),
+    );
+  }
+
+  /// All current and future jobs share the same persisted map. The two legacy
+  /// fields remain as a backward-compatible fallback for existing saves.
+  int ptipoteJobLevel(PtipoteFigurine figurine, String jobId) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    final legacy = switch (jobId) {
+      'artisan' => profile.artisanLevel,
+      'vendor' => profile.vendorLevel,
+      _ => 0,
+    };
+    return math.max(profile.jobLevels[jobId] ?? 0, legacy).clamp(0, 99).toInt();
+  }
+
+  Map<String, int> ptipoteJobLevels(PtipoteFigurine figurine) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    final levels = Map<String, int>.from(profile.jobLevels)
+      ..['artisan'] = ptipoteJobLevel(figurine, 'artisan')
+      ..['vendor'] = ptipoteJobLevel(figurine, 'vendor');
+    return levels;
+  }
+
+  int constructorLevelFor(PtipoteFigurine figurine) =>
+      ptipoteJobLevel(figurine, 'constructor').clamp(0, 4).toInt();
+
+  double getConstructorTimeReduction(PtipoteFigurine figurine) =>
+      buildingConstructionConfig.constructorReduction(
+        constructorLevelFor(figurine),
+        levelFor(figurine),
+      );
+
+  void setPtipoteJobLevel(
+    PtipoteFigurine figurine,
+    String jobId,
+    int level,
+  ) {
+    final profile = ptipoteV2ProfileFor(figurine);
+    final updated = Map<String, int>.from(profile.jobLevels)
+      ..[jobId] = level.clamp(0, 99).toInt();
+    ptipoteV2Profiles[figurine.id] = profile.copyWith(
+      jobLevels: updated,
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+  }
+
+  /// Completing a construction records the job without introducing a second
+  /// job-XP currency. It mirrors the existing "first use unlock" behaviour.
+  void _recordConstructorParticipation(PtipoteFigurine? figurine) {
+    if (figurine == null) return;
+    _recordConstructorParticipationById(figurine.id);
+  }
+
+  void _recordConstructorParticipationById(String? ptipoteId) {
+    if (ptipoteId == null || ptipoteId.isEmpty) return;
+    final profile = ptipoteV2Profiles[ptipoteId];
+    if (profile == null) return;
+    final current = (profile.jobLevels['constructor'] ?? 0).clamp(0, 4).toInt();
+    if (current > 0) return;
+    ptipoteV2Profiles[ptipoteId] = profile.copyWith(
+      jobLevels: Map<String, int>.from(profile.jobLevels)..['constructor'] = 0,
+      updatedAt: DateTime.now(),
     );
   }
 
   double getVendorSaleBonus(PtipoteFigurine figurine) {
     final profile = ptipoteV2ProfileFor(figurine);
     return ptipoteDailyLifeConfig.vendorBonus(
-          profile.vendorLevel,
+          ptipoteJobLevel(figurine, 'vendor'),
           levelFor(figurine),
         ) +
         modifiersFor(figurine).commerceBonus;
@@ -6961,7 +7320,7 @@ class Zone0GameState extends ChangeNotifier {
     final profile = ptipoteV2Profiles[ptipoteId];
     if (profile == null) return 0;
     return ptipoteDailyLifeConfig.vendorBonus(
-          profile.vendorLevel,
+          math.max(profile.jobLevels['vendor'] ?? 0, profile.vendorLevel),
           levelOverrides[ptipoteId] ?? 1,
         ) +
         PtipoteModifierService.resolve(
@@ -8297,6 +8656,10 @@ class Zone0GameState extends ChangeNotifier {
         isAssignedToTower(figurine.id) ||
         isAssignedToWorkshop(figurine.id) ||
         isAssignedToMarket(figurine.id) ||
+        logisticsMaintenancePtipoteIds.contains(figurine.id) ||
+        logisticsConstructionQueue.any(
+          (entry) => entry.constructorPtipoteId == figurine.id,
+        ) ||
         constructionProjects.values.any((project) =>
             project.isInProgress && project.assignedPtipoteId == figurine.id);
   }
@@ -13377,29 +13740,38 @@ class Zone0GameState extends ChangeNotifier {
         .requirements(buildingConstructionConfig.mineralCostMultiplier);
   }
 
-  Duration _projectDuration(String targetId) => Duration(
-        minutes: _biofermenterBiomeForTarget(targetId) != null
-            ? lisiereForageConfig.territoryBuildings.biofermenter
-                    .constructionMinutesByLevel[_buildingLevel(targetId) + 1] ??
-                60
-            : _edibleForestBiomeForTarget(targetId) != null
+  Duration _projectDuration(String targetId) {
+    final baseMinutes = _biofermenterBiomeForTarget(targetId) != null
+        ? lisiereForageConfig.territoryBuildings.biofermenter
+                .constructionMinutesByLevel[_buildingLevel(targetId) + 1] ??
+            60
+        : _edibleForestBiomeForTarget(targetId) != null
+            ? lisiereForageConfig
+                .territoryBuildings.biofermenter.edibleForestConstructionMinutes
+            : _mycelialNetworkBiomeForTarget(targetId) != null
                 ? lisiereForageConfig.territoryBuildings.biofermenter
-                    .edibleForestConstructionMinutes
-                : _mycelialNetworkBiomeForTarget(targetId) != null
+                    .mycelialNetworkConstructionMinutes
+                : _calciumBasinBiomeForTarget(targetId) != null
                     ? lisiereForageConfig.territoryBuildings.biofermenter
-                        .mycelialNetworkConstructionMinutes
-                    : _calciumBasinBiomeForTarget(targetId) != null
-                        ? lisiereForageConfig.territoryBuildings.biofermenter
-                            .calciumBasinConstructionMinutes
-                        : targetId == 'housing'
-                            ? housingConfig.housingDurationMinutes
-                            : _isRefugeTarget(targetId)
-                                ? pTibugConfig.territory.refugeMinutesForLevel(
-                                    _buildingLevel(targetId) + 1)
-                                : buildingConstructionConfig
-                                    .project(targetId)
-                                    .durationMinutes,
-      );
+                        .calciumBasinConstructionMinutes
+                    : targetId == 'housing'
+                        ? housingConfig.housingDurationMinutes
+                        : _isRefugeTarget(targetId)
+                            ? pTibugConfig.territory.refugeMinutesForLevel(
+                                _buildingLevel(targetId) + 1)
+                            : buildingConstructionConfig
+                                .project(targetId)
+                                .durationMinutes;
+    // Only new project snapshots use the new multiplier. In-progress
+    // projects retain their persisted [constructionDuration]/[endsAt].
+    return Duration(
+      minutes: math.max(
+        1,
+        (baseMinutes * buildingConstructionConfig.globalBaseDurationMultiplier)
+            .round(),
+      ),
+    );
+  }
 
   int _buildingLevel(String targetId) {
     final territoryBiome = _biofermenterBiomeForTarget(targetId);
@@ -13428,6 +13800,7 @@ class Zone0GameState extends ChangeNotifier {
       'towerWeatherModule' => towerWeatherModuleInstalled ? 1 : 0,
       'towerResearchModule' => towerResearchModuleInstalled ? 1 : 0,
       'market' => marketLevel,
+      'logistics' => logisticsLevel,
       'house' => houseLevel,
       'housing' => housingUnits,
       'plaineNursery' => plaineNurseryLevel,
@@ -13453,6 +13826,7 @@ class Zone0GameState extends ChangeNotifier {
       'towerWeatherModule' => 1,
       'towerResearchModule' => 1,
       'market' => 5,
+      'logistics' => 4,
       'house' => housingConfig.houseMaxLevel,
       'housing' => 99,
       'plaineNursery' => pTibugConfig.territory.nurseryMaximumLevel,
@@ -13605,10 +13979,91 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
+  /// Selects the execution mode before progressive deposits begin.  Costs are
+  /// intentionally snapshotted on the project so a Dashboard change or a
+  /// level-up cannot rewrite a prepared chantier.
+  Zone0ActionResult configureProjectConstructionMode(
+    String targetId, {
+    PtipoteFigurine? constructor,
+  }) {
+    final project = projectFor(targetId);
+    if (!project.canEditMaterials) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Le mode ne peut plus être modifié après le lancement.',
+      );
+    }
+    final nextId = constructor?.id;
+    if (project.depositedMaterials.isNotEmpty &&
+        project.plannedConstructorId != nextId) {
+      return const Zone0ActionResult(
+        success: false,
+        message:
+            'Récupérez d’abord les matériaux déposés pour changer de mode.',
+      );
+    }
+    if (constructor != null && isBusy(constructor)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'P’TIPOTE indisponible pour cette construction.',
+      );
+    }
+    final base = project.baseRequirements.isEmpty
+        ? Map<String, int>.from(project.requirements)
+        : project.baseRequirements;
+    final materials = constructor == null
+        ? Map<String, int>.from(base)
+        : <String, int>{
+            for (final entry in base.entries)
+              entry.key: math.max(
+                1,
+                (entry.value *
+                        (1 -
+                            buildingConstructionConfig
+                                .ptipoteMaterialReduction))
+                    .ceil(),
+              ),
+          };
+    project
+      ..requirements = materials
+      ..plannedConstructorId = nextId
+      ..plannedConstructorName = constructor?.displayName
+      ..plannedConstructorLevel =
+          constructor == null ? 0 : constructorLevelFor(constructor)
+      ..plannedPtipoteLevel = constructor == null ? 0 : levelFor(constructor)
+      ..plannedConstructorTimeReduction =
+          constructor == null ? 0 : getConstructorTimeReduction(constructor)
+      ..materialReductionSnapshot = constructor == null
+          ? 0
+          : buildingConstructionConfig.ptipoteMaterialReduction
+      ..unattendedEnergyCostSnapshot = constructor == null
+          ? _unattendedEnergyCost(targetId, project.targetLevel)
+          : 0;
+    project.refreshState();
+    notifyListeners();
+    unawaited(saveBuildingsToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: constructor == null
+          ? 'Construction automatisée sélectionnée.'
+          : '${constructor.displayName} construira avec -20 % de matériaux.',
+    );
+  }
+
+  int _unattendedEnergyCost(String targetId, int targetLevel) =>
+      buildingConstructionConfig.projects[targetId]
+          ?.unattendedEnergyCostForLevel(targetLevel) ??
+      1;
+
+  int projectUnattendedEnergyCost(String targetId, {int? targetLevel}) =>
+      _unattendedEnergyCost(
+          targetId, targetLevel ?? projectFor(targetId).targetLevel);
+
   Zone0ActionResult startConstructionProject(
     String targetId, {
     int? campHeartLevel,
     PtipoteFigurine? constructor,
+    bool fromLogisticsQueue = false,
   }) {
     final fabLabRoom = switch (targetId) {
       'cuisine' => FabLabRoom.kitchen,
@@ -13722,6 +14177,14 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Le Cœur du Camp doit atteindre le niveau 2.',
       );
     }
+    if (targetId == 'logistics' &&
+        (campHeartLevel ?? 0) < logisticsConfig.requiredCampHeartLevel) {
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Le Cœur du Camp doit atteindre le niveau ${logisticsConfig.requiredCampHeartLevel}.',
+      );
+    }
     if (targetId == 'market') {
       if ((campHeartLevel ?? 0) < marketConfig.requiredCampHeartLevel) {
         return Zone0ActionResult(
@@ -13750,6 +14213,9 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Les travaux sont déjà en cours.',
       );
     }
+    final queuedConstructor = fromLogisticsQueue &&
+        constructor == null &&
+        project.plannedConstructorId != null;
     if (constructor != null && isBusy(constructor)) {
       return const Zone0ActionResult(
         success: false,
@@ -13769,29 +14235,79 @@ class Zone0GameState extends ChangeNotifier {
     if (dataIssue != null) {
       return Zone0ActionResult(success: false, message: dataIssue);
     }
+    if (!queuedConstructor && project.plannedConstructorId != constructor?.id) {
+      final mode = configureProjectConstructionMode(
+        targetId,
+        constructor: constructor,
+      );
+      if (!mode.success) return mode;
+      if (!project.isReady) {
+        return const Zone0ActionResult(
+          success: false,
+          message: 'Les matériaux doivent correspondre au mode choisi.',
+        );
+      }
+    }
+    final unattendedEnergyCost = constructor == null && !queuedConstructor
+        ? (project.unattendedEnergyCostSnapshot > 0
+            ? project.unattendedEnergyCostSnapshot
+            : _unattendedEnergyCost(targetId, project.targetLevel))
+        : 0;
+    if (constructor == null &&
+        !queuedConstructor &&
+        energyUnits < unattendedEnergyCost) {
+      return Zone0ActionResult(
+        success: false,
+        message: 'Énergie insuffisante : $energyUnits / $unattendedEnergyCost.',
+      );
+    }
     final requiredData =
         projectRequiredData(targetId, targetLevel: project.targetLevel);
     // Validation happened above before any state mutation. Data is now part
     // of the same logical start transaction as the already-reserved
     // materials, so it cannot be charged for a blocked project.
     _consumePTibugData(requiredData);
+    if (constructor == null && !queuedConstructor) {
+      project.unattendedEnergyCostSnapshot = unattendedEnergyCost;
+      energyUnits -= unattendedEnergyCost;
+    }
     final now = DateTime.now();
     project.startedAt = now;
-    final artisanReduction =
-        constructor == null ? 0.0 : getArtisanTimeReduction(constructor);
+    final constructorReduction = constructor != null
+        ? getConstructorTimeReduction(constructor)
+        : queuedConstructor
+            ? project.plannedConstructorTimeReduction
+            : 0.0;
     final finalDuration = Duration(
       seconds: math.max(
         1,
-        (project.constructionDuration.inSeconds * (1 - artisanReduction))
+        (project.constructionDuration.inSeconds * (1 - constructorReduction))
             .round(),
       ),
     );
     project
-      ..assignedPtipoteId = constructor?.id
-      ..assignedPtipoteName = constructor?.displayName
-      ..artisanTimeReductionSnapshot = artisanReduction
+      ..assignedPtipoteId = constructor?.id ??
+          (queuedConstructor ? project.plannedConstructorId : null)
+      ..assignedPtipoteName = constructor?.displayName ??
+          (queuedConstructor ? project.plannedConstructorName : null)
+      ..constructorLevelSnapshot = constructor != null
+          ? constructorLevelFor(constructor)
+          : queuedConstructor
+              ? project.plannedConstructorLevel
+              : 0
+      ..ptipoteLevelSnapshot = constructor != null
+          ? levelFor(constructor)
+          : queuedConstructor
+              ? project.plannedPtipoteLevel
+              : 0
+      ..constructorTimeReductionSnapshot = constructorReduction
+      ..startedFromLogisticsQueue = fromLogisticsQueue
       ..constructionDuration = finalDuration
       ..endsAt = now.add(finalDuration);
+    _recordConstructorParticipation(constructor);
+    if (queuedConstructor) {
+      _recordConstructorParticipationById(project.plannedConstructorId);
+    }
     project.state = project.currentLevel == 0
         ? ConstructionProjectState.underConstruction
         : ConstructionProjectState.upgrading;
@@ -13817,6 +14333,8 @@ class Zone0GameState extends ChangeNotifier {
       _completeConstructionProject(project, current);
       changed = true;
     }
+    changed = resolveLogisticsMaintenance(now: current) || changed;
+    changed = _resolveLogisticsConstructionQueue(current) || changed;
     if (changed) {
       notifyListeners();
       unawaited(saveBuildingsToFirebase());
@@ -13856,6 +14374,13 @@ class Zone0GameState extends ChangeNotifier {
         _settleLegacyDataCellsToCapsules(at: now);
       case 'market':
         marketLevel = project.currentLevel;
+        emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
+      case 'logistics':
+        logisticsLevel = project.currentLevel;
+        while (logisticsMaintenancePtipoteIds.length >
+            logisticsPtipoteSlotCapacity) {
+          logisticsMaintenancePtipoteIds.removeLast();
+        }
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
       case 'house':
         houseLevel = project.currentLevel;
@@ -18237,6 +18762,38 @@ class Zone0GameState extends ChangeNotifier {
             marketBuildingData['currentLevel'],
           ).clamp(0, 5);
         }
+        final logisticsData = buildingsData['logistics'];
+        if (logisticsData is Map) {
+          logisticsLevel =
+              _readInt(logisticsData['currentLevel']).clamp(0, 4).toInt();
+          logisticsAutoRepairThreshold = _readInt(
+            logisticsData['autoRepairThreshold'],
+            fallback: logisticsConfig.defaultRepairThreshold,
+          )
+              .clamp(
+                logisticsConfig.minimumRepairThreshold,
+                logisticsConfig.maximumRepairThreshold,
+              )
+              .toInt();
+          logisticsRepairKitStored = _readInt(logisticsData['repairKitStored'])
+              .clamp(0, logisticsRepairKitCapacity)
+              .toInt();
+          logisticsMaintenancePtipoteIds
+            ..clear()
+            ..addAll(
+                (logisticsData['maintenancePtipoteIds'] as List? ?? const [])
+                    .map((item) => '$item'));
+          logisticsMaintenanceJobs
+            ..clear()
+            ..addAll((logisticsData['maintenanceJobs'] as List? ?? const [])
+                .whereType<Map>()
+                .map(LogisticsMaintenanceJob.fromFirebase));
+          logisticsConstructionQueue
+            ..clear()
+            ..addAll((logisticsData['constructionQueue'] as List? ?? const [])
+                .whereType<Map>()
+                .map(LogisticsConstructionQueueEntry.fromFirebase));
+        }
         final houseData = buildingsData['house'];
         if (houseData is Map) {
           houseLevel = _readInt(
@@ -18393,6 +18950,16 @@ class Zone0GameState extends ChangeNotifier {
       // Old saves predate independent Fablab units and construction projects.
       // Keep every acquired level, then let a future project target the next
       // level. No material is retroactively charged or discarded.
+      // A merely prepared legacy project has not started yet, so it receives
+      // the new base-duration rule. Active projects keep their own persisted
+      // end timestamp and are never made longer by this migration.
+      for (final project in constructionProjects.values) {
+        if (!project.isInProgress &&
+            project.state != ConstructionProjectState.built &&
+            project.state != ConstructionProjectState.maxLevel) {
+          project.constructionDuration = _projectDuration(project.targetId);
+        }
+      }
       recyclerLevel = recyclerLevel.clamp(0, fablabConfig.fablabMaxLevel);
       securityTowerLevel = securityTowerLevel.clamp(0, 3);
       marketLevel = marketLevel.clamp(0, 5);
@@ -21782,6 +22349,27 @@ class Zone0GameState extends ChangeNotifier {
             'requiredCampHeartLevel': marketConfig.requiredCampHeartLevel,
             'isVisible': true,
           },
+          'logistics': <String, dynamic>{
+            'buildingId': 'logistics',
+            'buildingType': 'logistics',
+            'displayName': 'Bâtiment Logistique',
+            'state': isLogisticsBuilt ? 'built' : 'constructible',
+            'currentLevel': logisticsLevel,
+            'maxLevel': 4,
+            'requiredCampHeartLevel': logisticsConfig.requiredCampHeartLevel,
+            'storageCapacity': logisticsStorageCapacity,
+            'repairKitCapacity': logisticsRepairKitCapacity,
+            'repairKitStored': logisticsRepairKitStored,
+            'maintenancePtipoteIds': logisticsMaintenancePtipoteIds,
+            'maintenanceJobs': logisticsMaintenanceJobs
+                .map((job) => job.toFirebase())
+                .toList(),
+            'constructionQueue': logisticsConstructionQueue
+                .map((entry) => entry.toFirebase())
+                .toList(),
+            'autoRepairThreshold': logisticsAutoRepairThreshold,
+            'isVisible': true,
+          },
           'house': <String, dynamic>{
             'buildingId': 'house',
             'buildingType': 'home',
@@ -23152,6 +23740,7 @@ class ConstructionProject {
     required this.targetLevel,
     required this.requirements,
     required this.constructionDuration,
+    Map<String, int>? initialBaseRequirements,
     Map<String, int>? depositedMaterials,
     this.depositedBioBatteries = 0,
     this.state = ConstructionProjectState.available,
@@ -23162,7 +23751,20 @@ class ConstructionProject {
     this.assignedPtipoteId,
     this.assignedPtipoteName,
     this.artisanTimeReductionSnapshot = 0,
-  }) : depositedMaterials = depositedMaterials ?? <String, int>{};
+    this.plannedConstructorId,
+    this.plannedConstructorName,
+    this.plannedConstructorLevel = 0,
+    this.plannedPtipoteLevel = 0,
+    this.plannedConstructorTimeReduction = 0,
+    this.constructorLevelSnapshot = 0,
+    this.ptipoteLevelSnapshot = 0,
+    this.constructorTimeReductionSnapshot = 0,
+    this.materialReductionSnapshot = 0,
+    this.unattendedEnergyCostSnapshot = 0,
+    this.startedFromLogisticsQueue = false,
+  })  : baseRequirements =
+            initialBaseRequirements ?? Map<String, int>.from(requirements),
+        depositedMaterials = depositedMaterials ?? <String, int>{};
 
   factory ConstructionProject.fromFirebase(Map<dynamic, dynamic> data) {
     final durationSeconds = Zone0GameState.instance._readInt(
@@ -23184,6 +23786,9 @@ class ConstructionProject {
       currentLevel: Zone0GameState.instance._readInt(data['currentLevel']),
       targetLevel: Zone0GameState.instance._readInt(data['targetLevel']),
       requirements: mapValue(data['requirements']),
+      initialBaseRequirements: mapValue(data['baseRequirements']).isEmpty
+          ? mapValue(data['requirements'])
+          : mapValue(data['baseRequirements']),
       depositedMaterials: mapValue(data['depositedMaterials']),
       depositedBioBatteries:
           Zone0GameState.instance._readInt(data['depositedBioBatteries']),
@@ -23201,6 +23806,25 @@ class ConstructionProject {
       assignedPtipoteName: data['assignedPtipoteName'] as String?,
       artisanTimeReductionSnapshot:
           (data['artisanTimeReductionSnapshot'] as num?)?.toDouble() ?? 0,
+      plannedConstructorId: data['plannedConstructorId'] as String?,
+      plannedConstructorName: data['plannedConstructorName'] as String?,
+      plannedConstructorLevel:
+          Zone0GameState.instance._readInt(data['plannedConstructorLevel']),
+      plannedPtipoteLevel:
+          Zone0GameState.instance._readInt(data['plannedPtipoteLevel']),
+      plannedConstructorTimeReduction:
+          (data['plannedConstructorTimeReduction'] as num?)?.toDouble() ?? 0,
+      constructorLevelSnapshot:
+          Zone0GameState.instance._readInt(data['constructorLevelSnapshot']),
+      ptipoteLevelSnapshot:
+          Zone0GameState.instance._readInt(data['ptipoteLevelSnapshot']),
+      constructorTimeReductionSnapshot:
+          (data['constructorTimeReductionSnapshot'] as num?)?.toDouble() ?? 0,
+      materialReductionSnapshot:
+          (data['materialReductionSnapshot'] as num?)?.toDouble() ?? 0,
+      unattendedEnergyCostSnapshot: Zone0GameState.instance
+          ._readInt(data['unattendedEnergyCostSnapshot']),
+      startedFromLogisticsQueue: data['startedFromLogisticsQueue'] == true,
     );
   }
 
@@ -23210,6 +23834,7 @@ class ConstructionProject {
   int currentLevel;
   int targetLevel;
   Map<String, int> requirements;
+  Map<String, int> baseRequirements;
   final Map<String, int> depositedMaterials;
   int depositedBioBatteries;
   Duration constructionDuration;
@@ -23220,6 +23845,17 @@ class ConstructionProject {
   bool notificationCreated;
   String? assignedPtipoteId;
   String? assignedPtipoteName;
+  String? plannedConstructorId;
+  String? plannedConstructorName;
+  int plannedConstructorLevel;
+  int plannedPtipoteLevel;
+  double plannedConstructorTimeReduction;
+  int constructorLevelSnapshot;
+  int ptipoteLevelSnapshot;
+  double constructorTimeReductionSnapshot;
+  double materialReductionSnapshot;
+  int unattendedEnergyCostSnapshot;
+  bool startedFromLogisticsQueue;
   double artisanTimeReductionSnapshot;
 
   bool get isInProgress =>
@@ -23246,6 +23882,7 @@ class ConstructionProject {
   }) {
     this.targetLevel = targetLevel;
     this.requirements = requirements;
+    baseRequirements = Map<String, int>.from(requirements);
     this.constructionDuration = constructionDuration;
     depositedMaterials.clear();
     depositedBioBatteries = 0;
@@ -23254,6 +23891,17 @@ class ConstructionProject {
     completedAt = null;
     assignedPtipoteId = null;
     assignedPtipoteName = null;
+    plannedConstructorId = null;
+    plannedConstructorName = null;
+    plannedConstructorLevel = 0;
+    plannedPtipoteLevel = 0;
+    plannedConstructorTimeReduction = 0;
+    constructorLevelSnapshot = 0;
+    ptipoteLevelSnapshot = 0;
+    constructorTimeReductionSnapshot = 0;
+    materialReductionSnapshot = 0;
+    unattendedEnergyCostSnapshot = 0;
+    startedFromLogisticsQueue = false;
     artisanTimeReductionSnapshot = 0;
     state = ConstructionProjectState.available;
   }
@@ -23288,6 +23936,7 @@ class ConstructionProject {
         'currentLevel': currentLevel,
         'targetLevel': targetLevel,
         'requirements': requirements,
+        'baseRequirements': baseRequirements,
         'depositedMaterials': depositedMaterials,
         'depositedBioBatteries': depositedBioBatteries,
         'constructionDurationSeconds': constructionDuration.inSeconds,
@@ -23299,7 +23948,145 @@ class ConstructionProject {
         'notificationCreated': notificationCreated,
         'assignedPtipoteId': assignedPtipoteId,
         'assignedPtipoteName': assignedPtipoteName,
+        'plannedConstructorId': plannedConstructorId,
+        'plannedConstructorName': plannedConstructorName,
+        'plannedConstructorLevel': plannedConstructorLevel,
+        'plannedPtipoteLevel': plannedPtipoteLevel,
+        'plannedConstructorTimeReduction': plannedConstructorTimeReduction,
+        'constructorLevelSnapshot': constructorLevelSnapshot,
+        'ptipoteLevelSnapshot': ptipoteLevelSnapshot,
+        'constructorTimeReductionSnapshot': constructorTimeReductionSnapshot,
+        'materialReductionSnapshot': materialReductionSnapshot,
+        'unattendedEnergyCostSnapshot': unattendedEnergyCostSnapshot,
+        'startedFromLogisticsQueue': startedFromLogisticsQueue,
         'artisanTimeReductionSnapshot': artisanTimeReductionSnapshot,
+      };
+}
+
+class LogisticsMaintenanceJob {
+  LogisticsMaintenanceJob({
+    required this.id,
+    required this.ptipoteId,
+    required this.buildingId,
+    required this.startedAt,
+    required this.endsAt,
+    required this.repairGain,
+    this.completed = false,
+  });
+
+  factory LogisticsMaintenanceJob.fromFirebase(Map<dynamic, dynamic> data) =>
+      LogisticsMaintenanceJob(
+        id: '${data['id'] ?? ''}',
+        ptipoteId: '${data['ptipoteId'] ?? ''}',
+        buildingId: '${data['buildingId'] ?? ''}',
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']) ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+        endsAt: Zone0GameState.instance._readDate(data['endsAt']) ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+        repairGain: Zone0GameState.instance._readInt(data['repairGain']),
+        completed: data['completed'] == true,
+      );
+
+  final String id;
+  final String ptipoteId;
+  final String buildingId;
+  final DateTime startedAt;
+  final DateTime endsAt;
+  final int repairGain;
+  bool completed;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'ptipoteId': ptipoteId,
+        'buildingId': buildingId,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'endsAt': Timestamp.fromDate(endsAt),
+        'repairGain': repairGain,
+        'completed': completed,
+      };
+}
+
+enum LogisticsQueueStatus { waiting, blocked }
+
+class LogisticsConstructionQueueEntry {
+  LogisticsConstructionQueueEntry({
+    required this.id,
+    required this.targetId,
+    required this.targetType,
+    required this.targetLevel,
+    required this.requiredResources,
+    required this.requiredData,
+    required this.createdAt,
+    this.constructorPtipoteId,
+    this.constructorPtipoteName,
+    this.constructorLevel = 0,
+    this.ptipoteLevel = 0,
+    this.constructorTimeReduction = 0,
+    this.status = LogisticsQueueStatus.waiting,
+  });
+
+  factory LogisticsConstructionQueueEntry.fromFirebase(
+      Map<dynamic, dynamic> data) {
+    Map<String, int> map(Object? value) => Map<String, int>.fromEntries(
+          (value as Map? ?? const <dynamic, dynamic>{}).entries.map(
+                (entry) => MapEntry(
+                  '${entry.key}',
+                  Zone0GameState.instance._readInt(entry.value),
+                ),
+              ),
+        );
+    return LogisticsConstructionQueueEntry(
+      id: '${data['id'] ?? ''}',
+      targetId: '${data['targetId'] ?? ''}',
+      targetType: '${data['targetType'] ?? ''}',
+      targetLevel: Zone0GameState.instance._readInt(data['targetLevel']),
+      requiredResources: map(data['requiredResources']),
+      requiredData: map(data['requiredData']),
+      constructorPtipoteId: data['constructorPtipoteId'] as String?,
+      constructorPtipoteName: data['constructorPtipoteName'] as String?,
+      constructorLevel:
+          Zone0GameState.instance._readInt(data['constructorLevel']),
+      ptipoteLevel: Zone0GameState.instance._readInt(data['ptipoteLevel']),
+      constructorTimeReduction:
+          (data['constructorTimeReduction'] as num?)?.toDouble() ?? 0,
+      createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      status: ForageMission._enumByName(
+        LogisticsQueueStatus.values,
+        '${data['status'] ?? ''}',
+        LogisticsQueueStatus.waiting,
+      ),
+    );
+  }
+
+  final String id;
+  final String targetId;
+  final String targetType;
+  final int targetLevel;
+  final Map<String, int> requiredResources;
+  final Map<String, int> requiredData;
+  final DateTime createdAt;
+  final String? constructorPtipoteId;
+  final String? constructorPtipoteName;
+  final int constructorLevel;
+  final int ptipoteLevel;
+  final double constructorTimeReduction;
+  LogisticsQueueStatus status;
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'targetId': targetId,
+        'targetType': targetType,
+        'targetLevel': targetLevel,
+        'requiredResources': requiredResources,
+        'requiredData': requiredData,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'constructorPtipoteId': constructorPtipoteId,
+        'constructorPtipoteName': constructorPtipoteName,
+        'constructorLevel': constructorLevel,
+        'ptipoteLevel': ptipoteLevel,
+        'constructorTimeReduction': constructorTimeReduction,
+        'status': status.name,
       };
 }
 

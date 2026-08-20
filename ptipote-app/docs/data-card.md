@@ -22,6 +22,22 @@ ne modifient pas la Viabilité. Une tentative réussie est identifiée par un
 Les réparations autonomes des habitants et les Kits de réparation conservent
 leur fonctionnement existant.
 
+## Construction et Bâtiment Logistique
+
+- Les nouveaux chantiers de construction et d'amélioration utilisent une durée
+  de base ×2 ; un chantier déjà lancé conserve son échéance enregistrée.
+- Sans P'TIPOTE : matériaux et Données à 100 %, avec un coût Énergie propre à
+  chaque définition de chantier. Avec P'TIPOTE : -20 % de matériaux physiques
+  (arrondi supérieur), Données inchangées et aucun coût Énergie d'automatisation.
+- Constructeur : N0 0 %, N1 -15 %, N2 -20 %, N3 -25 %, N4 -30 %, puis -1 %
+  supplémentaire par niveau P'TIPOTE. Artisan reste réservé au Craft.
+- Logistique se construit au Cœur du Camp N2. N1/N2/N3/N4 ajoutent
+  respectivement +100/+200/+300/+400 stockage, 5/10/20/30 Kits et 1/1/1/2
+  postes de maintenance. La file Construction est disponible au N3 (3 ordres
+  par défaut) : elle lance 1 chantier Logistique à la fois au N3 et jusqu'à 2
+  au N4. Les réparations automatiques traitent d'abord la Viabilité la plus
+  basse sous le seuil choisi.
+
 ## P’TIPOTE — vie quotidienne et autonomie
 
 - Niveau 1 : aucune autonomie. Niveau 2 : sommeil autonome à 30 % ou moins,
