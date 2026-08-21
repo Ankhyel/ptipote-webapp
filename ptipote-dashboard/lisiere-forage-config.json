@@ -187,7 +187,7 @@
       "passiveProductionMultiplier": 1,
       "vatCount": 1,
       "vatEfficiencyMultiplier": 1,
-      "lithoculture": {"mineralPerCycle": 10, "organicPerCycle": 3, "cycleMinutes": 60, "tankBaseCapacity": 30, "tankCapacityPerLevel": 10},
+      "lithoculture": {"enabled": false, "mineralPerCycle": 10, "organicPerCycle": 3, "cycleMinutes": 60, "tankBaseCapacity": 30, "tankCapacityPerLevel": 10},
       "normalMineralPerOrganic": 3,
       "mineralBasinMineralPerOrganic": 2,
       "wasteCanReplaceMineral": true,
@@ -195,7 +195,52 @@
       "maxWasteSharePerBatch": 1,
       "edibleForest": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 10, "Mycélium": 10}, "pollinatorTraitId": "pollinisateur", "bonusPerPollinator": 0.1, "maxPollinatorsCounted": 3, "affectsPassiveProductionOnly": true},
       "mycelialNetwork": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 10, "Mycélium": 10}, "baseMyceliumPerDay": 8, "biomeMultipliers": {"none": 1.0, "medium": 1.25, "rich": 1.5}, "mycelialTraitId": "decomposeur", "mycelialTraitBonusPerPTibug": 0.1, "maxMycelialPTibugsCounted": 3, "roundFinalProductionUp": true},
-      "calciumBasin": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 20, "Mycélium": 10}, "organicBaseCapacity": 9, "organicCapacityPerLevel": 3, "waterBaseCapacity": 30, "waterCapacityPerLevel": 10, "mineralReserveBaseCapacity": 30, "mineralReserveCapacityPerLevel": 10, "mineralPerTenStoredPerHour": 1, "organicPerActiveHour": 1, "waterPerActiveHour": 2, "minerTraitBonusPerPTibug": 1, "eligibleTraitIds": ["mineur", "lithoculture"]},
+      "calciumBasin": {"enabled": true, "constructionMinutes": 60, "cost": {"Organique": 20, "Minéral": 20}, "organicBaseCapacity": 9, "organicCapacityPerLevel": 3, "waterBaseCapacity": 30, "waterCapacityPerLevel": 10, "mineralReserveBaseCapacity": 30, "mineralReserveCapacityPerLevel": 10, "mineralPerTenStoredPerHour": 1, "organicPerActiveHour": 1, "waterPerActiveHour": 2, "minerTraitBonusPerPTibug": 1, "eligibleTraitIds": ["mineur"]},
+      "biomeSynergy": {
+        "ptibugBonusPerDay": 3,
+        "maxEligiblePtibugs": 3,
+        "mainModuleMultipliers": {"1": 1, "2": 2, "3": 3},
+        "secondaryModules": {
+          "slotCount": 2,
+          "securityFloors": {"1": 20, "2": 35, "3": 50},
+          "researchFloors": {"1": 20, "2": 35, "3": 50},
+          "weatherDamageReductions": {"1": 0.15, "2": 0.30, "3": 0.50},
+          "standardModuleBuild": {
+            "resourceCostsByLevel": {
+              "1": {"Minéral": 10, "Organique": 30},
+              "2": {"Minéral": 20, "Organique": 40},
+              "3": {"Minéral": 25, "Organique": 45}
+            },
+            "dataCostsByLevel": {
+              "1": {"biomimetisme": 10, "energie": 10},
+              "2": {"energie": 10, "mycelienne": 5},
+              "3": {"mycelienne": 10}
+            },
+            "durationMinutesByLevel": {"1": 60, "2": 120, "3": 180}
+          },
+          "weatherModuleBuild": {
+            "resourceCostsByLevel": {
+              "1": {"Minéral": 10, "Organique": 30},
+              "2": {"Minéral": 20, "Organique": 40},
+              "3": {"Minéral": 25, "Organique": 45}
+            },
+            "dataCostsByLevel": {
+              "1": {"biomimetisme": 10, "energie": 5, "toxine": 2},
+              "2": {"energie": 5, "mycelienne": 2, "toxine": 2},
+              "3": {"mycelienne": 5, "toxine": 5}
+            },
+            "durationMinutesByLevel": {"1": 60, "2": 120, "3": 180}
+          }
+        }
+      },
+      "mineralBasin": {
+        "productionPerDay": {"1": 12, "2": 15, "3": 18},
+        "waterCapacity": {"1": 24, "2": 36, "3": 48},
+        "organicCapacity": {"1": 12, "2": 18, "3": 24},
+        "waterConsumptionPerDay": {"1": 24, "2": 18, "3": 12},
+        "organicConsumptionPerDay": {"1": 18, "2": 12, "3": 6},
+        "rainRefillsWater": true
+      },
       "futureScarabeHook": {"enabled": false, "mineralToOrganicConversionRate": 4}
     }
   }

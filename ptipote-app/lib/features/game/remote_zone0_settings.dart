@@ -1741,6 +1741,11 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
   final scarabe = _map(bio?['futureScarabeHook']);
   final lithoculture = _map(bio?['lithoculture']);
   final durations = _map(bio?['constructionMinutesByLevel']);
+  final synergy = _map(bio?['biomeSynergy']);
+  final secondary = _map(synergy?['secondaryModules']);
+  final standardModuleBuild = _map(secondary?['standardModuleBuild']);
+  final weatherModuleBuild = _map(secondary?['weatherModuleBuild']);
+  final mineralBasin = _map(bio?['mineralBasin'] ?? calcium);
   return LisiereTerritoryBuildingsConfig(
     slotsPerZone: _int(raw?['slotsPerZone'], base.slotsPerZone),
     biofermenter: BiofermenterConfig(
@@ -1903,7 +1908,125 @@ LisiereTerritoryBuildingsConfig _territoryBuildings(Map<String, dynamic>? raw) {
               .where((value) => value.isNotEmpty)
               .toList() ??
           baseBio.calciumEligibleTraitIds,
+      biomeSynergy: BiomeProductionSynergyConfig(
+        ptibugBonusPerDay: _double(
+          synergy?['ptibugBonusPerDay'],
+          baseBio.biomeSynergy.ptibugBonusPerDay,
+        ),
+        maxEligiblePtibugs: _int(
+          synergy?['maxEligiblePtibugs'],
+          baseBio.biomeSynergy.maxEligiblePtibugs,
+        ),
+        mainModuleMultipliers: <int, double>{
+          for (var level = 1; level <= 3; level++)
+            level: _double(
+              _map(synergy?['mainModuleMultipliers'])?['$level'],
+              baseBio.biomeSynergy.mainModuleMultipliers[level]!,
+            ),
+        },
+        secondarySlotCount: _int(
+          secondary?['slotCount'],
+          baseBio.biomeSynergy.secondarySlotCount,
+        ),
+        securityFloors: <int, int>{
+          for (var level = 1; level <= 3; level++)
+            level: _int(
+              _map(secondary?['securityFloors'])?['$level'],
+              baseBio.biomeSynergy.securityFloors[level]!,
+            ),
+        },
+        researchFloors: <int, int>{
+          for (var level = 1; level <= 3; level++)
+            level: _int(
+              _map(secondary?['researchFloors'])?['$level'],
+              baseBio.biomeSynergy.researchFloors[level]!,
+            ),
+        },
+        weatherDamageReductions: <int, double>{
+          for (var level = 1; level <= 3; level++)
+            level: _double(
+              _map(secondary?['weatherDamageReductions'])?['$level'],
+              baseBio.biomeSynergy.weatherDamageReductions[level]!,
+            ),
+        },
+        standardModuleBuild: _biomeSecondaryModuleBuildConfig(
+          standardModuleBuild,
+          baseBio.biomeSynergy.standardModuleBuild,
+        ),
+        weatherModuleBuild: _biomeSecondaryModuleBuildConfig(
+          weatherModuleBuild,
+          baseBio.biomeSynergy.weatherModuleBuild,
+        ),
+      ),
+      mineralBasinProductionPerDay: <int, double>{
+        for (var level = 1; level <= 3; level++)
+          level: _double(
+            _map(mineralBasin?['productionPerDay'])?['$level'],
+            baseBio.mineralBasinProductionPerDay[level]!,
+          ),
+      },
+      mineralBasinWaterCapacity: <int, int>{
+        for (var level = 1; level <= 3; level++)
+          level: _int(
+            _map(mineralBasin?['waterCapacity'])?['$level'],
+            baseBio.mineralBasinWaterCapacity[level]!,
+          ),
+      },
+      mineralBasinOrganicCapacity: <int, int>{
+        for (var level = 1; level <= 3; level++)
+          level: _int(
+            _map(mineralBasin?['organicCapacity'])?['$level'],
+            baseBio.mineralBasinOrganicCapacity[level]!,
+          ),
+      },
+      mineralBasinWaterConsumptionPerDay: <int, double>{
+        for (var level = 1; level <= 3; level++)
+          level: _double(
+            _map(mineralBasin?['waterConsumptionPerDay'])?['$level'],
+            baseBio.mineralBasinWaterConsumptionPerDay[level]!,
+          ),
+      },
+      mineralBasinOrganicConsumptionPerDay: <int, double>{
+        for (var level = 1; level <= 3; level++)
+          level: _double(
+            _map(mineralBasin?['organicConsumptionPerDay'])?['$level'],
+            baseBio.mineralBasinOrganicConsumptionPerDay[level]!,
+          ),
+      },
+      rainRefillsMineralBasinWater: mineralBasin?['rainRefillsWater'] is bool
+          ? mineralBasin!['rainRefillsWater'] as bool
+          : baseBio.rainRefillsMineralBasinWater,
     ),
+  );
+}
+
+BiomeSecondaryModuleBuildConfig _biomeSecondaryModuleBuildConfig(
+  Map<String, dynamic>? raw,
+  BiomeSecondaryModuleBuildConfig fallback,
+) {
+  final resources = _map(raw?['resourceCostsByLevel']);
+  final data = _map(raw?['dataCostsByLevel']);
+  final durations = _map(raw?['durationMinutesByLevel']);
+  return BiomeSecondaryModuleBuildConfig(
+    resourceCostsByLevel: <int, Map<String, int>>{
+      for (final entry in fallback.resourceCostsByLevel.entries)
+        entry.key: <String, int>{
+          for (final cost in entry.value.entries)
+            cost.key:
+                _int(_map(resources?['${entry.key}'])?[cost.key], cost.value),
+        },
+    },
+    dataCostsByLevel: <int, Map<String, int>>{
+      for (final entry in fallback.dataCostsByLevel.entries)
+        entry.key: <String, int>{
+          for (final cost in entry.value.entries)
+            cost.key: _int(_map(data?['${entry.key}'])?[cost.key], cost.value),
+        },
+    },
+    durationMinutesByLevel: <int, int>{
+      for (final entry in fallback.durationMinutesByLevel.entries)
+        entry.key: _int(durations?['${entry.key}'], entry.value),
+    },
   );
 }
 

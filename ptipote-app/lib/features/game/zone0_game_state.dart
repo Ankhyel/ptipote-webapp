@@ -1413,10 +1413,18 @@ class Zone0GameState extends ChangeNotifier {
       );
       final raw = config.damageFor(event.type, event.intensity) *
           impact.localImpactMultiplier;
+      // A biome module protects only the physical installation in its own
+      // biome. Camp-wide buildings use their existing protections unchanged.
+      final territorialBiome = _biofermenterBiomeForTarget(buildingId) ??
+          territoryBuildingForId(buildingId)?.biome;
+      final territorialReduction = territorialBiome == null
+          ? 0.0
+          : biomeWeatherDamageReductionFor(territorialBiome);
       final protection = ((filtrationReady
                   ? structuralProtectionReductionPercent(buildingId, event.type)
                   : 0) +
-              globalWeatherProtectionPercent(event.type))
+              globalWeatherProtectionPercent(event.type) +
+              territorialReduction * 100)
           .clamp(0, config.protectionCapPercent);
       final reduced = raw * (1 - protection / 100);
       final damage = reduced.ceil();
@@ -3927,8 +3935,79 @@ class Zone0GameState extends ChangeNotifier {
         .toInt();
   }
 
-  int biomeResearchProgressFor(ForageBiome biome) =>
-      biomeSecurity[biome]?.researchProgress ?? 0;
+  int biomeSecondaryModuleLevel(
+    ForageBiome biome,
+    BiomeSecondaryModuleType type,
+  ) =>
+      territoryZone(biome).secondaryModules[type.name] ?? 0;
+
+  int effectiveBiomeSecurityFor(ForageBiome biome) {
+    final dynamic = biomeSecurity[biome]?.localSecurity ?? 0;
+    final level = biomeSecondaryModuleLevel(
+      biome,
+      BiomeSecondaryModuleType.security,
+    );
+    final floor = lisiereForageConfig.territoryBuildings.biofermenter
+            .biomeSynergy.securityFloors[level.clamp(1, 3).toInt()] ??
+        0;
+    return math.max(dynamic, floor);
+  }
+
+  int biomeResearchProgressFor(ForageBiome biome) {
+    final dynamic = biomeSecurity[biome]?.researchProgress ?? 0;
+    final level = biomeSecondaryModuleLevel(
+      biome,
+      BiomeSecondaryModuleType.research,
+    );
+    final floor = lisiereForageConfig.territoryBuildings.biofermenter
+            .biomeSynergy.researchFloors[level.clamp(1, 3).toInt()] ??
+        0;
+    return math.max(dynamic, floor);
+  }
+
+  double biomeWeatherDamageReductionFor(ForageBiome biome) {
+    final level = biomeSecondaryModuleLevel(
+      biome,
+      BiomeSecondaryModuleType.weatherProtection,
+    );
+    return lisiereForageConfig.territoryBuildings.biofermenter.biomeSynergy
+            .weatherDamageReductions[level.clamp(1, 3).toInt()] ??
+        0;
+  }
+
+  /// Démontage explicite : les améliorations secondaires passent toutes par
+  /// un chantier et ne peuvent donc jamais être montées instantanément.
+  Zone0ActionResult removeBiomeSecondaryModule(
+    ForageBiome biome,
+    BiomeSecondaryModuleType type,
+  ) {
+    final zone = territoryZone(biome);
+    if (zone.buildingId != 'biofermenter') {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Construisez d’abord le bâtiment territorial.',
+      );
+    }
+    if (constructionProjects[biomeSecondaryModuleTargetId(biome, type)]
+            ?.isInProgress ??
+        false) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Les travaux de ce module sont déjà en cours.',
+      );
+    }
+    if (zone.secondaryModules.remove(type.name) == null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Aucun module à défaire.',
+      );
+    }
+    constructionProjects.remove(biomeSecondaryModuleTargetId(biome, type));
+    zone.updatedAt = DateTime.now();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(success: true, message: 'Module défait.');
+  }
 
   /// Les expéditions de recherche de la Lisière et la Tour contribuent au
   /// même savoir local. Sous 50 %, les données sont trop incertaines : les
@@ -5407,7 +5486,7 @@ class Zone0GameState extends ChangeNotifier {
   int adjacentBiomeSecurityFor(ForageBiome biome) {
     final neighbours = adjacentBiomesFor(biome)
         .where(isBiomeUnlocked)
-        .map((item) => biomeSecurity[item]?.localSecurity ?? 0)
+        .map(effectiveBiomeSecurityFor)
         .toList();
     if (neighbours.isEmpty) return 0;
     return (neighbours.reduce((left, right) => left + right) /
@@ -12936,30 +13015,51 @@ class Zone0GameState extends ChangeNotifier {
         () => LisiereTerritoryZone.initial(biome),
       );
 
-  int activePollinatorsForBiofermenter(ForageBiome biome) {
+  /// Centralised count used by all territorial synergies.  A P'TIBUG must be
+  /// active *and* effectively hosted in this biome; cuves and other temporary
+  /// activities do not provide an invisible production bonus.
+  int activeSynergyPTibugsForBiome(ForageBiome biome, String traitId) {
     final config = lisiereForageConfig.territoryBuildings.biofermenter;
     return pTibugs
         .where((bug) =>
             bug.lifecycleStatus == PTibugLifecycleStatus.active &&
             bug.refugeBiome == biome &&
             bug.assignedBuildingId != null &&
-            (bug.biologicalTraitId == config.pollinatorTraitId ||
-                bug.secondTraitId == config.pollinatorTraitId))
+            (bug.biologicalTraitId == traitId || bug.secondTraitId == traitId))
         .length
-        .clamp(0, config.maxPollinatorsCounted);
+        .clamp(0, config.biomeSynergy.maxEligiblePtibugs);
   }
 
-  int activeMycelialPTibugsForBiofermenter(ForageBiome biome) {
-    final config = lisiereForageConfig.territoryBuildings.biofermenter;
-    return pTibugs
-        .where((bug) =>
-            bug.lifecycleStatus == PTibugLifecycleStatus.active &&
-            bug.refugeBiome == biome &&
-            bug.assignedBuildingId != null &&
-            (bug.biologicalTraitId == config.mycelialTraitId ||
-                bug.secondTraitId == config.mycelialTraitId))
-        .length
-        .clamp(0, config.maxMycelialPTibugsCounted);
+  int activePollinatorsForBiofermenter(ForageBiome biome) =>
+      activeSynergyPTibugsForBiome(
+        biome,
+        lisiereForageConfig.territoryBuildings.biofermenter.pollinatorTraitId,
+      );
+
+  int activeMycelialPTibugsForBiofermenter(ForageBiome biome) =>
+      activeSynergyPTibugsForBiome(
+        biome,
+        lisiereForageConfig.territoryBuildings.biofermenter.mycelialTraitId,
+      );
+
+  int activeCalciumMinerPTibugsForBiofermenter(ForageBiome biome) =>
+      activeSynergyPTibugsForBiome(
+        biome,
+        'mineur',
+      );
+
+  double biomeProductionWithSynergy({
+    required double baseProductionPerDay,
+    required int eligiblePTibugs,
+    required int mainModuleLevel,
+  }) {
+    final synergy =
+        lisiereForageConfig.territoryBuildings.biofermenter.biomeSynergy;
+    final multiplier =
+        synergy.mainModuleMultipliers[mainModuleLevel.clamp(1, 3).toInt()] ?? 1;
+    // The multiplier deliberately applies to this second term only.
+    return baseProductionPerDay +
+        eligiblePTibugs * synergy.ptibugBonusPerDay * multiplier;
   }
 
   double biofermenterOrganicPerDay(ForageBiome biome) {
@@ -12973,8 +13073,11 @@ class Zone0GameState extends ChangeNotifier {
         zone.vatEfficiencyMultiplier *
         buildingProductionMultiplier(buildingId);
     if (zone.edibleForestInstalled && config.edibleForestEnabled) {
-      result *= 1 +
-          activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator;
+      result = biomeProductionWithSynergy(
+        baseProductionPerDay: result,
+        eligiblePTibugs: activePollinatorsForBiofermenter(biome),
+        mainModuleLevel: zone.edibleForestModuleLevel,
+      );
     }
     return result;
   }
@@ -13002,15 +13105,15 @@ class Zone0GameState extends ChangeNotifier {
   int calciumOrganicCapacity(ForageBiome biome) {
     final level = math.max(1, territoryZone(biome).buildingLevel);
     final config = lisiereForageConfig.territoryBuildings.biofermenter;
-    return config.calciumOrganicBaseCapacity +
-        (level - 1) * config.calciumOrganicCapacityPerLevel;
+    return config.mineralBasinOrganicCapacity[level.clamp(1, 3).toInt()] ??
+        config.mineralBasinOrganicCapacity[3]!;
   }
 
   int calciumWaterCapacity(ForageBiome biome) {
     final level = math.max(1, territoryZone(biome).buildingLevel);
     final config = lisiereForageConfig.territoryBuildings.biofermenter;
-    return config.calciumWaterBaseCapacity +
-        (level - 1) * config.calciumWaterCapacityPerLevel;
+    return config.mineralBasinWaterCapacity[level.clamp(1, 3).toInt()] ??
+        config.mineralBasinWaterCapacity[3]!;
   }
 
   int calciumMineralReserveCapacity(ForageBiome biome) {
@@ -13024,17 +13127,39 @@ class Zone0GameState extends ChangeNotifier {
       biome == ForageBiome.bassinMineral &&
       lisiereForageConfig.territoryBuildings.biofermenter.calciumBasinEnabled;
 
-  int activeCalciumMinerPTibugsForBiofermenter(ForageBiome biome) {
+  double mineralBasinBaseProductionPerDay(ForageBiome biome) {
     final config = lisiereForageConfig.territoryBuildings.biofermenter;
-    return pTibugs
-        .where((bug) =>
-            bug.lifecycleStatus == PTibugLifecycleStatus.active &&
-            bug.refugeBiome == biome &&
-            bug.assignedBuildingId != null &&
-            config.calciumEligibleTraitIds.any((traitId) =>
-                bug.biologicalTraitId == traitId ||
-                bug.secondTraitId == traitId))
-        .length;
+    final level = math.max(1, territoryZone(biome).buildingLevel).clamp(1, 3);
+    return config.mineralBasinProductionPerDay[level] ??
+        config.mineralBasinProductionPerDay[3]!;
+  }
+
+  double mineralBasinProductionPerDay(ForageBiome biome) {
+    final zone = territoryZone(biome);
+    if (!zone.calciumBasinInstalled ||
+        !isBuildingOperational(biofermenterTargetId(biome))) {
+      return 0;
+    }
+    return biomeProductionWithSynergy(
+          baseProductionPerDay: mineralBasinBaseProductionPerDay(biome),
+          eligiblePTibugs: activeCalciumMinerPTibugsForBiofermenter(biome),
+          mainModuleLevel: zone.calciumBasinModuleLevel,
+        ) *
+        buildingProductionMultiplier(biofermenterTargetId(biome));
+  }
+
+  double mineralBasinWaterConsumptionPerDay(ForageBiome biome) {
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    final level = math.max(1, territoryZone(biome).buildingLevel).clamp(1, 3);
+    return config.mineralBasinWaterConsumptionPerDay[level] ??
+        config.mineralBasinWaterConsumptionPerDay[3]!;
+  }
+
+  double mineralBasinOrganicConsumptionPerDay(ForageBiome biome) {
+    final config = lisiereForageConfig.territoryBuildings.biofermenter;
+    final level = math.max(1, territoryZone(biome).buildingLevel).clamp(1, 3);
+    return config.mineralBasinOrganicConsumptionPerDay[level] ??
+        config.mineralBasinOrganicConsumptionPerDay[3]!;
   }
 
   /// The ceiling is applied once to the complete daily formula, then the
@@ -13048,13 +13173,11 @@ class Zone0GameState extends ChangeNotifier {
     }
     final buildingId = biofermenterTargetId(biome);
     if (!isBuildingOperational(buildingId)) return 0;
-    final richness = lisiereForageConfig.biomes[biome]!.myceliumRichness;
-    final biomeMultiplier = config.myceliumBiomeMultipliers[richness] ?? 1;
-    final traitMultiplier = 1 +
-        activeMycelialPTibugsForBiofermenter(biome) *
-            config.mycelialTraitBonusPerPTibug;
-    return (config.baseMyceliumPerDay * biomeMultiplier * traitMultiplier)
-        .ceil();
+    return biomeProductionWithSynergy(
+      baseProductionPerDay: config.baseMyceliumPerDay,
+      eligiblePTibugs: activeMycelialPTibugsForBiofermenter(biome),
+      mainModuleLevel: zone.mycelialNetworkModuleLevel,
+    ).ceil();
   }
 
   bool resolveBiofermenterProduction({DateTime? now}) {
@@ -13066,7 +13189,7 @@ class Zone0GameState extends ChangeNotifier {
       final buildingId = biofermenterTargetId(biome);
       if (!isBuildingOperational(buildingId)) {
         // A disabled Biofermenter cannot catch up the time it spent broken.
-        // Its passive production and Lithoculture both resume after repair.
+        // Its passive production resumes only after repair.
         zone
           ..lastProductionResolvedAt = current
           ..lithocultureCycleStartedAt =
@@ -13075,7 +13198,6 @@ class Zone0GameState extends ChangeNotifier {
         changed = true;
         continue;
       }
-      final config = lisiereForageConfig.territoryBuildings.biofermenter;
       final last = zone.lastProductionResolvedAt ?? current;
       final elapsedHours = current.difference(last).inMilliseconds /
           Duration.millisecondsPerHour;
@@ -13114,99 +13236,113 @@ class Zone0GameState extends ChangeNotifier {
               : 0
           ..myceliumReserve += myceliumWhole;
         changed = true;
-
-        if (zone.calciumBasinInstalled) {
-          final weather = activeGlobalWeatherEvent;
-          final rainRate = weather != null &&
-                  weather.status == GlobalWeatherEventStatus.active &&
-                  weather.type == TowerWeatherType.heavyRain &&
-                  weather.isBiomeAffected(biome)
-              ? switch (weather.intensity) {
-                  GlobalWeatherIntensity.moderate => 2,
-                  GlobalWeatherIntensity.strong => 5,
-                  GlobalWeatherIntensity.severe => 10,
-                  GlobalWeatherIntensity.calm => 0,
-                }
-              : 0;
-          if (rainRate > 0) {
-            zone.calciumWaterTank = math.min(
-              calciumWaterCapacity(biome),
-              zone.calciumWaterTank + (elapsedHours * rainRate).floor(),
-            );
-          }
-          final exactHours = elapsedHours + zone.calciumProductionHourRemainder;
-          final wholeHours = exactHours.floor();
-          zone.calciumProductionHourRemainder = exactHours - wholeHours;
-          for (var hour = 0; hour < wholeHours; hour++) {
-            final base = zone.lithocultureMineralTank ~/
-                config.lithocultureMineralPerCycle;
-            if (base <= 0 ||
-                zone.calciumOrganicTank < config.calciumOrganicPerActiveHour ||
-                zone.calciumWaterTank < config.calciumWaterPerActiveHour) {
-              break;
-            }
-            final output = base +
-                activeCalciumMinerPTibugsForBiofermenter(biome) *
-                    config.calciumMinerTraitBonusPerPTibug;
-            final room = calciumMineralReserveCapacity(biome) -
-                zone.calciumMineralReserve;
-            if (room <= 0) break;
-            zone
-              ..calciumMineralReserve += math.min(room, output)
-              ..calciumOrganicTank -= config.calciumOrganicPerActiveHour
-              ..calciumWaterTank -= config.calciumWaterPerActiveHour;
-          }
-        }
       }
-      while (zone.lithocultureCycleStartedAt != null) {
-        final finishedAt = zone.lithocultureCycleStartedAt!.add(
-          Duration(minutes: config.lithocultureCycleMinutes),
-        );
-        if (finishedAt.isAfter(current) ||
-            zone.organicReserve + config.lithocultureOrganicPerCycle >
-                biofermenterOrganicReserveCapacity(biome)) {
-          break;
-        }
-        zone.organicReserve += config.lithocultureOrganicPerCycle;
+      // Lithoculture is retired. A former in-progress cycle becomes a stable
+      // mineral substrate and never converts Minéral into Organique again.
+      if (zone.lithocultureCycleStartedAt != null) {
         zone.lithocultureCycleStartedAt = null;
-        if (zone.lithocultureMineralTank >=
-            config.lithocultureMineralPerCycle) {
-          zone.lithocultureMineralTank -= config.lithocultureMineralPerCycle;
-          zone.lithocultureCycleStartedAt = finishedAt;
-        }
+        changed = true;
       }
-      if (zone.lithocultureCycleStartedAt == null &&
-          zone.lithocultureMineralTank >= config.lithocultureMineralPerCycle &&
-          zone.organicReserve + config.lithocultureOrganicPerCycle <=
-              biofermenterOrganicReserveCapacity(biome)) {
-        zone.lithocultureMineralTank -= config.lithocultureMineralPerCycle;
-        zone.lithocultureCycleStartedAt = current;
-      }
-      changed = changed || zone.lithocultureCycleStartedAt != null;
+      changed = _resolveMineralBasinProduction(
+            biome,
+            elapsedHours: math.max(0, elapsedHours),
+            now: current,
+          ) ||
+          changed;
     }
     return changed;
   }
 
-  int get lithocultureMineralPerCycle => lisiereForageConfig
-      .territoryBuildings.biofermenter.lithocultureMineralPerCycle;
-  int get lithocultureOrganicPerCycle => lisiereForageConfig
-      .territoryBuildings.biofermenter.lithocultureOrganicPerCycle;
+  bool _resolveMineralBasinProduction(
+    ForageBiome biome, {
+    required double elapsedHours,
+    required DateTime now,
+  }) {
+    final zone = territoryZone(biome);
+    if (!zone.calciumBasinInstalled) return false;
+    var changed = false;
+    final weather = activeGlobalWeatherEvent;
+    final rainIsActive = weather != null &&
+        weather.status == GlobalWeatherEventStatus.active &&
+        weather.type == TowerWeatherType.heavyRain &&
+        weather.isBiomeAffected(biome);
+    if (rainIsActive &&
+        lisiereForageConfig
+            .territoryBuildings.biofermenter.rainRefillsMineralBasinWater) {
+      final filled = calciumWaterCapacity(biome);
+      if (zone.calciumWaterTank != filled) {
+        zone.calciumWaterTank = filled;
+        changed = true;
+      }
+    }
+    // A non-zero, fixed substrate unlocks biominéralisation. It is never
+    // decremented; its legacy field is intentionally retained for migration.
+    if (elapsedHours <= 0 ||
+        zone.lithocultureMineralTank <= 0 ||
+        zone.calciumWaterTank <= 0 ||
+        zone.calciumOrganicTank <= 0) {
+      return changed;
+    }
+    final dailyWater = mineralBasinWaterConsumptionPerDay(biome);
+    final dailyOrganic = mineralBasinOrganicConsumptionPerDay(biome);
+    if (dailyWater <= 0 || dailyOrganic <= 0) return changed;
+    // Bound elapsed active time by actual local input reserves. The P'TIBUG
+    // bonus intentionally does not increase this consumption.
+    final desiredHours = elapsedHours;
+    final activeHours = math.min(
+      desiredHours,
+      math.min(
+        zone.calciumWaterTank * 24 / dailyWater,
+        zone.calciumOrganicTank * 24 / dailyOrganic,
+      ),
+    );
+    if (activeHours <= 0) return changed;
+    final outputExact = activeHours * mineralBasinProductionPerDay(biome) / 24 +
+        zone.calciumProductionHourRemainder;
+    final requestedOutput = outputExact.floor();
+    final room = math.max(
+      0,
+      calciumMineralReserveCapacity(biome) - zone.calciumMineralReserve,
+    );
+    if (requestedOutput > room) return changed;
+    final waterExact =
+        activeHours * dailyWater / 24 + zone.calciumWaterConsumptionRemainder;
+    final organicExact = activeHours * dailyOrganic / 24 +
+        zone.calciumOrganicConsumptionRemainder;
+    final inputWater = waterExact.floor();
+    final inputOrganic = organicExact.floor();
+    if (inputWater > zone.calciumWaterTank ||
+        inputOrganic > zone.calciumOrganicTank) {
+      return changed;
+    }
+    zone
+      ..calciumMineralReserve += requestedOutput
+      ..calciumWaterTank -= inputWater
+      ..calciumOrganicTank -= inputOrganic
+      ..calciumProductionHourRemainder = outputExact - requestedOutput
+      ..calciumWaterConsumptionRemainder = waterExact - inputWater
+      ..calciumOrganicConsumptionRemainder = organicExact - inputOrganic
+      ..updatedAt = now;
+    return true;
+  }
 
-  Zone0ActionResult transferMineralToLithoculture(
+  Zone0ActionResult transferMineralToBasinSubstrate(
     ForageBiome biome,
     int amount,
   ) {
     final zone = territoryZone(biome);
-    if (zone.buildingId != 'biofermenter' || amount <= 0) {
+    if (zone.buildingId != 'biofermenter' ||
+        !zone.calciumBasinInstalled ||
+        amount <= 0) {
       return const Zone0ActionResult(
         success: false,
-        message: 'Biofermenteur indisponible.',
+        message: 'Bassin minéral indisponible.',
       );
     }
     if (!isBuildingOperational(biofermenterTargetId(biome))) {
       return const Zone0ActionResult(
         success: false,
-        message: 'Le Biofermenteur doit être réparé avant la Lithoculture.',
+        message: 'Le Biofermenteur doit être réparé avant le Bassin minéral.',
       );
     }
     final moved = math.min(
@@ -13220,7 +13356,7 @@ class Zone0GameState extends ChangeNotifier {
     if (moved <= 0) {
       return const Zone0ActionResult(
         success: false,
-        message: 'Minéral insuffisant.',
+        message: 'Minéral insuffisant ou substrat déjà plein.',
       );
     }
     removeResources(<String, int>{'Minéral': moved});
@@ -13232,7 +13368,7 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
       success: true,
-      message: '$moved Minéral versé dans la cuve de Lithoculture.',
+      message: '$moved Minéral versé dans le substrat du Bassin minéral.',
     );
   }
 
@@ -13314,7 +13450,7 @@ class Zone0GameState extends ChangeNotifier {
     return Zone0ActionResult(
       success: result.addedAny,
       message: result.hasPending
-          ? 'Inventaire plein : le Minéral reste dans le Bassin de calcium.'
+          ? 'Inventaire plein : le Minéral reste dans le Bassin minéral.'
           : 'Minéral récolté.',
     );
   }
@@ -13330,7 +13466,7 @@ class Zone0GameState extends ChangeNotifier {
                 0, calciumOrganicCapacity(biome) - zone.calciumOrganicTank)));
     if (!zone.calciumBasinInstalled || moved <= 0) {
       return const Zone0ActionResult(
-          success: false, message: 'Bassin de calcium ou espace indisponible.');
+          success: false, message: 'Bassin minéral ou espace indisponible.');
     }
     removeResource('Organique', moved);
     zone.calciumOrganicTank += moved;
@@ -13338,40 +13474,8 @@ class Zone0GameState extends ChangeNotifier {
     unawaited(saveRuntimeToFirebase());
     return Zone0ActionResult(
         success: true,
-        message: '$moved Organique versé dans le Bassin de calcium.');
+        message: '$moved Organique versé dans le Bassin minéral.');
   }
-
-  int getLithocultureMineralCostPerOrganic(ForageBiome biome) =>
-      territoryZone(biome).terrainTags.contains('mineralBasin')
-          ? lisiereForageConfig
-              .territoryBuildings.biofermenter.mineralBasinMineralPerOrganic
-          : lisiereForageConfig
-              .territoryBuildings.biofermenter.normalMineralPerOrganic;
-
-  LithoculturePreview lithoculturePreview(
-      ForageBiome biome, int organicAmount) {
-    final config = lisiereForageConfig.territoryBuildings.biofermenter;
-    final mineralCost =
-        getLithocultureMineralCostPerOrganic(biome) * organicAmount;
-    final availableWaste = resourceAmount('Déchets');
-    final wasteUsed = config.wasteCanReplaceMineral
-        ? math.min(availableWaste,
-            (mineralCost * config.maxWasteSharePerBatch).floor())
-        : 0;
-    final mineralCovered =
-        (wasteUsed * config.mineralEquivalentPerWaste).floor();
-    return LithoculturePreview(
-      organicAmount,
-      math.max(0, mineralCost - mineralCovered).toInt(),
-      wasteUsed,
-    );
-  }
-
-  /// Compatibilité avec les anciens appelants : la Lithoculture ne crédite
-  /// plus jamais l'inventaire directement. La quantité correspond maintenant
-  /// au Minéral versé dans sa cuve.
-  bool runLithoculture(ForageBiome biome, int mineralAmount) =>
-      transferMineralToLithoculture(biome, mineralAmount).success;
 
   String _wasteDayKey(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
@@ -13849,6 +13953,22 @@ class Zone0GameState extends ChangeNotifier {
     String targetId, {
     int? targetLevel,
   }) {
+    final secondaryModule = _biomeSecondaryModuleForTarget(targetId);
+    if (secondaryModule != null) {
+      final synergy =
+          lisiereForageConfig.territoryBuildings.biofermenter.biomeSynergy;
+      final build =
+          secondaryModule.type == BiomeSecondaryModuleType.weatherProtection
+              ? synergy.weatherModuleBuild
+              : synergy.standardModuleBuild;
+      final costs =
+          build.dataCostsByLevel[targetLevel ?? 1] ?? const <String, int>{};
+      return <PTibugDataFamily, int>{
+        for (final entry in costs.entries)
+          if (_dataFamilyForName(entry.key) case final family?)
+            family: math.max(0, entry.value),
+      }..removeWhere((_, amount) => amount <= 0);
+    }
     if (targetId == 'incubation') {
       final costs =
           fablabConfig.incubationRoomDataCostsByLevel[targetLevel ?? 1] ??
@@ -13919,6 +14039,18 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Map<String, int> _projectRequirements(String targetId, int targetLevel) {
+    final secondaryModule = _biomeSecondaryModuleForTarget(targetId);
+    if (secondaryModule != null) {
+      final synergy =
+          lisiereForageConfig.territoryBuildings.biofermenter.biomeSynergy;
+      final build =
+          secondaryModule.type == BiomeSecondaryModuleType.weatherProtection
+              ? synergy.weatherModuleBuild
+              : synergy.standardModuleBuild;
+      return Map<String, int>.from(
+        build.resourceCostsByLevel[targetLevel] ?? const <String, int>{},
+      );
+    }
     if (targetId == 'incubation') {
       return Map<String, int>.from(
         fablabConfig.incubationRoomResourceCostsByLevel[targetLevel] ??
@@ -13964,6 +14096,19 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Duration _projectDuration(String targetId) {
+    final secondaryModule = _biomeSecondaryModuleForTarget(targetId);
+    if (secondaryModule != null) {
+      final synergy =
+          lisiereForageConfig.territoryBuildings.biofermenter.biomeSynergy;
+      final build =
+          secondaryModule.type == BiomeSecondaryModuleType.weatherProtection
+              ? synergy.weatherModuleBuild
+              : synergy.standardModuleBuild;
+      return Duration(
+        minutes:
+            build.durationMinutesByLevel[_buildingLevel(targetId) + 1] ?? 60,
+      );
+    }
     if (targetId == 'incubation') {
       return Duration(
         minutes: fablabConfig.incubationRoomDurationMinutesByLevel[
@@ -14004,19 +14149,25 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int _buildingLevel(String targetId) {
+    final secondaryModule = _biomeSecondaryModuleForTarget(targetId);
+    if (secondaryModule != null) {
+      return territoryZone(secondaryModule.biome)
+              .secondaryModules[secondaryModule.type.name] ??
+          0;
+    }
     final territoryBiome = _biofermenterBiomeForTarget(targetId);
     if (territoryBiome != null)
       return territoryZone(territoryBiome).buildingLevel;
     final forestBiome = _edibleForestBiomeForTarget(targetId);
     if (forestBiome != null)
-      return territoryZone(forestBiome).edibleForestInstalled ? 1 : 0;
+      return territoryZone(forestBiome).edibleForestModuleLevel;
     final networkBiome = _mycelialNetworkBiomeForTarget(targetId);
     if (networkBiome != null) {
-      return territoryZone(networkBiome).mycelialNetworkInstalled ? 1 : 0;
+      return territoryZone(networkBiome).mycelialNetworkModuleLevel;
     }
     final calciumBiome = _calciumBasinBiomeForTarget(targetId);
     if (calciumBiome != null) {
-      return territoryZone(calciumBiome).calciumBasinInstalled ? 1 : 0;
+      return territoryZone(calciumBiome).calciumBasinModuleLevel;
     }
     if (_isRefugeTarget(targetId)) {
       return territoryBuildingForId(targetId)?.level ?? 0;
@@ -14040,10 +14191,11 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   int _projectMaxLevel(String targetId) {
+    if (_biomeSecondaryModuleForTarget(targetId) != null) return 3;
     if (_biofermenterBiomeForTarget(targetId) != null) return 4;
-    if (_edibleForestBiomeForTarget(targetId) != null) return 1;
-    if (_mycelialNetworkBiomeForTarget(targetId) != null) return 1;
-    if (_calciumBasinBiomeForTarget(targetId) != null) return 1;
+    if (_edibleForestBiomeForTarget(targetId) != null) return 3;
+    if (_mycelialNetworkBiomeForTarget(targetId) != null) return 3;
+    if (_calciumBasinBiomeForTarget(targetId) != null) return 3;
     if (_isRefugeTarget(targetId))
       return pTibugConfig.territory.refugeMaximumLevel;
     return switch (targetId) {
@@ -14074,6 +14226,11 @@ class Zone0GameState extends ChangeNotifier {
       'mycelialNetwork-${biome.name}';
   String calciumBasinTargetId(ForageBiome biome) =>
       'calciumBasin-${biome.name}';
+  String biomeSecondaryModuleTargetId(
+    ForageBiome biome,
+    BiomeSecondaryModuleType type,
+  ) =>
+      'biomeSecondary-${type.name}-${biome.name}';
   ForageBiome? _biofermenterBiomeForTarget(String targetId) {
     const prefix = 'biofermenter-';
     if (!targetId.startsWith(prefix)) return null;
@@ -14103,6 +14260,21 @@ class Zone0GameState extends ChangeNotifier {
     return ForageBiome.values
         .where((item) => item.name == targetId.substring(prefix.length))
         .firstOrNull;
+  }
+
+  ({ForageBiome biome, BiomeSecondaryModuleType type})?
+      _biomeSecondaryModuleForTarget(String targetId) {
+    const prefix = 'biomeSecondary-';
+    if (!targetId.startsWith(prefix)) return null;
+    final parts = targetId.substring(prefix.length).split('-');
+    if (parts.length != 2) return null;
+    final type = BiomeSecondaryModuleType.values
+        .where((item) => item.name == parts[0])
+        .firstOrNull;
+    final biome =
+        ForageBiome.values.where((item) => item.name == parts[1]).firstOrNull;
+    if (type == null || biome == null) return null;
+    return (biome: biome, type: type);
   }
 
   int projectBioBatteryRequirement(String targetId) {
@@ -14356,6 +14528,27 @@ class Zone0GameState extends ChangeNotifier {
         );
       }
     }
+    final secondaryModule = _biomeSecondaryModuleForTarget(targetId);
+    if (secondaryModule != null) {
+      final zone = territoryZone(secondaryModule.biome);
+      if (zone.buildingId != 'biofermenter') {
+        return const Zone0ActionResult(
+          success: false,
+          message: 'Le Biofermenteur doit être construit avant ce module.',
+        );
+      }
+      final isNew = !zone.secondaryModules.containsKey(
+        secondaryModule.type.name,
+      );
+      final maxModules = lisiereForageConfig
+          .territoryBuildings.biofermenter.biomeSynergy.secondarySlotCount;
+      if (isNew && zone.secondaryModules.length >= maxModules) {
+        return const Zone0ActionResult(
+          success: false,
+          message: 'Deux modules secondaires sont déjà actifs. Défaites-en un.',
+        );
+      }
+    }
     final calciumBiome = _calciumBasinBiomeForTarget(targetId);
     if (calciumBiome != null) {
       final zone = territoryZone(calciumBiome);
@@ -14364,7 +14557,7 @@ class Zone0GameState extends ChangeNotifier {
         return const Zone0ActionResult(
           success: false,
           message:
-              'Le Bassin de calcium est réservé au Biofermenteur du Bassin minéral.',
+              'Le Bassin minéral est réservé au Biofermenteur du Bassin minéral.',
         );
       }
     }
@@ -14639,6 +14832,15 @@ class Zone0GameState extends ChangeNotifier {
           ..isBuilt = plaineNurseryLevel > 0;
         emitKernelProgressEvent(KernelProgressEventType.buildingConstructed);
       default:
+        final secondaryModule =
+            _biomeSecondaryModuleForTarget(project.targetId);
+        if (secondaryModule != null) {
+          territoryZone(secondaryModule.biome)
+            ..secondaryModules[secondaryModule.type.name] =
+                project.currentLevel.clamp(1, 3).toInt()
+            ..updatedAt = now;
+          break;
+        }
         final territoryBiome = _biofermenterBiomeForTarget(project.targetId);
         if (territoryBiome != null) {
           territoryZone(territoryBiome)
@@ -14653,6 +14855,7 @@ class Zone0GameState extends ChangeNotifier {
         if (forestBiome != null) {
           territoryZone(forestBiome)
             ..edibleForestInstalled = true
+            ..edibleForestModuleLevel = project.currentLevel.clamp(1, 3)
             ..lastProductionResolvedAt = now
             ..updatedAt = now;
           break;
@@ -14661,6 +14864,7 @@ class Zone0GameState extends ChangeNotifier {
         if (networkBiome != null) {
           territoryZone(networkBiome)
             ..mycelialNetworkInstalled = true
+            ..mycelialNetworkModuleLevel = project.currentLevel.clamp(1, 3)
             ..lastProductionResolvedAt = now
             ..updatedAt = now;
           break;
@@ -14669,6 +14873,7 @@ class Zone0GameState extends ChangeNotifier {
         if (calciumBiome != null) {
           territoryZone(calciumBiome)
             ..calciumBasinInstalled = true
+            ..calciumBasinModuleLevel = project.currentLevel.clamp(1, 3)
             ..lastProductionResolvedAt = now
             ..updatedAt = now;
           break;
@@ -19843,7 +20048,7 @@ class Zone0GameState extends ChangeNotifier {
       riskPercent: 0,
       riskLabel: 'Recherche contrôlée',
       baseRiskPercent: 0,
-      securityAtLaunch: biomeSecurity[biome]?.localSecurity ?? 0,
+      securityAtLaunch: effectiveBiomeSecurityFor(biome),
       securityReduction: 0,
     );
   }
@@ -27968,6 +28173,11 @@ class TowerBiomeResearch {
 
 enum BiomeDiscoveryStatus { discovered, exploring, unlocked }
 
+/// Les améliorations territoriales sont communes aux trois spécialisations.
+/// Elles sont persistées par identifiant afin que de futurs modules puissent
+/// être ajoutés sans changer les sauvegardes existantes.
+enum BiomeSecondaryModuleType { security, research, weatherProtection }
+
 class LisiereTerritoryZone {
   LisiereTerritoryZone({
     required this.zoneId,
@@ -27978,6 +28188,10 @@ class LisiereTerritoryZone {
     this.edibleForestInstalled = false,
     this.mycelialNetworkInstalled = false,
     this.calciumBasinInstalled = false,
+    this.edibleForestModuleLevel = 0,
+    this.mycelialNetworkModuleLevel = 0,
+    this.calciumBasinModuleLevel = 0,
+    Map<String, int>? secondaryModules,
     this.vatCount = 1,
     this.vatEfficiencyMultiplier = 1,
     this.organicProductionRemainder = 0,
@@ -27988,11 +28202,13 @@ class LisiereTerritoryZone {
     this.calciumWaterTank = 0,
     this.calciumMineralReserve = 0,
     this.calciumProductionHourRemainder = 0,
+    this.calciumOrganicConsumptionRemainder = 0,
+    this.calciumWaterConsumptionRemainder = 0,
     this.myceliumProductionRemainder = 0,
     this.myceliumReserve = 0,
     this.lastProductionResolvedAt,
     this.updatedAt,
-  });
+  }) : secondaryModules = secondaryModules ?? <String, int>{};
   factory LisiereTerritoryZone.initial(ForageBiome biome) =>
       LisiereTerritoryZone(
         zoneId: biome.name,
@@ -28002,46 +28218,85 @@ class LisiereTerritoryZone {
         },
       );
   factory LisiereTerritoryZone.fromFirebase(
-          ForageBiome biome, Map<dynamic, dynamic> data) =>
-      LisiereTerritoryZone(
-        zoneId: '${data['zoneId'] ?? biome.name}',
-        biome: biome,
-        terrainTags: ((data['terrainTags'] as List?) ?? const <dynamic>[])
-            .map((item) => '$item')
-            .toSet()
-          ..addAll(biome == ForageBiome.bassinMineral
-              ? <String>{'mineralBasin'}
-              : <String>{'normal'}),
-        buildingId: data['buildingId'] as String?,
-        buildingLevel: ForageMission._readStaticInt(data['buildingLevel']),
-        edibleForestInstalled: data['edibleForestInstalled'] == true,
-        mycelialNetworkInstalled: data['mycelialNetworkInstalled'] == true,
-        calciumBasinInstalled: data['calciumBasinInstalled'] == true,
-        vatCount: math.max(1, ForageMission._readStaticInt(data['vatCount'])),
-        vatEfficiencyMultiplier:
-            (data['vatEfficiencyMultiplier'] as num?)?.toDouble() ?? 1,
-        organicProductionRemainder:
-            (data['organicProductionRemainder'] as num?)?.toDouble() ?? 0,
-        organicReserve: ForageMission._readStaticInt(data['organicReserve']),
-        lithocultureMineralTank:
-            ForageMission._readStaticInt(data['lithocultureMineralTank']),
-        lithocultureCycleStartedAt:
-            ForageMission._readDate(data['lithocultureCycleStartedAt']),
-        calciumOrganicTank:
-            ForageMission._readStaticInt(data['calciumOrganicTank']),
-        calciumWaterTank:
-            ForageMission._readStaticInt(data['calciumWaterTank']),
-        calciumMineralReserve:
-            ForageMission._readStaticInt(data['calciumMineralReserve']),
-        calciumProductionHourRemainder:
-            (data['calciumProductionHourRemainder'] as num?)?.toDouble() ?? 0,
-        myceliumProductionRemainder:
-            (data['myceliumProductionRemainder'] as num?)?.toDouble() ?? 0,
-        myceliumReserve: ForageMission._readStaticInt(data['myceliumReserve']),
-        lastProductionResolvedAt:
-            ForageMission._readDate(data['lastProductionResolvedAt']),
-        updatedAt: ForageMission._readDate(data['updatedAt']),
-      );
+    ForageBiome biome,
+    Map<dynamic, dynamic> data,
+  ) {
+    final buildingLevel = ForageMission._readStaticInt(data['buildingLevel']);
+    final basinConfig = lisiereForageConfig.territoryBuildings.biofermenter;
+    final basinLevel = math.max(1, buildingLevel).clamp(1, 3).toInt();
+    final basinSchemaCurrent = data['mineralBasinSchema'] == 1;
+    final basinInstalled = data['calciumBasinInstalled'] == true;
+    return LisiereTerritoryZone(
+      zoneId: '${data['zoneId'] ?? biome.name}',
+      biome: biome,
+      terrainTags: ((data['terrainTags'] as List?) ?? const <dynamic>[])
+          .map((item) => '$item')
+          .toSet()
+        ..addAll(biome == ForageBiome.bassinMineral
+            ? <String>{'mineralBasin'}
+            : <String>{'normal'}),
+      buildingId: data['buildingId'] as String?,
+      buildingLevel: buildingLevel,
+      edibleForestInstalled: data['edibleForestInstalled'] == true,
+      mycelialNetworkInstalled: data['mycelialNetworkInstalled'] == true,
+      calciumBasinInstalled: data['calciumBasinInstalled'] == true,
+      edibleForestModuleLevel: math.max(
+        ForageMission._readStaticInt(data['edibleForestModuleLevel']),
+        data['edibleForestInstalled'] == true ? 1 : 0,
+      ),
+      mycelialNetworkModuleLevel: math.max(
+        ForageMission._readStaticInt(data['mycelialNetworkModuleLevel']),
+        data['mycelialNetworkInstalled'] == true ? 1 : 0,
+      ),
+      calciumBasinModuleLevel: math.max(
+        ForageMission._readStaticInt(data['calciumBasinModuleLevel']),
+        data['calciumBasinInstalled'] == true ? 1 : 0,
+      ),
+      secondaryModules: (data['secondaryModules'] as Map?)?.map(
+            (key, value) => MapEntry(
+              '$key',
+              ForageMission._readStaticInt(value).clamp(0, 3).toInt(),
+            ),
+          ) ??
+          <String, int>{},
+      vatCount: math.max(1, ForageMission._readStaticInt(data['vatCount'])),
+      vatEfficiencyMultiplier:
+          (data['vatEfficiencyMultiplier'] as num?)?.toDouble() ?? 1,
+      organicProductionRemainder:
+          (data['organicProductionRemainder'] as num?)?.toDouble() ?? 0,
+      organicReserve: ForageMission._readStaticInt(data['organicReserve']),
+      lithocultureMineralTank:
+          ForageMission._readStaticInt(data['lithocultureMineralTank']),
+      lithocultureCycleStartedAt:
+          ForageMission._readDate(data['lithocultureCycleStartedAt']),
+      // Legacy Bassins start filled once. This migration is deliberately
+      // non-punitive while later saves persist their actual local reserves.
+      calciumOrganicTank: basinSchemaCurrent
+          ? ForageMission._readStaticInt(data['calciumOrganicTank'])
+          : basinInstalled
+              ? basinConfig.mineralBasinOrganicCapacity[basinLevel]!
+              : 0,
+      calciumWaterTank: basinSchemaCurrent
+          ? ForageMission._readStaticInt(data['calciumWaterTank'])
+          : basinInstalled
+              ? basinConfig.mineralBasinWaterCapacity[basinLevel]!
+              : 0,
+      calciumMineralReserve:
+          ForageMission._readStaticInt(data['calciumMineralReserve']),
+      calciumProductionHourRemainder:
+          (data['calciumProductionHourRemainder'] as num?)?.toDouble() ?? 0,
+      calciumOrganicConsumptionRemainder:
+          (data['calciumOrganicConsumptionRemainder'] as num?)?.toDouble() ?? 0,
+      calciumWaterConsumptionRemainder:
+          (data['calciumWaterConsumptionRemainder'] as num?)?.toDouble() ?? 0,
+      myceliumProductionRemainder:
+          (data['myceliumProductionRemainder'] as num?)?.toDouble() ?? 0,
+      myceliumReserve: ForageMission._readStaticInt(data['myceliumReserve']),
+      lastProductionResolvedAt:
+          ForageMission._readDate(data['lastProductionResolvedAt']),
+      updatedAt: ForageMission._readDate(data['updatedAt']),
+    );
+  }
   final String zoneId;
   final ForageBiome biome;
   final Set<String> terrainTags;
@@ -28050,6 +28305,10 @@ class LisiereTerritoryZone {
   bool edibleForestInstalled;
   bool mycelialNetworkInstalled;
   bool calciumBasinInstalled;
+  int edibleForestModuleLevel;
+  int mycelialNetworkModuleLevel;
+  int calciumBasinModuleLevel;
+  final Map<String, int> secondaryModules;
   int vatCount;
   double vatEfficiencyMultiplier;
   double organicProductionRemainder;
@@ -28060,6 +28319,8 @@ class LisiereTerritoryZone {
   int calciumWaterTank;
   int calciumMineralReserve;
   double calciumProductionHourRemainder;
+  double calciumOrganicConsumptionRemainder;
+  double calciumWaterConsumptionRemainder;
   double myceliumProductionRemainder;
   int myceliumReserve;
   DateTime? lastProductionResolvedAt;
@@ -28073,6 +28334,10 @@ class LisiereTerritoryZone {
         'edibleForestInstalled': edibleForestInstalled,
         'mycelialNetworkInstalled': mycelialNetworkInstalled,
         'calciumBasinInstalled': calciumBasinInstalled,
+        'edibleForestModuleLevel': edibleForestModuleLevel,
+        'mycelialNetworkModuleLevel': mycelialNetworkModuleLevel,
+        'calciumBasinModuleLevel': calciumBasinModuleLevel,
+        'secondaryModules': secondaryModules,
         'vatCount': vatCount,
         'vatEfficiencyMultiplier': vatEfficiencyMultiplier,
         'organicProductionRemainder': organicProductionRemainder,
@@ -28084,7 +28349,11 @@ class LisiereTerritoryZone {
         'calciumOrganicTank': calciumOrganicTank,
         'calciumWaterTank': calciumWaterTank,
         'calciumMineralReserve': calciumMineralReserve,
+        'mineralBasinSchema': 1,
         'calciumProductionHourRemainder': calciumProductionHourRemainder,
+        'calciumOrganicConsumptionRemainder':
+            calciumOrganicConsumptionRemainder,
+        'calciumWaterConsumptionRemainder': calciumWaterConsumptionRemainder,
         'myceliumProductionRemainder': myceliumProductionRemainder,
         'myceliumReserve': myceliumReserve,
         'lastProductionResolvedAt': lastProductionResolvedAt == null
@@ -28092,14 +28361,6 @@ class LisiereTerritoryZone {
             : Timestamp.fromDate(lastProductionResolvedAt!),
         'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
       };
-}
-
-class LithoculturePreview {
-  const LithoculturePreview(
-      this.organicOutput, this.mineralCost, this.wasteCost);
-  final int organicOutput;
-  final int mineralCost;
-  final int wasteCost;
 }
 
 class CampWasteDailyReport {

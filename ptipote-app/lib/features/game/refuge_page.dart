@@ -7968,8 +7968,7 @@ class _LisierePageState extends State<LisierePage> {
     final cost =
         (duration.baseVitalityCost * intensity.vitalityMultiplier).round();
     final baseRiskPercent = _baseRiskPercent();
-    final securityAtLaunch =
-        widget.gameState.biomeSecurity[_biome]?.localSecurity ?? 0;
+    final securityAtLaunch = widget.gameState.effectiveBiomeSecurityFor(_biome);
     final securityReduction = _securityReduction();
     final riskPercent = _riskPercent(figurine);
     final vitality = widget.gameState.vitalityFor(figurine);
@@ -8119,8 +8118,7 @@ class _LisierePageState extends State<LisierePage> {
   }
 
   int _securityReduction() {
-    final localSecurity =
-        widget.gameState.biomeSecurity[_biome]?.localSecurity ?? 0;
+    final localSecurity = widget.gameState.effectiveBiomeSecurityFor(_biome);
     return (localSecurity *
             towerOperationsConfig.maximumLocalRiskReductionPercent /
             100)
@@ -8333,7 +8331,6 @@ class _LisiereBuildingsTab extends StatefulWidget {
 
 class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
   late ForageBiome biome;
-  int lithocultureAmount = 10;
 
   @override
   void initState() {
@@ -8349,6 +8346,140 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
           initialBiome: selectedBiome,
           showBiomeDetail: true,
         ),
+      ),
+    );
+  }
+
+  void _editSecondaryModules(BuildContext context, Zone0GameState state) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          String label(BiomeSecondaryModuleType type) => switch (type) {
+                BiomeSecondaryModuleType.security =>
+                  'Stabilisation sécuritaire',
+                BiomeSecondaryModuleType.research => 'Veille scientifique',
+                BiomeSecondaryModuleType.weatherProtection =>
+                  'Protection météorologique',
+              };
+          String effect(BiomeSecondaryModuleType type, int level) {
+            final synergy = lisiereForageConfig
+                .territoryBuildings.biofermenter.biomeSynergy;
+            return switch (type) {
+              BiomeSecondaryModuleType.security =>
+                'Sécurité minimum ${synergy.securityFloors[level] ?? 0}',
+              BiomeSecondaryModuleType.research =>
+                'Recherche locale minimum ${synergy.researchFloors[level] ?? 0}',
+              BiomeSecondaryModuleType.weatherProtection =>
+                '-${((synergy.weatherDamageReductions[level] ?? 0) * 100).round()} % dégâts météo physiques',
+            };
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text('Modules secondaires',
+                        style: TextStyle(
+                            fontSize: 24, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Deux emplacements maximum. Chaque niveau est construit séparément ; défaites un module pour libérer un emplacement.',
+                    ),
+                    const SizedBox(height: 12),
+                    for (final type in BiomeSecondaryModuleType.values)
+                      Builder(builder: (context) {
+                        final level =
+                            state.biomeSecondaryModuleLevel(biome, type);
+                        final project = state.projectFor(
+                          state.biomeSecondaryModuleTargetId(biome, type),
+                        );
+                        final nextLabel = level == 0
+                            ? 'Installer'
+                            : level >= 3
+                                ? 'Niveau maximum'
+                                : 'Améliorer N${level + 1}';
+                        return Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(label(type),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w900)),
+                                const SizedBox(height: 4),
+                                Text(level == 0
+                                    ? 'Non installé'
+                                    : 'N$level · ${effect(type, level)}'),
+                                if (project.isInProgress) ...<Widget>[
+                                  const SizedBox(height: 4),
+                                  Text('Travaux en cours',
+                                      style: TextStyle(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary)),
+                                ],
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: <Widget>[
+                                    FilledButton.icon(
+                                      onPressed:
+                                          level >= 3 || project.isInProgress
+                                              ? null
+                                              : () => _showBuildingProject(
+                                                    sheetContext,
+                                                    gameState: state,
+                                                    targetId: state
+                                                        .biomeSecondaryModuleTargetId(
+                                                      biome,
+                                                      type,
+                                                    ),
+                                                    title: label(type),
+                                                    description:
+                                                        'Module secondaire du bâtiment territorial.',
+                                                  ),
+                                      icon: const Icon(Icons.upgrade_outlined),
+                                      label: Text(nextLabel),
+                                    ),
+                                    if (level > 0)
+                                      OutlinedButton(
+                                        onPressed: () {
+                                          final result =
+                                              state.removeBiomeSecondaryModule(
+                                            biome,
+                                            type,
+                                          );
+                                          ScaffoldMessenger.of(this.context)
+                                              .showSnackBar(SnackBar(
+                                                  content:
+                                                      Text(result.message)));
+                                          setSheetState(() {});
+                                          setState(() {});
+                                        },
+                                        child: const Text('Défaire'),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -8411,6 +8542,16 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
     final label = lisiereForageConfig.biomes[biome]!.label;
     final organicReserveCapacity =
         state.biofermenterOrganicReserveCapacity(biome);
+    final synergy = config.biomeSynergy;
+    final secondaryModules = zone.secondaryModules.entries
+        .where((entry) => entry.value > 0)
+        .map((entry) => '${switch (entry.key) {
+              'security' => 'Sécurité',
+              'research' => 'Veille scientifique',
+              'weatherProtection' => 'Protection météo',
+              _ => entry.key,
+            }} N${entry.value}')
+        .join(' · ');
     return ListView(padding: const EdgeInsets.all(16), children: <Widget>[
       Text('Bâtiment territorial',
           style: Theme.of(context)
@@ -8456,8 +8597,16 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                           'Biofermenteur mycélien · niveau ${zone.buildingLevel}',
                           style: const TextStyle(fontWeight: FontWeight.w900)),
                       Text(
-                        'Module : ${zone.mycelialNetworkInstalled ? 'Réseau mycélien' : zone.edibleForestInstalled ? 'Forêt comestible' : zone.calciumBasinInstalled ? 'Bassin de calcium' : 'aucun'}',
+                        'Module principal : ${zone.mycelialNetworkInstalled ? 'Réseau mycélien N${zone.mycelialNetworkModuleLevel}' : zone.edibleForestInstalled ? 'Forêt comestible N${zone.edibleForestModuleLevel}' : zone.calciumBasinInstalled ? 'Bassin minéral N${zone.calciumBasinModuleLevel}' : 'aucun'}',
                         style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        'Modules secondaires (${zone.secondaryModules.length}/${synergy.secondarySlotCount}) : ${secondaryModules.isEmpty ? 'aucun' : secondaryModules}',
+                      ),
+                      TextButton.icon(
+                        onPressed: () => _editSecondaryModules(context, state),
+                        icon: const Icon(Icons.tune_outlined),
+                        label: const Text('Configurer les modules secondaires'),
                       ),
                       const SizedBox(height: 8),
                       _BuildingViabilityCard(
@@ -8486,11 +8635,9 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                         ),
                       ),
                       Text(
-                          'Lithoculture : ${state.lithocultureMineralPerCycle} Minéral → ${state.lithocultureOrganicPerCycle} Organique · 1 h/cycle'),
+                          'Forêt comestible : ${zone.edibleForestInstalled ? 'Base ${config.passiveOrganicPerDayByLevel[zone.buildingLevel] ?? 0}/j · ${state.activePollinatorsForBiofermenter(biome)} Pollinisateur(s) × +${synergy.ptibugBonusPerDay.toStringAsFixed(0)} · N${zone.edibleForestModuleLevel}' : 'non installée'}'),
                       Text(
-                          'Forêt comestible : ${zone.edibleForestInstalled ? '+${(state.activePollinatorsForBiofermenter(biome) * config.bonusPerPollinator * 100).round()} % · ${state.activePollinatorsForBiofermenter(biome)}/${config.maxPollinatorsCounted} Pollinisateurs' : 'non installée'}'),
-                      Text(
-                          'Réseau mycélien : ${zone.mycelialNetworkInstalled ? '${state.biofermenterMyceliumPerDay(biome)} Mycélium/jour · ${state.activeMycelialPTibugsForBiofermenter(biome)}/${config.maxMycelialPTibugsCounted} P’TIBUG mycéliens' : 'non installé'}'),
+                          'Réseau mycélien : ${zone.mycelialNetworkInstalled ? 'Base ${config.baseMyceliumPerDay.toStringAsFixed(0)}/j · ${state.activeMycelialPTibugsForBiofermenter(biome)} P’TIBUG mycéliens × +${synergy.ptibugBonusPerDay.toStringAsFixed(0)} · N${zone.mycelialNetworkModuleLevel}' : 'non installé'}'),
                       if (zone.mycelialNetworkInstalled) ...<Widget>[
                         const SizedBox(height: 4),
                         Text(
@@ -8515,47 +8662,6 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 10),
-                      const Text('Lithoculture',
-                          style: TextStyle(fontWeight: FontWeight.w900)),
-                      Text(
-                          'Cuve : ${zone.lithocultureMineralTank}/${state.lithocultureTankCapacity(biome)} Minéral${zone.lithocultureCycleStartedAt == null ? ' · en attente du seuil' : ' · cycle en cours : ${_countdownLabel(zone.lithocultureCycleStartedAt!.add(Duration(minutes: config.lithocultureCycleMinutes)))}'}'),
-                      const SizedBox(height: 5),
-                      Stack(alignment: Alignment.center, children: <Widget>[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: LinearProgressIndicator(
-                            minHeight: 34,
-                            value: state.lithocultureTankCapacity(biome) == 0
-                                ? 0
-                                : zone.lithocultureMineralTank /
-                                    state.lithocultureTankCapacity(biome),
-                            color: Colors.grey.shade500,
-                            backgroundColor: Colors.grey.shade300,
-                          ),
-                        ),
-                        const Icon(Icons.eco, color: Colors.green),
-                      ]),
-                      Wrap(
-                        spacing: 8,
-                        children: <int>[1, 5, 10]
-                            .map((amount) => ChoiceChip(
-                                  label: Text('×$amount'),
-                                  selected: lithocultureAmount == amount,
-                                  onSelected: (_) => setState(
-                                    () => lithocultureAmount = amount,
-                                  ),
-                                ))
-                            .toList()
-                          ..add(ChoiceChip(
-                            label: const Text('Max'),
-                            selected: false,
-                            onSelected: (_) => setState(
-                              () => lithocultureAmount =
-                                  state.resourceAmount('Minéral'),
-                            ),
-                          )),
-                      ),
                       const SizedBox(height: 8),
                       Wrap(spacing: 8, children: <Widget>[
                         OutlinedButton(
@@ -8573,8 +8679,9 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                 ? 'Travaux : ${_countdownLabel(bioProject.endsAt!)}'
                                 : 'Améliorer')),
                         OutlinedButton(
-                            onPressed: zone.edibleForestInstalled ||
-                                    zone.mycelialNetworkInstalled
+                            onPressed: zone.edibleForestModuleLevel >= 3 ||
+                                    (zone.mycelialNetworkInstalled &&
+                                        !zone.edibleForestInstalled)
                                 ? null
                                 : () {
                                     _showBuildingProject(context,
@@ -8582,14 +8689,17 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                         targetId: forestTarget,
                                         title: 'Forêt comestible',
                                         description:
-                                            'Module territorial · ${config.edibleForestConstructionMinutes} min.');
+                                            'Module principal niveau ${zone.edibleForestModuleLevel + 1} · ${config.edibleForestConstructionMinutes} min.');
                                   },
                             child: Text(forestProject.isInProgress
                                 ? 'Travaux : ${_countdownLabel(forestProject.endsAt!)}'
-                                : 'Installer Forêt comestible')),
+                                : zone.edibleForestInstalled
+                                    ? 'Améliorer Forêt comestible'
+                                    : 'Installer Forêt comestible')),
                         OutlinedButton(
-                            onPressed: zone.mycelialNetworkInstalled ||
-                                    zone.edibleForestInstalled ||
+                            onPressed: zone.mycelialNetworkModuleLevel >= 3 ||
+                                    (zone.edibleForestInstalled &&
+                                        !zone.mycelialNetworkInstalled) ||
                                     !config.mycelialNetworkEnabled
                                 ? null
                                 : () {
@@ -8598,23 +8708,13 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                         targetId: networkTarget,
                                         title: 'Réseau mycélien',
                                         description:
-                                            'Module territorial · ${config.mycelialNetworkConstructionMinutes} min.');
+                                            'Module principal niveau ${zone.mycelialNetworkModuleLevel + 1} · ${config.mycelialNetworkConstructionMinutes} min.');
                                   },
                             child: Text(networkProject.isInProgress
                                 ? 'Travaux : ${_countdownLabel(networkProject.endsAt!)}'
-                                : 'Installer Réseau mycélien')),
-                        FilledButton(
-                            onPressed: () {
-                              final result =
-                                  state.transferMineralToLithoculture(
-                                biome,
-                                lithocultureAmount,
-                              );
-                              setState(() {});
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(result.message)));
-                            },
-                            child: Text('Verser $lithocultureAmount Minéral')),
+                                : zone.mycelialNetworkInstalled
+                                    ? 'Améliorer Réseau mycélien'
+                                    : 'Installer Réseau mycélien')),
                         OutlinedButton.icon(
                           onPressed: zone.organicReserve <= 0
                               ? null
@@ -8648,27 +8748,33 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                 'Récolter le Mycélium (${zone.myceliumReserve})'),
                           ),
                         if (state.canInstallCalciumBasin(biome) &&
-                            !zone.calciumBasinInstalled)
+                            zone.calciumBasinModuleLevel < 3)
                           OutlinedButton(
                             onPressed: () => _showBuildingProject(
                               context,
                               gameState: state,
                               targetId: calciumTarget,
-                              title: 'Bassin de calcium',
+                              title: 'Bassin minéral',
                               description:
-                                  'Module du Bassin minéral : produit du Minéral avec de l’eau de pluie.',
+                                  'Module principal niveau ${zone.calciumBasinModuleLevel + 1} : produit du Minéral avec de l’eau de pluie.',
                             ),
                             child: Text(calciumProject.isInProgress
                                 ? 'Travaux : ${_countdownLabel(calciumProject.endsAt!)}'
-                                : 'Installer Bassin de calcium'),
+                                : zone.calciumBasinInstalled
+                                    ? 'Améliorer Bassin minéral'
+                                    : 'Installer Bassin minéral'),
                           ),
                       ]),
                       if (zone.calciumBasinInstalled) ...<Widget>[
                         const SizedBox(height: 16),
-                        const Text('Bassin de calcium',
+                        const Text('Bassin minéral',
                             style: TextStyle(fontWeight: FontWeight.w900)),
                         Text(
-                            'Production : ${zone.lithocultureMineralTank ~/ state.lithocultureMineralPerCycle} Minéral/h${state.activeCalciumMinerPTibugsForBiofermenter(biome) > 0 ? ' + ${state.activeCalciumMinerPTibugsForBiofermenter(biome)} P’TIBUG' : ''} · consomme 1 Organique et 2 Eau/h.'),
+                            'Base ${state.mineralBasinBaseProductionPerDay(biome).toStringAsFixed(0)}/j · ${state.activeCalciumMinerPTibugsForBiofermenter(biome)} Mineur(s) × +${synergy.ptibugBonusPerDay.toStringAsFixed(0)} · module N${zone.calciumBasinModuleLevel}'),
+                        Text(
+                            'Production finale : ${state.mineralBasinProductionPerDay(biome).toStringAsFixed(1)} Minéral/j · consomme ${state.mineralBasinOrganicConsumptionPerDay(biome).toStringAsFixed(1)} Organique et ${state.mineralBasinWaterConsumptionPerDay(biome).toStringAsFixed(1)} Eau/j.'),
+                        Text(
+                            'Substrat minéral fixe : ${zone.lithocultureMineralTank}/${state.lithocultureTankCapacity(biome)} · il n’est jamais consommé.'),
                         Row(children: <Widget>[
                           Expanded(
                               child: _BiofermenterTank(
@@ -8699,6 +8805,21 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                           )),
                         ]),
                         Wrap(spacing: 8, children: <Widget>[
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              final result =
+                                  state.transferMineralToBasinSubstrate(
+                                biome,
+                                1,
+                              );
+                              setState(() {});
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(result.message)),
+                              );
+                            },
+                            icon: const Icon(Icons.add),
+                            label: const Text('1 Minéral au substrat'),
+                          ),
                           OutlinedButton.icon(
                             onPressed: () {
                               final result =
@@ -8926,7 +9047,7 @@ class _LisiereBuildingsMap extends StatelessWidget {
                                     ? 'Réseau mycélien'
                                     : zone.edibleForestInstalled
                                         ? 'Forêt comestible'
-                                        : 'Bassin de calcium',
+                                        : 'Bassin minéral',
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -9473,7 +9594,7 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                       style: const TextStyle(
                           fontWeight: FontWeight.w900, fontSize: 19)),
                   Text(
-                      '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
+                      '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.effectiveBiomeSecurityFor(biome)}%'),
                   const SizedBox(height: 8),
                   const Text(
                       'La Savane tropicale accueille uniquement la Nurserie principale.'),
@@ -9495,7 +9616,7 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                   style: const TextStyle(
                       fontWeight: FontWeight.w900, fontSize: 19)),
               Text(
-                  '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
+                  '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.effectiveBiomeSecurityFor(biome)}%'),
               if (gameState.activeGlobalWeatherEvent case final weather?)
                 Text(
                   weather.type == TowerWeatherType.calm
@@ -9641,7 +9762,7 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
                 ],
               ),
               Text(
-                  '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.biomeSecurity[biome]?.localSecurity ?? 0}%'),
+                  '${visual.icon} ${visual.label} · $biomass% · sécurité ${gameState.effectiveBiomeSecurityFor(biome)}%'),
               if (weatherLabel != null)
                 Text(
                   isWeatherAffected
@@ -14501,13 +14622,15 @@ class _TowerExplorationTab extends StatelessWidget {
                                 ),
                               if (unlocked) ...<Widget>[
                                 Text(
-                                  'Réduction de danger : -${_localRiskReduction(state.localSecurity)}%',
+                                  'Réduction de danger : -${_localRiskReduction(gameState.effectiveBiomeSecurityFor(biome))}%',
                                 ),
                                 Text(
-                                  'Sécurisation : ${state.localSecurity}% / 100%',
+                                  'Sécurisation : ${gameState.effectiveBiomeSecurityFor(biome)}% / 100%',
                                 ),
                                 LinearProgressIndicator(
-                                  value: state.localSecurity / 100,
+                                  value: gameState
+                                          .effectiveBiomeSecurityFor(biome) /
+                                      100,
                                   color: Theme.of(context).colorScheme.primary,
                                 ),
                               ],

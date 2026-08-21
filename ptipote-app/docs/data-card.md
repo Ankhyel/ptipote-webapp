@@ -69,19 +69,41 @@ leur fonctionnement existant.
   snapshotées au lancement ; `requiredJobLevel` reste un hook sur les futures
   capacités, pas une liste d’arbres de talents.
 
-## Biofermenteur et Bassin de calcium
+## Bâtiments de biome
 
-Le Biofermenteur conserve sa réserve d'Organique verte, récoltée par le
-joueur. Sa Lithoculture reçoit jusqu'à `30 + 10 par niveau` Minéraux : chaque
-tranche de 10 démarre un cycle d'une heure qui ajoute 3 Organique à la réserve.
+Les bâtiments territoriaux sont des amplificateurs : leur production de base
+reste modeste et les bons P’TIBUG présents dans le biome ajoutent une vraie
+synergie. La formule est `base + (P’TIBUG éligibles × 3/j × module principal)`.
+Seuls trois P’TIBUG au plus comptent, et le module principal multiplie la
+**synergie seulement** : N1 ×1, N2 ×2, N3 ×3.
 
-Le **Bassin de calcium** est un module du seul biome **Bassin minéral**. Il
-ajoute une réserve d'Eau (`30 + 10/niveau`), une réserve d'Organique
-(`9 + 3/niveau`) et une réserve de Minéral. La pluie modérée, forte et sévère
-apporte respectivement 2, 5 et 10 Eau par heure. Chaque heure productive, le
-Bassin conserve ses Minéraux de la cuve, produit 1 Minéral par tranche de 10,
-et consomme 1 Organique ainsi que 2 Eau. Un P’TIBUG `mineur` ou
-`lithoculture` actif dans le biome ajoute +1 Minéral/h au cycle.
+- **Forêt comestible** : Organique, Trait `pollinisateur`.
+- **Réseau mycélien** : Mycélium, Trait mycélien existant (`decomposeur`).
+- **Bassin minéral** : Minéral, Trait `mineur`.
+
+Chaque bâtiment territorial possède au plus deux modules secondaires parmi :
+**Stabilisation sécuritaire** (plancher 20/35/50), **Veille scientifique**
+(plancher de connaissance 20/35/50) et **Protection météorologique**
+(-15/-30/-50 % de dégâts physiques météo sur le bâtiment). Les planchers ne
+s’ajoutent pas à la valeur dynamique et la protection ne concerne jamais les
+afflictions biologiques.
+
+Les modules **Sécurité** et **Veille** suivent des chantiers N1/N2/N3 de
+1 h / 2 h / 3 h ; ils demandent respectivement 10/20/25 Minéral et 30/40/45
+Organique, avec les Données configurées dans le Dashboard. Le module **Météo**
+utilise les mêmes ressources et durées, avec ses Données Énergie, Mycélienne et
+Toxique propres. Défaire un module libère son emplacement.
+
+La Lithoculture est retirée : aucune conversion Minéral → Organique ni
+substitution Déchets ne reste active. Le **Bassin minéral** du biome Bassin
+minéral utilise un substrat minéral fixe, une réserve locale d’Eau et une
+réserve locale d’Organique. Eau et Organique sont consommés, jamais le
+substrat ; l’absence de l’un des deux met la production en pause. La pluie
+remplit l’Eau locale au maximum. La production de base est 12 / 15 / 18
+Minéral par 24 h aux niveaux 1 / 2 / 3 ; ses consommations sont 24 Eau + 18
+Organique, puis 18 + 12, puis 12 + 6 par 24 h. Le calcul est offline et
+déterministe.
+L’Eau n’est pas une ressource globale du Camp.
 
 ## P’TIPOTES Protocoles — Noyaux et Enveloppes
 

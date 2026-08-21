@@ -99,6 +99,47 @@ class LisiereTerritoryBuildingsConfig {
   final BiofermenterConfig biofermenter;
 }
 
+/// Réglages communs aux modules de production des bâtiments territoriaux.
+/// Le multiplicateur ne concerne volontairement que la synergie P'TIBUG : la
+/// production de base d'un bâtiment reste toujours modeste et stable.
+class BiomeProductionSynergyConfig {
+  const BiomeProductionSynergyConfig({
+    required this.ptibugBonusPerDay,
+    required this.maxEligiblePtibugs,
+    required this.mainModuleMultipliers,
+    required this.secondarySlotCount,
+    required this.securityFloors,
+    required this.researchFloors,
+    required this.weatherDamageReductions,
+    required this.standardModuleBuild,
+    required this.weatherModuleBuild,
+  });
+
+  final double ptibugBonusPerDay;
+  final int maxEligiblePtibugs;
+  final Map<int, double> mainModuleMultipliers;
+  final int secondarySlotCount;
+  final Map<int, int> securityFloors;
+  final Map<int, int> researchFloors;
+  final Map<int, double> weatherDamageReductions;
+  final BiomeSecondaryModuleBuildConfig standardModuleBuild;
+  final BiomeSecondaryModuleBuildConfig weatherModuleBuild;
+}
+
+/// Coûts explicites et durées des chantiers de modules territoriaux. Les
+/// ressources physiques et les Données restent volontairement séparées.
+class BiomeSecondaryModuleBuildConfig {
+  const BiomeSecondaryModuleBuildConfig({
+    required this.resourceCostsByLevel,
+    required this.dataCostsByLevel,
+    required this.durationMinutesByLevel,
+  });
+
+  final Map<int, Map<String, int>> resourceCostsByLevel;
+  final Map<int, Map<String, int>> dataCostsByLevel;
+  final Map<int, int> durationMinutesByLevel;
+}
+
 class BiofermenterConfig {
   const BiofermenterConfig({
     required this.passiveOrganicPerDayByLevel,
@@ -148,6 +189,13 @@ class BiofermenterConfig {
     required this.calciumWaterPerActiveHour,
     required this.calciumMinerTraitBonusPerPTibug,
     required this.calciumEligibleTraitIds,
+    required this.biomeSynergy,
+    required this.mineralBasinProductionPerDay,
+    required this.mineralBasinWaterCapacity,
+    required this.mineralBasinOrganicCapacity,
+    required this.mineralBasinWaterConsumptionPerDay,
+    required this.mineralBasinOrganicConsumptionPerDay,
+    required this.rainRefillsMineralBasinWater,
   });
   final Map<int, double> passiveOrganicPerDayByLevel;
   final Map<String, int> constructionCost;
@@ -156,8 +204,8 @@ class BiofermenterConfig {
   final int vatCount;
   final double vatEfficiencyMultiplier;
 
-  /// La Lithoculture utilise une cuve : chaque cycle consomme ce nombre de
-  /// Minéraux et dépose sa production dans la réserve du Biofermenteur.
+  /// Champs legacy conservés uniquement pour lire les anciennes sauvegardes.
+  /// Aucun cycle Lithoculture ne peut encore être lancé.
   final int lithocultureMineralPerCycle;
   final int lithocultureOrganicPerCycle;
   final int lithocultureCycleMinutes;
@@ -199,6 +247,14 @@ class BiofermenterConfig {
   final int calciumWaterPerActiveHour;
   final int calciumMinerTraitBonusPerPTibug;
   final List<String> calciumEligibleTraitIds;
+
+  final BiomeProductionSynergyConfig biomeSynergy;
+  final Map<int, double> mineralBasinProductionPerDay;
+  final Map<int, int> mineralBasinWaterCapacity;
+  final Map<int, int> mineralBasinOrganicCapacity;
+  final Map<int, double> mineralBasinWaterConsumptionPerDay;
+  final Map<int, double> mineralBasinOrganicConsumptionPerDay;
+  final bool rainRefillsMineralBasinWater;
 }
 
 class BiomassTierConfig {
@@ -618,6 +674,66 @@ const LisiereForageConfig defaultLisiereForageConfig = LisiereForageConfig(
       calciumWaterPerActiveHour: 2,
       calciumMinerTraitBonusPerPTibug: 1,
       calciumEligibleTraitIds: const <String>['mineur', 'lithoculture'],
+      biomeSynergy: const BiomeProductionSynergyConfig(
+        ptibugBonusPerDay: 3,
+        maxEligiblePtibugs: 3,
+        mainModuleMultipliers: <int, double>{1: 1, 2: 2, 3: 3},
+        secondarySlotCount: 2,
+        securityFloors: <int, int>{1: 20, 2: 35, 3: 50},
+        researchFloors: <int, int>{1: 20, 2: 35, 3: 50},
+        weatherDamageReductions: <int, double>{1: .15, 2: .30, 3: .50},
+        standardModuleBuild: BiomeSecondaryModuleBuildConfig(
+          resourceCostsByLevel: <int, Map<String, int>>{
+            1: <String, int>{'Minéral': 10, 'Organique': 30},
+            2: <String, int>{'Minéral': 20, 'Organique': 40},
+            3: <String, int>{'Minéral': 25, 'Organique': 45},
+          },
+          dataCostsByLevel: <int, Map<String, int>>{
+            1: <String, int>{'biomimetisme': 10, 'energie': 10},
+            2: <String, int>{'energie': 10, 'mycelienne': 5},
+            3: <String, int>{'mycelienne': 10},
+          },
+          durationMinutesByLevel: <int, int>{1: 60, 2: 120, 3: 180},
+        ),
+        weatherModuleBuild: BiomeSecondaryModuleBuildConfig(
+          resourceCostsByLevel: <int, Map<String, int>>{
+            1: <String, int>{'Minéral': 10, 'Organique': 30},
+            2: <String, int>{'Minéral': 20, 'Organique': 40},
+            3: <String, int>{'Minéral': 25, 'Organique': 45},
+          },
+          dataCostsByLevel: <int, Map<String, int>>{
+            1: <String, int>{
+              'biomimetisme': 10,
+              'energie': 5,
+              'toxine': 2,
+            },
+            2: <String, int>{'energie': 5, 'mycelienne': 2, 'toxine': 2},
+            3: <String, int>{'mycelienne': 5, 'toxine': 5},
+          },
+          durationMinutesByLevel: <int, int>{1: 60, 2: 120, 3: 180},
+        ),
+      ),
+      // Le ratio reste volontairement identique au N1 : les niveaux
+      // supérieurs accélèrent la biominéralisation sans créer une nouvelle
+      // ressource ni une consommation cachée.
+      mineralBasinProductionPerDay: const <int, double>{
+        1: 12,
+        2: 15,
+        3: 18,
+      },
+      mineralBasinWaterCapacity: const <int, int>{1: 24, 2: 36, 3: 48},
+      mineralBasinOrganicCapacity: const <int, int>{1: 12, 2: 18, 3: 24},
+      mineralBasinWaterConsumptionPerDay: const <int, double>{
+        1: 24,
+        2: 18,
+        3: 12,
+      },
+      mineralBasinOrganicConsumptionPerDay: const <int, double>{
+        1: 18,
+        2: 12,
+        3: 6,
+      },
+      rainRefillsMineralBasinWater: true,
     ),
   ),
   myceliumExploration: const MyceliumExplorationConfig(
