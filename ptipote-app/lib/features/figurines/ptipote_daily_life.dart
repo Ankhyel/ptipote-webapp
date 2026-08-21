@@ -21,6 +21,12 @@ class PtipoteDailyLifeConfig {
     this.vitalMidBonus = 5,
     this.vitalHighBonus = 10,
     this.attachmentDecayPerHour = 1,
+    this.attachmentLevelDecayReduction = .25,
+    this.attachmentLevelThresholdPercent = 70,
+    this.attachmentLevel1Hours = 24,
+    this.attachmentLevel2Hours = 48,
+    this.attachmentLevel3Hours = 72,
+    this.trainingEnergyCost = 10,
     this.hugAttachmentGain = 5,
     this.trainingAttachmentGain = 20,
     this.walkAttachmentGain = 30,
@@ -60,6 +66,12 @@ class PtipoteDailyLifeConfig {
   final double vitalMidBonus;
   final double vitalHighBonus;
   final double attachmentDecayPerHour;
+  final double attachmentLevelDecayReduction;
+  final double attachmentLevelThresholdPercent;
+  final int attachmentLevel1Hours;
+  final int attachmentLevel2Hours;
+  final int attachmentLevel3Hours;
+  final int trainingEnergyCost;
   final double hugAttachmentGain;
   final double trainingAttachmentGain;
   final double walkAttachmentGain;
@@ -96,6 +108,16 @@ class PtipoteDailyLifeConfig {
       base + math.max(0, level - 1) * energyMaxBonusPerLevel;
   int maxHungerForLevel(int base, int level) =>
       base + math.max(0, level - 1) * hungerMaxBonusPerLevel;
+  double attachmentDecayMultiplier(int attachmentLevel) =>
+      (1 - attachmentLevel.clamp(0, 3) * attachmentLevelDecayReduction)
+          .clamp(0.0, 1.0);
+  int attachmentHoursForNextLevel(int attachmentLevel) =>
+      switch (attachmentLevel.clamp(0, 3)) {
+        0 => attachmentLevel1Hours,
+        1 => attachmentLevel2Hours,
+        2 => attachmentLevel3Hours,
+        _ => 0,
+      };
   double artisanReduction(int artisanLevel, int ptipoteLevel) {
     final base = switch (artisanLevel.clamp(0, 3)) {
       1 => artisanLevel1BaseReduction,
@@ -136,6 +158,12 @@ class PtipoteDailyLifeConfig {
         'v3VitalMidBonus': vitalMidBonus,
         'v3VitalHighBonus': vitalHighBonus,
         'v3AttachmentDecayPerHour': attachmentDecayPerHour,
+        'v3AttachmentLevelDecayReduction': attachmentLevelDecayReduction,
+        'v3AttachmentLevelThresholdPercent': attachmentLevelThresholdPercent,
+        'v3AttachmentLevel1Hours': attachmentLevel1Hours,
+        'v3AttachmentLevel2Hours': attachmentLevel2Hours,
+        'v3AttachmentLevel3Hours': attachmentLevel3Hours,
+        'v3TrainingEnergyCost': trainingEnergyCost,
         'v3HugAttachmentGain': hugAttachmentGain,
         'v3TrainingAttachmentGain': trainingAttachmentGain,
         'v3WalkAttachmentGain': walkAttachmentGain,
@@ -189,6 +217,18 @@ class PtipoteDailyLifeConfig {
       vitalHighBonus: d('v3VitalHighBonus', fallback.vitalHighBonus),
       attachmentDecayPerHour:
           d('v3AttachmentDecayPerHour', fallback.attachmentDecayPerHour),
+      attachmentLevelDecayReduction: d('v3AttachmentLevelDecayReduction',
+          fallback.attachmentLevelDecayReduction),
+      attachmentLevelThresholdPercent: d('v3AttachmentLevelThresholdPercent',
+          fallback.attachmentLevelThresholdPercent),
+      attachmentLevel1Hours:
+          i('v3AttachmentLevel1Hours', fallback.attachmentLevel1Hours),
+      attachmentLevel2Hours:
+          i('v3AttachmentLevel2Hours', fallback.attachmentLevel2Hours),
+      attachmentLevel3Hours:
+          i('v3AttachmentLevel3Hours', fallback.attachmentLevel3Hours),
+      trainingEnergyCost:
+          i('v3TrainingEnergyCost', fallback.trainingEnergyCost),
       hugAttachmentGain: d('v3HugAttachmentGain', fallback.hugAttachmentGain),
       trainingAttachmentGain:
           d('v3TrainingAttachmentGain', fallback.trainingAttachmentGain),

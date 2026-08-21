@@ -306,6 +306,8 @@ class PtipoteV2Profile {
     this.skills = const <String, PtipoteSkillProgress>{},
     this.attachmentValue = 25,
     this.attachmentLastUpdatedAt,
+    this.attachmentLevel = 0,
+    this.attachmentStableSince,
     this.assignedJobId,
     this.artisanLevel = 0,
     this.vendorLevel = 0,
@@ -354,6 +356,12 @@ class PtipoteV2Profile {
   /// Relationnel V3: persisted as a timestamped source, never as happiness.
   final double attachmentValue;
   final DateTime? attachmentLastUpdatedAt;
+
+  /// Three slow, relationship-based attachment ranks.  The source timestamp
+  /// only starts while attachment is at least 70%; dropping below that value
+  /// resets the current rank's progression instead of banking partial time.
+  final int attachmentLevel;
+  final DateTime? attachmentStableSince;
 
   /// Explicit player assignment.  V4 may add more job ids without a migration.
   final String? assignedJobId;
@@ -430,6 +438,9 @@ class PtipoteV2Profile {
     Map<String, PtipoteSkillProgress>? skills,
     double? attachmentValue,
     DateTime? attachmentLastUpdatedAt,
+    int? attachmentLevel,
+    DateTime? attachmentStableSince,
+    bool clearAttachmentStableSince = false,
     String? assignedJobId,
     bool clearAssignedJobId = false,
     int? artisanLevel,
@@ -486,6 +497,10 @@ class PtipoteV2Profile {
       attachmentValue: attachmentValue ?? this.attachmentValue,
       attachmentLastUpdatedAt:
           attachmentLastUpdatedAt ?? this.attachmentLastUpdatedAt,
+      attachmentLevel: attachmentLevel ?? this.attachmentLevel,
+      attachmentStableSince: clearAttachmentStableSince
+          ? null
+          : attachmentStableSince ?? this.attachmentStableSince,
       assignedJobId:
           clearAssignedJobId ? null : assignedJobId ?? this.assignedJobId,
       artisanLevel: artisanLevel ?? this.artisanLevel,
@@ -542,6 +557,8 @@ class PtipoteV2Profile {
         'skills': skills.map((key, value) => MapEntry(key, value.toFirebase())),
         'attachmentValue': attachmentValue,
         'attachmentLastUpdatedAt': attachmentLastUpdatedAt?.toIso8601String(),
+        'attachmentLevel': attachmentLevel,
+        'attachmentStableSince': attachmentStableSince?.toIso8601String(),
         'assignedJobId': assignedJobId,
         'artisanLevel': artisanLevel,
         'vendorLevel': vendorLevel,
@@ -692,6 +709,9 @@ class PtipoteV2Profile {
       attachmentValue:
           ((value['attachmentValue'] as num?)?.toDouble() ?? 25).clamp(0, 50),
       attachmentLastUpdatedAt: _readDate(value['attachmentLastUpdatedAt']),
+      attachmentLevel:
+          ((value['attachmentLevel'] as num?)?.round() ?? 0).clamp(0, 3),
+      attachmentStableSince: _readDate(value['attachmentStableSince']),
       assignedJobId: _nullableText(value['assignedJobId']),
       artisanLevel: legacyArtisan,
       vendorLevel: legacyVendor,

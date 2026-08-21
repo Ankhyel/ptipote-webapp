@@ -199,10 +199,14 @@ class PTibugCultivationConfig {
   const PTibugCultivationConfig({
     required this.armatureMinutes,
     required this.activeHours,
-    required this.tankSlotsPerNurseryLevel,
+    required this.baseTankSlots,
+    required this.additionalTankSlotsPerNurseryLevel,
     required this.tankConstructionCost,
     required this.tankConstructionBioBatteries,
     required this.tankConstructionMinutes,
+    required this.improvementTankConstructionCost,
+    required this.improvementTankConstructionBioBatteries,
+    required this.improvementTankConstructionMinutes,
     required this.targetAutonomyHours,
     required this.energyPerActiveHour,
     required this.organicPerActiveHour,
@@ -224,10 +228,26 @@ class PTibugCultivationConfig {
 
   final int armatureMinutes;
   final int activeHours;
-  final int tankSlotsPerNurseryLevel;
+
+  /// Deux cuves sont disponibles dès la Nurserie N1, puis chaque niveau
+  /// ajoute une cuve. N3 = 4 cuves au total.
+  final int baseTankSlots;
+  final int additionalTankSlotsPerNurseryLevel;
+
+  /// Compatibilité lecture des anciens outils/tests Dashboard. La nouvelle
+  /// formule utilise [baseTankSlots] et cette progression additionnelle.
+  @Deprecated('Use additionalTankSlotsPerNurseryLevel instead.')
+  int get tankSlotsPerNurseryLevel => additionalTankSlotsPerNurseryLevel;
+
+  int tankSlotsForNurseryLevel(int level) => level <= 0
+      ? 0
+      : baseTankSlots + (level - 1) * additionalTankSlotsPerNurseryLevel;
   final Map<String, int> tankConstructionCost;
   final int tankConstructionBioBatteries;
   final int tankConstructionMinutes;
+  final Map<String, int> improvementTankConstructionCost;
+  final int improvementTankConstructionBioBatteries;
+  final int improvementTankConstructionMinutes;
   final int targetAutonomyHours;
   final Map<PTibugSpecies, double> energyPerActiveHour;
   final Map<PTibugSpecies, double> organicPerActiveHour;
@@ -1495,10 +1515,17 @@ final PTibugConfig defaultPTibugConfig = PTibugConfig(
   cultivation: const PTibugCultivationConfig(
     armatureMinutes: 180,
     activeHours: 24,
-    tankSlotsPerNurseryLevel: 1,
-    tankConstructionCost: <String, int>{'Organique': 10, 'Minéral': 5},
-    tankConstructionBioBatteries: 1,
-    tankConstructionMinutes: 1,
+    baseTankSlots: 2,
+    additionalTankSlotsPerNurseryLevel: 1,
+    tankConstructionCost: <String, int>{'Organique': 10, 'Minéral': 20},
+    tankConstructionBioBatteries: 5,
+    tankConstructionMinutes: 60,
+    improvementTankConstructionCost: <String, int>{
+      'Organique': 5,
+      'Minéral': 10,
+    },
+    improvementTankConstructionBioBatteries: 3,
+    improvementTankConstructionMinutes: 60,
     targetAutonomyHours: 8,
     energyPerActiveHour: <PTibugSpecies, double>{
       PTibugSpecies.hyme: 1,

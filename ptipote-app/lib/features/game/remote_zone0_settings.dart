@@ -1171,9 +1171,14 @@ PTibugConfig _ptibug(Object? value) {
           rawCultivation?['armatureMinutes'], base.cultivation.armatureMinutes),
       activeHours:
           _int(rawCultivation?['activeHours'], base.cultivation.activeHours),
-      tankSlotsPerNurseryLevel: _int(
-          rawCultivation?['tankSlotsPerNurseryLevel'],
-          base.cultivation.tankSlotsPerNurseryLevel),
+      // Compatibilité Dashboard : l'ancienne clé décrivait une progression
+      // absolue. Les nouvelles clés rendent explicite 2 cuves de base puis
+      // +1 par niveau (N3 = 4).
+      baseTankSlots: _int(
+          rawCultivation?['baseTankSlots'], base.cultivation.baseTankSlots),
+      additionalTankSlotsPerNurseryLevel: _int(
+          rawCultivation?['additionalTankSlotsPerNurseryLevel'],
+          base.cultivation.additionalTankSlotsPerNurseryLevel),
       tankConstructionCost: _resourceMap(
           rawCultivation?['tankConstructionCost'],
           base.cultivation.tankConstructionCost),
@@ -1182,6 +1187,15 @@ PTibugConfig _ptibug(Object? value) {
           base.cultivation.tankConstructionBioBatteries),
       tankConstructionMinutes: _int(rawCultivation?['tankConstructionMinutes'],
           base.cultivation.tankConstructionMinutes),
+      improvementTankConstructionCost: _resourceMap(
+          rawCultivation?['improvementTankConstructionCost'],
+          base.cultivation.improvementTankConstructionCost),
+      improvementTankConstructionBioBatteries: _int(
+          rawCultivation?['improvementTankConstructionBioBatteries'],
+          base.cultivation.improvementTankConstructionBioBatteries),
+      improvementTankConstructionMinutes: _int(
+          rawCultivation?['improvementTankConstructionMinutes'],
+          base.cultivation.improvementTankConstructionMinutes),
       targetAutonomyHours: _int(rawCultivation?['targetAutonomyHours'],
           base.cultivation.targetAutonomyHours),
       energyPerActiveHour: <PTibugSpecies, double>{
@@ -2526,7 +2540,63 @@ FablabConfig _fablab(Object? value) {
       raw['simpleMealOutputAmount'],
       b.simpleMealOutputAmount,
     ),
+    incubationRoomResourceCostsByLevel: _nestedResourceMap(
+      raw['incubationRoomResourceCostsByLevel'],
+      b.incubationRoomResourceCostsByLevel,
+    ),
+    incubationRoomDataCostsByLevel: _nestedResourceMap(
+      raw['incubationRoomDataCostsByLevel'],
+      b.incubationRoomDataCostsByLevel,
+    ),
+    incubationRoomBioBatteriesByLevel: _levelMap(
+      raw['incubationRoomBioBatteriesByLevel'],
+      b.incubationRoomBioBatteriesByLevel,
+    ),
+    incubationRoomDurationMinutesByLevel: _levelMap(
+      raw['incubationRoomDurationMinutesByLevel'],
+      b.incubationRoomDurationMinutesByLevel,
+    ),
+    incubationInventoryBaseCapacity: _int(
+      raw['incubationInventoryBaseCapacity'],
+      b.incubationInventoryBaseCapacity,
+    ),
+    incubationInventoryBonusPerLevel: _int(
+      raw['incubationInventoryBonusPerLevel'],
+      b.incubationInventoryBonusPerLevel,
+    ),
+    moduleUpgradeOrganicCost: _int(
+      raw['moduleUpgradeOrganicCost'],
+      b.moduleUpgradeOrganicCost,
+    ),
+    moduleUpgradeMyceliumCost: _int(
+      raw['moduleUpgradeMyceliumCost'],
+      b.moduleUpgradeMyceliumCost,
+    ),
+    moduleUpgradeDurationMinutes: _int(
+      raw['moduleUpgradeDurationMinutes'],
+      b.moduleUpgradeDurationMinutes,
+    ),
+    symbiosisBreakOrganicCost: _int(
+      raw['symbiosisBreakOrganicCost'],
+      b.symbiosisBreakOrganicCost,
+    ),
+    symbiosisBreakDurationMinutes: _int(
+      raw['symbiosisBreakDurationMinutes'],
+      b.symbiosisBreakDurationMinutes,
+    ),
   );
+}
+
+Map<int, Map<String, int>> _nestedResourceMap(
+  Object? value,
+  Map<int, Map<String, int>> fallback,
+) {
+  final raw = _map(value);
+  if (raw == null) return fallback;
+  return <int, Map<String, int>>{
+    for (final entry in fallback.entries)
+      entry.key: _resourceMap(raw['${entry.key}'], entry.value),
+  };
 }
 
 Map<int, FablabRoomLevelConfig> _fablabRoomLevels(

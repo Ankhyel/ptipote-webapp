@@ -2,7 +2,7 @@ import 'fablab_config.dart';
 
 /// The physical FabLab is the only building. Its rooms deliberately carry
 /// production progression, never a second viability/weather/storage state.
-enum FabLabRoom { kitchen, workshop, recycler }
+enum FabLabRoom { kitchen, workshop, recycler, incubation }
 
 enum RecyclerModuleType { organic, mineral }
 
@@ -160,7 +160,9 @@ extension FabLabRoomRules on FablabConfig {
       houseStorageByLevel[level.clamp(1, houseStorageByLevel.length)] ?? 100;
 
   int roomWorkersFor(FabLabRoom room, int level) =>
-      room == FabLabRoom.recycler ? 0 : roomConfigFor(room, level).workers;
+      room == FabLabRoom.kitchen || room == FabLabRoom.workshop
+          ? roomConfigFor(room, level).workers
+          : 0;
 
   FablabRoomLevelConfig roomConfigFor(FabLabRoom room, int level) {
     final configs =
@@ -169,15 +171,16 @@ extension FabLabRoomRules on FablabConfig {
   }
 
   int queueCapacityFor(FabLabRoom room, int level) =>
-      room == FabLabRoom.recycler
-          ? 0
-          : roomConfigFor(room, level).queueCapacity;
+      room == FabLabRoom.kitchen || room == FabLabRoom.workshop
+          ? roomConfigFor(room, level).queueCapacity
+          : 0;
 
   List<int> quantitiesFor(FabLabRoom room, int level) =>
       roomConfigFor(room, level).quantities;
 
   bool roomSupportsMarketRestock(FabLabRoom room, int level) =>
-      room != FabLabRoom.recycler && roomConfigFor(room, level).marketRestock;
+      (room == FabLabRoom.kitchen || room == FabLabRoom.workshop) &&
+      roomConfigFor(room, level).marketRestock;
 
   int recyclerInputForLevel(int level) =>
       recyclerInputByLevel[level.clamp(1, 4)] ?? 18;

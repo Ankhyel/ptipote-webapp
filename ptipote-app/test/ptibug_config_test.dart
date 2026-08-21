@@ -184,7 +184,10 @@ void main() {
     expect(cultivation.armatureMinutes, 180);
     expect(cultivation.activeHours, 24);
     expect(cultivation.activeSecondsRequired, 24 * 60 * 60);
-    expect(cultivation.tankSlotsPerNurseryLevel, 1);
+    expect(cultivation.baseTankSlots, 2);
+    expect(cultivation.additionalTankSlotsPerNurseryLevel, 1);
+    expect(cultivation.tankSlotsForNurseryLevel(1), 2);
+    expect(cultivation.tankSlotsForNurseryLevel(3), 4);
     expect(cultivation.targetAutonomyHours, 8);
     expect(cultivation.organicPerActiveHour[PTibugSpecies.hyme],
         greaterThan(cultivation.mineralPerActiveHour[PTibugSpecies.hyme]!));

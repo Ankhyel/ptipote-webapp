@@ -187,6 +187,8 @@ class Zone0GameState extends ChangeNotifier {
       <PTibugModuleInstance>[];
   final List<PTibugModuleCraftOrder> pTibugModuleCraftOrders =
       <PTibugModuleCraftOrder>[];
+  final List<PTibugModuleVatOperation> pTibugModuleVatOperations =
+      <PTibugModuleVatOperation>[];
   final List<PTibugCapsule> pTibugCapsules = <PTibugCapsule>[];
   int pTibugModuleCapacityLevel = 0;
   final Map<String, PTibugTerritoryBuilding> pTibugTerritoryBuildings =
@@ -516,7 +518,8 @@ class Zone0GameState extends ChangeNotifier {
   int fabLabRoomLevel(FabLabRoom room) => fabLabRoom(room).level;
 
   bool canUpgradeFabLabRoom(FabLabRoom room) =>
-      fabLabRoom(room).level < fablabLevel && fabLabRoom(room).level < 4;
+      fabLabRoom(room).level < fablabLevel &&
+      fabLabRoom(room).level < (room == FabLabRoom.incubation ? 3 : 4);
 
   String fabLabRoomUpgradeMessage(FabLabRoom room) =>
       fabLabRoom(room).level >= fablabLevel && fabLabRoom(room).level < 4
@@ -638,7 +641,7 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult restartBuildingByPayment(String buildingId) {
     final viability = viabilityForBuilding(buildingId);
     if (!viability.isDisabled) {
-      return const Zone0ActionResult(
+      return Zone0ActionResult(
           success: false, message: 'Ce bâtiment fonctionne déjà.');
     }
     final config = towerOperationsConfig.buildingViability;
@@ -2904,7 +2907,10 @@ class Zone0GameState extends ChangeNotifier {
     final legacyMaximum = math
         .max(
           fablabLevel,
-          math.max(atelierLevel, math.max(cuisineLevel, recyclerLevel)),
+          math.max(
+            plaineNurseryLevel,
+            math.max(atelierLevel, math.max(cuisineLevel, recyclerLevel)),
+          ),
         )
         .clamp(0, fablabConfig.fablabMaxLevel);
     final resolvedFabLabLevel = math
@@ -2918,12 +2924,18 @@ class Zone0GameState extends ChangeNotifier {
       final kitchen = fabLab.room(FabLabRoom.kitchen);
       final workshop = fabLab.room(FabLabRoom.workshop);
       final recycler = fabLab.room(FabLabRoom.recycler);
+      final incubation = fabLab.room(FabLabRoom.incubation);
       kitchen.level =
           math.max(kitchen.level, cuisineLevel).clamp(0, fabLab.level);
       workshop.level =
           math.max(workshop.level, atelierLevel).clamp(0, fabLab.level);
       recycler.level =
           math.max(recycler.level, recyclerLevel).clamp(0, fabLab.level);
+      // The former Nursery owned these vats. It now becomes the Incubation
+      // room without removing any existing P'TIBUG work in progress.
+      incubation.level = math
+          .max(incubation.level, plaineNurseryLevel)
+          .clamp(0, math.min(3, fabLab.level));
       if (fabLab.recyclerVats.first.storedWaste == 0) {
         fabLab.recyclerVats.first.storedWaste = recyclerWasteTank;
       }
@@ -2969,7 +2981,7 @@ class Zone0GameState extends ChangeNotifier {
         ..remove('atelier')
         ..remove('cuisine')
         ..remove('recycler');
-      fabLab.migrationVersion = 2;
+      fabLab.migrationVersion = 3;
       changed = true;
     } else {
       // Reconcile the old room levels too when a previous migration was
@@ -2978,6 +2990,7 @@ class Zone0GameState extends ChangeNotifier {
         FabLabRoom.kitchen: cuisineLevel,
         FabLabRoom.workshop: atelierLevel,
         FabLabRoom.recycler: recyclerLevel,
+        FabLabRoom.incubation: plaineNurseryLevel,
       };
       for (final entry in roomLegacyLevels.entries) {
         final room = fabLab.room(entry.key);
@@ -5469,8 +5482,13 @@ class Zone0GameState extends ChangeNotifier {
   int get manualKitchenSlots =>
       fablabConfig.roomConfigFor(FabLabRoom.kitchen, cuisineLevel).manualSlots;
 
-  int productionQueueCapacityFor(FabLabRoom room) =>
-      fablabConfig.queueCapacityFor(room, fabLabRoomLevel(room));
+  /// A production list is shared by the room, never pre-assigned to a
+  /// specific P’TIPOTE. Four orders are always visible; each permanent worker
+  /// adds four more slots and picks the next free order when available.
+  int productionQueueCapacityFor(FabLabRoom room) {
+    if (room == FabLabRoom.recycler) return 0;
+    return math.max(4, permanentWorkersFor(room).length * 4);
+  }
 
   List<WorkshopCraftOrder> productionQueueFor(FabLabRoom room) {
     final area = room == FabLabRoom.kitchen
@@ -5657,8 +5675,11 @@ class Zone0GameState extends ChangeNotifier {
                 orElse: () => '',
               );
 
-  /// Chaque magasin possède exactement trois emplacements produit en V2.
-  int get marketSlotLimit => 3;
+  /// Chaque niveau de magasin ouvre trois emplacements produit supplémentaires.
+  /// La boutique principale conserve son niveau historique, les autres leur
+  /// niveau propre. Cette capacité est calculée, jamais lue d'un ancien slot
+  /// sauvegardé, afin que les sauvegardes V1/V2 se mettent à niveau.
+  int get marketSlotLimit => 3 * math.max(1, primaryMarketShopLevel);
 
   /// La boutique principale est conservée sur les champs historiques afin de
   /// migrer les sauvegardes sans perdre son stock ni son Distributeur.
@@ -5831,9 +5852,12 @@ class Zone0GameState extends ChangeNotifier {
   MarketShop? marketShopById(String id) =>
       marketShops.where((shop) => shop.id == id).firstOrNull;
 
-  int marketShopStockLimit(String shopId) => shopId == primaryMarketShopId
-      ? (primaryMarketShopLevel >= 2 ? 6 : 3)
-      : marketShopById(shopId)?.stockSlots ?? 0;
+  int marketShopStockLimit(String shopId) {
+    final level = shopId == primaryMarketShopId
+        ? primaryMarketShopLevel
+        : marketShopById(shopId)?.level ?? 1;
+    return 3 * math.max(1, level);
+  }
 
   List<Zone0InventoryStack>? marketStockForShop(String shopId) =>
       shopId == primaryMarketShopId
@@ -6743,15 +6767,16 @@ class Zone0GameState extends ChangeNotifier {
     if (cell == null) {
       return const Zone0ActionResult(
         success: false,
-        message: 'Cellule introuvable.',
+        message: 'Capsule introuvable.',
       );
     }
     if (cell.isOpened) {
       return const Zone0ActionResult(
         success: false,
-        message: 'Cellule déjà analysée.',
+        message: 'Capsule déjà ouverte.',
       );
     }
+    _rollResearchCapsuleOnOpening(cell);
     for (final entry in cell.entries) {
       pTibugDataReserve[entry.family] =
           (pTibugDataReserve[entry.family] ?? 0) + entry.value(pTibugConfig);
@@ -6763,7 +6788,7 @@ class Zone0GameState extends ChangeNotifier {
             '${cell.displayName} analysée : les données rejoignent le Kernel.',
         sourceBuildingId: 'kernel',
         mailbox: Zone0MessageMailbox.kernel,
-        subject: 'Analyse de cellule',
+        subject: 'Ouverture de Capsule',
         concerned: 'Joueur',
         summary: '5 données révélées.',
       ),
@@ -6774,6 +6799,47 @@ class Zone0GameState extends ChangeNotifier {
       success: true,
       message: 'Données ajoutées au Kernel.',
     );
+  }
+
+  /// Le résultat d'une Capsule de Recherche est tiré lorsqu'elle est ouverte,
+  /// jamais au retour de mission. Une Capsule déjà préparée garde néanmoins
+  /// son tirage, ce qui évite tout reroll à la suite d'un rebuild UI.
+  Zone0ActionResult preparePTibugDataCellOpening(String cellId) {
+    final cell = pTibugDataCells.where((item) => item.id == cellId).firstOrNull;
+    if (cell == null || cell.isOpened) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Capsule indisponible.',
+      );
+    }
+    _rollResearchCapsuleOnOpening(cell);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(success: true, message: 'Capsule préparée.');
+  }
+
+  void _rollResearchCapsuleOnOpening(PTibugDataCell cell) {
+    if (cell.entries.isNotEmpty) return;
+    final weights = cell.sourceBiomeId == 'toxicCloud'
+        ? <PTibugDataFamily, int>{PTibugDataFamily.toxine: 1}
+        : pTibugConfig
+                .biomes[PTibugBiome.values.firstWhere(
+              (biome) => biome.name == cell.sourceBiomeId,
+              orElse: () => PTibugBiome.savaneTropicale,
+            )]
+                ?.dataWeights ??
+            const <PTibugDataFamily, int>{PTibugDataFamily.organique: 1};
+    final dominant = cell.dominantFamily ?? _pickWeightedDataFamily(weights);
+    final targetValue = _pickDataCellValue(ForageMissionType.research);
+    for (var slot = 0; slot < 5; slot += 1) {
+      cell.entries.add(PTibugDataCellEntry(
+        family: slot < 2 ? dominant : _pickWeightedDataFamily(weights),
+        quality: slot < targetValue - 5
+            ? PTibugDataQuality.sought
+            : PTibugDataQuality.common,
+        slotIndex: slot,
+      ));
+    }
   }
 
   Map<PTibugDataFamily, int> pTibugPatternMissingData(String patternId) {
@@ -7159,9 +7225,47 @@ class Zone0GameState extends ChangeNotifier {
         profile.attachmentLastUpdatedAt ?? profile.updatedAt ?? current;
     final elapsedHours = math.max(0, current.difference(last).inSeconds / 3600);
     return (profile.attachmentValue -
-            elapsedHours * ptipoteDailyLifeConfig.attachmentDecayPerHour)
+            elapsedHours *
+                ptipoteDailyLifeConfig.attachmentDecayPerHour *
+                ptipoteDailyLifeConfig
+                    .attachmentDecayMultiplier(profile.attachmentLevel))
         .clamp(0, ptipoteDailyLifeConfig.attachmentMax)
         .toDouble();
+  }
+
+  bool _resolveAttachmentProgress(PtipoteFigurine figurine, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final profile = ptipoteV2ProfileFor(figurine);
+    final attachment = attachmentFor(figurine, now: current);
+    final percent = ptipoteDailyLifeConfig.attachmentMax <= 0
+        ? 0.0
+        : attachment * 100 / ptipoteDailyLifeConfig.attachmentMax;
+    if (percent < ptipoteDailyLifeConfig.attachmentLevelThresholdPercent) {
+      if (profile.attachmentStableSince == null &&
+          profile.attachmentValue == attachment) {
+        return false;
+      }
+      ptipoteV2Profiles[figurine.id] = profile.copyWith(
+        attachmentValue: attachment,
+        attachmentLastUpdatedAt: current,
+        clearAttachmentStableSince: true,
+        updatedAt: current,
+      );
+      return true;
+    }
+    final stableSince = profile.attachmentStableSince ?? current;
+    final requiredHours = ptipoteDailyLifeConfig
+        .attachmentHoursForNextLevel(profile.attachmentLevel);
+    final canLevel = requiredHours > 0 &&
+        current.difference(stableSince).inMinutes >= requiredHours * 60;
+    ptipoteV2Profiles[figurine.id] = profile.copyWith(
+      attachmentValue: attachment,
+      attachmentLastUpdatedAt: current,
+      attachmentStableSince: canLevel ? current : stableSince,
+      attachmentLevel: canLevel ? profile.attachmentLevel + 1 : null,
+      updatedAt: current,
+    );
+    return true;
   }
 
   void _setAttachment(
@@ -7171,10 +7275,20 @@ class Zone0GameState extends ChangeNotifier {
   }) {
     final current = now ?? DateTime.now();
     final profile = ptipoteV2ProfileFor(figurine);
+    final clamped =
+        value.clamp(0, ptipoteDailyLifeConfig.attachmentMax).toDouble();
+    final percent = ptipoteDailyLifeConfig.attachmentMax <= 0
+        ? 0.0
+        : clamped * 100 / ptipoteDailyLifeConfig.attachmentMax;
     ptipoteV2Profiles[figurine.id] = profile.copyWith(
-      attachmentValue:
-          value.clamp(0, ptipoteDailyLifeConfig.attachmentMax).toDouble(),
+      attachmentValue: clamped,
       attachmentLastUpdatedAt: current,
+      attachmentStableSince:
+          percent >= ptipoteDailyLifeConfig.attachmentLevelThresholdPercent
+              ? (profile.attachmentStableSince ?? current)
+              : null,
+      clearAttachmentStableSince:
+          percent < ptipoteDailyLifeConfig.attachmentLevelThresholdPercent,
       updatedAt: current,
     );
   }
@@ -7366,6 +7480,12 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   void completePtipoteTraining(PtipoteFigurine figurine) {
+    final energyCost = ptipoteDailyLifeConfig.trainingEnergyCost;
+    if (vitalityFor(figurine) < energyCost) return;
+    vitalityOverrides[figurine.id] = math.max(
+      0,
+      vitalityFor(figurine) - energyCost,
+    );
     final profile = ptipoteV2ProfileFor(figurine);
     final xp =
         ptipoteDailyLifeConfig.movementXpPerLevel * profile.trainingGameLevel;
@@ -7733,7 +7853,16 @@ class Zone0GameState extends ChangeNotifier {
   /// after a legacy migration, so the stable figurine id is the authority --
   /// not the display name (which is allowed to be empty while naming).
   List<PtipoteFigurine> allPtipotes(List<PtipoteFigurine> physical) {
-    final result = <PtipoteFigurine>[...physical];
+    // A legacy physical cache may still contain a temporary companion after
+    // its Co-élevage departure. Its profile remains archived for history but
+    // must never resurrect it in Maison or any activity selector.
+    final result = physical.where((figurine) {
+      final profile = ptipoteV2Profiles[figurine.id];
+      return profile == null ||
+          profile.ownershipMode != PtipoteOwnershipMode.coBred ||
+          (profile.lifecycleStatus == PtipoteLifecycleStatus.active &&
+              !profile.departurePending);
+    }).toList();
     final knownIds = <String>{
       for (final figurine in physical)
         if (figurine.id.trim().isNotEmpty) figurine.id,
@@ -7757,7 +7886,8 @@ class Zone0GameState extends ChangeNotifier {
         final profile = ptipoteV2ProfileFor(figurine);
         return profile.isArrivalComplete &&
             profile.lifecycleStatus == PtipoteLifecycleStatus.active &&
-            !profile.departurePending;
+            !profile.departurePending &&
+            !isBusy(figurine);
       }).toList();
 
   /// Needs use the same living roster as activities. Co-élevage companions
@@ -8389,6 +8519,10 @@ class Zone0GameState extends ChangeNotifier {
     if (!CoBreedingCompletionService.canFinalize(session, profile)) {
       return null;
     }
+    // A co-bred companion is allowed to complete an already-started task, but
+    // the departure ritual must not archive it while that task is still
+    // running. It will be offered again on the next Maison refresh.
+    if (_hasNonInterruptiblePtipoteWork(profile.ptipoteId)) return null;
     final now = DateTime.now();
     final transactionId =
         'co-complete-$sessionId-${now.microsecondsSinceEpoch}';
@@ -8436,9 +8570,11 @@ class Zone0GameState extends ChangeNotifier {
       restorerXp: 0,
     ));
     completedCoBreedingCount += 1;
+    _releaseDepartedCoBredPtipote(profile.ptipoteId);
     ptipoteV2Profiles[profile.ptipoteId] = profile.copyWith(
       lifecycleStatus: PtipoteLifecycleStatus.departedCoBreeding,
       departurePending: true,
+      clearAssignedJobId: true,
       updatedAt: now,
     );
     coBreedingSessions[index] = session.copyWith(
@@ -8470,6 +8606,44 @@ class Zone0GameState extends ChangeNotifier {
       kernelTrustAmount: trustXp,
       alreadyCompleted: false,
     );
+  }
+
+  bool _hasNonInterruptiblePtipoteWork(String ptipoteId) =>
+      isOnMission(ptipoteId) ||
+      activeWorkshopOrders
+          .any((order) => order.assignedPtipoteId == ptipoteId) ||
+      activePTibugModuleCraftOrders
+          .any((order) => order.assignedPtipoteId == ptipoteId) ||
+      pTibugArmatures.any((order) =>
+          order.isCrafting && order.assignedPtipoteId == ptipoteId) ||
+      constructionProjects.values.any((project) =>
+          project.isInProgress && project.assignedPtipoteId == ptipoteId);
+
+  /// Terminal Co-élevage cleanup. This is deliberately idempotent: a retry
+  /// after an interrupted save cannot leave a ghost vendor, tower worker or
+  /// FabLab permanent worker behind.
+  void _releaseDepartedCoBredPtipote(String ptipoteId) {
+    towerAssignedIds.remove(ptipoteId);
+    for (final room in FabLabRoom.values) {
+      fabLabRoom(room).permanentWorkerIds.remove(ptipoteId);
+    }
+    marketStoreAssignedPtipoteIds.removeWhere(
+      (_, assignedId) => assignedId == ptipoteId,
+    );
+    marketStoreAssignedPtipoteNames.removeWhere(
+      (shopId, _) => !marketStoreAssignedPtipoteIds.containsKey(shopId),
+    );
+    if (marketAssignedPtipoteId == ptipoteId) {
+      marketAssignedPtipoteId = null;
+      marketAssignedPtipoteName = null;
+    }
+    if (marketSecondaryAssignedPtipoteId == ptipoteId) {
+      marketSecondaryAssignedPtipoteId = null;
+      marketSecondaryAssignedPtipoteName = null;
+    }
+    manualRestingIds.remove(ptipoteId);
+    waitingForBedIds.remove(ptipoteId);
+    logisticsMaintenancePtipoteIds.remove(ptipoteId);
   }
 
   List<PtipoteFigurine> eligibleTargetsForCoBreedingXpReward(
@@ -9004,7 +9178,6 @@ class Zone0GameState extends ChangeNotifier {
   Zone0ActionResult enqueueFabLabProductionOrder({
     required CraftRecipe recipe,
     required int quantity,
-    required PtipoteFigurine worker,
     WorkshopOrderSource source = WorkshopOrderSource.productionQueue,
   }) {
     final room = recipe.craftSection == CraftSection.cuisine
@@ -9019,10 +9192,10 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Construisez d’abord cette salle.',
       );
     }
-    if (!permanentWorkersFor(room).contains(worker.id)) {
+    if (permanentWorkersFor(room).isEmpty) {
       return const Zone0ActionResult(
         success: false,
-        message: 'Affectez d’abord ce P’TIPOTE à un poste permanent.',
+        message: 'Affectez d’abord un P’TIPOTE à un poste permanent.',
       );
     }
     if (!fablabConfig
@@ -9047,11 +9220,9 @@ class Zone0GameState extends ChangeNotifier {
         message: 'La liste de production est pleine.',
       );
     }
-    final speedBonus = craftSpeedBonus(worker, fabLabRoomLevel(room));
     final unitSeconds = math.max(
       1,
       (Duration(minutes: recipe.durationMinutes).inSeconds *
-              (1 - speedBonus) *
               buildingCraftDurationMultiplier(
                 room == FabLabRoom.kitchen ? 'cuisine' : 'atelier',
               ))
@@ -9065,8 +9236,10 @@ class Zone0GameState extends ChangeNotifier {
         recipeId: recipe.id,
         requestedQuantity: quantity,
         completedQuantity: 0,
-        assignedPtipoteId: worker.id,
-        assignedPtipoteName: worker.displayName,
+        // A list order belongs to the room. A free permanent worker claims
+        // it only when it actually starts, then snapshots its speed bonus.
+        assignedPtipoteId: null,
+        assignedPtipoteName: null,
         startTime: now,
         nextCompletionTime: now,
         unitDurationSeconds: unitSeconds,
@@ -9164,23 +9337,9 @@ class Zone0GameState extends ChangeNotifier {
             .where((option) => option * recipe!.resultAmount <= missing)
             .fold<int>(0, math.max);
         if (quantity <= 0) continue;
-        final workerId = state.permanentWorkerIds.first;
-        final profile = ptipoteV2Profiles[workerId];
-        final workerLevel = levelOverrides[workerId] ?? 1;
-        final artisan = ptipoteDailyLifeConfig.artisanReduction(
-          profile?.artisanLevel ?? 0,
-          workerLevel,
-        );
-        final speed = (workshopConfig.ptipoteCraftTimeReductionPercent +
-                workerLevel * workshopConfig.levelSpeedBonusPercent +
-                workshopConfig
-                    .buildingSpeedBonusForLevel(fabLabRoomLevel(room)) +
-                artisan)
-            .clamp(0, .50);
         final unitSeconds = math.max(
           1,
           (Duration(minutes: recipe.durationMinutes).inSeconds *
-                  (1 - speed) *
                   buildingCraftDurationMultiplier(
                     room == FabLabRoom.kitchen ? 'cuisine' : 'atelier',
                   ))
@@ -9196,8 +9355,8 @@ class Zone0GameState extends ChangeNotifier {
             recipeId: recipe.id,
             requestedQuantity: quantity,
             completedQuantity: 0,
-            assignedPtipoteId: workerId,
-            assignedPtipoteName: profile?.displayName ?? 'P’TIPOTE',
+            assignedPtipoteId: null,
+            assignedPtipoteName: null,
             startTime: current,
             nextCompletionTime: current,
             unitDurationSeconds: unitSeconds,
@@ -9231,19 +9390,19 @@ class Zone0GameState extends ChangeNotifier {
       if (!isBuildingOperational(buildingId)) continue;
       for (final order in productionQueueFor(room)) {
         if (order.status == WorkshopOrderStatus.active) continue;
-        final workerId = order.assignedPtipoteId;
-        if (workerId == null || !permanentWorkersFor(room).contains(workerId)) {
+        final workerId = permanentWorkersFor(room).firstWhere(
+          (id) => !activeWorkshopOrders.any(
+            (active) => active.id != order.id && active.assignedPtipoteId == id,
+          ),
+          orElse: () => '',
+        );
+        if (workerId.isEmpty) {
           if (order.status != WorkshopOrderStatus.blocked) {
             order.status = WorkshopOrderStatus.blocked;
             changed = true;
           }
           continue;
         }
-        final workerBusy = activeWorkshopOrders.any(
-          (active) =>
-              active.id != order.id && active.assignedPtipoteId == workerId,
-        );
-        if (workerBusy) continue;
         CraftRecipe? recipe;
         for (final candidate in craftConfig.recipes) {
           if (candidate.id == order.recipeId) {
@@ -9283,6 +9442,29 @@ class Zone0GameState extends ChangeNotifier {
         order.reservedResources
           ..clear()
           ..addAll(costs);
+        final profile = ptipoteV2Profiles[workerId];
+        final level = levelOverrides[workerId] ?? 1;
+        final artisan = ptipoteDailyLifeConfig.artisanReduction(
+          math.max(
+              profile?.jobLevels['artisan'] ?? 0, profile?.artisanLevel ?? 0),
+          level,
+        );
+        final speed = (workshopConfig.ptipoteCraftTimeReductionPercent +
+                level * workshopConfig.levelSpeedBonusPercent +
+                workshopConfig
+                    .buildingSpeedBonusForLevel(fabLabRoomLevel(room)) +
+                artisan)
+            .clamp(0, .50);
+        order
+          ..assignedPtipoteId = workerId
+          ..assignedPtipoteName = profile?.displayName ?? 'P’TIPOTE'
+          ..unitDurationSeconds = math.max(
+            1,
+            (Duration(minutes: recipe.durationMinutes).inSeconds *
+                    (1 - speed) *
+                    buildingCraftDurationMultiplier(buildingId))
+                .round(),
+          );
         order.nextCompletionTime = current.add(
           Duration(seconds: order.unitDurationSeconds),
         );
@@ -9483,9 +9665,9 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     if (marketStock.length >= marketSlotLimit) {
-      return const Zone0ActionResult(
+      return Zone0ActionResult(
         success: false,
-        message: 'Les trois emplacements sont occupés.',
+        message: 'Les ${marketSlotLimit} emplacements sont occupés.',
       );
     }
     final moved = removeResource(
@@ -10056,6 +10238,7 @@ class Zone0GameState extends ChangeNotifier {
     pTibugDataCells.clear();
     pTibugModuleInstances.clear();
     pTibugModuleCraftOrders.clear();
+    pTibugModuleVatOperations.clear();
     pTibugCapsules.clear();
     pTibugArmatures.clear();
     pTibugCultivationTanks.clear();
@@ -12259,6 +12442,7 @@ class Zone0GameState extends ChangeNotifier {
       ptipoteStatsConfig.naturalVitalityRecoveryMinutes * 2,
     );
     for (final figurine in figurines) {
+      if (_resolveAttachmentProgress(figurine)) changed = true;
       if (isOnMission(figurine.id)) continue;
       if (towerAssignedIds.contains(figurine.id)) {
         if (tick % math.max(1, securityTowerConfig.tickMinutes * 2) == 0) {
@@ -13665,6 +13849,16 @@ class Zone0GameState extends ChangeNotifier {
     String targetId, {
     int? targetLevel,
   }) {
+    if (targetId == 'incubation') {
+      final costs =
+          fablabConfig.incubationRoomDataCostsByLevel[targetLevel ?? 1] ??
+              const <String, int>{};
+      return <PTibugDataFamily, int>{
+        for (final entry in costs.entries)
+          if (_dataFamilyForName(entry.key) case final family?)
+            family: math.max(0, entry.value),
+      }..removeWhere((_, amount) => amount <= 0);
+    }
     final definition = buildingConstructionConfig.projects[targetId];
     if (definition == null) return const <PTibugDataFamily, int>{};
     return <PTibugDataFamily, int>{
@@ -13725,6 +13919,12 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Map<String, int> _projectRequirements(String targetId, int targetLevel) {
+    if (targetId == 'incubation') {
+      return Map<String, int>.from(
+        fablabConfig.incubationRoomResourceCostsByLevel[targetLevel] ??
+            const <String, int>{},
+      );
+    }
     final territoryBiome = _biofermenterBiomeForTarget(targetId);
     if (territoryBiome != null) {
       final config = lisiereForageConfig.territoryBuildings.biofermenter;
@@ -13764,6 +13964,13 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   Duration _projectDuration(String targetId) {
+    if (targetId == 'incubation') {
+      return Duration(
+        minutes: fablabConfig.incubationRoomDurationMinutesByLevel[
+                _buildingLevel(targetId) + 1] ??
+            60,
+      );
+    }
     final baseMinutes = _biofermenterBiomeForTarget(targetId) != null
         ? lisiereForageConfig.territoryBuildings.biofermenter
                 .constructionMinutesByLevel[_buildingLevel(targetId) + 1] ??
@@ -13819,6 +14026,7 @@ class Zone0GameState extends ChangeNotifier {
       'cuisine' => cuisineLevel,
       'atelier' => atelierLevel,
       'recycler' => recyclerLevel,
+      'incubation' => fabLabRoom(FabLabRoom.incubation).level,
       'securityTower' => securityTowerLevel,
       'towerWeatherModule' => towerWeatherModuleInstalled ? 1 : 0,
       'towerResearchModule' => towerResearchModuleInstalled ? 1 : 0,
@@ -13845,6 +14053,7 @@ class Zone0GameState extends ChangeNotifier {
       // The Recycler is a room: it cannot have a separate progression above
       // the physical FabLab, even if an old remote configuration still says 5.
       'recycler' => fablabConfig.fablabMaxLevel,
+      'incubation' => 3,
       'securityTower' => 3,
       'towerWeatherModule' => 1,
       'towerResearchModule' => 1,
@@ -13898,6 +14107,11 @@ class Zone0GameState extends ChangeNotifier {
 
   int projectBioBatteryRequirement(String targetId) {
     final project = projectFor(targetId);
+    if (targetId == 'incubation') {
+      return fablabConfig
+              .incubationRoomBioBatteriesByLevel[project.targetLevel] ??
+          0;
+    }
     if (!_isRefugeTarget(targetId)) return 0;
     return pTibugConfig.territory
         .refugeBioBatteriesForLevel(project.targetLevel);
@@ -13907,7 +14121,7 @@ class Zone0GameState extends ChangeNotifier {
       {int amount = 1}) {
     final project = projectFor(targetId);
     final required = projectBioBatteryRequirement(targetId);
-    if (!_isRefugeTarget(targetId) ||
+    if (!_isRefugeTarget(targetId) && targetId != 'incubation' ||
         !project.canEditMaterials ||
         required <= 0) {
       return const Zone0ActionResult(
@@ -14092,6 +14306,7 @@ class Zone0GameState extends ChangeNotifier {
       'cuisine' => FabLabRoom.kitchen,
       'atelier' => FabLabRoom.workshop,
       'recycler' => FabLabRoom.recycler,
+      'incubation' => FabLabRoom.incubation,
       _ => null,
     };
     if (fabLabRoom != null && fabLabRoomLevel(fabLabRoom) >= fablabLevel) {
@@ -14383,6 +14598,8 @@ class Zone0GameState extends ChangeNotifier {
       case 'recycler':
         recyclerLevel = project.currentLevel;
         fabLabRoom(FabLabRoom.recycler).level = recyclerLevel;
+      case 'incubation':
+        fabLabRoom(FabLabRoom.incubation).level = project.currentLevel;
       case 'securityTower':
         securityTowerLevel = project.currentLevel;
         refugeSafety = math.max(
@@ -14645,10 +14862,36 @@ class Zone0GameState extends ChangeNotifier {
     );
   }
 
-  int get cultivationTankSlotCount => math.max(
-        0,
-        plaineNurseryLevel * pTibugConfig.cultivation.tankSlotsPerNurseryLevel,
-      );
+  int get incubationRoomLevel => fabLabRoom(FabLabRoom.incubation).level;
+
+  int get cultivationTankSlotCount =>
+      pTibugConfig.cultivation.tankSlotsForNurseryLevel(incubationRoomLevel);
+
+  int get improvementTankSlotCount => incubationRoomLevel.clamp(0, 3);
+
+  int get activeImprovementVatOperations =>
+      pTibugModuleVatOperations.where((operation) => operation.isActive).length;
+
+  /// One dedicated inventory for Armatures, Matrices and Modules. Matrices
+  /// occupy stack slots; the same source P'TIBUG can fill a stack up to 10.
+  int get incubationInventoryCapacity =>
+      fablabConfig.incubationInventoryBaseCapacity +
+      math.max(0, incubationRoomLevel - 1) *
+          fablabConfig.incubationInventoryBonusPerLevel;
+
+  int get incubationInventoryUsed {
+    final matrixStacks = <String, int>{};
+    for (final matrix in pTibugAspectMatrices) {
+      final key = matrix.sourcePTibugId;
+      matrixStacks[key] = (matrixStacks[key] ?? 0) + 1;
+    }
+    final matrixSlots = matrixStacks.values
+        .fold<int>(0, (total, amount) => total + (amount / 10).ceil());
+    return pTibugArmatures.length + pTibugModuleInstances.length + matrixSlots;
+  }
+
+  bool get hasIncubationInventorySpace =>
+      incubationInventoryUsed < incubationInventoryCapacity;
 
   List<PTibugCultivationTank> get builtCultivationTanks =>
       pTibugCultivationTanks.where((tank) => tank.isBuilt).toList()
@@ -15943,7 +16186,14 @@ class Zone0GameState extends ChangeNotifier {
     required String firstId,
     required String secondId,
   }) {
-    final first =
+    // La fusion est retirée : les modules issus de l'ancien système restent
+    // des instances standards équipables et migrent vers la future évolution
+    // en cuve, sans détruire l'inventaire du joueur.
+    return const Zone0ActionResult(
+      success: false,
+      message: 'La fusion de Modules est remplacée par l’évolution en cuve.',
+    );
+    /* final first =
         pTibugModuleInstances.where((item) => item.id == firstId).firstOrNull;
     final second =
         pTibugModuleInstances.where((item) => item.id == secondId).firstOrNull;
@@ -15985,7 +16235,149 @@ class Zone0GameState extends ChangeNotifier {
     return Zone0ActionResult(
       success: true,
       message: '${first.type.displayName} niveau $nextLevel créé.',
-    );
+    ); */
+  }
+
+  /// Starts the improvement-vat work. An upgraded module stays attached to
+  /// this P'TIBUG until a later symbiosis break is completed.
+  Zone0ActionResult startPTibugModuleSymbiosis({
+    required String moduleInstanceId,
+    required PTibug bug,
+  }) {
+    final module = pTibugModuleInstances
+        .where((item) => item.id == moduleInstanceId)
+        .firstOrNull;
+    if (module == null ||
+        module.equippedPTibugId != bug.id ||
+        module.symbiosisWithPTibugId != null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Module ou P’TIBUG indisponible.');
+    }
+    if (activeImprovementVatOperations >= improvementTankSlotCount) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Toutes les cuves d’amélioration sont occupées.');
+    }
+    final cost = <String, int>{
+      'Organique': fablabConfig.moduleUpgradeOrganicCost,
+      'Mycélium': fablabConfig.moduleUpgradeMyceliumCost,
+    };
+    if (!hasResources(cost) || incubationRoomLevel <= 0) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Salle d’incubation ou matériaux insuffisants.');
+    }
+    removeResources(cost);
+    final now = DateTime.now();
+    pTibugModuleVatOperations.add(PTibugModuleVatOperation(
+      id: 'module-symbiosis-${now.microsecondsSinceEpoch}',
+      moduleInstanceId: module.id,
+      targetPTibugId: bug.id,
+      kind: PTibugModuleVatOperationKind.symbiosis,
+      startedAt: now,
+      endsAt:
+          now.add(Duration(minutes: fablabConfig.moduleUpgradeDurationMinutes)),
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Symbiose du module lancée.');
+  }
+
+  Zone0ActionResult breakPTibugModuleSymbiosis(String moduleInstanceId) {
+    final module = pTibugModuleInstances
+        .where((item) => item.id == moduleInstanceId)
+        .firstOrNull;
+    if (module == null ||
+        module.symbiosisWithPTibugId == null ||
+        pTibugModuleVatOperations.any(
+            (item) => item.moduleInstanceId == module.id && item.isActive)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Brisure de symbiose indisponible.');
+    }
+    if (resourceAmount('Organique') < fablabConfig.symbiosisBreakOrganicCost ||
+        incubationRoomLevel <= 0) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Salle d’incubation ou Organique insuffisant.');
+    }
+    if (activeImprovementVatOperations >= improvementTankSlotCount) {
+      return const Zone0ActionResult(
+          success: false,
+          message: 'Toutes les cuves d’amélioration sont occupées.');
+    }
+    removeResource('Organique', fablabConfig.symbiosisBreakOrganicCost);
+    final now = DateTime.now();
+    pTibugModuleVatOperations.add(PTibugModuleVatOperation(
+      id: 'module-break-${now.microsecondsSinceEpoch}',
+      moduleInstanceId: module.id,
+      targetPTibugId: module.symbiosisWithPTibugId,
+      kind: PTibugModuleVatOperationKind.breakSymbiosis,
+      startedAt: now,
+      endsAt: now
+          .add(Duration(minutes: fablabConfig.symbiosisBreakDurationMinutes)),
+    ));
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Brisure de symbiose lancée.');
+  }
+
+  bool _resolvePTibugModuleVatOperations(DateTime current) {
+    var changed = false;
+    for (final operation
+        in pTibugModuleVatOperations.where((item) => item.isActive)) {
+      if (operation.endsAt.isAfter(current)) continue;
+      final module = pTibugModuleInstances
+          .where((item) => item.id == operation.moduleInstanceId)
+          .firstOrNull;
+      if (module != null) {
+        if (operation.kind == PTibugModuleVatOperationKind.symbiosis) {
+          module
+            ..symbiosisWithPTibugId = operation.targetPTibugId
+            ..symbiosisLevel = math.max(1, module.symbiosisLevel);
+        } else {
+          module.symbiosisWithPTibugId = null;
+        }
+      }
+      operation.completedAt = current;
+      changed = true;
+    }
+    return changed;
+  }
+
+  int symbiosisXpRequiredForLevel(int level) => switch (level) {
+        1 => 15,
+        2 => 30,
+        _ => 60,
+      };
+
+  double moduleSymbiosisCapacityMultiplier(PTibugModuleInstance module) =>
+      1 + module.symbiosisLevel.clamp(0, 3) * .10;
+
+  bool _resolvePTibugModuleSymbiosisXp(DateTime current) {
+    var changed = false;
+    for (final module in pTibugModuleInstances) {
+      if (module.symbiosisWithPTibugId == null || !module.isEquipped) {
+        continue;
+      }
+      final last = module.symbiosisLastXpAt ?? current;
+      final gainedHours = current.difference(last).inHours;
+      if (gainedHours <= 0) continue;
+      module.symbiosisLastXpAt = last.add(Duration(hours: gainedHours));
+      if (module.symbiosisLevel < 3) {
+        module.symbiosisXp += gainedHours;
+        while (module.symbiosisLevel < 3 &&
+            module.symbiosisXp >=
+                symbiosisXpRequiredForLevel(module.symbiosisLevel)) {
+          module.symbiosisXp -=
+              symbiosisXpRequiredForLevel(module.symbiosisLevel);
+          module.symbiosisLevel += 1;
+        }
+      }
+      changed = true;
+    }
+    return changed;
   }
 
   Zone0ActionResult encapsulatePTibug(PTibug bug) {
@@ -16100,6 +16492,12 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
     }
     if (_resolvePTibugModuleCrafts(current)) {
+      changed = true;
+    }
+    if (_resolvePTibugModuleVatOperations(current)) {
+      changed = true;
+    }
+    if (_resolvePTibugModuleSymbiosisXp(current)) {
       changed = true;
     }
     final creation = pTibugCreationOrder;
@@ -18660,6 +19058,13 @@ class Zone0GameState extends ChangeNotifier {
                 .whereType<Map>()
                 .map(PTibugModuleInstance.fromFirebase),
           );
+        // The retired fusion system never grants a permanent power advantage
+        // in the DEV migration. Its outputs become ordinary level-1 modules.
+        for (final module in pTibugModuleInstances) {
+          if (module.source == 'fusion' && module.qualityLevel != 1) {
+            module.qualityLevel = 1;
+          }
+        }
         pTibugModuleCraftOrders
           ..clear()
           ..addAll(
@@ -18667,6 +19072,12 @@ class Zone0GameState extends ChangeNotifier {
                 .whereType<Map>()
                 .map(PTibugModuleCraftOrder.fromFirebase),
           );
+        pTibugModuleVatOperations
+          ..clear()
+          ..addAll(
+              (ptibugData['moduleVatOperations'] as List? ?? const <dynamic>[])
+                  .whereType<Map>()
+                  .map(PTibugModuleVatOperation.fromFirebase));
         pTibugCapsules
           ..clear()
           ..addAll(
@@ -19218,7 +19629,8 @@ class Zone0GameState extends ChangeNotifier {
 
     // Older saves can contain cells created before the five-entry contract.
     // Only unopened cells are completed, so no already-granted data is added.
-    for (final cell in pTibugDataCells.where((item) => !item.isOpened)) {
+    for (final cell in pTibugDataCells
+        .where((item) => !item.isOpened && !item.rollOnOpen)) {
       final fallbackFamily = cell.dominantFamily ?? PTibugDataFamily.organique;
       while (cell.entries.length < 5) {
         cell.entries.add(
@@ -19731,7 +20143,7 @@ class Zone0GameState extends ChangeNotifier {
         ? activeMarketLicenses.elementAt(
             _random.nextInt(activeMarketLicenses.length),
           )
-        : 'materials';
+        : 'food';
     final item = category == 'atelier' && marketLevel >= 2
         ? 'Filtre'
         : category == 'structure' && marketLevel >= 3
@@ -19748,11 +20160,11 @@ class Zone0GameState extends ChangeNotifier {
                         'P’TIBUG Arac',
                       ][_random.nextInt(3)])
                 : _random.nextBool()
-                    ? 'Organique'
-                    : 'Minéral';
+                    ? 'Repas simple'
+                    : 'Boisson tonique';
     final isMatrix = _isMarketMatrixResource(item);
-    final quantity = item == 'Organique' || item == 'Minéral'
-        ? 10
+    final quantity = item == 'Repas simple' || item == 'Boisson tonique'
+        ? 3
         : isMatrix
             ? 2 + (_random.nextInt(6) * 2)
             : 1;
@@ -21598,20 +22010,6 @@ class Zone0GameState extends ChangeNotifier {
             (weights[PTibugDataFamily.toxine] ?? 0) + toxineWeightBonus;
       }
       final dominant = _pickWeightedDataFamily(weights);
-      final entries = <PTibugDataCellEntry>[];
-      final targetValue = _pickDataCellValue(mission.type);
-      for (var slot = 0; slot < 5; slot += 1) {
-        final family = slot < 2 ? dominant : _pickWeightedDataFamily(weights);
-        entries.add(
-          PTibugDataCellEntry(
-            family: family,
-            quality: slot < targetValue - 5
-                ? PTibugDataQuality.sought
-                : PTibugDataQuality.common,
-            slotIndex: slot,
-          ),
-        );
-      }
       cells.add(
         PTibugDataCell(
           id: 'cell-${mission.id}-$attempt',
@@ -21621,7 +22019,8 @@ class Zone0GameState extends ChangeNotifier {
           sourceMissionId: mission.id,
           dominantFamily: dominant,
           isNeutralCell: false,
-          entries: entries,
+          rollOnOpen: true,
+          entries: <PTibugDataCellEntry>[],
           createdAt: completedAt,
         ),
       );
@@ -21629,9 +22028,9 @@ class Zone0GameState extends ChangeNotifier {
     return cells;
   }
 
-  /// Research rewards are granted directly to the Data reserve. The
-  /// PTibugDataCell shape is retained only as an internal weighted-roll
-  /// container and for legacy migration; there is no open/reveal step.
+  /// Research returns physical Capsules to the inventory. Their five entries
+  /// are rolled on opening by [openPTibugDataCell], preserving both the
+  /// weighted biome identity and the player's reveal choice.
   Map<PTibugDataFamily, int> _grantResearchCapsules({
     required ForageMission mission,
     required List<PTibugDataCell> cells,
@@ -21640,57 +22039,68 @@ class Zone0GameState extends ChangeNotifier {
       return const <PTibugDataFamily, int>{};
     }
     final granted = <PTibugDataFamily, int>{};
-    for (final cell in cells) {
-      for (final entry in cell.entries) {
-        granted[entry.family] =
-            (granted[entry.family] ?? 0) + entry.value(pTibugConfig);
-      }
-    }
+    final capsules = <PTibugDataCell>[...cells];
     // Toxic Cloud is a deterministic environmental guarantee, not another
     // random table entry. It is additive to the normal research outcome.
     if (towerOperationsConfig.research.toxicCloudGuaranteeEnabled &&
         activeGlobalWeatherEvent?.type == TowerWeatherType.toxicCloud) {
-      granted[PTibugDataFamily.toxine] = math.max(
-        math.max(
-          1,
-          towerOperationsConfig.research.toxicCapsuleGuaranteedAmount,
-        ),
-        granted[PTibugDataFamily.toxine] ?? 0,
+      final guaranteed = math.max(
+        1,
+        towerOperationsConfig.research.toxicCapsuleGuaranteedAmount,
       );
+      for (var index = 0; index < guaranteed; index += 1) {
+        capsules.add(PTibugDataCell(
+          id: 'toxic-capsule-${mission.id}-$index',
+          displayName: 'Capsule Toxique · Nuage toxique',
+          sourceBiomeId: 'toxicCloud',
+          sourceMissionId: mission.id,
+          dominantFamily: PTibugDataFamily.toxine,
+          rollOnOpen: true,
+          entries: <PTibugDataCellEntry>[],
+          createdAt: DateTime.now(),
+        ));
+      }
     }
-    for (final entry in granted.entries) {
-      pTibugDataReserve[entry.key] =
-          (pTibugDataReserve[entry.key] ?? 0) + entry.value;
+    for (final capsule in capsules) {
+      if (pTibugDataCells.any((item) => item.id == capsule.id)) continue;
+      pTibugDataCells.add(capsule);
+      final family = capsule.dominantFamily ?? PTibugDataFamily.organique;
+      granted[family] = (granted[family] ?? 0) + 1;
     }
     return granted;
   }
 
-  /// Legacy Tower-only research is allowed to finish after a migration, but
-  /// it must use the same direct Capsule reward model as current missions.
+  /// Legacy Tower-only research may finish after migration and follows the
+  /// same unopened-Capsule flow as a current mission.
   Map<PTibugDataFamily, int> _grantLegacyResearchCapsules(
     List<PTibugDataCell> cells,
   ) {
     if (!researchUnlocked) return const <PTibugDataFamily, int>{};
     final granted = <PTibugDataFamily, int>{};
-    for (final cell in cells) {
-      for (final entry in cell.entries) {
-        granted[entry.family] =
-            (granted[entry.family] ?? 0) + entry.value(pTibugConfig);
-      }
-    }
+    final capsules = <PTibugDataCell>[...cells];
     if (towerOperationsConfig.research.toxicCloudGuaranteeEnabled &&
         activeGlobalWeatherEvent?.type == TowerWeatherType.toxicCloud) {
-      granted[PTibugDataFamily.toxine] = math.max(
-        math.max(
-          1,
-          towerOperationsConfig.research.toxicCapsuleGuaranteedAmount,
-        ),
-        granted[PTibugDataFamily.toxine] ?? 0,
+      final guaranteed = math.max(
+        1,
+        towerOperationsConfig.research.toxicCapsuleGuaranteedAmount,
       );
+      for (var index = 0; index < guaranteed; index += 1) {
+        capsules.add(PTibugDataCell(
+          id: 'legacy-toxic-capsule-${DateTime.now().microsecondsSinceEpoch}-$index',
+          displayName: 'Capsule Toxique · Nuage toxique',
+          sourceBiomeId: 'toxicCloud',
+          dominantFamily: PTibugDataFamily.toxine,
+          rollOnOpen: true,
+          entries: <PTibugDataCellEntry>[],
+          createdAt: DateTime.now(),
+        ));
+      }
     }
-    for (final entry in granted.entries) {
-      pTibugDataReserve[entry.key] =
-          (pTibugDataReserve[entry.key] ?? 0) + entry.value;
+    for (final capsule in capsules) {
+      if (pTibugDataCells.any((item) => item.id == capsule.id)) continue;
+      pTibugDataCells.add(capsule);
+      final family = capsule.dominantFamily ?? PTibugDataFamily.organique;
+      granted[family] = (granted[family] ?? 0) + 1;
     }
     return granted;
   }
@@ -21723,17 +22133,6 @@ class Zone0GameState extends ChangeNotifier {
           towerOperationsConfig.research.cellChancePerHour) continue;
       final weights = _researchCapsuleWeightsFor(research.biome);
       final dominant = _pickWeightedDataFamily(weights);
-      final targetValue = _pickDataCellValue(ForageMissionType.research);
-      final entries = List<PTibugDataCellEntry>.generate(
-        5,
-        (slot) => PTibugDataCellEntry(
-          family: slot < 2 ? dominant : _pickWeightedDataFamily(weights),
-          quality: slot < targetValue - 5
-              ? PTibugDataQuality.sought
-              : PTibugDataQuality.common,
-          slotIndex: slot,
-        ),
-      );
       cells.add(PTibugDataCell(
         id: 'tower-cell-${research.id}-$attempt',
         displayName:
@@ -21741,7 +22140,8 @@ class Zone0GameState extends ChangeNotifier {
         sourceBiomeId: biomeId.name,
         sourceMissionId: research.id,
         dominantFamily: dominant,
-        entries: entries,
+        rollOnOpen: true,
+        entries: <PTibugDataCellEntry>[],
         createdAt: completedAt,
       ));
     }
@@ -22292,6 +22692,9 @@ class Zone0GameState extends ChangeNotifier {
               pTibugModuleInstances.map((item) => item.toFirebase()).toList(),
           'moduleCraftOrders':
               pTibugModuleCraftOrders.map((item) => item.toFirebase()).toList(),
+          'moduleVatOperations': pTibugModuleVatOperations
+              .map((item) => item.toFirebase())
+              .toList(),
           'moduleCapacityLevel': pTibugModuleCapacityLevel,
           'capsules': pTibugCapsules.map((item) => item.toFirebase()).toList(),
         },
@@ -23262,8 +23665,8 @@ class MarketShop {
         _ => false,
       };
 
-  /// Un magasin V2 garde trois slots produits quel que soit son niveau.
-  int get stockSlots => 3;
+  /// Chaque niveau de magasin ajoute trois slots produits.
+  int get stockSlots => 3 * math.max(1, level);
   int get distributorSlots => level >= 2 ? 2 : 1;
 
   factory MarketShop.fromFirebase(Map<dynamic, dynamic> data) => MarketShop(
@@ -23671,11 +24074,11 @@ class WorkshopCraftOrder {
   final WorkshopOrderArea area;
   final int requestedQuantity;
   int completedQuantity;
-  final String? assignedPtipoteId;
-  final String? assignedPtipoteName;
+  String? assignedPtipoteId;
+  String? assignedPtipoteName;
   final DateTime startTime;
   DateTime nextCompletionTime;
-  final int unitDurationSeconds;
+  int unitDurationSeconds;
   final Map<String, int> reservedResources;
   final WorkshopOrderSource source;
   WorkshopOrderStatus status;
@@ -26491,6 +26894,7 @@ class PTibugDataCell {
     this.sourceMissionId,
     this.dominantFamily,
     this.isNeutralCell = false,
+    this.rollOnOpen = false,
     this.openedAt,
   });
 
@@ -26500,6 +26904,7 @@ class PTibugDataCell {
   final String? sourceMissionId;
   final PTibugDataFamily? dominantFamily;
   final bool isNeutralCell;
+  final bool rollOnOpen;
   final List<PTibugDataCellEntry> entries;
   final DateTime createdAt;
   DateTime? openedAt;
@@ -26519,6 +26924,7 @@ class PTibugDataCell {
                 PTibugDataFamily.organique,
               ),
         isNeutralCell: data['isNeutralCell'] == true,
+        rollOnOpen: data['rollOnOpen'] == true,
         entries: (data['entries'] as List? ?? const <dynamic>[])
             .whereType<Map>()
             .map(PTibugDataCellEntry.fromFirebase)
@@ -26536,6 +26942,7 @@ class PTibugDataCell {
         'sourceMissionId': sourceMissionId,
         'dominantFamily': dominantFamily?.name,
         'isNeutralCell': isNeutralCell,
+        'rollOnOpen': rollOnOpen,
         'entries': entries.map((entry) => entry.toFirebase()).toList(),
         'createdAt': Timestamp.fromDate(createdAt),
         'openedAt': openedAt == null ? null : Timestamp.fromDate(openedAt!),
@@ -26600,6 +27007,10 @@ class PTibugModuleInstance {
     required this.type,
     this.qualityLevel = 1,
     this.equippedPTibugId,
+    this.symbiosisWithPTibugId,
+    this.symbiosisLevel = 0,
+    this.symbiosisXp = 0,
+    this.symbiosisLastXpAt,
     required this.createdAt,
     this.source = 'atelier',
   });
@@ -26608,6 +27019,10 @@ class PTibugModuleInstance {
   final PTibugModuleType type;
   int qualityLevel;
   String? equippedPTibugId;
+  String? symbiosisWithPTibugId;
+  int symbiosisLevel;
+  int symbiosisXp;
+  DateTime? symbiosisLastXpAt;
   final DateTime createdAt;
   final String source;
   bool get isEquipped => equippedPTibugId != null;
@@ -26624,6 +27039,13 @@ class PTibugModuleInstance {
             ._readInt(data['qualityLevel'], fallback: 1)
             .clamp(1, 99),
         equippedPTibugId: data['equippedPTibugId'] as String?,
+        symbiosisWithPTibugId: data['symbiosisWithPTibugId'] as String?,
+        symbiosisLevel: Zone0GameState.instance
+            ._readInt(data['symbiosisLevel'])
+            .clamp(0, 3),
+        symbiosisXp: Zone0GameState.instance._readInt(data['symbiosisXp']),
+        symbiosisLastXpAt:
+            Zone0GameState.instance._readDate(data['symbiosisLastXpAt']),
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
             DateTime.now(),
         source: '${data['source'] ?? 'atelier'}',
@@ -26634,8 +27056,65 @@ class PTibugModuleInstance {
         'type': type.name,
         'qualityLevel': qualityLevel,
         'equippedPTibugId': equippedPTibugId,
+        'symbiosisWithPTibugId': symbiosisWithPTibugId,
+        'symbiosisLevel': symbiosisLevel,
+        'symbiosisXp': symbiosisXp,
+        'symbiosisLastXpAt': symbiosisLastXpAt == null
+            ? null
+            : Timestamp.fromDate(symbiosisLastXpAt!),
         'createdAt': Timestamp.fromDate(createdAt),
         'source': source,
+      };
+}
+
+enum PTibugModuleVatOperationKind { symbiosis, breakSymbiosis }
+
+class PTibugModuleVatOperation {
+  PTibugModuleVatOperation({
+    required this.id,
+    required this.moduleInstanceId,
+    required this.targetPTibugId,
+    required this.kind,
+    required this.startedAt,
+    required this.endsAt,
+    this.completedAt,
+  });
+
+  final String id;
+  final String moduleInstanceId;
+  final String? targetPTibugId;
+  final PTibugModuleVatOperationKind kind;
+  final DateTime startedAt;
+  final DateTime endsAt;
+  DateTime? completedAt;
+  bool get isActive => completedAt == null;
+
+  factory PTibugModuleVatOperation.fromFirebase(Map<dynamic, dynamic> data) =>
+      PTibugModuleVatOperation(
+        id: '${data['id'] ?? ''}',
+        moduleInstanceId: '${data['moduleInstanceId'] ?? ''}',
+        targetPTibugId: data['targetPTibugId'] as String?,
+        kind: ForageMission._enumByName(
+          PTibugModuleVatOperationKind.values,
+          '${data['kind'] ?? ''}',
+          PTibugModuleVatOperationKind.symbiosis,
+        ),
+        startedAt: Zone0GameState.instance._readDate(data['startedAt']) ??
+            DateTime.now(),
+        endsAt:
+            Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
+        completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+      );
+
+  Map<String, dynamic> toFirebase() => <String, dynamic>{
+        'id': id,
+        'moduleInstanceId': moduleInstanceId,
+        'targetPTibugId': targetPTibugId,
+        'kind': kind.name,
+        'startedAt': Timestamp.fromDate(startedAt),
+        'endsAt': Timestamp.fromDate(endsAt),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
       };
 }
 

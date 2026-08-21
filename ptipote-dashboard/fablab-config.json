@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "constructionCostLevel1Organic": 8,
   "constructionCostLevel1Mineral": 4,
   "baseGlobalStockCapacity": 100,
@@ -37,5 +37,24 @@
   "atelierUnlockCampHeartLevel": 1,
   "recyclerUnlockCampHeartLevel": 2,
   "simpleMealOrganicCost": 2,
-  "simpleMealOutputAmount": 1
+  "simpleMealOutputAmount": 1,
+  "incubationRoomResourceCostsByLevel": {
+    "1": {"Minéral": 30, "Organique": 20},
+    "2": {"Minéral": 40, "Organique": 30, "Mycélium": 10},
+    "3": {"Minéral": 40, "Organique": 30, "Mycélium": 20}
+  },
+  "incubationRoomDataCostsByLevel": {
+    "1": {"biomimetisme": 10, "organique": 10, "energie": 5, "comportementInsectoide": 5},
+    "2": {"mycelienne": 10, "comportementInsectoide": 5},
+    "3": {"mycelienne": 20, "comportementInsectoide": 10}
+  },
+  "incubationRoomBioBatteriesByLevel": {"3": 5},
+  "incubationRoomDurationMinutesByLevel": {"1": 60, "2": 120, "3": 180},
+  "incubationInventoryBaseCapacity": 100,
+  "incubationInventoryBonusPerLevel": 25,
+  "moduleUpgradeOrganicCost": 20,
+  "moduleUpgradeMyceliumCost": 10,
+  "moduleUpgradeDurationMinutes": 120,
+  "symbiosisBreakOrganicCost": 10,
+  "symbiosisBreakDurationMinutes": 180
 }

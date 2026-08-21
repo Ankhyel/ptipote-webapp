@@ -1177,7 +1177,7 @@ class _KernelMainMissionTab extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.w900)),
                 const SizedBox(height: 6),
                 if (gameState.residentArrivalCandidates.isEmpty)
-                  const Text(
+                  Text(
                       'Aucune arrivée à examiner. Les futures candidatures apparaîtront ici.')
                 else
                   ...gameState.residentArrivalCandidates.map(
@@ -1751,7 +1751,7 @@ class _KernelDataCellsCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               gameState.researchUnlocked
-                  ? 'Les missions de la Tour ajoutent directement les Données à cette réserve.'
+                  ? 'Les missions de la Tour donnent des Capsules à ouvrir. Leur tirage aléatoire rejoint ensuite cette réserve.'
                   : 'La Tour de recherche doit être débloquée avant toute découverte de Capsule.',
             ),
             const SizedBox(height: 12),
@@ -1803,14 +1803,14 @@ class _KernelDataCellsSheetState extends State<_KernelDataCellsSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text(
-                'Cellules à analyser',
+                'Capsules à ouvrir',
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 8),
               const Text(
-                'Chaque cellule contient cinq entrées de données. L\'analyse les transfère définitivement dans la réserve du Kernel.',
+                'Chaque Capsule révèle cinq entrées de Données lors de son ouverture. Elles rejoignent ensuite définitivement la réserve du Kernel.',
               ),
               const SizedBox(height: 12),
               Expanded(
@@ -1819,16 +1819,12 @@ class _KernelDataCellsSheetState extends State<_KernelDataCellsSheet> {
                   separatorBuilder: (_, __) => const Divider(),
                   itemBuilder: (context, index) {
                     final cell = cells[index];
-                    final total = cell.entries.fold<int>(
-                      0,
-                      (sum, entry) => sum + entry.value(pTibugConfig),
-                    );
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.memory_outlined),
                       title: Text(cell.displayName),
                       subtitle: Text(
-                        '${cell.isNeutralCell ? 'Neutre' : _kernelDataFamilyLabel(cell.dominantFamily!)} · 5 données · valeur $total',
+                        '${cell.isNeutralCell ? 'Neutre' : _kernelDataFamilyLabel(cell.dominantFamily!)} · 5 données · tirage à l’ouverture',
                       ),
                       trailing: FilledButton(
                         style: FilledButton.styleFrom(
@@ -1837,6 +1833,9 @@ class _KernelDataCellsSheetState extends State<_KernelDataCellsSheet> {
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         onPressed: () async {
+                          final prepared = widget.gameState
+                              .preparePTibugDataCellOpening(cell.id);
+                          if (!prepared.success || !mounted) return;
                           final confirmed = await showModalBottomSheet<bool>(
                             context: context,
                             isScrollControlled: true,
@@ -2478,6 +2477,9 @@ class _MaisonPageState extends State<_MaisonPage>
                         hungerMax: _gameState.hungerMaxFor(figurine),
                         happiness: _gameState.happinessFor(figurine),
                         attachment: _gameState.attachmentFor(figurine),
+                        attachmentLevel: _gameState
+                            .ptipoteV2ProfileFor(figurine)
+                            .attachmentLevel,
                         happinessBreakdown:
                             _gameState.happinessBreakdownFor(figurine),
                         jobLevels: _gameState.ptipoteJobLevels(figurine),
@@ -2625,7 +2627,13 @@ class _MaisonTrainingTab extends StatelessWidget {
 
   Future<void> _selectPtipote(BuildContext context, String activity) async {
     final all = await figurineService.watchMyFigurines().first;
-    final available = gameState.ptipotesAvailableForActivities(all);
+    final available = gameState
+        .ptipotesAvailableForActivities(all)
+        .where((ptipote) =>
+            activity != 'movement' ||
+            gameState.vitalityFor(ptipote) >=
+                ptipoteDailyLifeConfig.trainingEnergyCost)
+        .toList();
     if (!context.mounted) return;
     final figurine = await showModalBottomSheet<PtipoteFigurine>(
       context: context,
@@ -2641,7 +2649,13 @@ class _MaisonTrainingTab extends StatelessWidget {
                     ?.copyWith(fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             if (available.isEmpty)
-              const ListTile(title: Text('Aucun P’TIPOTE disponible.')),
+              ListTile(
+                title: const Text('Aucun P’TIPOTE disponible dans la Maison.'),
+                subtitle: activity == 'movement'
+                    ? Text(
+                        'L’entraînement demande ${ptipoteDailyLifeConfig.trainingEnergyCost} énergie.')
+                    : null,
+              ),
             ...available.map((ptipote) => ListTile(
                   leading: PtipoteImage(
                       type: ptipote.type, species: ptipote.species, height: 42),
@@ -4830,6 +4844,7 @@ class _PtipoteDashboardCard extends StatelessWidget {
     required this.hungerMax,
     required this.happiness,
     required this.attachment,
+    required this.attachmentLevel,
     required this.happinessBreakdown,
     required this.jobLevels,
     required this.activity,
@@ -4847,6 +4862,7 @@ class _PtipoteDashboardCard extends StatelessWidget {
   final int hungerMax;
   final double happiness;
   final double attachment;
+  final int attachmentLevel;
   final PtipoteHappinessBreakdown happinessBreakdown;
   final Map<String, int> jobLevels;
   final String activity;
@@ -4968,7 +4984,11 @@ class _PtipoteDashboardCard extends StatelessWidget {
             _PtipoteGauge(label: 'Énergie', value: energy, max: energyMax),
             _PtipoteGauge(label: 'Faim', value: hunger, max: hungerMax),
             _PtipoteGauge(label: 'Sommeil', value: rest, max: 100),
-            _PtipoteGauge(label: 'Attachement', value: attachment, max: 50),
+            _PtipoteGauge(
+              label: 'Attachement · N$attachmentLevel',
+              value: attachment,
+              max: 50,
+            ),
             InkWell(
               borderRadius: BorderRadius.circular(8),
               onTap: () => _showHappinessDetail(context),
@@ -5024,7 +5044,20 @@ class _PtipoteDashboardCard extends StatelessWidget {
                     'Faim +${data.hunger.toStringAsFixed(1)} · Sommeil +${data.sleep.toStringAsFixed(1)}'),
                 const SizedBox(height: 8),
                 Text('ATTACHEMENT ${data.attachment.toStringAsFixed(1)} / 50'),
-                const Text('Décroissance : -1 / h.'),
+                Builder(builder: (_) {
+                  final level = attachmentLevel;
+                  final reduction = (level *
+                          ptipoteDailyLifeConfig.attachmentLevelDecayReduction *
+                          100)
+                      .round();
+                  final required =
+                      ptipoteDailyLifeConfig.attachmentHoursForNextLevel(level);
+                  return Text(
+                    'Niveau $level · décroissance -${ptipoteDailyLifeConfig.attachmentDecayPerHour * (1 - level * ptipoteDailyLifeConfig.attachmentLevelDecayReduction)}/h'
+                    '${reduction > 0 ? ' ($reduction % réduit)' : ''}'
+                    '${required > 0 ? ' · ${required} h à 70 % minimum pour le niveau suivant' : ' · niveau maximum'}',
+                  );
+                }),
               ]),
         ),
       ),
@@ -10301,8 +10334,7 @@ class _WaterSortRepairGameState extends State<_WaterSortRepairGame> {
         for (var to = 0; to < state.length; to++) {
           if (to == from) continue;
           final target = state[to];
-          if (target.length == 4 ||
-              (target.isNotEmpty && target.last != color)) {
+          if (target.length == 4) {
             continue;
           }
           final moved = math.min(run, 4 - target.length);
@@ -10335,8 +10367,7 @@ class _WaterSortRepairGameState extends State<_WaterSortRepairGame> {
         selected = null;
         return;
       }
-      if (target.length == 4 ||
-          (target.isNotEmpty && target.last != source.last)) {
+      if (target.length == 4) {
         selected = null;
         return;
       }
@@ -10364,7 +10395,7 @@ class _WaterSortRepairGameState extends State<_WaterSortRepairGame> {
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
           const SizedBox(height: 6),
           const Text(
-              'Versez une fiole sur une fiole vide ou de même couleur. Les couches identiques sont versées ensemble.'),
+              'Versez une fiole vers toute fiole non pleine. Les couches identiques au sommet restent versées ensemble.'),
           const SizedBox(height: 14),
           Wrap(
             spacing: 10,
@@ -19716,6 +19747,43 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
           ),
           const SizedBox(height: 12),
           ExpansionTile(
+            leading: const Icon(Icons.auto_awesome_outlined),
+            title: const Text('Cuves d’amélioration'),
+            subtitle: Text(
+              '${widget.gameState.improvementTankSlotCount}/3 disponible(s) · amélioration de Module et brisure de symbiose.',
+            ),
+            children: <Widget>[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(
+                  'Coûts : amélioration 20 Organique · 10 Mycélium · 2 h. Brisure : 10 Organique · 3 h.',
+                ),
+              ),
+              ...List<Widget>.generate(
+                widget.gameState.improvementTankSlotCount,
+                (index) {
+                  final operation = widget.gameState.pTibugModuleVatOperations
+                      .where((item) => item.isActive)
+                      .elementAtOrNull(index);
+                  return ListTile(
+                    leading: const Icon(Icons.auto_awesome_outlined),
+                    title: Text('Cuve d’amélioration ${index + 1}'),
+                    subtitle: operation == null
+                        ? const Text('Disponible')
+                        : Text(
+                            '${operation.kind == PTibugModuleVatOperationKind.symbiosis ? 'Symbiose' : 'Brisure de symbiose'} · fin dans ${_countdownLabel(operation.endsAt)}',
+                          ),
+                  );
+                },
+              ),
+              if (widget.gameState.improvementTankSlotCount == 0)
+                const ListTile(
+                  title: Text('Construisez la Salle d’incubation au FabLab.'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ExpansionTile(
             leading: const Icon(Icons.inventory_2_outlined),
             title: const Text('Mise en Capsule'),
             subtitle: const Text('1 Bio-batterie · 10 Minéral'),
@@ -20616,19 +20684,6 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                 ),
               );
             }),
-            if (_firstFusionPair() case final pair?)
-              OutlinedButton.icon(
-                onPressed: () => _message(
-                  widget.gameState
-                      .fusePTibugModuleInstances(
-                          firstId: pair.$1.id, secondId: pair.$2.id)
-                      .message,
-                ),
-                icon: const Icon(Icons.merge_type_outlined),
-                label: Text(
-                  'Fusionner 2 ${_moduleTitle(pair.$1.type)} niveau ${pair.$1.qualityLevel}',
-                ),
-              ),
           ],
         ),
         const SizedBox(height: 12),
@@ -21485,8 +21540,8 @@ class FablabPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
-      initialIndex: initialTabIndex.clamp(0, 4),
+      length: 6,
+      initialIndex: initialTabIndex.clamp(0, 5),
       child: Scaffold(
         appBar: AppBar(
           title: Text('FabLab · N${gameState.fablabLevel}'),
@@ -21523,6 +21578,7 @@ class FablabPage extends StatelessWidget {
               Tab(text: 'Cuisine', icon: Icon(Icons.soup_kitchen_outlined)),
               Tab(text: 'Atelier', icon: Icon(Icons.construction_outlined)),
               Tab(text: 'Recycleur', icon: Icon(Icons.recycling_outlined)),
+              Tab(text: 'Cuves', icon: Icon(Icons.science_outlined)),
               Tab(text: 'Amélioration', icon: Icon(Icons.upgrade_outlined)),
               Tab(text: 'Infos', icon: Icon(Icons.info_outline)),
             ],
@@ -21551,6 +21607,10 @@ class FablabPage extends StatelessWidget {
                       description:
                           'Débloqué au Cœur du Camp niveau ${fablabConfig.recyclerUnlockCampHeartLevel}. Niveau actuel : $campHeartLevel.',
                     ),
+              _FabLabCultivationVatsTab(
+                gameState: gameState,
+                campHeartLevel: campHeartLevel,
+              ),
               _FablabUpgradeOverview(
                 gameState: gameState,
                 campHeartLevel: campHeartLevel,
@@ -21566,6 +21626,67 @@ class FablabPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Entrée FabLab dédiée à la salle d'Incubation. Les opérations existantes
+/// restent conservées pendant la migration, mais la progression et la
+/// capacité des cuves dépendent désormais de cette salle interne.
+class _FabLabCultivationVatsTab extends StatelessWidget {
+  const _FabLabCultivationVatsTab({
+    required this.gameState,
+    required this.campHeartLevel,
+  });
+
+  final Zone0GameState gameState;
+  final int campHeartLevel;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.all(18),
+        children: <Widget>[
+          _FabLabHeader(gameState: gameState),
+          const SizedBox(height: 14),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Row(children: <Widget>[
+                    Icon(Icons.science_outlined),
+                    SizedBox(width: 8),
+                    Text('Salle d’incubation',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
+                  ]),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Niveau ${gameState.incubationRoomLevel} · ${gameState.cultivationTankSlotCount} cuve(s) de Cultivation disponibles. Deux au niveau 1, puis une supplémentaire par niveau de salle.',
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Inventaire d’incubation : ${gameState.incubationInventoryUsed}/${gameState.incubationInventoryCapacity}. Armatures, Matrices et Modules y sont conservés.',
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => PTibugNurseryPage(
+                          gameState: gameState,
+                          campHeartLevel: campHeartLevel,
+                          campHeartState: CampHeartState.placeholder(),
+                          initialTabIndex: 2,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.open_in_new_outlined),
+                    label: const Text('Gérer les cuves et l’inventaire'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
 }
 
 class _FablabUpgradeOverview extends StatelessWidget {
@@ -21643,6 +21764,18 @@ class _FablabUpgradeOverview extends StatelessWidget {
             enabled:
                 campHeartLevel >= fablabConfig.recyclerUnlockCampHeartLevel &&
                     gameState.canUpgradeFabLabRoom(FabLabRoom.recycler),
+          ),
+          _FablabUnitUpgradeCard(
+            gameState: gameState,
+            targetId: 'incubation',
+            title: 'Salle d’incubation',
+            level: gameState.incubationRoomLevel,
+            description:
+                'Accueille les cuves de Cultivation et d’amélioration, ainsi que leur inventaire dédié.',
+            nextEffect: gameState.incubationRoomLevel >= gameState.fablabLevel
+                ? 'FabLab N${gameState.fablabLevel + 1} requis.'
+                : 'Prochain niveau : davantage de cuves et de stockage.',
+            enabled: gameState.canUpgradeFabLabRoom(FabLabRoom.incubation),
           ),
         ],
       ),
@@ -22779,23 +22912,14 @@ class _FablabWorkshopViewState extends State<FablabWorkshopView> {
                                       ) >
                                       0,
                               onQueue: () async {
-                                final worker = await _pickPermanentFabLabWorker(
-                                  context: context,
-                                  gameState: widget.gameState,
-                                  figurines: figurines,
-                                  room: FabLabRoom.workshop,
+                                final result = widget.gameState
+                                    .enqueueFabLabProductionOrder(
+                                  recipe: recipe,
+                                  quantity: _quantity,
                                 );
-                                if (worker != null && context.mounted) {
-                                  final result = widget.gameState
-                                      .enqueueFabLabProductionOrder(
-                                    recipe: recipe,
-                                    quantity: _quantity,
-                                    worker: worker,
-                                  );
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(result.message)),
-                                  );
-                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(result.message)),
+                                );
                               },
                             ))
                         .toList(),
@@ -23001,21 +23125,12 @@ class _FablabCuisineViewState extends State<FablabCuisineView> {
                         ) >
                         0,
                     onQueue: () async {
-                      final worker = await _pickPermanentFabLabWorker(
-                        context: context,
-                        gameState: widget.gameState,
-                        figurines: figurines,
-                        room: FabLabRoom.kitchen,
+                      final result =
+                          widget.gameState.enqueueFabLabProductionOrder(
+                        recipe: recipe,
+                        quantity: _quantity,
                       );
-                      if (worker != null && context.mounted) {
-                        final result =
-                            widget.gameState.enqueueFabLabProductionOrder(
-                          recipe: recipe,
-                          quantity: _quantity,
-                          worker: worker,
-                        );
-                        setState(() => _lastResult = result.message);
-                      }
+                      setState(() => _lastResult = result.message);
                     },
                   ),
                 ),

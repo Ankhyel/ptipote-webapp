@@ -41,6 +41,17 @@ class FablabConfig {
     required this.recyclerUnlockCampHeartLevel,
     required this.simpleMealOrganicCost,
     required this.simpleMealOutputAmount,
+    required this.incubationRoomResourceCostsByLevel,
+    required this.incubationRoomDataCostsByLevel,
+    required this.incubationRoomBioBatteriesByLevel,
+    required this.incubationRoomDurationMinutesByLevel,
+    required this.incubationInventoryBaseCapacity,
+    required this.incubationInventoryBonusPerLevel,
+    required this.moduleUpgradeOrganicCost,
+    required this.moduleUpgradeMyceliumCost,
+    required this.moduleUpgradeDurationMinutes,
+    required this.symbiosisBreakOrganicCost,
+    required this.symbiosisBreakDurationMinutes,
   });
 
   /// Version of the Dashboard payload. Version 2 introduced the unified
@@ -66,6 +77,17 @@ class FablabConfig {
   final int recyclerUnlockCampHeartLevel;
   final int simpleMealOrganicCost;
   final int simpleMealOutputAmount;
+  final Map<int, Map<String, int>> incubationRoomResourceCostsByLevel;
+  final Map<int, Map<String, int>> incubationRoomDataCostsByLevel;
+  final Map<int, int> incubationRoomBioBatteriesByLevel;
+  final Map<int, int> incubationRoomDurationMinutesByLevel;
+  final int incubationInventoryBaseCapacity;
+  final int incubationInventoryBonusPerLevel;
+  final int moduleUpgradeOrganicCost;
+  final int moduleUpgradeMyceliumCost;
+  final int moduleUpgradeDurationMinutes;
+  final int symbiosisBreakOrganicCost;
+  final int symbiosisBreakDurationMinutes;
 
   Map<String, int> get constructionCostLevel1 {
     return <String, int>{
@@ -181,6 +203,30 @@ const FablabConfig defaultFablabConfig = FablabConfig(
   recyclerUnlockCampHeartLevel: 2,
   simpleMealOrganicCost: 2,
   simpleMealOutputAmount: 1,
+  incubationRoomResourceCostsByLevel: <int, Map<String, int>>{
+    1: <String, int>{'Minéral': 30, 'Organique': 20},
+    2: <String, int>{'Minéral': 40, 'Organique': 30, 'Mycélium': 10},
+    3: <String, int>{'Minéral': 40, 'Organique': 30, 'Mycélium': 20},
+  },
+  incubationRoomDataCostsByLevel: <int, Map<String, int>>{
+    1: <String, int>{
+      'biomimetisme': 10,
+      'organique': 10,
+      'energie': 5,
+      'comportementInsectoide': 5
+    },
+    2: <String, int>{'mycelienne': 10, 'comportementInsectoide': 5},
+    3: <String, int>{'mycelienne': 20, 'comportementInsectoide': 10},
+  },
+  incubationRoomBioBatteriesByLevel: <int, int>{3: 5},
+  incubationRoomDurationMinutesByLevel: <int, int>{1: 60, 2: 120, 3: 180},
+  incubationInventoryBaseCapacity: 100,
+  incubationInventoryBonusPerLevel: 25,
+  moduleUpgradeOrganicCost: 20,
+  moduleUpgradeMyceliumCost: 10,
+  moduleUpgradeDurationMinutes: 120,
+  symbiosisBreakOrganicCost: 10,
+  symbiosisBreakDurationMinutes: 180,
 );
 
 FablabConfig fablabConfig = defaultFablabConfig;
