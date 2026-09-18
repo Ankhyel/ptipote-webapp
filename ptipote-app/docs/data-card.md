@@ -173,3 +173,39 @@ L’Eau n’est pas une ressource globale du Camp.
   centrale, les offres non achetées du Sourcier sont sauvegardées à son départ.
   Elles restent dans un panneau déroulant sous sa carte : le joueur choisit
   lui-même de les acheter ou de les laisser en attente.
+
+## Météo — afflictions et protections
+
+- La météo utilise un état commun persistant pour les **P’TIPOTES**, les
+  **P’TIBUG** et les habitants : Chaleur → Insolation/Surrégime, Pluie →
+  Infection/Humidifié, Nuage toxique → Intoxiqué. Une affliction dure 8 h par
+  défaut, puis immunise uniquement contre le même type pendant 24 h à partir
+  de la contraction. Plusieurs types peuvent coexister sans prolonger une
+  affliction déjà active ; une tentative refusée n’entraîne aucun coût ni
+  dégât supplémentaire. Les états se résolvent par timestamps, y compris
+  après fermeture de l’application.
+- Les P’TIPOTES affligés travaillent à 70 % de productivité (un seul
+  multiplicateur global) ; les habitants reçoivent -10 Bonheur par affliction
+  active. Les P’TIBUG gardent leur malus météo de production existant, piloté
+  désormais par l’affliction afin d’éviter tout double malus.
+- Les protections personnelles P’TIPOTE se fabriquent à l’Atelier et occupent
+  l’un des trois slots génériques : thermique, pluie/humidité, filtrante/
+  toxique. Elles ne créent ni portage ni inventaire de cargaison. Protection
+  thermique : 10 Organique, 5 Minéral, 5 Réflecteurs thermiques (30 min) ;
+  protection pluie/humidité : 15 Organique, 5 Couches imperméabilisantes
+  (30 min) ; protection filtrante/toxique : 8 Organique, 7 Minéral,
+  10 Filtres (30 min).
+- Les soins ont un cooldown commun de 4 h par entité : Anti-poison (lot de 4)
+  -4 h toxique pour 2 Organique et 1 Minéral ; Gelée anti-poison (lot de 3)
+  -3 h toxique **ou** chaleur pour 2 Organique et 1 Minéral ; Gelée hydratante
+  (lot de 3) -4 h chaleur pour 2 Organique ; Antibiotique (lot de 3) -4 h
+  pluie pour 2 Organique. Chaque Craft de soin dure 10 min.
+- Les installations réduisent la durée sans descendre sous 2 h : Ventilation
+  Termite -2 h chaleur ; Chloro-canaux -2 h pluie ; Installation filtrante
+  -2 h toxique ; Bassin thermal -1 h pluie et toxique.
+- Tout module démonté avec remboursement rend 50 % de ses **matériaux
+  physiques réellement payés**, arrondis à l’inférieur ; aucune Donnée n’est
+  rendue (`refundData = false` dans le Dashboard). Ce remboursement est soumis
+  à un cooldown global de 72 h. Le retrait
+  ou remplacement gratuit sans remboursement reste possible selon les règles
+  du module concerné.

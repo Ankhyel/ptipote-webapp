@@ -34,6 +34,7 @@ import 'resident_economy_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'waste_recycler_config.dart';
+import 'weather_afflictions.dart';
 import 'zone0_game_state.dart';
 
 class RefugePage extends StatefulWidget {
@@ -2349,6 +2350,15 @@ class _MaisonPageState extends State<_MaisonPage>
                                 hasIndigestion: _gameState.hasIndigestion,
                                 restStateLabelFor: _gameState.restStateLabelFor,
                                 moodLabelFor: _gameState.moodLabelFor,
+                                afflictionLabelFor: (figurine) => _gameState
+                                    .activeWeatherAfflictionsForPtipote(
+                                      figurine.id,
+                                    )
+                                    .map(
+                                      (item) =>
+                                          '${item.type.emoji} ${item.type.ptipoteLabel}',
+                                    )
+                                    .join(' · '),
                                 recoveryRemaining:
                                     _gameState.vitalityRecoveryRemaining,
                                 restRecoveryRemaining:
@@ -2486,6 +2496,15 @@ class _MaisonPageState extends State<_MaisonPage>
                         activity: _ptipoteActivityLabel(figurine),
                         countdown: _coBreedingCountdown(figurine) ??
                             _ptipoteActivityCountdown(figurine),
+                        weatherAfflictionsLabel: _gameState
+                            .activeWeatherAfflictionsForPtipote(figurine.id)
+                            .map(
+                              (item) =>
+                                  '${item.type.emoji} ${item.type.ptipoteLabel}',
+                            )
+                            .join(' · '),
+                        onManageWeather: () =>
+                            _openPtipoteWeatherCare(figurine),
                         onRename: () => _renameFromDashboard(figurine),
                       ),
                     ),
@@ -2497,6 +2516,179 @@ class _MaisonPageState extends State<_MaisonPage>
       ),
     );
   }
+
+  Future<void> _openPtipoteWeatherCare(PtipoteFigurine figurine) =>
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final afflictions =
+                _gameState.activeWeatherAfflictionsForPtipote(figurine.id);
+            final treatmentCooldown = _gameState
+                .weatherTreatmentCooldownRemainingForPtipote(figurine.id);
+            final slots = _gameState.weatherModuleSlotsForPtipote(figurine.id);
+            final modules = ptipoteModuleDefinitions
+                .where((definition) =>
+                    definition.compatibleEntity == 'ptipote' &&
+                    definition.enabled)
+                .map((definition) => definition.displayName)
+                .toList(growable: false);
+            void feedback(Zone0ActionResult result) {
+              setSheetState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(result.message)),
+              );
+            }
+
+            return SafeArea(
+              child: DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: .72,
+                minChildSize: .35,
+                maxChildSize: .94,
+                builder: (_, controller) => ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.fromLTRB(18, 4, 18, 32),
+                  children: <Widget>[
+                    Text(
+                      'Santé et protections',
+                      style: Theme.of(sheetContext)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                    Text(figurine.displayName),
+                    const SizedBox(height: 16),
+                    const Text('AFFLICTIONS',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
+                    if (afflictions.isEmpty)
+                      const ListTile(
+                        leading: Icon(Icons.health_and_safety_outlined),
+                        title: Text('Aucune affliction active'),
+                      )
+                    else
+                      ...afflictions.map((affliction) => Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                      '${affliction.type.emoji} ${affliction.type.ptipoteLabel}',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w900)),
+                                  Text(
+                                    'Fin dans ${_shortDurationLabel(affliction.endsAt.difference(DateTime.now()))}',
+                                  ),
+                                  Text(
+                                    'Rendement des activités : -${((1 - towerOperationsConfig.weatherAfflictions.ptipoteProductivityMultiplier) * 100).round()} %',
+                                  ),
+                                  if (treatmentCooldown > Duration.zero)
+                                    Text(
+                                      'Prochain traitement : ${_shortDurationLabel(treatmentCooldown)}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  Wrap(
+                                    spacing: 6,
+                                    children: _gameState
+                                        .weatherTreatmentItemsFor(
+                                            affliction.type)
+                                        .where((treatment) =>
+                                            _gameState
+                                                .resourceAmount(treatment) >
+                                            0)
+                                        .map((treatment) => OutlinedButton(
+                                              onPressed: () => feedback(_gameState
+                                                  .treatPtipoteWeatherAffliction(
+                                                figurineId: figurine.id,
+                                                type: affliction.type,
+                                                treatmentItem: treatment,
+                                              )),
+                                              child: Text(treatment),
+                                            ))
+                                        .toList(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )),
+                    const SizedBox(height: 16),
+                    const Text('MODULES PERSONNELS',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
+                    Text(
+                      '${slots.length} emplacement${slots.length == 1 ? '' : 's'} générique${slots.length == 1 ? '' : 's'} maximum.',
+                    ),
+                    const SizedBox(height: 6),
+                    ...List<Widget>.generate(slots.length, (index) {
+                      final installed = slots[index];
+                      return Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.shield_outlined),
+                          title: Text(installed ?? 'Emplacement libre'),
+                          subtitle: installed == null
+                              ? const Text(
+                                  'Choisissez une protection du stock.')
+                              : const Text('Protège automatiquement.'),
+                          trailing: installed == null
+                              ? PopupMenuButton<String>(
+                                  icon: const Icon(Icons.add),
+                                  onSelected: (item) => feedback(
+                                      _gameState.installPtipoteWeatherModule(
+                                    figurineId: figurine.id,
+                                    itemName: item,
+                                    slotIndex: index,
+                                  )),
+                                  itemBuilder: (_) => modules
+                                      .map((item) => PopupMenuItem<String>(
+                                            value: item,
+                                            enabled: _gameState
+                                                    .resourceAmount(item) >
+                                                0,
+                                            child: Text(
+                                                '$item · ${_gameState.resourceAmount(item)}'),
+                                          ))
+                                      .toList(),
+                                )
+                              : PopupMenuButton<String>(
+                                  tooltip: 'Gérer le module',
+                                  onSelected: (action) => feedback(
+                                    action == 'dismantle'
+                                        ? _gameState
+                                            .dismantlePtipoteWeatherModuleForRefund(
+                                            figurineId: figurine.id,
+                                            slotIndex: index,
+                                          )
+                                        : _gameState.removePtipoteWeatherModule(
+                                            figurineId: figurine.id,
+                                            slotIndex: index,
+                                          ),
+                                  ),
+                                  itemBuilder: (_) =>
+                                      const <PopupMenuEntry<String>>[
+                                    PopupMenuItem<String>(
+                                      value: 'remove',
+                                      child: Text('Retirer sans remboursement'),
+                                    ),
+                                    PopupMenuItem<String>(
+                                      value: 'dismantle',
+                                      child: Text('Démonter · récupérer 50 %'),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
 
   Future<void> _renameFromDashboard(PtipoteFigurine figurine) async {
     final controller = TextEditingController(text: figurine.displayName);
@@ -4849,6 +5041,8 @@ class _PtipoteDashboardCard extends StatelessWidget {
     required this.jobLevels,
     required this.activity,
     required this.countdown,
+    required this.weatherAfflictionsLabel,
+    required this.onManageWeather,
     required this.onRename,
   });
 
@@ -4867,6 +5061,8 @@ class _PtipoteDashboardCard extends StatelessWidget {
   final Map<String, int> jobLevels;
   final String activity;
   final String countdown;
+  final String weatherAfflictionsLabel;
+  final VoidCallback onManageWeather;
   final VoidCallback onRename;
 
   @override
@@ -4966,6 +5162,14 @@ class _PtipoteDashboardCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
+            if (weatherAfflictionsLabel.isNotEmpty) ...<Widget>[
+              OutlinedButton.icon(
+                onPressed: onManageWeather,
+                icon: const Icon(Icons.health_and_safety_outlined),
+                label: Text('Météo · $weatherAfflictionsLabel'),
+              ),
+              const SizedBox(height: 8),
+            ],
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -4988,6 +5192,12 @@ class _PtipoteDashboardCard extends StatelessWidget {
               label: 'Attachement · N$attachmentLevel',
               value: attachment,
               max: 50,
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: onManageWeather,
+              icon: const Icon(Icons.shield_outlined),
+              label: const Text('Santé et protections'),
             ),
             InkWell(
               borderRadius: BorderRadius.circular(8),
@@ -5494,6 +5704,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
     required this.hasIndigestion,
     required this.restStateLabelFor,
     required this.moodLabelFor,
+    required this.afflictionLabelFor,
     required this.recoveryRemaining,
     required this.restRecoveryRemaining,
     required this.isCuddleCareActive,
@@ -5528,6 +5739,7 @@ class _PtipoteRefugeLayer extends StatefulWidget {
   final bool Function(PtipoteFigurine figurine) hasIndigestion;
   final String Function(PtipoteFigurine figurine) restStateLabelFor;
   final String Function(PtipoteFigurine figurine) moodLabelFor;
+  final String Function(PtipoteFigurine figurine) afflictionLabelFor;
   final Duration Function(PtipoteFigurine figurine) recoveryRemaining;
   final Duration Function(PtipoteFigurine figurine) restRecoveryRemaining;
   final bool Function(PtipoteFigurine figurine) isCuddleCareActive;
@@ -5843,6 +6055,7 @@ class _PtipoteRefugeLayerState extends State<_PtipoteRefugeLayer> {
             hasIndigestion: widget.hasIndigestion(selectedFigurine),
             restStateLabel: widget.restStateLabelFor(selectedFigurine),
             moodLabel: widget.moodLabelFor(selectedFigurine),
+            weatherAfflictionLabel: widget.afflictionLabelFor(selectedFigurine),
             recoveryRemaining: widget.recoveryRemaining(selectedFigurine),
             cuddleCareActive: widget.isCuddleCareActive(selectedFigurine),
             canCuddle: widget.canCuddle(selectedFigurine),
@@ -6152,6 +6365,7 @@ class _PtipoteInfoBubble extends StatelessWidget {
     required this.hasIndigestion,
     required this.restStateLabel,
     required this.moodLabel,
+    required this.weatherAfflictionLabel,
     required this.recoveryRemaining,
     required this.cuddleCareActive,
     required this.canCuddle,
@@ -6179,6 +6393,7 @@ class _PtipoteInfoBubble extends StatelessWidget {
   final bool hasIndigestion;
   final String restStateLabel;
   final String moodLabel;
+  final String weatherAfflictionLabel;
   final Duration recoveryRemaining;
   final bool cuddleCareActive;
   final bool canCuddle;
@@ -6239,6 +6454,16 @@ class _PtipoteInfoBubble extends StatelessWidget {
                   const Text(
                     'En attente d’une alcôve libre.',
                     style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ],
+                if (weatherAfflictionLabel.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Météo : $weatherAfflictionLabel',
+                    style: const TextStyle(
+                      color: Color(0xFF9A3E30),
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 6),
@@ -6312,6 +6537,11 @@ class _PtipoteInfoBubble extends StatelessWidget {
                             '$rest/${ptipoteStatsConfig.maxRest} · $restStateLabel',
                       ),
                       _InfoLine(label: 'Bonheur', value: moodLabel),
+                      if (weatherAfflictionLabel.isNotEmpty)
+                        _InfoLine(
+                          label: 'Affliction',
+                          value: weatherAfflictionLabel,
+                        ),
                       _InfoLine(
                         label: 'Câlin',
                         value: lastCuddleAt == null
@@ -8450,7 +8680,7 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                       icon: const Icon(Icons.upgrade_outlined),
                                       label: Text(nextLabel),
                                     ),
-                                    if (level > 0)
+                                    if (level > 0) ...<Widget>[
                                       OutlinedButton(
                                         onPressed: () {
                                           final result =
@@ -8465,8 +8695,28 @@ class _LisiereBuildingsTabState extends State<_LisiereBuildingsTab> {
                                           setSheetState(() {});
                                           setState(() {});
                                         },
-                                        child: const Text('Défaire'),
+                                        child: const Text('Retirer'),
                                       ),
+                                      OutlinedButton.icon(
+                                        onPressed: () {
+                                          final result = state
+                                              .dismantleBiomeSecondaryModuleForRefund(
+                                            biome,
+                                            type,
+                                          );
+                                          ScaffoldMessenger.of(this.context)
+                                              .showSnackBar(SnackBar(
+                                                  content:
+                                                      Text(result.message)));
+                                          setSheetState(() {});
+                                          setState(() {});
+                                        },
+                                        icon: const Icon(
+                                            Icons.recycling_outlined),
+                                        label: const Text(
+                                            'Démonter · récupération 50 %'),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ],
@@ -9706,9 +9956,10 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
     final residents = gameState.pTibugsForTerritory(activeBuilding.id);
     final weather = gameState.activeGlobalWeatherEvent;
     final isWeatherAffected = weather != null && weather.isBiomeAffected(biome);
-    final exposedPTibugs = residents
-        .where((bug) => gameState.pTibugWeatherMalusPercentFor(bug) > 0)
-        .length;
+    final exposedBugs = residents
+        .where(gameState.isPTibugExposedToCurrentWeather)
+        .toList(growable: false);
+    final exposedPTibugs = exposedBugs.length;
     final weatherLabel = weather == null
         ? null
         : switch (weather.type) {
@@ -9766,7 +10017,7 @@ class _PTibugTerritoryBiomeCard extends StatelessWidget {
               if (weatherLabel != null)
                 Text(
                   isWeatherAffected
-                      ? '$weatherLabel · malus local P’TIBUG jusqu’à -${residents.isEmpty ? 0 : residents.map(gameState.pTibugWeatherMalusPercentFor).reduce(math.max)}% · $exposedPTibugs/${residents.length} non protégé(s)'
+                      ? '$weatherLabel · malus local P’TIBUG jusqu’à -${exposedBugs.isEmpty ? 0 : exposedBugs.map(gameState.pTibugWeatherMalusPercentFor).reduce(math.max)}% · $exposedPTibugs/${residents.length} non protégé(s)'
                       : '$weatherLabel · ce biome n’est pas touché.',
                   style: const TextStyle(
                       fontSize: 12, fontWeight: FontWeight.w700),
@@ -11175,6 +11426,146 @@ bool _hasSmartSensor(PTibug bug) =>
     bug.biologicalTraitId == 'capteurIntelligent' ||
     bug.secondTraitId == 'capteurIntelligent';
 
+/// Shared P’TIBUG weather-care sheet.
+///
+/// The state remains the sole authority for compatibility, treatment cooldown
+/// and resource consumption. This view deliberately only offers the remedies
+/// which can shorten the currently displayed affliction.
+Future<void> _showPTibugWeatherCareSheet(
+  BuildContext context, {
+  required Zone0GameState gameState,
+  required PTibug bug,
+}) =>
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final afflictions = gameState.activeWeatherAfflictionsForPTibug(bug);
+          final treatmentCooldown =
+              gameState.weatherTreatmentCooldownRemainingForPTibug(bug);
+
+          void feedback(Zone0ActionResult result) {
+            setSheetState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result.message)),
+            );
+          }
+
+          return SafeArea(
+            child: DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: .64,
+              minChildSize: .34,
+              maxChildSize: .94,
+              builder: (_, controller) => ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(18, 4, 18, 32),
+                children: <Widget>[
+                  Text(
+                    'Santé météo',
+                    style: Theme.of(sheetContext)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                  Text(bug.displayName),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Une affliction réduit la production tant qu’elle reste active. Les soins raccourcissent sa durée sans ajouter de récompense.',
+                  ),
+                  const SizedBox(height: 14),
+                  if (afflictions.isEmpty)
+                    const Card(
+                      child: ListTile(
+                        leading: Icon(Icons.health_and_safety_outlined),
+                        title: Text('Aucune affliction active'),
+                        subtitle:
+                            Text('Ce P’TIBUG est actuellement stabilisé.'),
+                      ),
+                    )
+                  else
+                    ...afflictions.map(
+                      (affliction) => Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Row(
+                                children: <Widget>[
+                                  Text(
+                                    affliction.type.emoji,
+                                    style: const TextStyle(fontSize: 20),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      affliction.type.ptibugLabel,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Fin dans ${_shortDurationLabel(affliction.endsAt.difference(DateTime.now()))}',
+                              ),
+                              Text(
+                                'Rendement effectif : ${(gameState.pTibugAfflictionProductionMultiplierFor(bug) * 100).round()} %',
+                              ),
+                              if (treatmentCooldown > Duration.zero)
+                                Text(
+                                  'Prochain traitement : ${_shortDurationLabel(treatmentCooldown)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: gameState
+                                    .weatherTreatmentItemsFor(affliction.type)
+                                    .where((treatment) =>
+                                        gameState.resourceAmount(treatment) > 0)
+                                    .map(
+                                      (treatment) => OutlinedButton.icon(
+                                        onPressed: () => feedback(
+                                          gameState
+                                              .treatPTibugWeatherAffliction(
+                                            bug: bug,
+                                            type: affliction.type,
+                                            treatmentItem: treatment,
+                                          ),
+                                        ),
+                                        icon: const Icon(
+                                          Icons.medication_outlined,
+                                          size: 16,
+                                        ),
+                                        label: Text(
+                                          '$treatment · ${gameState.resourceAmount(treatment)}',
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
 class _PTibugTerritoryBugCard extends StatelessWidget {
   const _PTibugTerritoryBugCard(
       {required this.gameState,
@@ -11192,6 +11583,7 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final inactive =
         bug.assignedBuildingId == null || bug.inactiveReason != null;
+    final weatherAfflictions = gameState.activeWeatherAfflictionsForPTibug(bug);
     final weather = gameState.pTibugWeatherFor(bug);
     final weatherLabel = switch (weather) {
       TowerWeatherType.calm => '🌤️ Temps calme',
@@ -11245,6 +11637,28 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                   Text(weatherLabel,
                       style: const TextStyle(
                           fontSize: 11, fontWeight: FontWeight.w700)),
+                if (weatherAfflictions.isNotEmpty)
+                  Text(
+                    'Santé : ${weatherAfflictions.map((item) {
+                      return '${item.type.emoji} ${item.type.ptibugLabel} · '
+                          '${_shortDurationLabel(item.endsAt.difference(DateTime.now()))}';
+                    }).join(' · ')}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                if (weatherAfflictions.isNotEmpty)
+                  Text(
+                    'Rendement affliction : ${(gameState.pTibugAfflictionProductionMultiplierFor(bug) * 100).round()} %',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 const SizedBox(height: 6),
                 OutlinedButton(
                   onPressed: bug.storedAmount == 0 &&
@@ -11262,6 +11676,16 @@ class _PTibugTerritoryBugCard extends StatelessWidget {
                       ? 'Sortir de cuve'
                       : 'Affecter'),
                 ),
+                if (weatherAfflictions.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => _showPTibugWeatherCareSheet(
+                      context,
+                      gameState: gameState,
+                      bug: bug,
+                    ),
+                    icon: const Icon(Icons.medical_services_outlined),
+                    label: const Text('Soigner'),
+                  ),
               ],
             ),
           ),
@@ -12113,6 +12537,117 @@ class _CampHousingTab extends StatelessWidget {
     );
   }
 
+  Widget _residentWeatherAfflictionsSection(
+    BuildContext context,
+    Zone0Resident resident,
+  ) =>
+      StatefulBuilder(
+        builder: (sectionContext, setSectionState) {
+          final afflictions =
+              gameState.activeWeatherAfflictionsForResident(resident);
+          final treatmentCooldown =
+              gameState.weatherTreatmentCooldownRemainingForResident(resident);
+
+          void treat(
+            WeatherAffliction affliction,
+            String treatment,
+          ) {
+            final result = gameState.treatResidentWeatherAffliction(
+              resident: resident,
+              type: affliction.type,
+              treatmentItem: treatment,
+            );
+            setSectionState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(result.message)),
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const SizedBox(height: 14),
+              const Text(
+                'Santé météo',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              if (afflictions.isEmpty)
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.health_and_safety_outlined),
+                  title: Text('Aucune affliction active'),
+                  subtitle: Text('Aucun malus de bonheur météo en cours.'),
+                )
+              else
+                ...afflictions.map(
+                  (affliction) => Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Row(
+                            children: <Widget>[
+                              Text(
+                                affliction.type.emoji,
+                                style: const TextStyle(fontSize: 20),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  affliction.type.ptipoteLabel,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Fin dans ${_shortDurationLabel(affliction.endsAt.difference(DateTime.now()))} · bonheur -${towerOperationsConfig.weatherAfflictions.residentHappinessPenalty}',
+                          ),
+                          if (treatmentCooldown > Duration.zero)
+                            Text(
+                              'Prochain traitement : ${_shortDurationLabel(treatmentCooldown)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: gameState
+                                .weatherTreatmentItemsFor(affliction.type)
+                                .where((treatment) =>
+                                    gameState.resourceAmount(treatment) > 0)
+                                .map(
+                                  (treatment) => OutlinedButton.icon(
+                                    onPressed: () =>
+                                        treat(affliction, treatment),
+                                    icon: const Icon(
+                                      Icons.medication_outlined,
+                                      size: 16,
+                                    ),
+                                    label: Text(
+                                      '$treatment · ${gameState.resourceAmount(treatment)}',
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      );
+
   void _showResidentSheet(BuildContext context, Zone0Resident resident) {
     showModalBottomSheet<void>(
       context: context,
@@ -12156,6 +12691,7 @@ class _CampHousingTab extends StatelessWidget {
               if (resident.needsState.missingWeatherProtectionTypes.isNotEmpty)
                 Text(
                     'Météo : protection manquante — ${resident.needsState.missingWeatherProtectionTypes.join(', ')}'),
+              _residentWeatherAfflictionsSection(sheetContext, resident),
               OutlinedButton.icon(
                 onPressed: () {
                   final result = gameState.giveResidentFinishedItem(
@@ -12379,6 +12915,11 @@ class _CampHousingTab extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.only(left: 5),
             child: Text('🍽️', style: TextStyle(fontSize: 15)),
+          ),
+        if (gameState.activeWeatherAfflictionsForResident(resident).isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: Icon(Icons.health_and_safety_outlined, size: 17),
           ),
         if (gameState.refugeSafety < 30)
           const Padding(
@@ -20788,22 +21329,52 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                         ? 'Disponible'
                         : 'Équipé par ${widget.gameState.pTibugBiologicalNameFor(owner)}',
                   ),
-                  trailing: owner == null
-                      ? TextButton(
-                          onPressed: () => _pickPTibugForModule(instance.id),
-                          child: const Text('Équiper'),
-                        )
-                      : TextButton(
-                          onPressed: () => _message(
+                  trailing: PopupMenuButton<String>(
+                    tooltip: 'Gérer le module',
+                    onSelected: (action) {
+                      switch (action) {
+                        case 'equip':
+                          _pickPTibugForModule(instance.id);
+                          return;
+                        case 'remove':
+                          _message(
                             widget.gameState
                                 .unequipPTibugModuleInstance(
-                                  bug: owner,
+                                  bug: owner!,
                                   moduleInstanceId: instance.id,
                                 )
                                 .message,
-                          ),
-                          child: const Text('Retirer'),
+                          );
+                          return;
+                        case 'dismantle':
+                          final result = widget.gameState
+                              .dismantlePTibugModuleInstanceForRefund(
+                            instance.id,
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(result.message)),
+                          );
+                          return;
+                      }
+                    },
+                    itemBuilder: (_) => <PopupMenuEntry<String>>[
+                      if (owner == null)
+                        const PopupMenuItem<String>(
+                          value: 'equip',
+                          child: Text('Équiper'),
+                        )
+                      else
+                        const PopupMenuItem<String>(
+                          value: 'remove',
+                          child: Text('Retirer'),
                         ),
+                      if (owner == null)
+                        const PopupMenuItem<String>(
+                          value: 'dismantle',
+                          child: Text('Démonter · récupérer 50 %'),
+                        ),
+                    ],
+                  ),
                 ),
               );
             }),
@@ -21195,6 +21766,8 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
             .where((instance) => !instance.isEquipped)
             .toList();
         final slots = widget.gameState.maxModulesPerPTibug;
+        final weatherAfflictions =
+            widget.gameState.activeWeatherAfflictionsForPTibug(bug);
         final trait = bug.biologicalTraitId == null
             ? null
             : pTibugConfig.traitDefinitionFor(bug.biologicalTraitId!);
@@ -21243,6 +21816,46 @@ class _PTibugNurseryPageState extends State<PTibugNurseryPage> {
                                   ? 'Niveau 3 atteint : premier Trait III requis avant Évolution.'
                                   : 'Niveau ${bug.level} : Trait principal ${bug.level} disponible.',
                 ),
+                if (weatherAfflictions.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 14),
+                  Card(
+                    color: Theme.of(sheetContext)
+                        .colorScheme
+                        .errorContainer
+                        .withValues(alpha: .5),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text(
+                            'Santé météo',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            weatherAfflictions
+                                .map(
+                                  (item) =>
+                                      '${item.type.emoji} ${item.type.ptibugLabel} · ${_shortDurationLabel(item.endsAt.difference(DateTime.now()))}',
+                                )
+                                .join('\n'),
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: () => _showPTibugWeatherCareSheet(
+                              sheetContext,
+                              gameState: widget.gameState,
+                              bug: bug,
+                            ),
+                            icon: const Icon(Icons.medical_services_outlined),
+                            label: const Text('Voir les soins'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Card(
                   child: Padding(
@@ -22269,10 +22882,23 @@ class FablabRecyclerView extends StatelessWidget {
                             Text(
                                 'Module ${vat.moduleType == RecyclerModuleType.organic ? 'Organique' : 'Minéral'}'),
                             OutlinedButton(
-                              onPressed: () => _showAction(context,
-                                  gameState.removeRecyclerVatModule(vatIndex)),
-                              child: const Text(
-                                  'Défaire le module · récupération 50 %'),
+                              onPressed: () => _showAction(
+                                context,
+                                gameState.removeRecyclerVatModule(vatIndex),
+                              ),
+                              child: const Text('Retirer'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => _showAction(
+                                context,
+                                gameState.dismantleRecyclerVatModuleForRefund(
+                                  vatIndex,
+                                ),
+                              ),
+                              icon: const Icon(Icons.recycling_outlined),
+                              label: const Text(
+                                'Démonter · récupération 50 %',
+                              ),
                             ),
                           ] else
                             const Text('Module indisponible'),

@@ -14,6 +14,7 @@ import 'ptibug_config.dart';
 import 'resident_economy_config.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
+import 'weather_afflictions.dart';
 import 'workshop_config.dart';
 import 'waste_recycler_config.dart';
 
@@ -2365,6 +2366,10 @@ TowerOperationsConfig _towerOperations(Object? value) {
     globalWeather: globalWeather,
     buildingViability: buildingViability,
     research: _towerResearch(raw['research'], base.research),
+    weatherAfflictions: _weatherAfflictions(
+      raw['weatherAfflictions'],
+      base.weatherAfflictions,
+    ),
     wellbeingBands: List<SecurityWellbeingBand>.generate(
       base.wellbeingBands.length,
       (index) {
@@ -2416,6 +2421,73 @@ TowerOperationsConfig _towerOperations(Object? value) {
         );
       },
     ),
+  );
+}
+
+WeatherAfflictionConfig _weatherAfflictions(
+  Object? value,
+  WeatherAfflictionConfig base,
+) {
+  final raw = _map(value);
+  if (raw == null) return base;
+  return WeatherAfflictionConfig(
+    enabled: raw['enabled'] is bool ? raw['enabled'] as bool : base.enabled,
+    baseDurationHours: _int(raw['baseDurationHours'], base.baseDurationHours),
+    immunityHours: _int(raw['immunityHours'], base.immunityHours),
+    treatmentCooldownHours: _int(
+      raw['treatmentCooldownHours'],
+      base.treatmentCooldownHours,
+    ),
+    ptipoteProductivityMultiplier: _double(
+      raw['ptipoteProductivityMultiplier'],
+      base.ptipoteProductivityMultiplier,
+    ),
+    residentHappinessPenalty: _int(
+      raw['residentHappinessPenalty'],
+      base.residentHappinessPenalty,
+    ),
+    structuralMinimumDurationHours: _int(
+      raw['structuralMinimumDurationHours'],
+      base.structuralMinimumDurationHours,
+    ),
+    personalModuleSlots:
+        _int(raw['personalModuleSlots'], base.personalModuleSlots),
+    moduleRefundPhysicalPercent: _int(
+      raw['moduleRefundPhysicalPercent'],
+      base.moduleRefundPhysicalPercent,
+    ),
+    moduleRefundCooldownHours: _int(
+      raw['moduleRefundCooldownHours'],
+      base.moduleRefundCooldownHours,
+    ),
+    // Data can never be refunded. Keep a false remote flag visible in the
+    // Dashboard, but never let an invalid published true flag opt into it.
+    refundData: false,
+    structuralReductionHours: <String, int>{
+      for (final entry in base.structuralReductionHours.entries)
+        entry.key: _int(
+          _map(raw['structuralReductionHours'])?[entry.key],
+          entry.value,
+        ),
+    },
+    treatmentReductionHours: <String, int>{
+      for (final entry in base.treatmentReductionHours.entries)
+        entry.key: _int(
+          _map(raw['treatmentReductionHours'])?[entry.key],
+          entry.value,
+        ),
+    },
+    treatmentTargetTypes: <String, List<String>>{
+      for (final entry in base.treatmentTargetTypes.entries)
+        entry.key: () {
+          final configured = _stringList(
+            _map(raw['treatmentTargetTypes'])?[entry.key],
+          );
+          return configured.isEmpty
+              ? List<String>.from(entry.value)
+              : configured;
+        }(),
+    },
   );
 }
 

@@ -24,6 +24,7 @@ import 'kernel_progress_config.dart';
 import 'logistics_config.dart';
 import 'lisiere_forage_config.dart';
 import 'market_config.dart';
+import 'module_dismantling.dart';
 import 'ptibug_config.dart';
 import 'ptibug_valuation_service.dart';
 import 'resident_economy_config.dart';
@@ -31,6 +32,7 @@ import 'remote_game_config_service.dart';
 import 'security_tower_config.dart';
 import 'tower_operations_config.dart';
 import 'waste_recycler_config.dart';
+import 'weather_afflictions.dart';
 import 'workshop_config.dart';
 
 /// Keeps player-facing messages in the building that owns the activity.
@@ -116,6 +118,65 @@ class Zone0GameState extends ChangeNotifier {
   /// model without mutating an NFC source record.
   final Map<String, PtipoteV2Profile> ptipoteV2Profiles =
       <String, PtipoteV2Profile>{};
+
+  /// A single persistent source of truth for weather health. Keys are stable
+  /// game identities, never NFC fields, so P'TIPOTES can be scanned again
+  /// without accidentally re-rolling their condition.
+  final Map<String, List<WeatherAffliction>> ptipoteWeatherAfflictions =
+      <String, List<WeatherAffliction>>{};
+  final Map<String, List<WeatherAffliction>> ptibugWeatherAfflictions =
+      <String, List<WeatherAffliction>>{};
+  final Map<String, List<WeatherAffliction>> residentWeatherAfflictions =
+      <String, List<WeatherAffliction>>{};
+  final Map<String, Map<WeatherAfflictionType, DateTime>>
+      weatherAfflictionImmunityUntil =
+      <String, Map<WeatherAfflictionType, DateTime>>{};
+  final Map<String, DateTime> weatherTreatmentCooldownUntil =
+      <String, DateTime>{};
+
+  /// Figures seen by the active game session. This lets a manually triggered
+  /// weather event apply immediately instead of waiting for the next needs
+  /// tick, while persisted afflictions remain the source of truth.
+  final List<PtipoteFigurine> _weatherTrackedFigurines = <PtipoteFigurine>[];
+
+  /// Personal P'TIPOTE weather modules live apart from the generic camp
+  /// inventory and may occupy one of exactly three generic slots.
+  final Map<String, List<String?>> ptipoteWeatherModuleSlots =
+      <String, List<String?>>{};
+
+  /// Physical costs are captured when a personal module is installed.  The
+  /// crafted item itself has no individual provenance in the camp inventory,
+  /// so this snapshot is the only safe source for a later dismantling refund.
+  final Map<String, List<Map<String, int>?>> ptipoteWeatherModuleCostSnapshots =
+      <String, List<Map<String, int>?>>{};
+
+  /// A refund is a camp-wide economic action: one refund starts this timer
+  /// for every module family.  Free removal never reads or writes it.
+  DateTime? moduleRefundCooldownUntil;
+
+  void _loadWeatherAfflictionMap(
+    Object? source,
+    Map<String, List<WeatherAffliction>> target,
+  ) {
+    if (source is! Map) return;
+    target
+      ..clear()
+      ..addEntries(source.entries.map((entry) => MapEntry(
+            '${entry.key}',
+            (entry.value as List? ?? const <dynamic>[])
+                .map(WeatherAffliction.fromFirebase)
+                .whereType<WeatherAffliction>()
+                .toList(),
+          )));
+  }
+
+  Map<String, List<Map<String, dynamic>>> _saveWeatherAfflictionMap(
+    Map<String, List<WeatherAffliction>> source,
+  ) =>
+      <String, List<Map<String, dynamic>>>{
+        for (final entry in source.entries)
+          entry.key: entry.value.map((value) => value.toFirebase()).toList(),
+      };
   final List<CoBreedingSession> coBreedingSessions = <CoBreedingSession>[];
   CoBreedingOffer? coBreedingOffer;
   final Map<String, CoBreedingEnvelopeOffer> coBreedingEnvelopeOffers =
@@ -3769,10 +3830,14 @@ class Zone0GameState extends ChangeNotifier {
     }
   }
 
-  void _resolveResidentWeatherImpact(GlobalWeatherEvent event) {
-    if (!resolvedResidentWeatherEventIds.add(event.id)) return;
+  bool _resolveResidentWeatherImpact(GlobalWeatherEvent event) {
+    // Persist the event marker as well as the concrete resident state. This
+    // is important when an offline weather event touches only residents: the
+    // resolver must still request a runtime save on the next app open.
+    if (!resolvedResidentWeatherEventIds.add(event.id)) return false;
+    var changed = true;
     if (event.type == TowerWeatherType.calm ||
-        !event.isBiomeAffected(ForageBiome.plaineRiche)) return;
+        !event.isBiomeAffected(ForageBiome.plaineRiche)) return changed;
     final label = _weatherProtectionLabel(event.type);
     for (final resident in residents.where((item) => item.isActive)) {
       final supportCandidates = resident.ownedItems
@@ -3784,8 +3849,17 @@ class Zone0GameState extends ChangeNotifier {
       final support = supportCandidates.firstOrNull;
       if (support == null) {
         resident.needsState.missingWeatherProtectionTypes.add(label);
-        resident.happinessModifiers['weather-${event.id}'] =
-            -_weatherProtectionPenalty(event.intensity);
+        _applyWeatherAffliction(
+          entityId: _residentAfflictionId(resident),
+          target: residentWeatherAfflictions,
+          type: _weatherAfflictionTypeFor(event.type),
+          sourceWeatherEventId: event.id,
+          appliedAt: event.startsAt,
+          durationReductionHours: _residentStructuralDurationReduction(
+            resident,
+            _weatherAfflictionTypeFor(event.type),
+          ),
+        );
       } else {
         var remainingUses = weatherProtectionUsesFor(event.intensity);
         final consumables = resident.ownedItems
@@ -3842,6 +3916,7 @@ class Zone0GameState extends ChangeNotifier {
       }
       resident.needsState.updatedAt = DateTime.now();
     }
+    return changed;
   }
 
   void _clearResidentWeatherImpact(GlobalWeatherEvent event) {
@@ -3851,6 +3926,171 @@ class Zone0GameState extends ChangeNotifier {
         item.equippedOrActive = false;
       }
     }
+  }
+
+  WeatherAfflictionType _weatherAfflictionTypeFor(TowerWeatherType type) =>
+      switch (type) {
+        TowerWeatherType.heatWave => WeatherAfflictionType.heat,
+        TowerWeatherType.heavyRain => WeatherAfflictionType.rain,
+        TowerWeatherType.toxicCloud => WeatherAfflictionType.toxic,
+        TowerWeatherType.calm => WeatherAfflictionType.heat,
+      };
+
+  String _residentAfflictionId(Zone0Resident resident) =>
+      'resident:${resident.id}';
+  String _ptibugAfflictionId(PTibug bug) => 'ptibug:${bug.id}';
+  String _ptipoteAfflictionId(String id) => 'ptipote:$id';
+
+  List<WeatherAffliction> activeWeatherAfflictionsForPtipote(String id) =>
+      _activeWeatherAfflictions(
+        ptipoteWeatherAfflictions[_ptipoteAfflictionId(id)] ?? const [],
+      );
+  List<WeatherAffliction> activeWeatherAfflictionsForPTibug(PTibug bug) =>
+      _activeWeatherAfflictions(
+        ptibugWeatherAfflictions[_ptibugAfflictionId(bug)] ?? const [],
+      );
+  List<WeatherAffliction> activeWeatherAfflictionsForResident(
+          Zone0Resident resident) =>
+      _activeWeatherAfflictions(
+        residentWeatherAfflictions[_residentAfflictionId(resident)] ?? const [],
+      );
+
+  List<WeatherAffliction> _activeWeatherAfflictions(
+    List<WeatherAffliction> values, {
+    DateTime? now,
+  }) {
+    final at = now ?? DateTime.now();
+    return values.where((value) => value.isActiveAt(at)).toList();
+  }
+
+  bool _applyWeatherAffliction({
+    required String entityId,
+    required Map<String, List<WeatherAffliction>> target,
+    required WeatherAfflictionType type,
+    required String sourceWeatherEventId,
+    DateTime? appliedAt,
+    int durationReductionHours = 0,
+    double? ptibugProductionMultiplier,
+  }) {
+    final config = towerOperationsConfig.weatherAfflictions;
+    if (!config.enabled) return false;
+    // The health incident begins when the weather exposure begins, not when a
+    // dormant application next happens to reconcile its timestamps.
+    final now = appliedAt ?? DateTime.now();
+    final immunity = weatherAfflictionImmunityUntil[entityId]?[type];
+    if (immunity != null && immunity.isAfter(now)) return false;
+    final values = target.putIfAbsent(entityId, () => <WeatherAffliction>[]);
+    if (values.any((item) => item.type == type && item.isActiveAt(now))) {
+      return false;
+    }
+    final actualHours = math.max(
+      config.structuralMinimumDurationHours,
+      config.baseDurationHours - durationReductionHours,
+    );
+    values.add(
+      WeatherAffliction(
+        type: type,
+        startedAt: now,
+        endsAt: now.add(Duration(hours: actualHours)),
+        sourceWeatherEventId: sourceWeatherEventId,
+        ptibugProductionMultiplier: ptibugProductionMultiplier,
+      ),
+    );
+    weatherAfflictionImmunityUntil.putIfAbsent(
+            entityId, () => <WeatherAfflictionType, DateTime>{})[type] =
+        now.add(Duration(hours: config.immunityHours));
+    return true;
+  }
+
+  bool _resolveWeatherAfflictions({DateTime? now}) {
+    final current = now ?? DateTime.now();
+    var changed = false;
+    for (final entry in <Map<String, List<WeatherAffliction>>>{
+      ptipoteWeatherAfflictions,
+      ptibugWeatherAfflictions,
+      residentWeatherAfflictions,
+    }) {
+      for (final values in entry.values) {
+        final before = values.length;
+        values.removeWhere((value) => !value.isActiveAt(current));
+        changed = changed || before != values.length;
+      }
+      entry.removeWhere((_, values) => values.isEmpty);
+    }
+    for (final resident in residents) {
+      final key = _residentAfflictionId(resident);
+      final active = _activeWeatherAfflictions(
+        residentWeatherAfflictions[key] ?? const <WeatherAffliction>[],
+        now: current,
+      );
+      final previous = resident.happinessModifiers['weather-affliction'] ?? 0;
+      final next = active.isEmpty
+          ? 0
+          : -towerOperationsConfig.weatherAfflictions.residentHappinessPenalty *
+              active.length;
+      if (next == 0) {
+        resident.happinessModifiers.remove('weather-affliction');
+      } else {
+        resident.happinessModifiers['weather-affliction'] = next;
+      }
+      // Older saves stored a separate modifier for each weather event. The
+      // health state is now the one source of truth, so remove only those
+      // legacy keys without touching other resident modifiers.
+      final legacyWeatherKeys = resident.happinessModifiers.keys
+          .where(
+            (key) => key.startsWith('weather-') && key != 'weather-affliction',
+          )
+          .toList();
+      if (legacyWeatherKeys.isNotEmpty) {
+        for (final legacyKey in legacyWeatherKeys) {
+          resident.happinessModifiers.remove(legacyKey);
+        }
+        changed = true;
+      }
+      if (previous != next ||
+          (active.isEmpty && residentWeatherAfflictions.containsKey(key))) {
+        changed = true;
+      }
+    }
+    final cooldownCount = weatherTreatmentCooldownUntil.length;
+    weatherTreatmentCooldownUntil
+        .removeWhere((_, until) => !until.isAfter(current));
+    if (weatherTreatmentCooldownUntil.length != cooldownCount) {
+      changed = true;
+    }
+    return changed;
+  }
+
+  int _residentStructuralDurationReduction(
+    Zone0Resident resident,
+    WeatherAfflictionType type,
+  ) {
+    final house = residentHouses
+        .where((candidate) => candidate.id == resident.houseId)
+        .firstOrNull;
+    if (house == null) return 0;
+    final furniture = house.installedFurnitureItems;
+    final installations = house.installedInstallationItems;
+    final reductions =
+        towerOperationsConfig.weatherAfflictions.structuralReductionHours;
+    return switch (type) {
+      WeatherAfflictionType.heat =>
+        (installations.contains('Ventilation Termite')
+            ? reductions['ventilationHeat'] ?? 0
+            : 0),
+      WeatherAfflictionType.rain => (furniture.contains('Bassin thermal')
+              ? reductions['thermalBasinRain'] ?? 0
+              : 0) +
+          (installations.contains('Chloro-canaux')
+              ? reductions['chloroCanalsRain'] ?? 0
+              : 0),
+      WeatherAfflictionType.toxic => (furniture.contains('Bassin thermal')
+              ? reductions['thermalBasinToxic'] ?? 0
+              : 0) +
+          (installations.contains('Installation filtrante')
+              ? reductions['filtrationToxic'] ?? 0
+              : 0),
+    };
   }
 
   ResidentPassion _residentPassionFor(Zone0Resident resident) =>
@@ -4002,11 +4242,62 @@ class Zone0GameState extends ChangeNotifier {
         message: 'Aucun module à défaire.',
       );
     }
+    zone.secondaryModulePhysicalCostSnapshots.remove(type.name);
     constructionProjects.remove(biomeSecondaryModuleTargetId(biome, type));
     zone.updatedAt = DateTime.now();
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(success: true, message: 'Module défait.');
+  }
+
+  /// Destroys a secondary biome module in exchange for a partial recovery of
+  /// the real physical costs recorded across its completed levels.  This is
+  /// intentionally distinct from [removeBiomeSecondaryModule], which is the
+  /// free removal path and never starts the camp-wide refund cooldown.
+  Zone0ActionResult dismantleBiomeSecondaryModuleForRefund(
+    ForageBiome biome,
+    BiomeSecondaryModuleType type,
+  ) {
+    final zone = territoryZone(biome);
+    if (zone.buildingId != 'biofermenter') {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Construisez d’abord le bâtiment territorial.',
+      );
+    }
+    if (constructionProjects[biomeSecondaryModuleTargetId(biome, type)]
+            ?.isInProgress ??
+        false) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Les travaux de ce module sont déjà en cours.',
+      );
+    }
+    if (!zone.secondaryModules.containsKey(type.name)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun module à démonter.');
+    }
+    final refund = ModuleDismantlingService.refundFor(
+      zone.secondaryModulePhysicalCostSnapshots[type.name] ??
+          const <String, int>{},
+      percent: _moduleRefundPercent,
+    );
+    final validation = _validateModuleRefund(refund);
+    if (!validation.success) return validation;
+    final now = DateTime.now();
+    zone.secondaryModules.remove(type.name);
+    zone.secondaryModulePhysicalCostSnapshots.remove(type.name);
+    constructionProjects.remove(biomeSecondaryModuleTargetId(biome, type));
+    zone.updatedAt = now;
+    _grantModuleRefund(refund, now);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: refund.isEmpty
+          ? 'Module démonté sans remboursement : coût d’origine inconnu.'
+          : 'Module démonté : ${_moduleRefundPercent}% des matériaux récupérés.',
+    );
   }
 
   /// Les expéditions de recherche de la Lisière et la Tour contribuent au
@@ -5682,6 +5973,30 @@ class Zone0GameState extends ChangeNotifier {
   int _orderResultAmount(WorkshopCraftOrder order) =>
       _orderRecipe(order).resultAmount;
 
+  List<Map<String, int>> _weatherModuleCraftSnapshotsForOrder(
+    WorkshopCraftOrder order, {
+    required int firstUnit,
+    required int unitCount,
+  }) {
+    final recipe = _orderRecipe(order);
+    if (ptipoteModuleDefinitionForItem(recipe.resultItem) == null ||
+        recipe.resultAmount != 1 ||
+        order.reservedResources.isEmpty ||
+        unitCount <= 0) {
+      return const <Map<String, int>>[];
+    }
+    final totalUnits = math.max(1, order.requestedQuantity);
+    return List<Map<String, int>>.generate(unitCount, (offset) {
+      final unitIndex = firstUnit + offset;
+      return <String, int>{
+        for (final entry in order.reservedResources.entries)
+          if (entry.value > 0)
+            entry.key: entry.value ~/ totalUnits +
+                (unitIndex < entry.value.remainder(totalUnits) ? 1 : 0),
+      }..removeWhere((_, amount) => amount <= 0);
+    });
+  }
+
   bool isAssignedToMarket(String figurineId) =>
       marketAssignedPtipoteId == figurineId ||
       marketSecondaryAssignedPtipoteId == figurineId ||
@@ -5704,6 +6019,28 @@ class Zone0GameState extends ChangeNotifier {
           : hasMarketCentralUpgrade(MarketCentralUpgrade.logisticsOptimization)
               ? marketConfig.centralSellerOptimizedResponseMinutes
               : marketConfig.centralSellerBaseResponseMinutes;
+
+  /// Weather afflictions reduce an individual P'TIPOTE's productivity.  A
+  /// shared task still has one end time, so it uses the slowest participating
+  /// P'TIPOTE rather than silently ignoring an afflicted team member.
+  ///
+  /// The minimum prevents an invalid remote value of zero from creating an
+  /// infinite-duration task while retaining the intended strong slowdown.
+  int _weatherAdjustedTaskDurationSeconds(
+    int baseSeconds, {
+    Iterable<String> ptipoteIds = const <String>[],
+  }) {
+    var durationMultiplier = 1.0;
+    for (final ptipoteId in ptipoteIds) {
+      if (ptipoteId.isEmpty) continue;
+      final productivity = math.max(
+        .01,
+        ptipoteAfflictionProductivityMultiplier(ptipoteId),
+      );
+      durationMultiplier = math.max(durationMultiplier, 1 / productivity);
+    }
+    return math.max(1, (math.max(1, baseSeconds) * durationMultiplier).round());
+  }
 
   int distributorRepairMinutes() =>
       hasMarketCentralUpgrade(MarketCentralUpgrade.bioSoftware)
@@ -9072,12 +9409,12 @@ class Zone0GameState extends ChangeNotifier {
     bioBatteries -= bioBatteryCost;
     energyUnits -= craftEnergyCost;
     final speedBonus = craftSpeedBonus(figurine, atelierLevel);
-    final unitSeconds = math.max(
-      1,
+    final unitSeconds = _weatherAdjustedTaskDurationSeconds(
       (Duration(minutes: recipe.durationMinutes).inSeconds *
               (1 - speedBonus) *
               buildingCraftDurationMultiplier('atelier'))
           .round(),
+      ptipoteIds: figurine == null ? const <String>[] : <String>[figurine.id],
     );
     final now = DateTime.now();
     workshopOrders.add(
@@ -9219,12 +9556,12 @@ class Zone0GameState extends ChangeNotifier {
     bioBatteries -= bioBatteryCost;
     energyUnits -= craftEnergyCost;
     final speedBonus = craftSpeedBonus(figurine, cuisineLevel);
-    final unitSeconds = math.max(
-      1,
+    final unitSeconds = _weatherAdjustedTaskDurationSeconds(
       (Duration(minutes: recipe.durationMinutes).inSeconds *
               (1 - speedBonus) *
               buildingCraftDurationMultiplier('cuisine'))
           .round(),
+      ptipoteIds: figurine == null ? const <String>[] : <String>[figurine.id],
     );
     final now = DateTime.now();
     workshopOrders.add(
@@ -9537,12 +9874,12 @@ class Zone0GameState extends ChangeNotifier {
         order
           ..assignedPtipoteId = workerId
           ..assignedPtipoteName = profile?.displayName ?? 'P’TIPOTE'
-          ..unitDurationSeconds = math.max(
-            1,
+          ..unitDurationSeconds = _weatherAdjustedTaskDurationSeconds(
             (Duration(minutes: recipe.durationMinutes).inSeconds *
                     (1 - speed) *
                     buildingCraftDurationMultiplier(buildingId))
                 .round(),
+            ptipoteIds: <String>[workerId],
           );
         order.nextCompletionTime = current.add(
           Duration(seconds: order.unitDurationSeconds),
@@ -9584,7 +9921,16 @@ class Zone0GameState extends ChangeNotifier {
       units = math.min(units, possible);
     }
     if (units > 0) {
-      addResources(<String, int>{resultItem: resultAmount * units});
+      final moduleSnapshots = _weatherModuleCraftSnapshotsForOrder(
+        order,
+        firstUnit: order.completedQuantity,
+        unitCount: units,
+      );
+      if (moduleSnapshots.isEmpty) {
+        addResources(<String, int>{resultItem: resultAmount * units});
+      } else {
+        _addCraftedPtipoteWeatherModules(resultItem, moduleSnapshots);
+      }
       order.completedQuantity += units;
       order.nextCompletionTime = order.nextCompletionTime.add(
         Duration(seconds: order.unitDurationSeconds * units),
@@ -10307,6 +10653,14 @@ class Zone0GameState extends ChangeNotifier {
     waitingForBedIds.clear();
     lastCuddleAt.clear();
     autoPreferenceOverrides.clear();
+    ptipoteWeatherAfflictions.clear();
+    ptibugWeatherAfflictions.clear();
+    residentWeatherAfflictions.clear();
+    weatherAfflictionImmunityUntil.clear();
+    weatherTreatmentCooldownUntil.clear();
+    ptipoteWeatherModuleSlots.clear();
+    ptipoteWeatherModuleCostSnapshots.clear();
+    moduleRefundCooldownUntil = null;
     missions.clear();
     towerMissions.clear();
     workshopOrders.clear();
@@ -11177,10 +11531,15 @@ class Zone0GameState extends ChangeNotifier {
     changed = _resolveMarketInformationPoint(current) || changed;
     // La Zone centrale couvre tous les magasins avec son délai propre.
     if (marketAssignedPtipoteId != null) {
+      final responseSeconds = _weatherAdjustedTaskDurationSeconds(
+        Duration(minutes: centralResponseMinutes()).inSeconds,
+        ptipoteIds: <String>[marketAssignedPtipoteId!],
+      );
       for (final request
           in marketRequests.where((item) => item.isOpen).toList()) {
-        if (current.isBefore(request.createdAt
-            .add(Duration(minutes: centralResponseMinutes())))) {
+        if (current.isBefore(
+          request.createdAt.add(Duration(seconds: responseSeconds)),
+        )) {
           continue;
         }
         final result = sellMarketRequest(
@@ -11222,8 +11581,13 @@ class Zone0GameState extends ChangeNotifier {
       for (final request in marketRequests
           .where((item) => item.isOpen && item.shopId == shopId)
           .toList()) {
-        if (current.isBefore(request.createdAt
-            .add(Duration(minutes: marketConfig.storeSellerResponseMinutes)))) {
+        final responseSeconds = _weatherAdjustedTaskDurationSeconds(
+          Duration(minutes: marketConfig.storeSellerResponseMinutes).inSeconds,
+          ptipoteIds: <String>[entry.value],
+        );
+        if (current.isBefore(
+          request.createdAt.add(Duration(seconds: responseSeconds)),
+        )) {
           continue;
         }
         final result = sellMarketRequest(
@@ -11987,15 +12351,29 @@ class Zone0GameState extends ChangeNotifier {
   }) {
     // Le joueur peut remplacer une réparation P’TIPOTE par une intervention
     // courte. La même machine ne peut jamais lancer deux réparations.
+    final repairPtipoteId = byPtipote
+        ? centralPtipoteIdForVendorLevel(
+            marketConfig.repairRequiredVendorLevel,
+          )
+        : null;
+    final repairDuration = byPtipote
+        ? Duration(
+            seconds: _weatherAdjustedTaskDurationSeconds(
+              Duration(minutes: distributorRepairMinutes()).inSeconds,
+              ptipoteIds: repairPtipoteId == null
+                  ? const <String>[]
+                  : <String>[repairPtipoteId],
+            ),
+          )
+        : const Duration(minutes: 1);
     distributor.repairEndsAt = DateTime.now().add(
-      Duration(minutes: byPtipote ? distributorRepairMinutes() : 1),
+      repairDuration,
     );
     distributor.repairStartedBy = byPtipote ? 'ptipote' : 'player';
     if (byPtipote) {
       marketDistributorsRepairedThisAssignment += 1;
-      final ptipoteId = marketAssignedPtipoteId;
-      if (ptipoteId != null) {
-        addMissionXp(ptipoteId, 5);
+      if (repairPtipoteId != null) {
+        addMissionXp(repairPtipoteId, 5);
         marketXpEarnedThisAssignment += 5;
       }
     }
@@ -12475,6 +12853,9 @@ class Zone0GameState extends ChangeNotifier {
     required int tick,
   }) {
     var changed = false;
+    _weatherTrackedFigurines
+      ..clear()
+      ..addAll(figurines);
     if (_syncBedAssignments(figurines)) {
       changed = true;
     }
@@ -12485,6 +12866,12 @@ class Zone0GameState extends ChangeNotifier {
       changed = true;
     }
     if (resolveWeatherCycle()) {
+      changed = true;
+    }
+    if (_applyPtipoteWeatherAfflictions(figurines)) {
+      changed = true;
+    }
+    if (_resolveWeatherAfflictions()) {
       changed = true;
     }
     if (resolveResidentNeeds()) {
@@ -12676,6 +13063,474 @@ class Zone0GameState extends ChangeNotifier {
       notifyListeners();
       unawaited(saveRuntimeToFirebase());
     }
+  }
+
+  bool _applyPtipoteWeatherAfflictions(
+    List<PtipoteFigurine> figurines, {
+    GlobalWeatherEvent? weatherEvent,
+  }) {
+    final event = weatherEvent ?? activeGlobalWeatherEvent;
+    if (event == null ||
+        event.status != GlobalWeatherEventStatus.active ||
+        event.type == TowerWeatherType.calm ||
+        !event.isBiomeAffected(ForageBiome.plaineRiche)) {
+      return false;
+    }
+    var changed = false;
+    final type = _weatherAfflictionTypeFor(event.type);
+    for (final figurine in figurines) {
+      if (_ptipoteHasWeatherProtection(figurine.id, type)) continue;
+      changed = _applyWeatherAffliction(
+            entityId: _ptipoteAfflictionId(figurine.id),
+            target: ptipoteWeatherAfflictions,
+            type: type,
+            sourceWeatherEventId: event.id,
+            appliedAt: event.startsAt,
+            durationReductionHours: _ptipoteStructuralDurationReduction(type),
+          ) ||
+          changed;
+    }
+    return changed;
+  }
+
+  List<String?> weatherModuleSlotsForPtipote(String figurineId) {
+    final configured =
+        towerOperationsConfig.weatherAfflictions.personalModuleSlots;
+    final slots = ptipoteWeatherModuleSlots.putIfAbsent(
+      figurineId,
+      () => List<String?>.filled(configured, null),
+    );
+    // The Dashboard can change the number of generic slots. Keep the saved
+    // placements stable and only append/remove empty trailing slots.
+    while (slots.length < configured) {
+      slots.add(null);
+    }
+    while (slots.length > configured && slots.last == null) {
+      slots.removeLast();
+    }
+    return slots;
+  }
+
+  List<Map<String, int>?> weatherModuleCostSnapshotsForPtipote(
+    String figurineId,
+  ) {
+    final slots = weatherModuleSlotsForPtipote(figurineId);
+    final snapshots = ptipoteWeatherModuleCostSnapshots.putIfAbsent(
+      figurineId,
+      () => List<Map<String, int>?>.filled(slots.length, null),
+    );
+    while (snapshots.length < slots.length) {
+      snapshots.add(null);
+    }
+    while (snapshots.length > slots.length && snapshots.last == null) {
+      snapshots.removeLast();
+    }
+    return snapshots;
+  }
+
+  void _normalizeWeatherModuleSnapshots(Zone0InventoryStack stack) {
+    while (stack.unitPhysicalCostSnapshots.length < stack.amount) {
+      stack.unitPhysicalCostSnapshots.add(null);
+    }
+    while (stack.unitPhysicalCostSnapshots.length > stack.amount) {
+      stack.unitPhysicalCostSnapshots.removeLast();
+    }
+  }
+
+  /// Adds crafted personal modules with a cost record for every physical
+  /// exemplar. Normal inventory stacks remain compact; only these modules
+  /// need per-unit provenance for the later dismantling refund.
+  InventoryAddResult _addCraftedPtipoteWeatherModules(
+    String itemName,
+    List<Map<String, int>> physicalCostSnapshots,
+  ) {
+    if (physicalCostSnapshots.isEmpty) {
+      return const InventoryAddResult(
+          addedAny: false, pending: <String, int>{});
+    }
+    final expected = <String, int>{itemName: physicalCostSnapshots.length};
+    if (!hasInventoryCapacityFor(expected)) {
+      return InventoryAddResult(addedAny: false, pending: expected);
+    }
+    var remaining = List<Map<String, int>>.from(physicalCostSnapshots);
+    for (final stack
+        in inventory.where((stack) => stack.resource == itemName)) {
+      if (remaining.isEmpty) break;
+      _normalizeWeatherModuleSnapshots(stack);
+      final room = lisiereForageConfig.inventoryStackLimit - stack.amount;
+      final take = math.min(room, remaining.length);
+      if (take <= 0) continue;
+      stack.amount += take;
+      stack.unitPhysicalCostSnapshots.addAll(
+        remaining.take(take).map(Map<String, int>.from),
+      );
+      remaining = remaining.skip(take).toList(growable: false);
+    }
+    while (remaining.isNotEmpty) {
+      final take = math.min(
+        remaining.length,
+        lisiereForageConfig.inventoryStackLimit,
+      );
+      final snapshots =
+          remaining.take(take).map(Map<String, int>.from).toList();
+      inventory.add(
+        Zone0InventoryStack(
+          resource: itemName,
+          amount: take,
+          unitPhysicalCostSnapshots: snapshots,
+        ),
+      );
+      remaining = remaining.skip(take).toList(growable: false);
+    }
+    unawaited(saveInventoryToFirebase());
+    return const InventoryAddResult(addedAny: true, pending: <String, int>{});
+  }
+
+  /// Removes exactly one crafted personal module and returns only its stored
+  /// cost record. A legacy/untracked item yields a null snapshot: dismantling
+  /// such an item deliberately never guesses from a newer Dashboard recipe.
+  Map<String, int>? _takePtipoteWeatherModuleFromInventory(String itemName) {
+    for (final stack in inventory.toList()) {
+      if (stack.resource != itemName || stack.amount <= 0) continue;
+      _normalizeWeatherModuleSnapshots(stack);
+      final snapshot = stack.unitPhysicalCostSnapshots.isEmpty
+          ? null
+          : stack.unitPhysicalCostSnapshots.removeAt(0);
+      stack.amount -= 1;
+      if (stack.amount <= 0) inventory.remove(stack);
+      notifyListeners();
+      unawaited(saveInventoryToFirebase());
+      return snapshot == null ? null : Map<String, int>.from(snapshot);
+    }
+    return null;
+  }
+
+  bool _hasPtipoteWeatherModuleInInventory(String itemName) => inventory.any(
+        (stack) => stack.resource == itemName && stack.amount > 0,
+      );
+
+  int get _moduleRefundPercent =>
+      towerOperationsConfig.weatherAfflictions.moduleRefundPhysicalPercent;
+
+  Duration get _moduleRefundCooldown => Duration(
+        hours:
+            towerOperationsConfig.weatherAfflictions.moduleRefundCooldownHours,
+      );
+
+  bool get canRefundModule {
+    final until = moduleRefundCooldownUntil;
+    return until == null || !until.isAfter(DateTime.now());
+  }
+
+  Zone0ActionResult _validateModuleRefund(Map<String, int> refund) {
+    if (refund.isEmpty) {
+      return const Zone0ActionResult(
+          success: true, message: 'Aucun remboursement.');
+    }
+    final until = moduleRefundCooldownUntil;
+    if (until != null && until.isAfter(DateTime.now())) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Remboursement de module indisponible pendant le cooldown.',
+      );
+    }
+    if (!hasInventoryCapacityFor(refund)) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Inventaire plein : remboursement impossible.',
+      );
+    }
+    return const Zone0ActionResult(
+        success: true, message: 'Remboursement possible.');
+  }
+
+  void _grantModuleRefund(Map<String, int> refund, DateTime now) {
+    if (refund.isEmpty) return;
+    // Capacity was checked before the mutation. addResources therefore cannot
+    // leave a partial refund in the camp stock.
+    final result = addResources(refund);
+    assert(!result.hasPending);
+    moduleRefundCooldownUntil = now.add(_moduleRefundCooldown);
+  }
+
+  bool _ptipoteHasWeatherProtection(
+    String figurineId,
+    WeatherAfflictionType type,
+  ) =>
+      weatherModuleSlotsForPtipote(figurineId).any(
+        (item) =>
+            item != null &&
+            (ptipoteModuleDefinitionForItem(item)?.prevents(type) ?? false),
+      );
+
+  int _ptipoteStructuralDurationReduction(WeatherAfflictionType type) {
+    final reductions =
+        towerOperationsConfig.weatherAfflictions.structuralReductionHours;
+    final installations =
+        viabilityForBuilding('house').installedStructuralProtections;
+    return switch (type) {
+      WeatherAfflictionType.heat =>
+        installations.contains(StructuralProtectionType.ventilationTermite)
+            ? reductions['ventilationHeat'] ?? 0
+            : 0,
+      WeatherAfflictionType.rain =>
+        (ptipoteHomeFurnitureItems.contains('Bassin thermal')
+                ? reductions['thermalBasinRain'] ?? 0
+                : 0) +
+            (installations.contains(StructuralProtectionType.chloroCanaux)
+                ? reductions['chloroCanalsRain'] ?? 0
+                : 0),
+      WeatherAfflictionType.toxic =>
+        (ptipoteHomeFurnitureItems.contains('Bassin thermal')
+                ? reductions['thermalBasinToxic'] ?? 0
+                : 0) +
+            (installations.contains(StructuralProtectionType.filtration)
+                ? reductions['filtrationToxic'] ?? 0
+                : 0),
+    };
+  }
+
+  double ptipoteAfflictionProductivityMultiplier(String figurineId) =>
+      activeWeatherAfflictionsForPtipote(figurineId).isEmpty
+          ? 1
+          : towerOperationsConfig
+              .weatherAfflictions.ptipoteProductivityMultiplier;
+
+  List<String> weatherTreatmentItemsFor(WeatherAfflictionType type) =>
+      towerOperationsConfig.weatherAfflictions.treatmentItemsFor(type);
+
+  Duration weatherTreatmentCooldownRemainingForEntity(String entityId) {
+    final until = weatherTreatmentCooldownUntil[entityId];
+    if (until == null) return Duration.zero;
+    final remaining = until.difference(DateTime.now());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  Duration weatherTreatmentCooldownRemainingForPtipote(String figurineId) =>
+      weatherTreatmentCooldownRemainingForEntity(
+          _ptipoteAfflictionId(figurineId));
+
+  Duration weatherTreatmentCooldownRemainingForPTibug(PTibug bug) =>
+      weatherTreatmentCooldownRemainingForEntity(_ptibugAfflictionId(bug));
+
+  Duration weatherTreatmentCooldownRemainingForResident(
+          Zone0Resident resident) =>
+      weatherTreatmentCooldownRemainingForEntity(
+          _residentAfflictionId(resident));
+
+  /// Converts only the two former display names to their canonical crafted
+  /// item names. It runs during load, before the state is persisted again, so
+  /// old stacks and already equipped personal modules keep their value.
+  bool _migrateLegacyPtipoteWeatherModuleNames() {
+    var changed = false;
+    for (final slots in ptipoteWeatherModuleSlots.values) {
+      for (var index = 0; index < slots.length; index++) {
+        final item = slots[index];
+        if (item == null) continue;
+        final canonical = canonicalPtipoteModuleItemName(item);
+        if (canonical == item) continue;
+        slots[index] = canonical;
+        changed = true;
+      }
+    }
+    for (final entry in legacyPtipoteModuleItemNames.entries) {
+      final amount = inventory
+          .where((stack) => stack.resource == entry.key)
+          .fold<int>(0, (total, stack) => total + stack.amount);
+      if (amount <= 0) continue;
+      inventory.removeWhere((stack) => stack.resource == entry.key);
+      final migrated = addResources(<String, int>{entry.value: amount});
+      assert(migrated.pending.isEmpty);
+      changed = true;
+    }
+    return changed;
+  }
+
+  Zone0ActionResult installPtipoteWeatherModule({
+    required String figurineId,
+    required String itemName,
+    required int slotIndex,
+  }) {
+    final canonicalItem = canonicalPtipoteModuleItemName(itemName);
+    final slots = weatherModuleSlotsForPtipote(figurineId);
+    if (ptipoteModuleDefinitionForItem(canonicalItem) == null ||
+        slotIndex < 0 ||
+        slotIndex >= slots.length) {
+      return const Zone0ActionResult(
+          success: false, message: 'Module incompatible.');
+    }
+    if (slots[slotIndex] != null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Emplacement déjà occupé.');
+    }
+    if (!_hasPtipoteWeatherModuleInInventory(canonicalItem)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Module absent du stock.');
+    }
+    final snapshot = _takePtipoteWeatherModuleFromInventory(canonicalItem);
+    slots[slotIndex] = canonicalItem;
+    weatherModuleCostSnapshotsForPtipote(figurineId)[slotIndex] = snapshot;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Module personnel installé.');
+  }
+
+  Zone0ActionResult removePtipoteWeatherModule({
+    required String figurineId,
+    required int slotIndex,
+  }) {
+    final slots = weatherModuleSlotsForPtipote(figurineId);
+    if (slotIndex < 0 ||
+        slotIndex >= slots.length ||
+        slots[slotIndex] == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun module à retirer.');
+    }
+    final item = slots[slotIndex]!;
+    // Validate before mutating either the equipped slot or the inventory.
+    // Returning a module must be atomic: a full stock cannot leave a copied
+    // item behind while the original remains equipped.
+    if (!hasInventoryCapacityFor(<String, int>{item: 1})) {
+      return const Zone0ActionResult(
+          success: false, message: 'Stock du camp plein.');
+    }
+    final snapshots = weatherModuleCostSnapshotsForPtipote(figurineId);
+    final snapshot = snapshots[slotIndex];
+    final added = _addCraftedPtipoteWeatherModules(
+      item,
+      <Map<String, int>>[
+        if (snapshot != null) Map<String, int>.from(snapshot),
+        if (snapshot == null) const <String, int>{},
+      ],
+    );
+    if (added.pending.isNotEmpty) {
+      return const Zone0ActionResult(
+          success: false, message: 'Stock du camp plein.');
+    }
+    slots[slotIndex] = null;
+    snapshots[slotIndex] = null;
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Module retiré dans le stock.');
+  }
+
+  /// Destroys a personal module instead of returning the crafted item to the
+  /// camp inventory. Only its stored physical cost snapshot is refunded;
+  /// knowledge/data never appears in this path.
+  Zone0ActionResult dismantlePtipoteWeatherModuleForRefund({
+    required String figurineId,
+    required int slotIndex,
+  }) {
+    final slots = weatherModuleSlotsForPtipote(figurineId);
+    final snapshots = weatherModuleCostSnapshotsForPtipote(figurineId);
+    if (slotIndex < 0 ||
+        slotIndex >= slots.length ||
+        slots[slotIndex] == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun module à démonter.');
+    }
+    final snapshot = snapshots[slotIndex] ?? const <String, int>{};
+    final refund = ModuleDismantlingService.refundFor(
+      snapshot,
+      percent: _moduleRefundPercent,
+    );
+    final validation = _validateModuleRefund(refund);
+    if (!validation.success) return validation;
+    final now = DateTime.now();
+    slots[slotIndex] = null;
+    snapshots[slotIndex] = null;
+    _grantModuleRefund(refund, now);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: refund.isEmpty
+          ? 'Module démonté sans remboursement : coût d’origine inconnu.'
+          : 'Module démonté : ${_moduleRefundPercent}% des matériaux récupérés.',
+    );
+  }
+
+  Zone0ActionResult treatPtipoteWeatherAffliction({
+    required String figurineId,
+    required WeatherAfflictionType type,
+    required String treatmentItem,
+  }) =>
+      _treatWeatherAffliction(
+        entityId: _ptipoteAfflictionId(figurineId),
+        target: ptipoteWeatherAfflictions,
+        type: type,
+        treatmentItem: treatmentItem,
+      );
+
+  Zone0ActionResult treatPTibugWeatherAffliction({
+    required PTibug bug,
+    required WeatherAfflictionType type,
+    required String treatmentItem,
+  }) =>
+      _treatWeatherAffliction(
+        entityId: _ptibugAfflictionId(bug),
+        target: ptibugWeatherAfflictions,
+        type: type,
+        treatmentItem: treatmentItem,
+      );
+
+  Zone0ActionResult treatResidentWeatherAffliction({
+    required Zone0Resident resident,
+    required WeatherAfflictionType type,
+    required String treatmentItem,
+  }) =>
+      _treatWeatherAffliction(
+        entityId: _residentAfflictionId(resident),
+        target: residentWeatherAfflictions,
+        type: type,
+        treatmentItem: treatmentItem,
+      );
+
+  Zone0ActionResult _treatWeatherAffliction({
+    required String entityId,
+    required Map<String, List<WeatherAffliction>> target,
+    required WeatherAfflictionType type,
+    required String treatmentItem,
+  }) {
+    final reduction = towerOperationsConfig.weatherAfflictions
+        .treatmentReductionForItem(treatmentItem, type);
+    if (reduction == 0) {
+      return const Zone0ActionResult(
+          success: false, message: 'Soin incompatible.');
+    }
+    final now = DateTime.now();
+    final cooldown = weatherTreatmentCooldownUntil[entityId];
+    if (cooldown != null && cooldown.isAfter(now)) {
+      final remaining = cooldown.difference(now);
+      return Zone0ActionResult(
+        success: false,
+        message:
+            'Prochain traitement possible dans ${remaining.inHours} h ${remaining.inMinutes.remainder(60)} min.',
+      );
+    }
+    final entries = target[entityId];
+    final index = entries
+            ?.indexWhere((item) => item.type == type && item.isActiveAt(now)) ??
+        -1;
+    if (index < 0 || removeResource(treatmentItem, 1) != 1) {
+      return const Zone0ActionResult(
+          success: false, message: 'Affliction ou soin indisponible.');
+    }
+    final shortened = entries![index].shorten(Duration(hours: reduction), now);
+    if (shortened.endsAt.isAtSameMomentAs(now)) {
+      entries.removeAt(index);
+    } else {
+      entries[index] = shortened;
+    }
+    weatherTreatmentCooldownUntil[entityId] = now.add(Duration(
+      hours: towerOperationsConfig.weatherAfflictions.treatmentCooldownHours,
+    ));
+    _resolveWeatherAfflictions();
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(success: true, message: 'Soin appliqué.');
   }
 
   bool _applyElapsedSimulation(List<PtipoteFigurine> figurines) {
@@ -13644,16 +14499,6 @@ class Zone0GameState extends ChangeNotifier {
       return const Zone0ActionResult(
           success: false, message: 'Aucun module installé.');
     }
-    final source = vat.installedModuleCost.isEmpty
-        ? recyclerModuleCost(vat.moduleType!)
-        : vat.installedModuleCost;
-    final refund = <String, int>{
-      for (final entry in source.entries)
-        entry.key: entry.value *
-            wasteRecyclerConfig.recyclerModuleRefundPercent ~/
-            100,
-    };
-    addResources(refund);
     vat.moduleType = null;
     vat.installedModuleCost.clear();
     if (vatIndex == 0) {
@@ -13663,8 +14508,44 @@ class Zone0GameState extends ChangeNotifier {
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
     return const Zone0ActionResult(
-        success: true,
-        message: 'Module défait : 50 % des matériaux ont été récupérés.');
+        success: true, message: 'Module retiré sans remboursement.');
+  }
+
+  /// The paid module is destroyed and a single camp-wide refund cooldown is
+  /// started.  A legacy vat without a stored cost can still be dismantled,
+  /// but it cannot invent a refund from today’s recipe.
+  Zone0ActionResult dismantleRecyclerVatModuleForRefund(int vatIndex) {
+    if (vatIndex < 0 || vatIndex >= fabLab.recyclerVats.length) {
+      return const Zone0ActionResult(
+          success: false, message: 'Cuve introuvable.');
+    }
+    final vat = fabLab.recyclerVats[vatIndex];
+    if (vat.moduleType == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Aucun module installé.');
+    }
+    final refund = ModuleDismantlingService.refundFor(
+      vat.installedModuleCost,
+      percent: _moduleRefundPercent,
+    );
+    final validation = _validateModuleRefund(refund);
+    if (!validation.success) return validation;
+    final now = DateTime.now();
+    vat.moduleType = null;
+    vat.installedModuleCost.clear();
+    if (vatIndex == 0) {
+      recyclerBiologicalOrientationInstalled = false;
+      recyclerBiologicalOrientationActive = false;
+    }
+    _grantModuleRefund(refund, now);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: refund.isEmpty
+          ? 'Module démonté sans remboursement : coût d’origine inconnu.'
+          : 'Module démonté : ${_moduleRefundPercent}% des matériaux récupérés.',
+    );
   }
 
   List<int> _recyclerRatios({RecyclerModuleType? moduleType}) {
@@ -13839,11 +14720,19 @@ class Zone0GameState extends ChangeNotifier {
   int removeResource(String resource, int requestedAmount) {
     var remaining = math.max(0, requestedAmount);
     var removed = 0;
+    final tracksWeatherModuleCost =
+        ptipoteModuleDefinitionForItem(resource) != null;
     for (final stack in inventory.toList()) {
       if (remaining <= 0) break;
       if (stack.resource != resource) continue;
+      if (tracksWeatherModuleCost) {
+        _normalizeWeatherModuleSnapshots(stack);
+      }
       final take = math.min(stack.amount, remaining);
       stack.amount -= take;
+      if (tracksWeatherModuleCost && take > 0) {
+        stack.unitPhysicalCostSnapshots.removeRange(0, take);
+      }
       remaining -= take;
       removed += take;
       if (stack.amount <= 0) {
@@ -14709,11 +15598,14 @@ class Zone0GameState extends ChangeNotifier {
         : queuedConstructor
             ? project.plannedConstructorTimeReduction
             : 0.0;
+    final constructorId = constructor?.id ??
+        (queuedConstructor ? project.plannedConstructorId : null);
     final finalDuration = Duration(
-      seconds: math.max(
-        1,
+      seconds: _weatherAdjustedTaskDurationSeconds(
         (project.constructionDuration.inSeconds * (1 - constructorReduction))
             .round(),
+        ptipoteIds:
+            constructorId == null ? const <String>[] : <String>[constructorId],
       ),
     );
     project
@@ -14775,6 +15667,11 @@ class Zone0GameState extends ChangeNotifier {
   }
 
   void _completeConstructionProject(ConstructionProject project, DateTime now) {
+    // completeAt clears deposits. Keep an immutable material snapshot before
+    // that point so a later module dismantling never reads a changed recipe.
+    final paidPhysicalMaterials = Map<String, int>.from(
+      project.depositedMaterials,
+    );
     if (!project.completeAt(now)) return;
     switch (project.targetId) {
       case 'fablab':
@@ -14835,9 +15732,16 @@ class Zone0GameState extends ChangeNotifier {
         final secondaryModule =
             _biomeSecondaryModuleForTarget(project.targetId);
         if (secondaryModule != null) {
-          territoryZone(secondaryModule.biome)
+          final zone = territoryZone(secondaryModule.biome);
+          zone
             ..secondaryModules[secondaryModule.type.name] =
                 project.currentLevel.clamp(1, 3).toInt()
+            ..secondaryModulePhysicalCostSnapshots[secondaryModule.type.name] =
+                ModuleDismantlingService.accumulate(
+              zone.secondaryModulePhysicalCostSnapshots[
+                  secondaryModule.type.name],
+              paidPhysicalMaterials,
+            )
             ..updatedAt = now;
           break;
         }
@@ -15047,12 +15951,15 @@ class Zone0GameState extends ChangeNotifier {
     energyUnits -= config.creationEnergyCost;
     bioBatteries -= config.creationBioBatteryCost;
     final now = DateTime.now();
+    final armatureDurationSeconds = _weatherAdjustedTaskDurationSeconds(
+      Duration(minutes: pTibugConfig.cultivation.armatureMinutes).inSeconds,
+      ptipoteIds: figurine == null ? const <String>[] : <String>[figurine.id],
+    );
     pTibugArmatures.add(PTibugArmature(
       id: 'ptibug-armature-${now.microsecondsSinceEpoch}',
       species: species,
       startedAt: now,
-      completesAt:
-          now.add(Duration(minutes: pTibugConfig.cultivation.armatureMinutes)),
+      completesAt: now.add(Duration(seconds: armatureDurationSeconds)),
       materialCosts: Map<String, int>.from(config.creationCost),
       createdAt: now,
       assignedPtipoteId: figurine?.id,
@@ -16137,6 +17044,7 @@ class Zone0GameState extends ChangeNotifier {
         id: 'ptibug-module-${order.id}',
         type: order.moduleType,
         createdAt: current,
+        physicalCostSnapshot: order.physicalCostSnapshot,
       );
       pTibugModuleInstances.add(instance);
       reports.add(
@@ -16224,12 +17132,19 @@ class Zone0GameState extends ChangeNotifier {
         id: current.microsecondsSinceEpoch.toString(),
         moduleType: type,
         startedAt: current,
-        endsAt: current.add(Duration(
-          seconds: math.max(1, (duration.inSeconds * (1 - speedBonus)).round()),
-        )),
+        endsAt: current.add(
+          Duration(
+            seconds: _weatherAdjustedTaskDurationSeconds(
+              (duration.inSeconds * (1 - speedBonus)).round(),
+              ptipoteIds:
+                  figurine == null ? const <String>[] : <String>[figurine.id],
+            ),
+          ),
+        ),
         assignedPtipoteId: figurine?.id,
         assignedPtipoteName: figurine?.displayName,
         energyCost: totalEnergyCost,
+        physicalCostSnapshot: cost,
       ),
     );
     notifyListeners();
@@ -16387,6 +17302,78 @@ class Zone0GameState extends ChangeNotifier {
     return const Zone0ActionResult(success: true, message: 'Module retiré.');
   }
 
+  /// Removes an unequipped P'TIBUG module permanently without returning any
+  /// material.  This free path intentionally leaves the camp-wide refund
+  /// cooldown untouched.
+  Zone0ActionResult discardPTibugModuleInstance(String moduleInstanceId) {
+    final instance = pTibugModuleInstances
+        .where((item) => item.id == moduleInstanceId)
+        .firstOrNull;
+    if (instance == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Module introuvable.');
+    }
+    if (instance.isEquipped || instance.symbiosisWithPTibugId != null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Retirez d’abord ce module et brisez sa symbiose.',
+      );
+    }
+    if (pTibugModuleVatOperations
+        .any((item) => item.moduleInstanceId == instance.id && item.isActive)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ce module est actuellement en cuve.');
+    }
+    pTibugModuleInstances.remove(instance);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return const Zone0ActionResult(
+        success: true, message: 'Module retiré sans remboursement.');
+  }
+
+  /// Destroys an unequipped P'TIBUG module and returns half of the physical
+  /// materials that were captured at craft completion.  Old/Sourcier modules
+  /// without a snapshot remain removable, but never fabricate a refund.
+  Zone0ActionResult dismantlePTibugModuleInstanceForRefund(
+    String moduleInstanceId,
+  ) {
+    final instance = pTibugModuleInstances
+        .where((item) => item.id == moduleInstanceId)
+        .firstOrNull;
+    if (instance == null) {
+      return const Zone0ActionResult(
+          success: false, message: 'Module introuvable.');
+    }
+    if (instance.isEquipped || instance.symbiosisWithPTibugId != null) {
+      return const Zone0ActionResult(
+        success: false,
+        message: 'Retirez d’abord ce module et brisez sa symbiose.',
+      );
+    }
+    if (pTibugModuleVatOperations
+        .any((item) => item.moduleInstanceId == instance.id && item.isActive)) {
+      return const Zone0ActionResult(
+          success: false, message: 'Ce module est actuellement en cuve.');
+    }
+    final refund = ModuleDismantlingService.refundFor(
+      instance.physicalCostSnapshot,
+      percent: _moduleRefundPercent,
+    );
+    final validation = _validateModuleRefund(refund);
+    if (!validation.success) return validation;
+    final now = DateTime.now();
+    pTibugModuleInstances.remove(instance);
+    _grantModuleRefund(refund, now);
+    notifyListeners();
+    unawaited(saveRuntimeToFirebase());
+    return Zone0ActionResult(
+      success: true,
+      message: refund.isEmpty
+          ? 'Module démonté sans remboursement : coût d’origine inconnu.'
+          : 'Module démonté : ${_moduleRefundPercent}% des matériaux récupérés.',
+    );
+  }
+
   Zone0ActionResult fusePTibugModuleInstances({
     required String firstId,
     required String secondId,
@@ -16482,6 +17469,7 @@ class Zone0GameState extends ChangeNotifier {
       startedAt: now,
       endsAt:
           now.add(Duration(minutes: fablabConfig.moduleUpgradeDurationMinutes)),
+      physicalCostSnapshot: cost,
     ));
     notifyListeners();
     unawaited(saveRuntimeToFirebase());
@@ -16541,6 +17529,13 @@ class Zone0GameState extends ChangeNotifier {
           module
             ..symbiosisWithPTibugId = operation.targetPTibugId
             ..symbiosisLevel = math.max(1, module.symbiosisLevel);
+          final cumulativeCost = ModuleDismantlingService.accumulate(
+            module.physicalCostSnapshot,
+            operation.physicalCostSnapshot,
+          );
+          module.physicalCostSnapshot
+            ..clear()
+            ..addAll(cumulativeCost);
         } else {
           module.symbiosisWithPTibugId = null;
         }
@@ -17557,18 +18552,16 @@ class Zone0GameState extends ChangeNotifier {
       output['Déchets'] =
           (output['Déchets']! * wasteMultiplierFor(bug.refugeBiome)).round();
     }
-    final weather = pTibugWeatherFor(bug);
-    final protected =
-        weather != null && _hasPTibugWeatherProtection(bug, weather);
+    // Production is driven exclusively by the persistent health state. Its
+    // multiplier is captured when the incident begins, so it remains active
+    // even if the weather event ends before the P'TIBUG recovers. This also
+    // prevents the former weather multiplier from being applied a second time.
+    final afflictionMultiplier = pTibugAfflictionProductionMultiplierFor(bug);
     final multiplier = buildingProductionMultiplier(
           bug.assignedBuildingId ?? plaineNurseryTerritoryId,
         ) *
         biomassPTibugMultiplierFor(bug.refugeBiome) *
-        (weather == null || protected
-            ? 1
-            : pTibugConfig.weather.multiplierForPenalty(
-                pTibugWeatherMalusPercentFor(bug),
-              ));
+        afflictionMultiplier;
     return <String, int>{
       for (final entry in output.entries)
         entry.key: math.max(0, (entry.value * multiplier).round()),
@@ -17584,6 +18577,14 @@ class Zone0GameState extends ChangeNotifier {
     return event.type;
   }
 
+  /// The raw biome malus remains useful for weather configuration, while this
+  /// helper answers the player-facing question: is this P'TIBUG actually
+  /// exposed after taking its fitted protection into account?
+  bool isPTibugExposedToCurrentWeather(PTibug bug) {
+    final weather = pTibugWeatherFor(bug);
+    return weather != null && !_hasPTibugWeatherProtection(bug, weather);
+  }
+
   int pTibugWeatherMalusPercentFor(PTibug bug) {
     final event = activeGlobalWeatherEvent;
     if (event == null || !event.isBiomeAffected(bug.refugeBiome)) return 0;
@@ -17593,6 +18594,30 @@ class Zone0GameState extends ChangeNotifier {
         .round()
         .clamp(
             0, towerOperationsConfig.globalWeather.maximumPTibugMalusPercent);
+  }
+
+  /// A P'TIBUG may have several afflictions of different types. They do not
+  /// stack production penalties: the strongest active health malus wins.
+  /// Legacy records without a snapshot can still use the current event while
+  /// it is active; new records always persist their multiplier.
+  double pTibugAfflictionProductionMultiplierFor(PTibug bug) {
+    final active = activeWeatherAfflictionsForPTibug(bug);
+    if (active.isEmpty) return 1;
+    final weather = pTibugWeatherFor(bug);
+    var multiplier = 1.0;
+    for (final affliction in active) {
+      final snapshot = affliction.ptibugProductionMultiplier;
+      final candidate = snapshot != null
+          ? snapshot.clamp(0.0, 1.0).toDouble()
+          : weather != null &&
+                  affliction.type == _weatherAfflictionTypeFor(weather)
+              ? pTibugConfig.weather.multiplierForPenalty(
+                  pTibugWeatherMalusPercentFor(bug),
+                )
+              : 1.0;
+      multiplier = math.min(multiplier, candidate);
+    }
+    return multiplier;
   }
 
   bool _hasPTibugWeatherProtection(PTibug bug, TowerWeatherType weather) =>
@@ -18190,7 +19215,9 @@ class Zone0GameState extends ChangeNotifier {
         figurineName: figurine.displayName,
         plan: plan,
         startTime: start,
-        endTime: start.add(_towerDurationForTicks(ticks)),
+        endTime: start.add(
+          _towerDurationForTicks(ticks, figurineId: figurine.id),
+        ),
         vitalityCost: ticks * securityTowerConfig.vitalityCostPerTick,
         securityGain: ticks *
             securityTowerConfig.securityGainForLevel(securityTowerLevel),
@@ -18511,6 +19538,74 @@ class Zone0GameState extends ChangeNotifier {
                 ),
           );
       }
+      _loadWeatherAfflictionMap(
+        data['ptipoteWeatherAfflictions'],
+        ptipoteWeatherAfflictions,
+      );
+      _loadWeatherAfflictionMap(
+        data['ptibugWeatherAfflictions'],
+        ptibugWeatherAfflictions,
+      );
+      _loadWeatherAfflictionMap(
+        data['residentWeatherAfflictions'],
+        residentWeatherAfflictions,
+      );
+      final immunityData = data['weatherAfflictionImmunityUntil'];
+      if (immunityData is Map) {
+        weatherAfflictionImmunityUntil
+          ..clear()
+          ..addEntries(immunityData.entries.map((entry) {
+            final rawTypes = entry.value as Map?;
+            return MapEntry(
+              '${entry.key}',
+              <WeatherAfflictionType, DateTime>{
+                for (final type in WeatherAfflictionType.values)
+                  if (_readDate(rawTypes?[type.name]) != null)
+                    type: _readDate(rawTypes?[type.name])!,
+              },
+            );
+          }));
+      }
+      final treatmentCooldownData = data['weatherTreatmentCooldownUntil'];
+      if (treatmentCooldownData is Map) {
+        weatherTreatmentCooldownUntil
+          ..clear()
+          ..addEntries(treatmentCooldownData.entries.map((entry) {
+            final until = _readDate(entry.value);
+            return until == null ? null : MapEntry('${entry.key}', until);
+          }).whereType<MapEntry<String, DateTime>>());
+      }
+      final weatherModulesData = data['ptipoteWeatherModuleSlots'];
+      if (weatherModulesData is Map) {
+        ptipoteWeatherModuleSlots
+          ..clear()
+          ..addEntries(weatherModulesData.entries.map((entry) => MapEntry(
+                '${entry.key}',
+                (entry.value as List? ?? const <dynamic>[])
+                    .map((value) => value as String?)
+                    .toList(),
+              )));
+      }
+      final weatherModuleCostsData = data['ptipoteWeatherModuleCostSnapshots'];
+      if (weatherModuleCostsData is Map) {
+        ptipoteWeatherModuleCostSnapshots
+          ..clear()
+          ..addEntries(weatherModuleCostsData.entries.map((entry) {
+            final values = entry.value as List? ?? const <dynamic>[];
+            return MapEntry(
+              '${entry.key}',
+              values.map<Map<String, int>?>((value) {
+                if (value is! Map) return null;
+                return <String, int>{
+                  for (final cost in value.entries)
+                    if (_readInt(cost.value) > 0)
+                      '${cost.key}': _readInt(cost.value),
+                };
+              }).toList(),
+            );
+          }));
+      }
+      moduleRefundCooldownUntil = _readDate(data['moduleRefundCooldownUntil']);
       final ptipoteFurnitureData = data['ptipoteHomeFurnitureItems'];
       if (ptipoteFurnitureData is List) {
         ptipoteHomeFurnitureItems
@@ -19635,11 +20730,17 @@ class Zone0GameState extends ChangeNotifier {
       lastManualTowerRechargeAt = _readDate(data['lastManualTowerRechargeAt']);
 
       final migratedPTibugState = _migratePTibugScientificState();
+      final migratedPtipoteWeatherModules =
+          _migrateLegacyPtipoteWeatherModuleNames();
       final discoveredSourcierPatterns =
           _refreshPTibugResearchPatternDiscoveries();
       final refreshedMerchantOffers = _refreshMerchantOffersForCurrentRules();
       final hadEnergyCorePattern = energyCorePatternDiscovered;
       final removedPrematureEnergyCore = _migratePrematureEnergyCorePattern();
+      // Afflictions and treatment cooldowns are timestamp based. Reconcile
+      // them immediately on app open so an expired health effect never waits
+      // for a later UI tick to disappear from Firebase or resident happiness.
+      final resolvedExpiredWeatherAfflictions = _resolveWeatherAfflictions();
       _loadedFromFirebase = true;
       resolveCoBreedingSessions();
       _resolveEnergyCoreMilestones();
@@ -19648,12 +20749,17 @@ class Zone0GameState extends ChangeNotifier {
           migratedHouse ||
           storageCapacityOutdated ||
           migratedPTibugState ||
+          migratedPtipoteWeatherModules ||
+          resolvedExpiredWeatherAfflictions ||
           discoveredSourcierPatterns ||
           refreshedMerchantOffers ||
           removedPrematureEnergyCore ||
           hadEnergyCorePattern != energyCorePatternDiscovered) {
         if (migratedFabLab || migratedHouse || storageCapacityOutdated) {
           unawaited(saveBuildingsToFirebase());
+        }
+        if (migratedPtipoteWeatherModules) {
+          unawaited(saveInventoryToFirebase());
         }
         unawaited(saveRuntimeToFirebase());
       }
@@ -19944,13 +21050,13 @@ class Zone0GameState extends ChangeNotifier {
       startTime: start,
       endTime: start.add(
         Duration(
-          seconds: math.max(
-            1,
+          seconds: _weatherAdjustedTaskDurationSeconds(
             (durationConfig
                         .realDuration(lisiereForageConfig.forageTimeScale)
                         .inSeconds *
                     intensityConfig.timeMultiplier)
                 .round(),
+            ptipoteIds: memberIds,
           ),
         ),
       ),
@@ -20092,21 +21198,17 @@ class Zone0GameState extends ChangeNotifier {
       );
     }
     final now = DateTime.now();
+    final explorationDurationSeconds = _weatherAdjustedTaskDurationSeconds(
+      (durationHours * 60 * 60 / lisiereForageConfig.forageTimeScale).round(),
+      ptipoteIds: figurines.map((item) => item.id),
+    );
     explorationMissions.add(
       BiomeExplorationMission(
         id: 'exploration-${now.microsecondsSinceEpoch}',
         biome: biome,
         memberIds: figurines.map((item) => item.id).toList(),
         memberNames: figurines.map((item) => item.displayName).toList(),
-        endTime: now.add(
-          Duration(
-            minutes: math.max(
-              1,
-              (durationHours * 60 / lisiereForageConfig.forageTimeScale)
-                  .round(),
-            ),
-          ),
-        ),
+        endTime: now.add(Duration(seconds: explorationDurationSeconds)),
         explorationProgressGain: durationHours * 10,
       ),
     );
@@ -20858,6 +21960,15 @@ class Zone0GameState extends ChangeNotifier {
       startsAt: current,
       intensity: GlobalWeatherIntensity.calm,
     )..status = GlobalWeatherEventStatus.active;
+    // The resolver is idempotent per event. Calling it for the currently
+    // active event covers both a freshly started cycle and a save reopened
+    // mid-weather without waiting for the next weather promotion.
+    changed =
+        _resolveResidentWeatherImpact(activeGlobalWeatherEvent!) || changed;
+    changed =
+        _applyPTibugWeatherAfflictions(activeGlobalWeatherEvent!) || changed;
+    changed =
+        _applyPtipoteWeatherAfflictions(_weatherTrackedFigurines) || changed;
     // Les anciennes sauvegardes n'ont pas de Viabilité : marquer l'événement
     // transitoire sans dégâts évite d'appliquer rétroactivement la météo.
     for (final state in buildingViabilities.values) {
@@ -20876,7 +21987,13 @@ class Zone0GameState extends ChangeNotifier {
       _applyWeatherViabilityDamage(promoted);
       _applyWeatherHouseDamage(promoted);
       _applyWeatherStockLosses(promoted);
-      _resolveResidentWeatherImpact(promoted);
+      changed = _resolveResidentWeatherImpact(promoted) || changed;
+      changed = _applyPTibugWeatherAfflictions(promoted) || changed;
+      changed = _applyPtipoteWeatherAfflictions(
+            _weatherTrackedFigurines,
+            weatherEvent: promoted,
+          ) ||
+          changed;
       _notifyGlobalWeatherStarted(promoted);
       nextGlobalWeatherEvent = _newGlobalWeatherEvent(
         startsAt: promoted.endsAt,
@@ -20891,7 +22008,30 @@ class Zone0GameState extends ChangeNotifier {
       _prepareResidentWeatherNeeds(upcoming);
       changed = true;
     }
+    changed = _resolveWeatherAfflictions(now: current) || changed;
     return changed || forceFirstAlert;
+  }
+
+  bool _applyPTibugWeatherAfflictions(GlobalWeatherEvent event) {
+    if (event.type == TowerWeatherType.calm) return false;
+    final type = _weatherAfflictionTypeFor(event.type);
+    var changed = false;
+    for (final bug in pTibugs.where((bug) =>
+        bug.lifecycleStatus == PTibugLifecycleStatus.active &&
+        event.isBiomeAffected(bug.refugeBiome))) {
+      if (_hasPTibugWeatherProtection(bug, event.type)) continue;
+      changed = _applyWeatherAffliction(
+            entityId: _ptibugAfflictionId(bug),
+            target: ptibugWeatherAfflictions,
+            type: type,
+            sourceWeatherEventId: event.id,
+            appliedAt: event.startsAt,
+            ptibugProductionMultiplier: pTibugConfig.weather
+                .multiplierForPenalty(pTibugWeatherMalusPercentFor(bug)),
+          ) ||
+          changed;
+    }
+    return changed;
   }
 
   void _migrateGlobalWeatherIfNeeded(DateTime now) {
@@ -21104,6 +22244,10 @@ class Zone0GameState extends ChangeNotifier {
     _applyWeatherViabilityDamage(activeGlobalWeatherEvent!);
     _applyWeatherHouseDamage(activeGlobalWeatherEvent!);
     _applyWeatherStockLosses(activeGlobalWeatherEvent!);
+    _resolveResidentWeatherImpact(activeGlobalWeatherEvent!);
+    _applyPTibugWeatherAfflictions(activeGlobalWeatherEvent!);
+    _applyPtipoteWeatherAfflictions(_weatherTrackedFigurines);
+    _resolveWeatherAfflictions();
     nextGlobalWeatherEvent = _newGlobalWeatherEvent(
       startsAt: activeGlobalWeatherEvent!.endsAt,
     );
@@ -21834,7 +22978,9 @@ class Zone0GameState extends ChangeNotifier {
               figurineName: memberName,
               plan: TowerMissionPlan.oneHour,
               startTime: completedAt,
-              endTime: completedAt.add(_towerDurationForTicks(ticks)),
+              endTime: completedAt.add(
+                _towerDurationForTicks(ticks, figurineId: memberId),
+              ),
               vitalityCost: ticks * securityTowerConfig.vitalityCostPerTick,
               securityGain: ticks *
                   securityTowerConfig.securityGainForLevel(securityTowerLevel),
@@ -22414,13 +23560,19 @@ class Zone0GameState extends ChangeNotifier {
     return math.max(1, minutes ~/ math.max(1, securityTowerConfig.tickMinutes));
   }
 
-  Duration _towerDurationForTicks(int ticks) {
+  Duration _towerDurationForTicks(int ticks, {String? figurineId}) {
     final theoreticalMinutes = ticks * securityTowerConfig.tickMinutes;
     final realMinutes = math.max(
       1,
       (theoreticalMinutes / lisiereForageConfig.forageTimeScale).round(),
     );
-    return Duration(minutes: realMinutes);
+    return Duration(
+      seconds: _weatherAdjustedTaskDurationSeconds(
+        Duration(minutes: realMinutes).inSeconds,
+        ptipoteIds:
+            figurineId == null ? const <String>[] : <String>[figurineId],
+      ),
+    );
   }
 
   void _resolveTowerMission(TowerMission mission, {bool early = false}) {
@@ -22628,14 +23780,7 @@ class Zone0GameState extends ChangeNotifier {
     if (user == null) return;
     await _runFirebaseSync('Sauvegarde inventaire', () {
       return _zone0Doc(user.uid).set(<String, dynamic>{
-        'inventory': inventory
-            .map(
-              (stack) => <String, dynamic>{
-                'resource': stack.resource,
-                'amount': stack.amount,
-              },
-            )
-            .toList(),
+        'inventory': inventory.map((stack) => stack.toFirebase()).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     });
@@ -22659,6 +23804,39 @@ class Zone0GameState extends ChangeNotifier {
         'ptipoteV2Profiles': ptipoteV2Profiles.map(
           (id, profile) => MapEntry(id, profile.toFirebase()),
         ),
+        'ptipoteWeatherAfflictions': _saveWeatherAfflictionMap(
+          ptipoteWeatherAfflictions,
+        ),
+        'ptibugWeatherAfflictions': _saveWeatherAfflictionMap(
+          ptibugWeatherAfflictions,
+        ),
+        'residentWeatherAfflictions': _saveWeatherAfflictionMap(
+          residentWeatherAfflictions,
+        ),
+        'weatherAfflictionImmunityUntil': weatherAfflictionImmunityUntil.map(
+          (entity, values) => MapEntry(
+            entity,
+            values.map(
+              (type, until) => MapEntry(type.name, Timestamp.fromDate(until)),
+            ),
+          ),
+        ),
+        'weatherTreatmentCooldownUntil': weatherTreatmentCooldownUntil.map(
+          (entity, until) => MapEntry(entity, Timestamp.fromDate(until)),
+        ),
+        'ptipoteWeatherModuleSlots': ptipoteWeatherModuleSlots,
+        'ptipoteWeatherModuleCostSnapshots':
+            ptipoteWeatherModuleCostSnapshots.map(
+          (figurineId, snapshots) => MapEntry(
+            figurineId,
+            snapshots
+                .map((snapshot) => snapshot == null ? null : snapshot)
+                .toList(),
+          ),
+        ),
+        'moduleRefundCooldownUntil': moduleRefundCooldownUntil == null
+            ? null
+            : Timestamp.fromDate(moduleRefundCooldownUntil!),
         'ptipoteHomeFurnitureItems': ptipoteHomeFurnitureItems,
         'coBreeding': <String, dynamic>{
           'unlocked': coBreedingUnlocked,
@@ -23235,9 +24413,12 @@ class Zone0InventoryStack {
     required this.resource,
     required int amount,
     List<String>? sourceItemIds,
+    List<Map<String, int>?>? unitPhysicalCostSnapshots,
   })  : id = id ?? 'stack-${DateTime.now().microsecondsSinceEpoch}',
         amount = math.max(0, amount),
-        sourceItemIds = sourceItemIds ?? <String>[];
+        sourceItemIds = sourceItemIds ?? <String>[],
+        unitPhysicalCostSnapshots =
+            unitPhysicalCostSnapshots ?? <Map<String, int>?>[];
 
   final String id;
   final String resource;
@@ -23247,14 +24428,37 @@ class Zone0InventoryStack {
   /// Matrices). Ils gardent leur identité visuelle tout en restant un stack.
   final List<String> sourceItemIds;
 
+  /// Per-unit paid physical costs for P'TIPOTE weather modules. Other stacks
+  /// intentionally leave this empty, so existing inventory serialization and
+  /// stacking semantics remain unchanged.
+  final List<Map<String, int>?> unitPhysicalCostSnapshots;
+
+  /// Inventory records are also decoded in tests and migrations, where the
+  /// Firebase singleton may intentionally not exist yet. Keep this tiny
+  /// conversion local instead of reaching through [Zone0GameState.instance].
+  static int _storedInt(Object? value) {
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? 0;
+  }
+
   factory Zone0InventoryStack.fromFirebase(Map<dynamic, dynamic> data) =>
       Zone0InventoryStack(
         id: data['id'] as String?,
         resource: '${data['resource'] ?? ''}',
-        amount: Zone0GameState.instance._readInt(data['amount']),
+        amount: _storedInt(data['amount']),
         sourceItemIds: (data['sourceItemIds'] as List? ?? const <dynamic>[])
             .map((item) => '$item')
             .toList(),
+        unitPhysicalCostSnapshots:
+            (data['unitPhysicalCostSnapshots'] as List? ?? const <dynamic>[])
+                .map<Map<String, int>?>((value) {
+          if (value is! Map) return null;
+          return <String, int>{
+            for (final entry in value.entries)
+              if (_storedInt(entry.value) > 0)
+                '${entry.key}': _storedInt(entry.value),
+          };
+        }).toList(),
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -23262,6 +24466,7 @@ class Zone0InventoryStack {
         'resource': resource,
         'amount': amount,
         'sourceItemIds': sourceItemIds,
+        'unitPhysicalCostSnapshots': unitPhysicalCostSnapshots,
       };
 }
 
@@ -27218,7 +28423,8 @@ class PTibugModuleInstance {
     this.symbiosisLastXpAt,
     required this.createdAt,
     this.source = 'atelier',
-  });
+    Map<String, int>? physicalCostSnapshot,
+  }) : physicalCostSnapshot = physicalCostSnapshot ?? <String, int>{};
 
   final String id;
   final PTibugModuleType type;
@@ -27230,6 +28436,7 @@ class PTibugModuleInstance {
   DateTime? symbiosisLastXpAt;
   final DateTime createdAt;
   final String source;
+  final Map<String, int> physicalCostSnapshot;
   bool get isEquipped => equippedPTibugId != null;
 
   factory PTibugModuleInstance.fromFirebase(Map<dynamic, dynamic> data) =>
@@ -27254,6 +28461,12 @@ class PTibugModuleInstance {
         createdAt: Zone0GameState.instance._readDate(data['createdAt']) ??
             DateTime.now(),
         source: '${data['source'] ?? 'atelier'}',
+        physicalCostSnapshot: <String, int>{
+          for (final entry
+              in (data['physicalCostSnapshot'] as Map? ?? const {}).entries)
+            if (Zone0GameState.instance._readInt(entry.value) > 0)
+              '${entry.key}': Zone0GameState.instance._readInt(entry.value),
+        },
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -27269,6 +28482,7 @@ class PTibugModuleInstance {
             : Timestamp.fromDate(symbiosisLastXpAt!),
         'createdAt': Timestamp.fromDate(createdAt),
         'source': source,
+        'physicalCostSnapshot': physicalCostSnapshot,
       };
 }
 
@@ -27283,7 +28497,8 @@ class PTibugModuleVatOperation {
     required this.startedAt,
     required this.endsAt,
     this.completedAt,
-  });
+    Map<String, int>? physicalCostSnapshot,
+  }) : physicalCostSnapshot = physicalCostSnapshot ?? <String, int>{};
 
   final String id;
   final String moduleInstanceId;
@@ -27291,6 +28506,7 @@ class PTibugModuleVatOperation {
   final PTibugModuleVatOperationKind kind;
   final DateTime startedAt;
   final DateTime endsAt;
+  final Map<String, int> physicalCostSnapshot;
   DateTime? completedAt;
   bool get isActive => completedAt == null;
 
@@ -27309,6 +28525,12 @@ class PTibugModuleVatOperation {
         endsAt:
             Zone0GameState.instance._readDate(data['endsAt']) ?? DateTime.now(),
         completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+        physicalCostSnapshot: <String, int>{
+          for (final entry
+              in (data['physicalCostSnapshot'] as Map? ?? const {}).entries)
+            if (Zone0GameState.instance._readInt(entry.value) > 0)
+              '${entry.key}': Zone0GameState.instance._readInt(entry.value),
+        },
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -27318,6 +28540,7 @@ class PTibugModuleVatOperation {
         'kind': kind.name,
         'startedAt': Timestamp.fromDate(startedAt),
         'endsAt': Timestamp.fromDate(endsAt),
+        'physicalCostSnapshot': physicalCostSnapshot,
         'completedAt':
             completedAt == null ? null : Timestamp.fromDate(completedAt!),
       };
@@ -27333,7 +28556,8 @@ class PTibugModuleCraftOrder {
     this.assignedPtipoteName,
     this.energyCost = 0,
     this.completedAt,
-  });
+    Map<String, int>? physicalCostSnapshot,
+  }) : physicalCostSnapshot = physicalCostSnapshot ?? <String, int>{};
 
   final String id;
   final PTibugModuleType moduleType;
@@ -27342,6 +28566,7 @@ class PTibugModuleCraftOrder {
   final String? assignedPtipoteId;
   final String? assignedPtipoteName;
   final int energyCost;
+  final Map<String, int> physicalCostSnapshot;
   DateTime? completedAt;
 
   bool get isActive => completedAt == null;
@@ -27362,6 +28587,12 @@ class PTibugModuleCraftOrder {
         assignedPtipoteName: data['assignedPtipoteName'] as String?,
         energyCost: Zone0GameState.instance._readInt(data['energyCost']),
         completedAt: Zone0GameState.instance._readDate(data['completedAt']),
+        physicalCostSnapshot: <String, int>{
+          for (final entry
+              in (data['physicalCostSnapshot'] as Map? ?? const {}).entries)
+            if (Zone0GameState.instance._readInt(entry.value) > 0)
+              '${entry.key}': Zone0GameState.instance._readInt(entry.value),
+        },
       );
 
   Map<String, dynamic> toFirebase() => <String, dynamic>{
@@ -27372,6 +28603,7 @@ class PTibugModuleCraftOrder {
         'assignedPtipoteId': assignedPtipoteId,
         'assignedPtipoteName': assignedPtipoteName,
         'energyCost': energyCost,
+        'physicalCostSnapshot': physicalCostSnapshot,
         'completedAt':
             completedAt == null ? null : Timestamp.fromDate(completedAt!),
       };
@@ -28192,6 +29424,7 @@ class LisiereTerritoryZone {
     this.mycelialNetworkModuleLevel = 0,
     this.calciumBasinModuleLevel = 0,
     Map<String, int>? secondaryModules,
+    Map<String, Map<String, int>>? secondaryModulePhysicalCostSnapshots,
     this.vatCount = 1,
     this.vatEfficiencyMultiplier = 1,
     this.organicProductionRemainder = 0,
@@ -28208,7 +29441,10 @@ class LisiereTerritoryZone {
     this.myceliumReserve = 0,
     this.lastProductionResolvedAt,
     this.updatedAt,
-  }) : secondaryModules = secondaryModules ?? <String, int>{};
+  })  : secondaryModules = secondaryModules ?? <String, int>{},
+        secondaryModulePhysicalCostSnapshots =
+            secondaryModulePhysicalCostSnapshots ??
+                <String, Map<String, int>>{};
   factory LisiereTerritoryZone.initial(ForageBiome biome) =>
       LisiereTerritoryZone(
         zoneId: biome.name,
@@ -28259,6 +29495,18 @@ class LisiereTerritoryZone {
             ),
           ) ??
           <String, int>{},
+      secondaryModulePhysicalCostSnapshots:
+          (data['secondaryModulePhysicalCostSnapshots'] as Map? ?? const {})
+              .map(
+        (moduleId, rawCosts) => MapEntry(
+          '$moduleId',
+          <String, int>{
+            for (final entry in (rawCosts as Map? ?? const {}).entries)
+              if (ForageMission._readStaticInt(entry.value) > 0)
+                '${entry.key}': ForageMission._readStaticInt(entry.value),
+          },
+        ),
+      ),
       vatCount: math.max(1, ForageMission._readStaticInt(data['vatCount'])),
       vatEfficiencyMultiplier:
           (data['vatEfficiencyMultiplier'] as num?)?.toDouble() ?? 1,
@@ -28309,6 +29557,7 @@ class LisiereTerritoryZone {
   int mycelialNetworkModuleLevel;
   int calciumBasinModuleLevel;
   final Map<String, int> secondaryModules;
+  final Map<String, Map<String, int>> secondaryModulePhysicalCostSnapshots;
   int vatCount;
   double vatEfficiencyMultiplier;
   double organicProductionRemainder;
@@ -28338,6 +29587,8 @@ class LisiereTerritoryZone {
         'mycelialNetworkModuleLevel': mycelialNetworkModuleLevel,
         'calciumBasinModuleLevel': calciumBasinModuleLevel,
         'secondaryModules': secondaryModules,
+        'secondaryModulePhysicalCostSnapshots':
+            secondaryModulePhysicalCostSnapshots,
         'vatCount': vatCount,
         'vatEfficiencyMultiplier': vatEfficiencyMultiplier,
         'organicProductionRemainder': organicProductionRemainder,

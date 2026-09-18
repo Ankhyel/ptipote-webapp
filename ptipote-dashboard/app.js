@@ -1325,6 +1325,12 @@ function prettyPath(path) {
     residentShopStockTarget: "Cible de stock initiale d’un commerce habitant",
     requestMinimumMarketLevelByItem: "Niveau minimal du Marché par produit demandé",
     constructionMinutesByLevel: "Durée de construction des magasins et Distributeurs par niveau (min)",
+    treatmentTargetTypes: "Cibles compatibles des soins",
+    antiPoisonToxic: "Anti-poison → Intoxiqué",
+    antiPoisonJellyToxic: "Gelée anti-poison → Intoxiqué",
+    antiPoisonJellyHeat: "Gelée anti-poison → Insolation",
+    hydratingJellyHeat: "Gelée hydratante → Insolation",
+    antibioticRain: "Antibiotique → Infection",
   };
   return path.map((key) => labels[key] || String(key).replace(/([A-Z])/g, " $1")).join(" / ");
 }
@@ -1814,6 +1820,7 @@ function renderTowerEditor() {
     configCard("Tour de sécurité", "tower", zone0Settings.tower, [], { open: true, meta: "Construction, emplacements et sécurité" }),
     configCard("Rondes, exploration et météo", "towerOperations", operationsWithoutWeather, [], { meta: "Sécurité locale, marchand et calendrier météo" }),
     configCard("Recherche et Capsules", "towerOperations", research, ["research"], { open: true, meta: "Probabilités de Capsules, valeur, progression et décroissance des connaissances par biome" }),
+    configCard("Météo · Afflictions", "towerOperations", operations.weatherAfflictions || {}, ["weatherAfflictions"], { open: true, meta: "Durées, immunités, cibles et cooldown de soin, malus P’TIPOTE, bonheur des habitants, modules personnels et remboursement de démontage." }),
     configCard("Viabilité des bâtiments", "towerOperations", buildingViability, ["buildingViability"], { open: true, meta: "Dégâts météo, mode dégradé, réparation et protections structurelles" }),
     ...weatherEvents.map((weather, index) => configCard(
       weather.label || `Intempérie ${index + 1}`,
@@ -1986,6 +1993,72 @@ function renderZone0Settings() {
   renderMarketEditor();
 }
 
+function validateWeatherAfflictionSettings(config) {
+  if (!config || typeof config !== "object") return;
+  const integerFields = [
+    "baseDurationHours",
+    "immunityHours",
+    "treatmentCooldownHours",
+    "residentHappinessPenalty",
+    "structuralMinimumDurationHours",
+    "personalModuleSlots",
+    "moduleRefundPhysicalPercent",
+    "moduleRefundCooldownHours",
+  ];
+  for (const field of integerFields) {
+    const value = Number(config[field]);
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`Afflictions météo : ${field} doit être un entier positif ou nul.`);
+    }
+  }
+  if (Number(config.baseDurationHours) < Number(config.structuralMinimumDurationHours)) {
+    throw new Error("Afflictions météo : la durée de base doit être supérieure ou égale à la durée minimale.");
+  }
+  if (Number(config.ptipoteProductivityMultiplier) < 0 || Number(config.ptipoteProductivityMultiplier) > 1) {
+    throw new Error("Afflictions météo : le multiplicateur de productivité P’TIPOTE doit être compris entre 0 et 1.");
+  }
+  if (Number(config.moduleRefundPhysicalPercent) > 100) {
+    throw new Error("Afflictions météo : le remboursement de module doit être compris entre 0 et 100 %.");
+  }
+  if (config.refundData !== false) {
+    throw new Error("Afflictions météo : les Données ne peuvent jamais être remboursées.");
+  }
+  const requiredStructural = [
+    "thermalBasinRain",
+    "thermalBasinToxic",
+    "ventilationHeat",
+    "chloroCanalsRain",
+    "filtrationToxic",
+  ];
+  const requiredTreatments = [
+    "antiPoisonToxic",
+    "antiPoisonJellyToxic",
+    "antiPoisonJellyHeat",
+    "hydratingJellyHeat",
+    "antibioticRain",
+  ];
+  for (const [label, source, keys] of [
+    ["réduction structurelle", config.structuralReductionHours, requiredStructural],
+    ["réduction de soin", config.treatmentReductionHours, requiredTreatments],
+  ]) {
+    for (const key of keys) {
+      const value = Number(source?.[key]);
+      if (!Number.isInteger(value) || value < 0) {
+        throw new Error(`Afflictions météo : ${label} invalide pour ${key}.`);
+      }
+    }
+  }
+  const weatherTypes = new Set(["heat", "rain", "toxic"]);
+  for (const key of requiredTreatments) {
+    const configuredTargets = config.treatmentTargetTypes?.[key];
+    if (!Array.isArray(configuredTargets) ||
+        configuredTargets.length === 0 ||
+        configuredTargets.some((target) => !weatherTypes.has(target))) {
+      throw new Error(`Afflictions météo : cible de soin invalide pour ${key}.`);
+    }
+  }
+}
+
 function validateZone0Settings() {
   const invalid = configFields(zone0Settings).find(({ path, value }) => {
     if (typeof value === "boolean" || typeof value === "string") return false;
@@ -1995,6 +2068,7 @@ function validateZone0Settings() {
       !path.includes("wellbeingModifier");
   });
   if (invalid) throw new Error(`Valeur invalide pour ${prettyPath(invalid.path)}.`);
+  validateWeatherAfflictionSettings(zone0Settings.towerOperations?.weatherAfflictions);
 }
 
 // Firestore accepte les objets dans un tableau, mais jamais un tableau dans

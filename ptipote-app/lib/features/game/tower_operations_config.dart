@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'lisiere_forage_config.dart';
+import 'weather_afflictions.dart';
 
 enum TowerWeatherType { calm, toxicCloud, heatWave, heavyRain }
 
@@ -238,6 +239,7 @@ class TowerOperationsConfig {
     required this.globalWeather,
     required this.buildingViability,
     required this.research,
+    required this.weatherAfflictions,
   });
 
   final int biomeRevealSecurityThreshold;
@@ -269,6 +271,7 @@ class TowerOperationsConfig {
   final GlobalWeatherConfig globalWeather;
   final BuildingViabilityConfig buildingViability;
   final TowerResearchConfig research;
+  final WeatherAfflictionConfig weatherAfflictions;
 
   SecurityWellbeingBand wellbeingBandFor(int security) =>
       wellbeingBands.where((band) => security >= band.minimumSecurity).reduce(
@@ -668,6 +671,7 @@ const TowerOperationsConfig defaultTowerOperationsConfig =
     familyRevealPercent: 65,
     fullRevealPercent: 85,
   ),
+  weatherAfflictions: defaultWeatherAfflictionConfig,
 );
 
 TowerOperationsConfig towerOperationsConfig = defaultTowerOperationsConfig;

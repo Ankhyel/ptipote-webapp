@@ -118,6 +118,40 @@
       "teeWeight": 1
     }
   },
+  "weatherAfflictions": {
+    "enabled": true,
+    "baseDurationHours": 8,
+    "immunityHours": 24,
+    "treatmentCooldownHours": 4,
+    "ptipoteProductivityMultiplier": 0.7,
+    "residentHappinessPenalty": 10,
+    "structuralMinimumDurationHours": 2,
+    "personalModuleSlots": 3,
+    "moduleRefundPhysicalPercent": 50,
+    "moduleRefundCooldownHours": 72,
+    "refundData": false,
+    "structuralReductionHours": {
+      "thermalBasinRain": 1,
+      "thermalBasinToxic": 1,
+      "ventilationHeat": 2,
+      "chloroCanalsRain": 2,
+      "filtrationToxic": 2
+    },
+    "treatmentReductionHours": {
+      "antiPoisonToxic": 4,
+      "antiPoisonJellyToxic": 3,
+      "antiPoisonJellyHeat": 3,
+      "hydratingJellyHeat": 4,
+      "antibioticRain": 4
+    },
+    "treatmentTargetTypes": {
+      "antiPoisonToxic": ["toxic"],
+      "antiPoisonJellyToxic": ["toxic"],
+      "antiPoisonJellyHeat": ["heat"],
+      "hydratingJellyHeat": ["heat"],
+      "antibioticRain": ["rain"]
+    }
+  },
   "research": {
     "researchEnabled": true,
     "researchRequiresPtipote": true,
