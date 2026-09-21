@@ -1,4 +1,5 @@
 const admin = require("firebase-admin");
+const {Timestamp} = require("firebase-admin/firestore");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
@@ -326,7 +327,7 @@ exports.ensureWorldcraftWorld = onCall({region: "europe-west9"}, async (request)
   const db = admin.firestore();
   const worldRef = db.collection("worlds").doc(WORLD_ID);
   const mapRef = db.collection("worldMaps").doc(WORLD_MAP_ID);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   await db.runTransaction(async (transaction) => {
     const existing = await transaction.get(worldRef);
     if (existing.exists) return;
@@ -435,7 +436,7 @@ exports.createCampInRegion = onCall({region: "europe-west9"}, async (request) =>
   const db = admin.firestore();
   const operationRef = worldcraftOperationRef(operationId);
   const regionRef = db.collection("regions").doc(regionId);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   return db.runTransaction(async (transaction) => {
     const [operation, regionSnapshot] = await Promise.all([
       transaction.get(operationRef), transaction.get(regionRef),
@@ -541,7 +542,7 @@ exports.resolveWorldcraftRegionUntil = onCall({region: "europe-west9"}, async (r
   const db = admin.firestore();
   const regionRef = db.collection("regions").doc(regionId);
   const macroRef = db.collection("regionMacroStates").doc(regionId);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const config = await loadWorldcraftRuntimeConfig(db);
   const [weatherSnapshot, cleanedTraceCount] = await Promise.all([
     db.collection("weatherCells").where("coveredRegionIds", "array-contains", regionId).get(),
@@ -580,7 +581,7 @@ exports.setWorldcraftCampMode = onCall({region: "europe-west9"}, async (request)
   const campId = `${request.data?.campId || ""}`;
   const mode = request.data?.mode === "autonomous" ? "autonomous" : "active";
   const campRef = admin.firestore().collection("camps").doc(campId);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   return admin.firestore().runTransaction(async (transaction) => {
     const snapshot = await transaction.get(campRef);
     if (!snapshot.exists) throw new HttpsError("not-found", "Camp introuvable.");
@@ -596,7 +597,7 @@ exports.resolveWorldcraftCampUntil = onCall({region: "europe-west9"}, async (req
   const db = admin.firestore();
   const campRef = db.collection("camps").doc(campId);
   const macroRef = db.collection("campMacroStates").doc(campId);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const config = await loadWorldcraftRuntimeConfig(db);
   return db.runTransaction(async (transaction) => {
     const [campSnapshot, macroSnapshot] = await Promise.all([transaction.get(campRef), transaction.get(macroRef)]);
@@ -661,7 +662,7 @@ exports.helpWorldcraftCampConstruction = onCall({region: "europe-west9"}, async 
   const db = admin.firestore();
   const operationRef = worldcraftOperationRef(operationId);
   const campRef = db.collection("camps").doc(campId);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   return db.runTransaction(async (transaction) => {
     const [previous, campSnapshot] = await Promise.all([transaction.get(operationRef), transaction.get(campRef)]);
     if (previous.exists) return previous.data().result;
@@ -698,7 +699,7 @@ exports.contributeWorldcraftCampConstruction = onCall({region: "europe-west9"}, 
   const operationRef = worldcraftOperationRef(operationId);
   const campRef = db.collection("camps").doc(campId);
   const storageRef = db.collection("campStorages").doc(`${campId}-storage`);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   return db.runTransaction(async (transaction) => {
     const [previous, campSnapshot, storageSnapshot] = await Promise.all([transaction.get(operationRef), transaction.get(campRef), transaction.get(storageRef)]);
     if (previous.exists) return previous.data().result;
@@ -734,7 +735,7 @@ exports.flushWorldcraftCampStorage = onCall({region: "europe-west9"}, async (req
   const campRef = db.collection("camps").doc(campId);
   const storageRef = db.collection("campStorages").doc(`${campId}-storage`);
   const lisiereRef = db.collection("users").doc(uid).collection("game").doc("zone0V2Lisiere");
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   return db.runTransaction(async (transaction) => {
     const [previous, campSnapshot, storageSnapshot, lisiereSnapshot] = await Promise.all([
       transaction.get(operationRef), transaction.get(campRef), transaction.get(storageRef), transaction.get(lisiereRef),
@@ -775,7 +776,7 @@ exports.extractSharedResource = onCall({region: "europe-west9"}, async (request)
   const db = admin.firestore();
   const operationRef = worldcraftOperationRef(operationId);
   const biomeRef = db.collection("biomeSharedStates").doc(biomeId);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   return db.runTransaction(async (transaction) => {
     const [previous, biomeSnapshot] = await Promise.all([transaction.get(operationRef), transaction.get(biomeRef)]);
     if (previous.exists) return previous.data().result;
@@ -802,7 +803,7 @@ exports.adjustWorldcraftBiomeDanger = onCall({region: "europe-west9"}, async (re
   const db = admin.firestore();
   const operationRef = worldcraftOperationRef(operationId);
   const biomeRef = db.collection("biomeSharedStates").doc(biomeId);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   return db.runTransaction(async (transaction) => {
     const [previous, biomeSnapshot] = await Promise.all([transaction.get(operationRef), transaction.get(biomeRef)]);
     if (previous.exists) return previous.data().result;
@@ -826,13 +827,13 @@ exports.recordWorldcraftTrace = onCall({region: "europe-west9"}, async (request)
   const db = admin.firestore();
   const operationRef = worldcraftOperationRef(operationId);
   const traceRef = db.collection("playerTraces").doc(`trace-${operationId}`);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const config = await loadWorldcraftRuntimeConfig(db);
   return db.runTransaction(async (transaction) => {
     const previous = await transaction.get(operationRef);
     if (previous.exists) return previous.data().result;
     const result = {traceId: traceRef.id, regionId};
-    transaction.create(traceRef, {id: traceRef.id, worldId: WORLD_ID, playerId, regionId, biomeId, traceType, createdAt: now, expiresAt: admin.firestore.Timestamp.fromMillis(now.toMillis() + config.traceLifetimeHours * 3600000)});
+    transaction.create(traceRef, {id: traceRef.id, worldId: WORLD_ID, playerId, regionId, biomeId, traceType, createdAt: now, expiresAt: Timestamp.fromMillis(now.toMillis() + config.traceLifetimeHours * 3600000)});
     transaction.create(operationRef, {id: operationId, type: "recordWorldcraftTrace", actorId: playerId, createdAt: now, result});
     return result;
   });
@@ -850,7 +851,7 @@ exports.claimWorldcraftPassageReserve = onCall({region: "europe-west9"}, async (
   const db = admin.firestore();
   const operationRef = worldcraftOperationRef(operationId);
   const reserveRef = db.collection("passageReserves").doc(campId);
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   return db.runTransaction(async (transaction) => {
     const [previous, reserveSnapshot] = await Promise.all([transaction.get(operationRef), transaction.get(reserveRef)]);
     if (previous.exists) return previous.data().result;
@@ -875,8 +876,8 @@ exports.seedWorldcraftDebug = onCall({region: "europe-west9"}, async (request) =
   await requireWorldcraftDev(uid);
   const scenario = `${request.data?.scenario || ""}`;
   const db = admin.firestore();
-  const now = admin.firestore.Timestamp.now();
-  const hourAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 4 * 3600000);
+  const now = Timestamp.now();
+  const hourAgo = Timestamp.fromMillis(now.toMillis() - 4 * 3600000);
   const writes = db.batch();
   if (scenario === "d3-help") {
     const regionRef = db.collection("regions").doc("region-d3");
@@ -885,7 +886,7 @@ exports.seedWorldcraftDebug = onCall({region: "europe-west9"}, async (request) =
       id: campId, regionId: "region-d3", founderId: "debug-community", coreId: `${campId}-core`, buildingIds: [], storageId: `${campId}-storage`, state: "autonomous", simulationMode: "autonomous", macroStateId: campId, accessPolicy: "passage", foundedAt: now, lastActiveAt: hourAgo, lastSimulatedAt: hourAgo, simulationVersion: WORLDCRAFT_VERSION,
     }, {merge: true});
     writes.set(db.collection("campMacroStates").doc(campId), {campId, autonomy: 20, resilience: 20, foodSecurity: 10, infrastructureState: "fragile", populationPressure: 60, ecologicalSupport: 20, essentialFunctionsState: "strained", recentEventIds: ["drought-d3"], helpState: "drought", lastSimulatedAt: hourAgo, simulationVersion: WORLDCRAFT_VERSION}, {merge: true});
-    writes.set(db.collection("helpRequests").doc("help-debug-d3-drought"), {id: "help-debug-d3-drought", campId, regionId: "region-d3", type: "drought", severity: 3, createdAt: now, expiresAt: admin.firestore.Timestamp.fromMillis(now.toMillis() + 86400000), status: "open"}, {merge: true});
+    writes.set(db.collection("helpRequests").doc("help-debug-d3-drought"), {id: "help-debug-d3-drought", campId, regionId: "region-d3", type: "drought", severity: 3, createdAt: now, expiresAt: Timestamp.fromMillis(now.toMillis() + 86400000), status: "open"}, {merge: true});
     writes.set(regionRef, {campId, occupancyState: "occupied"}, {merge: true});
   } else if (scenario === "e2-reserve") {
     writes.set(db.collection("passageReserves").doc("camp-debug-e2"), {id: "camp-debug-e2", campId: "camp-debug-e2", resourceEntries: {organic: {availableQuantity: 12, maxPerTraveler: 3}}, policy: "open", updatedAt: now}, {merge: true});
@@ -893,9 +894,9 @@ exports.seedWorldcraftDebug = onCall({region: "europe-west9"}, async (request) =
   } else if (scenario === "b4-exploitation") {
     writes.set(db.collection("regionMacroStates").doc("region-b4"), {exploitationPressure: 90, mineralReserveSummary: 10, lastSimulatedAt: now}, {merge: true});
   } else if (scenario === "c4-trace") {
-    writes.set(db.collection("playerTraces").doc("trace-debug-c4"), {id: "trace-debug-c4", worldId: WORLD_ID, playerId: "debug-player", regionId: "region-c4", biomeId: null, traceType: "visit", createdAt: hourAgo, expiresAt: admin.firestore.Timestamp.fromMillis(now.toMillis() + 20 * 3600000)}, {merge: true});
+    writes.set(db.collection("playerTraces").doc("trace-debug-c4"), {id: "trace-debug-c4", worldId: WORLD_ID, playerId: "debug-player", regionId: "region-c4", biomeId: null, traceType: "visit", createdAt: hourAgo, expiresAt: Timestamp.fromMillis(now.toMillis() + 20 * 3600000)}, {merge: true});
   } else if (scenario === "weather-front") {
-    writes.set(db.collection("weatherCells").doc("weather-debug-front"), {id: "weather-debug-front", worldId: WORLD_ID, weatherType: "rain", intensity: 0.7, coveredRegionIds: ["region-b2", "region-b3", "region-c2", "region-c3"], startsAt: now, endsAt: admin.firestore.Timestamp.fromMillis(now.toMillis() + 8 * 3600000), seed: 2026, status: "active"}, {merge: true});
+    writes.set(db.collection("weatherCells").doc("weather-debug-front"), {id: "weather-debug-front", worldId: WORLD_ID, weatherType: "rain", intensity: 0.7, coveredRegionIds: ["region-b2", "region-b3", "region-c2", "region-c3"], startsAt: now, endsAt: Timestamp.fromMillis(now.toMillis() + 8 * 3600000), seed: 2026, status: "active"}, {merge: true});
   } else {
     throw new HttpsError("invalid-argument", "Scénario Worldcraft inconnu.");
   }

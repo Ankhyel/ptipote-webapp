@@ -13,7 +13,9 @@ async function createUser() {
     "http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key",
     {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({returnSecureToken: true})},
   );
-  assert.equal(response.ok, true, `Création compte émulateur: ${await response.text()}`);
+  if (!response.ok) {
+    throw new Error(`Création compte émulateur: ${await response.text()}`);
+  }
   return response.json();
 }
 
