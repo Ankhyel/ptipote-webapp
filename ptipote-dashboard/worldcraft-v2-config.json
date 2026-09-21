@@ -1,0 +1,7 @@
+{
+  "traceLifetimeHours": 24,
+  "campActiveGraceMinutes": 15,
+  "weatherProjectionEnabled": true,
+  "lazyTraceCleanupLimit": 100,
+  "macroSimulationVersion": "WORLDCRAFT_0_1"
+}

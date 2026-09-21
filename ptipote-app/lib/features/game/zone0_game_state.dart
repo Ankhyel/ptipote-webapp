@@ -3955,6 +3955,30 @@ class Zone0GameState extends ChangeNotifier {
         residentWeatherAfflictions[_residentAfflictionId(resident)] ?? const [],
       );
 
+  /// V2 Lisière encounters use the exact same persisted Intoxiqué system as
+  /// weather events. The explicit source id makes repeated offline resolution
+  /// idempotent through the existing active-affliction and immunity checks.
+  bool applyLisiereToxicAffliction({
+    required String ptipoteId,
+    required String encounterId,
+    DateTime? appliedAt,
+  }) {
+    final changed = _applyWeatherAffliction(
+      entityId: _ptipoteAfflictionId(ptipoteId),
+      target: ptipoteWeatherAfflictions,
+      type: WeatherAfflictionType.toxic,
+      sourceWeatherEventId: 'lisiere:$encounterId',
+      appliedAt: appliedAt,
+      durationReductionHours:
+          _ptipoteStructuralDurationReduction(WeatherAfflictionType.toxic),
+    );
+    if (changed) {
+      notifyListeners();
+      unawaited(saveRuntimeToFirebase());
+    }
+    return changed;
+  }
+
   List<WeatherAffliction> _activeWeatherAfflictions(
     List<WeatherAffliction> values, {
     DateTime? now,

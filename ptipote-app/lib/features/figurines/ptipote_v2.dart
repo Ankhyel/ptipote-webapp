@@ -7,7 +7,12 @@ library;
 
 import 'dart:math' as math;
 
-enum PtipoteAcquisitionOrigin { physicalScan, coBreeding, legacyMigration }
+enum PtipoteAcquisitionOrigin {
+  physicalScan,
+  digitalAdoption,
+  coBreeding,
+  legacyMigration,
+}
 
 enum PtipoteGeneration { vestige, protocol }
 

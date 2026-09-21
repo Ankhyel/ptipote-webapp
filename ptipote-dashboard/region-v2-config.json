@@ -1,0 +1,57 @@
+{
+  "questionnaireScores": {
+    "q1": {
+      "mer": ["LITTORAUX_ARCHIPELS", "BASSES_EAUX"],
+      "montagne": ["HAUTES_TERRES", "PLAINES_SECHES"]
+    },
+    "q2": {
+      "neige": ["HAUTES_TERRES", "BASSES_EAUX"],
+      "soleil": ["PLAINES_SECHES", "LITTORAUX_ARCHIPELS"]
+    },
+    "q3": {
+      "champ": ["HAUTES_TERRES", "PLAINES_SECHES"],
+      "coquillages": ["BASSES_EAUX", "LITTORAUX_ARCHIPELS"]
+    }
+  },
+  "tiePriorities": {
+    "champ": ["HAUTES_TERRES", "PLAINES_SECHES"],
+    "coquillages": ["BASSES_EAUX", "LITTORAUX_ARCHIPELS"]
+  },
+  "presets": {
+    "LITTORAUX_ARCHIPELS": [
+      {"position": "b1", "biomeType": "mangrove"},
+      {"position": "a2", "biomeType": "savane_humide"},
+      {"position": "b3", "biomeType": "marais"},
+      {"position": "a1", "biomeType": "littoral"},
+      {"position": "a3", "biomeType": "semi_desert"}
+    ],
+    "HAUTES_TERRES": [
+      {"position": "b1", "biomeType": "savane_humide"},
+      {"position": "a2", "biomeType": "colline"},
+      {"position": "b3", "biomeType": "foret_seche"},
+      {"position": "a1", "biomeType": "haut_refuge"},
+      {"position": "a3", "biomeType": "foret_humide"}
+    ],
+    "PLAINES_SECHES": [
+      {"position": "b1", "biomeType": "marais"},
+      {"position": "a2", "biomeType": "savane_humide"},
+      {"position": "b3", "biomeType": "savane_seche"},
+      {"position": "a1", "biomeType": "semi_desert"},
+      {"position": "a3", "biomeType": "foret_seche"}
+    ],
+    "BASSES_EAUX": [
+      {"position": "b1", "biomeType": "foret_humide"},
+      {"position": "a2", "biomeType": "mangrove"},
+      {"position": "b3", "biomeType": "savane_humide"},
+      {"position": "a1", "biomeType": "littoral"},
+      {"position": "a3", "biomeType": "marais"}
+    ]
+  },
+  "connections": {
+    "b1": ["a1"],
+    "a1": ["b1", "a2"],
+    "a2": ["a1", "a3"],
+    "a3": ["a2", "b3"],
+    "b3": ["a3"]
+  }
+}

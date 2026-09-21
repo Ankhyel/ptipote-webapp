@@ -209,3 +209,148 @@ L’Eau n’est pas une ressource globale du Camp.
   à un cooldown global de 72 h. Le retrait
   ou remplacement gratuit sans remboursement reste possible selon les règles
   du module concerné.
+
+## PTIPOTE V2 — Lisière, exploration et patrouille
+
+- Une Lisière V2 génère de façon déterministe **6 à 9 parcelles** par biome,
+  reliées par des arêtes facile / moyenne / difficile. Les temps de trajet par
+  classe, la capacité d’équipe (2 de base, +1 Gestion d’équipe, +1 par module
+  d’optimisation dans la limite de deux), les seuils de métiers et la réserve
+  de retour sont réglables depuis le Dashboard, section **Lisière V2**.
+- Les cinq biomes de la Région et leurs passerelles sont réglables dans le
+  Dashboard, section **Régions V2 et passerelles**. Une passerelle est
+  utilisable dès que la connexion existe : elle n’a ni bâtiment, ni recherche,
+  ni autre prérequis. Les missions calculent leur trajet inter-biomes depuis
+  ce graphe régional persistant.
+- Les ressources organiques se régénèrent uniquement par le futur crochet de
+  Biomasse ; les filons minéraux ont des couches finies et ne réapparaissent
+  jamais. Les Déchets sont des nœuds finis distincts. Les rendements conservent leur fraction persistante entre deux
+  actions. Puissance de récolte, fréquence d’action et modificateur de
+  rendement sont trois caractéristiques distinctes.
+- Le joueur tient un nœud de ressource pour utiliser son outil de base :
+  **1 dégât par seconde**. Avec le mode Entraîner actif, le P’TIPOTE frappe
+  en même temps, gagne **1 XP Récolteur par coup**, et devient Récolteur N1 à
+  **100 XP**. Récolteur N1 peut être envoyé en autonomie. Les durées 30 min, 1 h, 2 h,
+  4 h et 8 h incluent toujours l’aller et le retour ; la résolution est basée
+  sur les timestamps et vise les parcelles en round-robin.
+- Patrouilleur est un métier d’exploration distinct de l’Enveloppe Protecteur.
+  Chaque rencontre vaut **5 XP** et chaque QTE réussi **15 XP** ; N1 est atteint
+  à **50 XP**. En Lisière V2 comme en simulation, le QTE se joue avec les
+  flèches haut, droite, bas et gauche du clavier.
+- Les stocks Camp, avant-poste, équipe P’TIPOTE et P’TIBUG restent séparés.
+  Une rotation transporte réellement sa cargaison, avec priorité aux
+  transporteurs P’TIBUG — le porteur désigné passe en premier — puis ne dépose
+  qu’à destination ; aucune ressource ne se téléporte. Une cargaison pleine
+  affiche une balance rouge et ne reçoit plus de récolte.
+- Le stockage Camp est l’inventaire physique `camp-storage-v2` : l’écran Camp,
+  les rotations, la première mission et les contributions aux chantiers lisent
+  cette même pile. Il n’existe aucun second stock miroir dans les fondations.
+- Tous les P’TIBUG récoltent en autonomie : Scarabé privilégie le Minéral,
+  Hyme l’Organique, Arac les Déchets puis l’Organique. Les traits Mineur,
+  Pollinisateur et Récupérateur appliquent +10 % au rendement de leur
+  ressource correspondante.
+- La première mission de test demande de rapporter au Camp **5 Organique** et
+  **3 Minéral**. Elle reste active tant que les matériaux ne sont pas déposés
+  physiquement au Camp. La cargaison va d’abord dans les inventaires P’TIBUG
+  de l’équipe, selon leur ordre de priorité ; sans place disponible, elle va
+  dans les inventaires P’TIPOTE, limités à deux piles de ressources chacun.
+- L’écran Lisière lit la Région et les biomes issus du questionnaire V2, et
+  non la simulation locale. Les P’TIPOTES reliés récupèrent au premier lien
+  les statistiques de leur figurine physique, puis leur vitalité d’expédition
+  et leurs métiers sont sauvegardés dans l’état V2. Plusieurs parcelles sont
+  sélectionnables pour une mission autonome.
+- Un avant-poste actif peut être construit par biome ; il possède son stock
+  propre. Les P’TIBUG issus de la collection V1 peuvent être reliés par leur
+  identité seulement, sans déplacer ni modifier les stocks V1 : leur réserve
+  d’autonomie, repos et capacité de transport deviennent alors des données de
+  Lisière V2 persistantes. Un ravitaillement utilise les coûts horaires V1
+  pendant huit heures : Hyme 3 Organique / 1 Minéral, Scarabé 1 / 3, Arak 2 / 2.
+  L’énergie demeure dans son système domestique V1 existant, sans créer de
+  seconde ressource énergétique dans le stock physique V2.
+- Le danger de biome augmente de 1 toutes les deux heures, est réduit de 5
+  lors d’une exploitation, puis est atténué par la sécurité de groupe. Une
+  visite ne peut déclencher qu’une rencontre : nuage toxique (-10 % cargaison
+  et le même état **Intoxiqué** persistant que la météo V1), drone (-25 % et
+  -15 % vitalité max) ou chute (-10 % et -20 %). Les pertes ne peuvent jamais
+  descendre sous la réserve de retour.
+- L’état de danger, les visites déjà résolues, le Drone chef et son dernier
+  résultat sont persistants. Les missions, rotations et maintenances se
+  résolvent par timestamp à la réouverture, sans dépendre d’un écran resté
+  ouvert.
+- Une entrée accompagnée sur une parcelle lance automatiquement le QTE du
+  Drone chef s’il est présent ; le boss est traité avant une rencontre normale.
+- La durée choisie d’une mission comprend réellement son aller, son parcours
+  Easy / Medium / Hard, son temps de travail et son retour. Les rotations
+  automatiques mettent un porteur plein en transit, déposent dans un
+  avant-poste pertinent ou au Camp, puis le rendent à l’équipe.
+- Le joueur possède un slot Outil et un slot Équipement. Le Multi-outils de
+  base est le seul outil initial : 1 action et 1 dégât de récolte par seconde.
+
+## PTIPOTE V2 — Onboarding, Région et Camp
+
+- Le premier P’TIPOTE peut provenir d’une **adoption numérique** ou d’une
+  **figurine scannée en NFC**. Ces deux voies créent le même `PtipoteV2Profile`
+  persistant : il n’existe pas de modèle de P’TIPOTE numérique parallèle. Le
+  scan conserve son identité NFC et ne modifie pas les documents V1.
+- La Couveuse V2 est persistée étape par étape : œuf, activation, éclosion,
+  nommage, puis questionnaire. Une reprise après fermeture restaure le même
+  P’TIPOTE et la même étape, sans doubler l’éclosion ni créer un second Camp.
+- Le questionnaire comporte exactement trois choix : mer/montagne,
+  neige/soleil et graine de champ/coquillages. Son résultat sélectionne l’un
+  des quatre presets régionaux par le calcul V2 existant, avec son départage
+  déterministe lié à la troisième réponse.
+- La création du monde installe une Région, ses cinq biomes, le Camp, son
+  Cœur, la Maison, le Kernel et un stock de Camp dans le document V2 dédié.
+  La création est transactionnelle et idempotente. Les graphes de Lisière
+  sont ensuite initialisés depuis les seeds de ces biomes.
+- Le Camp V2 est accessible depuis l’accueil, sans passer par le Refuge V1.
+  Il présente les écrans Camp, Maison et Kernel, le premier P’TIPOTE, les
+  biomes initiaux, le stockage et le crochet persistant du premier habitant.
+- Trois habitants bâtisseurs sont présents dès l’arrivée. Chaque bâtiment
+  dispose de trois places et démarre un chantier de 24 h : une aide joueur
+  est disponible toutes les 3 h et retire 3 h ; chaque ressource remise au
+  chantier retire également 3 h. Leurs noms et envies de métier sont tirés à
+  la création du Camp et leurs interventions passent par une boîte de dialogue
+  RPG. Les recherches restent volontairement hors de ce premier cycle de test
+  Lisière.
+
+## PTIPOTE V2 — Worldcraft 0, monde partagé asynchrone
+
+- Le territoire V2 est structuré en **World → WorldMap → Région → Biome →
+  Parcelle**. Une Région n’appartient pas à un joueur : elle est lue depuis le
+  World partagé. Les profils prototype sont Haut Refuge, Littoral, Sec, Mixte
+  et Transition ; Transition et Mixte ne sont pas des Biomes.
+- Le World de test contient une carte stable de **5 × 5**, soit 25 Régions,
+  avec des liaisons orthogonales. C3 héberge le Hub Haut Refuge. Toute Région
+  contient exactement cinq Biomes, y compris lorsqu’elle ne possède aucun
+  Camp.
+- Un Camp est une implantation mondiale unique par Région. Sa création passe
+  par une opération serveur idempotente et transactionnelle : la Région reçoit
+  son `campId` au même moment que le Camp est créé. Les clients ne peuvent pas
+  écrire directement les collections Worldcraft.
+- Le stockage mondial du Camp et la Réserve de passage sont des entités
+  séparées. Les piles physiques arrivées dans `camp-storage-v2` sont
+  transférées atomiquement vers le stockage mondial lors de l’ouverture du
+  Camp ; les chantiers prélèvent ce stockage partagé. Cette pile locale reste
+  uniquement la projection de transport de Prompt 1 et n’autorise aucun
+  retrait voyageur.
+- Le questionnaire V2 reste personnel et indicatif. En attendant le Walker,
+  un sélecteur explicitement **DEV / PROTOTYPE** permet d’implanter le Camp
+  dans une Région libre ; aucun déplacement artificiel n’est simulé.
+- Les états macro Région, Biome et Camp sont horodatés et résolus à la demande.
+  Worldcraft 0 ne définit volontairement aucune formule de biomasse,
+  contamination ou écologie : il prépare leur autorité partagée sans inventer
+  leur gameplay. Un Camp garde le même identifiant en mode Active ou Autonome.
+- Les opérations d’extraction minérale agrégée, création de Camp, traces et
+  réserves de passage portent un `operationId`. Une répétition renvoie le même
+  résultat sans double effet. La Réserve de passage est séparée de tout stock
+  personnel ou privé du Camp.
+- Une WeatherCell peut couvrir plusieurs Régions : le résolveur régional lazy
+  enregistre les cellules actives à partir de leurs timestamps. Les
+  PlayerTrace expirent selon une durée configurable dans le Dashboard (24 h
+  par défaut) et sont nettoyées paresseusement à la consultation d’une Région.
+  Les formules météorologiques et écologiques restent réservées aux prochains
+  lots.
+- À la réouverture d’un Camp autonome, le résolveur conserve la même
+  implantation et produit un message narratif de reprise ; aucune simulation
+  détaillée d’habitant n’est exécutée pendant l’absence.

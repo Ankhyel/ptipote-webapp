@@ -47,6 +47,46 @@ void main() {
     });
   });
 
+  group('P\'TIPOTE V2 adoption onboarding', () {
+    test('digital adoption uses the common profile and survives the Couveuse',
+        () {
+      final base = PtipoteV2Profile(
+        ptipoteId: 'digital-1',
+        acquisitionOrigin: PtipoteAcquisitionOrigin.digitalAdoption,
+        ownershipMode: PtipoteOwnershipMode.owned,
+        ptipoteGeneration: PtipoteGeneration.vestige,
+        typeId: PtipoteTypeId.vegetal,
+        natureId: 'adoption-vegetal',
+        systemName: 'P’TIPOTE végétal',
+        arrivalState: PtipoteArrivalState.pendingEgg,
+      );
+      final egg = PtipoteArrivalService.sendPtipoteToIncubator(
+        profile: base,
+        config: defaultPtipoteV2Config,
+        systemName: base.systemName,
+        now: DateTime.utc(2026),
+      );
+      final active = PtipoteArrivalService.prepareRhythm(
+        egg,
+        config: defaultPtipoteV2Config,
+        now: DateTime.utc(2026, 1, 1, 1),
+      );
+      final named = PtipoteArrivalService.finalizeNaming(
+        PtipoteArrivalService.startNaming(
+          PtipoteArrivalService.hatch(active),
+        ),
+        displayName: 'Mousse',
+      );
+      final restored = PtipoteV2Profile.fromFirebase(
+        named.ptipoteId,
+        named.toFirebase(),
+      );
+      expect(restored.acquisitionOrigin, PtipoteAcquisitionOrigin.digitalAdoption);
+      expect(restored.displayName, 'Mousse');
+      expect(restored.isArrivalComplete, isTrue);
+    });
+  });
+
   group('P\'TIPOTE V2 modifiers', () {
     test('Protocol core applies its Type at prepared core-only efficiency', () {
       const profile = PtipoteV2Profile(

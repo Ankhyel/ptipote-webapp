@@ -9,6 +9,7 @@ import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
 import 'logistics_config.dart';
 import 'lisiere_forage_config.dart';
+import 'lisiere_v2.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
 import 'resident_economy_config.dart';
@@ -17,12 +18,15 @@ import 'tower_operations_config.dart';
 import 'weather_afflictions.dart';
 import 'workshop_config.dart';
 import 'waste_recycler_config.dart';
+import 'zone0_v2_foundation.dart';
 
 /// Applies Dashboard tuning without ever reading or writing player progress.
 /// Invalid or incomplete values fall back to the versioned Dart defaults.
 void applyRemoteZone0Settings(Map<String, dynamic>? raw) {
   campHeartConfig = _campHeart(raw?['campHeart']);
   lisiereForageConfig = _lisiere(raw?['lisiere']);
+  lisiereV2Config = LisiereV2Config.fromMap(_map(raw?['lisiereV2']));
+  applyZone0V2FoundationRemoteConfig(_map(raw?['regionV2']));
   securityTowerConfig = _tower(raw?['tower']);
   towerOperationsConfig = _towerOperations(raw?['towerOperations']);
   fablabConfig = _fablab(raw?['fablab']);

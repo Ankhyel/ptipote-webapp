@@ -182,5 +182,68 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && resource.data.ownerUid == request.auth.uid;
     }
+
+    // WORLDCRAFT 0: territorial state is readable by connected players but is
+    // only mutated through Firebase callable functions. This is deliberate:
+    // client transactions are not sufficient authority for a shared Region.
+    match /worlds/{worldId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /worldMaps/{worldMapId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /regions/{regionId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /regionConnections/{connectionId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /regionMacroStates/{regionId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /biomeSharedStates/{biomeId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /camps/{campId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /campMacroStates/{campId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /campStorages/{storageId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /weatherCells/{weatherCellId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /playerTraces/{traceId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /passageReserves/{campId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /helpRequests/{requestId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /worldOperations/{operationId} {
+      allow read, write: if false;
+    }
+    match /hubs/{hubId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
   }
 }

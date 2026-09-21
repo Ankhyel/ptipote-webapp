@@ -27,6 +27,7 @@ import 'kernel_config.dart';
 import 'kernel_progress_config.dart';
 import 'logistics_config.dart';
 import 'lisiere_forage_config.dart';
+import 'lisiere_v2_simulation_page.dart';
 import 'market_config.dart';
 import 'ptibug_config.dart';
 import 'ptibug_valuation_service.dart';
@@ -7903,6 +7904,19 @@ class _LisierePageState extends State<LisierePage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Lisière proche'),
+          actions: <Widget>[
+            IconButton(
+              tooltip: 'Ouvrir la simulation Lisière V2',
+              icon: const Icon(Icons.science_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => LisiereV2SimulationPage(
+                    gameState: widget.gameState,
+                  ),
+                ),
+              ),
+            ),
+          ],
           bottom: TabBar(
             isScrollable: true,
             tabs: <Widget>[

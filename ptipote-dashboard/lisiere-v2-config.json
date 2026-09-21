@@ -1,0 +1,15 @@
+{
+  "minimumParcels": 6,
+  "maximumParcels": 9,
+  "easyTravelSeconds": 60,
+  "mediumTravelSeconds": 120,
+  "hardTravelSeconds": 180,
+  "baseTeamCapacity": 2,
+  "teamManagementBonus": 1,
+  "logisticsOptimizationMaximum": 2,
+  "returnSafetyReserve": 5,
+  "recolteurActionsForN1": 100,
+  "patrouilleurExperienceForN1": 50,
+  "patrouilleurEncounterExperience": 5,
+  "patrouilleurQteExperience": 15
+}

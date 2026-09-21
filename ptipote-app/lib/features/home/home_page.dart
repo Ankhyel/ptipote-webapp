@@ -11,6 +11,7 @@ import '../chat/chats_page.dart';
 import '../figurines/figurines_page.dart';
 import '../friends/friends_page.dart';
 import '../game/refuge_page.dart';
+import '../game/zone0_v2_onboarding_page.dart';
 import '../nfc/nfc_page.dart';
 import '../profile/profile_page.dart';
 
@@ -195,16 +196,28 @@ class _HomePageState extends State<HomePage> {
                 ),
                 Positioned(
                   left: (constraints.maxWidth - 154) / 2,
-                  top: unit * 1.18,
+                  top: unit * .85,
                   child: StreamBuilder<UserProfile?>(
                     stream: _profileStream(),
                     builder: (context, snapshot) {
                       final canSeeDiagnostics =
                           snapshot.data?.canSeeDiagnostics ?? false;
-                      if (!canSeeDiagnostics) return const SizedBox.shrink();
-                      return _GameButton(
-                        onTap: () =>
-                            Navigator.of(context).pushNamed(RefugePage.route),
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          _GameButton(
+                            label: 'PTIPOTE V2',
+                            icon: Icons.terrain_outlined,
+                            onTap: () => Navigator.of(context)
+                                .pushNamed(Zone0V2OnboardingPage.route),
+                          ),
+                          if (canSeeDiagnostics)
+                            TextButton(
+                              onPressed: () => Navigator.of(context)
+                                  .pushNamed(RefugePage.route),
+                              child: const Text('Ouvrir V1 · diagnostic'),
+                            ),
+                        ],
                       );
                     },
                   ),
@@ -257,9 +270,15 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _GameButton extends StatelessWidget {
-  const _GameButton({required this.onTap});
+  const _GameButton({
+    required this.onTap,
+    required this.label,
+    required this.icon,
+  });
 
   final VoidCallback onTap;
+  final String label;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -281,17 +300,21 @@ class _GameButton extends StatelessWidget {
             ),
           ],
         ),
-        child: const Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(Icons.cottage_outlined, size: 28),
-              SizedBox(width: 8),
-              Text(
-                'Jeu',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-              ),
-            ],
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(icon, size: 28),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style:
+                      const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+              ],
+            ),
           ),
         ),
       ),
