@@ -377,6 +377,10 @@ L’Eau n’est pas une ressource globale du Camp.
   Après publication, l’action DEV « Appliquer Worldbuilding » met à jour les
   25 Régions par une opération idempotente sans modifier Camp, macro-états ou
   stocks.
+- L’audit Worldbuilding avertit lorsque moins de trois types de Biomes sont
+  présents dans une Région ou lorsqu’un même type représente plus de 50 % des
+  125 Biomes de la carte. Il signale sans bloquer la génération les continuités
+  géographiques à revoir.
 - La Lisière utilise la seed persistante de chaque Biome pour ses graphes de
   Parcelles. Son aperçu est un rendu local 2D à profondeur 3/4 : sol,
   accessoires, nœuds et êtres sont une projection lisible, non un terrain
