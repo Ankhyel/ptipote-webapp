@@ -99,12 +99,31 @@ function validMatrix(value) {
     Array.isArray(row) && row.length === 5 && row.every((profile) => typeof profile === "string"));
 }
 
+function copyMatrix(matrix) {
+  return matrix.map((row) => [...row]);
+}
+
 function mergeBiomeDefinitions(base, override) {
   if (!override || typeof override !== "object" || Array.isArray(override)) return base;
   return Object.fromEntries(Object.entries(base).map(([id, definition]) => [
     id,
     {...definition, ...(override[id] || {}), visualProfile: {...definition.visualProfile, ...(override[id]?.visualProfile || {})}},
   ]));
+}
+
+// The rich visual object is still convenient for Flutter.  Its stable ID,
+// however, prevents future asset packs from having to infer identity from a
+// ground-set string.  Neighbour compatibility is declarative data used by the
+// non-blocking continuity audit, not a second terrain generator.
+function enrichBiomeDefinitions(biomes) {
+  return Object.fromEntries(Object.entries(biomes).map(([id, biome]) => [id, {
+    ...biome,
+    visualProfileId: biome.visualProfileId || `biome-visual-${id}-v1`,
+    parcelGenerationProfileId: biome.parcelGenerationProfileId ||
+      biome.parcelGenerationProfile || biome.ecologyProfileId || id,
+    neighborCompatibility: Array.isArray(biome.neighborCompatibility)
+      ? biome.neighborCompatibility : Object.keys(biomes),
+  }]));
 }
 
 function boundedWeight(value, fallback) {
@@ -114,22 +133,26 @@ function boundedWeight(value, fallback) {
 
 function runtimeConfig(source) {
   const candidate = source && typeof source === "object" && !Array.isArray(source) ? source : {};
-  const matrix = validMatrix(candidate.regionProfileMatrix)
+  const matrix = copyMatrix(validMatrix(candidate.regionProfileMatrix)
     ? candidate.regionProfileMatrix
-    : DEFAULT_WORLDBUILDING_CONFIG.regionProfileMatrix;
-  const offsets = validMatrix(candidate.generationSeedOffsets)
+    : DEFAULT_WORLDBUILDING_CONFIG.regionProfileMatrix);
+  const offsets = copyMatrix(validMatrix(candidate.generationSeedOffsets)
     ? candidate.generationSeedOffsets
-    : DEFAULT_WORLDBUILDING_CONFIG.generationSeedOffsets;
+    : DEFAULT_WORLDBUILDING_CONFIG.generationSeedOffsets);
   const pools = {...DEFAULT_PROFILE_POOLS, ...(candidate.profilePools || {})};
   const parcelGenerationProfiles = {
     ...DEFAULT_WORLDBUILDING_CONFIG.parcelGenerationProfiles,
     ...(candidate.parcelGenerationProfiles || {}),
   };
   const baseBiomes = mergeBiomeDefinitions(DEFAULT_BIOMES, candidate.biomes);
-  const biomes = Object.fromEntries(Object.entries(baseBiomes).map(([id, biome]) => [
+  const biomes = enrichBiomeDefinitions(Object.fromEntries(Object.entries(baseBiomes).map(([id, biome]) => [
     id,
-    {...biome, parcelGenerationProfile: `${parcelGenerationProfiles[id] || biome.ecologyProfileId || id}`},
-  ]));
+    {
+      ...biome,
+      parcelGenerationProfile: `${parcelGenerationProfiles[id] || biome.ecologyProfileId || id}`,
+      parcelGenerationProfileId: `${parcelGenerationProfiles[id] || biome.ecologyProfileId || id}`,
+    },
+  ])));
   return {
     worldbuildingVersion: typeof candidate.worldbuildingVersion === "string" && candidate.worldbuildingVersion.length > 0
       ? candidate.worldbuildingVersion : DEFAULT_WORLDBUILDING_CONFIG.worldbuildingVersion,
@@ -280,6 +303,9 @@ function buildWorldbuildingMap(configSource, worldSeed) {
 module.exports = {
   DEFAULT_WORLDBUILDING_CONFIG,
   buildWorldbuildingMap,
+  composeRegion,
+  neighborProfiles,
+  rankedCandidates,
   runtimeConfig,
   stableSeed,
 };

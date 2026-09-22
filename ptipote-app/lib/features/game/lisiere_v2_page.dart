@@ -485,6 +485,9 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
             ptipotes: scenePtipotes,
             ptibugIcons: sceneBugs,
             active: sceneParcelId != null,
+            onNodeTapDown:
+                team == null ? null : (node) => _startHarvest(node.id),
+            onNodeTapUp: team == null ? null : _stopHarvest,
           ),
           const SizedBox(height: 8),
           if (team?.currentParcelId != null)
@@ -1146,6 +1149,8 @@ class WorldbuildingParcelScene extends StatelessWidget {
     required this.ptipotes,
     required this.ptibugIcons,
     required this.active,
+    this.onNodeTapDown,
+    this.onNodeTapUp,
   });
 
   final Map<String, dynamic>? biome;
@@ -1153,6 +1158,8 @@ class WorldbuildingParcelScene extends StatelessWidget {
   final List<PtipoteV2Profile> ptipotes;
   final List<String> ptibugIcons;
   final bool active;
+  final ValueChanged<LisiereResourceNode>? onNodeTapDown;
+  final VoidCallback? onNodeTapUp;
 
   Color get _ground => switch (
           '${biome?['visualProfile'] is Map ? (biome!['visualProfile'] as Map)['groundSet'] : ''}') {
@@ -1206,19 +1213,34 @@ class WorldbuildingParcelScene extends StatelessWidget {
               ...orderedNodes.map((item) => Positioned(
                     left: 32.0 + (item.index % 3) * constraints.maxWidth * .26,
                     top: item.y,
-                    child: Opacity(
-                      opacity:
+                    child: GestureDetector(
+                      onTapDown:
                           item.node.state == LisiereResourceNodeState.available
+                              ? (_) => onNodeTapDown?.call(item.node)
+                              : null,
+                      onTapUp:
+                          item.node.state == LisiereResourceNodeState.available
+                              ? (_) => onNodeTapUp?.call()
+                              : null,
+                      onTapCancel: onNodeTapUp,
+                      child: Semantics(
+                        button: true,
+                        label: 'Nœud ${item.node.kind.name}',
+                        child: Opacity(
+                          opacity: item.node.state ==
+                                  LisiereResourceNodeState.available
                               ? 1
                               : .42,
-                      child: Text(item.node.visualVariant,
-                          style:
-                              const TextStyle(fontSize: 27, shadows: <Shadow>[
+                          child: Text(item.node.visualVariant,
+                              style: const TextStyle(
+                                  fontSize: 27, shadows: <Shadow>[
                             Shadow(
                                 color: Colors.black45,
                                 offset: Offset(2, 3),
                                 blurRadius: 2),
                           ])),
+                        ),
+                      ),
                     ),
                   )),
               Positioned(

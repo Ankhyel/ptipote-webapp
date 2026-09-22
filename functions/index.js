@@ -315,7 +315,11 @@ function worldbuildingBiomeMetadata({regionId, biomeType, position, definition, 
     internalPosition: position,
     seed: worldbuildingStableSeed(`250525:${regionId}:${position}:${biomeType}`),
     environmentalTags: definition.environmentalTags || [],
+    visualProfileId: definition.visualProfileId || null,
     visualProfile: definition.visualProfile || {},
+    parcelGenerationProfileId: definition.parcelGenerationProfileId ||
+      definition.parcelGenerationProfile || null,
+    neighborCompatibility: definition.neighborCompatibility || [],
     weatherResponseProfile: definition.weatherResponseProfile || {},
     ecologyProfileId: definition.ecologyProfileId || null,
     possibleFindingTables: definition.possibleFindingTables || [],
@@ -336,8 +340,9 @@ function worldbuildingBiomeSummary({regionId, biomeId, biomeType, position, defi
     internalPosition: position,
     seed: metadata.seed,
     environmentalTags: metadata.environmentalTags,
+    visualProfileId: metadata.visualProfileId,
     groundSet: metadata.visualProfile.groundSet || null,
-    parcelGenerationProfile: definition.parcelGenerationProfile || null,
+    parcelGenerationProfile: metadata.parcelGenerationProfileId,
   };
 }
 

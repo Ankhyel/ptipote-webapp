@@ -390,8 +390,17 @@ L’Eau n’est pas une ressource globale du Camp.
   compatibilités et profils de génération de Parcelles sont externalisés dans
   `worldbuildingV2`. Le questionnaire peut classer des Régions recommandées
   sans jamais modifier la géographie mondiale.
+- Chaque définition de Biome expose aussi des identifiants stables
+  `visualProfileId` et `parcelGenerationProfileId`, ainsi qu’une compatibilité
+  de voisinage déclarative. Ces références sont persistées avec les tags,
+  seeds et positions : le client ne déduit donc pas l’identité d’un décor à
+  partir de son sol. Les contrôles automatisés démontrent séparément l’effet
+  de l’offset de coordonnée et celui des profils voisins.
 - Une fixture Flutter mobile 390 × 844 vérifie la scène Lisière 2D 3/4 :
-  nœuds, obstacle, destination et porteur P’TIBUG restent lisibles. Les
+  P’TIPOTE, nœuds, obstacle, destination et porteur P’TIBUG restent lisibles.
+  Les nœuds visibles peuvent être maintenus directement dans cette projection
+  pour déclencher la récolte existante ; les cartes de Parcelles restent une
+  commande complémentaire de prototype, pas une seconde géographie.
   nœuds organiques, minéraux et déchets varient selon le profil visuel du
   Biome ; les emojis restent la banque d’art provisoire.
 - La Lisière utilise la seed persistante de chaque Biome pour ses graphes de
