@@ -20,6 +20,10 @@ import {
   setDoc,
   where,
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+import {
+  getFunctions,
+  httpsCallable,
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-functions.js";
 
 const BOOTSTRAP_ADMIN_UIDS = new Set(["taNxWXLMh2gJx5CHgmBB8Phl4c93"]);
 
@@ -34,6 +38,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app, "europe-west9");
 const provider = new GoogleAuthProvider();
 let currentDashboardRole = "";
 let ptipoteStatsConfig = {};
@@ -1802,6 +1807,7 @@ function renderLisiereEditor() {
     configCard("Lisière V2", "lisiereV2", zone0Settings.lisiereV2 || {}, [], { open: true, meta: "Parcelles, trajets, équipes et progression Récolteur/Patrouilleur" }),
     configCard("Régions V2 et passerelles", "regionV2", zone0Settings.regionV2 || {}, [], { open: true, meta: "Questionnaire, presets de biomes et connexions sans prérequis" }),
     configCard("Worldcraft V2", "worldcraftV2", zone0Settings.worldcraftV2 || {}, [], { open: true, meta: "Traces, activité de Camp et résolution lazy du monde partagé" }),
+    `<details class="config-card"><summary><span><strong>Worldcraft · initialisation DEV</strong><small>Crée une seule fois la carte mondiale persistante 5×5. Réservé aux tests administrateur.</small></span><span class="card-chevron">⌄</span></summary><div class="stat-form config-card-body"><div class="stat-field"><button class="button" id="ensureWorldcraftButton" type="button">Initialiser le World partagé</button><small id="ensureWorldcraftStatus">Aucune écriture directe Firestore : l’opération passe par la Function idempotente.</small></div></div></details>`,
     configCard("Biomasse", "lisiere", biomass, ["biomass"], { open: true, meta: "Épuisement, rendement, récupération, Revigorer et Refuges P'TIBUG" }),
     configCard("Durées de mission", "lisiere", durations, ["durations"], { meta: "Durées et coût de vitalité" }),
     configCard("Intensités", "lisiere", intensities, ["intensities"], { meta: "Gains, fatigue et risque" }),
@@ -1809,6 +1815,17 @@ function renderLisiereEditor() {
     ...upcomingBiomes.map((biome, index) => configCard(biome.label || `Biome futur ${index + 1}`, "lisiere", biome, ["upcomingBiomes", index], { meta: "Biome futur : réglages préparés" })),
   ].join("");
   bindZone0Inputs(el.lisiereForageList);
+  document.getElementById("ensureWorldcraftButton")?.addEventListener("click", async () => {
+    const status = document.getElementById("ensureWorldcraftStatus");
+    if (!auth.currentUser || !status) return;
+    status.textContent = "Initialisation du World partagé…";
+    try {
+      const result = await httpsCallable(functions, "ensureWorldcraftWorld")({});
+      status.textContent = `World prêt : ${result.data.worldId} · carte ${result.data.worldMapId}.`;
+    } catch (error) {
+      status.textContent = `Initialisation indisponible : ${error.message || error}`;
+    }
+  });
 }
 
 function renderTowerEditor() {

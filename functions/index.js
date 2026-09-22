@@ -227,6 +227,10 @@ async function cleanupExpiredWorldcraftTraces(db, regionId, now, limit) {
 const WORLDCRAFT_VERSION = "WORLDCRAFT_0_1";
 const WORLD_ID = "zone0-shared-world";
 const WORLD_MAP_ID = "zone0-map-5x5";
+// Callable endpoints must be publicly invocable at Cloud Run so the Firebase
+// SDK can reach their handler. Each handler still requires Firebase Auth and
+// validates its own ownership and idempotency rules.
+const WORLDCRAFT_CALLABLE_OPTIONS = {region: "europe-west9", invoker: "public"};
 
 function requireWorldcraftAuth(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
@@ -322,7 +326,7 @@ function biomeSharedState(regionId, biomeId, biomeType, now) {
   };
 }
 
-exports.ensureWorldcraftWorld = onCall({region: "europe-west9"}, async (request) => {
+exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   requireWorldcraftAuth(request);
   const db = admin.firestore();
   const worldRef = db.collection("worlds").doc(WORLD_ID);
@@ -429,7 +433,7 @@ exports.ensureWorldcraftWorld = onCall({region: "europe-west9"}, async (request)
   return {worldId: WORLD_ID, worldMapId: WORLD_MAP_ID};
 });
 
-exports.createCampInRegion = onCall({region: "europe-west9"}, async (request) => {
+exports.createCampInRegion = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const founderId = requireWorldcraftAuth(request);
   const operationId = worldcraftOperationId(request.data?.operationId);
   const regionId = `${request.data?.regionId || ""}`;
@@ -536,7 +540,7 @@ exports.createCampInRegion = onCall({region: "europe-west9"}, async (request) =>
   });
 });
 
-exports.resolveWorldcraftRegionUntil = onCall({region: "europe-west9"}, async (request) => {
+exports.resolveWorldcraftRegionUntil = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   requireWorldcraftAuth(request);
   const regionId = `${request.data?.regionId || ""}`;
   const db = admin.firestore();
@@ -576,7 +580,7 @@ exports.resolveWorldcraftRegionUntil = onCall({region: "europe-west9"}, async (r
   });
 });
 
-exports.setWorldcraftCampMode = onCall({region: "europe-west9"}, async (request) => {
+exports.setWorldcraftCampMode = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const uid = requireWorldcraftAuth(request);
   const campId = `${request.data?.campId || ""}`;
   const mode = request.data?.mode === "autonomous" ? "autonomous" : "active";
@@ -591,7 +595,7 @@ exports.setWorldcraftCampMode = onCall({region: "europe-west9"}, async (request)
   });
 });
 
-exports.resolveWorldcraftCampUntil = onCall({region: "europe-west9"}, async (request) => {
+exports.resolveWorldcraftCampUntil = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const uid = requireWorldcraftAuth(request);
   const campId = `${request.data?.campId || ""}`;
   const db = admin.firestore();
@@ -654,7 +658,7 @@ function mutateWorldcraftCampBuilding(camp, buildingId, mutator, now) {
   return {...camp, detailedState: details};
 }
 
-exports.helpWorldcraftCampConstruction = onCall({region: "europe-west9"}, async (request) => {
+exports.helpWorldcraftCampConstruction = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const uid = requireWorldcraftAuth(request);
   const operationId = worldcraftOperationId(request.data?.operationId);
   const campId = `${request.data?.campId || ""}`;
@@ -686,7 +690,7 @@ exports.helpWorldcraftCampConstruction = onCall({region: "europe-west9"}, async 
   });
 });
 
-exports.contributeWorldcraftCampConstruction = onCall({region: "europe-west9"}, async (request) => {
+exports.contributeWorldcraftCampConstruction = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const uid = requireWorldcraftAuth(request);
   const operationId = worldcraftOperationId(request.data?.operationId);
   const campId = `${request.data?.campId || ""}`;
@@ -726,7 +730,7 @@ exports.contributeWorldcraftCampConstruction = onCall({region: "europe-west9"}, 
 // The detailed Lisière inventory remains a local transport projection. This
 // operation atomically moves arrived physical stacks into the shared Camp
 // storage, which is the authority used by Camp actions.
-exports.flushWorldcraftCampStorage = onCall({region: "europe-west9"}, async (request) => {
+exports.flushWorldcraftCampStorage = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const uid = requireWorldcraftAuth(request);
   const operationId = worldcraftOperationId(request.data?.operationId);
   const campId = `${request.data?.campId || ""}`;
@@ -767,7 +771,7 @@ exports.flushWorldcraftCampStorage = onCall({region: "europe-west9"}, async (req
   });
 });
 
-exports.extractSharedResource = onCall({region: "europe-west9"}, async (request) => {
+exports.extractSharedResource = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const playerId = requireWorldcraftAuth(request);
   const operationId = worldcraftOperationId(request.data?.operationId);
   const biomeId = `${request.data?.biomeId || ""}`;
@@ -795,7 +799,7 @@ exports.extractSharedResource = onCall({region: "europe-west9"}, async (request)
   });
 });
 
-exports.adjustWorldcraftBiomeDanger = onCall({region: "europe-west9"}, async (request) => {
+exports.adjustWorldcraftBiomeDanger = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const playerId = requireWorldcraftAuth(request);
   const operationId = worldcraftOperationId(request.data?.operationId);
   const biomeId = `${request.data?.biomeId || ""}`;
@@ -818,7 +822,7 @@ exports.adjustWorldcraftBiomeDanger = onCall({region: "europe-west9"}, async (re
   });
 });
 
-exports.recordWorldcraftTrace = onCall({region: "europe-west9"}, async (request) => {
+exports.recordWorldcraftTrace = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const playerId = requireWorldcraftAuth(request);
   const operationId = worldcraftOperationId(request.data?.operationId);
   const regionId = `${request.data?.regionId || ""}`;
@@ -839,7 +843,7 @@ exports.recordWorldcraftTrace = onCall({region: "europe-west9"}, async (request)
   });
 });
 
-exports.claimWorldcraftPassageReserve = onCall({region: "europe-west9"}, async (request) => {
+exports.claimWorldcraftPassageReserve = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const playerId = requireWorldcraftAuth(request);
   const operationId = worldcraftOperationId(request.data?.operationId);
   const campId = `${request.data?.campId || ""}`;
@@ -871,7 +875,7 @@ exports.claimWorldcraftPassageReserve = onCall({region: "europe-west9"}, async (
   });
 });
 
-exports.seedWorldcraftDebug = onCall({region: "europe-west9"}, async (request) => {
+exports.seedWorldcraftDebug = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   const uid = requireWorldcraftAuth(request);
   await requireWorldcraftDev(uid);
   const scenario = `${request.data?.scenario || ""}`;
