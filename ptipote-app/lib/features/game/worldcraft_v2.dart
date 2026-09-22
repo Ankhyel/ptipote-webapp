@@ -12,8 +12,19 @@ enum WorldcraftRegionOccupancy { free, occupied }
 enum WorldcraftCampSimulationMode { active, autonomous }
 
 const String worldcraftV2Version = 'WORLDCRAFT_0_1';
+const String worldbuildingV2Version = 'WORLDBUILDING_0_1';
 const String worldcraftPrototypeWorldId = 'zone0-shared-world';
 const String worldcraftPrototypeMapId = 'zone0-map-5x5';
+
+/// Canonical topological slots of a Region. Their actual types and visual
+/// profiles are server-authored Worldbuilding data, never a private reroll.
+const List<String> worldcraftBiomeInternalPositions = <String>[
+  'b1',
+  'a1',
+  'a2',
+  'a3',
+  'b3',
+];
 
 String worldcraftCoordinate(int x, int y) =>
     '${String.fromCharCode('A'.codeUnitAt(0) + x)}${y + 1}';
@@ -134,7 +145,8 @@ WorldcraftSeed createWorldcraftPrototypeSeed({int seed = 250525}) {
   ];
   final connectionIds = <String, List<String>>{};
   final connections = <WorldcraftConnectionSeed>[];
-  String regionId(int x, int y) => 'region-${worldcraftCoordinate(x, y).toLowerCase()}';
+  String regionId(int x, int y) =>
+      'region-${worldcraftCoordinate(x, y).toLowerCase()}';
   for (var y = 0; y < 5; y++) {
     for (var x = 0; x < 5; x++) {
       connectionIds[regionId(x, y)] = <String>[];

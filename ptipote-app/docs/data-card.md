@@ -354,3 +354,31 @@ L’Eau n’est pas une ressource globale du Camp.
 - À la réouverture d’un Camp autonome, le résolveur conserve la même
   implantation et produit un message narratif de reprise ; aucune simulation
   détaillée d’habitant n’est exécutée pendant l’absence.
+
+## PTIPOTE V2 — Worldbuilding 0, première carte jouable
+
+- Worldbuilding 0 enrichit Worldcraft sans changer l’autorité du territoire :
+  la même carte 5 × 5 et les mêmes coordonnées sont conservées. Chaque Région
+  reçoit exactement cinq Biomes dans les positions internes **B1, A1, A2, A3,
+  B3** ; B1, A2 et B3 sont proches du centre territorial, A1 et A3 sont plus
+  éloignées.
+- Les types disponibles sont : Littoral, Mangrove, Marais, Savane humide,
+  Savane sèche, Semi-désert, Colline, Forêt sèche, Forêt humide et Haut
+  Refuge. Les profils géographiques Haut Refuge, Littoral, Sec, Mixte et
+  Transition choisissent des palettes de Biomes avec influences des Régions
+  voisines. Mixte et Transition restent des profils, jamais des Biomes.
+- La composition dépend exclusivement de la seed du World, de la coordonnée,
+  du profil, de l’offset de génération et de la version Worldbuilding. Elle
+  est donc déterministe, persistée dans les documents Région/Biome et ne se
+  relance pas au chargement d’un joueur.
+- Le Dashboard contient la configuration versionnée `worldbuildingV2` :
+  matrice 5 × 5, palettes, positions, offsets, tags environnementaux, profils
+  visuels, réponses météo déclaratives et tables de découvertes possibles.
+  Après publication, l’action DEV « Appliquer Worldbuilding » met à jour les
+  25 Régions par une opération idempotente sans modifier Camp, macro-états ou
+  stocks.
+- La Lisière utilise la seed persistante de chaque Biome pour ses graphes de
+  Parcelles. Son aperçu est un rendu local 2D à profondeur 3/4 : sol,
+  accessoires, nœuds et êtres sont une projection lisible, non un terrain
+  mondial synchronisé. Les hooks météo, écologie et trouvailles sont des
+  données sans formules de gameplay à ce stade.

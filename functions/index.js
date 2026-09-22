@@ -3,6 +3,11 @@ const {Timestamp} = require("firebase-admin/firestore");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {
+  buildWorldbuildingMap,
+  runtimeConfig: worldbuildingRuntimeConfig,
+  stableSeed: worldbuildingStableSeed,
+} = require("./worldbuilding_v2");
 
 admin.initializeApp();
 
@@ -204,6 +209,11 @@ async function loadWorldcraftRuntimeConfig(db) {
   };
 }
 
+async function loadWorldbuildingRuntimeConfig(db) {
+  const snapshot = await db.collection("gameConfigs").doc("zone0").get();
+  return worldbuildingRuntimeConfig(snapshot.data()?.zone0Settings?.worldbuildingV2);
+}
+
 async function cleanupExpiredWorldcraftTraces(db, regionId, now, limit) {
   const snapshot = await db.collection("playerTraces").where("regionId", "==", regionId).get();
   const expired = snapshot.docs.filter((document) => {
@@ -248,33 +258,6 @@ function worldcraftCoordinate(x, y) {
   return `${String.fromCharCode("A".charCodeAt(0) + x)}${y + 1}`;
 }
 
-function worldcraftProfileAt(x, y) {
-  const grid = [
-    ["highRefuge", "highRefuge", "highRefuge", "highRefuge", "dry"],
-    ["highRefuge", "transition", "highRefuge", "transition", "dry"],
-    ["coastal", "mixed", "highRefuge", "mixed", "dry"],
-    ["coastal", "transition", "mixed", "transition", "dry"],
-    ["coastal", "coastal", "coastal", "coastal", "dry"],
-  ];
-  return grid[y][x];
-}
-
-function worldcraftBiomeComposition(profile) {
-  return {
-    highRefuge: ["haut_refuge", "colline", "foret_humide", "savane_humide", "foret_seche"],
-    coastal: ["littoral", "mangrove", "marais", "savane_humide", "foret_humide"],
-    dry: ["semi_desert", "savane_seche", "foret_seche", "colline", "marais"],
-    mixed: ["savane_humide", "marais", "colline", "foret_seche", "littoral"],
-    transition: ["savane_humide", "colline", "savane_seche", "foret_seche", "marais"],
-  }[profile];
-}
-
-function worldcraftSeed(value) {
-  let hash = 17;
-  for (const code of `${value}`) hash = (hash * 31 + code.charCodeAt(0)) & 0x7fffffff;
-  return hash;
-}
-
 function worldcraftOperationRef(operationId) {
   return admin.firestore().collection("worldOperations").doc(operationId);
 }
@@ -306,7 +289,7 @@ function worldcraftMacro(regionId, now) {
   };
 }
 
-function biomeSharedState(regionId, biomeId, biomeType, now) {
+function biomeSharedState(regionId, biomeId, biomeType, now, metadata = {}) {
   return {
     regionId,
     biomeId,
@@ -323,12 +306,31 @@ function biomeSharedState(regionId, biomeId, biomeType, now) {
     ecologicalStateFuture: null,
     lastSimulatedAt: now,
     simulationVersion: WORLDCRAFT_VERSION,
+    ...metadata,
+  };
+}
+
+function worldbuildingBiomeMetadata({regionId, biomeType, position, definition, version}) {
+  return {
+    internalPosition: position,
+    seed: worldbuildingStableSeed(`250525:${regionId}:${position}:${biomeType}`),
+    environmentalTags: definition.environmentalTags || [],
+    visualProfile: definition.visualProfile || {},
+    weatherResponseProfile: definition.weatherResponseProfile || {},
+    ecologyProfileId: definition.ecologyProfileId || null,
+    possibleFindingTables: definition.possibleFindingTables || [],
+    worldbuildingVersion: version,
   };
 }
 
 exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   requireWorldcraftAuth(request);
   const db = admin.firestore();
+  const worldbuilding = await loadWorldbuildingRuntimeConfig(db);
+  const worldbuildingMap = buildWorldbuildingMap(worldbuilding, 250525);
+  const composedByCoordinate = new Map(
+    worldbuildingMap.regions.map((region) => [region.coordinate, region]),
+  );
   const worldRef = db.collection("worlds").doc(WORLD_ID);
   const mapRef = db.collection("worldMaps").doc(WORLD_MAP_ID);
   const now = Timestamp.now();
@@ -340,6 +342,7 @@ exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
       worldVersion: WORLDCRAFT_VERSION,
       seed: 250525,
       activeWorldMapId: WORLD_MAP_ID,
+      worldbuildingVersion: worldbuildingMap.config.worldbuildingVersion,
       createdAt: now,
       simulationVersion: WORLDCRAFT_VERSION,
       status: "active",
@@ -378,7 +381,8 @@ exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
         const coordinate = worldcraftCoordinate(x, y);
         const regionId = `region-${coordinate.toLowerCase()}`;
         regionIds.push(regionId);
-        const profile = worldcraftProfileAt(x, y);
+        const composed = composedByCoordinate.get(coordinate);
+        const profile = composed.profile;
         const biomeIds = Array.from({length: 5}, (_, index) => `${regionId}-biome-${index + 1}`);
         transaction.set(db.collection("regions").doc(regionId), {
           id: regionId,
@@ -388,7 +392,12 @@ exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
           coordinateY: y,
           displayCoordinate: coordinate,
           profile,
-          seed: worldcraftSeed(`250525:${regionId}`),
+          seed: worldbuildingStableSeed(`250525:${regionId}`),
+          worldbuildingVersion: worldbuildingMap.config.worldbuildingVersion,
+          primaryInfluence: composed.primaryInfluence,
+          secondaryInfluences: composed.secondaryInfluences,
+          visualTags: composed.visualTags,
+          generationSeedOffset: composed.generationSeedOffset,
           biomeIds,
           connectionIds: connectionIds.get(regionId),
           hubId: coordinate === "C3" ? "hub-c3" : null,
@@ -402,11 +411,19 @@ exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
           simulationVersion: WORLDCRAFT_VERSION,
         });
         transaction.set(db.collection("regionMacroStates").doc(regionId), worldcraftMacro(regionId, now));
-        const biomes = worldcraftBiomeComposition(profile);
-        biomes.forEach((biomeType, index) => {
+        worldbuildingMap.config.internalPositions.forEach((position, index) => {
           const biomeId = biomeIds[index];
+          const biomeType = composed.biomeTypesByPosition[position];
+          const definition = worldbuildingMap.config.biomes[biomeType];
           transaction.set(db.collection("biomeSharedStates").doc(biomeId),
-            biomeSharedState(regionId, biomeId, biomeType, now));
+            biomeSharedState(regionId, biomeId, biomeType, now,
+              worldbuildingBiomeMetadata({
+                regionId,
+                biomeType,
+                position,
+                definition,
+                version: worldbuildingMap.config.worldbuildingVersion,
+              })));
         });
       }
     }
@@ -419,6 +436,7 @@ exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
       hubIds: ["hub-c3"],
       createdAt: now,
       version: WORLDCRAFT_VERSION,
+      worldbuildingVersion: worldbuildingMap.config.worldbuildingVersion,
     });
     transaction.set(db.collection("hubs").doc("hub-c3"), {
       id: "hub-c3",
@@ -429,8 +447,111 @@ exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
       state: "active",
       createdAt: now,
     });
+    transaction.set(db.collection("worldbuildingAudits").doc(WORLD_MAP_ID), {
+      worldId: WORLD_ID,
+      worldMapId: WORLD_MAP_ID,
+      worldbuildingVersion: worldbuildingMap.config.worldbuildingVersion,
+      warnings: worldbuildingMap.warnings,
+      generatedAt: now,
+    });
   });
   return {worldId: WORLD_ID, worldMapId: WORLD_MAP_ID};
+});
+
+// Applies a versioned Dashboard composition to an already seeded prototype
+// world. It deliberately preserves every macro value, Camp and inventory: only
+// geographic content and visual/projection metadata are upgraded.
+exports.upgradeWorldcraftWorldbuilding = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
+  const actorId = requireWorldcraftAuth(request);
+  await requireWorldcraftDev(actorId);
+  const operationId = worldcraftOperationId(request.data?.operationId);
+  const db = admin.firestore();
+  const worldbuilding = await loadWorldbuildingRuntimeConfig(db);
+  const built = buildWorldbuildingMap(worldbuilding, 250525);
+  const now = Timestamp.now();
+  const operationRef = worldcraftOperationRef(operationId);
+  const worldRef = db.collection("worlds").doc(WORLD_ID);
+  const result = await db.runTransaction(async (transaction) => {
+    const [operation, world] = await Promise.all([
+      transaction.get(operationRef), transaction.get(worldRef),
+    ]);
+    if (operation.exists) return operation.data().result;
+    if (!world.exists) {
+      throw new HttpsError("failed-precondition", "Initialise d’abord le World partagé.");
+    }
+    const regionRefs = built.regions.map((region) =>
+      db.collection("regions").doc(`region-${region.coordinate.toLowerCase()}`));
+    const regionSnapshots = await transaction.getAll(...regionRefs);
+    const regionById = new Map(regionSnapshots.map((snapshot) => [snapshot.id, snapshot]));
+    for (const composed of built.regions) {
+      const regionId = `region-${composed.coordinate.toLowerCase()}`;
+      const regionRef = db.collection("regions").doc(regionId);
+      const regionSnapshot = regionById.get(regionId);
+      if (!regionSnapshot.exists) {
+        throw new HttpsError("failed-precondition", `Région ${composed.coordinate} absente.`);
+      }
+      const biomeIds = Array.isArray(regionSnapshot.data().biomeIds)
+        ? regionSnapshot.data().biomeIds.map(String) : [];
+      if (biomeIds.length !== built.config.internalPositions.length) {
+        throw new HttpsError("failed-precondition", `Biomes invalides pour ${composed.coordinate}.`);
+      }
+      transaction.set(regionRef, {
+        profile: composed.profile,
+        primaryInfluence: composed.primaryInfluence,
+        secondaryInfluences: composed.secondaryInfluences,
+        visualTags: composed.visualTags,
+        generationSeedOffset: composed.generationSeedOffset,
+        worldbuildingVersion: built.config.worldbuildingVersion,
+        worldbuildingUpdatedAt: now,
+      }, {merge: true});
+      built.config.internalPositions.forEach((position, index) => {
+        const biomeType = composed.biomeTypesByPosition[position];
+        const definition = built.config.biomes[biomeType];
+        transaction.set(db.collection("biomeSharedStates").doc(biomeIds[index]), {
+          biomeType,
+          ...worldbuildingBiomeMetadata({
+            regionId,
+            biomeType,
+            position,
+            definition,
+            version: built.config.worldbuildingVersion,
+          }),
+          lastWorldbuildingUpdatedAt: now,
+        }, {merge: true});
+      });
+    }
+    const upgraded = {
+      worldId: WORLD_ID,
+      worldMapId: WORLD_MAP_ID,
+      worldbuildingVersion: built.config.worldbuildingVersion,
+      upgradedRegions: built.regions.length,
+      warnings: built.warnings,
+    };
+    transaction.set(worldRef, {
+      worldbuildingVersion: built.config.worldbuildingVersion,
+      worldbuildingUpdatedAt: now,
+    }, {merge: true});
+    transaction.set(db.collection("worldMaps").doc(WORLD_MAP_ID), {
+      worldbuildingVersion: built.config.worldbuildingVersion,
+      worldbuildingUpdatedAt: now,
+    }, {merge: true});
+    transaction.set(db.collection("worldbuildingAudits").doc(WORLD_MAP_ID), {
+      worldId: WORLD_ID,
+      worldMapId: WORLD_MAP_ID,
+      worldbuildingVersion: built.config.worldbuildingVersion,
+      warnings: built.warnings,
+      generatedAt: now,
+    }, {merge: true});
+    transaction.create(operationRef, {
+      id: operationId,
+      type: "upgradeWorldcraftWorldbuilding",
+      actorId,
+      createdAt: now,
+      result: upgraded,
+    });
+    return upgraded;
+  });
+  return result;
 });
 
 exports.createCampInRegion = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {

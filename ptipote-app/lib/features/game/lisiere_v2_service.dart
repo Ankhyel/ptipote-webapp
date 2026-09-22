@@ -37,6 +37,7 @@ class LisiereV2Service {
     required int seed,
     required DateTime createdAt,
     Map<String, List<String>> biomeConnections = const <String, List<String>>{},
+    Map<String, int> biomeSeeds = const <String, int>{},
   }) async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -52,11 +53,14 @@ class LisiereV2Service {
         var changed = false;
         for (final entry in biomeConnections.entries) {
           if (!snapshot.biomeConnections.containsKey(entry.key)) {
-            snapshot.biomeConnections[entry.key] = List<String>.from(entry.value);
+            snapshot.biomeConnections[entry.key] =
+                List<String>.from(entry.value);
             changed = true;
           }
         }
-        if (changed) transaction.set(reference, snapshot.toMap(), SetOptions(merge: true));
+        if (changed) {
+          transaction.set(reference, snapshot.toMap(), SetOptions(merge: true));
+        }
         return snapshot;
       }
       final snapshot = createLisiereV2Snapshot(
@@ -64,6 +68,7 @@ class LisiereV2Service {
         seed: seed,
         createdAt: createdAt,
         biomeConnections: biomeConnections,
+        biomeSeeds: biomeSeeds,
       );
       transaction.set(reference, <String, dynamic>{
         ...snapshot.toMap(),
@@ -213,7 +218,8 @@ class LisiereV2Service {
     while (pending.isNotEmpty) {
       final current = pending.removeAt(0);
       final currentDistance = distances[current]!;
-      for (final next in snapshot.biomeConnections[current] ?? const <String>[]) {
+      for (final next
+          in snapshot.biomeConnections[current] ?? const <String>[]) {
         if (!snapshot.graphs.containsKey(next)) continue;
         final candidate = currentDistance + lisiereV2Config.hardTravelSeconds;
         if (candidate >= (distances[next] ?? 1 << 30)) continue;
@@ -901,7 +907,9 @@ class LisiereV2Service {
       _mutate((snapshot) {
         for (final ptibug in snapshot.ptibugs.values) {
           final requestedRation = now.isAfter(ptibug.maintenance.lastResolvedAt)
-              ? now.difference(ptibug.maintenance.lastResolvedAt).inMilliseconds /
+              ? now
+                      .difference(ptibug.maintenance.lastResolvedAt)
+                      .inMilliseconds /
                   const Duration(days: 1).inMilliseconds *
                   ptibug.maintenance.dailyRation
               : 0.0;
@@ -1083,10 +1091,11 @@ class LisiereV2Service {
         );
       }
       final resolution = node.applyAction(toolActor);
-      final creditedAmount = resolution.resource == LisiereResourceKind.mineral &&
-              sharedMineralLimit != null
-          ? resolution.creditedAmount.clamp(0, sharedMineralLimit).toInt()
-          : resolution.creditedAmount;
+      final creditedAmount =
+          resolution.resource == LisiereResourceKind.mineral &&
+                  sharedMineralLimit != null
+              ? resolution.creditedAmount.clamp(0, sharedMineralLimit).toInt()
+              : resolution.creditedAmount;
       final accepted = inventory.add(
         resolution.resource,
         creditedAmount,

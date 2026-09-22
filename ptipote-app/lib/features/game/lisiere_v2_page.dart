@@ -73,7 +73,9 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
       final regionId = '${selectedWorldcraft['regionId'] ?? ''}';
       await _worldcraft.resolveRegionUntil(regionId);
       final sharedRegion = await _worldcraft.loadRegion(regionId);
-      if (sharedRegion == null) throw StateError('Région mondiale introuvable.');
+      if (sharedRegion == null) {
+        throw StateError('Région mondiale introuvable.');
+      }
       region = sharedRegion;
       biomes = (await _worldcraft.loadBiomes(regionId))
           .map((biome) => <String, dynamic>{
@@ -104,6 +106,11 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
             },
       seed: (region['seed'] as num?)?.toInt() ?? lisiereStableSeed('region-v2'),
       createdAt: DateTime.now(),
+      biomeSeeds: <String, int>{
+        for (final biome in biomes)
+          if (biome['seed'] is num)
+            '${biome['id']}': (biome['seed'] as num).toInt(),
+      },
     );
     if (selectedWorldcraft is Map) {
       snapshot = await _lisiere.syncSharedBiomeDanger(<String, int>{
@@ -177,11 +184,12 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
         organicYieldModifier: 1 + modifiers.gather.forResource('Organique'),
         mineralYieldModifier: 1 + modifiers.gather.forResource('Minéral'),
         wasteYieldModifier: 1 + modifiers.gather.forResource('Déchets'),
-        yieldModifier: 1 + <double>[
-          modifiers.gather.forResource('Organique'),
-          modifiers.gather.forResource('Minéral'),
-          modifiers.gather.forResource('Déchets'),
-        ].reduce((left, right) => left > right ? left : right),
+        yieldModifier: 1 +
+            <double>[
+              modifiers.gather.forResource('Organique'),
+              modifiers.gather.forResource('Minéral'),
+              modifiers.gather.forResource('Déchets'),
+            ].reduce((left, right) => left > right ? left : right),
         security: modifiers.missionSecurityBonus * 100,
       );
     }).toList();
@@ -230,8 +238,7 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
   }) async {
     // Accompanied entry resolves the boss before the regular encounter. The
     // QTE is deliberately not a separate optional button: entering is enough.
-    final qteSucceeded =
-        bossDroneActive ? await _showBossQte() : true;
+    final qteSucceeded = bossDroneActive ? await _showBossQte() : true;
     if (!mounted) return;
     await _run((_) async {
       await _lisiere.moveAccompaniedTeam(
@@ -247,7 +254,8 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
         if (qteSucceeded != true) return;
       }
       final event = await _lisiere.enterBiome(
-        visitId: 'visit-${team.id}-$biomeId-${DateTime.now().millisecondsSinceEpoch}',
+        visitId:
+            'visit-${team.id}-$biomeId-${DateTime.now().millisecondsSinceEpoch}',
         biomeId: biomeId,
         teamId: team.id,
       );
@@ -289,24 +297,23 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
       if (team == null || team.ptipoteIds.isEmpty) return;
       final node = data.snapshot.nodes[nodeId];
       final collector = data.snapshot.ptipotes[team.ptipoteIds.first];
-      final isSharedWorld = data.world['worldcraft'] is Map &&
-          _selectedBiomeId != null;
+      final isSharedWorld =
+          data.world['worldcraft'] is Map && _selectedBiomeId != null;
       // Detailed nodes remain a local visual projection. Mineral credits are
       // capped by the shared server reserve before they enter player cargo.
-      final harvestPower = 1 +
-          (_trainingEnabled ? (collector?.harvestPower ?? 0) : 0);
+      final harvestPower =
+          1 + (_trainingEnabled ? (collector?.harvestPower ?? 0) : 0);
       final mineralYield = node != null &&
               node.kind == LisiereResourceKind.mineral &&
               node.resistance - harvestPower <= 0
           ? (node.standardYield *
-                  (_trainingEnabled
-                      ? (collector?.yieldModifierFor(node.kind) ?? 1)
-                      : 1) +
-              node.yieldRemainder)
+                      (_trainingEnabled
+                          ? (collector?.yieldModifierFor(node.kind) ?? 1)
+                          : 1) +
+                  node.yieldRemainder)
               .floor()
           : 0;
-      final sharedMineralLimit = isSharedWorld &&
-              mineralYield > 0
+      final sharedMineralLimit = isSharedWorld && mineralYield > 0
           ? await _worldcraft.extractSharedMineral(
               operationId:
                   'extract-$nodeId-${DateTime.now().microsecondsSinceEpoch}',
@@ -324,7 +331,8 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
       );
       if (isSharedWorld) {
         await _worldcraft.adjustBiomeDanger(
-          operationId: 'danger-harvest-$nodeId-${DateTime.now().microsecondsSinceEpoch}',
+          operationId:
+              'danger-harvest-$nodeId-${DateTime.now().microsecondsSinceEpoch}',
           biomeId: _selectedBiomeId!,
           delta: -1,
         );
@@ -405,11 +413,28 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
     final team =
         _selectedTeamId == null ? null : snapshot.teams[_selectedTeamId];
     final targets = graph?.parcels ?? const <ParcelInstance>[];
+    final selectedBiome =
+        data.biomes.where((biome) => biome['id'] == biomeId).firstOrNull;
+    final sceneParcelId = _selectedParcelId ?? team?.currentParcelId;
+    final sceneNodes = sceneParcelId == null
+        ? const <LisiereResourceNode>[]
+        : snapshot.nodes.values
+            .where((node) => node.parcelId == sceneParcelId)
+            .toList(growable: false);
+    final scenePtipotes = team?.ptipoteIds
+            .map((id) => _profileFor(data.world, id))
+            .whereType<PtipoteV2Profile>()
+            .toList(growable: false) ??
+        const <PtipoteV2Profile>[];
+    final sceneBugs = team?.ptibugIds
+            .map((id) => _ptibugIcon(snapshot.ptibugs[id]?.speciesId))
+            .toList(growable: false) ??
+        const <String>[];
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
         if (_notice.isNotEmpty) _noticeCard(),
-        const Text('Région créée par ton questionnaire',
+        const Text('Région mondiale partagée',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         _starterMissionCard(snapshot.starterMission),
@@ -446,6 +471,15 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
           Text(
               '${graph.parcels.length} parcelles · déplacements accompagnés instantanés',
               style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
+          _WorldbuildingParcelScene(
+            biome: selectedBiome,
+            nodes: sceneNodes,
+            ptipotes: scenePtipotes,
+            ptibugIcons: sceneBugs,
+            active: sceneParcelId != null,
+          ),
+          const SizedBox(height: 8),
           if (team?.currentParcelId != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -1091,6 +1125,168 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
         context: context,
         builder: (_) => const _BossDroneQteDialog(),
       );
+}
+
+/// A deliberately light 2D / 3⁄4 projection. Positions are generated from
+/// persisted parcel and Biome seeds elsewhere; this widget only gives the
+/// player a readable local scene and never claims it is a synchronized MMO
+/// terrain renderer.
+class _WorldbuildingParcelScene extends StatelessWidget {
+  const _WorldbuildingParcelScene({
+    required this.biome,
+    required this.nodes,
+    required this.ptipotes,
+    required this.ptibugIcons,
+    required this.active,
+  });
+
+  final Map<String, dynamic>? biome;
+  final List<LisiereResourceNode> nodes;
+  final List<PtipoteV2Profile> ptipotes;
+  final List<String> ptibugIcons;
+  final bool active;
+
+  Color get _ground => switch (
+          '${biome?['visualProfile'] is Map ? (biome!['visualProfile'] as Map)['groundSet'] : ''}') {
+        'shore' => const Color(0xff8ebdcc),
+        'wet_roots' || 'marsh' => const Color(0xff607c67),
+        'sand' => const Color(0xffc8a56a),
+        'highland' || 'hillside' => const Color(0xff777a70),
+        'leaf_litter' || 'dry_forest' || 'dry_grass' => const Color(0xff9b8752),
+        _ => const Color(0xff628b63),
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final orderedNodes = nodes.indexed
+        .map((entry) =>
+            (index: entry.$1, node: entry.$2, y: 88.0 + entry.$1 * 27.0))
+        .toList()
+      ..sort((left, right) => left.y.compareTo(right.y));
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: AspectRatio(
+        aspectRatio: 16 / 8.5,
+        child: LayoutBuilder(
+          builder: (context, constraints) => Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _ParcelGroundPainter(_ground),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                left: 10,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text(
+                      active
+                          ? '${biome?['biomeType'] ?? 'Biome'} · parcelle active'
+                          : '${biome?['biomeType'] ?? 'Biome'} · choisir une parcelle',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ),
+              ),
+              ...orderedNodes.map((item) => Positioned(
+                    left: 32.0 + (item.index % 3) * constraints.maxWidth * .26,
+                    top: item.y,
+                    child: Opacity(
+                      opacity:
+                          item.node.state == LisiereResourceNodeState.available
+                              ? 1
+                              : .42,
+                      child: Text(item.node.visualVariant,
+                          style:
+                              const TextStyle(fontSize: 27, shadows: <Shadow>[
+                            Shadow(
+                                color: Colors.black45,
+                                offset: Offset(2, 3),
+                                blurRadius: 2),
+                          ])),
+                    ),
+                  )),
+              ...ptipotes.indexed.map((entry) => Positioned(
+                    left: constraints.maxWidth * (.36 + entry.$1 * .13),
+                    top: constraints.maxHeight * (.56 + entry.$1 * .05),
+                    child: SizedBox(
+                      width: 44,
+                      height: 52,
+                      child: PtipoteImage(
+                        type: entry.$2.typeId.name,
+                        species: entry.$2.natureId,
+                        visualAssetKey: entry.$2.visualAssetKey,
+                        height: 52,
+                      ),
+                    ),
+                  )),
+              ...ptibugIcons.indexed.map((entry) => Positioned(
+                    left: constraints.maxWidth * (.61 + entry.$1 * .08),
+                    top: constraints.maxHeight * (.61 + entry.$1 * .05),
+                    child: Text(entry.$2,
+                        style: const TextStyle(fontSize: 29, shadows: <Shadow>[
+                          Shadow(
+                              color: Colors.black45,
+                              offset: Offset(2, 3),
+                              blurRadius: 2),
+                        ])),
+                  )),
+              const Positioned(
+                right: 8,
+                bottom: 6,
+                child: Text('projection locale',
+                    style: TextStyle(color: Colors.white70, fontSize: 10)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ParcelGroundPainter extends CustomPainter {
+  const _ParcelGroundPainter(this.ground);
+
+  final Color ground;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+        Offset.zero & size, Paint()..color = const Color(0xff26312b));
+    final land = Path()
+      ..moveTo(size.width * .08, size.height * .27)
+      ..lineTo(size.width * .88, size.height * .16)
+      ..lineTo(size.width * .98, size.height * .72)
+      ..lineTo(size.width * .16, size.height * .91)
+      ..close();
+    canvas.drawPath(
+      land.shift(const Offset(0, 5)),
+      Paint()..color = Colors.black26,
+    );
+    canvas.drawPath(land, Paint()..color = ground);
+    for (var index = 0; index < 5; index++) {
+      final y = size.height * (.32 + index * .12);
+      canvas.drawLine(
+        Offset(size.width * .14, y),
+        Offset(size.width * .9, y - size.height * .1),
+        Paint()
+          ..color = Colors.white.withValues(alpha: .09)
+          ..strokeWidth = 1,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ParcelGroundPainter oldDelegate) =>
+      oldDelegate.ground != ground;
 }
 
 extension on String {

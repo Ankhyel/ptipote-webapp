@@ -12,14 +12,15 @@ class WorldcraftV2Service {
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _functions = functions ??
-            FirebaseFunctions.instanceFor(region: 'europe-west9');
+        _functions =
+            functions ?? FirebaseFunctions.instanceFor(region: 'europe-west9');
 
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
 
   Future<Map<String, dynamic>> ensureWorld() async {
-    final result = await _call('ensureWorldcraftWorld', const <String, dynamic>{});
+    final result =
+        await _call('ensureWorldcraftWorld', const <String, dynamic>{});
     return Map<String, dynamic>.from(result);
   }
 
@@ -34,6 +35,16 @@ class WorldcraftV2Service {
     return regions;
   }
 
+  /// Small DEV-map projection. Biomes remain individual shared documents;
+  /// this convenience method only assembles the 25-region inspector view.
+  Future<List<Map<String, dynamic>>> loadWorldMapSummary() async {
+    final regions = await loadRegions();
+    return Future.wait(regions.map((region) async => <String, dynamic>{
+          ...region,
+          'biomes': await loadBiomes('${region['id']}'),
+        }));
+  }
+
   Future<Map<String, dynamic>?> loadRegion(String regionId) async =>
       (await _firestore.collection('regions').doc(regionId).get()).data();
 
@@ -42,7 +53,8 @@ class WorldcraftV2Service {
     final ids = List<String>.from(region?['biomeIds'] as List? ?? const []);
     if (ids.isEmpty) return const <Map<String, dynamic>>[];
     final values = await Future.wait(ids.map((id) async =>
-        (await _firestore.collection('biomeSharedStates').doc(id).get()).data()));
+        (await _firestore.collection('biomeSharedStates').doc(id).get())
+            .data()));
     return values.whereType<Map<String, dynamic>>().toList(growable: false);
   }
 
@@ -60,7 +72,8 @@ class WorldcraftV2Service {
       Map<String, dynamic>.from(await _call(
         'flushWorldcraftCampStorage',
         <String, dynamic>{
-          'operationId': 'flush-$campId-${DateTime.now().microsecondsSinceEpoch}',
+          'operationId':
+              'flush-$campId-${DateTime.now().microsecondsSinceEpoch}',
           'campId': campId,
         },
       ));
@@ -69,20 +82,30 @@ class WorldcraftV2Service {
     required String operationId,
     required String regionId,
   }) async =>
-      Map<String, dynamic>.from(await _call('createCampInRegion', <String, dynamic>{
+      Map<String, dynamic>.from(
+          await _call('createCampInRegion', <String, dynamic>{
         'operationId': operationId,
         'regionId': regionId,
       }));
 
-  Future<Map<String, dynamic>> resolveRegionUntil(String regionId) async =>
+  Future<Map<String, dynamic>> upgradeWorldbuilding({
+    required String operationId,
+  }) async =>
       Map<String, dynamic>.from(await _call(
-          'resolveWorldcraftRegionUntil', <String, dynamic>{'regionId': regionId}));
+        'upgradeWorldcraftWorldbuilding',
+        <String, dynamic>{'operationId': operationId},
+      ));
+
+  Future<Map<String, dynamic>> resolveRegionUntil(String regionId) async =>
+      Map<String, dynamic>.from(await _call('resolveWorldcraftRegionUntil',
+          <String, dynamic>{'regionId': regionId}));
 
   Future<Map<String, dynamic>> setCampMode({
     required String campId,
     required WorldcraftCampSimulationMode mode,
   }) async =>
-      Map<String, dynamic>.from(await _call('setWorldcraftCampMode', <String, dynamic>{
+      Map<String, dynamic>.from(
+          await _call('setWorldcraftCampMode', <String, dynamic>{
         'campId': campId,
         'mode': mode.name,
       }));
@@ -95,9 +118,10 @@ class WorldcraftV2Service {
     required String campId,
     required String buildingId,
   }) async {
-    final result = await _call('helpWorldcraftCampConstruction',
-        <String, dynamic>{
-      'operationId': 'help-$campId-$buildingId-${DateTime.now().microsecondsSinceEpoch}',
+    final result =
+        await _call('helpWorldcraftCampConstruction', <String, dynamic>{
+      'operationId':
+          'help-$campId-$buildingId-${DateTime.now().microsecondsSinceEpoch}',
       'campId': campId,
       'buildingId': buildingId,
     });
@@ -109,9 +133,10 @@ class WorldcraftV2Service {
     required String buildingId,
     required String resourceType,
   }) async {
-    final result = await _call('contributeWorldcraftCampConstruction',
-        <String, dynamic>{
-      'operationId': 'contribution-$campId-$buildingId-${DateTime.now().microsecondsSinceEpoch}',
+    final result =
+        await _call('contributeWorldcraftCampConstruction', <String, dynamic>{
+      'operationId':
+          'contribution-$campId-$buildingId-${DateTime.now().microsecondsSinceEpoch}',
       'campId': campId,
       'buildingId': buildingId,
       'resourceType': resourceType,

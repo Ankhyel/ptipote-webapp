@@ -1067,12 +1067,15 @@ class LisierePtipoteState {
         yieldModifier: (map['yieldModifier'] as num?)?.toDouble() ?? 1,
         organicYieldModifier:
             (map['organicYieldModifier'] as num?)?.toDouble() ??
-                (map['yieldModifier'] as num?)?.toDouble() ?? 1,
+                (map['yieldModifier'] as num?)?.toDouble() ??
+                1,
         mineralYieldModifier:
             (map['mineralYieldModifier'] as num?)?.toDouble() ??
-                (map['yieldModifier'] as num?)?.toDouble() ?? 1,
+                (map['yieldModifier'] as num?)?.toDouble() ??
+                1,
         wasteYieldModifier: (map['wasteYieldModifier'] as num?)?.toDouble() ??
-            (map['yieldModifier'] as num?)?.toDouble() ?? 1,
+            (map['yieldModifier'] as num?)?.toDouble() ??
+            1,
         security: (map['security'] as num?)?.toDouble() ?? 0,
       );
 }
@@ -1614,8 +1617,8 @@ class LisiereV2Snapshot {
             Map<String, String>.from(pendingToxicAfflictions ?? const {}),
         biomeConnections = Map<String, List<String>>.fromEntries(
           (biomeConnections ?? const <String, List<String>>{}).entries.map(
-            (entry) => MapEntry(entry.key, List<String>.from(entry.value)),
-          ),
+                (entry) => MapEntry(entry.key, List<String>.from(entry.value)),
+              ),
         ),
         starterMission = starterMission ?? LisiereStarterMission(),
         playerLoadout = playerLoadout ?? const LisierePlayerLoadout();
@@ -1637,6 +1640,7 @@ class LisiereV2Snapshot {
   /// V2 persists the effect request until the shared V1 affliction service
   /// acknowledges it. This preserves the unique Intoxiqué state on restart.
   final Map<String, String> pendingToxicAfflictions;
+
   /// Regional gateways are data, not an unlock or construction prerequisite.
   final Map<String, List<String>> biomeConnections;
   final LisiereStarterMission starterMission;
@@ -1728,6 +1732,7 @@ LisiereV2Snapshot createLisiereV2Snapshot({
   required int seed,
   required DateTime createdAt,
   Map<String, List<String>> biomeConnections = const <String, List<String>>{},
+  Map<String, int> biomeSeeds = const <String, int>{},
 }) {
   final graphs = <String, BiomeParcelGraph>{};
   final nodes = <String, LisiereResourceNode>{};
@@ -1735,7 +1740,7 @@ LisiereV2Snapshot createLisiereV2Snapshot({
   for (final biomeId in biomeIds) {
     final graph = createBiomeParcelGraph(
       biomeId: biomeId,
-      seed: seed ^ lisiereStableSeed(biomeId),
+      seed: biomeSeeds[biomeId] ?? (seed ^ lisiereStableSeed(biomeId)),
     );
     graphs[biomeId] = graph;
     dangers[biomeId] = BiomeDangerState(

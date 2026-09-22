@@ -1,0 +1,39 @@
+{
+  "worldbuildingVersion": "WORLDBUILDING_0_1",
+  "minimumDistinctBiomes": 3,
+  "internalPositions": ["b1", "a1", "a2", "a3", "b3"],
+  "regionProfileMatrix": [
+    ["highRefuge", "highRefuge", "highRefuge", "highRefuge", "dry"],
+    ["highRefuge", "transition", "highRefuge", "transition", "dry"],
+    ["coastal", "mixed", "highRefuge", "mixed", "dry"],
+    ["coastal", "transition", "mixed", "transition", "dry"],
+    ["coastal", "coastal", "coastal", "coastal", "dry"]
+  ],
+  "generationSeedOffsets": [
+    [101, 102, 103, 104, 105],
+    [201, 202, 203, 204, 205],
+    [301, 302, 303, 304, 305],
+    [401, 402, 403, 404, 405],
+    [501, 502, 503, 504, 505]
+  ],
+  "profilePools": {
+    "highRefuge": {"near": ["colline", "foret_humide", "savane_humide", "foret_seche"], "far": ["haut_refuge", "colline", "foret_humide"], "required": ["haut_refuge"]},
+    "coastal": {"near": ["littoral", "mangrove", "marais", "savane_humide", "foret_humide"], "far": ["littoral", "mangrove", "marais"], "required": ["littoral"]},
+    "dry": {"near": ["savane_seche", "foret_seche", "colline", "savane_humide"], "far": ["semi_desert", "savane_seche", "foret_seche"], "required": ["semi_desert"]},
+    "mixed": {"near": ["savane_humide", "foret_humide", "colline", "savane_seche", "foret_seche", "littoral"], "far": ["colline", "foret_seche", "mangrove", "semi_desert"], "required": []},
+    "transition": {"near": ["savane_humide", "foret_humide", "colline", "savane_seche", "foret_seche", "marais"], "far": ["colline", "marais", "savane_seche", "semi_desert"], "required": []}
+  },
+  "biomes": {
+    "littoral": {"compatibleRegionProfiles": ["coastal", "mixed", "transition"], "environmentalTags": ["COASTAL", "OPEN", "WET"], "visualProfile": {"groundSet": "shore", "vegetationSet": "coastal_grass", "rockSet": "pale_rocks", "organicNodeVariants": ["algues", "herbes_salines"], "mineralNodeVariants": ["galet", "affleurement_clair"], "wasteVisualVariants": ["debris_coastal"], "environmentalProps": ["vague", "bois_flotte"], "ambienceTags": ["brise", "embruns"]}, "weatherResponseProfile": {"rain": "medium"}, "ecologyProfileId": "coastal", "possibleFindingTables": ["coastal"]},
+    "mangrove": {"compatibleRegionProfiles": ["coastal", "mixed", "transition"], "environmentalTags": ["COASTAL", "WET", "FORESTED"], "visualProfile": {"groundSet": "wet_roots", "vegetationSet": "mangrove", "rockSet": "dark_roots", "organicNodeVariants": ["racines", "mousse_humide"], "mineralNodeVariants": ["roche_sombre"], "wasteVisualVariants": ["debris_wet"], "environmentalProps": ["racines", "flaque"], "ambienceTags": ["humide", "insectes"]}, "weatherResponseProfile": {"rain": "high"}, "ecologyProfileId": "wetland", "possibleFindingTables": ["wetland"]},
+    "marais": {"compatibleRegionProfiles": ["coastal", "mixed", "transition", "dry"], "environmentalTags": ["WET", "OPEN"], "visualProfile": {"groundSet": "marsh", "vegetationSet": "reeds", "rockSet": "mud_rock", "organicNodeVariants": ["roseaux", "tourbe"], "mineralNodeVariants": ["pierre_boueuse"], "wasteVisualVariants": ["debris_marsh"], "environmentalProps": ["flaque", "roseaux"], "ambienceTags": ["brume", "humide"]}, "weatherResponseProfile": {"rain": "high"}, "ecologyProfileId": "wetland", "possibleFindingTables": ["wetland"]},
+    "savane_humide": {"compatibleRegionProfiles": ["highRefuge", "coastal", "mixed", "transition", "dry"], "environmentalTags": ["OPEN", "WET"], "visualProfile": {"groundSet": "green_grass", "vegetationSet": "tall_grass", "rockSet": "warm_rocks", "organicNodeVariants": ["herbes_denses", "arbuste"], "mineralNodeVariants": ["roche_ocre"], "wasteVisualVariants": ["debris_grass"], "environmentalProps": ["hautes_herbes"], "ambienceTags": ["vent", "humide"]}, "weatherResponseProfile": {"rain": "medium"}, "ecologyProfileId": "savanna_wet", "possibleFindingTables": ["savanna"]},
+    "savane_seche": {"compatibleRegionProfiles": ["dry", "mixed", "transition"], "environmentalTags": ["OPEN", "DRY"], "visualProfile": {"groundSet": "dry_grass", "vegetationSet": "short_grass", "rockSet": "ochre_rocks", "organicNodeVariants": ["herbes_seches", "buisson"], "mineralNodeVariants": ["roche_ocre"], "wasteVisualVariants": ["debris_dry"], "environmentalProps": ["buisson_sec"], "ambienceTags": ["chaleur", "vent"]}, "weatherResponseProfile": {"rain": "low"}, "ecologyProfileId": "savanna_dry", "possibleFindingTables": ["dry"]},
+    "semi_desert": {"compatibleRegionProfiles": ["dry", "mixed", "transition"], "environmentalTags": ["OPEN", "DRY", "ROCKY"], "visualProfile": {"groundSet": "sand", "vegetationSet": "sparse_shrubs", "rockSet": "desert_rocks", "organicNodeVariants": ["arbuste_sec"], "mineralNodeVariants": ["affleurement", "roche_claire"], "wasteVisualVariants": ["debris_dry"], "environmentalProps": ["dune", "pierre"], "ambienceTags": ["aride", "vent"]}, "weatherResponseProfile": {"rain": "low"}, "ecologyProfileId": "arid", "possibleFindingTables": ["dry"]},
+    "colline": {"compatibleRegionProfiles": ["highRefuge", "dry", "mixed", "transition"], "environmentalTags": ["ROCKY", "OPEN"], "visualProfile": {"groundSet": "hillside", "vegetationSet": "shrubs", "rockSet": "ridge_rocks", "organicNodeVariants": ["arbuste", "herbes"], "mineralNodeVariants": ["roche_sombre", "filon"], "wasteVisualVariants": ["debris_rocky"], "environmentalProps": ["crête", "rocher"], "ambienceTags": ["hauteur", "vent"]}, "weatherResponseProfile": {"rain": "medium"}, "ecologyProfileId": "hills", "possibleFindingTables": ["hills"]},
+    "foret_seche": {"compatibleRegionProfiles": ["highRefuge", "dry", "mixed", "transition"], "environmentalTags": ["FORESTED", "DRY"], "visualProfile": {"groundSet": "leaf_litter", "vegetationSet": "dry_forest", "rockSet": "root_rocks", "organicNodeVariants": ["bois_sec", "feuilles"], "mineralNodeVariants": ["roche_racinee"], "wasteVisualVariants": ["debris_forest"], "environmentalProps": ["tronc", "branche"], "ambienceTags": ["sec", "sous_bois"]}, "weatherResponseProfile": {"rain": "low"}, "ecologyProfileId": "forest_dry", "possibleFindingTables": ["forest"]},
+    "foret_humide": {"compatibleRegionProfiles": ["highRefuge", "coastal", "mixed", "transition"], "environmentalTags": ["FORESTED", "WET"], "visualProfile": {"groundSet": "moss", "vegetationSet": "wet_forest", "rockSet": "moss_rocks", "organicNodeVariants": ["mousse", "vegetation_dense"], "mineralNodeVariants": ["roche_mousse"], "wasteVisualVariants": ["debris_forest"], "environmentalProps": ["fougere", "tronc"], "ambienceTags": ["humide", "sous_bois"]}, "weatherResponseProfile": {"rain": "high"}, "ecologyProfileId": "forest_wet", "possibleFindingTables": ["forest"]},
+    "haut_refuge": {"compatibleRegionProfiles": ["highRefuge", "transition"], "environmentalTags": ["ROCKY", "HIGH_ALTITUDE"], "visualProfile": {"groundSet": "highland", "vegetationSet": "alpine_grass", "rockSet": "dark_rocks", "organicNodeVariants": ["lichen", "herbes_hautes"], "mineralNodeVariants": ["filon_sombre", "roche_haute"], "wasteVisualVariants": ["debris_rocky"], "environmentalProps": ["falaise", "rocher"], "ambienceTags": ["altitude", "vent"]}, "weatherResponseProfile": {"rain": "medium"}, "ecologyProfileId": "highland", "possibleFindingTables": ["highland"]}
+  },
+  "continuity": {"minimumCompatiblePairs": 1, "incompatiblePairs": [["mangrove", "haut_refuge"], ["littoral", "haut_refuge"], ["mangrove", "semi_desert"]]}
+}

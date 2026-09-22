@@ -33,7 +33,20 @@ async function callable(token, name, data) {
 async function main() {
   const first = await createUser();
   const second = await createUser();
+  if (admin.apps.length === 0) admin.initializeApp({projectId});
+  const db = admin.firestore();
+  await db.collection("users").doc(first.localId).set({role: "dev"}, {merge: true});
   await callable(first.idToken, "ensureWorldcraftWorld", {});
+  const worldbuilding = await callable(first.idToken, "upgradeWorldcraftWorldbuilding", {
+    operationId: "emulator-worldbuilding-001",
+  });
+  assert.equal(worldbuilding.upgradedRegions, 25, "Worldbuilding met à jour les 25 Régions");
+  const worldbuildingReplay = await callable(first.idToken, "upgradeWorldcraftWorldbuilding", {
+    operationId: "emulator-worldbuilding-001",
+  });
+  assert.deepEqual(worldbuildingReplay, worldbuilding, "Worldbuilding est idempotent");
+  const upgradedBiome = await db.collection("biomeSharedStates").doc("region-c3-biome-1").get();
+  assert.ok(upgradedBiome.data().visualProfile, "le profil visuel est persistant");
 
   const creates = await Promise.allSettled([
     callable(first.idToken, "createCampInRegion", {operationId: "emulator-camp-a-001", regionId: "region-a1"}),
@@ -57,8 +70,6 @@ async function main() {
   const extractReplay = await callable(first.idToken, "extractSharedResource", {operationId: "emulator-extract-a-001", biomeId: "region-b1-biome-1", requestedAmount: 150});
   assert.equal(extractReplay.actualExtracted, extracts[0].actualExtracted, "extraction idempotente");
 
-  if (admin.apps.length === 0) admin.initializeApp({projectId});
-  const db = admin.firestore();
   await db.collection("passageReserves").doc(created.campId).set({
     id: created.campId, campId: created.campId, policy: "open",
     resourceEntries: {mineral: {availableQuantity: 10, maxPerTraveler: 10}},

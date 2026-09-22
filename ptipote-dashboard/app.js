@@ -1111,6 +1111,7 @@ const ZONE0_SECTION_SOURCES = {
   lisiereV2: "lisiere-v2-config.json",
   regionV2: "region-v2-config.json",
   worldcraftV2: "worldcraft-v2-config.json",
+  worldbuildingV2: "worldbuilding-v2-config.json",
   tower: "security-tower-config.json",
   towerOperations: "tower-operations-config.json",
   fablab: "fablab-config.json",
@@ -1135,6 +1136,7 @@ const ZONE0_SECTION_LABELS = {
   lisiereV2: "Lisière V2",
   regionV2: "Régions V2 et passerelles",
   worldcraftV2: "Monde partagé asynchrone",
+  worldbuildingV2: "Worldbuilding 0",
   tower: "Tour de sécurité",
   towerOperations: "Exploration, météo et marchand",
   fablab: "Fablab",
@@ -1807,7 +1809,8 @@ function renderLisiereEditor() {
     configCard("Lisière V2", "lisiereV2", zone0Settings.lisiereV2 || {}, [], { open: true, meta: "Parcelles, trajets, équipes et progression Récolteur/Patrouilleur" }),
     configCard("Régions V2 et passerelles", "regionV2", zone0Settings.regionV2 || {}, [], { open: true, meta: "Questionnaire, presets de biomes et connexions sans prérequis" }),
     configCard("Worldcraft V2", "worldcraftV2", zone0Settings.worldcraftV2 || {}, [], { open: true, meta: "Traces, activité de Camp et résolution lazy du monde partagé" }),
-    `<details class="config-card"><summary><span><strong>Worldcraft · initialisation DEV</strong><small>Crée une seule fois la carte mondiale persistante 5×5. Réservé aux tests administrateur.</small></span><span class="card-chevron">⌄</span></summary><div class="stat-form config-card-body"><div class="stat-field"><button class="button" id="ensureWorldcraftButton" type="button">Initialiser le World partagé</button><small id="ensureWorldcraftStatus">Aucune écriture directe Firestore : l’opération passe par la Function idempotente.</small></div></div></details>`,
+    configCard("Worldbuilding 0", "worldbuildingV2", zone0Settings.worldbuildingV2 || {}, [], { open: true, meta: "Carte 5×5, palettes, influences, tags et profils visuels des Biomes" }),
+    `<details class="config-card"><summary><span><strong>Worldcraft · initialisation DEV</strong><small>Crée une seule fois la carte mondiale persistante 5×5. Réservé aux tests administrateur.</small></span><span class="card-chevron">⌄</span></summary><div class="stat-form config-card-body"><div class="stat-field"><button class="button" id="ensureWorldcraftButton" type="button">Initialiser le World partagé</button><small id="ensureWorldcraftStatus">Aucune écriture directe Firestore : l’opération passe par la Function idempotente.</small></div><div class="stat-field"><button class="button secondary" id="upgradeWorldbuildingButton" type="button">Appliquer Worldbuilding à la carte DEV</button><small id="upgradeWorldbuildingStatus">Publie d’abord les réglages Worldbuilding, puis applique leur version aux 25 Régions existantes sans toucher aux Camps ni aux stocks.</small></div></div></details>`,
     configCard("Biomasse", "lisiere", biomass, ["biomass"], { open: true, meta: "Épuisement, rendement, récupération, Revigorer et Refuges P'TIBUG" }),
     configCard("Durées de mission", "lisiere", durations, ["durations"], { meta: "Durées et coût de vitalité" }),
     configCard("Intensités", "lisiere", intensities, ["intensities"], { meta: "Gains, fatigue et risque" }),
@@ -1824,6 +1827,19 @@ function renderLisiereEditor() {
       status.textContent = `World prêt : ${result.data.worldId} · carte ${result.data.worldMapId}.`;
     } catch (error) {
       status.textContent = `Initialisation indisponible : ${error.message || error}`;
+    }
+  });
+  document.getElementById("upgradeWorldbuildingButton")?.addEventListener("click", async () => {
+    const status = document.getElementById("upgradeWorldbuildingStatus");
+    if (!auth.currentUser || !status) return;
+    status.textContent = "Application de la version Worldbuilding…";
+    try {
+      const result = await httpsCallable(functions, "upgradeWorldcraftWorldbuilding")({
+        operationId: `worldbuilding-${Date.now()}`,
+      });
+      status.textContent = `Worldbuilding ${result.data.worldbuildingVersion} appliqué à ${result.data.upgradedRegions} Régions${result.data.warnings?.length ? ` · ${result.data.warnings.length} avertissement(s)` : ""}.`;
+    } catch (error) {
+      status.textContent = `Application indisponible : ${error.message || error}`;
     }
   });
 }

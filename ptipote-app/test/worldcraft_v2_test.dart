@@ -10,8 +10,10 @@ void main() {
         hasLength(25));
     expect(first.regions.map((region) => region.id),
         second.regions.map((region) => region.id));
-    expect(first.regions.every((region) => region.biomeIds.length == 5), isTrue);
-    expect(first.regions.every((region) => !region.toMap().containsKey('ownerId')),
+    expect(
+        first.regions.every((region) => region.biomeIds.length == 5), isTrue);
+    expect(
+        first.regions.every((region) => !region.toMap().containsKey('ownerId')),
         isTrue);
   });
 
@@ -23,12 +25,14 @@ void main() {
     expect(hubs.single.profile, WorldcraftRegionProfile.highRefuge);
   });
 
-  test('orthogonal connections are stable and do not create diagonal links', () {
+  test('orthogonal connections are stable and do not create diagonal links',
+      () {
     final seed = createWorldcraftPrototypeSeed();
     expect(seed.connections, hasLength(40));
     final ids = seed.connections.map((connection) => connection.id).toSet();
     expect(ids, hasLength(40));
-    final c3 = seed.regions.singleWhere((region) => region.displayCoordinate == 'C3');
+    final c3 =
+        seed.regions.singleWhere((region) => region.displayCoordinate == 'C3');
     expect(c3.connectionIds, hasLength(4));
   });
 
@@ -36,6 +40,17 @@ void main() {
     for (final profile in WorldcraftRegionProfile.values) {
       expect(worldcraftBiomeComposition(profile), hasLength(5));
     }
+  });
+
+  test('Worldbuilding keeps the five canonical internal Biome positions', () {
+    expect(worldbuildingV2Version, 'WORLDBUILDING_0_1');
+    expect(worldcraftBiomeInternalPositions, <String>[
+      'b1',
+      'a1',
+      'a2',
+      'a3',
+      'b3',
+    ]);
   });
 
   test('the macro resolver is lazy, timestamp based and deterministic', () {
@@ -54,18 +69,26 @@ void main() {
 
   test('expired traces are never visible', () {
     final now = DateTime.utc(2026, 1, 2);
-    expect(isWorldcraftTraceVisible(<String, dynamic>{
-      'expiresAt': now.add(const Duration(hours: 1)).millisecondsSinceEpoch,
-    }, now), isTrue);
-    expect(isWorldcraftTraceVisible(<String, dynamic>{
-      'expiresAt': now.subtract(const Duration(seconds: 1)).millisecondsSinceEpoch,
-    }, now), isFalse);
+    expect(
+        isWorldcraftTraceVisible(<String, dynamic>{
+          'expiresAt': now.add(const Duration(hours: 1)).millisecondsSinceEpoch,
+        }, now),
+        isTrue);
+    expect(
+        isWorldcraftTraceVisible(<String, dynamic>{
+          'expiresAt':
+              now.subtract(const Duration(seconds: 1)).millisecondsSinceEpoch,
+        }, now),
+        isFalse);
   });
 
   test('one shared weather cell has geographic local projections', () {
-    expect(worldcraftWeatherProjection(weatherType: 'rain', biomeType: 'mangrove'),
+    expect(
+        worldcraftWeatherProjection(weatherType: 'rain', biomeType: 'mangrove'),
         'forte_pluie');
-    expect(worldcraftWeatherProjection(weatherType: 'rain', biomeType: 'semi_desert'),
+    expect(
+        worldcraftWeatherProjection(
+            weatherType: 'rain', biomeType: 'semi_desert'),
         'pluie_faible');
   });
 }
