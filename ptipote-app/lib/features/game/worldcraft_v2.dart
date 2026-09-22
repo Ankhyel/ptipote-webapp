@@ -260,6 +260,33 @@ bool isWorldcraftTraceVisible(Map<String, dynamic> trace, DateTime now) =>
     DateTime.fromMillisecondsSinceEpoch((trace['expiresAt'] as num).toInt())
         .isAfter(now);
 
+/// Indicative onboarding helper only. It never changes the shared World and
+/// will later be consumed by Walker destination UI rather than direct travel.
+List<Map<String, dynamic>> recommendWorldcraftRegionsForQuestionnaire({
+  required Iterable<Map<String, dynamic>> regions,
+  required String questionnaireProfile,
+}) {
+  final priorities = switch (questionnaireProfile) {
+    'LITTORAUX_ARCHIPELS' => const <String>['coastal', 'mixed'],
+    'HAUTES_TERRES' => const <String>['highRefuge', 'transition'],
+    'PLAINES_SECHES' => const <String>['dry', 'mixed'],
+    'BASSES_EAUX' => const <String>['coastal', 'transition'],
+    _ => const <String>['mixed', 'transition', 'coastal', 'highRefuge', 'dry'],
+  };
+  final ordered = regions.toList(growable: false)
+    ..sort((left, right) {
+      final leftRank = priorities.indexOf('${left['profile']}');
+      final rightRank = priorities.indexOf('${right['profile']}');
+      final normalizedLeft = leftRank < 0 ? priorities.length : leftRank;
+      final normalizedRight = rightRank < 0 ? priorities.length : rightRank;
+      return normalizedLeft != normalizedRight
+          ? normalizedLeft.compareTo(normalizedRight)
+          : '${left['displayCoordinate']}'
+              .compareTo('${right['displayCoordinate']}');
+    });
+  return ordered;
+}
+
 /// A regional WeatherCell stays shared; this only gives the local Biome its
 /// geographic presentation. It intentionally does not apply ecology formulas.
 String worldcraftWeatherProjection({

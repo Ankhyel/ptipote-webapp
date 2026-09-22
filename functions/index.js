@@ -323,6 +323,24 @@ function worldbuildingBiomeMetadata({regionId, biomeType, position, definition, 
   };
 }
 
+// Region documents carry a compact read model for the 5×5 Debug map. The
+// detailed Biome documents remain the authority for gameplay and are only read
+// when a player enters one Region.
+function worldbuildingBiomeSummary({regionId, biomeId, biomeType, position, definition, version}) {
+  const metadata = worldbuildingBiomeMetadata({
+    regionId, biomeType, position, definition, version,
+  });
+  return {
+    id: biomeId,
+    biomeType,
+    internalPosition: position,
+    seed: metadata.seed,
+    environmentalTags: metadata.environmentalTags,
+    groundSet: metadata.visualProfile.groundSet || null,
+    parcelGenerationProfile: definition.parcelGenerationProfile || null,
+  };
+}
+
 exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
   requireWorldcraftAuth(request);
   const db = admin.firestore();
@@ -384,6 +402,11 @@ exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
         const composed = composedByCoordinate.get(coordinate);
         const profile = composed.profile;
         const biomeIds = Array.from({length: 5}, (_, index) => `${regionId}-biome-${index + 1}`);
+        const biomePlans = worldbuildingMap.config.internalPositions.map((position, index) => {
+          const biomeType = composed.biomeTypesByPosition[position];
+          const definition = worldbuildingMap.config.biomes[biomeType];
+          return {biomeId: biomeIds[index], biomeType, position, definition};
+        });
         transaction.set(db.collection("regions").doc(regionId), {
           id: regionId,
           worldId: WORLD_ID,
@@ -399,6 +422,14 @@ exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
           visualTags: composed.visualTags,
           generationSeedOffset: composed.generationSeedOffset,
           biomeIds,
+          biomeSummaries: biomePlans.map((plan) => worldbuildingBiomeSummary({
+            regionId,
+            biomeId: plan.biomeId,
+            biomeType: plan.biomeType,
+            position: plan.position,
+            definition: plan.definition,
+            version: worldbuildingMap.config.worldbuildingVersion,
+          })),
           connectionIds: connectionIds.get(regionId),
           hubId: coordinate === "C3" ? "hub-c3" : null,
           campId: null,
@@ -411,17 +442,14 @@ exports.ensureWorldcraftWorld = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
           simulationVersion: WORLDCRAFT_VERSION,
         });
         transaction.set(db.collection("regionMacroStates").doc(regionId), worldcraftMacro(regionId, now));
-        worldbuildingMap.config.internalPositions.forEach((position, index) => {
-          const biomeId = biomeIds[index];
-          const biomeType = composed.biomeTypesByPosition[position];
-          const definition = worldbuildingMap.config.biomes[biomeType];
-          transaction.set(db.collection("biomeSharedStates").doc(biomeId),
-            biomeSharedState(regionId, biomeId, biomeType, now,
+        biomePlans.forEach((plan) => {
+          transaction.set(db.collection("biomeSharedStates").doc(plan.biomeId),
+            biomeSharedState(regionId, plan.biomeId, plan.biomeType, now,
               worldbuildingBiomeMetadata({
                 regionId,
-                biomeType,
-                position,
-                definition,
+                biomeType: plan.biomeType,
+                position: plan.position,
+                definition: plan.definition,
                 version: worldbuildingMap.config.worldbuildingVersion,
               })));
         });
@@ -495,25 +523,40 @@ exports.upgradeWorldcraftWorldbuilding = onCall(WORLDCRAFT_CALLABLE_OPTIONS, asy
       if (biomeIds.length !== built.config.internalPositions.length) {
         throw new HttpsError("failed-precondition", `Biomes invalides pour ${composed.coordinate}.`);
       }
+      const biomePlans = built.config.internalPositions.map((position, index) => {
+        const biomeType = composed.biomeTypesByPosition[position];
+        return {
+          biomeId: biomeIds[index],
+          biomeType,
+          position,
+          definition: built.config.biomes[biomeType],
+        };
+      });
       transaction.set(regionRef, {
         profile: composed.profile,
         primaryInfluence: composed.primaryInfluence,
         secondaryInfluences: composed.secondaryInfluences,
         visualTags: composed.visualTags,
         generationSeedOffset: composed.generationSeedOffset,
+        biomeSummaries: biomePlans.map((plan) => worldbuildingBiomeSummary({
+          regionId,
+          biomeId: plan.biomeId,
+          biomeType: plan.biomeType,
+          position: plan.position,
+          definition: plan.definition,
+          version: built.config.worldbuildingVersion,
+        })),
         worldbuildingVersion: built.config.worldbuildingVersion,
         worldbuildingUpdatedAt: now,
       }, {merge: true});
-      built.config.internalPositions.forEach((position, index) => {
-        const biomeType = composed.biomeTypesByPosition[position];
-        const definition = built.config.biomes[biomeType];
-        transaction.set(db.collection("biomeSharedStates").doc(biomeIds[index]), {
-          biomeType,
+      biomePlans.forEach((plan) => {
+        transaction.set(db.collection("biomeSharedStates").doc(plan.biomeId), {
+          biomeType: plan.biomeType,
           ...worldbuildingBiomeMetadata({
             regionId,
-            biomeType,
-            position,
-            definition,
+            biomeType: plan.biomeType,
+            position: plan.position,
+            definition: plan.definition,
             version: built.config.worldbuildingVersion,
           }),
           lastWorldbuildingUpdatedAt: now,

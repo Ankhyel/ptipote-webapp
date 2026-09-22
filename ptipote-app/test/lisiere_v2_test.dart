@@ -2,6 +2,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ptipote_app/features/game/lisiere_v2.dart';
 
 void main() {
+  test('les nœuds de Lisière utilisent le profil visuel du Biome', () {
+    expect(
+      lisiereBiomeNodeVisual(
+        visualProfile: const <String, dynamic>{'groundSet': 'shore'},
+        kind: LisiereResourceKind.organic,
+        seed: 0,
+      ),
+      '🪸',
+    );
+    expect(
+      lisiereBiomeNodeVisual(
+        visualProfile: const <String, dynamic>{'groundSet': 'sand'},
+        kind: LisiereResourceKind.mineral,
+        seed: 1,
+      ),
+      '⛏️',
+    );
+  });
+
   test('a V2 biome graph has 6 to 9 connected, stable parcels', () {
     final first = createBiomeParcelGraph(biomeId: 'biome-1', seed: 1234);
     final second = createBiomeParcelGraph(biomeId: 'biome-1', seed: 1234);

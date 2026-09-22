@@ -47,6 +47,11 @@ async function main() {
   assert.deepEqual(worldbuildingReplay, worldbuilding, "Worldbuilding est idempotent");
   const upgradedBiome = await db.collection("biomeSharedStates").doc("region-c3-biome-1").get();
   assert.ok(upgradedBiome.data().visualProfile, "le profil visuel est persistant");
+  const upgradedRegion = await db.collection("regions").doc("region-c3").get();
+  assert.equal(upgradedRegion.data().biomeSummaries.length, 5,
+    "la Région fournit son résumé léger de cinq Biomes");
+  assert.ok(upgradedRegion.data().biomeSummaries.every((biome) => biome.seed),
+    "les seeds de Biome sont visibles sans charger les états détaillés");
 
   const creates = await Promise.allSettled([
     callable(first.idToken, "createCampInRegion", {operationId: "emulator-camp-a-001", regionId: "region-a1"}),

@@ -91,4 +91,19 @@ void main() {
             weatherType: 'rain', biomeType: 'semi_desert'),
         'pluie_faible');
   });
+
+  test('le questionnaire recommande sans posséder ni modifier les Régions', () {
+    final regions = <Map<String, dynamic>>[
+      <String, dynamic>{'displayCoordinate': 'C2', 'profile': 'mixed'},
+      <String, dynamic>{'displayCoordinate': 'A1', 'profile': 'coastal'},
+      <String, dynamic>{'displayCoordinate': 'B2', 'profile': 'coastal'},
+    ];
+    final recommended = recommendWorldcraftRegionsForQuestionnaire(
+      regions: regions,
+      questionnaireProfile: 'LITTORAUX_ARCHIPELS',
+    );
+    expect(recommended.first['displayCoordinate'], 'A1');
+    expect(recommended[1]['displayCoordinate'], 'B2');
+    expect(recommended.last['displayCoordinate'], 'C2');
+  });
 }

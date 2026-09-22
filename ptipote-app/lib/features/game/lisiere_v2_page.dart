@@ -111,6 +111,13 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
           if (biome['seed'] is num)
             '${biome['id']}': (biome['seed'] as num).toInt(),
       },
+      biomeVisualProfiles: <String, Map<String, dynamic>>{
+        for (final biome in biomes)
+          if (biome['visualProfile'] is Map)
+            '${biome['id']}': Map<String, dynamic>.from(
+              biome['visualProfile'] as Map,
+            ),
+      },
     );
     if (selectedWorldcraft is Map) {
       snapshot = await _lisiere.syncSharedBiomeDanger(<String, int>{
@@ -472,7 +479,7 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
               '${graph.parcels.length} parcelles · déplacements accompagnés instantanés',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
-          _WorldbuildingParcelScene(
+          WorldbuildingParcelScene(
             biome: selectedBiome,
             nodes: sceneNodes,
             ptipotes: scenePtipotes,
@@ -1131,8 +1138,9 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
 /// persisted parcel and Biome seeds elsewhere; this widget only gives the
 /// player a readable local scene and never claims it is a synchronized MMO
 /// terrain renderer.
-class _WorldbuildingParcelScene extends StatelessWidget {
-  const _WorldbuildingParcelScene({
+class WorldbuildingParcelScene extends StatelessWidget {
+  const WorldbuildingParcelScene({
+    super.key,
     required this.biome,
     required this.nodes,
     required this.ptipotes,
@@ -1213,6 +1221,32 @@ class _WorldbuildingParcelScene extends StatelessWidget {
                           ])),
                     ),
                   )),
+              Positioned(
+                right: constraints.maxWidth * .17,
+                top: constraints.maxHeight * .33,
+                child: Text(_obstacle,
+                    style: const TextStyle(fontSize: 34, shadows: <Shadow>[
+                      Shadow(
+                          color: Colors.black45,
+                          offset: Offset(2, 3),
+                          blurRadius: 2),
+                    ])),
+              ),
+              if (active)
+                Positioned(
+                  right: constraints.maxWidth * .22,
+                  bottom: constraints.maxHeight * .12,
+                  child: const Text('⌖',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 30,
+                          shadows: <Shadow>[
+                            Shadow(
+                                color: Colors.black45,
+                                offset: Offset(2, 3),
+                                blurRadius: 2),
+                          ])),
+                ),
               ...ptipotes.indexed.map((entry) => Positioned(
                     left: constraints.maxWidth * (.36 + entry.$1 * .13),
                     top: constraints.maxHeight * (.56 + entry.$1 * .05),
@@ -1250,6 +1284,14 @@ class _WorldbuildingParcelScene extends StatelessWidget {
       ),
     );
   }
+
+  String get _obstacle => switch (
+          '${biome?['visualProfile'] is Map ? (biome!['visualProfile'] as Map)['groundSet'] : ''}') {
+        'shore' || 'wet_roots' || 'marsh' => '🌳',
+        'sand' => '🪨',
+        'highland' || 'hillside' => '⛰️',
+        _ => '🌲',
+      };
 }
 
 class _ParcelGroundPainter extends CustomPainter {

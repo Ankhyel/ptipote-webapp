@@ -67,6 +67,15 @@ const DEFAULT_WORLDBUILDING_CONFIG = Object.freeze({
     [501, 502, 503, 504, 505],
   ],
   profilePools: DEFAULT_PROFILE_POOLS,
+  selectionWeights: {
+    ownProfile: 8,
+    ownNear: 3,
+    neighborProfile: 2,
+    neighborNear: 1,
+  },
+  parcelGenerationProfiles: Object.fromEntries(
+    Object.entries(DEFAULT_BIOMES).map(([id, biome]) => [id, biome.ecologyProfileId]),
+  ),
   biomes: DEFAULT_BIOMES,
   continuity: {
     minimumCompatiblePairs: 1,
@@ -98,6 +107,11 @@ function mergeBiomeDefinitions(base, override) {
   ]));
 }
 
+function boundedWeight(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(100, number)) : fallback;
+}
+
 function runtimeConfig(source) {
   const candidate = source && typeof source === "object" && !Array.isArray(source) ? source : {};
   const matrix = validMatrix(candidate.regionProfileMatrix)
@@ -107,6 +121,15 @@ function runtimeConfig(source) {
     ? candidate.generationSeedOffsets
     : DEFAULT_WORLDBUILDING_CONFIG.generationSeedOffsets;
   const pools = {...DEFAULT_PROFILE_POOLS, ...(candidate.profilePools || {})};
+  const parcelGenerationProfiles = {
+    ...DEFAULT_WORLDBUILDING_CONFIG.parcelGenerationProfiles,
+    ...(candidate.parcelGenerationProfiles || {}),
+  };
+  const baseBiomes = mergeBiomeDefinitions(DEFAULT_BIOMES, candidate.biomes);
+  const biomes = Object.fromEntries(Object.entries(baseBiomes).map(([id, biome]) => [
+    id,
+    {...biome, parcelGenerationProfile: `${parcelGenerationProfiles[id] || biome.ecologyProfileId || id}`},
+  ]));
   return {
     worldbuildingVersion: typeof candidate.worldbuildingVersion === "string" && candidate.worldbuildingVersion.length > 0
       ? candidate.worldbuildingVersion : DEFAULT_WORLDBUILDING_CONFIG.worldbuildingVersion,
@@ -116,7 +139,11 @@ function runtimeConfig(source) {
     regionProfileMatrix: matrix,
     generationSeedOffsets: offsets,
     profilePools: pools,
-    biomes: mergeBiomeDefinitions(DEFAULT_BIOMES, candidate.biomes),
+    selectionWeights: Object.fromEntries(Object.entries(
+      DEFAULT_WORLDBUILDING_CONFIG.selectionWeights,
+    ).map(([key, fallback]) => [key, boundedWeight(candidate.selectionWeights?.[key], fallback)])),
+    parcelGenerationProfiles,
+    biomes,
     continuity: {...DEFAULT_WORLDBUILDING_CONFIG.continuity, ...(candidate.continuity || {})},
   };
 }
@@ -132,16 +159,18 @@ function neighborProfiles(config, x, y) {
 function rankedCandidates(config, profile, neighbors, mode, key) {
   const scores = new Map();
   const add = (values, weight) => (values || []).forEach((id) => {
-    if (!config.biomes[id]) return;
+    const definition = config.biomes[id];
+    if (!definition || (Array.isArray(definition.compatibleRegionProfiles) &&
+      !definition.compatibleRegionProfiles.includes(profile))) return;
     scores.set(id, (scores.get(id) || 0) + weight);
   });
   const main = config.profilePools[profile] || DEFAULT_PROFILE_POOLS.mixed;
-  add(main[mode], 8);
-  add(main.near, mode === "near" ? 3 : 1);
+  add(main[mode], config.selectionWeights.ownProfile);
+  add(main.near, mode === "near" ? config.selectionWeights.ownNear : config.selectionWeights.neighborNear);
   for (const neighbor of neighbors) {
     const pool = config.profilePools[neighbor] || DEFAULT_PROFILE_POOLS.mixed;
-    add(pool[mode], 2);
-    add(pool.near, 1);
+    add(pool[mode], config.selectionWeights.neighborProfile);
+    add(pool.near, config.selectionWeights.neighborNear);
   }
   return [...scores.keys()].sort((left, right) =>
     (scores.get(right) - scores.get(left)) ||

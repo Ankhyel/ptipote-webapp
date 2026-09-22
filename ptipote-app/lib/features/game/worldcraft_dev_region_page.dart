@@ -115,15 +115,28 @@ class _WorldcraftDevRegionPageState extends State<WorldcraftDevRegionPage> {
                   ? 'Camp présent : consultation uniquement.'
                   : 'Région libre : implantation de test disponible.'),
               const SizedBox(height: 12),
+              Text(
+                  'Influence principale : ${region['primaryInfluence'] ?? region['profile']}'),
+              Text('Influences voisines : '
+                  '${(region['secondaryInfluences'] as List? ?? const <dynamic>[]).join(' · ')}'),
+              Text('Seed Région : ${region['seed'] ?? '—'} · '
+                  'offset : ${region['generationSeedOffset'] ?? '—'}'),
+              Text(
+                  'Tags : ${(region['visualTags'] as List? ?? const <dynamic>[]).join(' · ')}'),
+              Text(
+                  'Voisins : ${(region['neighborCoordinates'] as List? ?? const <dynamic>[]).join(' · ')}'),
+              const Divider(),
               ...biomes.map((biome) => ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.landscape_outlined),
                     title: Text('${biome['internalPosition'] ?? 'Biome'} · '
                         '${biome['biomeType'] ?? 'inconnu'}'),
-                    subtitle: Text((biome['environmentalTags'] as List? ??
-                            const <dynamic>[])
-                        .join(' · ')),
+                    subtitle: Text(
+                      'seed ${biome['seed'] ?? '—'} · '
+                      '${biome['groundSet'] ?? 'sol inconnu'}\n'
+                      '${(biome['environmentalTags'] as List? ?? const <dynamic>[]).join(' · ')}',
+                    ),
                   )),
               if (!occupied)
                 Align(

@@ -35,14 +35,69 @@ class WorldcraftV2Service {
     return regions;
   }
 
-  /// Small DEV-map projection. Biomes remain individual shared documents;
-  /// this convenience method only assembles the 25-region inspector view.
+  /// Small DEV-map projection. Its `biomeSummaries` are embedded in each
+  /// Region at generation time, so opening the 5×5 map never loads 125
+  /// detailed Biome documents.
   Future<List<Map<String, dynamic>>> loadWorldMapSummary() async {
     final regions = await loadRegions();
-    return Future.wait(regions.map((region) async => <String, dynamic>{
-          ...region,
-          'biomes': await loadBiomes('${region['id']}'),
-        }));
+    final byConnection = <String, List<Map<String, dynamic>>>{};
+    for (final region in regions) {
+      for (final connectionId
+          in List<String>.from(region['connectionIds'] as List? ?? const [])) {
+        final connectedRegions = byConnection.putIfAbsent(
+            connectionId, () => <Map<String, dynamic>>[]);
+        connectedRegions.add(region);
+      }
+    }
+    return regions.map((region) {
+      final neighbors = <Map<String, dynamic>>[];
+      for (final connectionId
+          in List<String>.from(region['connectionIds'] as List? ?? const [])) {
+        neighbors.addAll(byConnection[connectionId] ?? const []);
+      }
+      neighbors.removeWhere((neighbor) => neighbor['id'] == region['id']);
+      final neighborCoordinates = neighbors
+          .map((neighbor) => '${neighbor['displayCoordinate']}')
+          .toSet()
+          .toList()
+        ..sort();
+      return <String, dynamic>{
+        ...region,
+        'biomes': (region['biomeSummaries'] as List? ?? const <dynamic>[])
+            .whereType<Map>()
+            .map((biome) => Map<String, dynamic>.from(biome))
+            .toList(growable: false),
+        'neighborCoordinates': neighborCoordinates,
+      };
+    }).toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> getWorldMapSummary() =>
+      loadWorldMapSummary();
+
+  Future<Map<String, dynamic>?> getRegionSummary(String regionId) async {
+    final region = await loadRegion(regionId);
+    if (region == null) return null;
+    return <String, dynamic>{
+      ...region,
+      'biomes': (region['biomeSummaries'] as List? ?? const <dynamic>[])
+          .whereType<Map>()
+          .map((biome) => Map<String, dynamic>.from(biome))
+          .toList(growable: false),
+    };
+  }
+
+  Future<Map<String, dynamic>?> getBiomeSummary(
+    String regionId,
+    String biomeId,
+  ) async {
+    final region = await getRegionSummary(regionId);
+    if (region == null) return null;
+    return (region['biomes'] as List)
+        .whereType<Map>()
+        .map((biome) => Map<String, dynamic>.from(biome))
+        .where((biome) => biome['id'] == biomeId)
+        .firstOrNull;
   }
 
   Future<Map<String, dynamic>?> loadRegion(String regionId) async =>

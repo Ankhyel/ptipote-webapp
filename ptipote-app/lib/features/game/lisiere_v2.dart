@@ -1733,11 +1733,15 @@ LisiereV2Snapshot createLisiereV2Snapshot({
   required DateTime createdAt,
   Map<String, List<String>> biomeConnections = const <String, List<String>>{},
   Map<String, int> biomeSeeds = const <String, int>{},
+  Map<String, Map<String, dynamic>> biomeVisualProfiles =
+      const <String, Map<String, dynamic>>{},
 }) {
   final graphs = <String, BiomeParcelGraph>{};
   final nodes = <String, LisiereResourceNode>{};
   final dangers = <String, BiomeDangerState>{};
   for (final biomeId in biomeIds) {
+    final visualProfile =
+        biomeVisualProfiles[biomeId] ?? const <String, dynamic>{};
     final graph = createBiomeParcelGraph(
       biomeId: biomeId,
       seed: biomeSeeds[biomeId] ?? (seed ^ lisiereStableSeed(biomeId)),
@@ -1756,7 +1760,11 @@ LisiereV2Snapshot createLisiereV2Snapshot({
         parcelId: parcel.id,
         maxResistance: (4 + (nodeSeed & 3)).toDouble(),
         standardYield: 2 + (nodeSeed % 3),
-        visualVariant: const <String>['🌿', '🍄', '🌾'][nodeSeed.abs() % 3],
+        visualVariant: lisiereBiomeNodeVisual(
+          visualProfile: visualProfile,
+          kind: LisiereResourceKind.organic,
+          seed: nodeSeed,
+        ),
         regenerationReference: createdAt,
       );
       nodes['${parcel.id}-mineral'] = LisiereResourceNode.mineral(
@@ -1765,7 +1773,11 @@ LisiereV2Snapshot createLisiereV2Snapshot({
         maxResistance: (6 + (nodeSeed & 3)).toDouble(),
         standardYield: 2 + (nodeSeed % 4),
         remainingLayers: 1 + (nodeSeed.abs() % 3),
-        visualVariant: const <String>['🪨', '⛏️', '💎'][nodeSeed.abs() % 3],
+        visualVariant: lisiereBiomeNodeVisual(
+          visualProfile: visualProfile,
+          kind: LisiereResourceKind.mineral,
+          seed: nodeSeed,
+        ),
       );
       nodes['${parcel.id}-waste'] = LisiereResourceNode.waste(
         id: '${parcel.id}-waste',
@@ -1773,7 +1785,11 @@ LisiereV2Snapshot createLisiereV2Snapshot({
         maxResistance: (3 + (nodeSeed & 1)).toDouble(),
         standardYield: 1 + (nodeSeed.abs() % 2),
         remainingLayers: 1 + (nodeSeed.abs() % 2),
-        visualVariant: const <String>['♻️', '🧰', '🪵'][nodeSeed.abs() % 3],
+        visualVariant: lisiereBiomeNodeVisual(
+          visualProfile: visualProfile,
+          kind: LisiereResourceKind.waste,
+          seed: nodeSeed,
+        ),
       );
     }
   }
@@ -1791,6 +1807,36 @@ LisiereV2Snapshot createLisiereV2Snapshot({
     biomeConnections: biomeConnections,
     updatedAt: createdAt,
   );
+}
+
+/// The visual profile is data-driven; emoji remain the prototype art bank
+/// until final sprites arrive. This does not change resource economics.
+String lisiereBiomeNodeVisual({
+  required Map<String, dynamic> visualProfile,
+  required LisiereResourceKind kind,
+  required int seed,
+}) {
+  final ground = '${visualProfile['groundSet'] ?? ''}';
+  final variants = switch (kind) {
+    LisiereResourceKind.organic => switch (ground) {
+        'shore' => const <String>['🪸', '🌿', '🐚'],
+        'wet_roots' || 'marsh' => const <String>['🌱', '🪷', '🍄'],
+        'sand' || 'dry_grass' => const <String>['🌵', '🌾', '🪵'],
+        'highland' || 'hillside' => const <String>['🌿', '🍄', '🌲'],
+        _ => const <String>['🌿', '🍄', '🌾'],
+      },
+    LisiereResourceKind.mineral => switch (ground) {
+        'shore' => const <String>['🪨', '🐚', '💎'],
+        'sand' => const <String>['🪨', '⛏️', '🟤'],
+        'highland' || 'hillside' => const <String>['⛰️', '🪨', '💎'],
+        _ => const <String>['🪨', '⛏️', '💎'],
+      },
+    LisiereResourceKind.waste => switch (ground) {
+        'shore' || 'wet_roots' || 'marsh' => const <String>['🧴', '🪵', '♻️'],
+        _ => const <String>['♻️', '🧰', '🪵'],
+      },
+  };
+  return variants[seed.abs() % variants.length];
 }
 
 int lisiereStableSeed(String value) {

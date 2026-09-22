@@ -38,6 +38,8 @@ class LisiereV2Service {
     required DateTime createdAt,
     Map<String, List<String>> biomeConnections = const <String, List<String>>{},
     Map<String, int> biomeSeeds = const <String, int>{},
+    Map<String, Map<String, dynamic>> biomeVisualProfiles =
+        const <String, Map<String, dynamic>>{},
   }) async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -69,6 +71,7 @@ class LisiereV2Service {
         createdAt: createdAt,
         biomeConnections: biomeConnections,
         biomeSeeds: biomeSeeds,
+        biomeVisualProfiles: biomeVisualProfiles,
       );
       transaction.set(reference, <String, dynamic>{
         ...snapshot.toMap(),

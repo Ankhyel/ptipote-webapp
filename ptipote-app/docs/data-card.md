@@ -381,6 +381,19 @@ L’Eau n’est pas une ressource globale du Camp.
   présents dans une Région ou lorsqu’un même type représente plus de 50 % des
   125 Biomes de la carte. Il signale sans bloquer la génération les continuités
   géographiques à revoir.
+- Chaque Région conserve également un résumé léger de ses cinq Biomes (type,
+  position interne, seed, tags, sol et profil de génération). La carte DEV
+  charge ces 25 résumés, tandis que la Lisière ne charge les cinq états
+  détaillés que pour la Région visitée. L’inspecteur DEV affiche influences,
+  tags, seeds, offsets et voisins.
+- Les poids de composition (profil local, proximité et influences voisines),
+  compatibilités et profils de génération de Parcelles sont externalisés dans
+  `worldbuildingV2`. Le questionnaire peut classer des Régions recommandées
+  sans jamais modifier la géographie mondiale.
+- Une fixture Flutter mobile 390 × 844 vérifie la scène Lisière 2D 3/4 :
+  nœuds, obstacle, destination et porteur P’TIBUG restent lisibles. Les
+  nœuds organiques, minéraux et déchets varient selon le profil visuel du
+  Biome ; les emojis restent la banque d’art provisoire.
 - La Lisière utilise la seed persistante de chaque Biome pour ses graphes de
   Parcelles. Son aperçu est un rendu local 2D à profondeur 3/4 : sol,
   accessoires, nœuds et êtres sont une projection lisible, non un terrain
