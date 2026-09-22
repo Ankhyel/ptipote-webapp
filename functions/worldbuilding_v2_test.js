@@ -21,5 +21,7 @@ for (const region of first.regions) {
 assert.strictEqual(first.regions.find((region) => region.coordinate === "A1").profile, "highRefuge");
 assert.strictEqual(first.regions.find((region) => region.coordinate === "E1").profile, "dry");
 assert.strictEqual(first.regions.find((region) => region.coordinate === "A5").profile, "coastal");
+assert.ok(!first.warnings.some((warning) => warning.type === "overrepresentation"),
+  "Aucun Biome ne dépasse le seuil de représentation configuré.");
 
 console.log("Worldbuilding V2: carte, diversité, matrice et déterminisme validés.");

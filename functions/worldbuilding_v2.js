@@ -70,6 +70,7 @@ const DEFAULT_WORLDBUILDING_CONFIG = Object.freeze({
   biomes: DEFAULT_BIOMES,
   continuity: {
     minimumCompatiblePairs: 1,
+    maximumBiomeRepresentationShare: 0.5,
     incompatiblePairs: [["mangrove", "haut_refuge"], ["littoral", "haut_refuge"], ["mangrove", "semi_desert"]],
   },
 });
@@ -219,6 +220,7 @@ function buildWorldbuildingMap(configSource, worldSeed) {
   }
   const byCoordinate = new Map(regions.map((region) => [region.coordinate, region]));
   const warnings = [];
+  const representation = new Map();
   for (const region of regions) {
     const x = region.coordinate.charCodeAt(0) - "A".charCodeAt(0);
     const y = Number(region.coordinate.slice(1)) - 1;
@@ -231,6 +233,17 @@ function buildWorldbuildingMap(configSource, worldSeed) {
     }
     const distinct = new Set(Object.values(region.biomeTypesByPosition)).size;
     if (distinct < config.minimumDistinctBiomes) warnings.push({type: "variety", region: region.coordinate, distinct});
+    for (const biomeType of Object.values(region.biomeTypesByPosition)) {
+      representation.set(biomeType, (representation.get(biomeType) || 0) + 1);
+    }
+  }
+  const totalBiomes = regions.length * config.internalPositions.length;
+  const maximumShare = Math.max(0, Math.min(1,
+    Number(config.continuity.maximumBiomeRepresentationShare) || 0.5));
+  for (const [biomeType, count] of representation) {
+    if (count / totalBiomes > maximumShare) {
+      warnings.push({type: "overrepresentation", biomeType, count, totalBiomes, maximumShare});
+    }
   }
   return {config, regions, warnings};
 }
