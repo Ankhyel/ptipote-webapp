@@ -115,14 +115,17 @@ function mergeBiomeDefinitions(base, override) {
 // however, prevents future asset packs from having to infer identity from a
 // ground-set string.  Neighbour compatibility is declarative data used by the
 // non-blocking continuity audit, not a second terrain generator.
-function enrichBiomeDefinitions(biomes) {
+function enrichBiomeDefinitions(biomes, visualProfileIds, neighborCompatibility) {
   return Object.fromEntries(Object.entries(biomes).map(([id, biome]) => [id, {
     ...biome,
-    visualProfileId: biome.visualProfileId || `biome-visual-${id}-v1`,
+    visualProfileId: visualProfileIds[id] || biome.visualProfileId ||
+      `biome-visual-${id}-v1`,
     parcelGenerationProfileId: biome.parcelGenerationProfileId ||
       biome.parcelGenerationProfile || biome.ecologyProfileId || id,
-    neighborCompatibility: Array.isArray(biome.neighborCompatibility)
-      ? biome.neighborCompatibility : Object.keys(biomes),
+    neighborCompatibility: Array.isArray(neighborCompatibility[id])
+      ? neighborCompatibility[id]
+      : Array.isArray(biome.neighborCompatibility)
+        ? biome.neighborCompatibility : Object.keys(biomes),
   }]));
 }
 
@@ -144,6 +147,12 @@ function runtimeConfig(source) {
     ...DEFAULT_WORLDBUILDING_CONFIG.parcelGenerationProfiles,
     ...(candidate.parcelGenerationProfiles || {}),
   };
+  const visualProfileIds = candidate.visualProfileIds &&
+          typeof candidate.visualProfileIds === "object"
+    ? candidate.visualProfileIds : {};
+  const neighborCompatibility = candidate.neighborCompatibility &&
+          typeof candidate.neighborCompatibility === "object"
+    ? candidate.neighborCompatibility : {};
   const baseBiomes = mergeBiomeDefinitions(DEFAULT_BIOMES, candidate.biomes);
   const biomes = enrichBiomeDefinitions(Object.fromEntries(Object.entries(baseBiomes).map(([id, biome]) => [
     id,
@@ -152,7 +161,7 @@ function runtimeConfig(source) {
       parcelGenerationProfile: `${parcelGenerationProfiles[id] || biome.ecologyProfileId || id}`,
       parcelGenerationProfileId: `${parcelGenerationProfiles[id] || biome.ecologyProfileId || id}`,
     },
-  ])));
+  ])), visualProfileIds, neighborCompatibility);
   return {
     worldbuildingVersion: typeof candidate.worldbuildingVersion === "string" && candidate.worldbuildingVersion.length > 0
       ? candidate.worldbuildingVersion : DEFAULT_WORLDBUILDING_CONFIG.worldbuildingVersion,

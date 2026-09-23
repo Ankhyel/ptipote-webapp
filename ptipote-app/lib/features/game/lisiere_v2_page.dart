@@ -481,10 +481,27 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
           const SizedBox(height: 8),
           WorldbuildingParcelScene(
             biome: selectedBiome,
+            parcels: graph.parcels,
             nodes: sceneNodes,
             ptipotes: scenePtipotes,
             ptibugIcons: sceneBugs,
             active: sceneParcelId != null,
+            selectedParcelId: _selectedParcelId,
+            teamParcelId: team?.currentParcelId,
+            onParcelTap: team == null || biomeId == null
+                ? null
+                : (parcel) {
+                    setState(() {
+                      _selectedParcelId = parcel.id;
+                      _selectedParcelIds.add(parcel.id);
+                    });
+                    unawaited(_moveAndEnterBiome(
+                      team: team,
+                      parcelId: parcel.id,
+                      biomeId: biomeId,
+                      bossDroneActive: danger?.bossDroneActive ?? false,
+                    ));
+                  },
             onNodeTapDown:
                 team == null ? null : (node) => _startHarvest(node.id),
             onNodeTapUp: team == null ? null : _stopHarvest,
@@ -1137,6 +1154,81 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
       );
 }
 
+/// Planar collision geometry for the local Lisière projection. It keeps the
+/// scene bounded and routes visual paths around a blocking prop; the persisted
+/// Parcel graph remains authoritative for actual travel.
+class WorldbuildingSceneGeometry {
+  const WorldbuildingSceneGeometry(this.size);
+
+  final Size size;
+
+  static const _anchors = <Offset>[
+    Offset(.18, .64), Offset(.34, .38), Offset(.50, .70),
+    Offset(.68, .45), Offset(.83, .68), Offset(.43, .84),
+    Offset(.68, .82), Offset(.18, .40), Offset(.84, .38),
+  ];
+
+  Rect get bounds => Rect.fromLTRB(
+      size.width * .11, size.height * .20, size.width * .91, size.height * .91);
+  Rect get obstacle => Rect.fromCenter(
+      center: Offset(size.width * .75, size.height * .25),
+      width: size.width * .12, height: size.height * .17);
+
+  Offset parcelAnchor(int ordinal) {
+    final normalized = _anchors[ordinal % _anchors.length];
+    final candidate = Offset(size.width * normalized.dx, size.height * normalized.dy);
+    if (isWalkable(candidate)) return candidate;
+    return Offset(obstacle.left - size.width * .07, obstacle.bottom + size.height * .07);
+  }
+
+  bool isWalkable(Offset point, {double radius = 18}) =>
+      bounds.deflate(radius).contains(point) && !obstacle.inflate(radius).contains(point);
+
+  List<Offset> route(Offset from, Offset to) {
+    final blocked = obstacle.inflate(10);
+    if (!_segmentIntersectsRect(from, to, blocked)) return <Offset>[from, to];
+    final top = <Offset>[from, Offset(blocked.left - 8, blocked.top - 8),
+      Offset(blocked.right + 8, blocked.top - 8), to];
+    final bottom = <Offset>[from, Offset(blocked.left - 8, blocked.bottom + 8),
+      Offset(blocked.right + 8, blocked.bottom + 8), to];
+    final viableTop = _routeIsWalkable(top, blocked);
+    final viableBottom = _routeIsWalkable(bottom, blocked);
+    if (viableTop && (!viableBottom || _routeLength(top) <= _routeLength(bottom))) {
+      return top;
+    }
+    return viableBottom ? bottom : top;
+  }
+
+  bool _routeIsWalkable(List<Offset> points, Rect blocked) =>
+      List<bool>.generate(points.length - 1,
+          (index) => !_segmentIntersectsRect(points[index], points[index + 1], blocked))
+          .every((valid) => valid);
+
+  double _routeLength(List<Offset> points) => List<double>.generate(
+      points.length - 1, (index) => (points[index] - points[index + 1]).distance)
+      .fold(0, (sum, value) => sum + value);
+
+  bool _segmentIntersectsRect(Offset from, Offset to, Rect rect) {
+    if (rect.contains(from) || rect.contains(to)) return true;
+    final corners = <Offset>[rect.topLeft, rect.topRight, rect.bottomRight, rect.bottomLeft];
+    return List<bool>.generate(corners.length, (index) => _segmentsIntersect(
+          from, to, corners[index], corners[(index + 1) % corners.length],
+        )).any((intersects) => intersects);
+  }
+
+  bool _segmentsIntersect(Offset a, Offset b, Offset c, Offset d) {
+    double cross(Offset first, Offset second, Offset point) =>
+        (second.dx - first.dx) * (point.dy - first.dy) -
+        (second.dy - first.dy) * (point.dx - first.dx);
+    final first = cross(a, b, c);
+    final second = cross(a, b, d);
+    final third = cross(c, d, a);
+    final fourth = cross(c, d, b);
+    return ((first > 0 && second < 0) || (first < 0 && second > 0)) &&
+        ((third > 0 && fourth < 0) || (third < 0 && fourth > 0));
+  }
+}
+
 /// A deliberately light 2D / 3⁄4 projection. Positions are generated from
 /// persisted parcel and Biome seeds elsewhere; this widget only gives the
 /// player a readable local scene and never claims it is a synchronized MMO
@@ -1145,19 +1237,27 @@ class WorldbuildingParcelScene extends StatelessWidget {
   const WorldbuildingParcelScene({
     super.key,
     required this.biome,
+    required this.parcels,
     required this.nodes,
     required this.ptipotes,
     required this.ptibugIcons,
     required this.active,
+    this.selectedParcelId,
+    this.teamParcelId,
+    this.onParcelTap,
     this.onNodeTapDown,
     this.onNodeTapUp,
   });
 
   final Map<String, dynamic>? biome;
+  final List<ParcelInstance> parcels;
   final List<LisiereResourceNode> nodes;
   final List<PtipoteV2Profile> ptipotes;
   final List<String> ptibugIcons;
   final bool active;
+  final String? selectedParcelId;
+  final String? teamParcelId;
+  final ValueChanged<ParcelInstance>? onParcelTap;
   final ValueChanged<LisiereResourceNode>? onNodeTapDown;
   final VoidCallback? onNodeTapUp;
 
@@ -1183,11 +1283,27 @@ class WorldbuildingParcelScene extends StatelessWidget {
       child: AspectRatio(
         aspectRatio: 16 / 8.5,
         child: LayoutBuilder(
-          builder: (context, constraints) => Stack(
+          builder: (context, constraints) {
+            final geometry = WorldbuildingSceneGeometry(constraints.biggest);
+            final parcelById = <String, ParcelInstance>{
+              for (final parcel in parcels) parcel.id: parcel,
+            };
+            final teamAnchor = parcelById[teamParcelId] == null
+                ? Offset(constraints.maxWidth * .48, constraints.maxHeight * .61)
+                : geometry.parcelAnchor(parcelById[teamParcelId]!.ordinal);
+            return Stack(
             children: <Widget>[
               Positioned.fill(
                 child: CustomPaint(
                   painter: _ParcelGroundPainter(_ground),
+                ),
+              ),
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _ParcelRoutePainter(
+                    parcels: parcels,
+                    geometry: geometry,
+                  ),
                 ),
               ),
               Positioned(
@@ -1210,6 +1326,45 @@ class WorldbuildingParcelScene extends StatelessWidget {
                   ),
                 ),
               ),
+              ...parcels.map((parcel) {
+                final anchor = geometry.parcelAnchor(parcel.ordinal);
+                final selected = parcel.id == selectedParcelId;
+                final current = parcel.id == teamParcelId;
+                return Positioned(
+                  left: anchor.dx - 22,
+                  top: anchor.dy - 22,
+                  child: Semantics(
+                    button: true,
+                    label: 'Aller à la parcelle ${parcel.ordinal + 1}',
+                    selected: selected,
+                    child: GestureDetector(
+                      key: ValueKey<String>('parcel-marker-${parcel.id}'),
+                      onTap: onParcelTap == null ? null : () => onParcelTap!(parcel),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: current
+                              ? Colors.lightGreen.shade700
+                              : selected
+                                  ? Colors.orange.shade700
+                                  : Colors.black54,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: .9),
+                            width: 2,
+                          ),
+                        ),
+                        child: Text('${parcel.ordinal + 1}',
+                            style: const TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ),
+                );
+              }),
               ...orderedNodes.map((item) => Positioned(
                     left: 32.0 + (item.index % 3) * constraints.maxWidth * .26,
                     top: item.y,
@@ -1244,8 +1399,8 @@ class WorldbuildingParcelScene extends StatelessWidget {
                     ),
                   )),
               Positioned(
-                right: constraints.maxWidth * .17,
-                top: constraints.maxHeight * .33,
+                left: geometry.obstacle.left,
+                top: geometry.obstacle.top,
                 child: Text(_obstacle,
                     style: const TextStyle(fontSize: 34, shadows: <Shadow>[
                       Shadow(
@@ -1270,8 +1425,8 @@ class WorldbuildingParcelScene extends StatelessWidget {
                           ])),
                 ),
               ...ptipotes.indexed.map((entry) => Positioned(
-                    left: constraints.maxWidth * (.36 + entry.$1 * .13),
-                    top: constraints.maxHeight * (.56 + entry.$1 * .05),
+                    left: teamAnchor.dx - 22 + entry.$1 * 10,
+                    top: teamAnchor.dy - 54 + entry.$1 * 5,
                     child: SizedBox(
                       width: 44,
                       height: 52,
@@ -1284,8 +1439,8 @@ class WorldbuildingParcelScene extends StatelessWidget {
                     ),
                   )),
               ...ptibugIcons.indexed.map((entry) => Positioned(
-                    left: constraints.maxWidth * (.61 + entry.$1 * .08),
-                    top: constraints.maxHeight * (.61 + entry.$1 * .05),
+                    left: teamAnchor.dx + 24 + entry.$1 * 9,
+                    top: teamAnchor.dy - 8 + entry.$1 * 5,
                     child: Text(entry.$2,
                         style: const TextStyle(fontSize: 29, shadows: <Shadow>[
                           Shadow(
@@ -1300,8 +1455,15 @@ class WorldbuildingParcelScene extends StatelessWidget {
                 child: Text('projection locale',
                     style: TextStyle(color: Colors.white70, fontSize: 10)),
               ),
+              const Positioned(
+                left: 8,
+                bottom: 6,
+                child: Text('Touchez une pastille pour suivre un chemin',
+                    style: TextStyle(color: Colors.white70, fontSize: 10)),
+              ),
             ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -1314,6 +1476,43 @@ class WorldbuildingParcelScene extends StatelessWidget {
         'highland' || 'hillside' => '⛰️',
         _ => '🌲',
       };
+}
+
+class _ParcelRoutePainter extends CustomPainter {
+  const _ParcelRoutePainter({required this.parcels, required this.geometry});
+
+  final List<ParcelInstance> parcels;
+  final WorldbuildingSceneGeometry geometry;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final byId = <String, ParcelInstance>{
+      for (final parcel in parcels) parcel.id: parcel,
+    };
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: .5)
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke;
+    for (final parcel in parcels) {
+      for (final neighborId in parcel.connectedParcelIds) {
+        final neighbor = byId[neighborId];
+        if (neighbor == null || parcel.id.compareTo(neighbor.id) >= 0) continue;
+        final route = geometry.route(
+          geometry.parcelAnchor(parcel.ordinal),
+          geometry.parcelAnchor(neighbor.ordinal),
+        );
+        final path = Path()..moveTo(route.first.dx, route.first.dy);
+        for (final point in route.skip(1)) {
+          path.lineTo(point.dx, point.dy);
+        }
+        canvas.drawPath(path, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ParcelRoutePainter oldDelegate) =>
+      oldDelegate.parcels != parcels || oldDelegate.geometry.size != geometry.size;
 }
 
 class _ParcelGroundPainter extends CustomPainter {

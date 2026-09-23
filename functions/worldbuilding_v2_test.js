@@ -32,6 +32,10 @@ const dashboardConfig = JSON.parse(fs.readFileSync(
   path.join(__dirname, "../ptipote-dashboard/worldbuilding-v2-config.json"), "utf8"));
 const dashboardMap = buildWorldbuildingMap(dashboardConfig, 250525);
 assert.equal(dashboardMap.config.selectionWeights.ownProfile, 8);
+assert.equal(dashboardMap.config.biomes.mangrove.visualProfileId,
+  "biome-visual-mangrove-v1");
+assert.ok(dashboardMap.config.biomes.mangrove.neighborCompatibility.includes("littoral"),
+  "La compatibilité de voisinage est pilotable depuis le Dashboard.");
 for (const region of dashboardMap.regions) {
   for (const type of Object.values(region.biomeTypesByPosition)) {
     assert.ok(dashboardMap.config.biomes[type].compatibleRegionProfiles.includes(region.profile),

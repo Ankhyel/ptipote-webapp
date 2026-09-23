@@ -6,6 +6,19 @@ import 'package:ptipote_app/features/game/lisiere_v2.dart';
 import 'package:ptipote_app/features/game/lisiere_v2_page.dart';
 
 void main() {
+  test('la géométrie garde les Parcelles dans la scène et détourne un obstacle',
+      () {
+    const size = Size(390, 207);
+    const geometry = WorldbuildingSceneGeometry(size);
+    for (var ordinal = 0; ordinal < 9; ordinal += 1) {
+      expect(geometry.isWalkable(geometry.parcelAnchor(ordinal)), isTrue);
+    }
+    expect(
+      geometry.route(const Offset(110, 52), const Offset(375, 52)).length,
+      greaterThan(2),
+    );
+  });
+
   testWidgets('la fixture Lisière reste lisible sur un écran mobile 390×844',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -13,6 +26,8 @@ void main() {
 
     var harvestStarts = 0;
     var harvestStops = 0;
+    String? selectedParcelId;
+    final graph = createBiomeParcelGraph(biomeId: 'fixture', seed: 123);
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: WorldbuildingParcelScene(
@@ -20,6 +35,7 @@ void main() {
             'biomeType': 'mangrove',
             'visualProfile': <String, dynamic>{'groundSet': 'wet_roots'},
           },
+          parcels: graph.parcels,
           nodes: <LisiereResourceNode>[
             LisiereResourceNode.organic(
               id: 'organic',
@@ -49,6 +65,7 @@ void main() {
           ],
           ptibugIcons: const <String>['🐞'],
           active: true,
+          onParcelTap: (parcel) => selectedParcelId = parcel.id,
           onNodeTapDown: (_) => harvestStarts += 1,
           onNodeTapUp: () => harvestStops += 1,
         ),
@@ -67,5 +84,9 @@ void main() {
     expect(harvestStarts, 1);
     await press.up();
     expect(harvestStops, 1);
+
+    await tester.tap(find.byKey(ValueKey<String>(
+        'parcel-marker-${graph.parcels[1].id}')));
+    expect(selectedParcelId, graph.parcels[1].id);
   });
 }

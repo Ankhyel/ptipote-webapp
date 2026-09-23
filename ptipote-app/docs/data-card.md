@@ -396,11 +396,21 @@ L’Eau n’est pas une ressource globale du Camp.
   seeds et positions : le client ne déduit donc pas l’identité d’un décor à
   partir de son sol. Les contrôles automatisés démontrent séparément l’effet
   de l’offset de coordonnée et celui des profils voisins.
+- Les mappings `visualProfileIds`, `parcelGenerationProfiles` et
+  `neighborCompatibility` sont éditables depuis la configuration
+  `worldbuildingV2` du Dashboard. La Function les projette ensuite dans les
+  Biomes partagés persistés ; aucune table locale concurrente n’est créée.
 - Une fixture Flutter mobile 390 × 844 vérifie la scène Lisière 2D 3/4 :
   P’TIPOTE, nœuds, obstacle, destination et porteur P’TIBUG restent lisibles.
   Les nœuds visibles peuvent être maintenus directement dans cette projection
   pour déclencher la récolte existante ; les cartes de Parcelles restent une
   commande complémentaire de prototype, pas une seconde géographie.
+- La scène rend maintenant le graphe réel des 6–9 Parcelles : les liaisons
+  sont des chemins et chaque pastille est cliquable pour utiliser le
+  déplacement accompagné existant. Une géométrie locale garde les points dans
+  les limites et détourne les chemins d’un obstacle bloquant. Cela reste une
+  collision 2D légère de présentation : la validation de trajet et la
+  persistance continuent à appartenir au graphe de Parcelles.
   nœuds organiques, minéraux et déchets varient selon le profil visuel du
   Biome ; les emojis restent la banque d’art provisoire.
 - La Lisière utilise la seed persistante de chaque Biome pour ses graphes de
