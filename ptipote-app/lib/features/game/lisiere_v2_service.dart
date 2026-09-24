@@ -1044,6 +1044,8 @@ class LisiereV2Service {
     required String ptipoteId,
     required bool isTraining,
     int? sharedMineralLimit,
+    int? sharedOrganicLimit,
+    int? sharedWasteLimit,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw StateError('Connexion requise pour récolter.');
@@ -1094,11 +1096,16 @@ class LisiereV2Service {
         );
       }
       final resolution = node.applyAction(toolActor);
-      final creditedAmount =
-          resolution.resource == LisiereResourceKind.mineral &&
-                  sharedMineralLimit != null
-              ? resolution.creditedAmount.clamp(0, sharedMineralLimit).toInt()
-              : resolution.creditedAmount;
+      final sharedLimit = resolution.resource == LisiereResourceKind.mineral
+          ? sharedMineralLimit
+          : resolution.resource == LisiereResourceKind.organic
+              ? sharedOrganicLimit
+              : resolution.resource == LisiereResourceKind.waste
+                  ? sharedWasteLimit
+                  : null;
+      final creditedAmount = sharedLimit == null
+          ? resolution.creditedAmount
+          : resolution.creditedAmount.clamp(0, sharedLimit).toInt();
       final accepted = inventory.add(
         resolution.resource,
         creditedAmount,
@@ -1142,6 +1149,33 @@ class LisiereV2Service {
         acceptedAmount: accepted,
         duplicate: false,
       );
+    });
+  }
+
+  /// Aligns the local 2D projection with the server-authoritative Organic
+  /// node after a shared harvest or an offline ecology resolution.
+  Future<void> synchronizeSharedOrganicNode({
+    required String nodeId,
+    required double vitality,
+    required String nodeState,
+  }) async {
+    await _mutate((snapshot) {
+      final node = snapshot.nodes[nodeId];
+      if (node == null || node.kind != LisiereResourceKind.organic) return;
+      node.resistance = vitality.clamp(0, node.maxResistance);
+      node.isDestroyed = nodeState == 'destroyed';
+    });
+  }
+
+  Future<void> synchronizeSharedWasteNode({
+    required String nodeId,
+    required double vitality,
+  }) async {
+    await _mutate((snapshot) {
+      final node = snapshot.nodes[nodeId];
+      if (node == null || node.kind != LisiereResourceKind.waste) return;
+      node.resistance = vitality.clamp(0, node.maxResistance);
+      if (node.resistance <= 0) node.remainingLayers = 0;
     });
   }
 

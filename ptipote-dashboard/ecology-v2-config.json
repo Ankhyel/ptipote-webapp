@@ -1,0 +1,57 @@
+{
+  "version": "ECOLOGY_0_1",
+  "biomass": {
+    "baseBiologicalFloor": 10,
+    "curve": [[0, 0.1], [15, 0.15], [20, 0.25], [30, 0.5], [50, 0.75], [71, 1], [100, 1], [110, 1.1], [120, 1.2]],
+    "naturalRecreateThreshold": 90,
+    "naturalRecreateHours": 120,
+    "maxNaturalRecreatesPerBiome": 1
+  },
+  "organic": {
+    "maxVitality": 10,
+    "nodeBiomassCapacity": 10,
+    "simpleBiomeOrganicCapacity": 80,
+    "regenHours": 12,
+    "depletionWindowHours": 48,
+    "destructionDepletions": 3,
+    "weatherDestroyedAtZeroChance": 0,
+    "putrefactionMultiplier": 0.9
+  },
+  "humidity": {
+    "ranges": {
+      "marsh": [70, 95], "mangrove": [65, 90], "humidForest": [60, 85], "humidSavanna": [45, 70],
+      "coastal": [40, 70], "hill": [35, 60], "highRefuge": [35, 60], "dryForest": [30, 55],
+      "drySavanna": [20, 45], "semiDesert": [10, 30]
+    },
+    "evaporationPerHour": {"default": 1.1, "dry": 1.8, "wet": 0.7},
+    "drainagePerHour": {"default": 0.7, "dry": 0.35, "wet": 1.1},
+    "floodThresholds": {
+      "default": {"unstable": 85, "stable": 100, "resilient": 120},
+      "semiDesert": {"unstable": 50, "stable": 70, "resilient": 100}
+    },
+    "rainfallPerHour": {"rain": 9, "heavyRain": 15, "torrentialRain": 20}
+  },
+  "waste": {"graceHours": 3, "contaminationPerTenWastePerSession": 1},
+  "contamination": {
+    "organicRegenCurve": [[0, 1], [20, 1], [21, 0.9], [40, 0.9], [41, 0.75], [60, 0.75], [61, 0.5], [80, 0.5], [81, 0.25], [100, 0.25]],
+    "naturalBiomassThreshold": 80,
+    "naturalMaximumContamination": 60,
+    "naturalReductionPerHour": 1
+  },
+  "mineral": {"surfaceWastePerTenExtracted": 1},
+  "mine": {
+    "deepReserve": 2000,
+    "cadences": {
+      "gentle": {"multiplier": 0.5, "pressurePerTen": 0.5},
+      "normal": {"multiplier": 1, "pressurePerTen": 1},
+      "intensive": {"multiplier": 2, "pressurePerTen": 2}
+    },
+    "wastePerTenExtracted": 1,
+    "directContaminationPerTenExtracted": 1
+  },
+  "qualitative": {
+    "biomass": [[15, "Critique"], [50, "Faible"], [80, "Stable"], [100, "Abondante"], [9999, "Foisonnante"]],
+    "humidity": [[20, "Très sèche"], [40, "Sèche"], [70, "Favorable"], [100, "Humide"], [9999, "Saturée"]],
+    "contamination": [[20, "Faible"], [60, "Présente"], [80, "Forte"], [9999, "Critique"]]
+  }
+}

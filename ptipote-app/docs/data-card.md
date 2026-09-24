@@ -222,9 +222,10 @@ L’Eau n’est pas une ressource globale du Camp.
   utilisable dès que la connexion existe : elle n’a ni bâtiment, ni recherche,
   ni autre prérequis. Les missions calculent leur trajet inter-biomes depuis
   ce graphe régional persistant.
-- Les ressources organiques se régénèrent uniquement par le futur crochet de
-  Biomasse ; les filons minéraux ont des couches finies et ne réapparaissent
-  jamais. Les Déchets sont des nœuds finis distincts. Les rendements conservent leur fraction persistante entre deux
+- Les nœuds Organiques sont désormais pilotés par l’écologie partagée : 10
+  Vitalité de base, régénération physique et destruction possible. Les filons
+  minéraux ont des couches finies et ne réapparaissent jamais. Les Déchets
+  sont des nœuds finis distincts. Les rendements conservent leur fraction persistante entre deux
   actions. Puissance de récolte, fréquence d’action et modificateur de
   rendement sont trois caractéristiques distinctes.
 - Le joueur tient un nœud de ressource pour utiliser son outil de base :
@@ -338,9 +339,8 @@ L’Eau n’est pas une ressource globale du Camp.
   un sélecteur explicitement **DEV / PROTOTYPE** permet d’implanter le Camp
   dans une Région libre ; aucun déplacement artificiel n’est simulé.
 - Les états macro Région, Biome et Camp sont horodatés et résolus à la demande.
-  Worldcraft 0 ne définit volontairement aucune formule de biomasse,
-  contamination ou écologie : il prépare leur autorité partagée sans inventer
-  leur gameplay. Un Camp garde le même identifiant en mode Active ou Autonome.
+  Le Biome porte désormais aussi l’état écologique physique V0 ; un Camp garde
+  le même identifiant en mode Active ou Autonome.
 - Les opérations d’extraction minérale agrégée, création de Camp, traces et
   réserves de passage portent un `operationId`. Une répétition renvoie le même
   résultat sans double effet. La Réserve de passage est séparée de tout stock
@@ -416,5 +416,62 @@ L’Eau n’est pas une ressource globale du Camp.
 - La Lisière utilise la seed persistante de chaque Biome pour ses graphes de
   Parcelles. Son aperçu est un rendu local 2D à profondeur 3/4 : sol,
   accessoires, nœuds et êtres sont une projection lisible, non un terrain
-  mondial synchronisé. Les hooks météo, écologie et trouvailles sont des
-  données sans formules de gameplay à ce stade.
+  mondial synchronisé. Les hooks météo et trouvailles restent des données
+  préparatoires ; l’écologie physique V0 ajoute les formules définies pour
+  l’eau, le vivant et les Déchets.
+
+## PTIPOTE V2 — Écologie physique 0
+
+- **Source de vérité.** `biomeSharedStates/{biomeId}` porte l’état partagé
+  `ECOLOGY_0_1` : Biomasse dérivée, socle biologique, Humidité,
+  Contamination, amas de Déchets, Minéral de surface, Réserve minérale
+  profonde, Mine et pression d’exploitation. Les Parcelles de la Lisière
+  restent une projection 2D détaillée : elles ne synchronisent ni sprites ni
+  décor individuel. Les mutations critiques passent exclusivement par les
+  Cloud Functions ; les règles Firestore refusent l’écriture directe.
+- **Biomasse et Organique.** La Biomasse n’a pas de timer propre et n’est pas
+  plafonnée à 100. Elle est recalculée comme socle biologique (`10 ×
+  (1 - Contamination / 100)`) plus la contribution de vitalité des nœuds
+  Organiques. Un nœud standard a 10 Vitalité : une unité de dégât réussie
+  donne une unité d’Organique. À conditions de référence, 0→10 prend 12 h.
+  Les multiplicateurs Biomasse, Humidité, Contamination, météo et
+  Putréfaction se multiplient. Trois épuisements dans 48 h détruisent le
+  nœud ; une recréation naturelle est seulement proposée à Biomasse ≥90, au
+  maximum une fois par Biome et par cinq jours.
+- **Eau.** L’Humidité est mondiale et évolue heure par heure à partir des
+  `WeatherCell` existantes, de l’évaporation et du drainage distincts. Une
+  session météo dure quatre heures ; Pluie, Pluie forte et Torrentielle
+  apportent respectivement +9, +15 et +20/h avant la réponse géographique du
+  Biome. Le seuil d’inondation dépend du Biome et de son futur état écologique
+  (Semi-désert : 50/70/100 instable/stable/résilient). Une inondation enlève
+  5 Vitalité à chaque nœud Organique une seule fois par session ; au-dessus du
+  seuil, la Putréfaction applique ×0,90 à la régénération.
+- **Déchets et Contamination.** Les Déchets sont des amas physiques finis :
+  une Vitalité vaut un Déchet, zéro les supprime. Ils ont trois heures de
+  grâce ; ensuite dix Déchets ajoutent une Contamination par résolution de
+  quatre heures, avec reste décimal persisté. La Contamination est bornée
+  0–100, réduit le socle et ralentit l’Organique. Une décontamination naturelle
+  de −1/h ne fonctionne que si Biomasse >80 et Contamination <60 ; elle peut
+  coexister avec des Déchets contaminants. Les déchets du Camp restent dans le
+  stock du Camp et ne deviennent jamais des amas territoriaux par défaut.
+- **Minéral et Mine.** Le Minéral de surface est fini, ne contamine pas
+  directement et produit un Déchet tous les dix Minéraux extraits. Il ne crée
+  plus de pression d’exploitation. La Mine utilise une réserve profonde finie,
+  avec cadences Douce/Normale/Intensive : dix Minéraux profonds ajoutent un
+  Déchet et une Contamination directe, ainsi que de la pression. Cette pression
+  ne décroît pas seule et ne bloque aucun état écologique ; elle fournit un
+  hook de tolérance au futur puzzle. L’API Mine accepte déjà un acteur manuel,
+  P’TIBUG ou habitant et un marqueur d’automatisation, sans inventer de
+  bâtiment ni de règle de déblocage.
+- **Offline et affichage.** `resolveWorldcraftRegionUntil` résout maintenant
+  les cinq Biomes avec le même état initial, la même météo horodatée et la
+  même cible temporelle. Les effets irréversibles sont persistés dans la même
+  transaction ou opération idempotente. L’interface joueur affiche des états
+  qualitatifs ; le panneau extensible **DEV** de la Lisière montre les valeurs
+  exactes. La scène 2D 3/4 varie déjà son voile visuel pour contamination,
+  Biomasse faible et saturation d’eau.
+- **Configuration.** `ecologyV2` est une section Dashboard séparée de la
+  Biomasse V1 : courbes, seuils, plages d’Humidité, pluie, inondation,
+  Déchets, Contamination, Minéral et Mine y sont versionnés et publiables.
+  Le puzzle écologique, les espèces, Blocs stables, Recherche, Data, Tour et
+  Walker restent explicitement hors périmètre.

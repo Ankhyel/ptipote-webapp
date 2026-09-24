@@ -320,6 +320,52 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
                   node.yieldRemainder)
               .floor()
           : 0;
+      final organicRequested = node != null &&
+              node.kind == LisiereResourceKind.organic
+          ? node.resistance.clamp(0, harvestPower).floor()
+          : 0;
+      final sharedOrganic = isSharedWorld && organicRequested > 0
+          ? await _worldcraft.harvestSharedOrganic(
+              operationId:
+                  'organic-$nodeId-${DateTime.now().microsecondsSinceEpoch}',
+              biomeId: _selectedBiomeId!,
+              nodeId: nodeId,
+              requestedAmount: organicRequested,
+            )
+          : null;
+      if (sharedOrganic != null &&
+          (sharedOrganic['actualHarvested'] as num? ?? 0).toInt() <= 0) {
+        await _lisiere.synchronizeSharedOrganicNode(
+          nodeId: nodeId,
+          vitality: (sharedOrganic['vitality'] as num? ?? 0).toDouble(),
+          nodeState: '${sharedOrganic['nodeState'] ?? 'depleted'}',
+        );
+        if (mounted) setState(() => _notice = 'Ce nœud Organique est épuisé.');
+        _stopHarvest();
+        return;
+      }
+      final wasteRequested = node != null && node.kind == LisiereResourceKind.waste
+          ? node.resistance.clamp(0, harvestPower).floor()
+          : 0;
+      final sharedWaste = isSharedWorld && wasteRequested > 0
+          ? await _worldcraft.cleanSharedWaste(
+              operationId:
+                  'waste-$nodeId-${DateTime.now().microsecondsSinceEpoch}',
+              biomeId: _selectedBiomeId!,
+              depositId: nodeId,
+              requestedAmount: wasteRequested,
+            )
+          : null;
+      if (sharedWaste != null &&
+          (sharedWaste['cleanedAmount'] as num? ?? 0).toInt() <= 0) {
+        await _lisiere.synchronizeSharedWasteNode(
+          nodeId: nodeId,
+          vitality: (sharedWaste['remainingVitality'] as num? ?? 0).toDouble(),
+        );
+        if (mounted) setState(() => _notice = 'Cet amas de Déchets est déjà nettoyé.');
+        _stopHarvest();
+        return;
+      }
       final sharedMineralLimit = isSharedWorld && mineralYield > 0
           ? await _worldcraft.extractSharedMineral(
               operationId:
@@ -335,7 +381,23 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
         ptipoteId: team.ptipoteIds.first,
         isTraining: _trainingEnabled,
         sharedMineralLimit: sharedMineralLimit,
+        sharedOrganicLimit:
+            (sharedOrganic?['actualHarvested'] as num?)?.toInt(),
+        sharedWasteLimit: (sharedWaste?['cleanedAmount'] as num?)?.toInt(),
       );
+      if (sharedOrganic != null) {
+        await _lisiere.synchronizeSharedOrganicNode(
+          nodeId: nodeId,
+          vitality: (sharedOrganic['vitality'] as num? ?? 0).toDouble(),
+          nodeState: '${sharedOrganic['nodeState'] ?? 'active'}',
+        );
+      }
+      if (sharedWaste != null) {
+        await _lisiere.synchronizeSharedWasteNode(
+          nodeId: nodeId,
+          vitality: (sharedWaste['remainingVitality'] as num? ?? 0).toDouble(),
+        );
+      }
       if (isSharedWorld) {
         await _worldcraft.adjustBiomeDanger(
           operationId:
@@ -473,6 +535,7 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
                   : 'Progression hors ligne : +1 toutes les 2 h'),
             ),
           ),
+        if (selectedBiome != null) _ecologyCard(selectedBiome),
         if (graph != null) ...<Widget>[
           const SizedBox(height: 8),
           Text(
@@ -656,6 +719,45 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
       ],
     );
   }
+
+  Widget _ecologyCard(Map<String, dynamic> biome) {
+    final qualitative = biome['ecologyQualitative'] is Map
+        ? Map<String, dynamic>.from(biome['ecologyQualitative'] as Map)
+        : const <String, dynamic>{};
+    String label(String key, String fallback) => '${qualitative[key] ?? fallback}';
+    num amount(String key) => (biome[key] as num?) ?? 0;
+    return Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.eco_outlined),
+        title: Text('État du Biome · Biomasse ${label('biomass', '—')}'),
+        subtitle: Text('Humidité ${label('humidity', '—')} · Contamination ${label('contamination', '—')}'),
+        children: <Widget>[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text('DEV · valeurs exactes mondiales (lecture seule).'),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              _ecologyValue('Biomasse', amount('biomass')),
+              _ecologyValue('Humidité', amount('humidity')),
+              _ecologyValue('Contamination', amount('contamination')),
+              _ecologyValue('Déchets', amount('wasteQuantity')),
+              _ecologyValue('Minéral', amount('mineralReserveSummary')),
+              _ecologyValue('Mine profonde', amount('deepMineralReserve')),
+              _ecologyValue('Pression', amount('exploitationPressure')),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  Widget _ecologyValue(String label, num value) => Chip(
+        label: Text('$label : ${value.toStringAsFixed(value % 1 == 0 ? 0 : 1)}'),
+      );
 
   Widget _teamTab(_LisiereContext data) {
     final snapshot = data.snapshot;
@@ -1271,6 +1373,17 @@ class WorldbuildingParcelScene extends StatelessWidget {
         _ => const Color(0xff628b63),
       };
 
+  Color get _ecologyTint {
+    final contamination = (biome?['contamination'] as num?)?.toDouble() ?? 0;
+    final biomass = (biome?['biomass'] as num?)?.toDouble() ?? 90;
+    final humidity = (biome?['humidity'] as num?)?.toDouble() ?? 50;
+    if (contamination >= 60) return const Color(0xff513d36).withValues(alpha: .42);
+    if (biomass < 15) return const Color(0xff80684b).withValues(alpha: .45);
+    if (biomass < 30) return const Color(0xff8a7650).withValues(alpha: .26);
+    if (humidity > 90) return const Color(0xff416f93).withValues(alpha: .20);
+    return Colors.transparent;
+  }
+
   @override
   Widget build(BuildContext context) {
     final orderedNodes = nodes.indexed
@@ -1298,6 +1411,8 @@ class WorldbuildingParcelScene extends StatelessWidget {
                   painter: _ParcelGroundPainter(_ground),
                 ),
               ),
+              if (_ecologyTint != Colors.transparent)
+                Positioned.fill(child: ColoredBox(color: _ecologyTint)),
               Positioned.fill(
                 child: CustomPaint(
                   painter: _ParcelRoutePainter(

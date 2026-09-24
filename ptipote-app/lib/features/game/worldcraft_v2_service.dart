@@ -215,6 +215,58 @@ class WorldcraftV2Service {
     return (result['actualExtracted'] as num?)?.toInt() ?? 0;
   }
 
+  Future<Map<String, dynamic>> harvestSharedOrganic({
+    required String operationId,
+    required String biomeId,
+    required String nodeId,
+    required int requestedAmount,
+  }) async =>
+      Map<String, dynamic>.from(await _call(
+        'harvestWorldcraftOrganic',
+        <String, dynamic>{
+          'operationId': operationId,
+          'biomeId': biomeId,
+          'nodeId': nodeId,
+          'requestedAmount': requestedAmount,
+        },
+      ));
+
+  Future<Map<String, dynamic>> cleanSharedWaste({
+    required String operationId,
+    required String biomeId,
+    required String depositId,
+    required int requestedAmount,
+  }) async =>
+      Map<String, dynamic>.from(await _call(
+        'cleanWorldcraftWaste',
+        <String, dynamic>{
+          'operationId': operationId,
+          'biomeId': biomeId,
+          'depositId': depositId,
+          'requestedAmount': requestedAmount,
+        },
+      ));
+
+  Future<Map<String, dynamic>> extractDeepMineral({
+    required String operationId,
+    required String biomeId,
+    required int requestedAmount,
+    String cadence = 'normal',
+    bool automated = false,
+    String actorType = 'manual',
+  }) async =>
+      Map<String, dynamic>.from(await _call(
+        'extractWorldcraftDeepMineral',
+        <String, dynamic>{
+          'operationId': operationId,
+          'biomeId': biomeId,
+          'requestedAmount': requestedAmount,
+          'cadence': cadence,
+          'automated': automated,
+          'actorType': actorType,
+        },
+      ));
+
   Future<int> adjustBiomeDanger({
     required String operationId,
     required String biomeId,

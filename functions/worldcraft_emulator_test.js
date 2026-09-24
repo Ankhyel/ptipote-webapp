@@ -74,6 +74,26 @@ async function main() {
   assert.equal(extracts[0].actualExtracted + extracts[1].actualExtracted, 200, "la réserve finie ne doit jamais devenir négative");
   const extractReplay = await callable(first.idToken, "extractSharedResource", {operationId: "emulator-extract-a-001", biomeId: "region-b1-biome-1", requestedAmount: 150});
   assert.equal(extractReplay.actualExtracted, extracts[0].actualExtracted, "extraction idempotente");
+  const surfaceState = (await db.collection("biomeSharedStates").doc("region-b1-biome-1").get()).data();
+  assert.equal(surfaceState.exploitationPressure, 0, "le Minéral de surface ne crée pas de pression");
+  assert.equal(surfaceState.wasteQuantity, 20, "10 Minéraux de surface créent un Déchet");
+
+  const organic = await Promise.all([
+    callable(first.idToken, "harvestWorldcraftOrganic", {operationId: "emulator-organic-a-001", biomeId: "region-b2-biome-1", nodeId: "region-b2-biome-1-parcel-1-organic", requestedAmount: 6}),
+    callable(second.idToken, "harvestWorldcraftOrganic", {operationId: "emulator-organic-b-001", biomeId: "region-b2-biome-1", nodeId: "region-b2-biome-1-parcel-1-organic", requestedAmount: 6}),
+  ]);
+  assert.equal(organic[0].actualHarvested + organic[1].actualHarvested, 10, "un nœud Organique partagé ne crédite pas deux fois sa Vitalité");
+  const organicReplay = await callable(first.idToken, "harvestWorldcraftOrganic", {operationId: "emulator-organic-a-001", biomeId: "region-b2-biome-1", nodeId: "region-b2-biome-1-parcel-1-organic", requestedAmount: 6});
+  assert.equal(organicReplay.actualHarvested, organic[0].actualHarvested, "récolte Organique idempotente");
+
+  const deep = await Promise.all([
+    callable(first.idToken, "extractWorldcraftDeepMineral", {operationId: "emulator-mine-a-001", biomeId: "region-b3-biome-1", requestedAmount: 1500, cadence: "normal", automated: true, actorType: "ptibug"}),
+    callable(second.idToken, "extractWorldcraftDeepMineral", {operationId: "emulator-mine-b-001", biomeId: "region-b3-biome-1", requestedAmount: 1500, cadence: "normal", automated: false, actorType: "manual"}),
+  ]);
+  assert.equal(deep[0].actualExtracted + deep[1].actualExtracted, 2000, "la réserve profonde ne devient jamais négative");
+  const mineState = (await db.collection("biomeSharedStates").doc("region-b3-biome-1").get()).data();
+  assert.equal(mineState.deepMineralReserve, 0, "la Mine est une réserve finie");
+  assert.ok(mineState.exploitationPressure > 0, "seule la Mine crée la pression d'exploitation");
 
   await db.collection("passageReserves").doc(created.campId).set({
     id: created.campId, campId: created.campId, policy: "open",

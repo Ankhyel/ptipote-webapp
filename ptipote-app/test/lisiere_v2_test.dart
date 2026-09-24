@@ -52,31 +52,34 @@ void main() {
     expect(config.travelSeconds(LisiereTravelDifficulty.hard), 180);
   });
 
-  test('organic harvest keeps fractional yield and awaits a biomass hook', () {
+  test('organic harvest gives one base Organique per vitality and awaits ecology', () {
     final node = LisiereResourceNode.organic(
       id: 'organic-1',
       parcelId: 'parcel-1',
-      maxResistance: 2,
-      standardYield: 10,
+      maxResistance: 10,
+      standardYield: 1,
       visualVariant: 'grass',
     );
     const actor = LisiereHarvestActor(
       id: 'ptipote-1',
-      harvestPower: 2,
+      harvestPower: 1,
       actionFrequency: 1,
       yieldModifier: 1.05,
       maxVitality: 100,
       currentVitality: 100,
     );
     final first = node.applyAction(actor);
-    expect(first.creditedAmount, 10);
-    expect(first.remainder, closeTo(.5, .0001));
+    expect(first.creditedAmount, 1);
+    expect(node.resistance, 9);
+    for (var index = 0; index < 9; index += 1) {
+      node.applyAction(actor);
+    }
     expect(node.state, LisiereResourceNodeState.temporarilyDepleted);
 
     node.restoreOrganicFromBiomass();
     final second = node.applyAction(actor);
-    expect(second.creditedAmount, 11);
-    expect(second.remainder, closeTo(0, .0001));
+    expect(second.creditedAmount, 1);
+    expect(node.resistance, 9);
   });
 
   test('mineral layers are finite and never regenerate', () {

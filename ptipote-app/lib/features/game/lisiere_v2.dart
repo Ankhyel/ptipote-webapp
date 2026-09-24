@@ -369,6 +369,7 @@ class LisiereResourceNode {
     required this.standardYield,
     required this.visualVariant,
     this.regenerationReference,
+    this.isDestroyed = false,
   })  : kind = LisiereResourceKind.organic,
         resistance = maxResistance,
         remainingLayers = 1,
@@ -384,6 +385,7 @@ class LisiereResourceNode {
   })  : kind = LisiereResourceKind.mineral,
         resistance = maxResistance,
         regenerationReference = null,
+        isDestroyed = false,
         yieldRemainder = 0;
 
   LisiereResourceNode.waste({
@@ -396,6 +398,7 @@ class LisiereResourceNode {
   })  : kind = LisiereResourceKind.waste,
         resistance = maxResistance,
         regenerationReference = null,
+        isDestroyed = false,
         yieldRemainder = 0;
 
   final String id;
@@ -408,8 +411,10 @@ class LisiereResourceNode {
   final String visualVariant;
   final DateTime? regenerationReference;
   double yieldRemainder;
+  bool isDestroyed;
 
   LisiereResourceNodeState get state {
+    if (isDestroyed) return LisiereResourceNodeState.exhausted;
     if (kind != LisiereResourceKind.organic && remainingLayers <= 0) {
       return LisiereResourceNodeState.exhausted;
     }
@@ -424,7 +429,24 @@ class LisiereResourceNode {
         actor.harvestPower <= 0) {
       return HarvestResolution.empty(this);
     }
-    resistance = (resistance - actor.harvestPower).clamp(0, maxResistance);
+    final inflicted = actor.harvestPower.clamp(0, resistance);
+    resistance = (resistance - inflicted).clamp(0, maxResistance);
+    if (kind == LisiereResourceKind.organic || kind == LisiereResourceKind.waste) {
+      final rawYield = inflicted * actor.yieldModifier + yieldRemainder;
+      final credited = rawYield.floor().clamp(0, 1 << 31).toInt();
+      yieldRemainder = rawYield - credited;
+      if (kind == LisiereResourceKind.waste && resistance <= 0) {
+        remainingLayers = 0;
+      }
+      return HarvestResolution(
+        nodeId: id,
+        resource: kind,
+        creditedAmount: credited,
+        remainder: yieldRemainder,
+        productiveUnitCompleted: credited > 0,
+        nodeState: state,
+      );
+    }
     if (resistance > 0) return HarvestResolution.empty(this);
     final rawYield = standardYield * actor.yieldModifier + yieldRemainder;
     final credited = rawYield.floor().clamp(0, 1 << 31).toInt();
@@ -445,7 +467,10 @@ class LisiereResourceNode {
 
   /// Called only by the future Biomass resolver; surface mineral never respawns.
   void restoreOrganicFromBiomass() {
-    if (kind == LisiereResourceKind.organic) resistance = maxResistance;
+    if (kind == LisiereResourceKind.organic) {
+      isDestroyed = false;
+      resistance = maxResistance;
+    }
   }
 
   Map<String, dynamic> toMap() => <String, dynamic>{
@@ -459,6 +484,7 @@ class LisiereResourceNode {
         'visualVariant': visualVariant,
         'regenerationReference': regenerationReference?.millisecondsSinceEpoch,
         'yieldRemainder': yieldRemainder,
+        'isDestroyed': isDestroyed,
       };
 
   factory LisiereResourceNode.fromMap(Map<String, dynamic> map) {
@@ -496,6 +522,7 @@ class LisiereResourceNode {
     node.resistance =
         (map['resistance'] as num?)?.toDouble() ?? node.maxResistance;
     node.yieldRemainder = (map['yieldRemainder'] as num?)?.toDouble() ?? 0;
+    node.isDestroyed = map['isDestroyed'] == true;
     return node;
   }
 }
@@ -1758,8 +1785,10 @@ LisiereV2Snapshot createLisiereV2Snapshot({
       nodes['${parcel.id}-organic'] = LisiereResourceNode.organic(
         id: '${parcel.id}-organic',
         parcelId: parcel.id,
-        maxResistance: (4 + (nodeSeed & 3)).toDouble(),
-        standardYield: 2 + (nodeSeed % 3),
+        // ECOLOGY_0: one vitality is one physical Organique. Ten actions
+        // exhaust a standard node; traits only affect the resulting bonus.
+        maxResistance: 10,
+        standardYield: 1,
         visualVariant: lisiereBiomeNodeVisual(
           visualProfile: visualProfile,
           kind: LisiereResourceKind.organic,
@@ -1782,9 +1811,9 @@ LisiereV2Snapshot createLisiereV2Snapshot({
       nodes['${parcel.id}-waste'] = LisiereResourceNode.waste(
         id: '${parcel.id}-waste',
         parcelId: parcel.id,
-        maxResistance: (3 + (nodeSeed & 1)).toDouble(),
-        standardYield: 1 + (nodeSeed.abs() % 2),
-        remainingLayers: 1 + (nodeSeed.abs() % 2),
+        maxResistance: 10,
+        standardYield: 1,
+        remainingLayers: 1,
         visualVariant: lisiereBiomeNodeVisual(
           visualProfile: visualProfile,
           kind: LisiereResourceKind.waste,
