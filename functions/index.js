@@ -997,22 +997,35 @@ exports.extractSharedResource = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
   const operationRef = worldcraftOperationRef(operationId);
   const biomeRef = db.collection("biomeSharedStates").doc(biomeId);
   const now = Timestamp.now();
+  const [config, weatherCells] = await Promise.all([
+    loadEcologyRuntimeConfig(db), weatherForBiome(db, biomeId),
+  ]);
   return db.runTransaction(async (transaction) => {
     const [previous, biomeSnapshot] = await Promise.all([transaction.get(operationRef), transaction.get(biomeRef)]);
     if (previous.exists) return previous.data().result;
     if (!biomeSnapshot.exists) throw new HttpsError("not-found", "Biome introuvable.");
     const state = biomeSnapshot.data();
-    const available = Math.max(0, Math.floor(Number(state.mineralReserveSummary || 0)));
+    // Every irreversible extraction starts from the same timestamp-resolved
+    // ecology state as a regional visit. A delayed extraction cannot skip
+    // pending rain, contamination or node regeneration.
+    const resolved = resolveBiomeEcology({
+      state,
+      biomeType: state.biomeType,
+      targetMs: now.toMillis(),
+      weatherCells,
+      config,
+    }).state;
+    const available = Math.max(0, Math.floor(Number(resolved.mineralReserveSummary || 0)));
     const actualExtracted = Math.min(available, requestedAmount);
-    const ecology = ecologyDefaults({biomeType: state.biomeType, nowMs: now.toMillis(), existing: state});
-    const extractionRemainder = Math.max(0, ecologyNumber(state.surfaceExtractionWasteRemainder));
+    const ecology = ecologyDefaults({biomeType: state.biomeType, nowMs: now.toMillis(), config, existing: resolved});
+    const extractionRemainder = Math.max(0, ecologyNumber(resolved.surfaceExtractionWasteRemainder));
     const wasteProgress = extractionRemainder + actualExtracted;
     const generatedWaste = Math.floor(wasteProgress / 10);
     const next = generatedWaste > 0
       ? addWasteDeposit(ecology, {id: `surface-${operationId}`, quantity: generatedWaste, createdAtMs: now.toMillis()})
       : ecology;
     next.surfaceExtractionWasteRemainder = wasteProgress % 10;
-    const biomass = calculateBiomass(next);
+    const biomass = calculateBiomass(next, config);
     next.biomass = biomass.biomass;
     next.biologicalFloor = biomass.biologicalFloor;
     const result = {operationId, biomeId, requestedAmount, actualExtracted, generatedWaste};
@@ -1020,7 +1033,7 @@ exports.extractSharedResource = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reque
       // Surface mineral is finite but does not create exploitation pressure.
       ...next,
       mineralReserveSummary: available - actualExtracted,
-      ecologyQualitative: qualitativeEcology(next),
+      ecologyQualitative: qualitativeEcology(next, config),
       lastSimulatedAt: now,
     });
     transaction.create(operationRef, {id: operationId, type: "extractSharedResource", actorId: playerId, createdAt: now, result});
@@ -1096,11 +1109,16 @@ exports.cleanWorldcraftWaste = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reques
     throw new HttpsError("invalid-argument", "Amas de Déchets invalide.");
   }
   const db = admin.firestore(); const operationRef = worldcraftOperationRef(operationId); const biomeRef = db.collection("biomeSharedStates").doc(biomeId); const now = Timestamp.now();
+  const [config, weatherCells] = await Promise.all([
+    loadEcologyRuntimeConfig(db), weatherForBiome(db, biomeId),
+  ]);
   return db.runTransaction(async (transaction) => {
     const [previous, snapshot] = await Promise.all([transaction.get(operationRef), transaction.get(biomeRef)]);
     if (previous.exists) return previous.data().result;
     if (!snapshot.exists) throw new HttpsError("not-found", "Biome introuvable.");
-    const state = ecologyDefaults({biomeType: snapshot.data().biomeType, nowMs: now.toMillis(), existing: snapshot.data()});
+    const current = snapshot.data();
+    const resolved = resolveBiomeEcology({state: current, biomeType: current.biomeType, targetMs: now.toMillis(), weatherCells, config}).state;
+    const state = ecologyDefaults({biomeType: current.biomeType, nowMs: now.toMillis(), config, existing: resolved});
     // Parcels are deterministic local projections. Their finite starting
     // deposits are materialised once on the server the first time somebody
     // cleans one, rather than trusting a client supplied quantity.
@@ -1113,11 +1131,86 @@ exports.cleanWorldcraftWaste = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (reques
     }
     const deposit = state.wasteDeposits[depositId];
     const cleanedAmount = Math.min(requestedAmount, Math.max(0, Math.floor(ecologyNumber(deposit?.quantity))));
-    if (deposit) { deposit.quantity -= cleanedAmount; if (deposit.quantity <= 0) delete state.wasteDeposits[depositId]; }
+    // Keep a zero-quantity tombstone. It prevents a deterministic local
+    // parcel projection from recreating a cleaned historical deposit merely
+    // because another player opens the same Parcel later.
+    if (deposit) {
+      deposit.quantity = Math.max(0, deposit.quantity - cleanedAmount);
+      if (deposit.quantity === 0) deposit.state = "cleaned";
+    }
     state.wasteQuantity = Object.values(state.wasteDeposits).reduce((sum, item) => sum + ecologyNumber(item.quantity), 0);
     const result = {operationId, biomeId, depositId, requestedAmount, cleanedAmount, remainingVitality: deposit?.quantity || 0};
-    transaction.update(biomeRef, {...state, ecologyQualitative: qualitativeEcology(state), lastSimulatedAt: now});
+    transaction.update(biomeRef, {...state, ecologyQualitative: qualitativeEcology(state, config), lastSimulatedAt: now});
     transaction.create(operationRef, {id: operationId, type: "cleanWorldcraftWaste", actorId: playerId, createdAt: now, result});
+    return result;
+  });
+});
+
+// Arac P'TIBUGs operate on the shared physical deposits first.  Once a Biome
+// has no remaining deposit, their work becomes a small passive reduction of
+// the same territorial Contamination gauge.  The assignment timestamp is
+// persisted on the Biome, so closing Flutter never pauses or duplicates it.
+exports.resolveWorldcraftPTibugCleaner = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async (request) => {
+  const playerId = requireWorldcraftAuth(request);
+  const operationId = worldcraftOperationId(request.data?.operationId);
+  const biomeId = `${request.data?.biomeId || ""}`;
+  const ptibugId = `${request.data?.ptibugId || ""}`;
+  if (!validEcologyNodeId(ptibugId)) {
+    throw new HttpsError("invalid-argument", "P’TIBUG nettoyeur invalide.");
+  }
+  const db = admin.firestore();
+  const [config, weatherCells] = await Promise.all([
+    loadEcologyRuntimeConfig(db), weatherForBiome(db, biomeId),
+  ]);
+  const operationRef = worldcraftOperationRef(operationId);
+  const biomeRef = db.collection("biomeSharedStates").doc(biomeId);
+  const now = Timestamp.now();
+  const suppliedStart = Math.min(now.toMillis(), Math.max(0, ecologyNumber(request.data?.activeSinceMs)));
+  return db.runTransaction(async (transaction) => {
+    const [previous, snapshot] = await Promise.all([transaction.get(operationRef), transaction.get(biomeRef)]);
+    if (previous.exists) return previous.data().result;
+    if (!snapshot.exists) throw new HttpsError("not-found", "Biome introuvable.");
+    const current = snapshot.data();
+    const state = resolveBiomeEcology({state: current, biomeType: current.biomeType, targetMs: now.toMillis(), weatherCells, config}).state;
+    state.cleanerProgress ||= {};
+    const prior = state.cleanerProgress[ptibugId] || {};
+    const maximumOfflineMs = Math.max(1, ecologyNumber(config.cleaners.maximumOfflineHours, 24)) * 60 * 60 * 1000;
+    const fallbackStart = Math.max(now.toMillis() - maximumOfflineMs, suppliedStart || now.toMillis());
+    const startMs = Math.max(now.toMillis() - maximumOfflineMs, ecologyNumber(prior.lastResolvedAtMs, fallbackStart));
+    const elapsedHours = Math.max(0, now.toMillis() - startMs) / (60 * 60 * 1000);
+    const work = elapsedHours * Math.max(0, ecologyNumber(config.cleaners.wasteCleanedPerHour, 1)) + Math.max(0, ecologyNumber(prior.workRemainder));
+    let remainingWork = Math.floor(work);
+    let cleanedAmount = 0;
+    const deposits = Object.values(state.wasteDeposits || {})
+      .filter((deposit) => ecologyNumber(deposit.quantity) > 0)
+      .sort((left, right) => ecologyNumber(left.createdAtMs) - ecologyNumber(right.createdAtMs) || `${left.id}`.localeCompare(`${right.id}`));
+    for (const deposit of deposits) {
+      if (remainingWork <= 0) break;
+      const cleaned = Math.min(remainingWork, Math.floor(ecologyNumber(deposit.quantity)));
+      deposit.quantity -= cleaned;
+      if (deposit.quantity <= 0) {
+        deposit.quantity = 0;
+        deposit.state = "cleaned";
+      }
+      remainingWork -= cleaned;
+      cleanedAmount += cleaned;
+    }
+    state.wasteQuantity = Object.values(state.wasteDeposits || {}).reduce((sum, deposit) => sum + Math.max(0, ecologyNumber(deposit.quantity)), 0);
+    const contaminationReduced = cleanedAmount === 0
+      ? Math.min(Math.max(0, ecologyNumber(state.contamination)), elapsedHours * Math.max(0, ecologyNumber(config.cleaners.passiveContaminationReductionPerHour, .25)))
+      : 0;
+    state.contamination = ecologyClamp(ecologyNumber(state.contamination) - contaminationReduced, 0, 100);
+    state.cleanerProgress[ptibugId] = {
+      lastResolvedAtMs: now.toMillis(),
+      workRemainder: work - Math.floor(work),
+      lastOperationId: operationId,
+    };
+    const biomass = calculateBiomass(state, config);
+    state.biomass = biomass.biomass;
+    state.biologicalFloor = biomass.biologicalFloor;
+    const result = {operationId, biomeId, ptibugId, elapsedHours, cleanedAmount, contaminationReduced, wasteQuantity: state.wasteQuantity, contamination: state.contamination};
+    transaction.update(biomeRef, {...state, ecologyQualitative: qualitativeEcology(state, config), lastSimulatedAt: now});
+    transaction.create(operationRef, {id: operationId, type: "resolveWorldcraftPTibugCleaner", actorId: playerId, createdAt: now, result});
     return result;
   });
 });
@@ -1131,11 +1224,14 @@ exports.extractWorldcraftDeepMineral = onCall(WORLDCRAFT_CALLABLE_OPTIONS, async
   const automated = request.data?.automated === true;
   const actorType = ["ptibug", "resident", "manual"].includes(request.data?.actorType) ? request.data.actorType : "manual";
   const db = admin.firestore(); const config = await loadEcologyRuntimeConfig(db); const operationRef = worldcraftOperationRef(operationId); const biomeRef = db.collection("biomeSharedStates").doc(biomeId); const now = Timestamp.now();
+  const weatherCells = await weatherForBiome(db, biomeId);
   return db.runTransaction(async (transaction) => {
     const [previous, snapshot] = await Promise.all([transaction.get(operationRef), transaction.get(biomeRef)]);
     if (previous.exists) return previous.data().result;
     if (!snapshot.exists) throw new HttpsError("not-found", "Biome introuvable.");
-    const state = ecologyDefaults({biomeType: snapshot.data().biomeType, nowMs: now.toMillis(), config, existing: snapshot.data()});
+    const current = snapshot.data();
+    const resolved = resolveBiomeEcology({state: current, biomeType: current.biomeType, targetMs: now.toMillis(), weatherCells, config}).state;
+    const state = ecologyDefaults({biomeType: current.biomeType, nowMs: now.toMillis(), config, existing: resolved});
     const regime = config.mine.cadences[cadence]; const desired = Math.max(1, Math.floor(requestedAmount * ecologyNumber(regime.multiplier, 1)));
     const actualExtracted = Math.min(Math.floor(state.deepMineralReserve), desired);
     state.deepMineralReserve -= actualExtracted;

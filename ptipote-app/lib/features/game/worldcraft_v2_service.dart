@@ -247,6 +247,22 @@ class WorldcraftV2Service {
         },
       ));
 
+  Future<Map<String, dynamic>> resolvePTibugCleaner({
+    required String operationId,
+    required String biomeId,
+    required String ptibugId,
+    required DateTime activeSince,
+  }) async =>
+      Map<String, dynamic>.from(await _call(
+        'resolveWorldcraftPTibugCleaner',
+        <String, dynamic>{
+          'operationId': operationId,
+          'biomeId': biomeId,
+          'ptibugId': ptibugId,
+          'activeSinceMs': activeSince.millisecondsSinceEpoch,
+        },
+      ));
+
   Future<Map<String, dynamic>> extractDeepMineral({
     required String operationId,
     required String biomeId,

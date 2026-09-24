@@ -14,7 +14,7 @@
     "regenHours": 12,
     "depletionWindowHours": 48,
     "destructionDepletions": 3,
-    "weatherDestroyedAtZeroChance": 0,
+    "severeWeatherDestructionChance": 0.15,
     "putrefactionMultiplier": 0.9
   },
   "humidity": {
@@ -37,6 +37,11 @@
     "naturalBiomassThreshold": 80,
     "naturalMaximumContamination": 60,
     "naturalReductionPerHour": 1
+  },
+  "cleaners": {
+    "wasteCleanedPerHour": 1,
+    "passiveContaminationReductionPerHour": 0.25,
+    "maximumOfflineHours": 24
   },
   "mineral": {"surfaceWastePerTenExtracted": 1},
   "mine": {

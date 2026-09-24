@@ -24,7 +24,9 @@ const DEFAULT_CONFIG = Object.freeze({
     regenHours: 12,
     depletionWindowHours: 48,
     destructionDepletions: 3,
-    weatherDestroyedAtZeroChance: 0,
+    // This probability is evaluated from a stable hash, never Math.random(),
+    // so an offline replay produces the same ecological outcome.
+    severeWeatherDestructionChance: 0.15,
     putrefactionMultiplier: 0.90,
   },
   humidity: {
@@ -42,6 +44,11 @@ const DEFAULT_CONFIG = Object.freeze({
   contamination: {
     organicRegenCurve: [[0, 1], [20, 1], [21, .9], [40, .9], [41, .75], [60, .75], [61, .5], [80, .5], [81, .25], [100, .25]],
     naturalBiomassThreshold: 80, naturalMaximumContamination: 60, naturalReductionPerHour: 1,
+  },
+  cleaners: {
+    wasteCleanedPerHour: 1,
+    passiveContaminationReductionPerHour: .25,
+    maximumOfflineHours: 24,
   },
   mineral: {surfaceWastePerTenExtracted: 1},
   mine: {
@@ -68,6 +75,11 @@ function merge(base, override) {
 function runtimeConfig(source) { return merge(DEFAULT_CONFIG, source || {}); }
 function number(value, fallback = 0) { const result = Number(value); return Number.isFinite(result) ? result : fallback; }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+function stableRatio(value) {
+  let hash = 17;
+  for (const character of `${value}`) hash = (hash * 31 + character.charCodeAt(0)) & 0x7fffffff;
+  return hash / 0x7fffffff;
+}
 function interpolate(points, input) {
   const sorted = [...points].sort((left, right) => left[0] - right[0]);
   if (input <= sorted[0][0]) return sorted[0][1];
@@ -141,10 +153,21 @@ function getFloodThreshold(biomeType, ecologyState, source) {
 function weatherRate(cell, biomeType, source) {
   const config = runtimeConfig(source); const raw = `${cell?.weatherType || ""}`.toLowerCase();
   const rain = raw.includes("torrential") || raw.includes("torrent") ? "torrentialRain" : raw.includes("heavy") || raw.includes("forte") ? "heavyRain" : raw.includes("rain") || raw.includes("pluie") ? "rain" : null;
-  if (!rain) return {humidityDelta: 0, regenMultiplier: 1, severe: false};
+  const severeHeat = raw.includes("heat") || raw.includes("chaleur");
+  const severeToxic = raw.includes("toxic");
+  if (!rain) return {humidityDelta: 0, regenMultiplier: 1, severe: severeHeat || severeToxic, severeKey: raw || "severe"};
   const response = cell?.biomeResponses?.[biomeFamily(biomeType)] || cell?.weatherResponseProfile || {};
-  const responseMultiplier = clamp(number(response.rainMultiplier ?? response.humidityMultiplier ?? cell?.intensity, 1), 0, 3);
-  return {humidityDelta: config.humidity.rainfallPerHour[rain] * responseMultiplier, regenMultiplier: 1, severe: rain === "torrentialRain"};
+  const responseProfile = typeof response === "object" && response !== null
+    ? (response.rain ?? response)
+    : response;
+  const namedResponse = typeof responseProfile === "string"
+    ? ({low: .6, medium: 1, high: 1.25}[responseProfile.toLowerCase()] ?? 1)
+    : 1;
+  const responseMultiplier = clamp(number(
+    responseProfile?.rainMultiplier ?? responseProfile?.humidityMultiplier ?? cell?.intensity,
+    namedResponse,
+  ), 0, 3);
+  return {humidityDelta: config.humidity.rainfallPerHour[rain] * responseMultiplier, regenMultiplier: 1, severe: rain === "torrentialRain", severeKey: rain};
 }
 function weatherForHour(cells, timestampMs) {
   return (cells || []).filter((cell) => number(cell.startsAtMs ?? cell.startsAt?.toMillis?.()) <= timestampMs && number(cell.endsAtMs ?? cell.endsAt?.toMillis?.()) > timestampMs && cell.status !== "expired");
@@ -156,8 +179,13 @@ function resolveBiomeEcology({state: input, biomeType, targetMs, weatherCells = 
   for (let hour = Math.floor(start / HOUR_MS) * HOUR_MS; hour < end; hour += HOUR_MS) {
     const hourStart = Math.max(hour, start); const hourEnd = Math.min(hour + HOUR_MS, end); const ratio = (hourEnd - hourStart) / HOUR_MS;
     const cells = weatherForHour(weatherCells, hourStart); const weather = cells.reduce((total, cell) => {
-      const rate = weatherRate(cell, biomeType, config); total.humidityDelta += rate.humidityDelta; total.regenMultiplier *= rate.regenMultiplier; total.severe ||= rate.severe; return total;
-    }, {humidityDelta: 0, regenMultiplier: 1, severe: false});
+      const rate = weatherRate(cell, biomeType, config);
+      total.humidityDelta += rate.humidityDelta;
+      total.regenMultiplier *= rate.regenMultiplier;
+      total.severe ||= rate.severe;
+      if (rate.severe) total.severeKeys.push(`${cell.id || cell.seed || "weather"}:${rate.severeKey}`);
+      return total;
+    }, {humidityDelta: 0, regenMultiplier: 1, severe: false, severeKeys: []});
     const family = biomeFamily(biomeType); const dry = ["drySavanna", "semiDesert", "dryForest"].includes(family); const wet = ["marsh", "mangrove", "humidForest"].includes(family);
     state.humidity = Math.max(0, number(state.humidity) + weather.humidityDelta * ratio - number(config.humidity.evaporationPerHour[dry ? "dry" : wet ? "wet" : "default"]) * ratio - number(config.humidity.drainagePerHour[dry ? "dry" : wet ? "wet" : "default"]) * ratio);
     const sessionId = `${Math.floor(hour / (SESSION_HOURS * HOUR_MS))}`;
@@ -167,6 +195,23 @@ function resolveBiomeEcology({state: input, biomeType, targetMs, weatherCells = 
       Object.values(state.organicNodes).forEach((node) => { if (node.state !== "destroyed") node.vitality = Math.max(0, number(node.vitality) - 5); });
       effects.push({type: "flood", sessionId});
     }
+    if (weather.severe) {
+      const chance = clamp(number(
+        config.organic.severeWeatherDestructionChance,
+        number(config.organic.weatherDestroyedAtZeroChance, 0),
+      ), 0, 1);
+      Object.values(state.organicNodes).forEach((node) => {
+        if (node.state === "destroyed" || (node.state !== "depleted" && number(node.vitality) > 0)) return;
+        const effectId = `severe-destroy:${node.id}:${sessionId}:${weather.severeKeys.sort().join(",")}`;
+        if (state.appliedEcologyEffects[effectId]) return;
+        state.appliedEcologyEffects[effectId] = true;
+        if (stableRatio(effectId) < chance) {
+          node.state = "destroyed";
+          node.vitality = 0;
+          effects.push({type: "organic-destroyed-by-weather", nodeId: node.id, effectId});
+        }
+      });
+    }
     const calculated = calculateBiomass(state, config); state.biomass = calculated.biomass; state.biologicalFloor = calculated.biologicalFloor;
     const regen = organicRegenMultiplier(state, biomeType, config, weather.regenMultiplier).value;
     const vitalityPerHour = config.organic.maxVitality / config.organic.regenHours * regen * ratio;
@@ -174,9 +219,6 @@ function resolveBiomeEcology({state: input, biomeType, targetMs, weatherCells = 
       if (node.state === "destroyed") return;
       node.vitality = clamp(number(node.vitality) + vitalityPerHour, 0, config.organic.maxVitality);
       if (node.vitality > 0 && node.state === "depleted") node.state = "active";
-    });
-    if (weather.severe) Object.values(state.organicNodes).forEach((node) => {
-      if (node.state === "depleted" && number(config.organic.weatherDestroyedAtZeroChance) >= 1) node.state = "destroyed";
     });
     if (hourEnd % (SESSION_HOURS * HOUR_MS) === 0 || hourEnd === end) {
       const contaminatingWaste = Object.values(state.wasteDeposits).reduce((sum, deposit) => number(deposit.createdAtMs) + config.waste.graceHours * HOUR_MS <= hourEnd ? sum + number(deposit.quantity) : sum, 0);
@@ -189,18 +231,21 @@ function resolveBiomeEcology({state: input, biomeType, targetMs, weatherCells = 
   const calculated = calculateBiomass(state, config); state.biomass = calculated.biomass; state.biologicalFloor = calculated.biologicalFloor;
   if (state.biomass >= config.biomass.naturalRecreateThreshold && end - state.lastNaturalOrganicRecreateAtMs >= config.biomass.naturalRecreateHours * HOUR_MS) {
     const period = Math.floor(end / (config.biomass.naturalRecreateHours * HOUR_MS));
-    const nodeId = `natural-organic-${period}`;
-    state.organicNodes[nodeId] = {
-      id: nodeId,
-      vitality: config.organic.maxVitality,
-      biomassCapacity: config.organic.nodeBiomassCapacity,
-      state: "active",
-      depletionAtMs: [],
-      createdAtMs: end,
-      origin: "natural-recreation",
-    };
-    state.lastNaturalOrganicRecreateAtMs = end;
-    effects.push({type: "organic-recreated", nodeId, maximum: config.biomass.maxNaturalRecreatesPerBiome});
+    // A recreated node returns to a persistent known biological slot. Flutter
+    // can render that same parcel node, without ever spawning it on a path.
+    const destroyed = Object.values(state.organicNodes)
+      .filter((node) => node.state === "destroyed")
+      .sort((left, right) => `${left.id}`.localeCompare(`${right.id}`));
+    if (destroyed.length > 0) {
+      const node = destroyed[period % destroyed.length];
+      node.vitality = config.organic.maxVitality;
+      node.state = "active";
+      node.depletionAtMs = [];
+      node.createdAtMs = end;
+      node.origin = "natural-recreation";
+      state.lastNaturalOrganicRecreateAtMs = end;
+      effects.push({type: "organic-recreated", nodeId: node.id, maximum: config.biomass.maxNaturalRecreatesPerBiome});
+    }
   }
   state.lastEcologyResolvedAtMs = end; state.ecologyVersion = ECOLOGY_VERSION;
   return {state, effects, nextResolutionAtMs: Math.ceil(end / HOUR_MS) * HOUR_MS};
@@ -211,4 +256,4 @@ function addWasteDeposit(state, {id, quantity, createdAtMs}) {
 function qualitative(value, categories) { return categories.find(([limit]) => value <= limit)?.[1] || categories.at(-1)?.[1]; }
 function qualitativeEcology(state, source) { const config = runtimeConfig(source); return {biomass: qualitative(number(state.biomass), config.qualitative.biomass), humidity: qualitative(number(state.humidity), config.qualitative.humidity), contamination: qualitative(number(state.contamination), config.qualitative.contamination)}; }
 
-module.exports = {ECOLOGY_VERSION, HOUR_MS, SESSION_HOURS, DEFAULT_CONFIG, runtimeConfig, ecologyDefaults, calculateBiomass, organicRegenMultiplier, getFloodThreshold, resolveBiomeEcology, addWasteDeposit, qualitativeEcology, clamp, number};
+module.exports = {ECOLOGY_VERSION, HOUR_MS, SESSION_HOURS, DEFAULT_CONFIG, runtimeConfig, ecologyDefaults, calculateBiomass, organicRegenMultiplier, getFloodThreshold, resolveBiomeEcology, addWasteDeposit, qualitativeEcology, clamp, number, stableRatio};

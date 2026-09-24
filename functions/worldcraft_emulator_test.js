@@ -86,6 +86,22 @@ async function main() {
   const organicReplay = await callable(first.idToken, "harvestWorldcraftOrganic", {operationId: "emulator-organic-a-001", biomeId: "region-b2-biome-1", nodeId: "region-b2-biome-1-parcel-1-organic", requestedAmount: 6});
   assert.equal(organicReplay.actualHarvested, organic[0].actualHarvested, "récolte Organique idempotente");
 
+  const cleanerBiomeRef = db.collection("biomeSharedStates").doc("region-b2-biome-2");
+  await cleanerBiomeRef.set({
+    contamination: 20,
+    wasteQuantity: 3,
+    wasteDeposits: {"cleaner-fixture": {id: "cleaner-fixture", quantity: 3, createdAtMs: Date.now() - 6 * 60 * 60 * 1000}},
+    lastEcologyResolvedAtMs: Date.now() - 2 * 60 * 60 * 1000,
+  }, {merge: true});
+  const cleaner = await callable(first.idToken, "resolveWorldcraftPTibugCleaner", {
+    operationId: "emulator-cleaner-001", biomeId: "region-b2-biome-2", ptibugId: "arac-test", activeSinceMs: Date.now() - 2 * 60 * 60 * 1000,
+  });
+  assert.ok(cleaner.cleanedAmount > 0, "un Arac nettoie d'abord les Déchets territoriaux");
+  const cleanerReplay = await callable(first.idToken, "resolveWorldcraftPTibugCleaner", {
+    operationId: "emulator-cleaner-001", biomeId: "region-b2-biome-2", ptibugId: "arac-test", activeSinceMs: Date.now() - 2 * 60 * 60 * 1000,
+  });
+  assert.deepEqual(cleanerReplay, cleaner, "résolution nettoyeur idempotente");
+
   const deep = await Promise.all([
     callable(first.idToken, "extractWorldcraftDeepMineral", {operationId: "emulator-mine-a-001", biomeId: "region-b3-biome-1", requestedAmount: 1500, cadence: "normal", automated: true, actorType: "ptibug"}),
     callable(second.idToken, "extractWorldcraftDeepMineral", {operationId: "emulator-mine-b-001", biomeId: "region-b3-biome-1", requestedAmount: 1500, cadence: "normal", automated: false, actorType: "manual"}),

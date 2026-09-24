@@ -124,6 +124,7 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
         for (final biome in biomes)
           '${biome['id']}': (biome['danger'] as num?)?.toInt() ?? 0,
       });
+      snapshot = await _lisiere.synchronizeSharedEcology(biomes);
     }
     final physical = await _figurines.watchMyFigurines().first;
     final linked = _linkedPtipotes(world, physical);
@@ -134,7 +135,11 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
         ptipoteIds: <String>[linked.first.id],
       );
     }
-    snapshot = await _lisiere.resolveAutonomousMissions(DateTime.now());
+    snapshot = await _resolveAutonomousMissionsWithWorldcraft(
+      world: world,
+      snapshot: snapshot,
+      now: DateTime.now(),
+    );
     snapshot = await _lisiere.resolvePTibugMaintenance(DateTime.now());
     for (final entry in snapshot.pendingToxicAfflictions.entries.toList()) {
       Zone0GameState.instance.applyLisiereToxicAffliction(
@@ -275,6 +280,56 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
     });
   }
 
+  /// The local mission engine still owns routes, teams and cargo. Arac work
+  /// changes the World-owned ecology first, using the mission timestamp as its
+  /// offline clock; the resulting node states are then copied into the scene.
+  Future<LisiereV2Snapshot> _resolveAutonomousMissionsWithWorldcraft({
+    required Map<String, dynamic> world,
+    required LisiereV2Snapshot snapshot,
+    required DateTime now,
+  }) async {
+    final selectedWorldcraft = world['worldcraft'];
+    if (selectedWorldcraft is Map) {
+      for (final mission in snapshot.missions.values) {
+        if (mission.status == LisiereMissionStatus.completed ||
+            mission.status == LisiereMissionStatus.cancelled ||
+            !now.isAfter(mission.lastResolvedAt)) {
+          continue;
+        }
+        final team = snapshot.teams[mission.teamId];
+        if (team == null) continue;
+        final cleaners = team.ptibugIds
+            .map((id) => snapshot.ptibugs[id])
+            .whereType<LisierePTibugState>()
+            .where(
+                (bug) => bug.speciesId == 'arac' && !bug.maintenance.isSleeping)
+            .toList(growable: false);
+        for (final cleaner in cleaners) {
+          for (final biomeId in mission.routeBiomeIds) {
+            await _worldcraft.resolvePTibugCleaner(
+              operationId:
+                  'mission-cleaner-${mission.id}-${cleaner.id}-$biomeId-${mission.lastResolvedAt.millisecondsSinceEpoch}',
+              biomeId: biomeId,
+              ptibugId: cleaner.id,
+              activeSince: mission.lastResolvedAt,
+            );
+          }
+        }
+      }
+    }
+    var next = await _lisiere.resolveAutonomousMissions(now);
+    if (selectedWorldcraft is Map) {
+      final regionId = '${selectedWorldcraft['regionId'] ?? ''}';
+      if (regionId.isNotEmpty) {
+        await _worldcraft.resolveRegionUntil(regionId);
+        next = await _lisiere.synchronizeSharedEcology(
+          await _worldcraft.loadBiomes(regionId),
+        );
+      }
+    }
+    return next;
+  }
+
   void _startHarvest(String nodeId) {
     if (_selectedTeamId == null || _harvestInFlight) return;
     _harvestTimer?.cancel();
@@ -320,10 +375,10 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
                   node.yieldRemainder)
               .floor()
           : 0;
-      final organicRequested = node != null &&
-              node.kind == LisiereResourceKind.organic
-          ? node.resistance.clamp(0, harvestPower).floor()
-          : 0;
+      final organicRequested =
+          node != null && node.kind == LisiereResourceKind.organic
+              ? node.resistance.clamp(0, harvestPower).floor()
+              : 0;
       final sharedOrganic = isSharedWorld && organicRequested > 0
           ? await _worldcraft.harvestSharedOrganic(
               operationId:
@@ -344,9 +399,10 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
         _stopHarvest();
         return;
       }
-      final wasteRequested = node != null && node.kind == LisiereResourceKind.waste
-          ? node.resistance.clamp(0, harvestPower).floor()
-          : 0;
+      final wasteRequested =
+          node != null && node.kind == LisiereResourceKind.waste
+              ? node.resistance.clamp(0, harvestPower).floor()
+              : 0;
       final sharedWaste = isSharedWorld && wasteRequested > 0
           ? await _worldcraft.cleanSharedWaste(
               operationId:
@@ -362,7 +418,9 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
           nodeId: nodeId,
           vitality: (sharedWaste['remainingVitality'] as num? ?? 0).toDouble(),
         );
-        if (mounted) setState(() => _notice = 'Cet amas de Déchets est déjà nettoyé.');
+        if (mounted) {
+          setState(() => _notice = 'Cet amas de Déchets est déjà nettoyé.');
+        }
         _stopHarvest();
         return;
       }
@@ -724,13 +782,15 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
     final qualitative = biome['ecologyQualitative'] is Map
         ? Map<String, dynamic>.from(biome['ecologyQualitative'] as Map)
         : const <String, dynamic>{};
-    String label(String key, String fallback) => '${qualitative[key] ?? fallback}';
+    String label(String key, String fallback) =>
+        '${qualitative[key] ?? fallback}';
     num amount(String key) => (biome[key] as num?) ?? 0;
     return Card(
       child: ExpansionTile(
         leading: const Icon(Icons.eco_outlined),
         title: Text('État du Biome · Biomasse ${label('biomass', '—')}'),
-        subtitle: Text('Humidité ${label('humidity', '—')} · Contamination ${label('contamination', '—')}'),
+        subtitle: Text(
+            'Humidité ${label('humidity', '—')} · Contamination ${label('contamination', '—')}'),
         children: <Widget>[
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -756,7 +816,8 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
   }
 
   Widget _ecologyValue(String label, num value) => Chip(
-        label: Text('$label : ${value.toStringAsFixed(value % 1 == 0 ? 0 : 1)}'),
+        label:
+            Text('$label : ${value.toStringAsFixed(value % 1 == 0 ? 0 : 1)}'),
       );
 
   Widget _teamTab(_LisiereContext data) {
@@ -983,8 +1044,12 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
               isThreeLine: true,
             ))),
         OutlinedButton.icon(
-          onPressed: () => _run(
-              (_) async => _lisiere.resolveAutonomousMissions(DateTime.now())),
+          onPressed: () =>
+              _run((data) async => _resolveAutonomousMissionsWithWorldcraft(
+                    world: data.world,
+                    snapshot: data.snapshot,
+                    now: DateTime.now(),
+                  )),
           icon: const Icon(Icons.update),
           label: const Text('Calculer les retours hors ligne'),
         ),
@@ -1265,57 +1330,88 @@ class WorldbuildingSceneGeometry {
   final Size size;
 
   static const _anchors = <Offset>[
-    Offset(.18, .64), Offset(.34, .38), Offset(.50, .70),
-    Offset(.68, .45), Offset(.83, .68), Offset(.43, .84),
-    Offset(.68, .82), Offset(.18, .40), Offset(.84, .38),
+    Offset(.18, .64),
+    Offset(.34, .38),
+    Offset(.50, .70),
+    Offset(.68, .45),
+    Offset(.83, .68),
+    Offset(.43, .84),
+    Offset(.68, .82),
+    Offset(.18, .40),
+    Offset(.84, .38),
   ];
 
   Rect get bounds => Rect.fromLTRB(
       size.width * .11, size.height * .20, size.width * .91, size.height * .91);
   Rect get obstacle => Rect.fromCenter(
       center: Offset(size.width * .75, size.height * .25),
-      width: size.width * .12, height: size.height * .17);
+      width: size.width * .12,
+      height: size.height * .17);
 
   Offset parcelAnchor(int ordinal) {
     final normalized = _anchors[ordinal % _anchors.length];
-    final candidate = Offset(size.width * normalized.dx, size.height * normalized.dy);
+    final candidate =
+        Offset(size.width * normalized.dx, size.height * normalized.dy);
     if (isWalkable(candidate)) return candidate;
-    return Offset(obstacle.left - size.width * .07, obstacle.bottom + size.height * .07);
+    return Offset(
+        obstacle.left - size.width * .07, obstacle.bottom + size.height * .07);
   }
 
   bool isWalkable(Offset point, {double radius = 18}) =>
-      bounds.deflate(radius).contains(point) && !obstacle.inflate(radius).contains(point);
+      bounds.deflate(radius).contains(point) &&
+      !obstacle.inflate(radius).contains(point);
 
   List<Offset> route(Offset from, Offset to) {
     final blocked = obstacle.inflate(10);
     if (!_segmentIntersectsRect(from, to, blocked)) return <Offset>[from, to];
-    final top = <Offset>[from, Offset(blocked.left - 8, blocked.top - 8),
-      Offset(blocked.right + 8, blocked.top - 8), to];
-    final bottom = <Offset>[from, Offset(blocked.left - 8, blocked.bottom + 8),
-      Offset(blocked.right + 8, blocked.bottom + 8), to];
+    final top = <Offset>[
+      from,
+      Offset(blocked.left - 8, blocked.top - 8),
+      Offset(blocked.right + 8, blocked.top - 8),
+      to
+    ];
+    final bottom = <Offset>[
+      from,
+      Offset(blocked.left - 8, blocked.bottom + 8),
+      Offset(blocked.right + 8, blocked.bottom + 8),
+      to
+    ];
     final viableTop = _routeIsWalkable(top, blocked);
     final viableBottom = _routeIsWalkable(bottom, blocked);
-    if (viableTop && (!viableBottom || _routeLength(top) <= _routeLength(bottom))) {
+    if (viableTop &&
+        (!viableBottom || _routeLength(top) <= _routeLength(bottom))) {
       return top;
     }
     return viableBottom ? bottom : top;
   }
 
   bool _routeIsWalkable(List<Offset> points, Rect blocked) =>
-      List<bool>.generate(points.length - 1,
-          (index) => !_segmentIntersectsRect(points[index], points[index + 1], blocked))
-          .every((valid) => valid);
+      List<bool>.generate(
+          points.length - 1,
+          (index) => !_segmentIntersectsRect(points[index], points[index + 1],
+              blocked)).every((valid) => valid);
 
   double _routeLength(List<Offset> points) => List<double>.generate(
-      points.length - 1, (index) => (points[index] - points[index + 1]).distance)
+          points.length - 1,
+          (index) => (points[index] - points[index + 1]).distance)
       .fold(0, (sum, value) => sum + value);
 
   bool _segmentIntersectsRect(Offset from, Offset to, Rect rect) {
     if (rect.contains(from) || rect.contains(to)) return true;
-    final corners = <Offset>[rect.topLeft, rect.topRight, rect.bottomRight, rect.bottomLeft];
-    return List<bool>.generate(corners.length, (index) => _segmentsIntersect(
-          from, to, corners[index], corners[(index + 1) % corners.length],
-        )).any((intersects) => intersects);
+    final corners = <Offset>[
+      rect.topLeft,
+      rect.topRight,
+      rect.bottomRight,
+      rect.bottomLeft
+    ];
+    return List<bool>.generate(
+        corners.length,
+        (index) => _segmentsIntersect(
+              from,
+              to,
+              corners[index],
+              corners[(index + 1) % corners.length],
+            )).any((intersects) => intersects);
   }
 
   bool _segmentsIntersect(Offset a, Offset b, Offset c, Offset d) {
@@ -1377,7 +1473,9 @@ class WorldbuildingParcelScene extends StatelessWidget {
     final contamination = (biome?['contamination'] as num?)?.toDouble() ?? 0;
     final biomass = (biome?['biomass'] as num?)?.toDouble() ?? 90;
     final humidity = (biome?['humidity'] as num?)?.toDouble() ?? 50;
-    if (contamination >= 60) return const Color(0xff513d36).withValues(alpha: .42);
+    if (contamination >= 60) {
+      return const Color(0xff513d36).withValues(alpha: .42);
+    }
     if (biomass < 15) return const Color(0xff80684b).withValues(alpha: .45);
     if (biomass < 30) return const Color(0xff8a7650).withValues(alpha: .26);
     if (humidity > 90) return const Color(0xff416f93).withValues(alpha: .20);
@@ -1402,181 +1500,189 @@ class WorldbuildingParcelScene extends StatelessWidget {
               for (final parcel in parcels) parcel.id: parcel,
             };
             final teamAnchor = parcelById[teamParcelId] == null
-                ? Offset(constraints.maxWidth * .48, constraints.maxHeight * .61)
+                ? Offset(
+                    constraints.maxWidth * .48, constraints.maxHeight * .61)
                 : geometry.parcelAnchor(parcelById[teamParcelId]!.ordinal);
             return Stack(
-            children: <Widget>[
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _ParcelGroundPainter(_ground),
-                ),
-              ),
-              if (_ecologyTint != Colors.transparent)
-                Positioned.fill(child: ColoredBox(color: _ecologyTint)),
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _ParcelRoutePainter(
-                    parcels: parcels,
-                    geometry: geometry,
+              children: <Widget>[
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _ParcelGroundPainter(_ground),
                   ),
                 ),
-              ),
-              Positioned(
-                top: 8,
-                left: 10,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Text(
-                      active
-                          ? '${biome?['biomeType'] ?? 'Biome'} · parcelle active'
-                          : '${biome?['biomeType'] ?? 'Biome'} · choisir une parcelle',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                if (_ecologyTint != Colors.transparent)
+                  Positioned.fill(child: ColoredBox(color: _ecologyTint)),
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _ParcelRoutePainter(
+                      parcels: parcels,
+                      geometry: geometry,
                     ),
                   ),
                 ),
-              ),
-              ...parcels.map((parcel) {
-                final anchor = geometry.parcelAnchor(parcel.ordinal);
-                final selected = parcel.id == selectedParcelId;
-                final current = parcel.id == teamParcelId;
-                return Positioned(
-                  left: anchor.dx - 22,
-                  top: anchor.dy - 22,
-                  child: Semantics(
-                    button: true,
-                    label: 'Aller à la parcelle ${parcel.ordinal + 1}',
-                    selected: selected,
-                    child: GestureDetector(
-                      key: ValueKey<String>('parcel-marker-${parcel.id}'),
-                      onTap: onParcelTap == null ? null : () => onParcelTap!(parcel),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: 44,
-                        height: 44,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: current
-                              ? Colors.lightGreen.shade700
-                              : selected
-                                  ? Colors.orange.shade700
-                                  : Colors.black54,
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: .9),
-                            width: 2,
+                Positioned(
+                  top: 8,
+                  left: 10,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      child: Text(
+                        active
+                            ? '${biome?['biomeType'] ?? 'Biome'} · parcelle active'
+                            : '${biome?['biomeType'] ?? 'Biome'} · choisir une parcelle',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ),
+                ...parcels.map((parcel) {
+                  final anchor = geometry.parcelAnchor(parcel.ordinal);
+                  final selected = parcel.id == selectedParcelId;
+                  final current = parcel.id == teamParcelId;
+                  return Positioned(
+                    left: anchor.dx - 22,
+                    top: anchor.dy - 22,
+                    child: Semantics(
+                      button: true,
+                      label: 'Aller à la parcelle ${parcel.ordinal + 1}',
+                      selected: selected,
+                      child: GestureDetector(
+                        key: ValueKey<String>('parcel-marker-${parcel.id}'),
+                        onTap: onParcelTap == null
+                            ? null
+                            : () => onParcelTap!(parcel),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 44,
+                          height: 44,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: current
+                                ? Colors.lightGreen.shade700
+                                : selected
+                                    ? Colors.orange.shade700
+                                    : Colors.black54,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: .9),
+                              width: 2,
+                            ),
+                          ),
+                          child: Text('${parcel.ordinal + 1}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                ...orderedNodes.map((item) => Positioned(
+                      left:
+                          32.0 + (item.index % 3) * constraints.maxWidth * .26,
+                      top: item.y,
+                      child: GestureDetector(
+                        onTapDown: item.node.state ==
+                                LisiereResourceNodeState.available
+                            ? (_) => onNodeTapDown?.call(item.node)
+                            : null,
+                        onTapUp: item.node.state ==
+                                LisiereResourceNodeState.available
+                            ? (_) => onNodeTapUp?.call()
+                            : null,
+                        onTapCancel: onNodeTapUp,
+                        child: Semantics(
+                          button: true,
+                          label: 'Nœud ${item.node.kind.name}',
+                          child: Opacity(
+                            opacity: item.node.state ==
+                                    LisiereResourceNodeState.available
+                                ? 1
+                                : .42,
+                            child: Text(item.node.visualVariant,
+                                style: const TextStyle(
+                                    fontSize: 27,
+                                    shadows: <Shadow>[
+                                      Shadow(
+                                          color: Colors.black45,
+                                          offset: Offset(2, 3),
+                                          blurRadius: 2),
+                                    ])),
                           ),
                         ),
-                        child: Text('${parcel.ordinal + 1}',
-                            style: const TextStyle(
-                                color: Colors.white, fontWeight: FontWeight.w800)),
                       ),
-                    ),
+                    )),
+                Positioned(
+                  left: geometry.obstacle.left,
+                  top: geometry.obstacle.top,
+                  child: Text(_obstacle,
+                      style: const TextStyle(fontSize: 34, shadows: <Shadow>[
+                        Shadow(
+                            color: Colors.black45,
+                            offset: Offset(2, 3),
+                            blurRadius: 2),
+                      ])),
+                ),
+                if (active)
+                  Positioned(
+                    right: constraints.maxWidth * .22,
+                    bottom: constraints.maxHeight * .12,
+                    child: const Text('⌖',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 30,
+                            shadows: <Shadow>[
+                              Shadow(
+                                  color: Colors.black45,
+                                  offset: Offset(2, 3),
+                                  blurRadius: 2),
+                            ])),
                   ),
-                );
-              }),
-              ...orderedNodes.map((item) => Positioned(
-                    left: 32.0 + (item.index % 3) * constraints.maxWidth * .26,
-                    top: item.y,
-                    child: GestureDetector(
-                      onTapDown:
-                          item.node.state == LisiereResourceNodeState.available
-                              ? (_) => onNodeTapDown?.call(item.node)
-                              : null,
-                      onTapUp:
-                          item.node.state == LisiereResourceNodeState.available
-                              ? (_) => onNodeTapUp?.call()
-                              : null,
-                      onTapCancel: onNodeTapUp,
-                      child: Semantics(
-                        button: true,
-                        label: 'Nœud ${item.node.kind.name}',
-                        child: Opacity(
-                          opacity: item.node.state ==
-                                  LisiereResourceNodeState.available
-                              ? 1
-                              : .42,
-                          child: Text(item.node.visualVariant,
-                              style: const TextStyle(
-                                  fontSize: 27, shadows: <Shadow>[
-                            Shadow(
-                                color: Colors.black45,
-                                offset: Offset(2, 3),
-                                blurRadius: 2),
-                          ])),
+                ...ptipotes.indexed.map((entry) => Positioned(
+                      left: teamAnchor.dx - 22 + entry.$1 * 10,
+                      top: teamAnchor.dy - 54 + entry.$1 * 5,
+                      child: SizedBox(
+                        width: 44,
+                        height: 52,
+                        child: PtipoteImage(
+                          type: entry.$2.typeId.name,
+                          species: entry.$2.natureId,
+                          visualAssetKey: entry.$2.visualAssetKey,
+                          height: 52,
                         ),
                       ),
-                    ),
-                  )),
-              Positioned(
-                left: geometry.obstacle.left,
-                top: geometry.obstacle.top,
-                child: Text(_obstacle,
-                    style: const TextStyle(fontSize: 34, shadows: <Shadow>[
-                      Shadow(
-                          color: Colors.black45,
-                          offset: Offset(2, 3),
-                          blurRadius: 2),
-                    ])),
-              ),
-              if (active)
-                Positioned(
-                  right: constraints.maxWidth * .22,
-                  bottom: constraints.maxHeight * .12,
-                  child: const Text('⌖',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 30,
-                          shadows: <Shadow>[
+                    )),
+                ...ptibugIcons.indexed.map((entry) => Positioned(
+                      left: teamAnchor.dx + 24 + entry.$1 * 9,
+                      top: teamAnchor.dy - 8 + entry.$1 * 5,
+                      child: Text(entry.$2,
+                          style:
+                              const TextStyle(fontSize: 29, shadows: <Shadow>[
                             Shadow(
                                 color: Colors.black45,
                                 offset: Offset(2, 3),
                                 blurRadius: 2),
                           ])),
+                    )),
+                const Positioned(
+                  right: 8,
+                  bottom: 6,
+                  child: Text('projection locale',
+                      style: TextStyle(color: Colors.white70, fontSize: 10)),
                 ),
-              ...ptipotes.indexed.map((entry) => Positioned(
-                    left: teamAnchor.dx - 22 + entry.$1 * 10,
-                    top: teamAnchor.dy - 54 + entry.$1 * 5,
-                    child: SizedBox(
-                      width: 44,
-                      height: 52,
-                      child: PtipoteImage(
-                        type: entry.$2.typeId.name,
-                        species: entry.$2.natureId,
-                        visualAssetKey: entry.$2.visualAssetKey,
-                        height: 52,
-                      ),
-                    ),
-                  )),
-              ...ptibugIcons.indexed.map((entry) => Positioned(
-                    left: teamAnchor.dx + 24 + entry.$1 * 9,
-                    top: teamAnchor.dy - 8 + entry.$1 * 5,
-                    child: Text(entry.$2,
-                        style: const TextStyle(fontSize: 29, shadows: <Shadow>[
-                          Shadow(
-                              color: Colors.black45,
-                              offset: Offset(2, 3),
-                              blurRadius: 2),
-                        ])),
-                  )),
-              const Positioned(
-                right: 8,
-                bottom: 6,
-                child: Text('projection locale',
-                    style: TextStyle(color: Colors.white70, fontSize: 10)),
-              ),
-              const Positioned(
-                left: 8,
-                bottom: 6,
-                child: Text('Touchez une pastille pour suivre un chemin',
-                    style: TextStyle(color: Colors.white70, fontSize: 10)),
-              ),
-            ],
+                const Positioned(
+                  left: 8,
+                  bottom: 6,
+                  child: Text('Touchez une pastille pour suivre un chemin',
+                      style: TextStyle(color: Colors.white70, fontSize: 10)),
+                ),
+              ],
             );
           },
         ),
@@ -1627,7 +1733,8 @@ class _ParcelRoutePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ParcelRoutePainter oldDelegate) =>
-      oldDelegate.parcels != parcels || oldDelegate.geometry.size != geometry.size;
+      oldDelegate.parcels != parcels ||
+      oldDelegate.geometry.size != geometry.size;
 }
 
 class _ParcelGroundPainter extends CustomPainter {

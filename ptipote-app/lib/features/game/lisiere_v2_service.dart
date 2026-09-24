@@ -1179,6 +1179,47 @@ class LisiereV2Service {
     });
   }
 
+  /// Rehydrates the visible parcel projection from the World-owned ecology
+  /// state after an offline resolver pass. Unknown server entries are ignored:
+  /// only deterministic local parcel nodes are rendered by Flutter.
+  Future<LisiereV2Snapshot> synchronizeSharedEcology(
+    Iterable<Map<String, dynamic>> biomes,
+  ) =>
+      _mutate((snapshot) {
+        for (final biome in biomes) {
+          final biomeId = '${biome['biomeId'] ?? biome['id'] ?? ''}';
+          if (biomeId.isEmpty) continue;
+          final organics =
+              biome['organicNodes'] as Map? ?? const <String, dynamic>{};
+          for (final entry in organics.entries) {
+            final node = snapshot.nodes['${entry.key}'];
+            if (node == null ||
+                node.kind != LisiereResourceKind.organic ||
+                entry.value is! Map) {
+              continue;
+            }
+            final state = Map<String, dynamic>.from(entry.value as Map);
+            node.resistance = ((state['vitality'] as num?)?.toDouble() ?? 0)
+                .clamp(0, node.maxResistance);
+            node.isDestroyed = state['state'] == 'destroyed';
+          }
+          final deposits =
+              biome['wasteDeposits'] as Map? ?? const <String, dynamic>{};
+          for (final entry in deposits.entries) {
+            final node = snapshot.nodes['${entry.key}'];
+            if (node == null ||
+                node.kind != LisiereResourceKind.waste ||
+                entry.value is! Map) {
+              continue;
+            }
+            final deposit = Map<String, dynamic>.from(entry.value as Map);
+            node.resistance = ((deposit['quantity'] as num?)?.toDouble() ?? 0)
+                .clamp(0, node.maxResistance);
+            if (node.resistance <= 0) node.remainingLayers = 0;
+          }
+        }
+      });
+
   /// One deterministic visit is persisted before its UI consequence is shown.
   /// The caller applies the already-existing V1 toxic affliction once when the
   /// returned result requests it; the V2 encounter id prevents duplicate UI.

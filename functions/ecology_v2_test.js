@@ -43,4 +43,19 @@ const one = resolveBiomeEcology({state: deterministicInput, biomeType: "savane_h
 const two = resolveBiomeEcology({state: deterministicInput, biomeType: "savane_humide", targetMs: startedAt + 24 * HOUR_MS});
 assert.deepEqual(one, two, "La résolution offline est déterministe.");
 
+const severeWeather = {weatherType: "torrentialRain", id: "weather-test", startsAtMs: startedAt, endsAtMs: startedAt + HOUR_MS, status: "active"};
+const severeDestroyed = resolveBiomeEcology({
+  state: {...standard, lastEcologyResolvedAtMs: startedAt, organicNodes: {depleted: {id: "depleted", vitality: 0, biomassCapacity: 10, state: "depleted"}}},
+  biomeType: "savane_humide", targetMs: startedAt + HOUR_MS, weatherCells: [severeWeather],
+  config: {organic: {severeWeatherDestructionChance: 1}},
+});
+assert.equal(severeDestroyed.state.organicNodes.depleted.state, "destroyed", "Une météo sévère détruit de manière déterministe un nœud déjà épuisé lorsque la probabilité configurée le décide.");
+
+const recreated = resolveBiomeEcology({
+  state: {...standard, organicBiomassCapacity: 100, lastEcologyResolvedAtMs: startedAt, organicNodes: {slot: {id: "slot", vitality: 0, biomassCapacity: 10, state: "destroyed", depletionAtMs: []}}},
+  biomeType: "savane_humide", targetMs: startedAt + 120 * HOUR_MS,
+});
+assert.equal(recreated.state.organicNodes.slot.state, "active", "La recréation naturelle réutilise un emplacement biologique connu.");
+assert.equal(recreated.state.organicNodes.slot.vitality, 10);
+
 console.log("Ecology V2: biomasse, humidité, inondation, déchets et déterminisme validés.");

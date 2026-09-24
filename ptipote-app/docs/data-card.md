@@ -454,6 +454,18 @@ L’Eau n’est pas une ressource globale du Camp.
   de −1/h ne fonctionne que si Biomasse >80 et Contamination <60 ; elle peut
   coexister avec des Déchets contaminants. Les déchets du Camp restent dans le
   stock du Camp et ne deviennent jamais des amas territoriaux par défaut.
+  Un Arac en mission résout son travail depuis les timestamps persistés : il
+  nettoie d’abord les amas partagés, puis réduit la même Contamination lorsqu’il
+  n’y a plus de Déchet exploitable. Son débit et sa fenêtre offline sont dans
+  `ecologyV2.cleaners`; aucune jauge de toxicité parallèle n’est créée.
+- **Nœuds et météo sévère.** Les nœuds organiques connus sont réhydratés dans
+  la Lisière depuis `BiomeSharedState` après chaque résolution hors ligne. Une
+  météo sévère peut détruire un nœud déjà épuisé suivant une probabilité
+  Dashboard déterministe (hash de nœud/session, jamais hasard client). Après
+  cinq jours à Biomasse suffisante, une recréation réutilise un emplacement
+  organique détruit connu : elle ne peut donc pas apparaître au milieu d’un
+  chemin. Les amas nettoyés gardent un tombstone à zéro afin de ne pas revenir
+  lors de l’ouverture d’une autre projection locale.
 - **Minéral et Mine.** Le Minéral de surface est fini, ne contamine pas
   directement et produit un Déchet tous les dix Minéraux extraits. Il ne crée
   plus de pression d’exploitation. La Mine utilise une réserve profonde finie,
@@ -470,11 +482,14 @@ L’Eau n’est pas une ressource globale du Camp.
   qualitatifs ; le panneau extensible **DEV** de la Lisière montre les valeurs
   exactes. La scène 2D 3/4 varie déjà son voile visuel pour contamination,
   Biomasse faible et saturation d’eau.
+  Toute extraction ou action de nettoyage résout aussi l’écologie avant sa
+  transaction : une action tardive ne contourne jamais une météo, une
+  contamination ou une régénération en attente.
 - **Configuration.** `ecologyV2` est une section Dashboard séparée de la
   Biomasse V1 : courbes, seuils, plages d’Humidité, pluie, inondation,
   Déchets, Contamination, Minéral et Mine y sont versionnés et publiables.
   Le Dashboard affiche en haut à droite son repère de livraison
-  `Dashboard V2.1.0 · Écologie physique 0.1` afin de vérifier visuellement
+  `Dashboard V2.1.1 · Écologie physique 0.1` afin de vérifier visuellement
   que la version Hosting contient bien ce lot. Le repère est une version de
   l’interface, indépendante des valeurs publiées dans Firestore.
   Le puzzle écologique, les espèces, Blocs stables, Recherche, Data, Tour et
