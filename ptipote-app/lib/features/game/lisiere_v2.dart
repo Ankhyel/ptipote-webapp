@@ -431,7 +431,8 @@ class LisiereResourceNode {
     }
     final inflicted = actor.harvestPower.clamp(0, resistance);
     resistance = (resistance - inflicted).clamp(0, maxResistance);
-    if (kind == LisiereResourceKind.organic || kind == LisiereResourceKind.waste) {
+    if (kind == LisiereResourceKind.organic ||
+        kind == LisiereResourceKind.waste) {
       final rawYield = inflicted * actor.yieldModifier + yieldRemainder;
       final credited = rawYield.floor().clamp(0, 1 << 31).toInt();
       yieldRemainder = rawYield - credited;
@@ -1187,6 +1188,11 @@ class LisierePTibugState {
           ],
         _ => const <LisiereResourceKind>[],
       };
+
+  /// Arac is the native territorial cleaner. The existing Récupérateur trait
+  /// grants the same ecology-cleaner role without changing cargo rules.
+  bool get isEcologyCleaner =>
+      speciesId == 'arac' || traitDefinitionIds.contains('recuperateur');
 
   double yieldModifierFor(LisiereResourceKind kind) {
     final hasMatchingTrait = (kind == LisiereResourceKind.mineral &&

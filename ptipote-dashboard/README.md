@@ -16,7 +16,7 @@ Cette premiere version ne contient aucune cle admin. La cle Firebase Web est un 
 
 Le coin supérieur droit affiche la version versionnée du Dashboard et le lot
 de gameplay qu'il expose. Pour le lot écologique actuel, le repère est
-`Dashboard V2.1.1 · Écologie physique 0.1`. Il est livré avec les fichiers
+`Dashboard V2.1.2 · Écologie physique 0.1`. Il est livré avec les fichiers
 statiques : après une publication Hosting, il permet de distinguer une page
 mise à jour d'une ancienne version encore conservée dans le cache du navigateur.
 

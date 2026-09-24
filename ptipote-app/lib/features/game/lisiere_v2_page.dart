@@ -301,8 +301,7 @@ class _LisiereV2PageState extends State<LisiereV2Page> {
         final cleaners = team.ptibugIds
             .map((id) => snapshot.ptibugs[id])
             .whereType<LisierePTibugState>()
-            .where(
-                (bug) => bug.speciesId == 'arac' && !bug.maintenance.isSleeping)
+            .where((bug) => bug.isEcologyCleaner && !bug.maintenance.isSleeping)
             .toList(growable: false);
         for (final cleaner in cleaners) {
           for (final biomeId in mission.routeBiomeIds) {

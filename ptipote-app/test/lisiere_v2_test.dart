@@ -52,7 +52,9 @@ void main() {
     expect(config.travelSeconds(LisiereTravelDifficulty.hard), 180);
   });
 
-  test('organic harvest gives one base Organique per vitality and awaits ecology', () {
+  test(
+      'organic harvest gives one base Organique per vitality and awaits ecology',
+      () {
     final node = LisiereResourceNode.organic(
       id: 'organic-1',
       parcelId: 'parcel-1',
@@ -158,6 +160,20 @@ void main() {
     expect(scarabe.yieldModifierFor(LisiereResourceKind.mineral), 1.1);
     expect(scarabe.yieldModifierFor(LisiereResourceKind.organic), 1);
     expect(arac.preferredResources.first, LisiereResourceKind.waste);
+    expect(arac.isEcologyCleaner, isTrue);
+    final recuperateur = LisierePTibugState(
+      id: 'recuperateur-1',
+      displayName: 'Récupérateur',
+      capacity: 20,
+      speciesId: 'hyme',
+      traitDefinitionIds: const <String>['recuperateur'],
+      maintenance: LisierePTibugMaintenance(
+        ptibugId: 'recuperateur-1',
+        dailyRation: 1,
+        lastResolvedAt: DateTime.utc(2026),
+      ),
+    );
+    expect(recuperateur.isEcologyCleaner, isTrue);
   });
 
   test('field inventories, team capacity and return reserve remain distinct',

@@ -454,10 +454,11 @@ L’Eau n’est pas une ressource globale du Camp.
   de −1/h ne fonctionne que si Biomasse >80 et Contamination <60 ; elle peut
   coexister avec des Déchets contaminants. Les déchets du Camp restent dans le
   stock du Camp et ne deviennent jamais des amas territoriaux par défaut.
-  Un Arac en mission résout son travail depuis les timestamps persistés : il
-  nettoie d’abord les amas partagés, puis réduit la même Contamination lorsqu’il
-  n’y a plus de Déchet exploitable. Son débit et sa fenêtre offline sont dans
-  `ecologyV2.cleaners`; aucune jauge de toxicité parallèle n’est créée.
+  Un Arac, ou tout P’TIBUG portant le trait **Récupérateur**, résout son travail
+  depuis les timestamps persistés : il nettoie d’abord les amas partagés, puis
+  réduit la même Contamination lorsqu’il n’y a plus de Déchet exploitable. Son
+  débit et sa fenêtre offline sont dans `ecologyV2.cleaners`; aucune jauge de
+  toxicité parallèle n’est créée.
 - **Nœuds et météo sévère.** Les nœuds organiques connus sont réhydratés dans
   la Lisière depuis `BiomeSharedState` après chaque résolution hors ligne. Une
   météo sévère peut détruire un nœud déjà épuisé suivant une probabilité
@@ -489,8 +490,10 @@ L’Eau n’est pas une ressource globale du Camp.
   Biomasse V1 : courbes, seuils, plages d’Humidité, pluie, inondation,
   Déchets, Contamination, Minéral et Mine y sont versionnés et publiables.
   Le Dashboard affiche en haut à droite son repère de livraison
-  `Dashboard V2.1.1 · Écologie physique 0.1` afin de vérifier visuellement
+  `Dashboard V2.1.2 · Écologie physique 0.1` afin de vérifier visuellement
   que la version Hosting contient bien ce lot. Le repère est une version de
   l’interface, indépendante des valeurs publiées dans Firestore.
+  Les assets CSS et JavaScript portent aussi ce numéro dans leur URL pour
+  empêcher Safari de conserver une ancienne interface sans carte écologique.
   Le puzzle écologique, les espèces, Blocs stables, Recherche, Data, Tour et
   Walker restent explicitement hors périmètre.
