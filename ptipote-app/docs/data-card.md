@@ -473,5 +473,9 @@ L’Eau n’est pas une ressource globale du Camp.
 - **Configuration.** `ecologyV2` est une section Dashboard séparée de la
   Biomasse V1 : courbes, seuils, plages d’Humidité, pluie, inondation,
   Déchets, Contamination, Minéral et Mine y sont versionnés et publiables.
+  Le Dashboard affiche en haut à droite son repère de livraison
+  `Dashboard V2.1.0 · Écologie physique 0.1` afin de vérifier visuellement
+  que la version Hosting contient bien ce lot. Le repère est une version de
+  l’interface, indépendante des valeurs publiées dans Firestore.
   Le puzzle écologique, les espèces, Blocs stables, Recherche, Data, Tour et
   Walker restent explicitement hors périmètre.

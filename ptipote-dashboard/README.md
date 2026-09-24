@@ -12,6 +12,14 @@ Dashboard interne statique pour suivre les donnees admin de PTIPOTE sans exposer
 
 Cette premiere version ne contient aucune cle admin. La cle Firebase Web est un identifiant client normal ; elle ne donne pas de droits si les rules Firestore sont correctes.
 
+## Repère de version déployée
+
+Le coin supérieur droit affiche la version versionnée du Dashboard et le lot
+de gameplay qu'il expose. Pour le lot écologique actuel, le repère est
+`Dashboard V2.1.0 · Écologie physique 0.1`. Il est livré avec les fichiers
+statiques : après une publication Hosting, il permet de distinguer une page
+mise à jour d'une ancienne version encore conservée dans le cache du navigateur.
+
 ## Stats tentees par le dashboard
 
 - `users` : nombre total d'utilisateurs.

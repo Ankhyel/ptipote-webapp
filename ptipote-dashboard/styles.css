@@ -147,6 +147,34 @@ button {
   margin-bottom: 18px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dashboard-version {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(234 242 224 / 86%);
+  color: var(--sage-dark);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dashboard-version strong {
+  font-size: 0.76rem;
+}
+
+.dashboard-version small {
+  color: var(--muted);
+  font-size: 0.67rem;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--sage-dark);
@@ -515,6 +543,7 @@ small {
 
 @media (max-width: 880px) {
   .topbar,
+  .topbar-actions,
   .session,
   .status-panel,
   .panel-head,
@@ -524,12 +553,17 @@ small {
   }
 
   .topbar,
+  .topbar-actions,
   .content-grid {
     display: grid;
     grid-template-columns: 1fr;
   }
 
   .session-copy {
+    text-align: left;
+  }
+
+  .dashboard-version {
     text-align: left;
   }
 
