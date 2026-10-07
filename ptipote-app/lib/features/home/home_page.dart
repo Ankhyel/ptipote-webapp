@@ -8,6 +8,7 @@ import '../../services/notification_service.dart';
 import '../../services/nfc_service.dart';
 import '../../services/user_profile_service.dart';
 import '../chat/chats_page.dart';
+import '../elevage/elevage_page.dart';
 import '../figurines/figurines_page.dart';
 import '../friends/friends_page.dart';
 import '../game/refuge_page.dart';
@@ -211,6 +212,13 @@ class _HomePageState extends State<HomePage> {
                             onTap: () => Navigator.of(context)
                                 .pushNamed(Zone0V2OnboardingPage.route),
                           ),
+                          const SizedBox(height: 12),
+                          _GameButton(
+                            label: 'P’TIPOTE Élevage',
+                            icon: Icons.pets_outlined,
+                            onTap: () => Navigator.of(context)
+                                .pushNamed(ElevagePage.route),
+                          ),
                           if (canSeeDiagnostics)
                             TextButton(
                               onPressed: () => Navigator.of(context)
@@ -310,8 +318,8 @@ class _GameButton extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   label,
-                  style:
-                      const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w900),
                 ),
               ],
             ),

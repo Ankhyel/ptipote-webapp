@@ -4,6 +4,7 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
 import 'features/auth/auth_gate.dart';
 import 'features/chat/chats_page.dart';
+import 'features/elevage/elevage_page.dart';
 import 'features/figurines/figurines_page.dart';
 import 'features/friends/friends_page.dart';
 import 'features/game/refuge_page.dart';
@@ -39,6 +40,7 @@ class PtipoteApp extends StatelessWidget {
           Zone0V2OnboardingPage.route: (_) => const Zone0V2OnboardingPage(),
           WorldcraftDevRegionPage.route: (_) => const WorldcraftDevRegionPage(),
           Zone0V2CampPage.route: (_) => const Zone0V2CampPage(),
+          ElevagePage.route: (_) => const ElevagePage(),
           NfcPage.route: (_) => const NfcPage(),
           ProfilePage.route: (_) => const ProfilePage(),
         },

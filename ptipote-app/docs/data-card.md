@@ -1,5 +1,72 @@
 # Data Card — Réparation interactive
 
+> **Frontière documentaire.** Les règles historiques Zone 0 / Camp ci-dessous
+> restent propres à ce jeu. Elles ne deviennent jamais des règles Élevage par
+> défaut.
+
+## P’TIPOTE Élevage — V0 mobile
+
+P’TIPOTE Élevage est une expérience Flutter distincte de Zone 0, ouverte depuis
+la page d’accueil. Elle vit dans `lib/features/elevage/` et ne lit ni n’écrit
+les documents Firestore Zone 0. La V0 TestFlight est locale à l’appareil :
+`schemaVersion: 1`, sauvegarde `ptipote:elevage:save`, backup
+`ptipote:elevage:save:backup`, configuration séparée
+`ptipote:elevage:config` et timestamps epoch milliseconds UTC. Les seeds,
+profils générés, sorties et coûts réellement payés sont persistés : aucun reload
+ne reroll un individu ou un loot.
+
+Le seul profil instancié est **MINERAL / RESONANCE**. Un seed fixe ROOT ou LEAF
+comme préférence, les variations environnementales et la baseline de
+personnalité (`initiative`, `contact`, `tempo`). Figurine mockée et Co-élevage
+partagent le même individu métier ; le prêt a `startedAt`, `expiresAt`,
+`sourcePoolId` et reste temporaire. À expiration, le retour est idempotent,
+libère l’Alcôve sans détruire son aménagement et crée une notification persistée
+du Sourcier.
+
+Une Alcôve possède quatre slots configurables. LIGHT, TEMPERATURE et HUMIDITY
+sont dérivés depuis ses installations, jamais sauvegardés comme seconde source
+de vérité. Les instances CRAFTED gardent `paidCost` et `sourceConfigRevision`.
+Le placement dev est explicite, gratuit et non remboursable. Déménager détruit
+les seules instances CRAFTED posées et rend
+`floor(total organic/mineral payé × rate)` ; les composants spéciaux et la
+réserve hors Alcôve ne sont jamais remboursés.
+
+Résonance mange ROOT, LEAF, MOSS, ALGAE ou MUSHROOM. ROOT/LEAF est découvert
+par preuves UNKNOWN → SUSPECTED → CONFIRMED. La faim dérive de `lastMealAt`,
+reste lente et non punitive. IRON apporte 2 unités structurelles, LIMESTONE 1,
+QUARTZ 0 : un matériau ne nourrit jamais l’individu. `FIRST_FOOD`,
+`FIRST_FAVORITE_FOOD`, `FIRST_TREAT` et `FIRST_AUTONOMOUS_MEAL` sont
+idempotents ; une friandise n’est pas un repas.
+
+La Mini-Lisière Élevage est séparée de la Lisière Zone 0 : Forêt, Littoral ou
+Colline, durée timestampée configurable, exactement trois pistes persistées et
+un seul choix atomique. La Forêt donne Organic et ressources végétales, le
+Littoral ALGAE/ALGAE_FRAGMENT/LIMESTONE, la Colline MINERAL/LIMESTONE/QUARTZ/
+IRON. Le Bio-fabricateur consomme réellement l’inventaire : BASSIN exige
+LIMESTONE + ALGAE_FRAGMENT, MOSS_STONE exige MOSS, et les recettes découvertes
+restent connues après consommation du composant.
+
+Les installations productives ont un stock local plafonné dérivé de timestamps
+(Bassin ALGAE/MOSS, Culture ROOT/LEAF, Butte FRUIT, Géodes IRON/QUARTZ). Elles
+ne remplissent pas l’inventaire passivement. Résonance peut manger localement
+et absorber IRON; l’alimentation manuelle reste toujours possible.
+
+Le Sourcier V0 utilise les Bio-piles, affiche au plus trois offres (Fruit
+fibreux et Jelly fruité livrés) et rachète seulement Organique/Minéral selon
+la config. Les transactions sont atomiques. Le Dashboard mobile local édite
+Preset, devMode, faim, découverte, Mini-Lisière, production, Co-élevage,
+Sourcier, recettes et métamorphose. Ses overrides versionnés sont séparés de la
+sauvegarde joueur et réinitialisables. Le Dashboard web Firestore actuel reste
+la configuration Zone 0 : Élevage mobile est volontairement local dans cette
+première build, afin de ne pas coupler le prototype aux documents Zone 0.
+
+Le temps n’évolue jamais seul un P’TIPOTE. Bébé demande 24 h en Prototype (48 h
+Target), Intermédiaire 72 h supplémentaires (168 h Target), plus repas,
+structure, compréhension, aménagement et autonomie. La métamorphose est
+volontaire, utilise trois motifs sans pénalité et fait passer BABY à
+INTERMEDIATE puis MATURE. BABY reste comportemental, INTERMEDIATE communique
+par catégories et MATURE peut préciser ROOT/LEAF/IRON. Mature reste jouable.
+
 Un bâtiment endommagé peut être réparé de deux façons : payer le coût normal
 ou **réparer soi-même**. Les deux actions restaurent exactement la quantité de
 Viabilité sélectionnée. La réparation interactive ne consomme ni ressources,

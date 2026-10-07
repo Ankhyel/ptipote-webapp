@@ -1,7 +1,7 @@
 name: ptipote_app
 description: PTIPOTE mobile app (Flutter) for NFC scan, account profiles, and figurine collections.
 publish_to: none
-version: 0.1.1+2
+version: 0.1.1+3
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -20,6 +20,7 @@ dependencies:
   url_launcher: ^6.3.2
   firebase_messaging: ^16.4.0
   package_info_plus: ^8.3.0
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:
