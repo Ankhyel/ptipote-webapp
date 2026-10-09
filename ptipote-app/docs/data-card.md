@@ -67,6 +67,24 @@ volontaire, utilise trois motifs sans pénalité et fait passer BABY à
 INTERMEDIATE puis MATURE. BABY reste comportemental, INTERMEDIATE communique
 par catégories et MATURE peut préciser ROOT/LEAF/IRON. Mature reste jouable.
 
+### Présentation joueur — Lot 12
+
+L’Alcôve mobile affiche une scène placeholder autonome : fond construit avec
+les couleurs Flutter, P’TIPOTE représenté par une silhouette/icône, déplacement
+léger gauche/droite et petites icônes pour les installations posées. Cette couche
+vit uniquement dans la présentation ; elle est conçue pour être remplacée plus
+tard par des sprites, fonds et mini-illustrations sans modifier le domaine.
+
+L’inventaire est la source visuelle des objets du joueur. Il regroupe
+**Nourriture**, **Friandises**, **Matériaux** et **Ressources**, puis filtre les
+objets réellement proposables à Résonance. Après Mini-Lisière, un résultat
+explicite détaille le gain avant le retour à l’Alcôve. Les IDs du domaine
+(`ROOT`, `IRON`, etc.) ne sont pas exposés : une couche de présentation fournit
+les libellés FR, icônes placeholder et feedbacks émotionnels courts. Les
+feedbacks ne modifient pas la vérité métier : ils traduisent seulement les
+réactions existantes. Lorsque `devMode` est désactivé, l’ajout d’inventaire dev
+et le Dashboard local ne sont plus exposés dans le parcours joueur.
+
 Un bâtiment endommagé peut être réparé de deux façons : payer le coût normal
 ou **réparer soi-même**. Les deux actions restaurent exactement la quantité de
 Viabilité sélectionnée. La réparation interactive ne consomme ni ressources,

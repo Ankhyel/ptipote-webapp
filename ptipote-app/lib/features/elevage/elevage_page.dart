@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'elevage_config.dart';
 import 'elevage_controller.dart';
 import 'elevage_engine.dart';
+import 'elevage_presentation.dart';
 import 'elevage_repository.dart';
 
 class ElevagePage extends StatefulWidget {
@@ -204,7 +205,7 @@ class _AlcovesPage extends StatelessWidget {
   }
 }
 
-class _IndividualPage extends StatelessWidget {
+class _IndividualPage extends StatefulWidget {
   const _IndividualPage(
       {required this.controller,
       required this.individualId,
@@ -214,40 +215,94 @@ class _IndividualPage extends StatelessWidget {
   final VoidCallback onBack;
 
   @override
+  State<_IndividualPage> createState() => _IndividualPageState();
+}
+
+class _IndividualPageState extends State<_IndividualPage> {
+  String? _reaction;
+  String? _feedback;
+
+  Future<void> _offer(String item, bool structural) async {
+    final state = widget.controller.state!;
+    final individual =
+        (state.data['individuals'] as Map)[widget.individualId] as Map;
+    if (structural) {
+      await widget.controller.offerStructural(widget.individualId, item);
+    } else {
+      await widget.controller.offerFood(widget.individualId, item);
+    }
+    if (!mounted) return;
+    if (widget.controller.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              ElevagePresentation.friendlyError(widget.controller.error))));
+      return;
+    }
+    final reaction =
+        ElevageDomain.reactionFor(item, Map<String, dynamic>.from(individual));
+    final feedback = ElevagePresentation.reactionFeedback(
+        reaction, individual['name'] as String);
+    setState(() {
+      _reaction = reaction;
+      _feedback = feedback;
+    });
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(feedback)));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
     final state = controller.state!;
-    final individual = (state.data['individuals'] as Map)[individualId] as Map;
+    final individual =
+        (state.data['individuals'] as Map)[widget.individualId] as Map;
     final alcove = (state.data['alcoves'] as List)
         .cast<Map>()
         .firstWhere((item) => item['id'] == individual['alcoveId']);
     final environment = ElevageDomain.environment(
         state, alcove['id'] as String, controller.config);
-    final hunger = ElevageDomain.hunger(state, individualId,
+    final hunger = ElevageDomain.hunger(state, widget.individualId,
         DateTime.now().millisecondsSinceEpoch, controller.config);
-    final communication = ElevageDomain.communication(state, individualId,
-        DateTime.now().millisecondsSinceEpoch, controller.config);
-    final available = ElevageDomain.metamorphosisAvailable(state, individualId,
-        DateTime.now().millisecondsSinceEpoch, controller.config);
+    final communication = ElevageDomain.communication(
+        state,
+        widget.individualId,
+        DateTime.now().millisecondsSinceEpoch,
+        controller.config);
+    final available = ElevageDomain.metamorphosisAvailable(
+        state,
+        widget.individualId,
+        DateTime.now().millisecondsSinceEpoch,
+        controller.config);
     final stage = individual['lifecycle']['stage'] as String;
     return Scaffold(
       appBar: AppBar(
-        leading: BackButton(onPressed: onBack),
+        leading: BackButton(onPressed: widget.onBack),
         title: const Text('Alcôve'),
         actions: <Widget>[
           IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: 'Dashboard',
-              onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                      builder: (_) =>
-                          ElevageDashboardPage(controller: controller))))
+              icon: const Icon(Icons.inventory_2_outlined),
+              tooltip: 'Inventaire',
+              onPressed: () =>
+                  _openInventory(context, controller, individual, _offer)),
+          if (controller.config.devMode)
+            IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Dashboard',
+                onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                        builder: (_) =>
+                            ElevageDashboardPage(controller: controller))))
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          Center(child: _PtipotePlaceholder(stage: stage, reaction: null)),
-          const SizedBox(height: 8),
+          _AlcoveScene(
+              stage: stage,
+              reaction: _reaction,
+              feedback: _feedback,
+              slots: (alcove['slots'] as List).cast<dynamic>()),
+          const SizedBox(height: 12),
           Center(
               child: Text('${individual['name']}',
                   style: Theme.of(context).textTheme.headlineMedium)),
@@ -274,20 +329,13 @@ class _IndividualPage extends StatelessWidget {
                 child: const Text('Actualiser l’Alcôve')),
           ]),
           _section(context, 'Proposer quelque chose', <Widget>[
-            Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
-              ...ElevageDomain.foodItems
-                  .where((item) => _special(state, item) > 0)
-                  .map((item) => _offerButton(
-                      context, controller, individual, item, false)),
-              ...ElevageDomain.treatItems
-                  .where((item) => _special(state, item) > 0)
-                  .map((item) => _offerButton(
-                      context, controller, individual, item, false)),
-              ...ElevageDomain.structuralItems
-                  .where((item) => _special(state, item) > 0)
-                  .map((item) => _offerButton(
-                      context, controller, individual, item, true)),
-            ]),
+            const Text('Choisissez un objet depuis votre inventaire.'),
+            const SizedBox(height: 8),
+            FilledButton.tonalIcon(
+                onPressed: () =>
+                    _openInventory(context, controller, individual, _offer),
+                icon: const Icon(Icons.card_giftcard_outlined),
+                label: const Text('Ouvrir l’inventaire')),
             if (controller.config.devMode)
               TextButton.icon(
                   onPressed: controller.addDevInventory,
@@ -298,16 +346,16 @@ class _IndividualPage extends StatelessWidget {
             ...List<Widget>.generate((alcove['slots'] as List).length, (index) {
               final raw = (alcove['slots'] as List)[index];
               if (raw is Map) {
-                final definition = controller.config
-                    .installation(raw['definitionId'] as String);
                 final stock = raw['productionState']?['availableByItemId'];
                 return ListTile(
                   leading: const Icon(Icons.cabin_outlined),
-                  title: Text(definition?.label ?? 'Installation inconnue'),
+                  title: Text(ElevagePresentation.installationLabel(
+                      raw['definitionId'] as String)),
                   subtitle: Text(stock is Map && stock.isNotEmpty
                       ? stock.entries
                           .where((entry) => entry.value != 0)
-                          .map((entry) => '${entry.key} × ${entry.value}')
+                          .map((entry) =>
+                              '${ElevagePresentation.itemLabel(entry.key as String)} × ${entry.value}')
                           .join(' · ')
                       : 'En place'),
                   trailing: IconButton(
@@ -331,7 +379,8 @@ class _IndividualPage extends StatelessWidget {
           ]),
           _section(context, 'Explorer', <Widget>[
             FilledButton.icon(
-                onPressed: () => _foraging(context, controller, individualId),
+                onPressed: () =>
+                    _foraging(context, controller, widget.individualId),
                 icon: const Icon(Icons.forest_outlined),
                 label: const Text('Explorer la Mini-Lisière')),
             const SizedBox(height: 6),
@@ -343,7 +392,7 @@ class _IndividualPage extends StatelessWidget {
           if (available)
             FilledButton.icon(
                 onPressed: () =>
-                    _metamorphosis(context, controller, individualId),
+                    _metamorphosis(context, controller, widget.individualId),
                 icon: const Icon(Icons.auto_awesome_outlined),
                 label: const Text('Accompagner la métamorphose')),
           if (stage != 'BABY')
@@ -378,7 +427,7 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               value: config.featureEnabled,
               onChanged: (value) => setState(
                   () => config = config.copyWith(featureEnabled: value)),
-              title: const Text('Feature enabled')),
+              title: const Text('Élevage activé')),
           SwitchListTile(
               value: config.devMode,
               onChanged: (value) =>
@@ -507,10 +556,12 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
 PreferredSizeWidget _appBar(
         BuildContext context, ElevageController controller) =>
     AppBar(title: const Text('P’TIPOTE Élevage'), actions: <Widget>[
-      IconButton(
-          icon: const Icon(Icons.settings_outlined),
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => ElevageDashboardPage(controller: controller))))
+      if (controller.config.devMode)
+        IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Réglages de test',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => ElevageDashboardPage(controller: controller))))
     ]);
 Widget _section(BuildContext context, String title, List<Widget> children) =>
     Card(
@@ -523,8 +574,6 @@ Widget _section(BuildContext context, String title, List<Widget> children) =>
                   const SizedBox(height: 8),
                   ...children
                 ])));
-int _special(ElevageSave state, String item) =>
-    ((state.data['inventory']['special'] as Map)[item] as num?)?.toInt() ?? 0;
 String _stageLabel(String value) => switch (value) {
       'BABY' => 'Bébé',
       'INTERMEDIATE' => 'Intermédiaire',
@@ -565,45 +614,228 @@ String _personalityLabel(Map individual) {
   return '${initiative >= 50 ? 'Autonome' : 'Accompagné'} · ${contact >= 50 ? 'Chaleureux' : 'Réservé'} · ${tempo >= 50 ? 'Posé' : 'Spontané'}';
 }
 
-class _PtipotePlaceholder extends StatelessWidget {
-  const _PtipotePlaceholder({required this.stage, required this.reaction});
+/// Scène placeholder volontairement composée d’icônes Flutter : les futures
+/// illustrations/sprites pourront remplacer cette couche sans toucher au domaine.
+class _AlcoveScene extends StatefulWidget {
+  const _AlcoveScene({
+    required this.stage,
+    required this.reaction,
+    required this.feedback,
+    required this.slots,
+  });
   final String stage;
   final String? reaction;
+  final String? feedback;
+  final List<dynamic> slots;
+
   @override
-  Widget build(BuildContext context) => Container(
-      width: stage == 'BABY'
-          ? 100
-          : stage == 'INTERMEDIATE'
-              ? 132
-              : 164,
-      height: stage == 'BABY'
-          ? 100
-          : stage == 'INTERMEDIATE'
-              ? 132
-              : 164,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Theme.of(context).colorScheme.secondaryContainer),
-      child: Icon(stage == 'BABY' ? Icons.egg_outlined : Icons.pets, size: 64));
+  State<_AlcoveScene> createState() => _AlcoveSceneState();
 }
 
-Widget _offerButton(BuildContext context, ElevageController controller,
-        Map individual, String item, bool structural) =>
-    FilledButton.tonal(
-        onPressed: () async {
-          if (structural) {
-            await controller.offerStructural(individual['id'] as String, item);
-          } else {
-            await controller.offerFood(individual['id'] as String, item);
-          }
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(
-                    '${ElevageDomain.reactionFor(item, Map<String, dynamic>.from(individual))} · $item')));
-          }
-        },
-        child: Text(item));
+class _AlcoveSceneState extends State<_AlcoveScene> {
+  Timer? _wanderTimer;
+  var _horizontal = -.35;
+  var _up = .18;
+
+  @override
+  void initState() {
+    super.initState();
+    _wanderTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted) return;
+      setState(() {
+        _horizontal = Random().nextDouble() * 1.1 - .55;
+        _up = Random().nextBool() ? .12 : .22;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _wanderTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = switch (widget.stage) {
+      'BABY' => 74.0,
+      'INTERMEDIATE' => 94.0,
+      _ => 112.0,
+    };
+    final reactionScale = widget.reaction == 'RUSH_SHAKE'
+        ? 1.14
+        : widget.reaction == 'STEP_BACK'
+            ? .88
+            : 1.0;
+    final installed = widget.slots.whereType<Map>().toList();
+    return Semantics(
+      label: 'Scène de l’Alcôve',
+      child: Container(
+        height: 232,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: LinearGradient(colors: <Color>[
+            Theme.of(context).colorScheme.primaryContainer,
+            Theme.of(context).colorScheme.surfaceContainerHighest,
+          ], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+        ),
+        child: Stack(children: <Widget>[
+          const Positioned(
+              left: 18,
+              top: 16,
+              child: Icon(Icons.dark_mode_outlined, size: 28)),
+          if (installed.isEmpty)
+            const Center(child: Text('Un foyer calme, prêt à être aménagé.')),
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: 12,
+            child: Wrap(
+              alignment: WrapAlignment.spaceEvenly,
+              spacing: 8,
+              children: installed
+                  .map((raw) => Tooltip(
+                      message: ElevagePresentation.installationLabel(
+                          raw['definitionId'] as String),
+                      child: Icon(ElevagePresentation.installationIcon(
+                          raw['definitionId'] as String))))
+                  .toList(),
+            ),
+          ),
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 850),
+            curve: Curves.easeInOut,
+            alignment: Alignment(_horizontal, _up),
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 220),
+              scale: reactionScale,
+              child: Container(
+                width: size,
+                height: size,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Theme.of(context).colorScheme.secondaryContainer,
+                    boxShadow: const <BoxShadow>[
+                      BoxShadow(blurRadius: 8, color: Colors.black26)
+                    ]),
+                child: Icon(
+                    widget.stage == 'BABY' ? Icons.egg_outlined : Icons.pets,
+                    size: size * .62),
+              ),
+            ),
+          ),
+          if (widget.feedback != null)
+            Positioned(
+              top: 14,
+              right: 14,
+              left: 48,
+              child: Material(
+                color: Theme.of(context)
+                    .colorScheme
+                    .surface
+                    .withValues(alpha: .92),
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(widget.feedback!)),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+}
+
+Future<void> _openInventory(
+    BuildContext context,
+    ElevageController controller,
+    Map individual,
+    Future<void> Function(String item, bool structural) onOffer) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (_, setSheetState) {
+        final state = controller.state!;
+        final special = state.data['inventory']['special'] as Map;
+        final generic = state.data['inventory']['generic'] as Map;
+        final items = <String, int>{
+          ...special.map((key, value) => MapEntry(key as String, value as int)),
+          'ORGANIC': (generic['organic'] as num?)?.toInt() ?? 0,
+          'MINERAL': (generic['mineral'] as num?)?.toInt() ?? 0,
+        }..removeWhere((_, amount) => amount <= 0);
+        const categories = <String>[
+          'Nourriture',
+          'Friandises',
+          'Matériaux',
+          'Ressources'
+        ];
+        return SafeArea(
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: .72,
+            builder: (_, scrollController) => ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.all(16),
+              children: <Widget>[
+                ListTile(
+                    leading: const Icon(Icons.inventory_2_outlined),
+                    title: const Text('Inventaire'),
+                    subtitle: Text(
+                        '${state.data['inventory']['bioPiles']} Bio-piles')),
+                if (items.isEmpty)
+                  const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(
+                          child: Text(
+                              'Votre inventaire est vide. Explorez la Mini-Lisière pour trouver des objets.'))),
+                ...categories.expand((category) {
+                  final entries = items.entries
+                      .where((entry) =>
+                          ElevagePresentation.itemCategory(entry.key) ==
+                          category)
+                      .toList();
+                  if (entries.isEmpty) return <Widget>[];
+                  return <Widget>[
+                    Padding(
+                        padding: const EdgeInsets.only(top: 12, bottom: 4),
+                        child: Text(category,
+                            style:
+                                Theme.of(sheetContext).textTheme.titleMedium)),
+                    ...entries.map((entry) {
+                      final item = entry.key;
+                      final canOffer = ElevageDomain.foodItems.contains(item) ||
+                          ElevageDomain.treatItems.contains(item) ||
+                          ElevageDomain.structuralItems.contains(item);
+                      return ListTile(
+                        leading: Icon(ElevagePresentation.itemIcon(item)),
+                        title: Text(ElevagePresentation.itemLabel(item)),
+                        trailing: canOffer
+                            ? FilledButton.tonal(
+                                onPressed: () async {
+                                  await onOffer(
+                                      item,
+                                      ElevageDomain.structuralItems
+                                          .contains(item));
+                                  if (sheetContext.mounted) {
+                                    setSheetState(() {});
+                                  }
+                                },
+                                child: Text('Proposer ×${entry.value}'))
+                            : Text('×${entry.value}'),
+                      );
+                    }),
+                  ];
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
 
 Future<void> _welcome(
     BuildContext context, ElevageController controller, String alcoveId) async {
@@ -694,6 +926,12 @@ Future<void> _placeInstallation(BuildContext context,
       context: context,
       builder: (sheetContext) => ListView(shrinkWrap: true, children: <Widget>[
             const ListTile(title: Text('Placer une installation')),
+            if (instances.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                    'Aucune installation en réserve. Fabriquez-en une au Bio-fabricateur.'),
+              ),
             ...instances.entries.map((entry) => ListTile(
                 title: Text(controller.config
                         .installation(
@@ -702,7 +940,13 @@ Future<void> _placeInstallation(BuildContext context,
                     'Inconnue'),
                 onTap: () async {
                   await controller.place(alcoveId, slot, entry.key as String);
-                  if (sheetContext.mounted) Navigator.pop(sheetContext);
+                  if (sheetContext.mounted && controller.error == null) {
+                    Navigator.pop(sheetContext);
+                  }
+                  if (context.mounted && controller.error == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Installation posée dans l’Alcôve.')));
+                  }
                 }))
           ]));
 }
@@ -733,6 +977,10 @@ Future<void> _openBiofabricator(
                                   await controller.craft(recipe);
                                   if (sheetContext.mounted &&
                                       controller.error == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                            content: Text(
+                                                '${recipe.label} a été bio-fabriqué.')));
                                     Navigator.pop(sheetContext);
                                   }
                                 },
@@ -786,10 +1034,42 @@ Future<void> _foraging(
             ...(run['points'] as List).cast<Map>().map((point) => ListTile(
                 title: Text(point['label'] as String),
                 onTap: () async {
+                  final reward = point['reward'] as Map;
                   await controller.claimForaging(id, point['id'] as String);
-                  if (sheetContext.mounted) Navigator.pop(sheetContext);
+                  if (sheetContext.mounted && controller.error == null) {
+                    Navigator.pop(sheetContext);
+                  }
+                  if (context.mounted && controller.error == null) {
+                    await _showForagingResult(context, reward);
+                  }
                 }))
           ]));
+}
+
+Future<void> _showForagingResult(BuildContext context, Map reward) async {
+  final generic = reward['generic'] as Map;
+  final rows = <String>[
+    ...generic.entries.where((entry) => entry.value != 0).map((entry) =>
+        '+${entry.value} ${ElevagePresentation.itemLabel((entry.key as String).toUpperCase())}'),
+    '+1 ${ElevagePresentation.itemLabel(reward['special'] as String)}',
+  ];
+  await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+              title: const Text('Exploration terminée'),
+              content:
+                  Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+                const Text('Tu as trouvé :'),
+                const SizedBox(height: 8),
+                ...rows.map((row) => ListTile(
+                    leading: const Icon(Icons.add_circle_outline),
+                    title: Text(row))),
+              ]),
+              actions: <Widget>[
+                FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Retour à l’Alcôve'))
+              ]));
 }
 
 Future<void> _sourcier(
@@ -813,7 +1093,13 @@ Future<void> _sourcier(
                 'Fruit fibreux · ${controller.config.fibrousFruitPrice} Bio-piles'),
             onTap: () async {
               await controller.buyTreat('FIBROUS_FRUIT');
-              if (sheetContext.mounted) Navigator.pop(sheetContext);
+              if (sheetContext.mounted && controller.error == null) {
+                Navigator.pop(sheetContext);
+              }
+              if (context.mounted && controller.error == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Achat effectué.')));
+              }
             },
           ),
           ListTile(
@@ -821,19 +1107,37 @@ Future<void> _sourcier(
                 'Jelly fruité · ${controller.config.fruitJellyPrice} Bio-piles'),
             onTap: () async {
               await controller.buyTreat('FRUIT_JELLY');
-              if (sheetContext.mounted) Navigator.pop(sheetContext);
+              if (sheetContext.mounted && controller.error == null) {
+                Navigator.pop(sheetContext);
+              }
+              if (context.mounted && controller.error == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Achat effectué.')));
+              }
             },
           ),
           const Divider(),
           ListTile(
             title: Text(
                 'Échanger ${controller.config.buybackQuantity} Organique → ${controller.config.buybackBioPiles} Bio-pile'),
-            onTap: () => controller.sellGeneric('ORGANIC'),
+            onTap: () async {
+              await controller.sellGeneric('ORGANIC');
+              if (context.mounted && controller.error == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Échange effectué.')));
+              }
+            },
           ),
           ListTile(
             title: Text(
                 'Échanger ${controller.config.buybackQuantity} Minéral → ${controller.config.buybackBioPiles} Bio-pile'),
-            onTap: () => controller.sellGeneric('MINERAL'),
+            onTap: () async {
+              await controller.sellGeneric('MINERAL');
+              if (context.mounted && controller.error == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Échange effectué.')));
+              }
+            },
           ),
         ],
       );
