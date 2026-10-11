@@ -51,6 +51,13 @@ class ElevageSave {
     normalized.putIfAbsent('discoveredItemIds', () => <String>[]);
     normalized.putIfAbsent('coRearingReturnLedger', () => <String, dynamic>{});
     normalized.putIfAbsent('pendingNotifications', () => <dynamic>[]);
+    final individuals = normalized['individuals'] as Map?;
+    individuals?.forEach((_, raw) {
+      if (raw is Map) {
+        raw.putIfAbsent('observationJournal',
+            () => <String, dynamic>{'observations': <String, dynamic>{}});
+      }
+    });
     return ElevageSave(normalized);
   }
 
@@ -155,6 +162,9 @@ class ElevageDomain {
       'preferenceDiscovery': <String, dynamic>{
         'foodPreference': <String, dynamic>{'status': 'UNKNOWN', 'evidence': 0},
       },
+      'observationJournal': <String, dynamic>{
+        'observations': <String, dynamic>{},
+      },
       'progressionEvidence': <String, dynamic>{
         'interactionTypes': <String>[],
         'foragingCount': 0,
@@ -169,6 +179,9 @@ class ElevageDomain {
     (state.data['individuals'] as Map<String, dynamic>)[id] = individual;
     (state.data['activeIndividualIds'] as List).add(id);
     alcove['occupantIndividualId'] = id;
+    final starter = _special(state);
+    starter['ROOT'] = (starter['ROOT'] ?? 0) + 1;
+    starter['LEAF'] = (starter['LEAF'] ?? 0) + 1;
     _memory(state, id, 'ADOPTED', now);
     return state;
   }
@@ -189,6 +202,9 @@ class ElevageDomain {
     if (!foodItems.contains(item)) {
       throw StateError('Cet objet ne nourrit pas Résonance.');
     }
+    if (!canOfferNormalFood(state, id, now, config)) {
+      throw StateError('P’TIPOTE n’a pas faim.');
+    }
     special[item] = special[item]! - 1;
     final care = individual['care'] as Map<String, dynamic>;
     care['lastMealAt'] = now;
@@ -205,23 +221,30 @@ class ElevageDomain {
               : 'UNKNOWN';
       _memory(state, id, 'FIRST_FAVORITE_FOOD', now);
       _interaction(individual, 'FAVORITE_FOOD', contact: 1);
+      _observe(individual, 'FOOD_FAVORITE', now,
+          relatedItemId: item, status: discovery['status'] as String);
     } else {
       _interaction(individual, 'FOOD', contact: 1);
+      _observe(individual, 'FOOD_ACCEPTED', now, relatedItemId: item);
     }
     _memory(state, id, 'FIRST_FOOD', now);
     return state;
   }
 
   static ElevageSave offerStructural(
-      ElevageSave source, String id, String item, int now) {
+      ElevageSave source, String id, String item, int now,
+      [ElevageConfig? config]) {
     final state = source.copy();
     final individual = _individual(state, id);
     final gains = <String, int>{'IRON': 2, 'LIMESTONE': 1, 'QUARTZ': 0};
     final gain = gains[item];
     if (gain == null) throw StateError('Matériau inconnu.');
-    if (gain == 0) return state;
     final special = _special(state);
     if ((special[item] ?? 0) < 1) throw StateError('Matériau non disponible.');
+    if (gain == 0) {
+      _observe(individual, 'STRUCTURAL_AVOIDED', now, relatedItemId: item);
+      return state;
+    }
     special[item] = special[item]! - 1;
     final intake =
         individual['care']['structuralIntake'] as Map<String, dynamic>;
@@ -229,6 +252,10 @@ class ElevageDomain {
     final byMaterial = intake['byMaterial'] as Map<String, dynamic>;
     byMaterial[item] = (byMaterial[item] as int? ?? 0) + gain;
     _interaction(individual, 'STRUCTURE', tempo: 1);
+    final count =
+        _observe(individual, 'STRUCTURAL_REACTION', now, relatedItemId: item);
+    _setObservationStatus(individual, 'STRUCTURAL_REACTION:$item', count,
+        config ?? defaultElevageConfig);
     return state;
   }
 
@@ -262,6 +289,32 @@ class ElevageDomain {
     if (hours >= config.hungerHungryHours) return 'HUNGRY';
     if (hours >= config.hungerNormalHours) return 'NORMAL';
     return 'SATIATED';
+  }
+
+  static int satietyPercent(
+      ElevageSave state, String id, int now, ElevageConfig config) {
+    final lastMeal = _individual(state, id)['care']['lastMealAt'] as int?;
+    if (lastMeal == null) return 100;
+    final elapsed = max(0, now - lastMeal);
+    final span =
+        config.hungerVeryHungryHours * const Duration(hours: 1).inMilliseconds;
+    return (100 - elapsed * 100 / span).round().clamp(0, 100);
+  }
+
+  static bool canOfferNormalFood(
+      ElevageSave state, String id, int now, ElevageConfig config) {
+    final lastMeal = _individual(state, id)['care']['lastMealAt'] as int?;
+    return lastMeal == null || satietyPercent(state, id, now, config) < 95;
+  }
+
+  static ElevageSave observeShade(
+      ElevageSave source, String id, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, id);
+    final count = _observe(individual, 'LIGHT_SHADE', now,
+        relatedEnvironmentAxis: 'LIGHT');
+    _setObservationStatus(individual, 'LIGHT_SHADE:LIGHT', count, config);
+    return state;
   }
 
   static ElevageSave startForaging(ElevageSave source, String id, String biome,
@@ -687,6 +740,47 @@ class ElevageDomain {
     final individualEvents =
         events.putIfAbsent(id, () => <String, dynamic>{}) as Map;
     individualEvents.putIfAbsent(event, () => now);
+  }
+
+  static int _observe(Map<String, dynamic> individual, String type, int now,
+      {String? relatedItemId,
+      String? relatedEnvironmentAxis,
+      String status = 'UNKNOWN'}) {
+    final journal = individual['observationJournal'] as Map;
+    final observations = journal.putIfAbsent(
+        'observations', () => <String, dynamic>{}) as Map<String, dynamic>;
+    final subject = relatedItemId ?? relatedEnvironmentAxis ?? 'GENERAL';
+    final id = '$type:$subject';
+    final entry = observations.putIfAbsent(
+        id,
+        () => <String, dynamic>{
+              'id': id,
+              'type': type,
+              'individualId': individual['id'],
+              'firstObservedAt': now,
+              'lastObservedAt': now,
+              'count': 0,
+              'relatedItemId': relatedItemId,
+              'relatedEnvironmentAxis': relatedEnvironmentAxis,
+              'status': status,
+            }) as Map;
+    entry['lastObservedAt'] = now;
+    entry['count'] = ((entry['count'] as num?)?.toInt() ?? 0) + 1;
+    if (status != 'UNKNOWN') entry['status'] = status;
+    return entry['count'] as int;
+  }
+
+  static void _setObservationStatus(Map<String, dynamic> individual, String id,
+      int count, ElevageConfig config) {
+    final observations = (individual['observationJournal']
+        as Map)['observations'] as Map<String, dynamic>;
+    final entry = observations[id] as Map?;
+    if (entry == null) return;
+    entry['status'] = count >= config.confirmedThreshold
+        ? 'CONFIRMED'
+        : count >= config.suspectedThreshold
+            ? 'SUSPECTED'
+            : 'UNKNOWN';
   }
 
   static void _interaction(Map<String, dynamic> individual, String type,

@@ -27,6 +27,8 @@ class ElevagePresentation {
   static String itemLabel(String id) => _items[id]?.label ?? 'Objet inconnu';
   static IconData itemIcon(String id) => _items[id]?.icon ?? Icons.help_outline;
   static String itemCategory(String id) => _items[id]?.category ?? 'Ressources';
+  static int environmentScale(int relativeValue) =>
+      (relativeValue + 3).clamp(1, 5);
 
   static String installationLabel(String id) => switch (id) {
         'BASSIN' => 'Bassin',
@@ -64,6 +66,78 @@ class ElevagePresentation {
         _ => '😐 $name accepte, sans enthousiasme particulier.',
       };
 
+  static String offerFeedback(String item, String reaction, String name) {
+    if (item == 'IRON') {
+      return '✨ $name vibre au contact du fer et en absorbe une partie.';
+    }
+    if (item == 'LIMESTONE') {
+      return '✨ $name semble intégrer lentement le calcaire.';
+    }
+    if (item == 'QUARTZ') {
+      return '🤔 $name examine le quartz puis s’en détourne.';
+    }
+    if (reaction == 'RUSH_SHAKE') {
+      return '😊 $name se jette sur ${_withArticle(item)}.';
+    }
+    if (itemCategory(item) == 'Nourriture') {
+      return '😐 $name mange ${_withArticle(item)} calmement.';
+    }
+    return reactionFeedback(reaction, name);
+  }
+
+  static String observationText(Map observation, String name) {
+    final item = observation['relatedItemId'] as String?;
+    return switch (observation['type']) {
+      'FOOD_FAVORITE' =>
+        '$name s’approche volontiers des ${_foodPlural(item!)}.',
+      'FOOD_ACCEPTED' =>
+        '$name mange ${itemLabel(item!).toLowerCase()} sans réaction particulière.',
+      'STRUCTURAL_REACTION' => item == 'IRON'
+          ? '$name vibre au contact du fer.'
+          : '$name intègre lentement le calcaire.',
+      'STRUCTURAL_AVOIDED' => '$name examine le quartz puis s’en détourne.',
+      'LIGHT_SHADE' => '$name reste volontiers dans les endroits ombragés.',
+      _ => '$name a observé son environnement.',
+    };
+  }
+
+  static String hypothesisText(Map observation, String name) =>
+      switch (observation['type']) {
+        'FOOD_FAVORITE' =>
+          '$name semble apprécier les ${_foodPlural(observation['relatedItemId'] as String)}.',
+        'STRUCTURAL_REACTION' => '$name semble réagir particulièrement au fer.',
+        'LIGHT_SHADE' => '$name semble préférer les zones peu éclairées.',
+        _ => '$name semble avoir une préférence à explorer.',
+      };
+
+  static String confirmedText(Map observation) => switch (observation['type']) {
+        'FOOD_FAVORITE' =>
+          'Préférence alimentaire : ${itemLabel(observation['relatedItemId'] as String)}',
+        'STRUCTURAL_REACTION' => 'Matériau structurel principal : Fer',
+        'LIGHT_SHADE' => 'Préférence lumineuse : faible lumière',
+        _ => 'Découverte confirmée',
+      };
+
+  static String _foodPlural(String item) => switch (item) {
+        'ROOT' => 'racines',
+        'LEAF' => 'feuilles',
+        'MOSS' => 'mousses',
+        'ALGAE' => 'algues',
+        'MUSHROOM' => 'champignons',
+        _ => itemLabel(item).toLowerCase(),
+      };
+
+  static String _withArticle(String item) => switch (item) {
+        'ROOT' => 'la racine',
+        'LEAF' => 'la feuille',
+        'MOSS' => 'la mousse',
+        'ALGAE' => 'les algues',
+        'MUSHROOM' => 'le champignon',
+        'FIBROUS_FRUIT' => 'le fruit fibreux',
+        'FRUIT_JELLY' => 'le jelly fruité',
+        _ => itemLabel(item).toLowerCase(),
+      };
+
   static String friendlyError(String? value) {
     if (value == null || value.isEmpty) return '';
     if (value.contains('non disponible')) {
@@ -71,6 +145,9 @@ class ElevagePresentation {
     }
     if (value.contains('insuffisante')) {
       return 'Vous ne possédez pas assez de ressources.';
+    }
+    if (value.contains('n’a pas faim')) {
+      return 'Votre P’TIPOTE n’a pas faim pour le moment.';
     }
     return 'Cette action ne peut pas être réalisée pour le moment.';
   }

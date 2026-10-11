@@ -13,4 +13,12 @@ void main() {
     expect(feedback, contains('Noma'));
     expect(feedback, isNot(contains('RUSH_SHAKE')));
   });
+
+  test('le HUD environnement utilise une échelle de jeu de 1 à 5', () {
+    expect(ElevagePresentation.environmentScale(-4), 1);
+    expect(ElevagePresentation.environmentScale(-1), 2);
+    expect(ElevagePresentation.environmentScale(0), 3);
+    expect(ElevagePresentation.environmentScale(1), 4);
+    expect(ElevagePresentation.environmentScale(6), 5);
+  });
 }

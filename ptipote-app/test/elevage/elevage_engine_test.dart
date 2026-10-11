@@ -167,4 +167,109 @@ void main() {
     final refund = ElevageDomain.moveOutRefund(state, 'alcove-1', config);
     expect(refund, <String, int>{'organic': 2, 'mineral': 1});
   });
+
+  test('starter réduit et Carnet individuel commencent sans révélation', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final special = state.data['inventory']['special'] as Map;
+    expect(special['ROOT'], 1);
+    expect(special['LEAF'], 1);
+    final journal =
+        (state.data['individuals'] as Map)[id]['observationJournal'] as Map;
+    expect((journal['observations'] as Map), isEmpty);
+  });
+
+  test('observations dédoublonnées suivent hypothèse puis confirmation', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    final favorite = individual['generatedProfile']['foodPreference'] as String;
+    (state.data['inventory']['special'] as Map)[favorite] = 4;
+    for (var index = 0; index < 4; index++) {
+      state = ElevageDomain.offerFood(
+          state,
+          id,
+          favorite,
+          now + Duration(hours: index * 24).inMilliseconds,
+          defaultElevageConfig);
+    }
+    final observations = ((state.data['individuals'] as Map)[id]
+        ['observationJournal']['observations'] as Map);
+    final observation = observations['FOOD_FAVORITE:$favorite'] as Map;
+    expect(observations, hasLength(1));
+    expect(observation['count'], 4);
+    expect(observation['status'], 'CONFIRMED');
+    final restored = ElevageSave.fromJson(state.toJson());
+    expect(
+        (((restored.data['individuals'] as Map)[id]['observationJournal']
+            ['observations'] as Map)['FOOD_FAVORITE:$favorite']['count']),
+        4);
+  });
+
+  test('satiété est dérivée et bloque seulement un repas normal immédiat', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final favorite = (state.data['individuals'] as Map)[id]['generatedProfile']
+        ['foodPreference'] as String;
+    (state.data['inventory']['special'] as Map)[favorite] = 2;
+    state =
+        ElevageDomain.offerFood(state, id, favorite, now, defaultElevageConfig);
+    expect(ElevageDomain.satietyPercent(state, id, now, defaultElevageConfig),
+        100);
+    expect(
+        ElevageDomain.satietyPercent(
+            state,
+            id,
+            now + const Duration(hours: 120).inMilliseconds,
+            defaultElevageConfig),
+        50);
+    expect(
+        () => ElevageDomain.offerFood(
+            state, id, favorite, now + 1, defaultElevageConfig),
+        throwsStateError);
+  });
+
+  test('observation d’ombre est persistante et atteint ses seuils', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    state = ElevageDomain.observeShade(state, id, now, defaultElevageConfig);
+    state =
+        ElevageDomain.observeShade(state, id, now + 1, defaultElevageConfig);
+    final observation = ((state.data['individuals'] as Map)[id]
+        ['observationJournal']['observations']['LIGHT_SHADE:LIGHT'] as Map);
+    expect(observation['count'], 2);
+    expect(observation['status'], 'SUSPECTED');
+    expect(
+        ((state.data['individuals'] as Map)[id]['progressionEvidence']
+            as Map)['foragingCount'],
+        0);
+  });
 }

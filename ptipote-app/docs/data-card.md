@@ -85,6 +85,30 @@ feedbacks ne modifient pas la vérité métier : ils traduisent seulement les
 réactions existantes. Lorsque `devMode` est désactivé, l’ajout d’inventaire dev
 et le Dashboard local ne sont plus exposés dans le parcours joueur.
 
+### Carnet d’observation — Lot 13
+
+Chaque individu possède un `observationJournal` persistant, indépendant des
+preuves de maturation. Une observation significative est dédoublonnée par
+`type + sujet` et conserve `firstObservedAt`, `lastObservedAt`, `count`, le
+contexte (objet ou axe environnemental) et son statut. Le Carnet affiche trois
+vues : **Observations** (comportements vus), **Hypothèses** (`SUSPECTED`) et
+**Découvertes confirmées** (`CONFIRMED`), plus les souvenirs importants déjà
+existants. Il ne révèle jamais les valeurs ou préférences UNKNOWN.
+
+Le starter normal attribue seulement ROOT ×1 et LEAF ×1 à l’adoption. Les
+stocks de test restent réservés à `devMode`. La satiété est une valeur dérivée
+de `lastMealAt` : une jauge 0–100 informe le joueur sans être sauvegardée. Un
+repas organique est refusé seulement juste après un repas réussi ; les
+friandises restent distinctes. À partir d’INTERMEDIATE, la structure minérale
+est affichée séparément de la maturation.
+
+La scène possède toujours une zone ombragée et une zone éclairée. Résonance a
+un biais comportemental doux vers l’ombre ; les passages significatifs créent
+une observation LIGHT_SHADE, puis une hypothèse/confirmation aux seuils de
+configuration. Le HUD représente LIGHT, TEMPERATURE et HUMIDITY sur une échelle
+relative 1–5 (`-2 ou moins → 1`, `-1 → 2`, `0 → 3`, `1 → 4`, `2 ou plus → 5`) :
+ce ne sont ni des degrés ni des pourcentages physiques.
+
 Un bâtiment endommagé peut être réparé de deux façons : payer le coût normal
 ou **réparer soi-même**. Les deux actions restaurent exactement la quantité de
 Viabilité sélectionnée. La réparation interactive ne consomme ni ressources,

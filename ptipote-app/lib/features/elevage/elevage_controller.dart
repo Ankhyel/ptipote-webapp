@@ -49,8 +49,10 @@ class ElevageController extends ChangeNotifier {
 
   Future<void> offerFood(String id, String item) => _mutate(
       (current) => ElevageDomain.offerFood(current, id, item, _now, config));
-  Future<void> offerStructural(String id, String item) => _mutate(
-      (current) => ElevageDomain.offerStructural(current, id, item, _now));
+  Future<void> offerStructural(String id, String item) => _mutate((current) =>
+      ElevageDomain.offerStructural(current, id, item, _now, config));
+  Future<void> observeShade(String id) => _mutate(
+      (current) => ElevageDomain.observeShade(current, id, _now, config));
   Future<void> addDevInventory() => _mutate(ElevageDomain.addDevInventory);
   Future<void> startForaging(String id, String biome) => _mutate((current) =>
       ElevageDomain.startForaging(current, id, biome, _now, config));

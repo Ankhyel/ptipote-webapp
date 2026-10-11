@@ -221,6 +221,24 @@ class _IndividualPage extends StatefulWidget {
 class _IndividualPageState extends State<_IndividualPage> {
   String? _reaction;
   String? _feedback;
+  Timer? _feedbackTimer;
+
+  void _showSceneFeedback(String feedback, {String? reaction}) {
+    _feedbackTimer?.cancel();
+    setState(() {
+      _reaction = reaction;
+      _feedback = feedback;
+    });
+    _feedbackTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) setState(() => _feedback = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _feedbackTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _offer(String item, bool structural) async {
     final state = widget.controller.state!;
@@ -240,14 +258,21 @@ class _IndividualPageState extends State<_IndividualPage> {
     }
     final reaction =
         ElevageDomain.reactionFor(item, Map<String, dynamic>.from(individual));
-    final feedback = ElevagePresentation.reactionFeedback(
-        reaction, individual['name'] as String);
-    setState(() {
-      _reaction = reaction;
-      _feedback = feedback;
-    });
+    final feedback = ElevagePresentation.offerFeedback(
+        item, reaction, individual['name'] as String);
+    _showSceneFeedback(feedback, reaction: reaction);
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(feedback)));
+  }
+
+  Future<void> _observeShade() async {
+    await widget.controller.observeShade(widget.individualId);
+    if (!mounted || widget.controller.error != null) return;
+    final individual = (widget.controller.state!.data['individuals']
+        as Map)[widget.individualId] as Map;
+    _showSceneFeedback(ElevagePresentation.observationText(<String, dynamic>{
+      'type': 'LIGHT_SHADE',
+    }, individual['name'] as String));
   }
 
   @override
@@ -262,6 +287,8 @@ class _IndividualPageState extends State<_IndividualPage> {
     final environment = ElevageDomain.environment(
         state, alcove['id'] as String, controller.config);
     final hunger = ElevageDomain.hunger(state, widget.individualId,
+        DateTime.now().millisecondsSinceEpoch, controller.config);
+    final satiety = ElevageDomain.satietyPercent(state, widget.individualId,
         DateTime.now().millisecondsSinceEpoch, controller.config);
     final communication = ElevageDomain.communication(
         state,
@@ -279,6 +306,14 @@ class _IndividualPageState extends State<_IndividualPage> {
         leading: BackButton(onPressed: widget.onBack),
         title: const Text('Alcôve'),
         actions: <Widget>[
+          IconButton(
+              icon: const Icon(Icons.menu_book_outlined),
+              tooltip: 'Carnet d’observation',
+              onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                      builder: (_) => ElevageNotebookPage(
+                          controller: controller,
+                          individualId: widget.individualId)))),
           IconButton(
               icon: const Icon(Icons.inventory_2_outlined),
               tooltip: 'Inventaire',
@@ -301,7 +336,9 @@ class _IndividualPageState extends State<_IndividualPage> {
               stage: stage,
               reaction: _reaction,
               feedback: _feedback,
-              slots: (alcove['slots'] as List).cast<dynamic>()),
+              slots: (alcove['slots'] as List).cast<dynamic>(),
+              environment: environment,
+              onShadeChoice: _observeShade),
           const SizedBox(height: 12),
           Center(
               child: Text('${individual['name']}',
@@ -319,6 +356,13 @@ class _IndividualPageState extends State<_IndividualPage> {
                 title: Text(_hungerLabel(hunger)),
                 subtitle: const Text(
                     'La faim est lente et ne comporte aucune punition irréversible.')),
+            ListTile(
+                leading: const Text('🍴', style: TextStyle(fontSize: 22)),
+                title: const Text('Satiété'),
+                subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: LinearProgressIndicator(value: satiety / 100)),
+                trailing: Text('$satiety %')),
             ListTile(
                 leading: const Icon(Icons.landscape_outlined),
                 title: Text(
@@ -396,13 +440,122 @@ class _IndividualPageState extends State<_IndividualPage> {
                 icon: const Icon(Icons.auto_awesome_outlined),
                 label: const Text('Accompagner la métamorphose')),
           if (stage != 'BABY')
-            _section(context, 'Tempérament',
-                <Widget>[Text(_personalityLabel(individual))]),
+            _section(context, 'Tempérament', <Widget>[
+              Text(_personalityLabel(individual)),
+              const SizedBox(height: 12),
+              const Text('Structure minérale'),
+              const SizedBox(height: 4),
+              LinearProgressIndicator(
+                  value: min(
+                      1,
+                      ((individual['care']['structuralIntake'] as Map)['total']
+                              as int) /
+                          12)),
+            ]),
         ],
       ),
     );
   }
 }
+
+class ElevageNotebookPage extends StatelessWidget {
+  const ElevageNotebookPage(
+      {super.key, required this.controller, required this.individualId});
+  final ElevageController controller;
+  final String individualId;
+
+  @override
+  Widget build(BuildContext context) {
+    final individual =
+        (controller.state!.data['individuals'] as Map)[individualId] as Map;
+    final name = individual['name'] as String;
+    final journal = individual['observationJournal'] as Map;
+    final observations =
+        (journal['observations'] as Map? ?? <dynamic, dynamic>{})
+            .values
+            .whereType<Map>()
+            .toList();
+    final hypotheses =
+        observations.where((item) => item['status'] == 'SUSPECTED').toList();
+    final discoveries =
+        observations.where((item) => item['status'] == 'CONFIRMED').toList();
+    final memories =
+        ((controller.state!.data['memoryEvents'] as Map)[individualId] as Map?)
+                ?.keys
+                .cast<String>()
+                .toList() ??
+            <String>[];
+    return Scaffold(
+      appBar: AppBar(title: const Text('Carnet d’observation')),
+      body: ListView(padding: const EdgeInsets.all(16), children: <Widget>[
+        Text('Carnet de $name',
+            style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 8),
+        const Text('Il se remplit au fil de vos observations significatives.'),
+        _notebookSection(
+            context,
+            'Observations',
+            observations.isEmpty
+                ? const <Widget>[
+                    Text('Aucune observation significative pour le moment.')
+                  ]
+                : observations
+                    .map((item) => ListTile(
+                        leading: const Icon(Icons.visibility_outlined),
+                        title: Text(
+                            ElevagePresentation.observationText(item, name)),
+                        subtitle: Text('Observé ${item['count']} fois')))
+                    .toList()),
+        _notebookSection(
+            context,
+            'Hypothèses',
+            hypotheses.isEmpty
+                ? const <Widget>[Text('Aucune hypothèse pour le moment.')]
+                : hypotheses
+                    .map((item) => ListTile(
+                        leading: const Icon(Icons.lightbulb_outline),
+                        title: Text(
+                            ElevagePresentation.hypothesisText(item, name))))
+                    .toList()),
+        _notebookSection(
+            context,
+            'Découvertes confirmées',
+            discoveries.isEmpty
+                ? const <Widget>[Text('Aucune découverte confirmée.')]
+                : discoveries
+                    .map((item) => ListTile(
+                        leading: const Icon(Icons.verified_outlined),
+                        title: Text(ElevagePresentation.confirmedText(item))))
+                    .toList()),
+        _notebookSection(
+            context,
+            'Souvenirs',
+            memories.isEmpty
+                ? const <Widget>[
+                    Text('Aucun souvenir marquant pour le moment.')
+                  ]
+                : memories
+                    .map((memory) => ListTile(
+                        leading: const Icon(Icons.auto_awesome_outlined),
+                        title: Text(_memoryLabel(memory))))
+                    .toList()),
+      ]),
+    );
+  }
+}
+
+Widget _notebookSection(
+        BuildContext context, String title, List<Widget> children) =>
+    Card(
+        child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(title, style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  ...children,
+                ])));
 
 class ElevageDashboardPage extends StatefulWidget {
   const ElevageDashboardPage({super.key, required this.controller});
@@ -614,6 +767,26 @@ String _personalityLabel(Map individual) {
   return '${initiative >= 50 ? 'Autonome' : 'Accompagné'} · ${contact >= 50 ? 'Chaleureux' : 'Réservé'} · ${tempo >= 50 ? 'Posé' : 'Spontané'}';
 }
 
+Widget _environmentBadge(String emoji, int value) => Padding(
+    padding: const EdgeInsets.only(left: 6),
+    child: DecoratedBox(
+        decoration: BoxDecoration(
+            color: Colors.black12, borderRadius: BorderRadius.circular(10)),
+        child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            child: Text('$emoji $value/5'))));
+
+String _memoryLabel(String memory) => switch (memory) {
+      'ADOPTED' => 'Arrivée dans l’Alcôve',
+      'FIRST_FOOD' => 'Premier repas',
+      'FIRST_FAVORITE_FOOD' => 'Premier aliment favori',
+      'FIRST_TREAT' => 'Première friandise',
+      'FIRST_AUTONOMOUS_MEAL' => 'Premier repas autonome',
+      'FIRST_METAMORPHOSIS' => 'Première métamorphose',
+      'SECOND_METAMORPHOSIS' => 'Deuxième métamorphose',
+      _ => 'Souvenir important',
+    };
+
 /// Scène placeholder volontairement composée d’icônes Flutter : les futures
 /// illustrations/sprites pourront remplacer cette couche sans toucher au domaine.
 class _AlcoveScene extends StatefulWidget {
@@ -622,11 +795,15 @@ class _AlcoveScene extends StatefulWidget {
     required this.reaction,
     required this.feedback,
     required this.slots,
+    required this.environment,
+    required this.onShadeChoice,
   });
   final String stage;
   final String? reaction;
   final String? feedback;
   final List<dynamic> slots;
+  final Map<String, int> environment;
+  final VoidCallback onShadeChoice;
 
   @override
   State<_AlcoveScene> createState() => _AlcoveSceneState();
@@ -643,8 +820,10 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
     _wanderTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted) return;
       setState(() {
-        _horizontal = Random().nextDouble() * 1.1 - .55;
+        final shade = Random().nextDouble() < .68;
+        _horizontal = shade ? -.42 : .38;
         _up = Random().nextBool() ? .12 : .22;
+        if (shade) widget.onShadeChoice();
       });
     });
   }
@@ -684,6 +863,35 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
               left: 18,
               top: 16,
               child: Icon(Icons.dark_mode_outlined, size: 28)),
+          Positioned(
+            left: 14,
+            right: 14,
+            top: 10,
+            child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  _environmentBadge(
+                      '☀️',
+                      ElevagePresentation.environmentScale(
+                          widget.environment['light']!)),
+                  _environmentBadge(
+                      '🌡️',
+                      ElevagePresentation.environmentScale(
+                          widget.environment['temperature']!)),
+                  _environmentBadge(
+                      '💧',
+                      ElevagePresentation.environmentScale(
+                          widget.environment['humidity']!)),
+                ]),
+          ),
+          const Positioned(
+              left: 16,
+              bottom: 46,
+              child: Text('Zone ombragée', style: TextStyle(fontSize: 11))),
+          const Positioned(
+              right: 16,
+              bottom: 46,
+              child: Text('Zone éclairée', style: TextStyle(fontSize: 11))),
           if (installed.isEmpty)
             const Center(child: Text('Un foyer calme, prêt à être aménagé.')),
           Positioned(
@@ -808,22 +1016,19 @@ Future<void> _openInventory(
                       final canOffer = ElevageDomain.foodItems.contains(item) ||
                           ElevageDomain.treatItems.contains(item) ||
                           ElevageDomain.structuralItems.contains(item);
-                      return ListTile(
-                        leading: Icon(ElevagePresentation.itemIcon(item)),
-                        title: Text(ElevagePresentation.itemLabel(item)),
-                        trailing: canOffer
-                            ? FilledButton.tonal(
-                                onPressed: () async {
-                                  await onOffer(
-                                      item,
-                                      ElevageDomain.structuralItems
-                                          .contains(item));
-                                  if (sheetContext.mounted) {
-                                    setSheetState(() {});
-                                  }
-                                },
-                                child: Text('Proposer ×${entry.value}'))
-                            : Text('×${entry.value}'),
+                      return _InventoryRow(
+                        icon: ElevagePresentation.itemIcon(item),
+                        label: ElevagePresentation.itemLabel(item),
+                        quantity: entry.value,
+                        onOffer: canOffer
+                            ? () async {
+                                await onOffer(
+                                    item,
+                                    ElevageDomain.structuralItems
+                                        .contains(item));
+                                if (sheetContext.mounted) setSheetState(() {});
+                              }
+                            : null,
                       );
                     }),
                   ];
@@ -835,6 +1040,45 @@ Future<void> _openInventory(
       },
     ),
   );
+}
+
+class _InventoryRow extends StatelessWidget {
+  const _InventoryRow(
+      {required this.icon,
+      required this.label,
+      required this.quantity,
+      required this.onOffer});
+  final IconData icon;
+  final String label;
+  final int quantity;
+  final Future<void> Function()? onOffer;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: LayoutBuilder(builder: (context, constraints) {
+          final details = Row(children: <Widget>[
+            Icon(icon),
+            const SizedBox(width: 10),
+            Expanded(
+                child: Text('$label · ×$quantity',
+                    maxLines: 2, overflow: TextOverflow.ellipsis)),
+          ]);
+          final action = onOffer == null
+              ? const SizedBox.shrink()
+              : FilledButton.tonal(
+                  onPressed: onOffer, child: const Text('Proposer'));
+          if (constraints.maxWidth < 360 && onOffer != null) {
+            return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[details, const SizedBox(height: 6), action]);
+          }
+          return Row(children: <Widget>[
+            Expanded(child: details),
+            if (onOffer != null) ...<Widget>[const SizedBox(width: 8), action]
+          ]);
+        }),
+      );
 }
 
 Future<void> _welcome(
