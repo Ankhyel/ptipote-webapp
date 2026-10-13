@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ptipote_app/features/elevage/elevage_config.dart';
 import 'package:ptipote_app/features/elevage/elevage_presentation.dart';
 
 void main() {
@@ -20,5 +21,15 @@ void main() {
     expect(ElevagePresentation.environmentScale(0), 3);
     expect(ElevagePresentation.environmentScale(1), 4);
     expect(ElevagePresentation.environmentScale(6), 5);
+  });
+
+  test(
+      'les fiches installation lisent description, production et impacts de la config',
+      () {
+    final basin = defaultElevageConfig.installation('BASSIN')!;
+    expect(basin.description, contains('algues'));
+    expect(basin.outputs, <String, int>{'ALGAE': 1, 'MOSS': 1});
+    expect(basin.humidity, 2);
+    expect(ElevagePresentation.environmentScale(basin.humidity), 5);
   });
 }

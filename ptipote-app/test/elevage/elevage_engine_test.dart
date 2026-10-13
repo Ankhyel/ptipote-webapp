@@ -272,4 +272,84 @@ void main() {
             as Map)['foragingCount'],
         0);
   });
+
+  test('un objet posé quitte l’inventaire et peut être récupéré', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'ROOT', 'ZONE_2', now + 1, defaultElevageConfig);
+    expect((state.data['inventory']['special'] as Map)['ROOT'], 0);
+    final item = ElevageDomain.sceneItems(state, 'alcove-1').single;
+    expect(item['itemId'], 'ROOT');
+    expect(item['zoneId'], 'ZONE_2');
+    final restored = ElevageSave.fromJson(state.toJson());
+    expect(ElevageDomain.sceneItems(restored, 'alcove-1').single['itemId'],
+        'ROOT');
+    state = ElevageDomain.recoverSceneItem(
+        state, 'alcove-1', item['instanceId'] as String);
+    expect(ElevageDomain.sceneItems(state, 'alcove-1'), isEmpty);
+    expect((state.data['inventory']['special'] as Map)['ROOT'], 1);
+  });
+
+  test('une racine désirée est déplacée hors d’une zone trop humide', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    ((state.data['individuals'] as Map)[id]['generatedProfile']
+        as Map)['foodPreference'] = 'ROOT';
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'ROOT', 'ZONE_3', now + 1, defaultElevageConfig);
+    final first = ElevageDomain.sceneItems(state, 'alcove-1').single;
+    final outcome = ElevageDomain.sceneItemOutcome(state, id, 'alcove-1',
+        first['instanceId'] as String, now + 2, defaultElevageConfig);
+    expect(outcome.behavior, 'MOVE_ITEM');
+    expect(outcome.targetZoneId, 'ZONE_1');
+    expect(outcome.observationCount, 1);
+    state = ElevageDomain.interactSceneItem(state, id, 'alcove-1',
+        first['instanceId'] as String, now + 2, defaultElevageConfig);
+    expect(
+        ElevageDomain.sceneItems(state, 'alcove-1').single['zoneId'], 'ZONE_1');
+    final observation = ((state.data['individuals'] as Map)[id]
+            ['observationJournal']['observations']
+        as Map)['HUMIDITY_AVOIDANCE:HUMIDITY'] as Map;
+    expect(observation['count'], 1);
+    expect(observation['status'], 'UNKNOWN');
+  });
+
+  test(
+      'consommer un objet posé le retire de la scène et conserve les règles repas',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    ((state.data['individuals'] as Map)[id]['generatedProfile']
+        as Map)['foodPreference'] = 'ROOT';
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'ROOT', 'ZONE_2', now + 1, defaultElevageConfig);
+    final item = ElevageDomain.sceneItems(state, 'alcove-1').single;
+    state = ElevageDomain.interactSceneItem(state, id, 'alcove-1',
+        item['instanceId'] as String, now + 2, defaultElevageConfig);
+    expect(ElevageDomain.sceneItems(state, 'alcove-1'), isEmpty);
+    expect(
+        ((state.data['individuals'] as Map)[id]['care'] as Map)['lastMealAt'],
+        now + 2);
+  });
 }

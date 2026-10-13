@@ -34,6 +34,9 @@ class ElevageSave {
       'activeIndividualIds': <String>[],
       'discoveredItemIds': <String>[],
       'installationInventory': <String, dynamic>{},
+      // Items placed in the four visible Alcôve zones. They are deliberately
+      // separate from both the player inventory and installed constructions.
+      'sceneItemsByAlcoveId': <String, dynamic>{},
       'runsByIndividualId': <String, dynamic>{},
       'memoryEvents': <String, dynamic>{},
       'coRearingReturnLedger': <String, dynamic>{},
@@ -48,6 +51,7 @@ class ElevageSave {
     final normalized = _clone(json);
     normalized.putIfAbsent('runsByIndividualId', () => <String, dynamic>{});
     normalized.putIfAbsent('installationInventory', () => <String, dynamic>{});
+    normalized.putIfAbsent('sceneItemsByAlcoveId', () => <String, dynamic>{});
     normalized.putIfAbsent('discoveredItemIds', () => <String>[]);
     normalized.putIfAbsent('coRearingReturnLedger', () => <String, dynamic>{});
     normalized.putIfAbsent('pendingNotifications', () => <dynamic>[]);
@@ -64,6 +68,20 @@ class ElevageSave {
   ElevageSave copy() => ElevageSave(_clone(data));
   Map<String, dynamic> toJson() => _clone(data);
   String encode() => jsonEncode(toJson());
+}
+
+class ElevageSceneItemOutcome {
+  const ElevageSceneItemOutcome({
+    required this.behavior,
+    required this.observationCount,
+    this.targetZoneId,
+    this.consumed = false,
+  });
+
+  final String behavior;
+  final int observationCount;
+  final String? targetZoneId;
+  final bool consumed;
 }
 
 Map<String, dynamic> _clone(Map<String, dynamic> value) =>
@@ -86,6 +104,18 @@ class ElevageDomain {
     'LIMESTONE',
     'QUARTZ',
   ];
+  static const Set<String> _placeableSceneItems = <String>{
+    'ROOT',
+    'LEAF',
+    'MOSS',
+    'ALGAE',
+    'MUSHROOM',
+    'FIBROUS_FRUIT',
+    'FRUIT_JELLY',
+    'IRON',
+    'LIMESTONE',
+    'QUARTZ',
+  };
 
   static ElevageSave adopt({
     required ElevageSave source,
@@ -305,6 +335,182 @@ class ElevageDomain {
       ElevageSave state, String id, int now, ElevageConfig config) {
     final lastMeal = _individual(state, id)['care']['lastMealAt'] as int?;
     return lastMeal == null || satietyPercent(state, id, now, config) < 95;
+  }
+
+  static List<Map<String, dynamic>> sceneItems(
+      ElevageSave state, String alcoveId) {
+    final all = state.data['sceneItemsByAlcoveId'] as Map;
+    final raw = all[alcoveId] as List? ?? const <dynamic>[];
+    return raw
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  /// Moves a compatible item out of the player inventory and into one physical
+  /// zone of an Alcôve. A zone holds at most one item in the V0 prototype.
+  static ElevageSave placeSceneItem(ElevageSave source, String alcoveId,
+      String item, String zoneId, int now, ElevageConfig config) {
+    if (!_placeableSceneItems.contains(item)) {
+      throw StateError('Cet objet ne peut pas être posé dans l’Alcôve.');
+    }
+    if (config.sceneZone(zoneId) == null) throw StateError('Zone invalide.');
+    final state = source.copy();
+    _alcove(state, alcoveId);
+    final special = _special(state);
+    if ((special[item] ?? 0) < 1) throw StateError('Objet non disponible.');
+    final placed = _sceneItems(state, alcoveId);
+    if (placed.any((entry) => entry['zoneId'] == zoneId)) {
+      throw StateError('Cette zone contient déjà un objet.');
+    }
+    special[item] = special[item]! - 1;
+    placed.add(<String, dynamic>{
+      'instanceId': 'scene-$now-${placed.length}-$item',
+      'itemId': item,
+      'zoneId': zoneId,
+      'placedAt': now,
+      'source': 'PLAYER',
+      'interactionCount': 0,
+    });
+    return state;
+  }
+
+  static ElevageSave recoverSceneItem(
+      ElevageSave source, String alcoveId, String instanceId) {
+    final state = source.copy();
+    final placed = _sceneItems(state, alcoveId);
+    final index =
+        placed.indexWhere((entry) => entry['instanceId'] == instanceId);
+    if (index < 0) throw StateError('Objet posé introuvable.');
+    final item = placed.removeAt(index)['itemId'] as String;
+    final special = _special(state);
+    special[item] = (special[item] ?? 0) + 1;
+    return state;
+  }
+
+  /// Evaluates only facts already present in the domain: item, hunger and the
+  /// relative environment of its zone. No preference is revealed by this API.
+  static ElevageSceneItemOutcome sceneItemOutcome(
+      ElevageSave state,
+      String individualId,
+      String alcoveId,
+      String instanceId,
+      int now,
+      ElevageConfig config) {
+    final placed = _sceneItems(state, alcoveId);
+    final item =
+        placed.where((entry) => entry['instanceId'] == instanceId).firstOrNull;
+    if (item == null) throw StateError('Objet posé introuvable.');
+    final individual = _individual(state, individualId);
+    final itemId = item['itemId'] as String;
+    final effective =
+        zoneEnvironment(state, alcoveId, item['zoneId'] as String, config);
+    final favorite = individual['generatedProfile']['foodPreference'] as String;
+
+    if (foodItems.contains(itemId) &&
+        itemId == favorite &&
+        (effective['humidity'] ?? 0) >= 2) {
+      final target =
+          _drierSceneZone(state, alcoveId, item['zoneId'] as String, config);
+      if (target != null) {
+        return ElevageSceneItemOutcome(
+          behavior: 'MOVE_ITEM',
+          targetZoneId: target,
+          observationCount:
+              _observationCount(individual, 'HUMIDITY_AVOIDANCE:ROOT') + 1,
+        );
+      }
+    }
+    if (itemId == 'QUARTZ') {
+      return ElevageSceneItemOutcome(
+          behavior: 'STEP_BACK',
+          observationCount:
+              _observationCount(individual, 'STRUCTURAL_AVOIDED:QUARTZ') + 1);
+    }
+    if (treatItems.contains(itemId)) {
+      return const ElevageSceneItemOutcome(
+          behavior: 'RUSH_SHAKE', observationCount: 0, consumed: true);
+    }
+    if (foodItems.contains(itemId)) {
+      if (!canOfferNormalFood(state, individualId, now, config)) {
+        return const ElevageSceneItemOutcome(
+            behavior: 'OBSERVE', observationCount: 0);
+      }
+      return ElevageSceneItemOutcome(
+        behavior: itemId == favorite ? 'RUSH_SHAKE' : 'APPROACH',
+        observationCount: _observationCount(individual,
+                '${itemId == favorite ? 'FOOD_FAVORITE' : 'FOOD_ACCEPTED'}:$itemId') +
+            1,
+        consumed: true,
+      );
+    }
+    if (itemId == 'IRON' || itemId == 'LIMESTONE') {
+      return ElevageSceneItemOutcome(
+        behavior: itemId == 'IRON' ? 'VIBRATE' : 'APPROACH',
+        observationCount:
+            _observationCount(individual, 'STRUCTURAL_REACTION:$itemId') + 1,
+        consumed: true,
+      );
+    }
+    return const ElevageSceneItemOutcome(
+        behavior: 'OBSERVE', observationCount: 0);
+  }
+
+  static ElevageSave interactSceneItem(ElevageSave source, String individualId,
+      String alcoveId, String instanceId, int now, ElevageConfig config) {
+    final outcome = sceneItemOutcome(
+        source, individualId, alcoveId, instanceId, now, config);
+    final state = source.copy();
+    final placed = _sceneItems(state, alcoveId);
+    final index =
+        placed.indexWhere((entry) => entry['instanceId'] == instanceId);
+    if (index < 0) throw StateError('Objet posé introuvable.');
+    final entry = placed[index];
+    final item = entry['itemId'] as String;
+    entry['interactionCount'] =
+        ((entry['interactionCount'] as num?)?.toInt() ?? 0) + 1;
+    final individual = _individual(state, individualId);
+
+    if (outcome.behavior == 'MOVE_ITEM') {
+      entry['zoneId'] = outcome.targetZoneId;
+      final count = _observe(individual, 'HUMIDITY_AVOIDANCE', now,
+          relatedEnvironmentAxis: 'HUMIDITY');
+      _setObservationStatus(
+          individual, 'HUMIDITY_AVOIDANCE:HUMIDITY', count, config);
+      return state;
+    }
+    if (outcome.behavior == 'STEP_BACK' && item == 'QUARTZ') {
+      final count =
+          _observe(individual, 'STRUCTURAL_AVOIDED', now, relatedItemId: item);
+      _setObservationStatus(
+          individual, 'STRUCTURAL_AVOIDED:$item', count, config);
+      return state;
+    }
+    if (!outcome.consumed) return state;
+
+    // Reuse the existing nutrition/structure rules without making scene items
+    // coexist with the player inventory: a transient unit is consumed by the
+    // same atomic domain operation, then the placed instance is removed.
+    final special = _special(state);
+    special[item] = (special[item] ?? 0) + 1;
+    final consumed = structuralItems.contains(item)
+        ? offerStructural(state, individualId, item, now, config)
+        : offerFood(state, individualId, item, now, config);
+    final consumedItems = _sceneItems(consumed, alcoveId);
+    consumedItems
+        .removeWhere((sceneItem) => sceneItem['instanceId'] == instanceId);
+    return consumed;
+  }
+
+  static Map<String, int> zoneEnvironment(
+      ElevageSave state, String alcoveId, String zoneId, ElevageConfig config) {
+    final zone = config.sceneZone(zoneId);
+    if (zone == null) throw StateError('Zone invalide.');
+    final result = Map<String, int>.from(environment(state, alcoveId, config));
+    result['light'] = result['light']! + zone.light;
+    result['temperature'] = result['temperature']! + zone.temperature;
+    result['humidity'] = result['humidity']! + zone.humidity;
+    return result;
   }
 
   static ElevageSave observeShade(
@@ -719,6 +925,41 @@ class ElevageDomain {
           .where((item) => item['id'] == id)
           .cast<Map<String, dynamic>>()
           .first;
+  static List<Map<String, dynamic>> _sceneItems(
+      ElevageSave state, String alcoveId) {
+    final byAlcove = state.data['sceneItemsByAlcoveId'] as Map<String, dynamic>;
+    final raw = byAlcove.putIfAbsent(alcoveId, () => <dynamic>[]) as List;
+    return raw
+        .cast<Map>()
+        .map((entry) => Map<String, dynamic>.from(entry))
+        .toList()
+      ..also((items) => byAlcove[alcoveId] = items);
+  }
+
+  static String? _drierSceneZone(ElevageSave state, String alcoveId,
+      String currentZoneId, ElevageConfig config) {
+    final occupied = _sceneItems(state, alcoveId)
+        .where((entry) => entry['zoneId'] != currentZoneId)
+        .map((entry) => entry['zoneId'] as String)
+        .toSet();
+    final candidates = config.sceneZones
+        .where(
+            (zone) => zone.id != currentZoneId && !occupied.contains(zone.id))
+        .toList()
+      ..sort((left, right) => zoneEnvironment(
+              state, alcoveId, left.id, config)['humidity']!
+          .compareTo(
+              zoneEnvironment(state, alcoveId, right.id, config)['humidity']!));
+    return candidates.isEmpty ? null : candidates.first.id;
+  }
+
+  static int _observationCount(Map<String, dynamic> individual, String id) {
+    final observations =
+        ((individual['observationJournal'] as Map?)?['observations'] as Map?) ??
+            const <String, dynamic>{};
+    return ((observations[id] as Map?)?['count'] as num?)?.toInt() ?? 0;
+  }
+
   static Map<String, dynamic> _individual(ElevageSave state, String id) =>
       Map<String, dynamic>.from((state.data['individuals'] as Map)[id] as Map);
   static Map<String, int> _generic(ElevageSave state) =>

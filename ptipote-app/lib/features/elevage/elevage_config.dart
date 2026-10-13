@@ -63,6 +63,7 @@ class ElevageInstallationDefinition {
   const ElevageInstallationDefinition({
     required this.id,
     required this.label,
+    required this.description,
     required this.light,
     required this.temperature,
     required this.humidity,
@@ -71,12 +72,33 @@ class ElevageInstallationDefinition {
 
   final String id;
   final String label;
+
+  /// Player-facing copy. Values and mechanics remain defined by this object.
+  final String description;
   final int light;
   final int temperature;
   final int humidity;
   final Map<String, int> outputs;
 
   bool get productive => outputs.isNotEmpty;
+}
+
+/// Four deliberately simple spatial contexts inside an Alcôve. Their effects
+/// are relative gameplay values, just like the global Alcôve environment.
+class ElevageSceneZone {
+  const ElevageSceneZone({
+    required this.id,
+    required this.label,
+    this.light = 0,
+    this.temperature = 0,
+    this.humidity = 0,
+  });
+
+  final String id;
+  final String label;
+  final int light;
+  final int temperature;
+  final int humidity;
 }
 
 class ElevageConfig {
@@ -141,6 +163,8 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'BASSIN',
           label: 'Bassin',
+          description:
+              'Un petit milieu humide où peuvent se développer algues et mousses.',
           light: 0,
           temperature: 0,
           humidity: 2,
@@ -149,6 +173,7 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'MOSS_STONE',
           label: 'Pierre de mousse',
+          description: 'Une pierre fraîche recouverte de mousse.',
           light: 0,
           temperature: -1,
           humidity: 2,
@@ -156,6 +181,8 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'CULTURE_POTAGERE',
           label: 'Culture potagère',
+          description:
+              'Un coin de culture qui fait pousser racines et feuilles.',
           light: 0,
           temperature: 0,
           humidity: 0,
@@ -164,6 +191,7 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'BUTTE_ARBUSTE',
           label: 'Butte d’arbuste',
+          description: 'Une petite butte végétale où mûrissent des fruits.',
           light: 0,
           temperature: 0,
           humidity: 0,
@@ -172,6 +200,7 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'GEODE_FERRIQUE',
           label: 'Géode ferrique',
+          description: 'Une géode minérale qui rend du fer disponible.',
           light: 0,
           temperature: 0,
           humidity: 0,
@@ -180,6 +209,7 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'GEODE_CRISTALLINE',
           label: 'Géode cristalline',
+          description: 'Une géode dont les cristaux de quartz affleurent.',
           light: 0,
           temperature: 0,
           humidity: 0,
@@ -188,6 +218,8 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'LAMPE_SOLAIRE',
           label: 'Lampe solaire',
+          description:
+              'Une lampe qui éclaire et réchauffe légèrement l’Alcôve.',
           light: 2,
           temperature: 1,
           humidity: 0,
@@ -195,6 +227,8 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'ABRI_FIBREUX',
           label: 'Abri fibreux',
+          description:
+              'Un abri tressé qui apporte de l’ombre et de la fraîcheur.',
           light: -2,
           temperature: -1,
           humidity: 0,
@@ -202,6 +236,7 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'ABRI_MINERAL_PROFOND',
           label: 'Abri minéral profond',
+          description: 'Un refuge profond, sombre et frais, mais plus humide.',
           light: -2,
           temperature: -2,
           humidity: 2,
@@ -209,6 +244,7 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'VENTILATION',
           label: 'Ventilation',
+          description: 'Un courant d’air qui rafraîchit et assèche légèrement.',
           light: 0,
           temperature: -2,
           humidity: -1,
@@ -216,6 +252,7 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'TROU_GEOTHERMIQUE_CHAUD',
           label: 'Trou géothermique chaud',
+          description: 'Une ouverture chaude qui réchauffe l’espace.',
           light: 0,
           temperature: 2,
           humidity: 0,
@@ -223,15 +260,31 @@ class ElevageConfig {
         const ElevageInstallationDefinition(
           id: 'TOIT_SERRE',
           label: 'Toit de serre',
+          description: 'Un toit transparent qui augmente lumière et chaleur.',
           light: 1,
           temperature: 2,
           humidity: 0,
         ),
       ];
 
+  List<ElevageSceneZone> get sceneZones => const <ElevageSceneZone>[
+        ElevageSceneZone(
+            id: 'ZONE_1', label: 'Abri ombragé', light: -1, humidity: -1),
+        ElevageSceneZone(id: 'ZONE_2', label: 'Nid central'),
+        ElevageSceneZone(id: 'ZONE_3', label: 'Coin humide', humidity: 2),
+        ElevageSceneZone(id: 'ZONE_4', label: 'Bord éclairé', light: 1),
+      ];
+
   ElevageInstallationDefinition? installation(String id) {
     for (final definition in installations) {
       if (definition.id == id) return definition;
+    }
+    return null;
+  }
+
+  ElevageSceneZone? sceneZone(String id) {
+    for (final zone in sceneZones) {
+      if (zone.id == id) return zone;
     }
     return null;
   }

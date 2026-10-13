@@ -51,6 +51,26 @@ class ElevageController extends ChangeNotifier {
       (current) => ElevageDomain.offerFood(current, id, item, _now, config));
   Future<void> offerStructural(String id, String item) => _mutate((current) =>
       ElevageDomain.offerStructural(current, id, item, _now, config));
+  Future<void> placeSceneItem(String alcoveId, String item, String zoneId) =>
+      _mutate((current) => ElevageDomain.placeSceneItem(
+          current, alcoveId, item, zoneId, _now, config));
+  Future<void> recoverSceneItem(String alcoveId, String instanceId) =>
+      _mutate((current) =>
+          ElevageDomain.recoverSceneItem(current, alcoveId, instanceId));
+  Future<ElevageSceneItemOutcome?> interactSceneItem(
+      String individualId, String alcoveId, String instanceId) async {
+    final current = state;
+    if (current == null) return null;
+    ElevageSceneItemOutcome? outcome;
+    await _mutate((next) {
+      outcome = ElevageDomain.sceneItemOutcome(
+          next, individualId, alcoveId, instanceId, _now, config);
+      return ElevageDomain.interactSceneItem(
+          next, individualId, alcoveId, instanceId, _now, config);
+    });
+    return error == null ? outcome : null;
+  }
+
   Future<void> observeShade(String id) => _mutate(
       (current) => ElevageDomain.observeShade(current, id, _now, config));
   Future<void> addDevInventory() => _mutate(ElevageDomain.addDevInventory);

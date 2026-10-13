@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'elevage_engine.dart';
+
 /// Couche de présentation : les IDs du domaine restent stables et anglais,
 /// tandis que les libellés, pictos et retours sont pensés pour le joueur.
 class ElevagePresentation {
@@ -83,6 +85,25 @@ class ElevagePresentation {
       return '😐 $name mange ${_withArticle(item)} calmement.';
     }
     return reactionFeedback(reaction, name);
+  }
+
+  /// Text appears only after repeated scene behaviour; the first interaction
+  /// is intentionally represented by a behaviour icon alone.
+  static String sceneObservationFeedback(
+      ElevageSceneItemOutcome outcome, String item, String name) {
+    if (outcome.behavior == 'MOVE_ITEM') {
+      return '$name déplace souvent sa nourriture avant de la manger.';
+    }
+    if (outcome.behavior == 'STEP_BACK' && item == 'QUARTZ') {
+      return '$name examine le quartz puis s’en détourne.';
+    }
+    if (outcome.behavior == 'RUSH_SHAKE') {
+      return '$name semble particulièrement attiré par les ${_foodPlural(item)}.';
+    }
+    if (outcome.behavior == 'VIBRATE') {
+      return '$name réagit particulièrement au fer.';
+    }
+    return '$name observe ${_withArticle(item)} avec attention.';
   }
 
   static String observationText(Map observation, String name) {

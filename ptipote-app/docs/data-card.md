@@ -606,3 +606,32 @@ L’Eau n’est pas une ressource globale du Camp.
   empêcher Safari de conserver une ancienne interface sans carte écologique.
   Le puzzle écologique, les espèces, Blocs stables, Recherche, Data, Tour et
   Walker restent explicitement hors périmètre.
+
+## P’TIPOTE Élevage — Lot 14 : objets posés et expérimentation spatiale
+
+- **Objet posé.** Les aliments, friandises et matériaux compatibles ne sont
+  plus donnés directement. Le joueur les retire de `inventory.special` pour
+  créer une instance persistée dans `sceneItemsByAlcoveId` : `instanceId`,
+  `itemId`, `zoneId`, `placedAt`, `source: PLAYER` et compteur d’interactions.
+  Un même objet ne peut donc jamais être à la fois dans l’inventaire et dans la
+  scène. Tant qu’il n’a pas été consommé, il peut être récupéré sans perte.
+- **Zones.** Chaque Alcôve possède quatre zones V0 : abri ombragé, nid
+  central, coin humide et bord éclairé. Leurs valeurs relatives modifient
+  localement Lumière / Température / Humidité sans inventer de degrés ou de
+  pourcentages physiques. Les règles de zone sont définies dans
+  `ElevageConfig.sceneZones`; elles complètent l’environnement global calculé
+  à partir des installations.
+- **Lecture différée.** À la première interaction, seule une icône de
+  comportement est affichée. Les messages d’observation n’apparaissent qu’à
+  partir du seuil `suspectedThreshold`; le Carnet conserve les observations
+  dédoublonnées et leurs états UNKNOWN / SUSPECTED / CONFIRMED. Le Carnet
+  reflète toujours le domaine, sans révéler une préférence inconnue.
+- **Contexte.** Une racine favorite dans un coin très humide peut être
+  déplacée vers une zone plus sèche (`MOVE_ITEM`) plutôt que consommée. Cette
+  expérience produit une observation d’évitement d’humidité progressivement,
+  sans transformer la position en préférence automatiquement confirmée.
+- **Fiches d’installation.** `ElevageInstallationDefinition` porte désormais
+  nom, description française, effets et production. Les fiches lisent aussi
+  `ElevageRecipe` afin d’afficher coût réel de configuration, production et
+  aperçu environnemental avant/après. Elles ne dévoilent aucune préférence
+  d’un P’TIPOTE.
