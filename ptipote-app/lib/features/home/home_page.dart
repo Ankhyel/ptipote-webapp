@@ -247,8 +247,10 @@ class _HomePageState extends State<HomePage> {
                     ),
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF7AFFEB),
-                        foregroundColor: const Color(0xFF24342F),
+                        backgroundColor:
+                            Theme.of(context).colorScheme.secondary,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onSecondary,
                         minimumSize: const Size.fromHeight(64),
                       ),
                       onPressed: _scanning ? null : _scanFigurine,
@@ -297,14 +299,15 @@ class _GameButton extends StatelessWidget {
         width: 154,
         height: 78,
         decoration: BoxDecoration(
-          color: const Color(0xFFE9D9B7),
-          border: Border.all(color: const Color(0xFFC7B07D)),
+          color: Theme.of(context).colorScheme.surface,
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
           borderRadius: BorderRadius.circular(28),
-          boxShadow: const <BoxShadow>[
+          boxShadow: <BoxShadow>[
             BoxShadow(
-              color: Color(0x2933281E),
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: .13),
               blurRadius: 14,
-              offset: Offset(0, 7),
+              offset: const Offset(0, 7),
             ),
           ],
         ),
@@ -377,13 +380,14 @@ class _CollectionButton extends StatelessWidget {
         height: 154,
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
-          border: Border.all(color: const Color(0xFFE0CFAE)),
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
           borderRadius: BorderRadius.circular(34),
-          boxShadow: const <BoxShadow>[
+          boxShadow: <BoxShadow>[
             BoxShadow(
-              color: Color(0x3333281E),
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: .16),
               blurRadius: 18,
-              offset: Offset(0, 8),
+              offset: const Offset(0, 8),
             ),
           ],
         ),
@@ -452,9 +456,9 @@ class _Badge extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
       padding: const EdgeInsets.symmetric(horizontal: 5),
       alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: Color(0xFFE64A3C),
-        borderRadius: BorderRadius.all(Radius.circular(999)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.secondary,
+        borderRadius: const BorderRadius.all(Radius.circular(999)),
       ),
       child: Text(
         count > 9 ? '9+' : '$count',
