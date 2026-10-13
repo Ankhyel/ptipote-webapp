@@ -31,6 +31,20 @@ class ElevageController extends ChangeNotifier {
     await _persist();
   }
 
+  Future<void> resetGame({bool resetConfig = false}) async {
+    if (resetConfig) {
+      await _repository.resetConfig();
+      config = defaultElevageConfig;
+    }
+    state = ElevageDomain.resetGame(config, _now);
+    error = null;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> resetAlcoves() =>
+      _mutate((current) => ElevageDomain.resetAlcoves(current, config, _now));
+
   Future<void> adopt({
     required String alcoveId,
     required String name,
@@ -73,6 +87,10 @@ class ElevageController extends ChangeNotifier {
 
   Future<void> observeShade(String id) => _mutate(
       (current) => ElevageDomain.observeShade(current, id, _now, config));
+  Future<void> follow(String id, String zoneId) => _mutate(
+      (current) => ElevageDomain.follow(current, id, zoneId, _now, config));
+  Future<void> cuddle(String id) =>
+      _mutate((current) => ElevageDomain.cuddle(current, id, _now, config));
   Future<void> addDevInventory() => _mutate(ElevageDomain.addDevInventory);
   Future<void> startForaging(String id, String biome) => _mutate((current) =>
       ElevageDomain.startForaging(current, id, biome, _now, config));

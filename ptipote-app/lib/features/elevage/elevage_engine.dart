@@ -17,7 +17,7 @@ class ElevageSave {
       'activeConfigRevision': config.revision,
       'inventory': <String, dynamic>{
         'generic': <String, int>{'organic': 0, 'mineral': 0},
-        'special': <String, int>{},
+        'special': <String, int>{'ROOT': 1, 'LEAF': 1},
         'bioPiles': 0,
       },
       'alcoves': List<Map<String, dynamic>>.generate(
@@ -103,6 +103,24 @@ class ElevageDomain {
     'IRON',
     'LIMESTONE',
     'QUARTZ',
+  ];
+
+  /// Tout le loot spécifique actuellement atteignable dans la Mini-Lisière.
+  /// Cette liste sert aussi de garde-fou QA pour éviter le fallback joueur
+  /// « Objet inconnu ».
+  static const List<String> foragingLootItemIds = <String>[
+    'ROOT',
+    'LEAF',
+    'FRUIT',
+    'SEED',
+    'SPROUT',
+    'MOSS',
+    'MUSHROOM',
+    'ALGAE',
+    'ALGAE_FRAGMENT',
+    'LIMESTONE',
+    'QUARTZ',
+    'IRON',
   ];
   static const Set<String> _placeableSceneItems = <String>{
     'ROOT',
@@ -209,10 +227,35 @@ class ElevageDomain {
     (state.data['individuals'] as Map<String, dynamic>)[id] = individual;
     (state.data['activeIndividualIds'] as List).add(id);
     alcove['occupantIndividualId'] = id;
-    final starter = _special(state);
-    starter['ROOT'] = (starter['ROOT'] ?? 0) + 1;
-    starter['LEAF'] = (starter['LEAF'] ?? 0) + 1;
     _memory(state, id, 'ADOPTED', now);
+    return state;
+  }
+
+  static ElevageSave resetGame(ElevageConfig config, int now) =>
+      ElevageSave.initial(config, now: now);
+
+  /// Keeps the player configuration and portable inventory, while removing all
+  /// Alcôve-bound state that could contaminate a spatial QA run.
+  static ElevageSave resetAlcoves(
+      ElevageSave source, ElevageConfig config, int now) {
+    final state = source.copy();
+    state.data['alcoves'] = List<Map<String, dynamic>>.generate(
+        config.alcoveCount,
+        (index) => <String, dynamic>{
+              'id': 'alcove-${index + 1}',
+              'slotLimit': config.installationSlotCount,
+              'occupantIndividualId': null,
+              'slots': List<dynamic>.filled(config.installationSlotCount, null),
+              'createdAt': now,
+            });
+    state.data['individuals'] = <String, dynamic>{};
+    state.data['activeIndividualIds'] = <String>[];
+    state.data['installationInventory'] = <String, dynamic>{};
+    state.data['sceneItemsByAlcoveId'] = <String, dynamic>{};
+    state.data['runsByIndividualId'] = <String, dynamic>{};
+    state.data['memoryEvents'] = <String, dynamic>{};
+    state.data['coRearingReturnLedger'] = <String, dynamic>{};
+    state.data['pendingNotifications'] = <dynamic>[];
     return state;
   }
 
@@ -251,11 +294,16 @@ class ElevageDomain {
               : 'UNKNOWN';
       _memory(state, id, 'FIRST_FAVORITE_FOOD', now);
       _interaction(individual, 'FAVORITE_FOOD', contact: 1);
-      _observe(individual, 'FOOD_FAVORITE', now,
-          relatedItemId: item, status: discovery['status'] as String);
+      final count = _observe(individual, 'FOOD_FAVORITE', now,
+          relatedItemId: item, config: config);
+      _setObservationStatus(
+          individual, 'FOOD_FAVORITE:$item', count, config, now);
     } else {
       _interaction(individual, 'FOOD', contact: 1);
-      _observe(individual, 'FOOD_ACCEPTED', now, relatedItemId: item);
+      final count = _observe(individual, 'FOOD_ACCEPTED', now,
+          relatedItemId: item, config: config);
+      _setObservationStatus(
+          individual, 'FOOD_ACCEPTED:$item', count, config, now);
     }
     _memory(state, id, 'FIRST_FOOD', now);
     return state;
@@ -272,7 +320,10 @@ class ElevageDomain {
     final special = _special(state);
     if ((special[item] ?? 0) < 1) throw StateError('Matériau non disponible.');
     if (gain == 0) {
-      _observe(individual, 'STRUCTURAL_AVOIDED', now, relatedItemId: item);
+      final count = _observe(individual, 'STRUCTURAL_AVOIDED', now,
+          relatedItemId: item, config: config ?? defaultElevageConfig);
+      _setObservationStatus(individual, 'STRUCTURAL_AVOIDED:$item', count,
+          config ?? defaultElevageConfig, now);
       return state;
     }
     special[item] = special[item]! - 1;
@@ -282,10 +333,10 @@ class ElevageDomain {
     final byMaterial = intake['byMaterial'] as Map<String, dynamic>;
     byMaterial[item] = (byMaterial[item] as int? ?? 0) + gain;
     _interaction(individual, 'STRUCTURE', tempo: 1);
-    final count =
-        _observe(individual, 'STRUCTURAL_REACTION', now, relatedItemId: item);
+    final count = _observe(individual, 'STRUCTURAL_REACTION', now,
+        relatedItemId: item, config: config ?? defaultElevageConfig);
     _setObservationStatus(individual, 'STRUCTURAL_REACTION:$item', count,
-        config ?? defaultElevageConfig);
+        config ?? defaultElevageConfig, now);
     return state;
   }
 
@@ -403,15 +454,16 @@ class ElevageDomain {
     if (item == null) throw StateError('Objet posé introuvable.');
     final individual = _individual(state, individualId);
     final itemId = item['itemId'] as String;
-    final effective =
-        zoneEnvironment(state, alcoveId, item['zoneId'] as String, config);
+    final effective = zoneEnvironment(
+        state, alcoveId, item['zoneId'] as String, config,
+        now: now);
     final favorite = individual['generatedProfile']['foodPreference'] as String;
 
     if (foodItems.contains(itemId) &&
         itemId == favorite &&
         (effective['humidity'] ?? 0) >= 2) {
-      final target =
-          _drierSceneZone(state, alcoveId, item['zoneId'] as String, config);
+      final target = _drierSceneZone(
+          state, alcoveId, item['zoneId'] as String, config, now);
       if (target != null) {
         return ElevageSceneItemOutcome(
           behavior: 'MOVE_ITEM',
@@ -474,16 +526,16 @@ class ElevageDomain {
     if (outcome.behavior == 'MOVE_ITEM') {
       entry['zoneId'] = outcome.targetZoneId;
       final count = _observe(individual, 'HUMIDITY_AVOIDANCE', now,
-          relatedEnvironmentAxis: 'HUMIDITY');
+          relatedEnvironmentAxis: 'HUMIDITY', config: config);
       _setObservationStatus(
-          individual, 'HUMIDITY_AVOIDANCE:HUMIDITY', count, config);
+          individual, 'HUMIDITY_AVOIDANCE:HUMIDITY', count, config, now);
       return state;
     }
     if (outcome.behavior == 'STEP_BACK' && item == 'QUARTZ') {
-      final count =
-          _observe(individual, 'STRUCTURAL_AVOIDED', now, relatedItemId: item);
+      final count = _observe(individual, 'STRUCTURAL_AVOIDED', now,
+          relatedItemId: item, config: config);
       _setObservationStatus(
-          individual, 'STRUCTURAL_AVOIDED:$item', count, config);
+          individual, 'STRUCTURAL_AVOIDED:$item', count, config, now);
       return state;
     }
     if (!outcome.consumed) return state;
@@ -503,14 +555,43 @@ class ElevageDomain {
   }
 
   static Map<String, int> zoneEnvironment(
-      ElevageSave state, String alcoveId, String zoneId, ElevageConfig config) {
+      ElevageSave state, String alcoveId, String zoneId, ElevageConfig config,
+      {int? now}) {
     final zone = config.sceneZone(zoneId);
     if (zone == null) throw StateError('Zone invalide.');
-    final result = Map<String, int>.from(environment(state, alcoveId, config));
-    result['light'] = result['light']! + zone.light;
-    result['temperature'] = result['temperature']! + zone.temperature;
-    result['humidity'] = result['humidity']! + zone.humidity;
+    final nightOffset =
+        dayNightPhase(now ?? DateTime.now().millisecondsSinceEpoch, config) ==
+                'NIGHT'
+            ? (zoneId == 'ZONE_4' ? -1 : -3)
+            : 0;
+    final result = <String, int>{
+      'light': zone.light + nightOffset,
+      'temperature': zone.temperature,
+      'humidity': zone.humidity,
+    };
+    final slots = _alcove(state, alcoveId)['slots'] as List;
+    for (var index = 0; index < slots.length; index++) {
+      final raw = slots[index];
+      if (raw is! Map) continue;
+      // Les anciennes sauvegardes n'avaient pas encore la position spatiale
+      // des installations : leur slot reste une position de repli stable.
+      final installedZone = raw['zoneId'] as String? ?? 'ZONE_${index + 1}';
+      if (installedZone != zoneId) continue;
+      final definition = config.installation(raw['definitionId'] as String);
+      if (definition == null) continue;
+      result['light'] = result['light']! + definition.light;
+      result['temperature'] = result['temperature']! + definition.temperature;
+      result['humidity'] = result['humidity']! + definition.humidity;
+    }
     return result;
+  }
+
+  static String dayNightPhase(int now, ElevageConfig config) {
+    final dayMs =
+        config.dayDurationHours * const Duration(hours: 1).inMilliseconds;
+    final cycleMs =
+        config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
+    return now % cycleMs < dayMs ? 'DAY' : 'NIGHT';
   }
 
   static ElevageSave observeShade(
@@ -518,8 +599,29 @@ class ElevageDomain {
     final state = source.copy();
     final individual = _individual(state, id);
     final count = _observe(individual, 'LIGHT_SHADE', now,
-        relatedEnvironmentAxis: 'LIGHT');
-    _setObservationStatus(individual, 'LIGHT_SHADE:LIGHT', count, config);
+        relatedEnvironmentAxis: 'LIGHT', config: config);
+    _setObservationStatus(individual, 'LIGHT_SHADE:LIGHT', count, config, now);
+    return state;
+  }
+
+  static ElevageSave follow(ElevageSave source, String id, String zoneId,
+      int now, ElevageConfig config) {
+    final state = source.copy();
+    if (config.sceneZone(zoneId) == null) throw StateError('Zone invalide.');
+    final individual = _individual(state, id);
+    _interaction(individual, 'FOLLOW', contact: 1);
+    final count = _observe(individual, 'FOLLOW', now, config: config);
+    _setObservationStatus(individual, 'FOLLOW:GENERAL', count, config, now);
+    return state;
+  }
+
+  static ElevageSave cuddle(
+      ElevageSave source, String id, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, id);
+    _interaction(individual, 'CUDDLE', contact: 1);
+    final count = _observe(individual, 'CUDDLE', now, config: config);
+    _setObservationStatus(individual, 'CUDDLE:GENERAL', count, config, now);
     return state;
   }
 
@@ -653,6 +755,7 @@ class ElevageDomain {
       inventory[(slots[slot] as Map)['instanceId'] as String] = slots[slot];
     }
     (instance as Map)['installedAt'] = now;
+    instance['zoneId'] = 'ZONE_${slot + 1}';
     slots[slot] = instance;
     return state;
   }
@@ -937,7 +1040,7 @@ class ElevageDomain {
   }
 
   static String? _drierSceneZone(ElevageSave state, String alcoveId,
-      String currentZoneId, ElevageConfig config) {
+      String currentZoneId, ElevageConfig config, int now) {
     final occupied = _sceneItems(state, alcoveId)
         .where((entry) => entry['zoneId'] != currentZoneId)
         .map((entry) => entry['zoneId'] as String)
@@ -946,10 +1049,10 @@ class ElevageDomain {
         .where(
             (zone) => zone.id != currentZoneId && !occupied.contains(zone.id))
         .toList()
-      ..sort((left, right) => zoneEnvironment(
-              state, alcoveId, left.id, config)['humidity']!
-          .compareTo(
-              zoneEnvironment(state, alcoveId, right.id, config)['humidity']!));
+      ..sort((left, right) => zoneEnvironment(state, alcoveId, left.id, config,
+              now: now)['humidity']!
+          .compareTo(zoneEnvironment(state, alcoveId, right.id, config,
+              now: now)['humidity']!));
     return candidates.isEmpty ? null : candidates.first.id;
   }
 
@@ -986,7 +1089,9 @@ class ElevageDomain {
   static int _observe(Map<String, dynamic> individual, String type, int now,
       {String? relatedItemId,
       String? relatedEnvironmentAxis,
-      String status = 'UNKNOWN'}) {
+      String status = 'UNKNOWN',
+      ElevageConfig? config}) {
+    final rules = config ?? defaultElevageConfig;
     final journal = individual['observationJournal'] as Map;
     final observations = journal.putIfAbsent(
         'observations', () => <String, dynamic>{}) as Map<String, dynamic>;
@@ -1001,27 +1106,51 @@ class ElevageDomain {
               'firstObservedAt': now,
               'lastObservedAt': now,
               'count': 0,
+              'rawBehaviorCount': 0,
+              'meaningfulEvidenceCount': 0,
+              'lastEvidenceAt': null,
               'relatedItemId': relatedItemId,
               'relatedEnvironmentAxis': relatedEnvironmentAxis,
               'status': status,
             }) as Map;
     entry['lastObservedAt'] = now;
-    entry['count'] = ((entry['count'] as num?)?.toInt() ?? 0) + 1;
+    entry['rawBehaviorCount'] = ((entry['rawBehaviorCount'] as num?)?.toInt() ??
+            (entry['count'] as num?)?.toInt() ??
+            0) +
+        1;
+    final existing = (entry['meaningfulEvidenceCount'] as num?)?.toInt() ??
+        (entry['count'] as num?)?.toInt() ??
+        0;
+    final lastEvidence = entry['lastEvidenceAt'] as int?;
+    final outsideWindow = lastEvidence == null ||
+        now - lastEvidence >=
+            rules.observationEvidenceCooldownMinutes *
+                const Duration(minutes: 1).inMilliseconds;
+    final evidence = entry['status'] == 'CONFIRMED' || !outsideWindow
+        ? existing
+        : existing + 1;
+    if (evidence != existing) entry['lastEvidenceAt'] = now;
+    entry['meaningfulEvidenceCount'] = evidence;
+    entry['count'] = evidence;
     if (status != 'UNKNOWN') entry['status'] = status;
-    return entry['count'] as int;
+    return evidence;
   }
 
   static void _setObservationStatus(Map<String, dynamic> individual, String id,
-      int count, ElevageConfig config) {
+      int count, ElevageConfig config, int now) {
     final observations = (individual['observationJournal']
         as Map)['observations'] as Map<String, dynamic>;
     final entry = observations[id] as Map?;
     if (entry == null) return;
-    entry['status'] = count >= config.confirmedThreshold
-        ? 'CONFIRMED'
-        : count >= config.suspectedThreshold
-            ? 'SUSPECTED'
-            : 'UNKNOWN';
+    if (count >= config.suspectedThreshold && entry['suspectedAt'] == null) {
+      entry['suspectedAt'] = now;
+    }
+    entry['status'] =
+        count >= config.confirmedThreshold && entry['suspectedAt'] != null
+            ? 'CONFIRMED'
+            : count >= config.suspectedThreshold
+                ? 'SUSPECTED'
+                : 'OBSERVED';
   }
 
   static void _interaction(Map<String, dynamic> individual, String type,

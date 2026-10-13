@@ -11,6 +11,7 @@ class ElevagePresentation {
     'MOSS': _ItemVisual('Mousse', Icons.terrain_outlined, 'Nourriture'),
     'ALGAE': _ItemVisual('Algues', Icons.waves_outlined, 'Nourriture'),
     'MUSHROOM': _ItemVisual('Champignon', Icons.park_outlined, 'Nourriture'),
+    'FRUIT': _ItemVisual('Fruit', Icons.apple_outlined, 'Nourriture'),
     'FIBROUS_FRUIT':
         _ItemVisual('Fruit fibreux', Icons.apple_outlined, 'Friandises'),
     'FRUIT_JELLY':
@@ -29,6 +30,18 @@ class ElevagePresentation {
   static String itemLabel(String id) => _items[id]?.label ?? 'Objet inconnu';
   static IconData itemIcon(String id) => _items[id]?.icon ?? Icons.help_outline;
   static String itemCategory(String id) => _items[id]?.category ?? 'Ressources';
+  static List<int> stackQuantities(int quantity, int maxStack) {
+    if (quantity <= 0 || maxStack <= 0) return const <int>[];
+    final stacks = <int>[];
+    var remaining = quantity;
+    while (remaining > 0) {
+      final current = remaining > maxStack ? maxStack : remaining;
+      stacks.add(current);
+      remaining -= current;
+    }
+    return stacks;
+  }
+
   static int environmentScale(int relativeValue) =>
       (relativeValue + 3).clamp(1, 5);
 
@@ -118,6 +131,9 @@ class ElevagePresentation {
           : '$name intègre lentement le calcaire.',
       'STRUCTURAL_AVOIDED' => '$name examine le quartz puis s’en détourne.',
       'LIGHT_SHADE' => '$name reste volontiers dans les endroits ombragés.',
+      'HUMIDITY_AVOIDANCE' => '$name repart rapidement de cette zone.',
+      'FOLLOW' => '$name suit volontiers vos mouvements.',
+      'CUDDLE' => '$name semble apprécier vos caresses.',
       _ => '$name a observé son environnement.',
     };
   }
@@ -128,6 +144,9 @@ class ElevagePresentation {
           '$name semble apprécier les ${_foodPlural(observation['relatedItemId'] as String)}.',
         'STRUCTURAL_REACTION' => '$name semble réagir particulièrement au fer.',
         'LIGHT_SHADE' => '$name semble préférer les zones peu éclairées.',
+        'HUMIDITY_AVOIDANCE' => '$name semble éviter les zones trop humides.',
+        'FOLLOW' => '$name semble attentif à votre présence.',
+        'CUDDLE' => '$name semble apprécier votre présence.',
         _ => '$name semble avoir une préférence à explorer.',
       };
 
@@ -136,6 +155,8 @@ class ElevagePresentation {
           'Préférence alimentaire : ${itemLabel(observation['relatedItemId'] as String)}',
         'STRUCTURAL_REACTION' => 'Matériau structurel principal : Fer',
         'LIGHT_SHADE' => 'Préférence lumineuse : faible lumière',
+        'HUMIDITY_AVOIDANCE' =>
+          'Sensibilité environnementale : humidité élevée',
         _ => 'Découverte confirmée',
       };
 

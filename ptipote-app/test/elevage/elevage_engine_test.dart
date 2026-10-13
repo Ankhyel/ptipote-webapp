@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ptipote_app/features/elevage/elevage_config.dart';
 import 'package:ptipote_app/features/elevage/elevage_engine.dart';
+import 'package:ptipote_app/features/elevage/elevage_presentation.dart';
 
 void main() {
   const now = 1700000000000;
@@ -261,8 +262,8 @@ void main() {
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
     state = ElevageDomain.observeShade(state, id, now, defaultElevageConfig);
-    state =
-        ElevageDomain.observeShade(state, id, now + 1, defaultElevageConfig);
+    state = ElevageDomain.observeShade(state, id,
+        now + const Duration(minutes: 10).inMilliseconds, defaultElevageConfig);
     final observation = ((state.data['individuals'] as Map)[id]
         ['observationJournal']['observations']['LIGHT_SHADE:LIGHT'] as Map);
     expect(observation['count'], 2);
@@ -325,7 +326,7 @@ void main() {
             ['observationJournal']['observations']
         as Map)['HUMIDITY_AVOIDANCE:HUMIDITY'] as Map;
     expect(observation['count'], 1);
-    expect(observation['status'], 'UNKNOWN');
+    expect(observation['status'], 'OBSERVED');
   });
 
   test(
@@ -351,5 +352,130 @@ void main() {
     expect(
         ((state.data['individuals'] as Map)[id]['care'] as Map)['lastMealAt'],
         now + 2);
+  });
+
+  test('reset QA remet la partie à zéro avec son starter réduit', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    state = ElevageDomain.addDevInventory(state);
+    final reset = ElevageDomain.resetGame(defaultElevageConfig, now + 1);
+    expect(reset.data['activeIndividualIds'], isEmpty);
+    expect((reset.data['alcoves'] as List), hasLength(4));
+    expect(reset.data['runsByIndividualId'], isEmpty);
+    expect(reset.data['sceneItemsByAlcoveId'], isEmpty);
+    expect((reset.data['inventory']['special'] as Map),
+        <String, dynamic>{'ROOT': 1, 'LEAF': 1});
+  });
+
+  test('reset Alcôves ne détruit pas les ressources portables', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state.data['inventory']['generic']['organic'] = 7;
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final reset =
+        ElevageDomain.resetAlcoves(state, defaultElevageConfig, now + 1);
+    expect(reset.data['activeIndividualIds'], isEmpty);
+    expect(reset.data['inventory']['generic']['organic'], 7);
+    expect(reset.data['installationInventory'], isEmpty);
+  });
+
+  test('tout loot normal possède un libellé français et une catégorie', () {
+    for (final item in ElevageDomain.foragingLootItemIds) {
+      expect(ElevagePresentation.itemLabel(item), isNot('Objet inconnu'));
+      expect(ElevagePresentation.itemCategory(item), isNotEmpty);
+    }
+  });
+
+  test('inventaire V1 découpe les quantités en stacks de 12', () {
+    expect(ElevagePresentation.stackQuantities(0, 12), isEmpty);
+    expect(ElevagePresentation.stackQuantities(12, 12), <int>[12]);
+    expect(ElevagePresentation.stackQuantities(28, 12), <int>[12, 12, 4]);
+  });
+
+  test('jour/nuit et installations modifient uniquement leur micro-zone', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][2] = <String, dynamic>{
+      'definitionId': 'BASSIN',
+      'zoneId': 'ZONE_3',
+    };
+    expect(ElevageDomain.dayNightPhase(0, defaultElevageConfig), 'DAY');
+    expect(
+        ElevageDomain.dayNightPhase(
+            const Duration(hours: 3).inMilliseconds, defaultElevageConfig),
+        'NIGHT');
+    final zone3 = ElevageDomain.zoneEnvironment(
+        state, 'alcove-1', 'ZONE_3', defaultElevageConfig,
+        now: 0);
+    final zone2 = ElevageDomain.zoneEnvironment(
+        state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+        now: 0);
+    expect(zone3['humidity'], 4); // zone +2, bassin +2
+    expect(zone2['humidity'], 0); // le bassin ne diffuse pas dans Z2
+  });
+
+  test('FOLLOW et CUDDLE créent des actions et des observations plafonnées',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final config =
+        defaultElevageConfig.copyWith(observationEvidenceCooldownMinutes: 0);
+    state = ElevageDomain.follow(state, id, 'ZONE_2', now + 1, config);
+    state = ElevageDomain.cuddle(state, id, now + 2, config);
+    final observations = ((state.data['individuals'] as Map)[id]
+        ['observationJournal']['observations'] as Map);
+    expect((observations['FOLLOW:GENERAL'] as Map)['status'], 'OBSERVED');
+    expect((observations['CUDDLE:GENERAL'] as Map)['status'], 'OBSERVED');
+    expect(
+        ((state.data['individuals'] as Map)[id]['personality']['tendencies']
+            as Map)['contact'],
+        greaterThan(0));
+  });
+
+  test('observation différée suit OBSERVED, SUSPECTED, CONFIRMED sans spam',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final config =
+        defaultElevageConfig.copyWith(observationEvidenceCooldownMinutes: 0);
+    state = ElevageDomain.observeShade(state, id, now + 1, config);
+    Map entry() => ((state.data['individuals'] as Map)[id]['observationJournal']
+        ['observations']['LIGHT_SHADE:LIGHT'] as Map);
+    expect(entry()['status'], 'OBSERVED');
+    state = ElevageDomain.observeShade(state, id, now + 2, config);
+    expect(entry()['status'], 'SUSPECTED');
+    state = ElevageDomain.observeShade(state, id, now + 3, config);
+    expect(entry()['status'], 'SUSPECTED');
+    state = ElevageDomain.observeShade(state, id, now + 4, config);
+    expect(entry()['status'], 'CONFIRMED');
+    final evidence = entry()['meaningfulEvidenceCount'];
+    state = ElevageDomain.observeShade(state, id, now + 5, config);
+    expect(entry()['meaningfulEvidenceCount'], evidence);
+    expect(entry()['rawBehaviorCount'], 5);
   });
 }

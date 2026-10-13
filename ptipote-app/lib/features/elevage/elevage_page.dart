@@ -221,6 +221,7 @@ class _IndividualPage extends StatefulWidget {
 class _IndividualPageState extends State<_IndividualPage> {
   String? _reaction;
   String? _feedback;
+  String? _pendingPlacementItem;
   Timer? _feedbackTimer;
 
   void _showSceneFeedback(String feedback, {String? reaction}) {
@@ -240,13 +241,19 @@ class _IndividualPageState extends State<_IndividualPage> {
     super.dispose();
   }
 
-  Future<void> _placeFromInventory(String item) async {
+  void _placeFromInventory(String item) {
+    setState(() => _pendingPlacementItem = item);
+    _showSceneFeedback(
+        'Placez ${ElevagePresentation.itemLabel(item).toLowerCase()} dans une zone libre.');
+  }
+
+  Future<void> _placeInZone(String zoneId) async {
+    final item = _pendingPlacementItem;
+    if (item == null) return;
     final state = widget.controller.state!;
     final individual =
         (state.data['individuals'] as Map)[widget.individualId] as Map;
     final alcoveId = individual['alcoveId'] as String;
-    final zoneId = await _chooseSceneZone(context, widget.controller, alcoveId);
-    if (zoneId == null) return;
     await widget.controller.placeSceneItem(alcoveId, item, zoneId);
     if (!mounted) return;
     if (widget.controller.error != null) {
@@ -256,6 +263,7 @@ class _IndividualPageState extends State<_IndividualPage> {
       return;
     }
     final zone = widget.controller.config.sceneZone(zoneId)!;
+    setState(() => _pendingPlacementItem = null);
     _showSceneFeedback(
         'Vous posez ${ElevagePresentation.itemLabel(item).toLowerCase()} dans ${zone.label}.');
   }
@@ -276,11 +284,11 @@ class _IndividualPageState extends State<_IndividualPage> {
       return;
     }
     if (outcome == null) return;
-    final feedback =
-        outcome.observationCount >= widget.controller.config.suspectedThreshold
-            ? ElevagePresentation.sceneObservationFeedback(
-                outcome, item['itemId'] as String, individual['name'] as String)
-            : null;
+    final feedback = outcome.observationCount >=
+            widget.controller.config.observationTextThreshold
+        ? ElevagePresentation.sceneObservationFeedback(
+            outcome, item['itemId'] as String, individual['name'] as String)
+        : null;
     _showSceneFeedback(feedback ?? '', reaction: outcome.behavior);
     if (feedback != null) {
       ScaffoldMessenger.of(context)
@@ -297,6 +305,18 @@ class _IndividualPageState extends State<_IndividualPage> {
     if (!mounted || widget.controller.error != null) return;
     _showSceneFeedback(
         'Vous récupérez ${ElevagePresentation.itemLabel(item['itemId'] as String).toLowerCase()}.');
+  }
+
+  Future<void> _followZone(String zoneId) async {
+    await widget.controller.follow(widget.individualId, zoneId);
+    if (!mounted || widget.controller.error != null) return;
+    _showSceneFeedback('', reaction: 'FOLLOW');
+  }
+
+  Future<void> _cuddle() async {
+    await widget.controller.cuddle(widget.individualId);
+    if (!mounted || widget.controller.error != null) return;
+    _showSceneFeedback('', reaction: 'CUDDLE');
   }
 
   Future<void> _openSceneItemActions(Map item) async {
@@ -409,7 +429,20 @@ class _IndividualPageState extends State<_IndividualPage> {
               sceneItems:
                   ElevageDomain.sceneItems(state, alcove['id'] as String),
               zones: controller.config.sceneZones,
-              onSceneItemTap: (item) => _openSceneItemActions(item)),
+              onSceneItemTap: (item) => _openSceneItemActions(item),
+              onZoneTap: (zoneId) => _pendingPlacementItem == null
+                  ? _followZone(zoneId)
+                  : _placeInZone(zoneId),
+              onPtipoteTap: _cuddle,
+              pendingItem: _pendingPlacementItem,
+              now: DateTime.now().millisecondsSinceEpoch,
+              config: controller.config,
+              zoneEnvironments: <String, Map<String, int>>{
+                for (final zone in controller.config.sceneZones)
+                  zone.id: ElevageDomain.zoneEnvironment(
+                      state, alcove['id'] as String, zone.id, controller.config,
+                      now: DateTime.now().millisecondsSinceEpoch),
+              }),
           const SizedBox(height: 12),
           Center(
               child: Text('${individual['name']}',
@@ -553,8 +586,10 @@ class ElevageNotebookPage extends StatelessWidget {
             .values
             .whereType<Map>()
             .toList();
-    final hypotheses =
-        observations.where((item) => item['status'] == 'SUSPECTED').toList();
+    final hypotheses = observations
+        .where((item) =>
+            item['status'] == 'SUSPECTED' || item['suspectedAt'] != null)
+        .toList();
     final discoveries =
         observations.where((item) => item['status'] == 'CONFIRMED').toList();
     final memories =
@@ -582,7 +617,8 @@ class ElevageNotebookPage extends StatelessWidget {
                         leading: const Icon(Icons.visibility_outlined),
                         title: Text(
                             ElevagePresentation.observationText(item, name)),
-                        subtitle: Text('Observé ${item['count']} fois')))
+                        subtitle:
+                            const Text('Comportement significatif relevé')))
                     .toList()),
         _notebookSection(
             context,
@@ -593,7 +629,10 @@ class ElevageNotebookPage extends StatelessWidget {
                     .map((item) => ListTile(
                         leading: const Icon(Icons.lightbulb_outline),
                         title: Text(
-                            ElevagePresentation.hypothesisText(item, name))))
+                            ElevagePresentation.hypothesisText(item, name)),
+                        trailing: item['status'] == 'CONFIRMED'
+                            ? const Icon(Icons.check_circle_outline)
+                            : null))
                     .toList()),
         _notebookSection(
             context,
@@ -695,6 +734,25 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               (value) => config = config.copyWith(suspectedThreshold: value)),
           _number(context, 'Preuves confirmées', config.confirmedThreshold,
               (value) => config = config.copyWith(confirmedThreshold: value)),
+          _number(
+              context,
+              'Observation textuelle après',
+              config.observationTextThreshold,
+              (value) =>
+                  config = config.copyWith(observationTextThreshold: value)),
+          _number(
+              context,
+              'Fenêtre de preuve (min)',
+              config.observationEvidenceCooldownMinutes,
+              (value) => config =
+                  config.copyWith(observationEvidenceCooldownMinutes: value)),
+          _heading('Cycle et inventaire'),
+          _number(context, 'Jour (h)', config.dayDurationHours,
+              (value) => config = config.copyWith(dayDurationHours: value)),
+          _number(context, 'Nuit (h)', config.nightDurationHours,
+              (value) => config = config.copyWith(nightDurationHours: value)),
+          _number(context, 'Taille d’une pile', config.inventoryStackSize,
+              (value) => config = config.copyWith(inventoryStackSize: value)),
           _heading('Mini-Lisière et installations'),
           _number(
               context,
@@ -751,6 +809,18 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                 setState(() => config = widget.controller.config);
               },
               child: const Text('Réinitialiser les réglages')),
+          if (config.devMode) ...<Widget>[
+            _heading('Réinitialisation QA'),
+            OutlinedButton.icon(
+                icon: const Icon(Icons.home_work_outlined),
+                label: const Text('Réinitialiser seulement les Alcôves'),
+                onPressed: () => _confirmReset(context, false)),
+            const SizedBox(height: 8),
+            FilledButton.tonalIcon(
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('Réinitialiser la partie Élevage'),
+                onPressed: () => _confirmReset(context, true)),
+          ],
         ]),
       );
 
@@ -781,6 +851,34 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                 ? item.copyWith(organic: organic, mineral: mineral)
                 : item)
             .toList()));
+  }
+
+  Future<void> _confirmReset(BuildContext context, bool wholeGame) async {
+    final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+              title: Text(wholeGame
+                  ? 'Réinitialiser P’TIPOTE Élevage ?'
+                  : 'Réinitialiser les Alcôves ?'),
+              content: Text(wholeGame
+                  ? 'Les individus, inventaires, observations et installations Élevage seront effacés. Zone 0 ne sera jamais touchée.'
+                  : 'Les occupants, objets posés et installations des Alcôves seront effacés. Votre inventaire et vos réglages sont conservés.'),
+              actions: <Widget>[
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: const Text('Annuler')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: const Text('Réinitialiser')),
+              ],
+            ));
+    if (accepted != true) return;
+    if (wholeGame) {
+      await widget.controller.resetGame();
+    } else {
+      await widget.controller.resetAlcoves();
+    }
+    if (context.mounted) Navigator.of(context).pop();
   }
 }
 
@@ -878,6 +976,12 @@ class _AlcoveScene extends StatefulWidget {
     required this.sceneItems,
     required this.zones,
     required this.onSceneItemTap,
+    required this.onZoneTap,
+    required this.onPtipoteTap,
+    required this.pendingItem,
+    required this.now,
+    required this.config,
+    required this.zoneEnvironments,
   });
   final String stage;
   final String? reaction;
@@ -888,6 +992,12 @@ class _AlcoveScene extends StatefulWidget {
   final List<Map<String, dynamic>> sceneItems;
   final List<ElevageSceneZone> zones;
   final ValueChanged<Map> onSceneItemTap;
+  final ValueChanged<String> onZoneTap;
+  final VoidCallback onPtipoteTap;
+  final String? pendingItem;
+  final int now;
+  final ElevageConfig config;
+  final Map<String, Map<String, int>> zoneEnvironments;
 
   @override
   State<_AlcoveScene> createState() => _AlcoveSceneState();
@@ -897,6 +1007,7 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
   Timer? _wanderTimer;
   var _horizontal = -.35;
   var _up = .18;
+  String _selectedZoneId = 'ZONE_1';
 
   @override
   void initState() {
@@ -921,9 +1032,9 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
   @override
   Widget build(BuildContext context) {
     final size = switch (widget.stage) {
-      'BABY' => 74.0,
-      'INTERMEDIATE' => 94.0,
-      _ => 112.0,
+      'BABY' => 38.0,
+      'INTERMEDIATE' => 47.0,
+      _ => 56.0,
     };
     final reactionScale = widget.reaction == 'RUSH_SHAKE'
         ? 1.14
@@ -934,7 +1045,7 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
     return Semantics(
       label: 'Scène de l’Alcôve',
       child: Container(
-        height: 232,
+        height: 252,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
           gradient: LinearGradient(colors: <Color>[
@@ -943,10 +1054,14 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
           ], begin: Alignment.topCenter, end: Alignment.bottomCenter),
         ),
         child: Stack(children: <Widget>[
-          const Positioned(
-              left: 18,
-              top: 16,
-              child: Icon(Icons.dark_mode_outlined, size: 28)),
+          Positioned(
+              left: 14,
+              top: 10,
+              child: Text(
+                  ElevageDomain.dayNightPhase(widget.now, widget.config) ==
+                          'DAY'
+                      ? '☀️ Jour'
+                      : '🌙 Nuit')),
           Positioned(
             left: 14,
             right: 14,
@@ -968,14 +1083,50 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                           widget.environment['humidity']!)),
                 ]),
           ),
-          const Positioned(
-              left: 16,
-              bottom: 46,
-              child: Text('Zone ombragée', style: TextStyle(fontSize: 11))),
-          const Positioned(
-              right: 16,
-              bottom: 46,
-              child: Text('Zone éclairée', style: TextStyle(fontSize: 11))),
+          Positioned.fill(
+            top: 42,
+            bottom: 0,
+            child: Row(
+              children: widget.zones.asMap().entries.map((entry) {
+                final zone = entry.value;
+                final selected = _selectedZoneId == zone.id;
+                return Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() => _selectedZoneId = zone.id);
+                      final item = widget.sceneItems
+                          .where((placed) => placed['zoneId'] == zone.id)
+                          .firstOrNull;
+                      if (item == null) widget.onZoneTap(zone.id);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      decoration: BoxDecoration(
+                        color: _zoneColor(
+                            context,
+                            entry.key,
+                            ElevageDomain.dayNightPhase(
+                                widget.now, widget.config),
+                            selected),
+                        border: Border(
+                            right: BorderSide(
+                                color: Colors.white.withValues(alpha: .32))),
+                      ),
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text('Z${entry.key + 1}',
+                              style: const TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
           ...widget.zones.asMap().entries.map((entry) {
             final index = entry.key;
             final zone = entry.value;
@@ -992,14 +1143,15 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
               duration: const Duration(milliseconds: 350),
               alignment: alignment,
               child: Semantics(
-                button: item != null,
+                button: true,
                 label: item == null
                     ? '${zone.label}, zone libre'
                     : '${ElevagePresentation.itemLabel(item['itemId'] as String)} posé dans ${zone.label}',
                 child: InkWell(
                   borderRadius: BorderRadius.circular(18),
-                  onTap:
-                      item == null ? null : () => widget.onSceneItemTap(item),
+                  onTap: item == null
+                      ? () => widget.onZoneTap(zone.id)
+                      : () => widget.onSceneItemTap(item),
                   child: Container(
                     width: 46,
                     height: 42,
@@ -1054,12 +1206,35 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                     boxShadow: const <BoxShadow>[
                       BoxShadow(blurRadius: 8, color: Colors.black26)
                     ]),
-                child: Icon(
-                    widget.stage == 'BABY' ? Icons.egg_outlined : Icons.pets,
-                    size: size * .62),
+                child: GestureDetector(
+                  onLongPress: widget.onPtipoteTap,
+                  onTap: widget.onPtipoteTap,
+                  child: Icon(_actionIcon(widget.reaction, widget.stage),
+                      size: size * .62),
+                ),
               ),
             ),
           ),
+          Positioned(
+            left: 14,
+            bottom: 8,
+            child: _zoneHud(widget.zoneEnvironments[_selectedZoneId] ??
+                const <String, int>{
+                  'light': 0,
+                  'temperature': 0,
+                  'humidity': 0
+                }),
+          ),
+          if (widget.pendingItem != null)
+            Positioned(
+              bottom: 8,
+              right: 12,
+              child: Chip(
+                  avatar:
+                      Icon(ElevagePresentation.itemIcon(widget.pendingItem!)),
+                  label: Text(
+                      'À poser : ${ElevagePresentation.itemLabel(widget.pendingItem!)}')),
+            ),
           if (widget.feedback != null)
             Positioned(
               top: 14,
@@ -1093,43 +1268,49 @@ IconData _reactionIcon(String? behavior) => switch (behavior) {
       _ => Icons.arrow_forward,
     };
 
-Future<String?> _chooseSceneZone(
-    BuildContext context, ElevageController controller, String alcoveId) async {
-  final state = controller.state!;
-  final occupied = ElevageDomain.sceneItems(state, alcoveId)
-      .map((item) => item['zoneId'] as String)
-      .toSet();
-  return showModalBottomSheet<String>(
-    context: context,
-    builder: (sheetContext) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-          const ListTile(
-              leading: Icon(Icons.place_outlined),
-              title: Text('Où poser cet objet ?'),
-              subtitle: Text('Chaque zone accueille un objet à la fois.')),
-          ...controller.config.sceneZones.map((zone) {
-            final taken = occupied.contains(zone.id);
-            final environment = ElevageDomain.zoneEnvironment(
-                state, alcoveId, zone.id, controller.config);
-            return ListTile(
-              enabled: !taken,
-              leading: const Icon(Icons.grid_view_outlined),
-              title: Text(zone.label),
-              subtitle: Text(taken
-                  ? 'Un objet est déjà posé ici.'
-                  : '☀️ ${ElevagePresentation.environmentScale(environment['light']!)} /5 · 🌡️ ${ElevagePresentation.environmentScale(environment['temperature']!)} /5 · 💧 ${ElevagePresentation.environmentScale(environment['humidity']!)} /5'),
-              trailing: taken ? const Icon(Icons.block) : const Icon(Icons.add),
-              onTap:
-                  taken ? null : () => Navigator.of(sheetContext).pop(zone.id),
-            );
-          }),
-        ]),
-      ),
-    ),
-  );
+IconData _actionIcon(String? action, String stage) => switch (action) {
+      'RUSH_SHAKE' || 'EAT' => Icons.restaurant_outlined,
+      'VIBRATE' || 'STRUCTURAL_ABSORB' => Icons.diamond_outlined,
+      'STEP_BACK' || 'DISCOMFORT' => Icons.sentiment_dissatisfied_outlined,
+      'SLEEP' => Icons.bedtime_outlined,
+      'OBSERVE' || 'CURIOUS' => Icons.question_mark,
+      'FOLLOW' => Icons.arrow_forward,
+      'CUDDLE' => Icons.favorite,
+      'MOVE_ITEM' => Icons.redo,
+      'METAMORPHOSIS' => Icons.egg_outlined,
+      _ => stage == 'BABY' ? Icons.egg_outlined : Icons.pets,
+    };
+
+Color _zoneColor(BuildContext context, int index, String phase, bool selected) {
+  final day = <Color>[
+    const Color(0xff31634e),
+    const Color(0xff5d8d58),
+    const Color(0xff9aa84e),
+    const Color(0xffd4b846)
+  ];
+  final night = <Color>[
+    const Color(0xff172b2b),
+    const Color(0xff203b37),
+    const Color(0xff2a493d),
+    const Color(0xff52683a)
+  ];
+  final base = (phase == 'DAY' ? day : night)[index];
+  return selected
+      ? Color.alphaBlend(Colors.white.withValues(alpha: .24), base)
+      : base;
 }
+
+Widget _zoneHud(Map<String, int> environment) => DecoratedBox(
+    decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .35),
+        borderRadius: BorderRadius.circular(10)),
+    child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        child: Text(
+            '☀️ ${ElevagePresentation.environmentScale(environment['light'] ?? 0)}/5  '
+            '🌡️ ${ElevagePresentation.environmentScale(environment['temperature'] ?? 0)}/5  '
+            '💧 ${ElevagePresentation.environmentScale(environment['humidity'] ?? 0)}/5',
+            style: const TextStyle(fontSize: 10, color: Colors.white))));
 
 Future<void> _showInstallationDetails(
     BuildContext context,
@@ -1207,7 +1388,8 @@ Future<void> _showInstallationDetails(
 String _signed(int value) => value > 0 ? '+$value' : '$value';
 
 Future<void> _openInventory(BuildContext context, ElevageController controller,
-    Map individual, Future<void> Function(String item) onPlace) async {
+    Map individual, void Function(String item) onPlace) async {
+  var filter = 'TOUT';
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -1221,12 +1403,19 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
           'ORGANIC': (generic['organic'] as num?)?.toInt() ?? 0,
           'MINERAL': (generic['mineral'] as num?)?.toInt() ?? 0,
         }..removeWhere((_, amount) => amount <= 0);
-        const categories = <String>[
-          'Nourriture',
-          'Friandises',
-          'Matériaux',
-          'Ressources'
-        ];
+        final stacks = <_ElevageInventoryStack>[];
+        for (final entry in items.entries) {
+          for (final quantity in ElevagePresentation.stackQuantities(
+              entry.value, controller.config.inventoryStackSize)) {
+            stacks.add(_ElevageInventoryStack(entry.key, quantity));
+          }
+        }
+        final visible = filter == 'TOUT'
+            ? stacks
+            : stacks
+                .where((stack) =>
+                    ElevagePresentation.itemCategory(stack.itemId) == filter)
+                .toList();
         return SafeArea(
           child: DraggableScrollableSheet(
             expand: false,
@@ -1240,45 +1429,58 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
                     title: const Text('Inventaire'),
                     subtitle: Text(
                         '${state.data['inventory']['bioPiles']} Bio-piles')),
-                if (items.isEmpty)
+                Wrap(spacing: 6, runSpacing: 4, children: <Widget>[
+                  for (final choice in const <String>[
+                    'TOUT',
+                    'Nourriture',
+                    'Matériaux',
+                    'Ressources',
+                    'Friandises'
+                  ])
+                    ChoiceChip(
+                      label: Text(choice),
+                      selected: filter == choice,
+                      onSelected: (_) => setSheetState(() => filter = choice),
+                    ),
+                ]),
+                const SizedBox(height: 12),
+                if (visible.isEmpty)
                   const Padding(
                       padding: EdgeInsets.all(24),
                       child: Center(
                           child: Text(
                               'Votre inventaire est vide. Explorez la Mini-Lisière pour trouver des objets.'))),
-                ...categories.expand((category) {
-                  final entries = items.entries
-                      .where((entry) =>
-                          ElevagePresentation.itemCategory(entry.key) ==
-                          category)
-                      .toList();
-                  if (entries.isEmpty) return <Widget>[];
-                  return <Widget>[
-                    Padding(
-                        padding: const EdgeInsets.only(top: 12, bottom: 4),
-                        child: Text(category,
-                            style:
-                                Theme.of(sheetContext).textTheme.titleMedium)),
-                    ...entries.map((entry) {
-                      final item = entry.key;
-                      final canPlace = ElevageDomain.foodItems.contains(item) ||
-                          ElevageDomain.treatItems.contains(item) ||
-                          ElevageDomain.structuralItems.contains(item);
-                      return _InventoryRow(
-                        icon: ElevagePresentation.itemIcon(item),
-                        label: ElevagePresentation.itemLabel(item),
-                        quantity: entry.value,
-                        onOffer: canPlace
-                            ? () async {
-                                Navigator.of(sheetContext).pop();
-                                await onPlace(item);
-                                if (sheetContext.mounted) setSheetState(() {});
-                              }
-                            : null,
+                if (visible.isNotEmpty)
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
+                    ),
+                    itemCount: visible.length,
+                    itemBuilder: (_, index) {
+                      final stack = visible[index];
+                      final canPlace = ElevageDomain.foodItems
+                              .contains(stack.itemId) ||
+                          ElevageDomain.treatItems.contains(stack.itemId) ||
+                          ElevageDomain.structuralItems.contains(stack.itemId);
+                      void select() {
+                        if (!canPlace) return;
+                        Navigator.of(sheetContext).pop();
+                        onPlace(stack.itemId);
+                      }
+
+                      return _ElevageInventorySlot(
+                        stack: stack,
+                        enabled: canPlace,
+                        onTap: select,
+                        onLongPress: select,
                       );
-                    }),
-                  ];
-                }),
+                    },
+                  ),
               ],
             ),
           ),
@@ -1288,43 +1490,78 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
   );
 }
 
-class _InventoryRow extends StatelessWidget {
-  const _InventoryRow(
-      {required this.icon,
-      required this.label,
-      required this.quantity,
-      required this.onOffer});
-  final IconData icon;
-  final String label;
+class _ElevageInventoryStack {
+  const _ElevageInventoryStack(this.itemId, this.quantity);
+  final String itemId;
   final int quantity;
-  final Future<void> Function()? onOffer;
+}
+
+class _ElevageInventorySlot extends StatelessWidget {
+  const _ElevageInventorySlot(
+      {required this.stack,
+      required this.enabled,
+      required this.onTap,
+      required this.onLongPress});
+  final _ElevageInventoryStack stack;
+  final bool enabled;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: LayoutBuilder(builder: (context, constraints) {
-          final details = Row(children: <Widget>[
-            Icon(icon),
-            const SizedBox(width: 10),
-            Expanded(
-                child: Text('$label · ×$quantity',
-                    maxLines: 2, overflow: TextOverflow.ellipsis)),
-          ]);
-          final action = onOffer == null
-              ? const SizedBox.shrink()
-              : FilledButton.tonal(
-                  onPressed: onOffer, child: const Text('Placer'));
-          if (constraints.maxWidth < 360 && onOffer != null) {
-            return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[details, const SizedBox(height: 6), action]);
-          }
-          return Row(children: <Widget>[
-            Expanded(child: details),
-            if (onOffer != null) ...<Widget>[const SizedBox(width: 8), action]
-          ]);
-        }),
-      );
+  Widget build(BuildContext context) {
+    final tile = DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+            color:
+                Theme.of(context).colorScheme.outline.withValues(alpha: .32)),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+              color: Colors.black.withValues(alpha: .08),
+              blurRadius: 8,
+              offset: const Offset(0, 3))
+        ],
+      ),
+      child: Stack(children: <Widget>[
+        Center(
+            child: Icon(ElevagePresentation.itemIcon(stack.itemId),
+                size: 36,
+                color: enabled ? Theme.of(context).colorScheme.primary : null)),
+        Positioned(
+            top: 6,
+            right: 7,
+            child: DecoratedBox(
+                decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(9)),
+                child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Text('×${stack.quantity}',
+                        style: const TextStyle(fontWeight: FontWeight.w900))))),
+        Positioned(
+            left: 5,
+            right: 5,
+            bottom: 6,
+            child: Text(ElevagePresentation.itemLabel(stack.itemId),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w800))),
+      ]),
+    );
+    return LongPressDraggable<String>(
+      data: stack.itemId,
+      feedback: Material(
+          color: Colors.transparent,
+          child: Icon(ElevagePresentation.itemIcon(stack.itemId), size: 48)),
+      onDragEnd: (_) => onLongPress(),
+      child: InkWell(
+          onTap: onTap, borderRadius: BorderRadius.circular(16), child: tile),
+    );
+  }
 }
 
 Future<void> _welcome(

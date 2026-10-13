@@ -126,6 +126,11 @@ class ElevageConfig {
     required this.buybackQuantity,
     required this.buybackBioPiles,
     required this.metamorphosisToleranceMs,
+    required this.inventoryStackSize,
+    required this.dayDurationHours,
+    required this.nightDurationHours,
+    required this.observationTextThreshold,
+    required this.observationEvidenceCooldownMinutes,
     required this.recipes,
   });
 
@@ -152,11 +157,17 @@ class ElevageConfig {
   final int buybackQuantity;
   final int buybackBioPiles;
   final int metamorphosisToleranceMs;
+  final int inventoryStackSize;
+  final int dayDurationHours;
+  final int nightDurationHours;
+  final int observationTextThreshold;
+  final int observationEvidenceCooldownMinutes;
   final List<ElevageRecipe> recipes;
 
   int get babyMinimumHours => preset == ElevagePreset.prototype ? 24 : 48;
   int get intermediateMinimumHours =>
       preset == ElevagePreset.prototype ? 72 : 168;
+  int get dayNightCycleHours => dayDurationHours + nightDurationHours;
 
   List<ElevageInstallationDefinition> get installations =>
       <ElevageInstallationDefinition>[
@@ -312,6 +323,11 @@ class ElevageConfig {
     int? buybackQuantity,
     int? buybackBioPiles,
     int? metamorphosisToleranceMs,
+    int? inventoryStackSize,
+    int? dayDurationHours,
+    int? nightDurationHours,
+    int? observationTextThreshold,
+    int? observationEvidenceCooldownMinutes,
     List<ElevageRecipe>? recipes,
   }) =>
       ElevageConfig(
@@ -343,6 +359,14 @@ class ElevageConfig {
         buybackBioPiles: buybackBioPiles ?? this.buybackBioPiles,
         metamorphosisToleranceMs:
             metamorphosisToleranceMs ?? this.metamorphosisToleranceMs,
+        inventoryStackSize: inventoryStackSize ?? this.inventoryStackSize,
+        dayDurationHours: dayDurationHours ?? this.dayDurationHours,
+        nightDurationHours: nightDurationHours ?? this.nightDurationHours,
+        observationTextThreshold:
+            observationTextThreshold ?? this.observationTextThreshold,
+        observationEvidenceCooldownMinutes:
+            observationEvidenceCooldownMinutes ??
+                this.observationEvidenceCooldownMinutes,
         recipes: recipes ?? this.recipes,
       );
 
@@ -371,6 +395,12 @@ class ElevageConfig {
         'buybackQuantity': buybackQuantity,
         'buybackBioPiles': buybackBioPiles,
         'metamorphosisToleranceMs': metamorphosisToleranceMs,
+        'inventoryStackSize': inventoryStackSize,
+        'dayDurationHours': dayDurationHours,
+        'nightDurationHours': nightDurationHours,
+        'observationTextThreshold': observationTextThreshold,
+        'observationEvidenceCooldownMinutes':
+            observationEvidenceCooldownMinutes,
         'recipes': recipes.map((recipe) => recipe.toJson()).toList(),
       };
 
@@ -415,6 +445,17 @@ class ElevageConfig {
           _nonNegative(json['buybackBioPiles'], base.buybackBioPiles),
       metamorphosisToleranceMs: _nonNegative(
           json['metamorphosisToleranceMs'], base.metamorphosisToleranceMs),
+      inventoryStackSize:
+          _positive(json['inventoryStackSize'], base.inventoryStackSize),
+      dayDurationHours:
+          _positive(json['dayDurationHours'], base.dayDurationHours),
+      nightDurationHours:
+          _positive(json['nightDurationHours'], base.nightDurationHours),
+      observationTextThreshold: _positive(
+          json['observationTextThreshold'], base.observationTextThreshold),
+      observationEvidenceCooldownMinutes: _nonNegative(
+          json['observationEvidenceCooldownMinutes'],
+          base.observationEvidenceCooldownMinutes),
       recipes: (json['recipes'] as List?)
               ?.whereType<Map>()
               .map((raw) =>
@@ -438,6 +479,7 @@ void validateElevageConfig(ElevageConfig config) {
   if (config.hungerNormalHours > config.hungerHungryHours ||
       config.hungerHungryHours > config.hungerVeryHungryHours ||
       config.suspectedThreshold > config.confirmedThreshold ||
+      config.observationTextThreshold > config.confirmedThreshold ||
       config.recipes.map((recipe) => recipe.id).toSet().length !=
           config.recipes.length) {
     throw const FormatException('Configuration Élevage invalide.');
@@ -468,6 +510,11 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
   buybackQuantity: 5,
   buybackBioPiles: 1,
   metamorphosisToleranceMs: 180,
+  inventoryStackSize: 12,
+  dayDurationHours: 3,
+  nightDurationHours: 3,
+  observationTextThreshold: 2,
+  observationEvidenceCooldownMinutes: 10,
   recipes: <ElevageRecipe>[
     ElevageRecipe(
         id: 'ABRI_FIBREUX',

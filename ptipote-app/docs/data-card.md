@@ -635,3 +635,53 @@ L’Eau n’est pas une ressource globale du Camp.
   `ElevageRecipe` afin d’afficher coût réel de configuration, production et
   aperçu environnemental avant/après. Elles ne dévoilent aucune préférence
   d’un P’TIPOTE.
+
+## P’TIPOTE Élevage — Lot 15 : boucle QA, micro-environnement et lecture différée
+
+- **Reset QA isolé.** Les outils de développement peuvent réinitialiser la
+  partie Élevage entière (état, Alcôves, individus, objets posés, productions,
+  observations, sorties et notifications) ou les seules Alcôves. Ils ne lisent
+  ni ne modifient jamais Zone 0. Une nouvelle partie repart avec les Alcôves
+  configurées, aucun individu et le starter normal `ROOT ×1`, `LEAF ×1` ; les
+  gros stocks restent réservés à `devMode`.
+- **Inventaire V1.** L’inventaire joueur est une grille unique mobile de
+  piles : nourriture, friandises, matériaux, ressources et composants y
+  partagent la même présentation. La taille maximale d’une pile est
+  configurable (`inventoryStackSize`, V0 : 12) : `ROOT ×28` devient donc
+  `×12`, `×12`, `×4`. Poser un objet le retire de cette grille ; récupérer un
+  objet le remet dans une pile disponible. Tous les loots de Mini-Lisière ont
+  un libellé français, une icône provisoire et une catégorie ; « Objet inconnu »
+  demeure seulement un garde-fou de données corrompues.
+- **Placement mobile.** L’appui long fournit un aperçu d’objet et active le
+  mode de pose : la feuille d’inventaire se ferme, puis un tap sur Z1–Z4 place
+  l’objet. C’est le repli tactile robuste du prototype en attendant les sprites
+  définitifs ; les zones mettent en évidence la pose sélectionnée et le flux
+  conserve l’intention de glisser-déposer.
+- **Cycle et zones.** Le cycle persistant est dérivé de l’heure réelle :
+  `dayDurationHours + nightDurationHours` (V0 : 3 h + 3 h). Le jour, Z1 reste
+  ombragée et Z4 lumineuse ; la nuit toutes les zones s’assombrissent, Z4
+  restant la moins sombre. Chaque décision spatiale utilise le micro-
+  environnement local `light`, `temperature`, `humidity` de la zone, pas le
+  seul résumé global. Une installation affecte sa zone de pose (avec repli
+  stable sur son slot pour les sauvegardes antérieures) ; elle ne diffuse pas
+  encore vers les zones voisines.
+- **Actions visibles.** Le placeholder du P’TIPOTE est volontairement petit
+  afin de laisser lire les quatre bandes Z1–Z4. Son icône temporaire exprime
+  `IDLE`, `EAT`, `STRUCTURAL_ABSORB`, `DISCOMFORT`, `SLEEP`, `CURIOUS`,
+  `FOLLOW`, `CUDDLE`, `MOVE_ITEM` ou `METAMORPHOSIS`. Taper une zone vide le
+  fait suivre (`FOLLOW`) ; taper le P’TIPOTE déclenche une caresse (`CUDDLE`).
+  Ces interactions ne donnent que de faibles tendances de personnalité,
+  limitées par les caps existants.
+- **Observations réellement progressives.** Une entrée persistée sépare
+  `rawBehaviorCount` de `meaningfulEvidenceCount`. Les preuves sont plafonnées
+  par une fenêtre configurable (`observationEvidenceCooldownMinutes`, V0 :
+  10 min) ou par un changement de contexte et n’augmentent plus une fois
+  confirmées. L’ordre est strict : `OBSERVED` → `SUSPECTED` → `CONFIRMED`; une
+  hypothèse est donc visible avant une découverte confirmée. Le texte joueur
+  n’apparaît qu’après `observationTextThreshold` répétitions (V0 : 2) : le
+  comportement/icône vient toujours avant son interprétation dans le Carnet.
+- **Nourriture contextuelle.** Un objet favori placé dans une zone trop humide
+  peut être observé, évité ou déplacé vers une zone plus sèche avant d’être
+  consommé. `MOVE_ITEM` produit d’abord un comportement, puis une observation
+  d’évitement de l’humidité à répétition. Le joueur conserve la récolte et la
+  pose au stade Bébé ; les étapes ultérieures d’autonomie restent inchangées.
