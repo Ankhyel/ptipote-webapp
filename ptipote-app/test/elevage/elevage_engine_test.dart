@@ -119,8 +119,10 @@ void main() {
     final instanceId =
         (state.data['installationInventory'] as Map).keys.single as String;
     state = ElevageDomain.place(state, 'alcove-1', 0, instanceId, now + 2);
+    final fastProduction =
+        defaultElevageConfig.copyWith(productionIntervalSeconds: 60);
     state = ElevageDomain.refreshAlcove(
-        state, 'alcove-1', now + 62000, defaultElevageConfig);
+        state, 'alcove-1', now + 62000, fastProduction);
     final placed =
         ((state.data['alcoves'] as List).first as Map)['slots'][0] as Map;
     expect((placed['productionState']['availableByItemId'] as Map)['ALGAE'], 1);
@@ -413,7 +415,7 @@ void main() {
     expect(ElevageDomain.dayNightPhase(0, defaultElevageConfig), 'DAY');
     expect(
         ElevageDomain.dayNightPhase(
-            const Duration(hours: 3).inMilliseconds, defaultElevageConfig),
+            const Duration(hours: 4).inMilliseconds, defaultElevageConfig),
         'NIGHT');
     final zone3 = ElevageDomain.zoneEnvironment(
         state, 'alcove-1', 'ZONE_3', defaultElevageConfig,
@@ -604,7 +606,7 @@ void main() {
     expect(
         ElevageDomain.dayNightRemainingMs(now, defaultElevageConfig,
             phaseOverride: 'DAY'),
-        const Duration(hours: 3).inMilliseconds);
+        const Duration(hours: 4).inMilliseconds);
   });
 
   test('migration QA V17 nettoie une ancienne save une seule fois', () {
@@ -681,5 +683,133 @@ void main() {
             <String, int>{'light': -2, 'temperature': -2, 'humidity': 2},
             defaultElevageConfig),
         'EXTREME');
+  });
+
+  test('personnalité V0 conserve ses poids, son tempo et sa baseline', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final individual =
+        ((state.data['individuals'] as Map).values.single as Map);
+    expect(
+        ElevageDomain.personalityWeights(defaultElevageConfig),
+        <String, double>{
+          'baseline': .5,
+          'baby': .25,
+          'intermediate': .15,
+          'adultPlasticity': .1,
+        });
+    final before = ElevageDomain.personalityValue(individual, 'initiative');
+    ElevageDomain.follow(state, individual['id'] as String, 'ZONE_1', now + 1,
+        defaultElevageConfig);
+    expect(ElevageDomain.personalityValue(individual, 'initiative'), before);
+    expect(ElevageDomain.evidenceForInspection(individual), anyOf(1, 2));
+  });
+
+  test('need peut rester interne, request respecte âge et initiative', () {
+    final requestConfig = defaultElevageConfig.copyWith(
+        hungerNormalHours: 1, hungerHungryHours: 2, hungerVeryHungryHours: 3);
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    final requestAt = defaultElevageConfig.dayNightCycleHours *
+        const Duration(hours: 1).inMilliseconds ~/
+        2;
+    (individual['care'] as Map)['lastMealAt'] =
+        requestAt - const Duration(hours: 200).inMilliseconds;
+    expect(ElevageDomain.hunger(state, id, requestAt, requestConfig),
+        anyOf('HUNGRY', 'VERY_HUNGRY'));
+    expect(ElevageDomain.isSleeping(individual, requestAt, requestConfig),
+        isFalse);
+    state = ElevageDomain.refreshRequest(state, id, requestAt, requestConfig);
+    expect((state.data['individuals'] as Map)[id]['activeRequest'], isNotNull);
+    expect(
+        ElevageDomain.activeRequest(state, id, requestAt)?['signal'], 'Pti ?');
+    expect(
+        ElevageDomain.activeRequest(
+            state, id, requestAt + const Duration(seconds: 91).inMilliseconds),
+        isNull);
+  });
+
+  test('sommeil mineral décalé supporte fenêtres multiples et choisit un spot',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect(ElevageDomain.circadianProfile(individual), 'SHIFTED_DIURNAL');
+    expect(ElevageDomain.sleepWindows(individual), hasLength(2));
+    expect(
+        ElevageDomain.isSleeping(individual, 0, defaultElevageConfig), isTrue);
+    expect(ElevageDomain.sleepZone(state, id, 0, defaultElevageConfig),
+        isNotEmpty);
+  });
+
+  test('cooldown de câlin ne modifie ni faim ni structure durablement', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final before = (state.data['individuals'] as Map)[id] as Map;
+    final structural =
+        ((before['care'] as Map)['structuralIntake'] as Map)['total'];
+    state = ElevageDomain.cuddle(state, id, now, defaultElevageConfig,
+        durationMs: 5000);
+    state = ElevageDomain.cuddle(state, id, now + 1, defaultElevageConfig,
+        durationMs: 5000);
+    state = ElevageDomain.cuddle(state, id, now + 2, defaultElevageConfig,
+        durationMs: 5000);
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect((individual['social'] as Map)['lastReaction'], 'IRRITATED');
+    expect(ElevageDomain.wellbeing(individual), lessThan(60));
+    expect(((individual['care'] as Map)['structuralIntake'] as Map)['total'],
+        structural);
+  });
+
+  test('production locale applique 3 heures, cap 6 et récolte unitaire', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][0] = <String, dynamic>{
+      'definitionId': 'CULTURE_POTAGERE',
+      'productionState': <String, dynamic>{
+        'lastResolvedAt': now,
+        'availableByItemId': <String, int>{},
+      },
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 30).inMilliseconds, defaultElevageConfig);
+    final refreshedAlcove = (state.data['alcoves'] as List).first as Map;
+    final stock = ((refreshedAlcove['slots'][0] as Map)['productionState']
+        as Map)['availableByItemId'] as Map;
+    expect(stock['ROOT'], 6);
+    state = ElevageDomain.harvestLocal(state, 'alcove-1', 0, 'ROOT', now + 1);
+    final harvestedAlcove = (state.data['alcoves'] as List).first as Map;
+    final harvestedStock = ((harvestedAlcove['slots'][0]
+        as Map)['productionState'] as Map)['availableByItemId'] as Map;
+    expect(harvestedStock['ROOT'], 5);
+    expect((state.data['inventory']['special'] as Map)['ROOT'], 2);
   });
 }

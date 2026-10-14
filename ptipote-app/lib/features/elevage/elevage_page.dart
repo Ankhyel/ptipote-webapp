@@ -326,6 +326,7 @@ class _IndividualPageState extends State<_IndividualPage> {
   String? _lastAutonomousBehavior;
   String _sceneAction = 'IDLE';
   String _ptipoteZoneId = 'ZONE_2';
+  int _lastIdleMoveAt = 0;
   final List<_SceneEvent> _actionQueue = <_SceneEvent>[];
   Timer? _followHoldTimer;
   String? _followHoldZoneId;
@@ -336,16 +337,34 @@ class _IndividualPageState extends State<_IndividualPage> {
   void initState() {
     super.initState();
     _autonomousTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      widget.controller.refreshRequest(widget.individualId);
       _enqueueSceneEvent(const _SceneEvent.autonomous());
     });
-    _idleTimer = Timer.periodic(
-        Duration(seconds: widget.controller.config.idlePauseSeconds), (_) {
+    _idleTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || _autonomousInFlight) return;
+      final state = widget.controller.state;
+      if (state == null) return;
+      final individual =
+          (state.data['individuals'] as Map)[widget.individualId] as Map?;
+      if (individual == null ||
+          ElevageDomain.isSleeping(
+              individual,
+              DateTime.now().millisecondsSinceEpoch,
+              widget.controller.config)) {
+        return;
+      }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastIdleMoveAt <
+          ElevageDomain.idlePauseFor(individual, widget.controller.config) *
+              1000) {
+        return;
+      }
       final zones = widget.controller.config.sceneZones;
       final index = zones.indexWhere((zone) => zone.id == _ptipoteZoneId);
       setState(() {
         _ptipoteZoneId = zones[(index + 1) % zones.length].id;
         _sceneAction = 'IDLE';
+        _lastIdleMoveAt = now;
       });
     });
     Future<void>.delayed(
@@ -446,6 +465,14 @@ class _IndividualPageState extends State<_IndividualPage> {
         (state.data['individuals'] as Map)[widget.individualId] as Map?;
     if (individual == null) return;
     final alcoveId = individual['alcoveId'] as String;
+    if (ElevageDomain.isSleeping(individual, now, config)) {
+      _setSceneAction('SLEEP',
+          zoneId: ElevageDomain.sleepZone(
+              state, widget.individualId, now, config,
+              phaseOverride: widget.controller.forcedDayNightPhase));
+      return;
+    }
+    if (_sceneAction == 'SLEEP') _setSceneAction('IDLE');
     final decision = targetInstanceId == null
         ? ElevageDomain.nextAutonomousSceneDecision(
             state, widget.individualId, alcoveId, now, config,
@@ -460,8 +487,9 @@ class _IndividualPageState extends State<_IndividualPage> {
       await Future<void>.delayed(
           Duration(milliseconds: config.objectReactionDelayMs));
       _setSceneAction('APPROACH_ITEM', zoneId: targetZone);
-      await Future<void>.delayed(
-          Duration(milliseconds: config.normalMoveDurationMs));
+      await Future<void>.delayed(Duration(
+          milliseconds:
+              ElevageDomain.normalMoveDurationFor(individual, config)));
       if (await _respondToArrivalComfort(alcoveId, config)) return;
       _setSceneAction('INSPECT_ITEM');
       await Future<void>.delayed(
@@ -645,8 +673,11 @@ class _IndividualPageState extends State<_IndividualPage> {
       return;
     }
     _showSceneFeedback('', reaction: 'FOLLOW');
-    await Future<void>.delayed(
-        Duration(milliseconds: widget.controller.config.normalMoveDurationMs));
+    await Future<void>.delayed(Duration(
+        milliseconds: ElevageDomain.normalMoveDurationFor(
+            (widget.controller.state!.data['individuals']
+                as Map)[widget.individualId] as Map,
+            widget.controller.config)));
     final state = widget.controller.state;
     if (state != null) {
       final individual =
@@ -677,7 +708,16 @@ class _IndividualPageState extends State<_IndividualPage> {
       _autonomousInFlight = false;
       return;
     }
-    _showSceneFeedback('', reaction: 'CUDDLE');
+    final updated = (widget.controller.state!.data['individuals']
+        as Map)[widget.individualId] as Map;
+    final social = updated['social'] as Map;
+    final socialReaction = social['lastReaction'] as String? ?? 'CONTENT';
+    _setSceneAction(socialReaction == 'IRRITATED'
+        ? 'IRRITATED'
+        : socialReaction == 'RESERVED'
+            ? 'NEUTRAL'
+            : 'CUDDLE');
+    _showSceneFeedback('', reaction: socialReaction);
     await Future<void>.delayed(Duration(milliseconds: elapsed));
     _setSceneAction('IDLE');
     _autonomousInFlight = false;
@@ -748,6 +788,28 @@ class _IndividualPageState extends State<_IndividualPage> {
                           widget.controller.config,
                           definition,
                           localEnvironment)),
+                ...(((raw['productionState'] as Map?)?['availableByItemId']
+                            as Map?)
+                        ?.entries
+                        .where((entry) => (entry.value as num).toInt() > 0)
+                        .map<Widget>((entry) => ListTile(
+                              leading: Icon(ElevagePresentation.itemIcon(
+                                  entry.key as String)),
+                              title: Text(
+                                  '${ElevagePresentation.itemLabel(entry.key as String)} : ${entry.value}/${widget.controller.config.productionMaxStock}'),
+                              trailing: OutlinedButton(
+                                onPressed: () async {
+                                  await widget.controller.harvestLocal(
+                                      alcoveId, slot, entry.key as String);
+                                  if (sheetContext.mounted) {
+                                    Navigator.pop(sheetContext);
+                                  }
+                                },
+                                child: const Text('Récolter'),
+                              ),
+                            ))
+                        .toList() ??
+                    const <Widget>[]),
                 ListTile(
                     leading: const Icon(Icons.swap_horiz_outlined),
                     title: const Text('Remplacer'),
@@ -805,6 +867,10 @@ class _IndividualPageState extends State<_IndividualPage> {
         DateTime.now().millisecondsSinceEpoch,
         controller.config);
     final stage = individual['lifecycle']['stage'] as String;
+    final request =
+        ElevageDomain.activeRequest(state, widget.individualId, now);
+    final sleeping =
+        ElevageDomain.isSleeping(individual, now, controller.config);
     return Scaffold(
       appBar: AppBar(
         leading: BackButton(onPressed: widget.onBack),
@@ -861,6 +927,8 @@ class _IndividualPageState extends State<_IndividualPage> {
                 pendingItem: _pendingPlacementItem,
                 followHoldZoneId: _followHoldZoneId,
                 action: _sceneAction,
+                requestSignal: request?['signal'] as String?,
+                sleeping: sleeping,
                 ptipoteZoneId: _ptipoteZoneId,
                 phase: controller.dayNightPhase(now),
                 phaseRemainingMs: ElevageDomain.dayNightRemainingMs(
@@ -1502,6 +1570,8 @@ class _AlcoveScene extends StatefulWidget {
     required this.pendingItem,
     required this.followHoldZoneId,
     required this.action,
+    required this.requestSignal,
+    required this.sleeping,
     required this.ptipoteZoneId,
     required this.phase,
     required this.phaseRemainingMs,
@@ -1526,6 +1596,8 @@ class _AlcoveScene extends StatefulWidget {
   final String? pendingItem;
   final String? followHoldZoneId;
   final String action;
+  final String? requestSignal;
+  final bool sleeping;
   final String ptipoteZoneId;
   final String phase;
   final int phaseRemainingMs;
@@ -1764,12 +1836,22 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                 child: GestureDetector(
                   onLongPress: widget.onPtipoteTap,
                   onTap: widget.onPtipoteTap,
-                  child: Icon(_actionIcon(widget.action, widget.stage),
-                      size: size * .62),
+                  child: Icon(_ptipoteIcon(widget.stage), size: size * .62),
                 ),
               ),
             ),
           ),
+          if (widget.sleeping ||
+              widget.requestSignal != null ||
+              widget.action != 'IDLE')
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 180),
+              alignment: _bubbleAlignment(widget.ptipoteZoneId),
+              child: _StatusBubble(
+                signal: widget.requestSignal,
+                action: widget.sleeping ? 'SLEEP' : widget.action,
+              ),
+            ),
           if (widget.pendingItem != null)
             Positioned(
               bottom: 8,
@@ -1834,6 +1916,46 @@ Alignment _zoneAlignment(String zoneId) => switch (zoneId) {
       _ => const Alignment(-.25, .18),
     };
 
+Alignment _bubbleAlignment(String zoneId) => switch (zoneId) {
+      'ZONE_1' => const Alignment(-.75, -.22),
+      'ZONE_2' => const Alignment(-.25, -.22),
+      'ZONE_3' => const Alignment(.25, -.22),
+      'ZONE_4' => const Alignment(.75, -.22),
+      _ => const Alignment(-.25, -.22),
+    };
+
+IconData _ptipoteIcon(String stage) =>
+    stage == 'BABY' ? Icons.egg_outlined : Icons.pets;
+
+class _StatusBubble extends StatelessWidget {
+  const _StatusBubble({required this.signal, required this.action});
+  final String? signal;
+  final String action;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: .94),
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          child: signal == null
+              ? Icon(_actionIcon(action, 'INTERMEDIATE'), size: 17)
+              : signal == 'Pti ?'
+                  ? const Text('Pti ?',
+                      style: TextStyle(fontWeight: FontWeight.w800))
+                  : Icon(_requestIcon(signal!), size: 17),
+        ),
+      );
+}
+
+IconData _requestIcon(String request) => switch (request) {
+      'FOOD' || 'ROOT' || 'LEAF' => Icons.restaurant_outlined,
+      'STRUCTURAL' || 'IRON' || 'LIMESTONE' => Icons.diamond_outlined,
+      'CONTACT' => Icons.favorite_outline,
+      'SLEEP' => Icons.bedtime_outlined,
+      _ => Icons.waving_hand_outlined,
+    };
+
 String _clockLabel(int remainingMs) {
   final minutes =
       max(0, remainingMs ~/ const Duration(minutes: 1).inMilliseconds);
@@ -1851,6 +1973,7 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       'VIBRATE' || 'STRUCTURAL_ABSORB' => Icons.diamond_outlined,
       'STEP_BACK' || 'REJECT' => Icons.sentiment_very_dissatisfied_outlined,
       'DISCOMFORT' => Icons.sentiment_dissatisfied_outlined,
+      'IRRITATED' => Icons.sentiment_very_dissatisfied_outlined,
       'EXTREME' => Icons.sentiment_very_dissatisfied_outlined,
       'FLEE' || 'FLEE_NORMAL' => Icons.priority_high,
       'FLEE_FAST' => Icons.running_with_errors_outlined,

@@ -788,3 +788,49 @@ L’Eau n’est pas une ressource globale du Camp.
   câlin démarre automatiquement. Sa durée est bornée à 1–5 secondes et reste
   enregistrée comme contexte de l’interaction (`lastCuddleDurationMs`) ; elle
   n’ajoute aucune sanction et utilise toujours l’axe Contact existant.
+
+## P’TIPOTE Élevage — Lot 19 : personnalité, demandes et sommeil
+
+- **Personnalité comportementale.** Les axes `initiative`, `contact` et
+  `tempo` restent déterministes à l’adoption, puis guident initiative,
+  proximité sociale et cadence d’action. La répartition V0 est provisoire :
+  **50 %** baseline, **25 %** expériences Bébé, **15 %** expériences
+  Intermédiaire et **10 %** plasticité adulte. **Point à arbitrer :** chaque
+  axe pourra recevoir une pondération propre — initiative davantage façonnée
+  par l’expérience, contact plus inné, tempo intermédiaire. Cette répartition
+  n’est donc pas une règle canonique définitive.
+- **Bulle et wellbeing.** Le placeholder principal du P’TIPOTE reste visible :
+  les intentions temporaires (`?`, nourriture, absorption, inconfort,
+  affection, sommeil…) sont rendues par une petite bulle au-dessus de lui.
+  `wellbeing` est un état interne borné, sans jauge joueur ; il reflète la
+  cohérence entre besoin, confort, repos, proximité et tempérament sans jamais
+  modifier les apports nutritifs ou structurels. L’expression positive varie
+  avec Contact : chaleureuse et démonstrative, ou réservée et discrète.
+- **Câlins.** Un cooldown social persistant protège de l’insistance. Sa durée
+  est plus courte pour un tempérament chaleureux et plus longue pour un profil
+  réservé. Une première tentative trop tôt est neutre ; l’insistance immédiate
+  produit une irritation et une baisse temporaire de wellbeing, jamais une
+  pénalité ou une modification permanente de personnalité. Les câlins restent
+  classés court (1–2 s), normal (2–3 s) et prolongé (4–5 s).
+- **Need ≠ Request.** Un besoin reste une donnée interne. Une `activeRequest`
+  temporaire n’est créée que lorsque le P’TIPOTE choisit de solliciter le
+  joueur ; une seule est visible, expire, est résolue ou est abandonnée. Bébé
+  utilise le signal non précis configurable « Pti ? », Intermédiaire une
+  catégorie (nourriture, structure, contact, sommeil…), Mature peut préciser
+  un objet connu. Un individu autonome tente d’abord les stocks locaux, là où
+  un profil accompagné sollicite plus volontiers le joueur.
+- **Sommeil extensible.** Les rythmes utilisent une liste de `sleepWindows`,
+  donc acceptent plusieurs repos par cycle. Végétal est diurne ; Minéral
+  (Résonance) est `SHIFTED_DIURNAL`, endormi de fin de nuit jusqu’au début du
+  jour ; Champignon est biphasique/polyphasique. Le cycle V0 est de six heures
+  (Jour 4 h, Nuit 2 h). Durant `SLEEP`, le P’TIPOTE reste immobile et choisit
+  la meilleure zone locale selon son confort. Le hook `PLAYER_PROXY_OBJECT`
+  est réservé à la future Poupée familière ; attachement/fidélité demeure un
+  système distinct, hors scope.
+- **Production locale.** Les installations productives produisent une unité
+  toutes les **3 h** (`productionIntervalSeconds`) et chaque sortie locale est
+  plafonnée à **6** (`productionMaxStock`). Une récolte transfère une seule
+  unité à la fois du stock local vers l’inventaire ; le joueur peut donc laisser
+  des ressources à l’individu. Bébé dépend de cette aide manuelle ;
+  Intermédiaire et Mature utilisent progressivement ces stocks selon leur
+  initiative.

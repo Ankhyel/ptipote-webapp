@@ -136,6 +136,13 @@ class ElevageConfig {
     required this.idlePauseSeconds,
     required this.normalMoveDurationMs,
     required this.runMoveDurationMs,
+    required this.personalityBaselineWeight,
+    required this.personalityBabyWeight,
+    required this.personalityIntermediateWeight,
+    required this.personalityAdultPlasticityWeight,
+    required this.warmCuddleCooldownSeconds,
+    required this.reservedCuddleCooldownSeconds,
+    required this.requestDurationSeconds,
     required this.recipes,
   });
 
@@ -172,6 +179,13 @@ class ElevageConfig {
   final int idlePauseSeconds;
   final int normalMoveDurationMs;
   final int runMoveDurationMs;
+  final double personalityBaselineWeight;
+  final double personalityBabyWeight;
+  final double personalityIntermediateWeight;
+  final double personalityAdultPlasticityWeight;
+  final int warmCuddleCooldownSeconds;
+  final int reservedCuddleCooldownSeconds;
+  final int requestDurationSeconds;
   final List<ElevageRecipe> recipes;
 
   int get babyMinimumHours => preset == ElevagePreset.prototype ? 24 : 48;
@@ -373,6 +387,13 @@ class ElevageConfig {
     int? idlePauseSeconds,
     int? normalMoveDurationMs,
     int? runMoveDurationMs,
+    double? personalityBaselineWeight,
+    double? personalityBabyWeight,
+    double? personalityIntermediateWeight,
+    double? personalityAdultPlasticityWeight,
+    int? warmCuddleCooldownSeconds,
+    int? reservedCuddleCooldownSeconds,
+    int? requestDurationSeconds,
     List<ElevageRecipe>? recipes,
   }) =>
       ElevageConfig(
@@ -419,6 +440,20 @@ class ElevageConfig {
         idlePauseSeconds: idlePauseSeconds ?? this.idlePauseSeconds,
         normalMoveDurationMs: normalMoveDurationMs ?? this.normalMoveDurationMs,
         runMoveDurationMs: runMoveDurationMs ?? this.runMoveDurationMs,
+        personalityBaselineWeight:
+            personalityBaselineWeight ?? this.personalityBaselineWeight,
+        personalityBabyWeight:
+            personalityBabyWeight ?? this.personalityBabyWeight,
+        personalityIntermediateWeight:
+            personalityIntermediateWeight ?? this.personalityIntermediateWeight,
+        personalityAdultPlasticityWeight: personalityAdultPlasticityWeight ??
+            this.personalityAdultPlasticityWeight,
+        warmCuddleCooldownSeconds:
+            warmCuddleCooldownSeconds ?? this.warmCuddleCooldownSeconds,
+        reservedCuddleCooldownSeconds:
+            reservedCuddleCooldownSeconds ?? this.reservedCuddleCooldownSeconds,
+        requestDurationSeconds:
+            requestDurationSeconds ?? this.requestDurationSeconds,
         recipes: recipes ?? this.recipes,
       );
 
@@ -458,6 +493,13 @@ class ElevageConfig {
         'idlePauseSeconds': idlePauseSeconds,
         'normalMoveDurationMs': normalMoveDurationMs,
         'runMoveDurationMs': runMoveDurationMs,
+        'personalityBaselineWeight': personalityBaselineWeight,
+        'personalityBabyWeight': personalityBabyWeight,
+        'personalityIntermediateWeight': personalityIntermediateWeight,
+        'personalityAdultPlasticityWeight': personalityAdultPlasticityWeight,
+        'warmCuddleCooldownSeconds': warmCuddleCooldownSeconds,
+        'reservedCuddleCooldownSeconds': reservedCuddleCooldownSeconds,
+        'requestDurationSeconds': requestDurationSeconds,
         'recipes': recipes.map((recipe) => recipe.toJson()).toList(),
       };
 
@@ -524,6 +566,23 @@ class ElevageConfig {
           _positive(json['normalMoveDurationMs'], base.normalMoveDurationMs),
       runMoveDurationMs:
           _positive(json['runMoveDurationMs'], base.runMoveDurationMs),
+      personalityBaselineWeight: _rate(
+          json['personalityBaselineWeight'], base.personalityBaselineWeight),
+      personalityBabyWeight:
+          _rate(json['personalityBabyWeight'], base.personalityBabyWeight),
+      personalityIntermediateWeight: _rate(
+          json['personalityIntermediateWeight'],
+          base.personalityIntermediateWeight),
+      personalityAdultPlasticityWeight: _rate(
+          json['personalityAdultPlasticityWeight'],
+          base.personalityAdultPlasticityWeight),
+      warmCuddleCooldownSeconds: _positive(
+          json['warmCuddleCooldownSeconds'], base.warmCuddleCooldownSeconds),
+      reservedCuddleCooldownSeconds: _positive(
+          json['reservedCuddleCooldownSeconds'],
+          base.reservedCuddleCooldownSeconds),
+      requestDurationSeconds: _positive(
+          json['requestDurationSeconds'], base.requestDurationSeconds),
       recipes: (json['recipes'] as List?)
               ?.whereType<Map>()
               .map((raw) =>
@@ -553,6 +612,16 @@ void validateElevageConfig(ElevageConfig config) {
       config.idlePauseSeconds <= 0 ||
       config.normalMoveDurationMs <= 0 ||
       config.runMoveDurationMs <= 0 ||
+      ((config.personalityBaselineWeight +
+                      config.personalityBabyWeight +
+                      config.personalityIntermediateWeight +
+                      config.personalityAdultPlasticityWeight) -
+                  1)
+              .abs() >
+          .0001 ||
+      config.warmCuddleCooldownSeconds <= 0 ||
+      config.reservedCuddleCooldownSeconds <= 0 ||
+      config.requestDurationSeconds <= 0 ||
       config.recipes.map((recipe) => recipe.id).toSet().length !=
           config.recipes.length) {
     throw const FormatException('Configuration Élevage invalide.');
@@ -572,8 +641,8 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
   suspectedThreshold: 2,
   confirmedThreshold: 4,
   foragingDurationSeconds: 20,
-  productionIntervalSeconds: 60,
-  productionMaxStock: 2,
+  productionIntervalSeconds: 10800,
+  productionMaxStock: 6,
   coRearingDurationHours: 168,
   refundOrganicRate: .5,
   refundMineralRate: .5,
@@ -584,8 +653,8 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
   buybackBioPiles: 1,
   metamorphosisToleranceMs: 180,
   inventoryStackSize: 12,
-  dayDurationHours: 3,
-  nightDurationHours: 3,
+  dayDurationHours: 4,
+  nightDurationHours: 2,
   observationTextThreshold: 2,
   observationEvidenceCooldownMinutes: 10,
   autonomousReactionIntervalSeconds: 60,
@@ -593,6 +662,13 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
   idlePauseSeconds: 45,
   normalMoveDurationMs: 1600,
   runMoveDurationMs: 400,
+  personalityBaselineWeight: .5,
+  personalityBabyWeight: .25,
+  personalityIntermediateWeight: .15,
+  personalityAdultPlasticityWeight: .1,
+  warmCuddleCooldownSeconds: 45,
+  reservedCuddleCooldownSeconds: 90,
+  requestDurationSeconds: 90,
   recipes: <ElevageRecipe>[
     ElevageRecipe(
         id: 'ABRI_FIBREUX',

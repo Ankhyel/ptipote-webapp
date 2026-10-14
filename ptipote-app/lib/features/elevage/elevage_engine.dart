@@ -74,6 +74,42 @@ class ElevageSave {
       if (raw is Map) {
         raw.putIfAbsent('observationJournal',
             () => <String, dynamic>{'observations': <String, dynamic>{}});
+        raw.putIfAbsent(
+            'wellbeing',
+            () => <String, dynamic>{
+                  'value': 60,
+                  'lastUpdatedAt': normalized['savedAt'] ?? 0,
+                });
+        raw.putIfAbsent('activeRequest', () => null);
+        raw.putIfAbsent(
+            'social',
+            () => <String, dynamic>{
+                  'cuddleCooldownUntil': 0,
+                  'cuddleAttempts': 0,
+                  'lastReaction': 'NEUTRAL',
+                });
+        final personality = raw['personality'];
+        if (personality is Map) {
+          personality.putIfAbsent(
+              'development',
+              () => <String, dynamic>{
+                    'babyExperience': <String, int>{
+                      'initiative': 0,
+                      'contact': 0,
+                      'tempo': 0,
+                    },
+                    'intermediateExperience': <String, int>{
+                      'initiative': 0,
+                      'contact': 0,
+                      'tempo': 0,
+                    },
+                    'adultPlasticity': <String, int>{
+                      'initiative': 0,
+                      'contact': 0,
+                      'tempo': 0,
+                    },
+                  });
+        }
       }
     });
     return ElevageSave(normalized);
@@ -163,6 +199,86 @@ class ElevageDomain {
     'QUARTZ',
   };
 
+  /// Répartition provisoire commune V0 : elle est volontairement centralisée
+  /// ici pour que chaque axe puisse recevoir sa propre pondération plus tard.
+  /// Voir aussi la Data Card : ce n'est pas encore une règle canonique.
+  static Map<String, double> personalityWeights(ElevageConfig config) =>
+      <String, double>{
+        'baseline': config.personalityBaselineWeight,
+        'baby': config.personalityBabyWeight,
+        'intermediate': config.personalityIntermediateWeight,
+        'adultPlasticity': config.personalityAdultPlasticityWeight,
+      };
+
+  /// Valeur 0–1 lisible par le comportement, sans exposer le nombre au joueur.
+  static double personalityValue(Map individual, String axis) {
+    final personality = individual['personality'] as Map;
+    final baseline = ((personality['baseline'] as Map)[axis] as num).toDouble();
+    final tendencies =
+        ((personality['tendencies'] as Map)[axis] as num?)?.toDouble() ?? 0;
+    return ((baseline + tendencies) / 100).clamp(0.0, 1.0);
+  }
+
+  static double wellbeing(Map individual) =>
+      (((individual['wellbeing'] as Map?)?['value'] as num?)?.toDouble() ?? 60)
+          .clamp(0, 100);
+
+  static int normalMoveDurationFor(Map individual, ElevageConfig config) {
+    final tempo = personalityValue(individual, 'tempo');
+    // Posé (>= .5) : 0.85× ; spontané (< .5) : 1.15×.
+    final factor = tempo >= .5 ? .85 : 1.15;
+    return (config.normalMoveDurationMs * factor).round();
+  }
+
+  static int idlePauseFor(Map individual, ElevageConfig config) {
+    final tempo = personalityValue(individual, 'tempo');
+    final factor = tempo >= .5 ? 1.25 : .75;
+    return max(1, (config.idlePauseSeconds * factor).round());
+  }
+
+  static int evidenceForInspection(Map individual) =>
+      personalityValue(individual, 'tempo') >= .5 ? 2 : 1;
+
+  static String circadianProfile(Map individual) =>
+      switch (individual['family']) {
+        'VEGETAL' => 'DIURNAL',
+        'FUNGAL' => 'BIPHASIC',
+        _ => 'SHIFTED_DIURNAL',
+      };
+
+  /// Les fenêtres peuvent être multiples : le profil fongique est biphasique.
+  /// Chaque couple est exprimé en fraction du cycle complet [0–1].
+  static List<List<double>> sleepWindows(Map individual) =>
+      switch (circadianProfile(individual)) {
+        'DIURNAL' => const <List<double>>[
+            <double>[.667, 1],
+          ],
+        'BIPHASIC' => const <List<double>>[
+            <double>[.34, .48],
+            <double>[.61, .74],
+          ],
+        _ => const <List<double>>[
+            <double>[0, .25],
+            <double>[.84, 1],
+          ],
+      };
+
+  static bool isSleeping(Map individual, int now, ElevageConfig config) {
+    final cycleMs =
+        config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
+    final position = (now % cycleMs) / cycleMs;
+    return sleepWindows(individual)
+        .any((window) => position >= window[0] && position < window[1]);
+  }
+
+  static String sleepZone(
+      ElevageSave state, String individualId, int now, ElevageConfig config,
+      {String? phaseOverride}) {
+    final individual = _individual(state, individualId);
+    return bestComfortZone(state, individual['alcoveId'] as String, config, now,
+        phaseOverride: phaseOverride);
+  }
+
   static ElevageSave adopt({
     required ElevageSave source,
     required String alcoveId,
@@ -225,6 +341,30 @@ class ElevageDomain {
           'tempo': 45 + random.nextInt(11),
         },
         'tendencies': <String, int>{'initiative': 0, 'contact': 0, 'tempo': 0},
+        'development': <String, dynamic>{
+          'babyExperience': <String, int>{
+            'initiative': 0,
+            'contact': 0,
+            'tempo': 0,
+          },
+          'intermediateExperience': <String, int>{
+            'initiative': 0,
+            'contact': 0,
+            'tempo': 0,
+          },
+          'adultPlasticity': <String, int>{
+            'initiative': 0,
+            'contact': 0,
+            'tempo': 0,
+          },
+        },
+      },
+      'wellbeing': <String, dynamic>{'value': 60, 'lastUpdatedAt': now},
+      'activeRequest': null,
+      'social': <String, dynamic>{
+        'cuddleCooldownUntil': 0,
+        'cuddleAttempts': 0,
+        'lastReaction': 'NEUTRAL',
       },
       'care': <String, dynamic>{
         'lastMealAt': null,
@@ -298,6 +438,7 @@ class ElevageDomain {
       special[item] = special[item]! - 1;
       _memory(state, id, 'FIRST_TREAT', now);
       _interaction(individual, 'TREAT', contact: 1);
+      _adjustWellbeing(individual, 2, now);
       return state;
     }
     if (!foodItems.contains(item)) {
@@ -310,6 +451,7 @@ class ElevageDomain {
     final care = individual['care'] as Map<String, dynamic>;
     care['lastMealAt'] = now;
     care['metabolicMeals'] = (care['metabolicMeals'] as int) + 1;
+    individual['activeRequest'] = null;
     if (item == favorite) {
       final discovery = individual['preferenceDiscovery']['foodPreference']
           as Map<String, dynamic>;
@@ -322,12 +464,15 @@ class ElevageDomain {
               : 'UNKNOWN';
       _memory(state, id, 'FIRST_FAVORITE_FOOD', now);
       _interaction(individual, 'FAVORITE_FOOD', contact: 1);
+      _adjustWellbeing(individual,
+          personalityValue(individual, 'initiative') < .5 ? 3 : 1, now);
       final count = _observe(individual, 'FOOD_FAVORITE', now,
           relatedItemId: item, config: config);
       _setObservationStatus(
           individual, 'FOOD_FAVORITE:$item', count, config, now);
     } else {
       _interaction(individual, 'FOOD', contact: 1);
+      _adjustWellbeing(individual, 1, now);
       final count = _observe(individual, 'FOOD_ACCEPTED', now,
           relatedItemId: item, config: config);
       _setObservationStatus(
@@ -361,6 +506,8 @@ class ElevageDomain {
     final byMaterial = intake['byMaterial'] as Map<String, dynamic>;
     byMaterial[item] = (byMaterial[item] as int? ?? 0) + gain;
     _interaction(individual, 'STRUCTURE', tempo: 1);
+    individual['activeRequest'] = null;
+    _adjustWellbeing(individual, 1, now);
     final count = _observe(individual, 'STRUCTURAL_REACTION', now,
         relatedItemId: item, config: config ?? defaultElevageConfig);
     _setObservationStatus(individual, 'STRUCTURAL_REACTION:$item', count,
@@ -770,10 +917,33 @@ class ElevageDomain {
     final state = source.copy();
     final individual = _individual(state, id);
     final boundedDuration = durationMs.clamp(1000, 5000);
+    final social = individual['social'] as Map<String, dynamic>;
+    final contact = personalityValue(individual, 'contact');
+    final cooldownUntil = (social['cuddleCooldownUntil'] as num?)?.toInt() ?? 0;
+    if (now < cooldownUntil) {
+      final attempts = ((social['cuddleAttempts'] as num?)?.toInt() ?? 0) + 1;
+      social['cuddleAttempts'] = attempts;
+      social['lastReaction'] = attempts >= 2 ? 'IRRITATED' : 'NEUTRAL';
+      _adjustWellbeing(individual, attempts >= 2 ? -5 : -1, now);
+      final count = _observe(individual, 'CUDDLE_SPACE', now, config: config);
+      _setObservationStatus(
+          individual, 'CUDDLE_SPACE:GENERAL', count, config, now);
+      return state;
+    }
     (individual['progressionEvidence'] as Map)['lastCuddleDurationMs'] =
         boundedDuration;
+    social['cuddleAttempts'] = 0;
+    final prolonged = boundedDuration >= 4000;
+    final prefersLong = contact >= .55;
+    social['lastReaction'] = prolonged && !prefersLong ? 'RESERVED' : 'CONTENT';
+    social['cuddleCooldownUntil'] = now +
+        (contact >= .55
+                ? config.warmCuddleCooldownSeconds
+                : config.reservedCuddleCooldownSeconds) *
+            1000;
     _interaction(individual, 'CUDDLE',
-        contact: boundedDuration >= 4000 ? 1 : 0);
+        contact: prolonged && prefersLong ? 1 : 0);
+    _adjustWellbeing(individual, prolonged == prefersLong ? 3 : 1, now);
     final count = _observe(individual, 'CUDDLE', now, config: config);
     _setObservationStatus(individual, 'CUDDLE:GENERAL', count, config, now);
     return state;
@@ -970,8 +1140,23 @@ class ElevageDomain {
     final residentId = alcove['occupantIndividualId'] as String?;
     if (residentId == null) return state;
     final individual = _individual(state, residentId);
-    if (hunger(state, residentId, now, config) == 'HUNGRY' ||
-        hunger(state, residentId, now, config) == 'VERY_HUNGRY') {
+    final stage = individual['lifecycle']['stage'] as String;
+    final initiative = personalityValue(individual, 'initiative');
+    final care = individual['care'] as Map<String, dynamic>;
+    final autonomyDelayMs = (stage == 'MATURE'
+                ? 10
+                : stage == 'INTERMEDIATE'
+                    ? 20
+                    : 999999) *
+            const Duration(minutes: 1).inMilliseconds +
+        ((1 - initiative) * const Duration(minutes: 10).inMilliseconds).round();
+    final lastAutonomy = (care['lastAutonomousAt'] as num?)?.toInt() ?? 0;
+    final mayActAutonomously = stage != 'BABY' &&
+        now - lastAutonomy >= autonomyDelayMs &&
+        !isSleeping(individual, now, config);
+    if (mayActAutonomously &&
+        (hunger(state, residentId, now, config) == 'HUNGRY' ||
+            hunger(state, residentId, now, config) == 'VERY_HUNGRY')) {
       final favorite =
           individual['generatedProfile']['foodPreference'] as String;
       final food = _consumeLocal(alcove, <String>[
@@ -982,22 +1167,98 @@ class ElevageDomain {
         'MUSHROOM'
       ]);
       if (food != null) {
-        final care = individual['care'] as Map<String, dynamic>;
         care['lastMealAt'] = now;
         care['autonomousMealCount'] = (care['autonomousMealCount'] as int) + 1;
+        care['lastAutonomousAt'] = now;
         _memory(state, residentId, 'FIRST_AUTONOMOUS_MEAL', now);
         _interaction(individual, 'AUTONOMOUS_MEAL', initiative: 1);
+        _adjustWellbeing(individual, initiative >= .5 ? 3 : 1, now);
       }
     }
-    final structural = _consumeLocal(alcove, const <String>['IRON']);
+    final structural = mayActAutonomously
+        ? _consumeLocal(alcove, const <String>['IRON'])
+        : null;
     if (structural != null) {
       final intake =
           individual['care']['structuralIntake'] as Map<String, dynamic>;
       intake['total'] = (intake['total'] as int) + 2;
       final byMaterial = intake['byMaterial'] as Map;
       byMaterial['IRON'] = ((byMaterial['IRON'] as num?)?.toInt() ?? 0) + 2;
+      care['lastAutonomousAt'] = now;
+      _interaction(individual, 'AUTONOMOUS_STRUCTURE', initiative: 1);
+      _adjustWellbeing(individual, initiative >= .5 ? 2 : 1, now);
     }
     return state;
+  }
+
+  static ElevageSave harvestLocal(
+      ElevageSave source, String alcoveId, int slot, String itemId, int now) {
+    final state = source.copy();
+    final slots = _alcove(state, alcoveId)['slots'] as List;
+    if (slot < 0 || slot >= slots.length || slots[slot] is! Map) {
+      throw StateError('Installation indisponible.');
+    }
+    final stock = ((slots[slot] as Map)['productionState']
+        as Map?)?['availableByItemId'] as Map?;
+    if (stock == null || ((stock[itemId] as num?)?.toInt() ?? 0) < 1) {
+      throw StateError('Rien à récolter.');
+    }
+    stock[itemId] = (stock[itemId] as num).toInt() - 1;
+    final special = _special(state);
+    special[itemId] = (special[itemId] ?? 0) + 1;
+    return state;
+  }
+
+  /// Évalue les besoins sans les confondre avec une sollicitation. Une Request
+  /// n'existe que lorsque l'individu choisit réellement de communiquer.
+  static ElevageSave refreshRequest(
+      ElevageSave source, String id, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, id);
+    final active = individual['activeRequest'] as Map?;
+    if (active != null && now >= (active['expiresAt'] as int)) {
+      individual['activeRequest'] = null;
+    }
+    if (individual['activeRequest'] != null ||
+        isSleeping(individual, now, config)) {
+      return state;
+    }
+    final hungerState = hunger(state, id, now, config);
+    final need =
+        hungerState == 'HUNGRY' || hungerState == 'VERY_HUNGRY' ? 'FOOD' : null;
+    if (need == null) return state;
+    final stage = individual['lifecycle']['stage'] as String;
+    final initiative = personalityValue(individual, 'initiative');
+    final alcove = _alcove(state, individual['alcoveId'] as String);
+    final localFood = _hasLocal(alcove, foodItems);
+    // Les individus plus autonomes essaient d'abord le stock de leur Alcôve;
+    // le besoin existe tout de même, mais ne devient pas une Request visible.
+    if (stage != 'BABY' && initiative >= .5 && localFood) return state;
+    final preferred =
+        individual['generatedProfile']['foodPreference'] as String;
+    final signal = switch (stage) {
+      'BABY' => 'Pti ?',
+      'INTERMEDIATE' => 'FOOD',
+      _ => preferred,
+    };
+    individual['activeRequest'] = <String, dynamic>{
+      'need': need,
+      'signal': signal,
+      'createdAt': now,
+      'expiresAt': now + config.requestDurationSeconds * 1000,
+    };
+    final count = _observe(individual, 'REQUEST_FOOD', now, config: config);
+    _setObservationStatus(
+        individual, 'REQUEST_FOOD:GENERAL', count, config, now);
+    (state.data['individuals'] as Map<String, dynamic>)[id] = individual;
+    return state;
+  }
+
+  static Map<String, dynamic>? activeRequest(
+      ElevageSave state, String id, int now) {
+    final request = _individual(state, id)['activeRequest'] as Map?;
+    if (request == null || now >= (request['expiresAt'] as int)) return null;
+    return Map<String, dynamic>.from(request);
   }
 
   static ElevageSave buyTreat(
@@ -1218,8 +1479,16 @@ class ElevageDomain {
     return ((observations[id] as Map?)?['count'] as num?)?.toInt() ?? 0;
   }
 
-  static Map<String, dynamic> _individual(ElevageSave state, String id) =>
-      Map<String, dynamic>.from((state.data['individuals'] as Map)[id] as Map);
+  static Map<String, dynamic> _individual(ElevageSave state, String id) {
+    final individuals = state.data['individuals'] as Map<String, dynamic>;
+    final individual = Map<String, dynamic>.from(individuals[id] as Map);
+    // Les mutations métier touchent parfois des champs de premier niveau
+    // (`activeRequest`, `wellbeing`, cooldown social). Réinsérer la copie évite
+    // qu’elles disparaissent silencieusement tout en gardant l’API historique.
+    individuals[id] = individual;
+    return individual;
+  }
+
   static Map<String, int> _generic(ElevageSave state) =>
       Map<String, int>.from((state.data['inventory']['generic'] as Map)
           .map((key, value) => MapEntry('$key', (value as num).toInt())))
@@ -1323,6 +1592,44 @@ class ElevageDomain {
       final current = (trends[item.key] as num).toInt();
       trends[item.key] = (current + item.value).clamp(-16, 16);
     }
+    final development = individual['personality']['development'] as Map?;
+    if (development == null) return;
+    final stage = individual['lifecycle']['stage'] as String;
+    final bucketName = stage == 'BABY'
+        ? 'babyExperience'
+        : stage == 'INTERMEDIATE'
+            ? 'intermediateExperience'
+            : 'adultPlasticity';
+    final bucket = development[bucketName] as Map;
+    for (final item in <String, int>{
+      'initiative': initiative,
+      'contact': contact,
+      'tempo': tempo,
+    }.entries) {
+      final current = (bucket[item.key] as num?)?.toInt() ?? 0;
+      bucket[item.key] = (current + item.value).clamp(-16, 16);
+    }
+  }
+
+  static void _adjustWellbeing(
+      Map<String, dynamic> individual, int delta, int now) {
+    final wellbeing = individual.putIfAbsent('wellbeing',
+        () => <String, dynamic>{'value': 60, 'lastUpdatedAt': now}) as Map;
+    final current = (wellbeing['value'] as num?)?.toInt() ?? 60;
+    wellbeing['value'] = (current + delta).clamp(0, 100);
+    wellbeing['lastUpdatedAt'] = now;
+  }
+
+  static bool _hasLocal(Map<String, dynamic> alcove, List<String> choices) {
+    for (final raw in alcove['slots'] as List) {
+      if (raw is! Map) continue;
+      final stock = raw['productionState']?['availableByItemId'];
+      if (stock is Map &&
+          choices.any((item) => ((stock[item] as num?)?.toInt() ?? 0) > 0)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static String? _consumeLocal(

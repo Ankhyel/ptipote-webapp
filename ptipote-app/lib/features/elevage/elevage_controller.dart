@@ -125,6 +125,11 @@ class ElevageController extends ChangeNotifier {
       _mutate((current) => ElevageDomain.remove(current, alcoveId, slot));
   Future<void> refreshAlcove(String alcoveId) => _mutate((current) =>
       ElevageDomain.refreshAlcove(current, alcoveId, _now, config));
+  Future<void> harvestLocal(String alcoveId, int slot, String itemId) =>
+      _mutate((current) =>
+          ElevageDomain.harvestLocal(current, alcoveId, slot, itemId, _now));
+  Future<void> refreshRequest(String individualId) => _mutate((current) =>
+      ElevageDomain.refreshRequest(current, individualId, _now, config));
   Future<void> buyTreat(String item) =>
       _mutate((current) => ElevageDomain.buyTreat(current, item, config));
   Future<void> sellGeneric(String item) =>
