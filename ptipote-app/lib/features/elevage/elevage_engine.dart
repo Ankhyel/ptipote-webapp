@@ -420,7 +420,9 @@ class ElevageDomain {
     if (config.preset == ElevagePreset.prototype) {
       return switch (stage) { 'BABY' => 5, 'INTERMEDIATE' => 3, _ => 1 };
     }
-    return switch (stage) { 'BABY' => 1.5, 'INTERMEDIATE' => 1.2, _ => 1 };
+    // TARGET conserve les seuils historiques : aucun accélérateur de
+    // playtest ne doit modifier son rythme dérivé.
+    return 1;
   }
 
   static bool canOfferNormalFood(

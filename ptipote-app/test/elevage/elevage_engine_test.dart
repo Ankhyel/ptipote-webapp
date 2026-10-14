@@ -512,7 +512,7 @@ void main() {
     expect(
         ElevageDomain.satietyPercent(
             state, id, now + const Duration(hours: 24).inMilliseconds, target),
-        greaterThan(50));
+        90);
   });
 
   test('un objet posé fournit une décision autonome sans bouton manuel', () {
