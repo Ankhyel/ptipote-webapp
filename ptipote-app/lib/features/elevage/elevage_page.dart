@@ -87,23 +87,33 @@ class _StartPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: _appBar(context, controller),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-              const Icon(Icons.pets_outlined, size: 76),
-              const SizedBox(height: 20),
-              Text('P’TIPOTE Élevage',
-                  style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 12),
-              const Text(
-                  'Une Alcôve vous attend. Commencez une partie locale sur cet appareil.',
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 24),
-              FilledButton(
-                  onPressed: controller.initialize,
-                  child: const Text('Commencer P’TIPOTE Élevage')),
-            ]),
+        body: _elevageCanvas(
+          child: Center(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child:
+                    Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+                  const _ElevageMark(size: 76),
+                  const SizedBox(height: 26),
+                  const _Eyebrow('P’TIPOTE ÉLEVAGE'),
+                  const SizedBox(height: 12),
+                  Text('Une Alcôve vous attend',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.displaySmall),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Commencez une partie locale et apprenez à connaître votre P’TIPOTE.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 26),
+                  FilledButton(
+                    onPressed: controller.initialize,
+                    child: const Text('Commencer l’aventure'),
+                  ),
+                ]),
+              ),
+            ),
           ),
         ),
       );
@@ -121,85 +131,149 @@ class _AlcovesPage extends StatelessWidget {
     final alcoves = (state.data['alcoves'] as List).cast<Map>();
     return Scaffold(
       appBar: _appBar(context, controller),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          Text('Les Alcôves',
-              style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 8),
-          const Text(
-              'Accueillez, observez et aménagez un espace pour chaque P’TIPOTE.'),
-          if (controller.notifications.isNotEmpty)
-            Card(
-              color: Theme.of(context).colorScheme.tertiaryContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      '${controller.notifications.first['name']} a été récupéré. Les Sourciers vous remercient pour votre contribution et le P’TIPOTE était en pleine forme.',
+      body: _elevageCanvas(
+        child: LayoutBuilder(builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 680;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 42),
+            children: <Widget>[
+              const _Eyebrow('P’TIPOTE ÉLEVAGE'),
+              const SizedBox(height: 16),
+              Text('Les Alcôves',
+                  style: Theme.of(context).textTheme.displayLarge),
+              const SizedBox(height: 12),
+              const Text('Chaque Alcôve peut accueillir un P’TIPOTE.'),
+              if (controller.notifications.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 20),
+                Card(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          '${controller.notifications.first['name']} a été récupéré. Les Sourciers vous remercient pour votre contribution et le P’TIPOTE était en pleine forme.',
+                        ),
+                        TextButton(
+                          onPressed: controller.acknowledgeNotifications,
+                          child: const Text('Compris'),
+                        ),
+                      ],
                     ),
-                    TextButton(
-                      onPressed: controller.acknowledgeNotifications,
-                      child: const Text('Compris'),
-                    ),
-                  ],
+                  ),
                 ),
+              ],
+              const SizedBox(height: 26),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: alcoves.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: wide ? 2 : 1,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  mainAxisExtent: 292,
+                ),
+                itemBuilder: (context, index) {
+                  final alcove = alcoves[index];
+                  final occupant = alcove['occupantIndividualId'] as String?;
+                  final individual = occupant == null
+                      ? null
+                      : (state.data['individuals'] as Map)[occupant] as Map?;
+                  final occupied = individual != null &&
+                      (state.data['activeIndividualIds'] as List)
+                          .contains(occupant);
+                  return _AlcoveOverviewCard(
+                    index: index + 1,
+                    occupied: occupied,
+                    individual: individual,
+                    onOpen: occupied
+                        ? () => onOpenIndividual(occupant!)
+                        : () => _welcome(
+                            context, controller, alcove['id'] as String),
+                    onMoveOut: !occupied &&
+                            (alcove['slots'] as List)
+                                .any((slot) => slot != null)
+                        ? () => _moveOut(
+                            context, controller, alcove['id'] as String)
+                        : null,
+                  );
+                },
               ),
-            ),
-          const SizedBox(height: 16),
-          ...alcoves.map((alcove) {
-            final occupant = alcove['occupantIndividualId'] as String?;
-            final individual = occupant == null
-                ? null
-                : (state.data['individuals'] as Map)[occupant] as Map?;
-            final occupied = individual != null &&
-                (state.data['activeIndividualIds'] as List).contains(occupant);
-            return Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: occupied
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                            Text('${individual['name']}',
-                                style: Theme.of(context).textTheme.titleLarge),
-                            Text(
-                                'Minéral · Résonance · ${_stageLabel(individual['lifecycle']['stage'] as String)}'),
-                            Text(individual['ownership']['mode'] == 'PHYSICAL'
-                                ? 'Figurine'
-                                : _coRemaining(individual['ownership'] as Map)),
-                            const SizedBox(height: 10),
-                            FilledButton(
-                                onPressed: () => onOpenIndividual(occupant!),
-                                child: const Text('Ouvrir l’Alcôve')),
-                          ])
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                            Text('Alcôve ${alcove['id']}',
-                                style: Theme.of(context).textTheme.titleLarge),
-                            const Text('Libre'),
-                            const SizedBox(height: 10),
-                            FilledButton.icon(
-                              onPressed: () => _welcome(
-                                  context, controller, alcove['id'] as String),
-                              icon: const Icon(Icons.add_home_outlined),
-                              label: const Text('Accueillir un P’TIPOTE'),
-                            ),
-                            if ((alcove['slots'] as List)
-                                .any((slot) => slot != null))
-                              TextButton(
-                                onPressed: () => _moveOut(context, controller,
-                                    alcove['id'] as String),
-                                child: const Text('Déménager'),
-                              ),
-                          ]),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _AlcoveOverviewCard extends StatelessWidget {
+  const _AlcoveOverviewCard({
+    required this.index,
+    required this.occupied,
+    required this.individual,
+    required this.onOpen,
+    this.onMoveOut,
+  });
+
+  final int index;
+  final bool occupied;
+  final Map? individual;
+  final VoidCallback onOpen;
+  final VoidCallback? onMoveOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = occupied ? individual!['name'] as String : 'Libre';
+    final stage = occupied
+        ? _stageLabel(individual!['lifecycle']['stage'] as String)
+        : null;
+    return Card(
+      color: occupied
+          ? Theme.of(context).cardTheme.color
+          : Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _Eyebrow('ALCÔVE $index'),
+              const SizedBox(height: 16),
+              const _ElevageMark(size: 54),
+              const Spacer(),
+              Text(name, style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 7),
+              Text(
+                occupied
+                    ? 'Minéral · Résonance · $stage'
+                    : 'Un espace calme attend un P’TIPOTE.',
               ),
-            );
-          }),
-        ],
+              if (occupied) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(
+                  individual!['ownership']['mode'] == 'PHYSICAL'
+                      ? 'Figurine'
+                      : _coRemaining(individual!['ownership'] as Map),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: onOpen,
+                child: Text(
+                    occupied ? 'Ouvrir l’Alcôve' : 'Accueillir un P’TIPOTE'),
+              ),
+              if (onMoveOut != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: onMoveOut,
+                    child: const Text('Déménager cette Alcôve'),
+                  ),
+                ),
+            ]),
       ),
     );
   }
@@ -759,192 +833,197 @@ class _IndividualPageState extends State<_IndividualPage> {
                             ElevageDashboardPage(controller: controller))))
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          _AlcoveScene(
-              stage: stage,
-              reaction: _reaction,
-              feedback: _feedback,
-              slots: (alcove['slots'] as List).cast<dynamic>(),
-              environment: environment,
-              sceneItems:
-                  ElevageDomain.sceneItems(state, alcove['id'] as String),
-              zones: controller.config.sceneZones,
-              onSceneItemTap: (item) => _openSceneItemActions(item),
-              onZoneTap: (zoneId) =>
-                  _pendingPlacementItem == null ? null : _placeInZone(zoneId),
-              onZoneHoldStart: _startFollowHold,
-              onZoneHoldEnd: _endFollowHold,
-              onPtipoteTap: _cuddle,
-              onInstallationSlotTap: (slot) => _openInstallationSlot(
-                  alcoveId, slot, zoneEnvironments['ZONE_${slot + 1}']!),
-              onEnvironmentTap: () =>
-                  _showEnvironmentPanel(context, environment, zoneEnvironments),
-              pendingItem: _pendingPlacementItem,
-              followHoldZoneId: _followHoldZoneId,
-              action: _sceneAction,
-              ptipoteZoneId: _ptipoteZoneId,
-              phase: controller.dayNightPhase(now),
-              phaseRemainingMs: ElevageDomain.dayNightRemainingMs(
-                  now, controller.config,
-                  phaseOverride: controller.forcedDayNightPhase),
-              now: now,
-              config: controller.config,
-              zoneEnvironments: zoneEnvironments),
-          const SizedBox(height: 12),
-          Center(
-              child: Text('${individual['name']}',
-                  style: Theme.of(context).textTheme.headlineMedium)),
-          Center(child: Text('Minéral · Résonance · ${_stageLabel(stage)}')),
-          const SizedBox(height: 12),
-          if (communication != null)
+      body: _elevageCanvas(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(24, 18, 24, 42),
+          children: <Widget>[
+            const _Eyebrow('P’TIPOTE ÉLEVAGE'),
+            const SizedBox(height: 12),
+            _AlcoveScene(
+                stage: stage,
+                reaction: _reaction,
+                feedback: _feedback,
+                slots: (alcove['slots'] as List).cast<dynamic>(),
+                environment: environment,
+                sceneItems:
+                    ElevageDomain.sceneItems(state, alcove['id'] as String),
+                zones: controller.config.sceneZones,
+                onSceneItemTap: (item) => _openSceneItemActions(item),
+                onZoneTap: (zoneId) =>
+                    _pendingPlacementItem == null ? null : _placeInZone(zoneId),
+                onZoneHoldStart: _startFollowHold,
+                onZoneHoldEnd: _endFollowHold,
+                onPtipoteTap: _cuddle,
+                onInstallationSlotTap: (slot) => _openInstallationSlot(
+                    alcoveId, slot, zoneEnvironments['ZONE_${slot + 1}']!),
+                onEnvironmentTap: () => _showEnvironmentPanel(
+                    context, environment, zoneEnvironments),
+                pendingItem: _pendingPlacementItem,
+                followHoldZoneId: _followHoldZoneId,
+                action: _sceneAction,
+                ptipoteZoneId: _ptipoteZoneId,
+                phase: controller.dayNightPhase(now),
+                phaseRemainingMs: ElevageDomain.dayNightRemainingMs(
+                    now, controller.config,
+                    phaseOverride: controller.forcedDayNightPhase),
+                now: now,
+                config: controller.config,
+                zoneEnvironments: zoneEnvironments),
+            const SizedBox(height: 12),
             Center(
-                child: Chip(
-                    avatar: const Icon(Icons.chat_bubble_outline),
-                    label: Text(_communicationLabel(communication)))),
-          _section(context, 'État', <Widget>[
-            ListTile(
-                leading: const Icon(Icons.restaurant_outlined),
-                title: Text(_hungerLabel(hunger)),
-                subtitle: const Text(
-                    'La faim est lente et ne comporte aucune punition irréversible.')),
-            ListTile(
-                leading: const Text('🍴', style: TextStyle(fontSize: 22)),
-                title: const Text('Satiété'),
+                child: Text('${individual['name']}',
+                    style: Theme.of(context).textTheme.headlineMedium)),
+            Center(child: Text('Minéral · Résonance · ${_stageLabel(stage)}')),
+            const SizedBox(height: 12),
+            if (communication != null)
+              Center(
+                  child: Chip(
+                      avatar: const Icon(Icons.chat_bubble_outline),
+                      label: Text(_communicationLabel(communication)))),
+            _section(context, 'État', <Widget>[
+              ListTile(
+                  leading: const Icon(Icons.restaurant_outlined),
+                  title: Text(_hungerLabel(hunger)),
+                  subtitle: const Text(
+                      'La faim est lente et ne comporte aucune punition irréversible.')),
+              ListTile(
+                  leading: const Text('🍴', style: TextStyle(fontSize: 22)),
+                  title: const Text('Satiété'),
+                  subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: LinearProgressIndicator(value: satiety / 100)),
+                  trailing: Text('$satiety %')),
+              ListTile(
+                leading: const Icon(Icons.favorite_outline),
+                title: const Text('Confort de l’Alcôve'),
                 subtitle: Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: LinearProgressIndicator(value: satiety / 100)),
-                trailing: Text('$satiety %')),
-            ListTile(
-              leading: const Icon(Icons.favorite_outline),
-              title: const Text('Confort de l’Alcôve'),
-              subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: LinearProgressIndicator(
-                      value: alcoveComfort['value'] as double)),
-              trailing: Text(alcoveComfort['label'] as String),
-            ),
-            if (stage != 'BABY') ...<Widget>[
-              ListTile(
-                leading: const Icon(Icons.auto_awesome_outlined),
-                title: const Text('Tempérament'),
-                subtitle: Text(_personalityLabel(individual)),
+                    child: LinearProgressIndicator(
+                        value: alcoveComfort['value'] as double)),
+                trailing: Text(alcoveComfort['label'] as String),
               ),
-              ListTile(
-                leading: const Text('💎', style: TextStyle(fontSize: 22)),
-                title: const Text('Structure ferrique'),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: LinearProgressIndicator(
-                      value: min(
-                          1,
-                          ((individual['care']['structuralIntake']
-                                  as Map)['total'] as int) /
-                              12)),
+              if (stage != 'BABY') ...<Widget>[
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome_outlined),
+                  title: const Text('Tempérament'),
+                  subtitle: Text(_personalityLabel(individual)),
                 ),
-              ),
-            ],
-            ListTile(
-                leading: const Icon(Icons.landscape_outlined),
-                title: Text(
-                    'Zone actuelle : ☀️ ${ElevagePresentation.environmentScale(localEnvironment['light'] ?? 0)}/5 · 🌡️ ${ElevagePresentation.environmentScale(localEnvironment['temperature'] ?? 0)}/5 · 💧 ${ElevagePresentation.environmentScale(localEnvironment['humidity'] ?? 0)}/5'),
-                subtitle: Text(_localComfortLabel(ElevageDomain.localComfort(
-                    localEnvironment, controller.config)))),
-            FilledButton.tonal(
-                onPressed: () =>
-                    controller.refreshAlcove(alcove['id'] as String),
-                child: const Text('Actualiser l’Alcôve')),
-            if (controller.config.devMode)
-              Wrap(spacing: 8, children: <Widget>[
-                OutlinedButton.icon(
-                    onPressed: () => controller.forceDayNightPhase('DAY'),
-                    icon: const Icon(Icons.light_mode_outlined),
-                    label: const Text('Forcer Jour')),
-                OutlinedButton.icon(
-                    onPressed: () => controller.forceDayNightPhase('NIGHT'),
-                    icon: const Icon(Icons.dark_mode_outlined),
-                    label: const Text('Forcer Nuit')),
-                TextButton(
-                    onPressed: () => controller.forceDayNightPhase(null),
-                    child: const Text('Cycle réel')),
-              ]),
-          ]),
-          _section(context, 'Poser un objet', <Widget>[
-            const Text(
-                'Choisissez un objet, puis posez-le dans une zone de l’Alcôve.'),
-            const SizedBox(height: 8),
-            FilledButton.tonalIcon(
-                onPressed: () => _openInventory(
-                    context, controller, individual, _placeFromInventory),
-                icon: const Icon(Icons.card_giftcard_outlined),
-                label: const Text('Choisir dans l’inventaire')),
-            if (controller.config.devMode)
-              TextButton.icon(
-                  onPressed: controller.addDevInventory,
-                  icon: const Icon(Icons.science_outlined),
-                  label: const Text('Ajouter inventaire dev')),
-          ]),
-          _section(context, 'Installations', <Widget>[
-            ...List<Widget>.generate((alcove['slots'] as List).length, (index) {
-              final raw = (alcove['slots'] as List)[index];
-              if (raw is Map) {
-                final definition = controller.config
-                    .installation(raw['definitionId'] as String);
-                final stock = raw['productionState']?['availableByItemId'];
+                ListTile(
+                  leading: const Text('💎', style: TextStyle(fontSize: 22)),
+                  title: const Text('Structure ferrique'),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: LinearProgressIndicator(
+                        value: min(
+                            1,
+                            ((individual['care']['structuralIntake']
+                                    as Map)['total'] as int) /
+                                12)),
+                  ),
+                ),
+              ],
+              ListTile(
+                  leading: const Icon(Icons.landscape_outlined),
+                  title: Text(
+                      'Zone actuelle : ☀️ ${ElevagePresentation.environmentScale(localEnvironment['light'] ?? 0)}/5 · 🌡️ ${ElevagePresentation.environmentScale(localEnvironment['temperature'] ?? 0)}/5 · 💧 ${ElevagePresentation.environmentScale(localEnvironment['humidity'] ?? 0)}/5'),
+                  subtitle: Text(_localComfortLabel(ElevageDomain.localComfort(
+                      localEnvironment, controller.config)))),
+              FilledButton.tonal(
+                  onPressed: () =>
+                      controller.refreshAlcove(alcove['id'] as String),
+                  child: const Text('Actualiser l’Alcôve')),
+              if (controller.config.devMode)
+                Wrap(spacing: 8, children: <Widget>[
+                  OutlinedButton.icon(
+                      onPressed: () => controller.forceDayNightPhase('DAY'),
+                      icon: const Icon(Icons.light_mode_outlined),
+                      label: const Text('Forcer Jour')),
+                  OutlinedButton.icon(
+                      onPressed: () => controller.forceDayNightPhase('NIGHT'),
+                      icon: const Icon(Icons.dark_mode_outlined),
+                      label: const Text('Forcer Nuit')),
+                  TextButton(
+                      onPressed: () => controller.forceDayNightPhase(null),
+                      child: const Text('Cycle réel')),
+                ]),
+            ]),
+            _section(context, 'Poser un objet', <Widget>[
+              const Text(
+                  'Choisissez un objet, puis posez-le dans une zone de l’Alcôve.'),
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                  onPressed: () => _openInventory(
+                      context, controller, individual, _placeFromInventory),
+                  icon: const Icon(Icons.card_giftcard_outlined),
+                  label: const Text('Choisir dans l’inventaire')),
+              if (controller.config.devMode)
+                TextButton.icon(
+                    onPressed: controller.addDevInventory,
+                    icon: const Icon(Icons.science_outlined),
+                    label: const Text('Ajouter inventaire dev')),
+            ]),
+            _section(context, 'Installations', <Widget>[
+              ...List<Widget>.generate((alcove['slots'] as List).length,
+                  (index) {
+                final raw = (alcove['slots'] as List)[index];
+                if (raw is Map) {
+                  final definition = controller.config
+                      .installation(raw['definitionId'] as String);
+                  final stock = raw['productionState']?['availableByItemId'];
+                  return ListTile(
+                    leading: const Icon(Icons.cabin_outlined),
+                    title: Text(ElevagePresentation.installationLabel(
+                        raw['definitionId'] as String)),
+                    subtitle: Text(stock is Map && stock.isNotEmpty
+                        ? stock.entries
+                            .where((entry) => entry.value != 0)
+                            .map((entry) =>
+                                '${ElevagePresentation.itemLabel(entry.key as String)} × ${entry.value}')
+                            .join(' · ')
+                        : 'En place'),
+                    onTap: definition == null
+                        ? null
+                        : () => _showInstallationDetails(context,
+                            controller.config, definition, environment),
+                    trailing: IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        onPressed: () =>
+                            controller.remove(alcove['id'] as String, index)),
+                  );
+                }
                 return ListTile(
-                  leading: const Icon(Icons.cabin_outlined),
-                  title: Text(ElevagePresentation.installationLabel(
-                      raw['definitionId'] as String)),
-                  subtitle: Text(stock is Map && stock.isNotEmpty
-                      ? stock.entries
-                          .where((entry) => entry.value != 0)
-                          .map((entry) =>
-                              '${ElevagePresentation.itemLabel(entry.key as String)} × ${entry.value}')
-                          .join(' · ')
-                      : 'En place'),
-                  onTap: definition == null
-                      ? null
-                      : () => _showInstallationDetails(
-                          context, controller.config, definition, environment),
-                  trailing: IconButton(
-                      icon: const Icon(Icons.remove_circle_outline),
-                      onPressed: () =>
-                          controller.remove(alcove['id'] as String, index)),
+                  leading: const Icon(Icons.add_circle_outline),
+                  title: Text('Emplacement ${index + 1} · libre'),
+                  onTap: () => _placeInstallation(
+                      context, controller, alcove['id'] as String, index),
                 );
-              }
-              return ListTile(
-                leading: const Icon(Icons.add_circle_outline),
-                title: Text('Emplacement ${index + 1} · libre'),
-                onTap: () => _placeInstallation(
-                    context, controller, alcove['id'] as String, index),
-              );
-            }),
-            FilledButton.tonalIcon(
-                onPressed: () => _openBiofabricator(
-                    context, controller, alcove['id'] as String),
-                icon: const Icon(Icons.precision_manufacturing_outlined),
-                label: const Text('Bio-fabricateur')),
-          ]),
-          _section(context, 'Explorer', <Widget>[
-            FilledButton.icon(
-                onPressed: () =>
-                    _foraging(context, controller, widget.individualId),
-                icon: const Icon(Icons.forest_outlined),
-                label: const Text('Explorer la Mini-Lisière')),
-            const SizedBox(height: 6),
-            FilledButton.tonalIcon(
-                onPressed: () => _sourcier(context, controller),
-                icon: const Icon(Icons.storefront_outlined),
-                label: const Text('Rencontrer le Sourcier')),
-          ]),
-          if (available)
-            FilledButton.icon(
-                onPressed: () =>
-                    _metamorphosis(context, controller, widget.individualId),
-                icon: const Icon(Icons.auto_awesome_outlined),
-                label: const Text('Accompagner la métamorphose')),
-        ],
+              }),
+              FilledButton.tonalIcon(
+                  onPressed: () => _openBiofabricator(
+                      context, controller, alcove['id'] as String),
+                  icon: const Icon(Icons.precision_manufacturing_outlined),
+                  label: const Text('Bio-fabricateur')),
+            ]),
+            _section(context, 'Explorer', <Widget>[
+              FilledButton.icon(
+                  onPressed: () =>
+                      _foraging(context, controller, widget.individualId),
+                  icon: const Icon(Icons.forest_outlined),
+                  label: const Text('Explorer la Mini-Lisière')),
+              const SizedBox(height: 6),
+              FilledButton.tonalIcon(
+                  onPressed: () => _sourcier(context, controller),
+                  icon: const Icon(Icons.storefront_outlined),
+                  label: const Text('Rencontrer le Sourcier')),
+            ]),
+            if (available)
+              FilledButton.icon(
+                  onPressed: () =>
+                      _metamorphosis(context, controller, widget.individualId),
+                  icon: const Icon(Icons.auto_awesome_outlined),
+                  label: const Text('Accompagner la métamorphose')),
+          ],
+        ),
       ),
     );
   }
@@ -1269,7 +1348,7 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
 
 PreferredSizeWidget _appBar(
         BuildContext context, ElevageController controller) =>
-    AppBar(title: const Text('P’TIPOTE Élevage'), actions: <Widget>[
+    AppBar(title: const Text('Expériences PTIPOTE'), actions: <Widget>[
       if (controller.config.devMode)
         IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -1277,6 +1356,65 @@ PreferredSizeWidget _appBar(
             onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => ElevageDashboardPage(controller: controller))))
     ]);
+
+Widget _elevageCanvas({required Widget child}) => DecoratedBox(
+      decoration: const BoxDecoration(
+        color: Color(0xFF111C18),
+        gradient: RadialGradient(
+          center: Alignment(.98, -.82),
+          radius: 1.14,
+          colors: <Color>[Color(0x663C3420), Color(0x00111C18)],
+          stops: <double>[0, 1],
+        ),
+      ),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 980),
+          child: child,
+        ),
+      ),
+    );
+
+class _Eyebrow extends StatelessWidget {
+  const _Eyebrow(this.label);
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFFE7C67F),
+          fontFamily: 'Avenir Next',
+          fontFamilyFallback: <String>['Helvetica Neue', 'Arial', 'sans-serif'],
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.25,
+        ),
+      );
+}
+
+class _ElevageMark extends StatelessWidget {
+  const _ElevageMark({required this.size});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFF9A9474)),
+        ),
+        child: Icon(
+          Icons.diamond_outlined,
+          size: size * .48,
+          color: const Color(0xFFEFD298),
+        ),
+      );
+}
+
 Widget _section(BuildContext context, String title, List<Widget> children) =>
     Card(
         child: Padding(
