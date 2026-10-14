@@ -12,6 +12,16 @@ class ElevageController extends ChangeNotifier {
   ElevageSave? state;
   bool loading = true;
   String? error;
+  String? forcedDayNightPhase;
+
+  String dayNightPhase(int now) =>
+      forcedDayNightPhase ?? ElevageDomain.dayNightPhase(now, config);
+
+  void forceDayNightPhase(String? phase) {
+    if (!config.devMode) return;
+    forcedDayNightPhase = phase;
+    notifyListeners();
+  }
 
   Future<void> load() async {
     loading = true;
@@ -78,9 +88,11 @@ class ElevageController extends ChangeNotifier {
     ElevageSceneItemOutcome? outcome;
     await _mutate((next) {
       outcome = ElevageDomain.sceneItemOutcome(
-          next, individualId, alcoveId, instanceId, _now, config);
+          next, individualId, alcoveId, instanceId, _now, config,
+          phaseOverride: forcedDayNightPhase);
       return ElevageDomain.interactSceneItem(
-          next, individualId, alcoveId, instanceId, _now, config);
+          next, individualId, alcoveId, instanceId, _now, config,
+          phaseOverride: forcedDayNightPhase);
     });
     return error == null ? outcome : null;
   }

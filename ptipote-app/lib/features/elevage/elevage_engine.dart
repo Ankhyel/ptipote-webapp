@@ -84,6 +84,20 @@ class ElevageSceneItemOutcome {
   final bool consumed;
 }
 
+/// Choix pur du prochain objet à examiner. La scène anime les étapes, puis
+/// appelle `interactSceneItem` une seule fois pour la mutation réelle.
+class ElevageAutonomousSceneDecision {
+  const ElevageAutonomousSceneDecision({
+    required this.instanceId,
+    required this.zoneId,
+    required this.outcome,
+  });
+
+  final String instanceId;
+  final String zoneId;
+  final ElevageSceneItemOutcome outcome;
+}
+
 Map<String, dynamic> _clone(Map<String, dynamic> value) =>
     Map<String, dynamic>.from(jsonDecode(jsonEncode(value)) as Map);
 
@@ -366,9 +380,10 @@ class ElevageDomain {
     final lastMeal = _individual(state, id)['care']['lastMealAt'] as int?;
     if (lastMeal == null) return 'SATIATED';
     final hours = (now - lastMeal) / const Duration(hours: 1).inMilliseconds;
-    if (hours >= config.hungerVeryHungryHours) return 'VERY_HUNGRY';
-    if (hours >= config.hungerHungryHours) return 'HUNGRY';
-    if (hours >= config.hungerNormalHours) return 'NORMAL';
+    final speed = _hungerSpeed(state, id, config);
+    if (hours >= config.hungerVeryHungryHours / speed) return 'VERY_HUNGRY';
+    if (hours >= config.hungerHungryHours / speed) return 'HUNGRY';
+    if (hours >= config.hungerNormalHours / speed) return 'NORMAL';
     return 'SATIATED';
   }
 
@@ -377,9 +392,21 @@ class ElevageDomain {
     final lastMeal = _individual(state, id)['care']['lastMealAt'] as int?;
     if (lastMeal == null) return 100;
     final elapsed = max(0, now - lastMeal);
-    final span =
-        config.hungerVeryHungryHours * const Duration(hours: 1).inMilliseconds;
+    final span = config.hungerVeryHungryHours /
+        _hungerSpeed(state, id, config) *
+        const Duration(hours: 1).inMilliseconds;
     return (100 - elapsed * 100 / span).round().clamp(0, 100);
+  }
+
+  /// Prototype accéléré pour que la boucle faim → objet posé → décision soit
+  /// observable en playtest ; TARGET conserve les durées de design lentes.
+  static double _hungerSpeed(
+      ElevageSave state, String id, ElevageConfig config) {
+    final stage = _individual(state, id)['lifecycle']['stage'] as String;
+    if (config.preset == ElevagePreset.prototype) {
+      return switch (stage) { 'BABY' => 5, 'INTERMEDIATE' => 3, _ => 1 };
+    }
+    return switch (stage) { 'BABY' => 1.5, 'INTERMEDIATE' => 1.2, _ => 1 };
   }
 
   static bool canOfferNormalFood(
@@ -447,7 +474,8 @@ class ElevageDomain {
       String alcoveId,
       String instanceId,
       int now,
-      ElevageConfig config) {
+      ElevageConfig config,
+      {String? phaseOverride}) {
     final placed = _sceneItems(state, alcoveId);
     final item =
         placed.where((entry) => entry['instanceId'] == instanceId).firstOrNull;
@@ -456,14 +484,15 @@ class ElevageDomain {
     final itemId = item['itemId'] as String;
     final effective = zoneEnvironment(
         state, alcoveId, item['zoneId'] as String, config,
-        now: now);
+        now: now, phaseOverride: phaseOverride);
     final favorite = individual['generatedProfile']['foodPreference'] as String;
 
     if (foodItems.contains(itemId) &&
         itemId == favorite &&
         (effective['humidity'] ?? 0) >= 2) {
       final target = _drierSceneZone(
-          state, alcoveId, item['zoneId'] as String, config, now);
+          state, alcoveId, item['zoneId'] as String, config, now,
+          phaseOverride: phaseOverride);
       if (target != null) {
         return ElevageSceneItemOutcome(
           behavior: 'MOVE_ITEM',
@@ -508,10 +537,34 @@ class ElevageDomain {
         behavior: 'OBSERVE', observationCount: 0);
   }
 
+  static ElevageAutonomousSceneDecision? nextAutonomousSceneDecision(
+      ElevageSave state,
+      String individualId,
+      String alcoveId,
+      int now,
+      ElevageConfig config,
+      {String? lastBehavior,
+      String? phaseOverride}) {
+    for (final item in _sceneItems(state, alcoveId)) {
+      final outcome = sceneItemOutcome(state, individualId, alcoveId,
+          item['instanceId'] as String, now, config,
+          phaseOverride: phaseOverride);
+      if (lastBehavior != null && outcome.behavior == lastBehavior) continue;
+      return ElevageAutonomousSceneDecision(
+        instanceId: item['instanceId'] as String,
+        zoneId: item['zoneId'] as String,
+        outcome: outcome,
+      );
+    }
+    return null;
+  }
+
   static ElevageSave interactSceneItem(ElevageSave source, String individualId,
-      String alcoveId, String instanceId, int now, ElevageConfig config) {
+      String alcoveId, String instanceId, int now, ElevageConfig config,
+      {String? phaseOverride}) {
     final outcome = sceneItemOutcome(
-        source, individualId, alcoveId, instanceId, now, config);
+        source, individualId, alcoveId, instanceId, now, config,
+        phaseOverride: phaseOverride);
     final state = source.copy();
     final placed = _sceneItems(state, alcoveId);
     final index =
@@ -556,14 +609,12 @@ class ElevageDomain {
 
   static Map<String, int> zoneEnvironment(
       ElevageSave state, String alcoveId, String zoneId, ElevageConfig config,
-      {int? now}) {
+      {int? now, String? phaseOverride}) {
     final zone = config.sceneZone(zoneId);
     if (zone == null) throw StateError('Zone invalide.');
-    final nightOffset =
-        dayNightPhase(now ?? DateTime.now().millisecondsSinceEpoch, config) ==
-                'NIGHT'
-            ? (zoneId == 'ZONE_4' ? -1 : -3)
-            : 0;
+    final phase = phaseOverride ??
+        dayNightPhase(now ?? DateTime.now().millisecondsSinceEpoch, config);
+    final nightOffset = phase == 'NIGHT' ? (zoneId == 'ZONE_4' ? -1 : -3) : 0;
     final result = <String, int>{
       'light': zone.light + nightOffset,
       'temperature': zone.temperature,
@@ -592,6 +643,23 @@ class ElevageDomain {
     final cycleMs =
         config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
     return now % cycleMs < dayMs ? 'DAY' : 'NIGHT';
+  }
+
+  static int dayNightRemainingMs(int now, ElevageConfig config,
+      {String? phaseOverride}) {
+    final phase = phaseOverride ?? dayNightPhase(now, config);
+    if (phaseOverride != null) {
+      return (phase == 'DAY'
+              ? config.dayDurationHours
+              : config.nightDurationHours) *
+          const Duration(hours: 1).inMilliseconds;
+    }
+    final dayMs =
+        config.dayDurationHours * const Duration(hours: 1).inMilliseconds;
+    final cycleMs =
+        config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
+    final position = now % cycleMs;
+    return phase == 'DAY' ? dayMs - position : cycleMs - position;
   }
 
   static ElevageSave observeShade(
@@ -1040,7 +1108,8 @@ class ElevageDomain {
   }
 
   static String? _drierSceneZone(ElevageSave state, String alcoveId,
-      String currentZoneId, ElevageConfig config, int now) {
+      String currentZoneId, ElevageConfig config, int now,
+      {String? phaseOverride}) {
     final occupied = _sceneItems(state, alcoveId)
         .where((entry) => entry['zoneId'] != currentZoneId)
         .map((entry) => entry['zoneId'] as String)
@@ -1050,9 +1119,9 @@ class ElevageDomain {
             (zone) => zone.id != currentZoneId && !occupied.contains(zone.id))
         .toList()
       ..sort((left, right) => zoneEnvironment(state, alcoveId, left.id, config,
-              now: now)['humidity']!
+              now: now, phaseOverride: phaseOverride)['humidity']!
           .compareTo(zoneEnvironment(state, alcoveId, right.id, config,
-              now: now)['humidity']!));
+              now: now, phaseOverride: phaseOverride)['humidity']!));
     return candidates.isEmpty ? null : candidates.first.id;
   }
 

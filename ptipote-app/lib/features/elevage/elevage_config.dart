@@ -131,6 +131,11 @@ class ElevageConfig {
     required this.nightDurationHours,
     required this.observationTextThreshold,
     required this.observationEvidenceCooldownMinutes,
+    required this.autonomousReactionIntervalSeconds,
+    required this.objectReactionDelayMs,
+    required this.idlePauseSeconds,
+    required this.normalMoveDurationMs,
+    required this.runMoveDurationMs,
     required this.recipes,
   });
 
@@ -162,6 +167,11 @@ class ElevageConfig {
   final int nightDurationHours;
   final int observationTextThreshold;
   final int observationEvidenceCooldownMinutes;
+  final int autonomousReactionIntervalSeconds;
+  final int objectReactionDelayMs;
+  final int idlePauseSeconds;
+  final int normalMoveDurationMs;
+  final int runMoveDurationMs;
   final List<ElevageRecipe> recipes;
 
   int get babyMinimumHours => preset == ElevagePreset.prototype ? 24 : 48;
@@ -328,6 +338,11 @@ class ElevageConfig {
     int? nightDurationHours,
     int? observationTextThreshold,
     int? observationEvidenceCooldownMinutes,
+    int? autonomousReactionIntervalSeconds,
+    int? objectReactionDelayMs,
+    int? idlePauseSeconds,
+    int? normalMoveDurationMs,
+    int? runMoveDurationMs,
     List<ElevageRecipe>? recipes,
   }) =>
       ElevageConfig(
@@ -367,6 +382,13 @@ class ElevageConfig {
         observationEvidenceCooldownMinutes:
             observationEvidenceCooldownMinutes ??
                 this.observationEvidenceCooldownMinutes,
+        autonomousReactionIntervalSeconds: autonomousReactionIntervalSeconds ??
+            this.autonomousReactionIntervalSeconds,
+        objectReactionDelayMs:
+            objectReactionDelayMs ?? this.objectReactionDelayMs,
+        idlePauseSeconds: idlePauseSeconds ?? this.idlePauseSeconds,
+        normalMoveDurationMs: normalMoveDurationMs ?? this.normalMoveDurationMs,
+        runMoveDurationMs: runMoveDurationMs ?? this.runMoveDurationMs,
         recipes: recipes ?? this.recipes,
       );
 
@@ -401,6 +423,11 @@ class ElevageConfig {
         'observationTextThreshold': observationTextThreshold,
         'observationEvidenceCooldownMinutes':
             observationEvidenceCooldownMinutes,
+        'autonomousReactionIntervalSeconds': autonomousReactionIntervalSeconds,
+        'objectReactionDelayMs': objectReactionDelayMs,
+        'idlePauseSeconds': idlePauseSeconds,
+        'normalMoveDurationMs': normalMoveDurationMs,
+        'runMoveDurationMs': runMoveDurationMs,
         'recipes': recipes.map((recipe) => recipe.toJson()).toList(),
       };
 
@@ -456,6 +483,17 @@ class ElevageConfig {
       observationEvidenceCooldownMinutes: _nonNegative(
           json['observationEvidenceCooldownMinutes'],
           base.observationEvidenceCooldownMinutes),
+      autonomousReactionIntervalSeconds: _positive(
+          json['autonomousReactionIntervalSeconds'],
+          base.autonomousReactionIntervalSeconds),
+      objectReactionDelayMs:
+          _positive(json['objectReactionDelayMs'], base.objectReactionDelayMs),
+      idlePauseSeconds:
+          _positive(json['idlePauseSeconds'], base.idlePauseSeconds),
+      normalMoveDurationMs:
+          _positive(json['normalMoveDurationMs'], base.normalMoveDurationMs),
+      runMoveDurationMs:
+          _positive(json['runMoveDurationMs'], base.runMoveDurationMs),
       recipes: (json['recipes'] as List?)
               ?.whereType<Map>()
               .map((raw) =>
@@ -480,6 +518,11 @@ void validateElevageConfig(ElevageConfig config) {
       config.hungerHungryHours > config.hungerVeryHungryHours ||
       config.suspectedThreshold > config.confirmedThreshold ||
       config.observationTextThreshold > config.confirmedThreshold ||
+      config.autonomousReactionIntervalSeconds <= 0 ||
+      config.objectReactionDelayMs <= 0 ||
+      config.idlePauseSeconds <= 0 ||
+      config.normalMoveDurationMs <= 0 ||
+      config.runMoveDurationMs <= 0 ||
       config.recipes.map((recipe) => recipe.id).toSet().length !=
           config.recipes.length) {
     throw const FormatException('Configuration Élevage invalide.');
@@ -515,6 +558,11 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
   nightDurationHours: 3,
   observationTextThreshold: 2,
   observationEvidenceCooldownMinutes: 10,
+  autonomousReactionIntervalSeconds: 60,
+  objectReactionDelayMs: 700,
+  idlePauseSeconds: 45,
+  normalMoveDurationMs: 1600,
+  runMoveDurationMs: 400,
   recipes: <ElevageRecipe>[
     ElevageRecipe(
         id: 'ABRI_FIBREUX',

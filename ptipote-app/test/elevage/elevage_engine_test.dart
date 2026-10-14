@@ -242,7 +242,7 @@ void main() {
         ElevageDomain.satietyPercent(
             state,
             id,
-            now + const Duration(hours: 120).inMilliseconds,
+            now + const Duration(hours: 24).inMilliseconds,
             defaultElevageConfig),
         50);
     expect(
@@ -477,5 +477,133 @@ void main() {
     state = ElevageDomain.observeShade(state, id, now + 5, config);
     expect(entry()['meaningfulEvidenceCount'], evidence);
     expect(entry()['rawBehaviorCount'], 5);
+  });
+
+  test('le preset Prototype accélère la faim Bébé par cinq', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final favorite = (state.data['individuals'] as Map)[id]['generatedProfile']
+        ['foodPreference'] as String;
+    (state.data['inventory']['special'] as Map)[favorite] = 1;
+    state =
+        ElevageDomain.offerFood(state, id, favorite, now, defaultElevageConfig);
+    expect(
+        ElevageDomain.hunger(
+            state,
+            id,
+            now + const Duration(hours: 34).inMilliseconds,
+            defaultElevageConfig),
+        'HUNGRY');
+    expect(
+        ElevageDomain.hunger(
+            state,
+            id,
+            now + const Duration(hours: 48).inMilliseconds,
+            defaultElevageConfig),
+        'VERY_HUNGRY');
+    final target = defaultElevageConfig.copyWith(preset: ElevagePreset.target);
+    expect(
+        ElevageDomain.satietyPercent(
+            state, id, now + const Duration(hours: 24).inMilliseconds, target),
+        greaterThan(50));
+  });
+
+  test('un objet posé fournit une décision autonome sans bouton manuel', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    ((state.data['individuals'] as Map)[id]['generatedProfile']
+        as Map)['foodPreference'] = 'ROOT';
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'ROOT', 'ZONE_2', now + 1, defaultElevageConfig);
+    final decision = ElevageDomain.nextAutonomousSceneDecision(
+        state, id, 'alcove-1', now + 2, defaultElevageConfig);
+    expect(decision, isNotNull);
+    expect(decision!.zoneId, 'ZONE_2');
+    expect(decision.outcome.consumed, isTrue);
+    state = ElevageDomain.interactSceneItem(state, id, 'alcove-1',
+        decision.instanceId, now + 2, defaultElevageConfig);
+    expect(ElevageDomain.sceneItems(state, 'alcove-1'), isEmpty);
+  });
+
+  test('une forte satiété fait inspecter puis ignorer un repas normal', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    ((state.data['individuals'] as Map)[id]['care'] as Map)['lastMealAt'] = now;
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'ROOT', 'ZONE_1', now + 1, defaultElevageConfig);
+    final item = ElevageDomain.sceneItems(state, 'alcove-1').single;
+    final outcome = ElevageDomain.sceneItemOutcome(state, id, 'alcove-1',
+        item['instanceId'] as String, now + 2, defaultElevageConfig);
+    expect(outcome.behavior, 'OBSERVE');
+    expect(outcome.consumed, isFalse);
+  });
+
+  test('décision autonome varie ses réactions et atteint Z1 ou Z4', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'ROOT', 'ZONE_1', now + 1, defaultElevageConfig);
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'LEAF', 'ZONE_4', now + 2, defaultElevageConfig);
+    final first = ElevageDomain.nextAutonomousSceneDecision(
+        state, id, 'alcove-1', now + 3, defaultElevageConfig);
+    expect(<String>['ZONE_1', 'ZONE_4'], contains(first!.zoneId));
+    final second = ElevageDomain.nextAutonomousSceneDecision(
+        state, id, 'alcove-1', now + 3, defaultElevageConfig,
+        lastBehavior: first.outcome.behavior);
+    expect(second?.outcome.behavior, isNot(first.outcome.behavior));
+  });
+
+  test('phase forcée et installation restent locales à leur zone', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'BASSIN',
+      'zoneId': 'ZONE_2',
+    };
+    final day = ElevageDomain.zoneEnvironment(
+        state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+        now: now, phaseOverride: 'DAY');
+    final night = ElevageDomain.zoneEnvironment(
+        state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+        now: now, phaseOverride: 'NIGHT');
+    final other = ElevageDomain.zoneEnvironment(
+        state, 'alcove-1', 'ZONE_3', defaultElevageConfig,
+        now: now, phaseOverride: 'DAY');
+    expect(day['humidity'], 2);
+    expect(other['humidity'], 2); // Z3 de base, sans bassin.
+    expect(night['light'], lessThan(day['light']!));
+    expect(
+        ElevageDomain.dayNightRemainingMs(now, defaultElevageConfig,
+            phaseOverride: 'DAY'),
+        const Duration(hours: 3).inMilliseconds);
   });
 }

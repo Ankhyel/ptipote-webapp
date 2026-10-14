@@ -685,3 +685,43 @@ L’Eau n’est pas une ressource globale du Camp.
   consommé. `MOVE_ITEM` produit d’abord un comportement, puis une observation
   d’évitement de l’humidité à répétition. Le joueur conserve la récolte et la
   pose au stade Bébé ; les étapes ultérieures d’autonomie restent inchangées.
+
+## P’TIPOTE Élevage — Lot 16 : comportement autonome et lecture de scène
+
+- **Cycle autonome d’objet.** Un objet posé ne demande plus au joueur de
+  cliquer « Observer ». La scène sélectionne une décision pure puis rend, dans
+  cet ordre, `NOTICE_ITEM`, `APPROACH_ITEM`, `INSPECT_ITEM`, `THINK` et la
+  décision (`EAT`, `STRUCTURAL_ABSORB`, `MOVE_ITEM`, `REJECT` ou `IGNORE`).
+  Seule la décision finale mute le domaine ; les étapes intermédiaires restent
+  une présentation temporaire. L’ancien déclencheur est conservé uniquement
+  comme outil QA quand `devMode` est actif.
+- **Cadence et variété.** Une réaction autonome est limitée par
+  `autonomousReactionIntervalSeconds` (V0 : 60 s). Une réaction identique ne
+  peut pas être choisie deux fois de suite lorsqu’une alternative existe. Les
+  actions directes du joueur restent immédiates. Les P’TIPOTE font des pauses
+  décoratives de `idlePauseSeconds` (V0 : 45 s) ; ils ne parcourent donc plus
+  l’Alcôve toutes les quelques secondes.
+- **Mouvement et actions.** Les positions sont les centres exacts de Z1 à Z4,
+  permettant d’atteindre les objets aux extrêmes. Le mouvement normal est
+  volontairement lent (`normalMoveDurationMs`, V0 : 1600 ms) ; fuite et
+  déplacement urgent utilisent `runMoveDurationMs` (V0 : 400 ms). Les pictos
+  provisoires rendent notamment marche, approche, inspection, réflexion,
+  repas, absorption, refus, inconfort, fuite, suivi, câlin, repos et
+  métamorphose sans introduire de sprites définitifs.
+- **État et habitudes.** Les préférences confirmées restent visibles dans les
+  habitudes du P’TIPOTE, mais ne produisent plus de notification autonome
+  répétitive. Les observations textuelles continuent de prioriser les faits
+  non résolus. Satiété, tempérament et, à partir d’Intermédiaire, structure
+  ferrique sont regroupés dans le bloc **État**.
+- **Faim de playtest.** Dans le preset `PROTOTYPE`, la satiété d’un Bébé se
+  vide cinq fois plus vite que la cadence historique ; Intermédiaire est moins
+  rapide et Mature reste lent. Le preset `TARGET` n’applique pas ce facteur de
+  playtest. Cette vitesse modifie uniquement l’évaluation dérivée des
+  timestamps, jamais les données de repas elles-mêmes.
+- **Jour/nuit QA.** Le cycle reste de six heures (3 h Jour, 3 h Nuit) et la
+  scène affiche l’état ainsi que le temps restant. En `devMode`, Forcer Jour,
+  Forcer Nuit et Cycle réel sont des overrides de session : ils ne modifient
+  pas la configuration ni les règles TARGET persistées. Une installation est
+  toujours attachée à sa zone Z1–Z4 et n’a aucune diffusion V0 vers les autres
+  zones. La palette des quatre bandes emploie désormais une teinte commune,
+  déclinée uniquement par niveau de lumière.
