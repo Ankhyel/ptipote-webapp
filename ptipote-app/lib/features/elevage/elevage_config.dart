@@ -296,6 +296,23 @@ class ElevageConfig {
         ElevageSceneZone(id: 'ZONE_4', label: 'Bord éclairé', light: 1),
       ];
 
+  /// Jour : 2 / 3 / 3 / 4 sur l’échelle joueur 1–5. La nuit reste discrète
+  /// et centralisée : Z1–Z3 sombrent, Z4 garde une lumière résiduelle.
+  int nightLightOffset(String zoneId) => switch (zoneId) {
+        'ZONE_1' || 'ZONE_2' || 'ZONE_3' => -3,
+        'ZONE_4' => -1,
+        _ => 0,
+      };
+
+  /// Seuils de confort lumineux du profil Résonance V0, consultés par le
+  /// domaine ; ils ne sont jamais recopiés dans l’interface.
+  int resonanceLightComfort(int lightScale) => switch (lightScale) {
+        1 || 2 => 1,
+        3 => 0,
+        4 => -1,
+        _ => -2,
+      };
+
   ElevageInstallationDefinition? installation(String id) {
     for (final definition in installations) {
       if (definition.id == id) return definition;

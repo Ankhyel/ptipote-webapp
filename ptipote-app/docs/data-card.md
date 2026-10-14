@@ -725,3 +725,36 @@ L’Eau n’est pas une ressource globale du Camp.
   toujours attachée à sa zone Z1–Z4 et n’a aucune diffusion V0 vers les autres
   zones. La palette des quatre bandes emploie désormais une teinte commune,
   déclinée uniquement par niveau de lumière.
+
+## P’TIPOTE Élevage — Lot 17 : lecture spatiale et séquence comportementale
+
+- **Migration QA d’inventaire.** `qaInventoryResetV17` est une migration locale
+  et one-shot de la sauvegarde Élevage : les anciennes réserves de playtest
+  sont remplacées une seule fois par le starter normal `ROOT ×1`, `LEAF ×1`.
+  Aucun inventaire, profil ou état Zone 0 n’est lu ou modifié. Les resets QA
+  existants créent déjà ce même starter minimal ; les outils dev restent
+  volontaires et ne sont jamais injectés par la migration.
+- **Lumière discrète et micro-zones.** Le jour est défini dans la configuration
+  par Z1–Z4 : **2/5, 3/5, 3/5, 4/5**. La nuit applique des offsets centralisés :
+  Z1–Z3 deviennent sombres et Z4 conserve une lumière résiduelle. Les quatre
+  bandes partagent une teinte de base ; seule leur luminosité varie. Chaque
+  slot d’installation est rendu dans sa propre zone Z1–Z4 et les effets restent
+  strictement locaux, sans diffusion V0.
+- **HUD environnemental.** Le HUD supérieur est la moyenne arithmétique des
+  quatre zones, jamais la zone courante. Il ouvre le détail compact de Z1 à Z4.
+  Le bloc **État** affiche séparément les valeurs de la zone actuellement
+  occupée par le P’TIPOTE ; les décisions biologiques restent locales.
+- **Confort Résonance.** Les seuils configurés V0 sont : lumière 1–2
+  confortable, 3 neutre, 4 inconfortable, 5 fortement inconfortable. Ils
+  produisent une lecture visuelle locale (sans fuir systématiquement une zone
+  simplement imparfaite) et préparent les observations répétées. Une hypothèse
+  de lumière peut proposer la piste « Essayez de lui proposer davantage
+  d’ombre » ; une découverte confirmée expose alors la plage lisible
+  1–2/5, neutre 3/5, inconfort 4–5/5.
+- **File d’actions de scène.** Les événements `NEW_ITEM`, `FOLLOW` et `CUDDLE`
+  sont mis en file. Une action atomique en cours termine avant la suivante :
+  approche, inspection et réflexion se déroulent dans la zone de l’objet, puis
+  finissent obligatoirement par un état lisible (`EAT`, `STRUCTURAL_ABSORB`,
+  `MOVE_ITEM`, `REJECT` ou `IGNORE`). `THINK` n’est jamais un résultat final.
+  Le Fer conclut notamment par l’icône d’absorption structurelle et la jauge
+  ferrique garde sa source de vérité métier existante.

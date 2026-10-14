@@ -606,4 +606,58 @@ void main() {
             phaseOverride: 'DAY'),
         const Duration(hours: 3).inMilliseconds);
   });
+
+  test('migration QA V17 nettoie une ancienne save une seule fois', () {
+    final legacy = ElevageSave.initial(defaultElevageConfig, now: now).toJson()
+      ..remove('qaInventoryResetV17');
+    legacy['inventory'] = <String, dynamic>{
+      'generic': <String, int>{'organic': 99, 'mineral': 88},
+      'special': <String, int>{'ROOT': 42, 'IRON': 9, 'SEED': 3},
+      'bioPiles': 17,
+    };
+    final cleaned = ElevageSave.fromJson(legacy);
+    final inventory = cleaned.data['inventory'] as Map;
+    expect(inventory['generic'], <String, int>{'organic': 0, 'mineral': 0});
+    expect(inventory['special'], <String, int>{'ROOT': 1, 'LEAF': 1});
+    expect(inventory['bioPiles'], 0);
+    expect(cleaned.data['qaInventoryResetV17'], isTrue);
+
+    final persisted = cleaned.toJson();
+    (persisted['inventory'] as Map)['special']['ROOT'] = 3;
+    final reloaded = ElevageSave.fromJson(persisted);
+    expect((reloaded.data['inventory'] as Map)['special']['ROOT'], 3);
+  });
+
+  test('zones jour et HUD moyen utilisent les quatre valeurs discrètes', () {
+    final state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final scales = <int>[];
+    for (final zone in defaultElevageConfig.sceneZones) {
+      final environment = ElevageDomain.zoneEnvironment(
+          state, 'alcove-1', zone.id, defaultElevageConfig,
+          now: now, phaseOverride: 'DAY');
+      scales.add(ElevagePresentation.environmentScale(environment['light']!));
+    }
+    expect(scales, <int>[2, 3, 3, 4]);
+    final average = ElevageDomain.averageZoneEnvironment(
+        state, 'alcove-1', defaultElevageConfig,
+        now: now, phaseOverride: 'DAY');
+    expect(ElevagePresentation.environmentScale(average['light']!), 3);
+  });
+
+  test('confort lumineux Résonance reste local et dérivé de la config', () {
+    expect(defaultElevageConfig.resonanceLightComfort(2), 1);
+    expect(defaultElevageConfig.resonanceLightComfort(3), 0);
+    expect(defaultElevageConfig.resonanceLightComfort(4), -1);
+    expect(defaultElevageConfig.resonanceLightComfort(5), -2);
+    expect(
+        ElevageDomain.localComfort(
+            <String, int>{'light': -1, 'temperature': 0, 'humidity': 0},
+            defaultElevageConfig),
+        'CONTENT');
+    expect(
+        ElevageDomain.localComfort(
+            <String, int>{'light': 1, 'temperature': 0, 'humidity': 0},
+            defaultElevageConfig),
+        'DISCOMFORT');
+  });
 }

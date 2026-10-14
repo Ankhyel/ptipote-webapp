@@ -150,11 +150,19 @@ class ElevagePresentation {
         _ => '$name semble avoir une préférence à explorer.',
       };
 
+  static String? hypothesisAdvice(Map observation) =>
+      switch (observation['type']) {
+        'LIGHT_SHADE' => 'Essayez de lui proposer davantage d’ombre.',
+        'HUMIDITY_AVOIDANCE' => 'Essayez une zone un peu moins humide.',
+        _ => null,
+      };
+
   static String confirmedText(Map observation) => switch (observation['type']) {
         'FOOD_FAVORITE' =>
           'Préférence alimentaire : ${itemLabel(observation['relatedItemId'] as String)}',
         'STRUCTURAL_REACTION' => 'Matériau structurel principal : Fer',
-        'LIGHT_SHADE' => 'Préférence lumineuse : faible lumière',
+        'LIGHT_SHADE' =>
+          'Confort lumineux : 1–2/5 · neutre 3/5 · inconfort 4–5/5',
         'HUMIDITY_AVOIDANCE' =>
           'Sensibilité environnementale : humidité élevée',
         _ => 'Découverte confirmée',

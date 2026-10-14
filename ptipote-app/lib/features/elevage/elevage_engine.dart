@@ -41,6 +41,9 @@ class ElevageSave {
       'memoryEvents': <String, dynamic>{},
       'coRearingReturnLedger': <String, dynamic>{},
       'pendingNotifications': <dynamic>[],
+      // Marqueur déjà appliqué aux nouvelles parties : les anciennes saves
+      // reçoivent le même starter lors de leur première ouverture Lot 17.
+      'qaInventoryResetV17': true,
     });
   }
 
@@ -55,6 +58,17 @@ class ElevageSave {
     normalized.putIfAbsent('discoveredItemIds', () => <String>[]);
     normalized.putIfAbsent('coRearingReturnLedger', () => <String, dynamic>{});
     normalized.putIfAbsent('pendingNotifications', () => <dynamic>[]);
+    // Migration QA one-shot, strictement limitée à la sauvegarde Élevage.
+    // Elle enlève les stocks de test historiques sans toucher Zone 0 ni la
+    // configuration locale, puis restitue le starter normal minimal.
+    if (normalized['qaInventoryResetV17'] != true) {
+      normalized['inventory'] = <String, dynamic>{
+        'generic': <String, int>{'organic': 0, 'mineral': 0},
+        'special': <String, int>{'ROOT': 1, 'LEAF': 1},
+        'bioPiles': 0,
+      };
+      normalized['qaInventoryResetV17'] = true;
+    }
     final individuals = normalized['individuals'] as Map?;
     individuals?.forEach((_, raw) {
       if (raw is Map) {
@@ -614,7 +628,7 @@ class ElevageDomain {
     if (zone == null) throw StateError('Zone invalide.');
     final phase = phaseOverride ??
         dayNightPhase(now ?? DateTime.now().millisecondsSinceEpoch, config);
-    final nightOffset = phase == 'NIGHT' ? (zoneId == 'ZONE_4' ? -1 : -3) : 0;
+    final nightOffset = phase == 'NIGHT' ? config.nightLightOffset(zoneId) : 0;
     final result = <String, int>{
       'light': zone.light + nightOffset,
       'temperature': zone.temperature,
@@ -635,6 +649,40 @@ class ElevageDomain {
       result['humidity'] = result['humidity']! + definition.humidity;
     }
     return result;
+  }
+
+  /// HUD global : moyenne des quatre micro-environnements, jamais la zone
+  /// actuelle du P’TIPOTE. Les décisions biologiques restent locales.
+  static Map<String, int> averageZoneEnvironment(
+      ElevageSave state, String alcoveId, ElevageConfig config,
+      {required int now, String? phaseOverride}) {
+    final result = <String, int>{};
+    for (final axis in <String>['light', 'temperature', 'humidity']) {
+      final total = config.sceneZones.fold<int>(
+          0,
+          (sum, zone) =>
+              sum +
+              zoneEnvironment(state, alcoveId, zone.id, config,
+                  now: now, phaseOverride: phaseOverride)[axis]!);
+      result[axis] = (total / config.sceneZones.length).round();
+    }
+    return result;
+  }
+
+  /// V0 Résonance : le confort provient de la zone locale. Il prépare les
+  /// observations sans devenir une seconde source de préférence persistée.
+  static String localComfort(
+      Map<String, int> environment, ElevageConfig config) {
+    final light = ((environment['light'] ?? 0) + 3).clamp(1, 5);
+    final lightScore = config.resonanceLightComfort(light);
+    final humidity = environment['humidity'] ?? 0;
+    final temperature = environment['temperature'] ?? 0;
+    final total =
+        lightScore + (humidity >= 2 ? -1 : 0) + (temperature >= 2 ? -1 : 0);
+    if (total <= -3) return 'STRONG_DISCOMFORT';
+    if (total < 0) return 'DISCOMFORT';
+    if (total > 0) return 'CONTENT';
+    return 'NEUTRAL';
   }
 
   static String dayNightPhase(int now, ElevageConfig config) {
