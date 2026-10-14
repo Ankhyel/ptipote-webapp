@@ -260,7 +260,7 @@ class ElevageConfig {
           description: 'Un refuge profond, sombre et frais, mais plus humide.',
           light: -2,
           temperature: -2,
-          humidity: 2,
+          humidity: 1,
         ),
         const ElevageInstallationDefinition(
           id: 'VENTILATION',
@@ -299,8 +299,9 @@ class ElevageConfig {
   /// Jour : 2 / 3 / 3 / 4 sur l’échelle joueur 1–5. La nuit reste discrète
   /// et centralisée : Z1–Z3 sombrent, Z4 garde une lumière résiduelle.
   int nightLightOffset(String zoneId) => switch (zoneId) {
-        'ZONE_1' || 'ZONE_2' || 'ZONE_3' => -3,
-        'ZONE_4' => -1,
+        // Les bases jour sont 2 / 3 / 3 / 4 : la nuit canonique est donc
+        // exactement 1 / 2 / 2 / 3, soit -1 dans chaque zone.
+        'ZONE_1' || 'ZONE_2' || 'ZONE_3' || 'ZONE_4' => -1,
         _ => 0,
       };
 
@@ -312,6 +313,18 @@ class ElevageConfig {
         4 => -1,
         _ => -2,
       };
+
+  String resonanceAxisComfort(String axis, int scale) {
+    // Résonance V0 préfère froid, sec et peu lumineux. Les trois axes
+    // utilisent la même échelle lisible jusqu’à l’arrivée d’autres Natures.
+    return switch (scale) {
+      1 => 'IDEAL',
+      2 => 'GOOD',
+      3 => 'NEUTRAL',
+      4 => 'BAD',
+      _ => 'EXTREME',
+    };
+  }
 
   ElevageInstallationDefinition? installation(String id) {
     for (final definition in installations) {

@@ -75,9 +75,16 @@ class ElevageController extends ChangeNotifier {
       (current) => ElevageDomain.offerFood(current, id, item, _now, config));
   Future<void> offerStructural(String id, String item) => _mutate((current) =>
       ElevageDomain.offerStructural(current, id, item, _now, config));
-  Future<void> placeSceneItem(String alcoveId, String item, String zoneId) =>
-      _mutate((current) => ElevageDomain.placeSceneItem(
-          current, alcoveId, item, zoneId, _now, config));
+  Future<String?> placeSceneItem(
+      String alcoveId, String item, String zoneId) async {
+    await _mutate((current) => ElevageDomain.placeSceneItem(
+        current, alcoveId, item, zoneId, _now, config));
+    if (error != null || state == null) return null;
+    return ElevageDomain.sceneItems(state!, alcoveId)
+        .where((entry) => entry['zoneId'] == zoneId)
+        .singleOrNull?['instanceId'] as String?;
+  }
+
   Future<void> recoverSceneItem(String alcoveId, String instanceId) =>
       _mutate((current) =>
           ElevageDomain.recoverSceneItem(current, alcoveId, instanceId));
@@ -101,8 +108,9 @@ class ElevageController extends ChangeNotifier {
       (current) => ElevageDomain.observeShade(current, id, _now, config));
   Future<void> follow(String id, String zoneId) => _mutate(
       (current) => ElevageDomain.follow(current, id, zoneId, _now, config));
-  Future<void> cuddle(String id) =>
-      _mutate((current) => ElevageDomain.cuddle(current, id, _now, config));
+  Future<void> cuddle(String id, {int durationMs = 1000}) =>
+      _mutate((current) => ElevageDomain.cuddle(current, id, _now, config,
+          durationMs: durationMs));
   Future<void> addDevInventory() => _mutate(ElevageDomain.addDevInventory);
   Future<void> startForaging(String id, String biome) => _mutate((current) =>
       ElevageDomain.startForaging(current, id, biome, _now, config));

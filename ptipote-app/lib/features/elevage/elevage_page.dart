@@ -221,19 +221,22 @@ class _IndividualPage extends StatefulWidget {
 enum _SceneEventType { autonomous, follow, cuddle }
 
 class _SceneEvent {
-  const _SceneEvent.autonomous({this.direct = false})
+  const _SceneEvent.autonomous({this.direct = false, this.targetInstanceId})
       : type = _SceneEventType.autonomous,
         zoneId = null;
   const _SceneEvent.follow(this.zoneId)
       : type = _SceneEventType.follow,
+        targetInstanceId = null,
         direct = true;
   const _SceneEvent.cuddle()
       : type = _SceneEventType.cuddle,
         zoneId = null,
+        targetInstanceId = null,
         direct = true;
 
   final _SceneEventType type;
   final String? zoneId;
+  final String? targetInstanceId;
   final bool direct;
 }
 
@@ -250,6 +253,10 @@ class _IndividualPageState extends State<_IndividualPage> {
   String _sceneAction = 'IDLE';
   String _ptipoteZoneId = 'ZONE_2';
   final List<_SceneEvent> _actionQueue = <_SceneEvent>[];
+  Timer? _followHoldTimer;
+  String? _followHoldZoneId;
+  bool _followFingerHeld = false;
+  int? _followHoldStartedAt;
 
   @override
   void initState() {
@@ -288,7 +295,34 @@ class _IndividualPageState extends State<_IndividualPage> {
     _feedbackTimer?.cancel();
     _autonomousTimer?.cancel();
     _idleTimer?.cancel();
+    _followHoldTimer?.cancel();
     super.dispose();
+  }
+
+  void _startFollowHold(String zoneId) {
+    if (_pendingPlacementItem != null) return;
+    _followHoldTimer?.cancel();
+    setState(() {
+      _followFingerHeld = true;
+      _followHoldZoneId = zoneId;
+      _followHoldStartedAt = DateTime.now().millisecondsSinceEpoch;
+    });
+    _followHoldTimer = Timer(const Duration(seconds: 3), () {
+      if (_followFingerHeld && _followHoldZoneId == zoneId) {
+        _followZone(zoneId);
+      }
+    });
+  }
+
+  void _endFollowHold() {
+    _followHoldTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _followFingerHeld = false;
+        _followHoldZoneId = null;
+        _followHoldStartedAt = null;
+      });
+    }
   }
 
   void _setSceneAction(String action, {String? zoneId}) {
@@ -311,7 +345,9 @@ class _IndividualPageState extends State<_IndividualPage> {
     if (!mounted || _autonomousInFlight || _actionQueue.isEmpty) return;
     final event = _actionQueue.removeAt(0);
     if (event.type == _SceneEventType.autonomous) {
-      await _executeAutonomousCycle(playerTriggered: event.direct);
+      await _executeAutonomousCycle(
+          playerTriggered: event.direct,
+          targetInstanceId: event.targetInstanceId);
     } else if (event.type == _SceneEventType.follow) {
       await _executeFollow(event.zoneId!);
     } else {
@@ -320,7 +356,8 @@ class _IndividualPageState extends State<_IndividualPage> {
     if (mounted) _drainActionQueue();
   }
 
-  Future<void> _executeAutonomousCycle({bool playerTriggered = false}) async {
+  Future<void> _executeAutonomousCycle(
+      {bool playerTriggered = false, String? targetInstanceId}) async {
     if (!mounted || _autonomousInFlight) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final config = widget.controller.config;
@@ -335,10 +372,12 @@ class _IndividualPageState extends State<_IndividualPage> {
         (state.data['individuals'] as Map)[widget.individualId] as Map?;
     if (individual == null) return;
     final alcoveId = individual['alcoveId'] as String;
-    final decision = ElevageDomain.nextAutonomousSceneDecision(
-        state, widget.individualId, alcoveId, now, config,
-        lastBehavior: playerTriggered ? null : _lastAutonomousBehavior,
-        phaseOverride: widget.controller.forcedDayNightPhase);
+    final decision = targetInstanceId == null
+        ? ElevageDomain.nextAutonomousSceneDecision(
+            state, widget.individualId, alcoveId, now, config,
+            lastBehavior: playerTriggered ? null : _lastAutonomousBehavior,
+            phaseOverride: widget.controller.forcedDayNightPhase)
+        : _decisionForInstance(state, alcoveId, targetInstanceId, now, config);
     if (decision == null) return;
     _autonomousInFlight = true;
     final targetZone = decision.zoneId;
@@ -349,6 +388,7 @@ class _IndividualPageState extends State<_IndividualPage> {
       _setSceneAction('APPROACH_ITEM', zoneId: targetZone);
       await Future<void>.delayed(
           Duration(milliseconds: config.normalMoveDurationMs));
+      if (await _respondToArrivalComfort(alcoveId, config)) return;
       _setSceneAction('INSPECT_ITEM');
       await Future<void>.delayed(
           Duration(milliseconds: config.objectReactionDelayMs));
@@ -383,6 +423,49 @@ class _IndividualPageState extends State<_IndividualPage> {
     }
   }
 
+  Future<bool> _respondToArrivalComfort(
+      String alcoveId, ElevageConfig config) async {
+    final current = widget.controller.state;
+    if (current == null) return true;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final environment = ElevageDomain.zoneEnvironment(
+        current, alcoveId, _ptipoteZoneId, config,
+        now: now, phaseOverride: widget.controller.forcedDayNightPhase);
+    final comfort = ElevageDomain.localComfort(environment, config);
+    if (comfort != 'BAD' && comfort != 'EXTREME') return false;
+    _setSceneAction(comfort == 'EXTREME' ? 'EXTREME' : 'DISCOMFORT');
+    await Future<void>.delayed(
+        Duration(milliseconds: config.objectReactionDelayMs));
+    final target = ElevageDomain.bestComfortZone(current, alcoveId, config, now,
+        phaseOverride: widget.controller.forcedDayNightPhase,
+        excludingZoneId: _ptipoteZoneId);
+    _setSceneAction(comfort == 'EXTREME' ? 'FLEE_FAST' : 'FLEE_NORMAL',
+        zoneId: target);
+    await Future<void>.delayed(Duration(
+        milliseconds:
+            (config.normalMoveDurationMs / (comfort == 'EXTREME' ? 3 : 2))
+                .round()));
+    _setSceneAction('IDLE');
+    return true;
+  }
+
+  ElevageAutonomousSceneDecision? _decisionForInstance(ElevageSave state,
+      String alcoveId, String instanceId, int now, ElevageConfig config) {
+    final item = ElevageDomain.sceneItems(state, alcoveId)
+        .where((entry) => entry['instanceId'] == instanceId)
+        .firstOrNull;
+    // L’objet récupéré avant son tour annule seulement cet événement : il ne
+    // peut jamais être remplacé par le premier objet de la scène.
+    if (item == null) return null;
+    return ElevageAutonomousSceneDecision(
+      instanceId: instanceId,
+      zoneId: item['zoneId'] as String,
+      outcome: ElevageDomain.sceneItemOutcome(
+          state, widget.individualId, alcoveId, instanceId, now, config,
+          phaseOverride: widget.controller.forcedDayNightPhase),
+    );
+  }
+
   void _placeFromInventory(String item) {
     setState(() => _pendingPlacementItem = item);
     _showSceneFeedback(
@@ -396,7 +479,8 @@ class _IndividualPageState extends State<_IndividualPage> {
     final individual =
         (state.data['individuals'] as Map)[widget.individualId] as Map;
     final alcoveId = individual['alcoveId'] as String;
-    await widget.controller.placeSceneItem(alcoveId, item, zoneId);
+    final instanceId =
+        await widget.controller.placeSceneItem(alcoveId, item, zoneId);
     if (!mounted) return;
     if (widget.controller.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -408,7 +492,10 @@ class _IndividualPageState extends State<_IndividualPage> {
     setState(() => _pendingPlacementItem = null);
     _showSceneFeedback(
         'Vous posez ${ElevagePresentation.itemLabel(item).toLowerCase()} dans ${zone.label}.');
-    _enqueueSceneEvent(const _SceneEvent.autonomous(direct: true));
+    if (instanceId != null) {
+      _enqueueSceneEvent(
+          _SceneEvent.autonomous(direct: true, targetInstanceId: instanceId));
+    }
   }
 
   Future<void> _interactSceneItem(Map item, {bool automatic = false}) async {
@@ -486,6 +573,17 @@ class _IndividualPageState extends State<_IndividualPage> {
     _showSceneFeedback('', reaction: 'FOLLOW');
     await Future<void>.delayed(
         Duration(milliseconds: widget.controller.config.normalMoveDurationMs));
+    final state = widget.controller.state;
+    if (state != null) {
+      final individual =
+          (state.data['individuals'] as Map)[widget.individualId] as Map;
+      if (await _respondToArrivalComfort(
+          individual['alcoveId'] as String, widget.controller.config)) {
+        _autonomousInFlight = false;
+        return;
+      }
+    }
+    if (_followFingerHeld) await _executeCuddle();
     _setSceneAction('IDLE');
     _autonomousInFlight = false;
   }
@@ -496,13 +594,17 @@ class _IndividualPageState extends State<_IndividualPage> {
   Future<void> _executeCuddle() async {
     _autonomousInFlight = true;
     _setSceneAction('CUDDLE');
-    await widget.controller.cuddle(widget.individualId);
+    final elapsed = _followHoldStartedAt == null
+        ? 1000
+        : (DateTime.now().millisecondsSinceEpoch - _followHoldStartedAt!)
+            .clamp(1000, 5000);
+    await widget.controller.cuddle(widget.individualId, durationMs: elapsed);
     if (!mounted || widget.controller.error != null) {
       _autonomousInFlight = false;
       return;
     }
     _showSceneFeedback('', reaction: 'CUDDLE');
-    await Future<void>.delayed(const Duration(milliseconds: 900));
+    await Future<void>.delayed(Duration(milliseconds: elapsed));
     _setSceneAction('IDLE');
     _autonomousInFlight = false;
   }
@@ -613,6 +715,7 @@ class _IndividualPageState extends State<_IndividualPage> {
         now: now, phaseOverride: controller.forcedDayNightPhase);
     final localEnvironment =
         zoneEnvironments[_ptipoteZoneId] ?? const <String, int>{};
+    final alcoveComfort = _alcoveComfort(zoneEnvironments, controller.config);
     final hunger = ElevageDomain.hunger(state, widget.individualId,
         DateTime.now().millisecondsSinceEpoch, controller.config);
     final satiety = ElevageDomain.satietyPercent(state, widget.individualId,
@@ -669,15 +772,17 @@ class _IndividualPageState extends State<_IndividualPage> {
                   ElevageDomain.sceneItems(state, alcove['id'] as String),
               zones: controller.config.sceneZones,
               onSceneItemTap: (item) => _openSceneItemActions(item),
-              onZoneTap: (zoneId) => _pendingPlacementItem == null
-                  ? _followZone(zoneId)
-                  : _placeInZone(zoneId),
+              onZoneTap: (zoneId) =>
+                  _pendingPlacementItem == null ? null : _placeInZone(zoneId),
+              onZoneHoldStart: _startFollowHold,
+              onZoneHoldEnd: _endFollowHold,
               onPtipoteTap: _cuddle,
               onInstallationSlotTap: (slot) => _openInstallationSlot(
                   alcoveId, slot, zoneEnvironments['ZONE_${slot + 1}']!),
               onEnvironmentTap: () =>
                   _showEnvironmentPanel(context, environment, zoneEnvironments),
               pendingItem: _pendingPlacementItem,
+              followHoldZoneId: _followHoldZoneId,
               action: _sceneAction,
               ptipoteZoneId: _ptipoteZoneId,
               phase: controller.dayNightPhase(now),
@@ -711,6 +816,15 @@ class _IndividualPageState extends State<_IndividualPage> {
                     padding: const EdgeInsets.only(top: 8),
                     child: LinearProgressIndicator(value: satiety / 100)),
                 trailing: Text('$satiety %')),
+            ListTile(
+              leading: const Icon(Icons.favorite_outline),
+              title: const Text('Confort de l’Alcôve'),
+              subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: LinearProgressIndicator(
+                      value: alcoveComfort['value'] as double)),
+              trailing: Text(alcoveComfort['label'] as String),
+            ),
             if (stage != 'BABY') ...<Widget>[
               ListTile(
                 leading: const Icon(Icons.auto_awesome_outlined),
@@ -1242,10 +1356,13 @@ class _AlcoveScene extends StatefulWidget {
     required this.zones,
     required this.onSceneItemTap,
     required this.onZoneTap,
+    required this.onZoneHoldStart,
+    required this.onZoneHoldEnd,
     required this.onPtipoteTap,
     required this.onInstallationSlotTap,
     required this.onEnvironmentTap,
     required this.pendingItem,
+    required this.followHoldZoneId,
     required this.action,
     required this.ptipoteZoneId,
     required this.phase,
@@ -1262,11 +1379,14 @@ class _AlcoveScene extends StatefulWidget {
   final List<Map<String, dynamic>> sceneItems;
   final List<ElevageSceneZone> zones;
   final ValueChanged<Map> onSceneItemTap;
-  final ValueChanged<String> onZoneTap;
+  final ValueChanged<String>? onZoneTap;
+  final ValueChanged<String> onZoneHoldStart;
+  final VoidCallback onZoneHoldEnd;
   final VoidCallback onPtipoteTap;
   final ValueChanged<int> onInstallationSlotTap;
   final VoidCallback onEnvironmentTap;
   final String? pendingItem;
+  final String? followHoldZoneId;
   final String action;
   final String ptipoteZoneId;
   final String phase;
@@ -1345,33 +1465,47 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                 final zone = entry.value;
                 final selected = _selectedZoneId == zone.id;
                 return Expanded(
-                  child: InkWell(
+                  child: GestureDetector(
+                    onLongPressStart: (_) => widget.onZoneHoldStart(zone.id),
+                    onLongPressEnd: (_) => widget.onZoneHoldEnd(),
+                    onLongPressCancel: widget.onZoneHoldEnd,
                     onTap: () {
                       setState(() => _selectedZoneId = zone.id);
                       final item = widget.sceneItems
                           .where((placed) => placed['zoneId'] == zone.id)
                           .firstOrNull;
-                      if (item == null) widget.onZoneTap(zone.id);
+                      if (item == null) widget.onZoneTap?.call(zone.id);
                     },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      decoration: BoxDecoration(
-                        color: _zoneColor(
-                            context, entry.key, widget.phase, selected),
-                        border: Border(
-                            right: BorderSide(
-                                color: Colors.white.withValues(alpha: .32))),
-                      ),
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Text('Z${entry.key + 1}',
-                              style: const TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.w800)),
+                    child: Stack(children: <Widget>[
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        decoration: BoxDecoration(
+                          color: _zoneColor(
+                              context,
+                              ElevagePresentation.environmentScale(
+                                  widget.zoneEnvironments[zone.id]!['light']!),
+                              selected),
+                          border: Border(
+                              right: BorderSide(
+                                  color: Colors.white.withValues(alpha: .32))),
+                        ),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text('Z${entry.key + 1}',
+                                style: const TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w800)),
+                          ),
                         ),
                       ),
-                    ),
+                      if (widget.followHoldZoneId == zone.id)
+                        const Center(
+                            child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator())),
+                    ]),
                   ),
                 );
               }).toList(),
@@ -1400,7 +1534,7 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(18),
                   onTap: item == null
-                      ? () => widget.onZoneTap(zone.id)
+                      ? () => widget.onZoneTap?.call(zone.id)
                       : () => widget.onSceneItemTap(item),
                   child: Container(
                     width: 46,
@@ -1467,10 +1601,13 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
             const Center(child: Text('Un foyer calme, prêt à être aménagé.')),
           AnimatedAlign(
             duration: Duration(
-                milliseconds:
-                    widget.action == 'FLEE' || widget.action == 'MOVE_ITEM'
-                        ? widget.config.runMoveDurationMs
-                        : widget.config.normalMoveDurationMs),
+                milliseconds: widget.action == 'FLEE_NORMAL'
+                    ? (widget.config.normalMoveDurationMs / 2).round()
+                    : widget.action == 'FLEE_FAST'
+                        ? (widget.config.normalMoveDurationMs / 3).round()
+                        : widget.action == 'MOVE_ITEM'
+                            ? widget.config.runMoveDurationMs
+                            : widget.config.normalMoveDurationMs),
             curve: Curves.easeInOut,
             alignment: _zoneAlignment(widget.ptipoteZoneId),
             child: AnimatedScale(
@@ -1576,7 +1713,9 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       'VIBRATE' || 'STRUCTURAL_ABSORB' => Icons.diamond_outlined,
       'STEP_BACK' || 'REJECT' => Icons.sentiment_very_dissatisfied_outlined,
       'DISCOMFORT' => Icons.sentiment_dissatisfied_outlined,
-      'FLEE' => Icons.priority_high,
+      'EXTREME' => Icons.sentiment_very_dissatisfied_outlined,
+      'FLEE' || 'FLEE_NORMAL' => Icons.priority_high,
+      'FLEE_FAST' => Icons.running_with_errors_outlined,
       'SLEEP' => Icons.bedtime_outlined,
       'OBSERVE' => Icons.question_mark,
       'CUDDLE' => Icons.favorite,
@@ -1585,33 +1724,49 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       _ => stage == 'BABY' ? Icons.egg_outlined : Icons.pets,
     };
 
-Color _zoneColor(BuildContext context, int index, String phase, bool selected) {
-  // Une même teinte vivante : seuls lumière et saturation distinguent les
-  // zones, pour que le joueur lise l'expérience plutôt qu'un code couleur.
-  final day = <Color>[
-    const Color(0xff315C49),
-    const Color(0xff4F7B58),
-    const Color(0xff719A62),
-    const Color(0xffA8BF72)
-  ];
-  final night = <Color>[
-    const Color(0xff142922),
-    const Color(0xff1B362A),
-    const Color(0xff294735),
-    const Color(0xff688451)
-  ];
-  final base = (phase == 'DAY' ? day : night)[index];
+Color _zoneColor(BuildContext context, int light, bool selected) {
+  // Même valeur Light = même couleur, quelle que soit la zone. Une seule
+  // teinte de base permet de lire la lumière sans code couleur parallèle.
+  final base = <Color>[
+    const Color(0xff162B25),
+    const Color(0xff315044),
+    const Color(0xff587866),
+    const Color(0xff86A887),
+    const Color(0xffBBD4AF),
+  ][light.clamp(1, 5) - 1];
   return selected
       ? Color.alphaBlend(Colors.white.withValues(alpha: .24), base)
       : base;
 }
 
 String _localComfortLabel(String comfort) => switch (comfort) {
-      'CONTENT' => 'Cette zone semble lui convenir.',
-      'DISCOMFORT' => 'Cette zone lui semble un peu inconfortable.',
-      'STRONG_DISCOMFORT' => 'Cette zone lui est clairement inconfortable.',
+      'IDEAL' || 'GOOD' => 'Cette zone lui convient très bien.',
+      'BAD' => 'Faradet semble mal à l’aise ici.',
+      'EXTREME' => 'Faradet semble vouloir quitter cet endroit.',
       _ => 'Cette zone lui paraît neutre.',
     };
+
+Map<String, Object> _alcoveComfort(
+    Map<String, Map<String, int>> zones, ElevageConfig config) {
+  const scores = <String, int>{
+    'IDEAL': 4,
+    'GOOD': 3,
+    'NEUTRAL': 2,
+    'BAD': 1,
+    'EXTREME': 0,
+  };
+  final total = zones.values.fold<int>(0,
+      (sum, zone) => sum + scores[ElevageDomain.localComfort(zone, config)]!);
+  final average = total / zones.length;
+  final label = switch (average) {
+    >= 3.5 => 'Très adaptée',
+    >= 2.5 => 'Adaptée',
+    >= 1.5 => 'Mitigée',
+    >= .5 => 'Peu adaptée',
+    _ => 'Inadaptée',
+  };
+  return <String, Object>{'value': average / 4, 'label': label};
+}
 
 Future<void> _showEnvironmentPanel(BuildContext context,
     Map<String, int> average, Map<String, Map<String, int>> zones) async {
@@ -2025,37 +2180,70 @@ Future<void> _openBiofabricator(
                     final environment = ElevageDomain.environment(
                         state, alcoveId, controller.config);
                     return ListTile(
+                        isThreeLine: known,
+                        minLeadingWidth: 28,
                         leading: Icon(definition == null
                             ? Icons.help_outline
                             : ElevagePresentation.installationIcon(
                                 definition.id)),
-                        title: Text(known ? recipe.label : 'Recette inconnue'),
+                        title: Text(known ? recipe.label : 'Recette inconnue',
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
                         subtitle: known
-                            ? Text(
-                                '${recipe.organic} Organique · ${recipe.mineral} Minéral')
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                      '${recipe.organic} Organique · ${recipe.mineral} Minéral'),
+                                  if (definition != null)
+                                    Text(
+                                        _installationImpactSentence(definition),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            fontStyle: FontStyle.italic)),
+                                ],
+                              )
                             : null,
                         onTap: !known || definition == null
                             ? null
                             : () => _showInstallationDetails(sheetContext,
                                 controller.config, definition, environment),
                         trailing: known
-                            ? FilledButton(
-                                onPressed: () async {
-                                  await controller.craft(recipe);
-                                  if (sheetContext.mounted &&
-                                      controller.error == null) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                            content: Text(
-                                                '${recipe.label} a été bio-fabriqué.')));
-                                    Navigator.pop(sheetContext);
-                                  }
-                                },
-                                child: const Text('Fabriquer'))
+                            ? SizedBox(
+                                width: 100,
+                                child: FilledButton(
+                                    onPressed: () async {
+                                      await controller.craft(recipe);
+                                      if (sheetContext.mounted &&
+                                          controller.error == null) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(SnackBar(
+                                                content: Text(
+                                                    '${recipe.label} a été bio-fabriqué.')));
+                                        Navigator.pop(sheetContext);
+                                      }
+                                    },
+                                    child: const Text('Fabriquer')))
                             : null);
                   })
                 ]));
       });
+}
+
+String _installationImpactSentence(ElevageInstallationDefinition definition) {
+  final parts = <String>[];
+  if (definition.light != 0) {
+    parts.add(definition.light > 0 ? 'éclaire' : 'assombrit');
+  }
+  if (definition.temperature != 0) {
+    parts.add(definition.temperature > 0 ? 'réchauffe' : 'rafraîchit');
+  }
+  if (definition.humidity != 0) {
+    parts.add(definition.humidity > 0 ? 'humidifie' : 'assèche');
+  }
+  if (parts.isEmpty) return 'Modifie doucement l’ambiance de la zone.';
+  return '${parts.join(', ')} la zone.';
 }
 
 Future<void> _foraging(

@@ -675,16 +675,47 @@ class ElevageDomain {
   /// observations sans devenir une seconde source de préférence persistée.
   static String localComfort(
       Map<String, int> environment, ElevageConfig config) {
-    final light = ((environment['light'] ?? 0) + 3).clamp(1, 5);
-    final lightScore = config.resonanceLightComfort(light);
-    final humidity = environment['humidity'] ?? 0;
-    final temperature = environment['temperature'] ?? 0;
-    final total =
-        lightScore + (humidity >= 2 ? -1 : 0) + (temperature >= 2 ? -1 : 0);
-    if (total <= -3) return 'STRONG_DISCOMFORT';
-    if (total < 0) return 'DISCOMFORT';
-    if (total > 0) return 'CONTENT';
-    return 'NEUTRAL';
+    const severity = <String, int>{
+      'IDEAL': 0,
+      'GOOD': 1,
+      'NEUTRAL': 2,
+      'BAD': 3,
+      'EXTREME': 4,
+    };
+    final axes = <String>['light', 'temperature', 'humidity']
+        .map((axis) => config.resonanceAxisComfort(
+            axis, ((environment[axis] ?? 0) + 3).clamp(1, 5)))
+        .toList()
+      ..sort((left, right) => severity[right]!.compareTo(severity[left]!));
+    // Le pire axe l’emporte : aucun extrême ne peut être masqué par une
+    // moyenne favorable sur les deux autres axes.
+    return axes.first;
+  }
+
+  static String bestComfortZone(
+      ElevageSave state, String alcoveId, ElevageConfig config, int now,
+      {String? phaseOverride, String? excludingZoneId}) {
+    const severity = <String, int>{
+      'IDEAL': 0,
+      'GOOD': 1,
+      'NEUTRAL': 2,
+      'BAD': 3,
+      'EXTREME': 4,
+    };
+    final zones =
+        config.sceneZones.where((zone) => zone.id != excludingZoneId).toList()
+          ..sort((left, right) {
+            final leftComfort = localComfort(
+                zoneEnvironment(state, alcoveId, left.id, config,
+                    now: now, phaseOverride: phaseOverride),
+                config);
+            final rightComfort = localComfort(
+                zoneEnvironment(state, alcoveId, right.id, config,
+                    now: now, phaseOverride: phaseOverride),
+                config);
+            return severity[leftComfort]!.compareTo(severity[rightComfort]!);
+          });
+    return zones.first.id;
   }
 
   static String dayNightPhase(int now, ElevageConfig config) {
@@ -734,10 +765,15 @@ class ElevageDomain {
   }
 
   static ElevageSave cuddle(
-      ElevageSave source, String id, int now, ElevageConfig config) {
+      ElevageSave source, String id, int now, ElevageConfig config,
+      {int durationMs = 1000}) {
     final state = source.copy();
     final individual = _individual(state, id);
-    _interaction(individual, 'CUDDLE', contact: 1);
+    final boundedDuration = durationMs.clamp(1000, 5000);
+    (individual['progressionEvidence'] as Map)['lastCuddleDurationMs'] =
+        boundedDuration;
+    _interaction(individual, 'CUDDLE',
+        contact: boundedDuration >= 4000 ? 1 : 0);
     final count = _observe(individual, 'CUDDLE', now, config: config);
     _setObservationStatus(individual, 'CUDDLE:GENERAL', count, config, now);
     return state;

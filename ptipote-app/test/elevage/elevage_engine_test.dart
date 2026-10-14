@@ -651,13 +651,35 @@ void main() {
     expect(defaultElevageConfig.resonanceLightComfort(5), -2);
     expect(
         ElevageDomain.localComfort(
-            <String, int>{'light': -1, 'temperature': 0, 'humidity': 0},
+            <String, int>{'light': -1, 'temperature': -1, 'humidity': -1},
             defaultElevageConfig),
-        'CONTENT');
+        'GOOD');
     expect(
         ElevageDomain.localComfort(
             <String, int>{'light': 1, 'temperature': 0, 'humidity': 0},
             defaultElevageConfig),
-        'DISCOMFORT');
+        'BAD');
+  });
+
+  test('nuit canonique, moyenne arrondie et Abri minéral restent exacts', () {
+    final state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final night = <int>[
+      for (final zone in defaultElevageConfig.sceneZones)
+        ElevagePresentation.environmentScale(ElevageDomain.zoneEnvironment(
+            state, 'alcove-1', zone.id, defaultElevageConfig,
+            now: now, phaseOverride: 'NIGHT')['light']!),
+    ];
+    expect(night, <int>[1, 2, 2, 3]);
+    expect((6 / 4).round(), 2);
+    expect(
+        defaultElevageConfig.installation('ABRI_MINERAL_PROFOND')!.humidity, 1);
+  });
+
+  test('un axe extrême domine strictement le confort local', () {
+    expect(
+        ElevageDomain.localComfort(
+            <String, int>{'light': -2, 'temperature': -2, 'humidity': 2},
+            defaultElevageConfig),
+        'EXTREME');
   });
 }

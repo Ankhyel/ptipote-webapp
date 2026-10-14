@@ -758,3 +758,33 @@ L’Eau n’est pas une ressource globale du Camp.
   `MOVE_ITEM`, `REJECT` ou `IGNORE`). `THINK` n’est jamais un résultat final.
   Le Fer conclut notamment par l’icône d’absorption structurelle et la jauge
   ferrique garde sa source de vérité métier existante.
+
+## P’TIPOTE Élevage — Lot 18 : confort local strict et ciblage
+
+- **Lumière canonique.** Les valeurs locales sont configurées et discrètes :
+  Nuit Z1–Z4 = **1 / 2 / 2 / 3** ; Jour = Nuit +1, soit **2 / 3 / 3 / 4**.
+  La couleur de fond est indexée exclusivement sur Light 1–5 et une teinte
+  commune : deux zones de même valeur sont donc toujours visuellement
+  identiques. Le HUD conserve une moyenne arithmétique, arrondie au plus
+  proche.
+- **Confort local.** Résonance classe séparément lumière, température et
+  humidité en `IDEAL`, `GOOD`, `NEUTRAL`, `BAD`, `EXTREME`. Le pire axe domine
+  le résultat local ; une humidité 5/5 ne peut jamais être masquée par deux
+  axes favorables. Le bloc État présente une jauge informative de confort
+  global, tandis que la scène décide exclusivement avec la zone courante.
+  `BAD` déclenche une fuite lisible à vitesse ×2 et `EXTREME` une fuite ×3.
+- **Installations et recettes.** L’Abri minéral profond conserve ombre et
+  fraîcheur mais augmente désormais l’humidité de **+1** seulement. Les slots
+  restent Z1↔slot1 à Z4↔slot4, sans diffusion. Le Bio-fabricateur contraint
+  ses libellés sur mobile et affiche une phrase italique dérivée des impacts
+  configurés, en plus des valeurs numériques de la fiche.
+- **FOLLOW et actions ciblées.** Maintenir une zone trois secondes lance un
+  FOLLOW en file ; relâcher avant annule. Une fois arrivé, le confort local est
+  évalué comme pour toute autre arrivée. Les événements de nouvel objet
+  conservent l’`instanceId` exact de l’objet posé jusqu’à la décision ; un item
+  récupéré annule son propre événement, sans substitution par un autre objet
+  présent dans l’Alcôve.
+- **Câlin.** Si le doigt est encore maintenu à l’arrivée après un FOLLOW, le
+  câlin démarre automatiquement. Sa durée est bornée à 1–5 secondes et reste
+  enregistrée comme contexte de l’interaction (`lastCuddleDurationMs`) ; elle
+  n’ajoute aucune sanction et utilise toujours l’axe Contact existant.
