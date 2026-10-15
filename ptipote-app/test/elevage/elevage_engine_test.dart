@@ -1114,4 +1114,22 @@ void main() {
     expect(ElevageDomain.isSleeping(woken, 1, defaultElevageConfig), isFalse);
     expect((woken['sleep'] as Map)['wakeCount'], 1);
   });
+
+  test('onomatopées Dashboard se sérialisent et restent validées', () {
+    final config =
+        defaultElevageConfig.copyWith(vocalizations: <String, String>{
+      ...defaultElevageConfig.vocalizations,
+      'CONTENT': 'Rrr !',
+    });
+    validateElevageConfig(config);
+    final restored = ElevageConfig.fromJson(config.toJson());
+    expect(restored.vocalizations['CONTENT'], 'Rrr !');
+    expect(
+        () => validateElevageConfig(
+                config.copyWith(vocalizations: <String, String>{
+              ...config.vocalizations,
+              'CONTENT': '   ',
+            })),
+        throwsFormatException);
+  });
 }

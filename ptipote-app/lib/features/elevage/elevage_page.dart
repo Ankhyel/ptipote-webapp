@@ -1492,6 +1492,17 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               config.metamorphosisToleranceMs,
               (value) =>
                   config = config.copyWith(metamorphosisToleranceMs: value)),
+          _heading('Voix et onomatopées'),
+          const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                  'Ces textes apparaissent dans les petites bulles de communication.')),
+          ..._vocalizationLabels.entries.map((entry) => ListTile(
+                title: Text(entry.value),
+                subtitle: Text(config.vocalizations[entry.key] ?? ''),
+                trailing: const Icon(Icons.edit_outlined),
+                onTap: () => _editVocalization(context, entry.key, entry.value),
+              )),
           const SizedBox(height: 16),
           FilledButton(
               onPressed: () async {
@@ -1549,6 +1560,21 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                 ? item.copyWith(organic: organic, mineral: mineral)
                 : item)
             .toList()));
+  }
+
+  Future<void> _editVocalization(
+      BuildContext context, String key, String label) async {
+    final current = config.vocalizations[key] ?? '';
+    final next = await _textDialog(context, label, current);
+    if (!context.mounted || next == null) return;
+    final clean = next.trim();
+    if (clean.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Une onomatopée ne peut pas être vide.')));
+      return;
+    }
+    setState(() => config = config.copyWith(
+        vocalizations: <String, String>{...config.vocalizations, key: clean}));
   }
 
   Future<void> _confirmReset(BuildContext context, bool wholeGame) async {
@@ -2950,6 +2976,43 @@ Future<int?> _numberDialog(
                     onPressed: () =>
                         Navigator.pop(dialogContext, int.tryParse(text.text)),
                     child: const Text('Valider'))
+              ]));
+  text.dispose();
+  return result;
+}
+
+const Map<String, String> _vocalizationLabels = <String, String>{
+  'CURIOSITY': 'Curiosité',
+  'ABSORB': 'Effort / absorption',
+  'CONTENT': 'Contentement',
+  'DISCOMFORT': 'Inconfort',
+  'SURPRISE': 'Surprise',
+  'REJECT': 'Refus',
+  'CALL': 'Appel',
+};
+
+Future<String?> _textDialog(
+    BuildContext context, String label, String value) async {
+  final text = TextEditingController(text: value);
+  final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+              title: Text(label),
+              content: TextField(
+                controller: text,
+                autofocus: true,
+                maxLength: 24,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                    labelText: 'Onomatopée', hintText: 'Ex. Prr !'),
+              ),
+              actions: <Widget>[
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Annuler')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, text.text),
+                    child: const Text('Valider')),
               ]));
   text.dispose();
   return result;

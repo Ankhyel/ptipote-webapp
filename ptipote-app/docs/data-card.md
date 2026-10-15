@@ -884,6 +884,10 @@ L’Eau n’est pas une ressource globale du Camp.
   (surprise), `Nh !` (refus) et `Pti !` (appel). Une réaction usuelle reste
   visible au plus 7 s ; une absorption structurelle jusqu’à 20 s, avec l’icône
   de la ressource concernée.
+- **Réglage Dashboard.** La section « Voix et onomatopées » du Dashboard
+  Élevage permet de modifier localement chaque famille (curiosité, absorption,
+  contentement, inconfort, surprise, refus, appel). Les valeurs sont validées,
+  persistées avec les overrides de configuration et ne peuvent pas être vides.
 - **Langage par stade.** Bébé demeure non verbal : picto d’action et
   onomatopée uniquement. Intermédiaire apprend catégorie par catégorie : un
   profil réservé utilise une onomatopée aux trois premières occurrences puis
