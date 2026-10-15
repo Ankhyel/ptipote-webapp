@@ -860,6 +860,73 @@ class ElevageDomain {
     return null;
   }
 
+  /// Selects a behavioural station without turning furniture into a second
+  /// production system. Tempo only biases the choice; the instance remains
+  /// the exact target of the scene sequence.
+  static Map<String, dynamic>? nextFurnitureActivity(ElevageSave state,
+      String individualId, String alcoveId, int now, ElevageConfig config) {
+    final individual = _individual(state, individualId);
+    final tempo = personalityValue(individual, 'tempo');
+    final candidates = habitatItems(state, alcoveId).where((item) {
+      final definition = config.installation(item['definitionId'] as String);
+      final lastUsed = (item['lastUsedAt'] as num? ?? 0).toInt();
+      return definition?.category == 'MEUBLE' &&
+          now - lastUsed >= config.autonomousReactionIntervalSeconds * 1000;
+    }).toList()
+      ..sort((a, b) {
+        final aScore = _furnitureAffinityScore(
+            config.installation(a['definitionId'] as String)?.activity, tempo);
+        final bScore = _furnitureAffinityScore(
+            config.installation(b['definitionId'] as String)?.activity, tempo);
+        return bScore == aScore
+            ? '${a['instanceId']}'.compareTo('${b['instanceId']}')
+            : bScore.compareTo(aScore);
+      });
+    return candidates.isEmpty
+        ? null
+        : Map<String, dynamic>.from(candidates.first);
+  }
+
+  static int _furnitureAffinityScore(String? activity, double tempo) {
+    if (activity == 'REST' || activity == 'READ') return tempo >= .5 ? 2 : 1;
+    if (activity == 'PLAY') return tempo < .5 ? 2 : 1;
+    return 1;
+  }
+
+  static ElevageSave useFurniture(ElevageSave source, String individualId,
+      String alcoveId, String instanceId, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    final items =
+        (state.data['habitatItemsByAlcoveId'] as Map)[alcoveId] as List? ??
+            <dynamic>[];
+    Map? item;
+    for (final entry in items.whereType<Map>()) {
+      if (entry['instanceId'] == instanceId) {
+        item = entry;
+        break;
+      }
+    }
+    if (item == null) throw StateError('Meuble introuvable.');
+    final definition = config.installation(item['definitionId'] as String);
+    if (definition?.category != 'MEUBLE') {
+      throw StateError('Cet objet ne constitue pas une station d’activité.');
+    }
+    item['interactionCount'] =
+        (item['interactionCount'] as num? ?? 0).toInt() + 1;
+    item['lastUsedAt'] = now;
+    final posed = personalityValue(individual, 'tempo') >= .5;
+    final boost =
+        (definition!.activity == 'REST' || definition.activity == 'READ') &&
+                posed
+            ? 2
+            : 1;
+    _adjustWellbeing(individual, boost, now);
+    _interaction(individual, 'FURNITURE_${definition.activity ?? 'USE'}',
+        tempo: definition.activity == 'PLAY' ? -1 : 1);
+    return state;
+  }
+
   static int zoneStaySeconds(
       Map individual, String comfort, ElevageConfig config) {
     final stage = individual['lifecycle']['stage'] as String;

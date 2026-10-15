@@ -1356,4 +1356,34 @@ void main() {
             phaseOverride: 'DAY'),
         isNull);
   });
+
+  test('le hamac est une station de repos sans production', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    (state.data['habitatItemsByAlcoveId'] as Map)['alcove-1'] =
+        <Map<String, dynamic>>[
+      <String, dynamic>{
+        'instanceId': 'hamac-1',
+        'definitionId': 'HAMAC',
+        'zoneId': 'ZONE_1',
+      }
+    ];
+    final before =
+        ((state.data['individuals'] as Map)[id]['wellbeing'] as Map)['value'];
+    state = ElevageDomain.useFurniture(
+        state, id, 'alcove-1', 'hamac-1', now, defaultElevageConfig);
+    final item = ElevageDomain.habitatItems(state, 'alcove-1').single;
+    expect(item['lastUsedAt'], now);
+    expect(item['interactionCount'], 1);
+    expect((state.data['individuals'] as Map)[id]['wellbeing']['value'],
+        greaterThan(before));
+    expect(defaultElevageConfig.installation('HAMAC')!.productive, isFalse);
+  });
 }

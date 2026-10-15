@@ -933,6 +933,11 @@ L’Eau n’est pas une ressource globale du Camp.
   Parcours d’obstacles, ainsi que plantes, mousse, cristal, géode, pierre,
   carillon et conque décoratifs. Le Bio-fabricateur sépare Structures, Meubles
   et Décorations et détaille les composants spécifiques.
+- **Stations d’activité.** Un meuble ne produit jamais de ressource : il
+  déclenche une activité courte et peut améliorer légèrement le wellbeing.
+  Hamac/Nid et Bibliothèque sont davantage sélectionnés par un Posé ; le
+  Parcours d’obstacles par un Spontané. Une station libre peut être activée
+  par le joueur ou choisie pendant un cycle autonome avec son `instanceId`.
 - **Affinités.** Au premier contact d’une décoration, un jet déterministe lié
   à l’individu est persisté par instance de décoration. Résonance favorise
   Cristal (80 %)

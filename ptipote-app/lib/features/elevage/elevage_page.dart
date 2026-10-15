@@ -596,6 +596,12 @@ class _IndividualPageState extends State<_IndividualPage> {
           phaseOverride: widget.controller.forcedDayNightPhase);
       if (reorganization != null) {
         await _executeHabitatReorganization(reorganization, individual);
+      } else {
+        final furniture = ElevageDomain.nextFurnitureActivity(
+            state, widget.individualId, alcoveId, now, config);
+        if (furniture != null) {
+          await _executeFurnitureActivity(furniture, individual);
+        }
       }
       return;
     }
@@ -717,6 +723,35 @@ class _IndividualPageState extends State<_IndividualPage> {
       _setSceneAction('MOVE_ITEM', zoneId: reorganization['targetZoneId']);
       await _waitSceneAction(ElevageDomain.normalMoveDurationFor(
           individual, widget.controller.config));
+      _setSceneAction('IDLE');
+    } finally {
+      _autonomousInFlight = false;
+    }
+  }
+
+  Future<void> _executeFurnitureActivity(Map furniture, Map individual) async {
+    _autonomousInFlight = true;
+    try {
+      final zoneId = furniture['zoneId'] as String;
+      _setSceneAction('APPROACH_ITEM', zoneId: zoneId);
+      await _waitSceneAction(ElevageDomain.normalMoveDurationFor(
+          individual, widget.controller.config));
+      _setSceneAction('THINK');
+      await _waitSceneAction(widget.controller.config.objectReactionDelayMs);
+      await widget.controller.useFurniture(widget.individualId,
+          individual['alcoveId'] as String, furniture['instanceId'] as String);
+      if (!mounted || widget.controller.error != null) return;
+      final activity = furniture['definitionId'] == 'HAMAC' ||
+              furniture['definitionId'] == 'NID_COUCHETTE'
+          ? 'REST'
+          : furniture['definitionId'] == 'PARCOURS_OBSTACLES'
+              ? 'PLAY'
+              : 'USE_FURNITURE';
+      _setSceneAction(activity);
+      final updated = (widget.controller.state!.data['individuals']
+          as Map)[widget.individualId] as Map;
+      _showSceneExpression('CONTENT', updated);
+      await _waitSceneAction(widget.controller.config.objectReactionDelayMs);
       _setSceneAction('IDLE');
     } finally {
       _autonomousInFlight = false;
@@ -962,6 +997,18 @@ class _IndividualPageState extends State<_IndividualPage> {
                   title: Text(definition.label),
                   subtitle: Text(
                       '${definition.category.toLowerCase()} · Z${(item['zoneId'] as String).split('_').last}\n${definition.description}${definition.category == 'DECORATION' ? '\n$affinityLabel' : ''}')),
+              if (definition.category == 'MEUBLE')
+                ListTile(
+                    leading: const Icon(Icons.chair_outlined),
+                    title: const Text('Encourager cette activité'),
+                    subtitle: Text(definition.activity == 'REST'
+                        ? 'Une pause calme peut légèrement améliorer son bien-être.'
+                        : 'Cette station propose une activité sans produire de ressource.'),
+                    onTap: () async {
+                      await widget.controller.useFurniture(widget.individualId,
+                          alcoveId, item['instanceId'] as String);
+                      if (sheetContext.mounted) Navigator.pop(sheetContext);
+                    }),
               if (definition.category == 'DECORATION')
                 ListTile(
                     leading: const Icon(Icons.auto_awesome_outlined),
@@ -2454,6 +2501,9 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       'MOVE_ITEM' => Icons.redo,
       'PICKUP' => Icons.pan_tool_alt_outlined,
       'FLEE_WITH_ITEM' => Icons.running_with_errors_outlined,
+      'REST' => Icons.weekend_outlined,
+      'PLAY' => Icons.sports_handball_outlined,
+      'USE_FURNITURE' => Icons.chair_outlined,
       'METAMORPHOSIS' => Icons.egg_outlined,
       _ => stage == 'BABY' ? Icons.egg_outlined : Icons.pets,
     };
