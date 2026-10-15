@@ -2,6 +2,26 @@ import 'dart:convert';
 
 const int elevageConfigSchemaVersion = 1;
 
+/// Every non-generic resource that can be selected as an explicit recipe
+/// component in the local Élevage Dashboard. Organic and Mineral stay as their
+/// dedicated base-cost fields so existing saves and the economy remain clear.
+const List<String> elevageRecipeSpecialComponentIds = <String>[
+  'ROOT',
+  'LEAF',
+  'MOSS',
+  'ALGAE',
+  'MUSHROOM',
+  'FRUIT',
+  'FIBROUS_FRUIT',
+  'FRUIT_JELLY',
+  'IRON',
+  'LIMESTONE',
+  'QUARTZ',
+  'SEED',
+  'SPROUT',
+  'ALGAE_FRAGMENT',
+];
+
 enum ElevagePreset { prototype, target }
 
 class ElevageRecipe {
@@ -25,13 +45,15 @@ class ElevageRecipe {
 
   bool get isBase => unlockItems.isEmpty;
 
-  ElevageRecipe copyWith({int? organic, int? mineral}) => ElevageRecipe(
+  ElevageRecipe copyWith(
+          {int? organic, int? mineral, Map<String, int>? special}) =>
+      ElevageRecipe(
         id: id,
         label: label,
         installationId: installationId,
         organic: organic ?? this.organic,
         mineral: mineral ?? this.mineral,
-        special: special,
+        special: special ?? this.special,
         unlockItems: unlockItems,
       );
 
@@ -964,6 +986,12 @@ void validateElevageConfig(ElevageConfig config) {
       config.minStaySeconds <= 0 ||
       config.resonanceGainPerUse <= 0 ||
       config.vocalizations.values.any((value) => value.trim().isEmpty) ||
+      config.recipes.any((recipe) =>
+          recipe.organic < 0 ||
+          recipe.mineral < 0 ||
+          recipe.special.entries.any((entry) =>
+              !elevageRecipeSpecialComponentIds.contains(entry.key) ||
+              entry.value <= 0)) ||
       config.recipes.map((recipe) => recipe.id).toSet().length !=
           config.recipes.length) {
     throw const FormatException('Configuration Élevage invalide.');

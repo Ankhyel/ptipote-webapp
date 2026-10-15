@@ -1386,4 +1386,25 @@ void main() {
         greaterThan(before));
     expect(defaultElevageConfig.installation('HAMAC')!.productive, isFalse);
   });
+
+  test('les composants spécifiques d’une recette sont configurables', () {
+    final hamac = defaultElevageConfig.recipes
+        .firstWhere((recipe) => recipe.id == 'HAMAC')
+        .copyWith(special: <String, int>{'SEED': 2, 'IRON': 1});
+    final config = defaultElevageConfig.copyWith(
+        recipes: defaultElevageConfig.recipes
+            .map((recipe) => recipe.id == 'HAMAC' ? hamac : recipe)
+            .toList());
+    validateElevageConfig(config);
+    final restored = ElevageConfig.fromJson(config.toJson());
+    expect(
+        restored.recipes.firstWhere((recipe) => recipe.id == 'HAMAC').special,
+        <String, int>{'SEED': 2, 'IRON': 1});
+    expect(
+        () => validateElevageConfig(config.copyWith(recipes: <ElevageRecipe>[
+              ...config.recipes.where((recipe) => recipe.id != 'HAMAC'),
+              hamac.copyWith(special: <String, int>{'UNKNOWN_ITEM': 1}),
+            ])),
+        throwsFormatException);
+  });
 }

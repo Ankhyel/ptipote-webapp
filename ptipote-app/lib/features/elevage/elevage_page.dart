@@ -1692,8 +1692,7 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
           _heading('Bio-fabricateur'),
           ...config.recipes.map((recipe) => ListTile(
               title: Text(recipe.label),
-              subtitle: Text(
-                  '${recipe.organic} Organique · ${recipe.mineral} Minéral'),
+              subtitle: Text(_recipeCostSummary(recipe)),
               onTap: () => _editRecipe(context, recipe))),
           _heading('Métamorphose'),
           _number(
@@ -1756,6 +1755,13 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
             if (!context.mounted || next == null) return;
             setState(() => apply(next));
           });
+  String _recipeCostSummary(ElevageRecipe recipe) => <String>[
+        '${recipe.organic} Organique',
+        '${recipe.mineral} Minéral',
+        ...recipe.special.entries.map((entry) =>
+            '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}'),
+      ].join(' · ');
+
   Future<void> _editRecipe(BuildContext context, ElevageRecipe recipe) async {
     final organic = await _numberDialog(
         context, '${recipe.label} · Organique', recipe.organic);
@@ -1764,12 +1770,119 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     final mineral = await _numberDialog(
         context, '${recipe.label} · Minéral', recipe.mineral);
     if (!context.mounted || mineral == null) return;
+    final special = await _editRecipeSpecialComponents(context, recipe);
+    if (!context.mounted || special == null) return;
     setState(() => config = config.copyWith(
         recipes: config.recipes
             .map((item) => item.id == recipe.id
-                ? item.copyWith(organic: organic, mineral: mineral)
+                ? item.copyWith(
+                    organic: organic, mineral: mineral, special: special)
                 : item)
             .toList()));
+  }
+
+  Future<Map<String, int>?> _editRecipeSpecialComponents(
+      BuildContext context, ElevageRecipe recipe) async {
+    final components = Map<String, int>.from(recipe.special);
+    return showDialog<Map<String, int>>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+              builder: (dialogContext, setLocal) => AlertDialog(
+                title: Text('${recipe.label} · composants'),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: SingleChildScrollView(
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          const Text(
+                              'Organique et Minéral sont réglés séparément. Ajoutez ici les ressources spécifiques nécessaires.'),
+                          const SizedBox(height: 12),
+                          if (components.isEmpty)
+                            const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text('Aucun composant spécifique.')),
+                          ...components.entries.map((entry) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(children: <Widget>[
+                                Expanded(
+                                  child: DropdownButtonFormField<String>(
+                                      initialValue: entry.key,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                          labelText: 'Composant'),
+                                      items: elevageRecipeSpecialComponentIds
+                                          .where((id) =>
+                                              id == entry.key ||
+                                              !components.containsKey(id))
+                                          .map((id) => DropdownMenuItem(
+                                              value: id,
+                                              child: Text(
+                                                  ElevagePresentation.itemLabel(
+                                                      id))))
+                                          .toList(),
+                                      onChanged: (next) {
+                                        if (next == null || next == entry.key) {
+                                          return;
+                                        }
+                                        final quantity = entry.value;
+                                        setLocal(() {
+                                          components.remove(entry.key);
+                                          components[next] = quantity;
+                                        });
+                                      }),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                    width: 68,
+                                    child: TextFormField(
+                                        key: ValueKey(
+                                            '${entry.key}:${entry.value}'),
+                                        initialValue: '${entry.value}',
+                                        decoration: const InputDecoration(
+                                            labelText: 'Qté'),
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (raw) =>
+                                            components[entry.key] =
+                                                int.tryParse(raw) ?? 0)),
+                                IconButton(
+                                    tooltip: 'Retirer',
+                                    onPressed: () => setLocal(
+                                        () => components.remove(entry.key)),
+                                    icon: const Icon(
+                                        Icons.remove_circle_outline)),
+                              ]))),
+                          if (components.length <
+                              elevageRecipeSpecialComponentIds.length)
+                            Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Ajouter un composant'),
+                                    onPressed: () => setLocal(() {
+                                          final next =
+                                              elevageRecipeSpecialComponentIds
+                                                  .firstWhere((id) =>
+                                                      !components
+                                                          .containsKey(id));
+                                          components[next] = 1;
+                                        }))),
+                        ]),
+                  ),
+                ),
+                actions: <Widget>[
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('Annuler')),
+                  FilledButton(
+                      onPressed: () {
+                        components.removeWhere((_, value) => value <= 0);
+                        Navigator.pop(dialogContext, components);
+                      },
+                      child: const Text('Valider')),
+                ],
+              ),
+            ));
   }
 
   Future<void> _editVocalization(

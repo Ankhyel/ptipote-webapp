@@ -938,6 +938,13 @@ L’Eau n’est pas une ressource globale du Camp.
   Hamac/Nid et Bibliothèque sont davantage sélectionnés par un Posé ; le
   Parcours d’obstacles par un Spontané. Une station libre peut être activée
   par le joueur ou choisie pendant un cycle autonome avec son `instanceId`.
+- **Recettes pilotables.** Dans le Dashboard Élevage, chaque recette conserve
+  ses coûts séparés Organique et Minéral puis expose une liste de composants
+  spécifiques éditable : Racine, Feuille, Mousse, Algues, Champignon, Fruit,
+  friandises, Fer, Calcaire, Quartz, Graine, Pousse et Fragment d’algue. Le
+  designer choisit un composant par ligne et sa quantité ; plusieurs lignes
+  sont possibles. La validation bloque les IDs inconnus et les quantités
+  nulles ou négatives, et les overrides restent séparés de la sauvegarde.
 - **Affinités.** Au premier contact d’une décoration, un jet déterministe lié
   à l’individu est persisté par instance de décoration. Résonance favorise
   Cristal (80 %)
