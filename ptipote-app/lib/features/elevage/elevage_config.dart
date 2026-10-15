@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-const int elevageConfigSchemaVersion = 1;
+const int elevageConfigSchemaVersion = 2;
 
 /// Every non-generic resource that can be selected as an explicit recipe
 /// component in the local Élevage Dashboard. Organic and Mineral stay as their
@@ -89,6 +89,7 @@ class ElevageInstallationDefinition {
     required this.light,
     required this.temperature,
     required this.humidity,
+    this.wellbeingImpact = 0,
     this.category = 'STRUCTURE',
     this.movableByPtipote = false,
     this.activity,
@@ -106,6 +107,11 @@ class ElevageInstallationDefinition {
   final int temperature;
   final int humidity;
 
+  /// Base wellbeing change when a free habitat item is used. Environmental
+  /// structures keep this at zero; furniture and decorations expose it to the
+  /// local Dashboard without exposing their individual affinity logic.
+  final int wellbeingImpact;
+
   /// STRUCTURE uses a technical Z1–Z4 slot; MEUBLE and DECORATION are free.
   final String category;
   final bool movableByPtipote;
@@ -115,6 +121,28 @@ class ElevageInstallationDefinition {
   final Map<String, int> outputs;
 
   bool get productive => outputs.isNotEmpty;
+
+  ElevageInstallationDefinition copyWith({
+    int? light,
+    int? temperature,
+    int? humidity,
+    int? wellbeingImpact,
+  }) =>
+      ElevageInstallationDefinition(
+        id: id,
+        label: label,
+        description: description,
+        light: light ?? this.light,
+        temperature: temperature ?? this.temperature,
+        humidity: humidity ?? this.humidity,
+        wellbeingImpact: wellbeingImpact ?? this.wellbeingImpact,
+        category: category,
+        movableByPtipote: movableByPtipote,
+        activity: activity,
+        decorCategory: decorCategory,
+        resonanceMaterial: resonanceMaterial,
+        outputs: outputs,
+      );
 }
 
 /// Four deliberately simple spatial contexts inside an Alcôve. Their effects
@@ -197,6 +225,7 @@ class ElevageConfig {
     required this.resonanceGainPerUse,
     required this.vocalizations,
     required this.recipes,
+    this.installationEffects = const <String, Map<String, int>>{},
   });
 
   final String revision;
@@ -263,12 +292,17 @@ class ElevageConfig {
   final Map<String, String> vocalizations;
   final List<ElevageRecipe> recipes;
 
+  /// Dashboard-only overrides. Structures expose light/temperature/humidity;
+  /// furniture and decorations expose wellbeing only. Individual affinity
+  /// remains part of the domain, not of the configuration UI.
+  final Map<String, Map<String, int>> installationEffects;
+
   int get babyMinimumHours => preset == ElevagePreset.prototype ? 24 : 48;
   int get intermediateMinimumHours =>
       preset == ElevagePreset.prototype ? 72 : 168;
   int get dayNightCycleHours => dayDurationHours + nightDurationHours;
 
-  List<ElevageInstallationDefinition> get installations =>
+  List<ElevageInstallationDefinition> get _defaultInstallations =>
       <ElevageInstallationDefinition>[
         const ElevageInstallationDefinition(
           id: 'BASSIN',
@@ -539,6 +573,23 @@ class ElevageConfig {
             decorCategory: 'MUSIC_ENERGETIC'),
       ];
 
+  List<ElevageInstallationDefinition> get installations =>
+      _defaultInstallations.map((definition) {
+        // All free habitat items start with the same small, readable wellbeing
+        // effect. Their individual affinity remains evaluated by the engine.
+        final base = definition.category == 'STRUCTURE'
+            ? definition
+            : definition.copyWith(wellbeingImpact: 1);
+        final override = installationEffects[definition.id];
+        if (override == null) return base;
+        return base.copyWith(
+          light: override['light'],
+          temperature: override['temperature'],
+          humidity: override['humidity'],
+          wellbeingImpact: override['wellbeing'],
+        );
+      }).toList(growable: false);
+
   List<ElevageSceneZone> get sceneZones => const <ElevageSceneZone>[
         ElevageSceneZone(id: 'ZONE_1', label: 'Abri ombragé', light: 2),
         ElevageSceneZone(id: 'ZONE_2', label: 'Nid central', light: 3),
@@ -655,6 +706,7 @@ class ElevageConfig {
     int? resonanceGainPerUse,
     Map<String, String>? vocalizations,
     List<ElevageRecipe>? recipes,
+    Map<String, Map<String, int>>? installationEffects,
   }) =>
       ElevageConfig(
         revision: revision ?? this.revision,
@@ -745,6 +797,7 @@ class ElevageConfig {
         resonanceGainPerUse: resonanceGainPerUse ?? this.resonanceGainPerUse,
         vocalizations: vocalizations ?? this.vocalizations,
         recipes: recipes ?? this.recipes,
+        installationEffects: installationEffects ?? this.installationEffects,
       );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -811,6 +864,7 @@ class ElevageConfig {
         'resonanceGainPerUse': resonanceGainPerUse,
         'vocalizations': vocalizations,
         'recipes': recipes.map((recipe) => recipe.toJson()).toList(),
+        'installationEffects': installationEffects,
       };
 
   factory ElevageConfig.fromJson(Map<String, dynamic> json) {
@@ -941,6 +995,8 @@ class ElevageConfig {
                   ElevageRecipe.fromJson(Map<String, dynamic>.from(raw)))
               .toList() ??
           base.recipes,
+      installationEffects: _installationEffects(
+          json['installationEffects'], base.installationEffects),
     );
     validateElevageConfig(config);
     return config;
@@ -956,7 +1012,39 @@ int _number(Object? value, int fallback) =>
 double _rate(Object? value, double fallback) =>
     value is num && value >= 0 && value <= 1 ? value.toDouble() : fallback;
 
+Map<String, Map<String, int>> _installationEffects(
+    Object? value, Map<String, Map<String, int>> fallback) {
+  if (value is! Map) return fallback;
+  final result = <String, Map<String, int>>{};
+  for (final entry in value.entries) {
+    if (entry.key is! String || entry.value is! Map) continue;
+    final effects = <String, int>{};
+    for (final effect in (entry.value as Map).entries) {
+      if (effect.key is String && effect.value is num) {
+        effects[effect.key as String] = (effect.value as num).round();
+      }
+    }
+    result[entry.key as String] = effects;
+  }
+  return result;
+}
+
 void validateElevageConfig(ElevageConfig config) {
+  final baseDefinitions = <String, ElevageInstallationDefinition>{
+    for (final definition in config._defaultInstallations)
+      definition.id: definition,
+  };
+  final invalidInstallationEffects =
+      config.installationEffects.entries.any((entry) {
+    final definition = baseDefinitions[entry.key];
+    if (definition == null) return true;
+    const environmental = <String>{'light', 'temperature', 'humidity'};
+    const wellbeing = <String>{'wellbeing'};
+    final allowed =
+        definition.category == 'STRUCTURE' ? environmental : wellbeing;
+    return entry.value.keys.any((key) => !allowed.contains(key)) ||
+        entry.value.values.any((value) => value < -5 || value > 5);
+  });
   if (config.hungerNormalHours > config.hungerHungryHours ||
       config.hungerHungryHours > config.hungerVeryHungryHours ||
       config.suspectedThreshold > config.confirmedThreshold ||
@@ -986,6 +1074,7 @@ void validateElevageConfig(ElevageConfig config) {
       config.minStaySeconds <= 0 ||
       config.resonanceGainPerUse <= 0 ||
       config.vocalizations.values.any((value) => value.trim().isEmpty) ||
+      invalidInstallationEffects ||
       config.recipes.any((recipe) =>
           recipe.organic < 0 ||
           recipe.mineral < 0 ||

@@ -1694,6 +1694,18 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               title: Text(recipe.label),
               subtitle: Text(_recipeCostSummary(recipe)),
               onTap: () => _editRecipe(context, recipe))),
+          _heading('Effets des structures et de l’habitat'),
+          const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                  'Les structures modifient Lumière, Température et Humidité. Les meubles et décorations ne règlent ici que leur effet de bien-être : leurs préférences individuelles restent secrètes.')),
+          ...config.installations.map((definition) => ListTile(
+              leading:
+                  Icon(ElevagePresentation.installationIcon(definition.id)),
+              title: Text(definition.label),
+              subtitle: Text(_installationEffectSummary(definition)),
+              trailing: const Icon(Icons.tune),
+              onTap: () => _editInstallationEffects(context, definition))),
           _heading('Métamorphose'),
           _number(
               context,
@@ -1761,6 +1773,99 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
         ...recipe.special.entries.map((entry) =>
             '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}'),
       ].join(' · ');
+
+  String _installationEffectSummary(ElevageInstallationDefinition definition) {
+    if (definition.category != 'STRUCTURE') {
+      return 'Bien-être ${_signed(definition.wellbeingImpact)}';
+    }
+    return '☀️ ${_signed(definition.light)} · '
+        '🌡️ ${_signed(definition.temperature)} · '
+        '💧 ${_signed(definition.humidity)}';
+  }
+
+  Future<void> _editInstallationEffects(
+      BuildContext context, ElevageInstallationDefinition definition) async {
+    final fields = definition.category == 'STRUCTURE'
+        ? <String, int>{
+            'light': definition.light,
+            'temperature': definition.temperature,
+            'humidity': definition.humidity,
+          }
+        : <String, int>{'wellbeing': definition.wellbeingImpact};
+    final labels = <String, String>{
+      'light': 'Lumière',
+      'temperature': 'Température',
+      'humidity': 'Humidité',
+      'wellbeing': 'Bien-être',
+    };
+    final controllers = <String, TextEditingController>{
+      for (final entry in fields.entries)
+        entry.key: TextEditingController(text: '${entry.value}'),
+    };
+    Map<String, int>? next;
+    String? error;
+    try {
+      next = await showDialog<Map<String, int>>(
+          context: context,
+          builder: (dialogContext) =>
+              StatefulBuilder(builder: (dialogContext, setLocal) {
+                return AlertDialog(
+                    title: Text('${definition.label} · effets'),
+                    content: SizedBox(
+                        width: double.maxFinite,
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                          Text(definition.category == 'STRUCTURE'
+                              ? 'Effets locaux appliqués dans la zone de la structure.'
+                              : 'Effet de bien-être de cet objet. Les affinités individuelles ne sont pas réglables ici.'),
+                          const SizedBox(height: 12),
+                          ...fields.keys.map((key) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: TextField(
+                                  controller: controllers[key],
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          signed: true),
+                                  decoration: InputDecoration(
+                                      labelText: labels[key],
+                                      helperText: 'Entre -5 et +5')))),
+                          if (error != null)
+                            Text(error!,
+                                style: const TextStyle(color: Colors.red)),
+                        ])),
+                    actions: <Widget>[
+                      TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Annuler')),
+                      FilledButton(
+                          onPressed: () {
+                            final values = <String, int>{};
+                            for (final key in fields.keys) {
+                              final value =
+                                  int.tryParse(controllers[key]!.text.trim());
+                              if (value == null || value < -5 || value > 5) {
+                                setLocal(() => error =
+                                    'Utilisez un nombre entier entre -5 et +5.');
+                                return;
+                              }
+                              values[key] = value;
+                            }
+                            Navigator.pop(dialogContext, values);
+                          },
+                          child: const Text('Valider'))
+                    ]);
+              }));
+    } finally {
+      for (final controller in controllers.values) {
+        controller.dispose();
+      }
+    }
+    if (!context.mounted || next == null) return;
+    setState(() => config = config.copyWith(installationEffects: {
+          ...config.installationEffects,
+          definition.id: next!,
+        }));
+  }
 
   Future<void> _editRecipe(BuildContext context, ElevageRecipe recipe) async {
     final organic = await _numberDialog(
@@ -2744,21 +2849,28 @@ Future<void> _showInstallationDetails(
                     .join(' · ')),
               ],
               const SizedBox(height: 16),
-              Text('Effets Alcôve',
-                  style: Theme.of(sheetContext).textTheme.titleSmall),
-              Text('☀️ Lumière : ${_signed(definition.light)}\n'
-                  '🌡️ Température : ${_signed(definition.temperature)}\n'
-                  '💧 Humidité : ${_signed(definition.humidity)}'),
-              const SizedBox(height: 16),
-              Text('Impact prévisionnel',
-                  style: Theme.of(sheetContext).textTheme.titleSmall),
-              Text(
-                  'Avant  ☀️ ${ElevagePresentation.environmentScale(currentEnvironment['light']!)}/5 · '
-                  '🌡️ ${ElevagePresentation.environmentScale(currentEnvironment['temperature']!)}/5 · '
-                  '💧 ${ElevagePresentation.environmentScale(currentEnvironment['humidity']!)}/5\n'
-                  'Après  ☀️ ${ElevagePresentation.environmentScale(after['light']!)}/5 · '
-                  '🌡️ ${ElevagePresentation.environmentScale(after['temperature']!)}/5 · '
-                  '💧 ${ElevagePresentation.environmentScale(after['humidity']!)}/5'),
+              if (definition.category == 'STRUCTURE') ...<Widget>[
+                Text('Effets Alcôve',
+                    style: Theme.of(sheetContext).textTheme.titleSmall),
+                Text('☀️ Lumière : ${_signed(definition.light)}\n'
+                    '🌡️ Température : ${_signed(definition.temperature)}\n'
+                    '💧 Humidité : ${_signed(definition.humidity)}'),
+                const SizedBox(height: 16),
+                Text('Impact prévisionnel',
+                    style: Theme.of(sheetContext).textTheme.titleSmall),
+                Text(
+                    'Avant  ☀️ ${ElevagePresentation.environmentScale(currentEnvironment['light']!)}/5 · '
+                    '🌡️ ${ElevagePresentation.environmentScale(currentEnvironment['temperature']!)}/5 · '
+                    '💧 ${ElevagePresentation.environmentScale(currentEnvironment['humidity']!)}/5\n'
+                    'Après  ☀️ ${ElevagePresentation.environmentScale(after['light']!)}/5 · '
+                    '🌡️ ${ElevagePresentation.environmentScale(after['temperature']!)}/5 · '
+                    '💧 ${ElevagePresentation.environmentScale(after['humidity']!)}/5'),
+              ] else ...<Widget>[
+                Text('Effet de bien-être',
+                    style: Theme.of(sheetContext).textTheme.titleSmall),
+                Text(
+                    '${_signed(definition.wellbeingImpact)} lors d’une interaction positive.'),
+              ],
             ]),
       ),
     ),
@@ -3217,6 +3329,9 @@ Future<void> _openBiofabricator(
 }
 
 String _installationImpactSentence(ElevageInstallationDefinition definition) {
+  if (definition.category != 'STRUCTURE') {
+    return 'Apporte ${_signed(definition.wellbeingImpact)} de bien-être lors d’une interaction positive.';
+  }
   final parts = <String>[];
   if (definition.light != 0) {
     parts.add(definition.light > 0 ? 'éclaire' : 'assombrit');

@@ -945,6 +945,14 @@ L’Eau n’est pas une ressource globale du Camp.
   designer choisit un composant par ligne et sa quantité ; plusieurs lignes
   sont possibles. La validation bloque les IDs inconnus et les quantités
   nulles ou négatives, et les overrides restent séparés de la sauvegarde.
+- **Effets d’habitat pilotables.** Le Dashboard expose les effets propres à
+  chaque objet : une **Structure** peut régler localement Lumière,
+  Température et Humidité ; un **Meuble** ou une **Décoration** règle seulement
+  son impact de wellbeing lors d’une interaction positive. Les affinités de
+  décoration, activités et préférences individuelles restent volontairement
+  dans le domaine : elles ne sont ni visibles ni réglables dans le Dashboard.
+  Les valeurs sont validées entre -5 et +5, persistées comme overrides de
+  configuration, séparés de la sauvegarde de jeu.
 - **Affinités.** Au premier contact d’une décoration, un jet déterministe lié
   à l’individu est persisté par instance de décoration. Résonance favorise
   Cristal (80 %)

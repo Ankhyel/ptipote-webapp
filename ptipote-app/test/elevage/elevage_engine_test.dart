@@ -1407,4 +1407,38 @@ void main() {
             ])),
         throwsFormatException);
   });
+
+  test('les effets d’habitat sont configurables par catégorie', () {
+    final config = defaultElevageConfig
+        .copyWith(installationEffects: <String, Map<String, int>>{
+      'ABRI_FIBREUX': <String, int>{
+        'light': 1,
+        'temperature': -2,
+        'humidity': 1,
+      },
+      'ABRI_MINERAL_PROFOND': <String, int>{
+        'light': -2,
+        'temperature': -1,
+        'humidity': 0,
+      },
+      'HAMAC': <String, int>{'wellbeing': 3},
+      'CRISTAL_DECORATIF': <String, int>{'wellbeing': 2},
+    });
+    validateElevageConfig(config);
+    expect(config.installation('ABRI_FIBREUX')!.light, 1);
+    expect(config.installation('ABRI_MINERAL_PROFOND')!.temperature, -1);
+    expect(config.installation('HAMAC')!.wellbeingImpact, 3);
+    expect(config.installation('CRISTAL_DECORATIF')!.wellbeingImpact, 2);
+    expect(
+        ElevageConfig.fromJson(config.toJson())
+            .installation('HAMAC')!
+            .wellbeingImpact,
+        3);
+    expect(
+        () => validateElevageConfig(
+                config.copyWith(installationEffects: <String, Map<String, int>>{
+              'HAMAC': <String, int>{'humidity': 2},
+            })),
+        throwsFormatException);
+  });
 }

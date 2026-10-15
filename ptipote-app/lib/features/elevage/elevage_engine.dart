@@ -916,11 +916,11 @@ class ElevageDomain {
         (item['interactionCount'] as num? ?? 0).toInt() + 1;
     item['lastUsedAt'] = now;
     final posed = personalityValue(individual, 'tempo') >= .5;
-    final boost =
-        (definition!.activity == 'REST' || definition.activity == 'READ') &&
+    final boost = definition!.wellbeingImpact +
+        ((definition.activity == 'REST' || definition.activity == 'READ') &&
                 posed
-            ? 2
-            : 1;
+            ? 1
+            : 0);
     _adjustWellbeing(individual, boost, now);
     _interaction(individual, 'FURNITURE_${definition.activity ?? 'USE'}',
         tempo: definition.activity == 'PLAY' ? -1 : 1);
@@ -1011,7 +1011,9 @@ class ElevageDomain {
         .firstWhere((entry) => entry['instanceId'] == instanceId);
     persistedItem['interactionCount'] =
         (persistedItem['interactionCount'] as num? ?? 0).toInt() + 1;
-    if (preference['liked'] == true) _adjustWellbeing(individual, 1, now);
+    if (preference['liked'] == true) {
+      _adjustWellbeing(individual, definition.wellbeingImpact, now);
+    }
     return preferred;
   }
 
