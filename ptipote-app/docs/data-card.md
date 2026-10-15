@@ -908,7 +908,44 @@ L’Eau n’est pas une ressource globale du Camp.
   tolère moins les réveils répétés ; un Spontané réagit plus vite. Ces réveils
   affectent seulement le wellbeing temporaire.
 - **Humidité de départ.** La baseline globale est désormais **2/5**
-  (`baseHumidity: -1` dans l’échelle interne convertie pour l’UI). Sans
+  (`baseHumidity: 2` dans l’échelle métier directe). Sans
   installation, l’Alcôve Résonance est viable ; +1 local donne 3/5, +2 donne
   4/5. Le niveau 5/5 nécessite donc une combinaison explicite d’effets et ne
   survient plus dans l’environnement standard.
+
+## P’TIPOTE Élevage — Lot 20 : habitat appropriable
+
+- **Trois catégories.** Une `STRUCTURE` reste dans son slot technique Z1–Z4,
+  modifie l’environnement et n’est jamais déplacée par le P’TIPOTE. Un
+  `MEUBLE` est une station d’activité libre ; une `DECORATION` est un petit
+  objet libre. Meubles et décorations sont conservés dans l’inventaire
+  d’habitat puis placés dans une zone, où plusieurs instances peuvent coexister.
+  Bébé ne les transporte pas ; Intermédiaire transporte les décorations ;
+  Mature peut aussi transporter les meubles explicitement compatibles.
+- **Formations de résonance.** Les anciennes géodes structurelles sont
+  migrées/affichées comme Formation minérale, métallique ou cristalline. Elles
+  ne produisent jamais Fer, Quartz ou Calcaire : elles soutiennent une action
+  `RESONATE`, lente, persistante et non destructive. Les ressources libres
+  restent absorbables et consommées immédiatement. Les recettes de Formation
+  demandent donc leurs composants spécifiques (Fer, Quartz, Calcaire).
+- **Mobilier et décor.** Le catalogue V0 contient Hamac, Nid/couchette,
+  Potager vertical, Litière fongique, Bac à gravier, Bibliothèque Databug et
+  Parcours d’obstacles, ainsi que plantes, mousse, cristal, géode, pierre,
+  carillon et conque décoratifs. Le Bio-fabricateur sépare Structures, Meubles
+  et Décorations et détaille les composants spécifiques.
+- **Affinités.** Au premier contact d’une décoration, un jet déterministe lié
+  à l’individu est persisté par instance de décoration. Résonance favorise
+  Cristal (80 %)
+  et Minéral (70 %), les autres groupes partent à 50 % ; une affinité déjà
+  appréciée dans le même groupe ajoute une unique fois +20 points, plafonnée à
+  100. Tempo module les catégories musicales douces/énergiques. Une décoration
+  aimée donne seulement un léger wellbeing, sans pénalité durable si elle ne
+  plaît pas.
+- **Séjour et environnement.** Les valeurs finales Lumière, Température et
+  Humidité sont désormais des données métier **0–5**, clampées après tous les
+  effets : jamais négatives, jamais au-delà de 5. Les baselines sont 2/5.
+  Le séjour neutre est configurable : Bébé 30 s, Intermédiaire 20 s, Mature
+  25 s ; Posé +5 s, Spontané -5 s, zone idéale +10 s, mauvaise -10 s,
+  extrême -20 s, avec un minimum absolu de 3 s. **Point à arbitrer futur :**
+  passer de une à deux Structures par zone. `RELATIONAL_OBJECT` reste le hook
+  réservé à la future Poupée familière.

@@ -34,6 +34,8 @@ class ElevageSave {
       'activeIndividualIds': <String>[],
       'discoveredItemIds': <String>[],
       'installationInventory': <String, dynamic>{},
+      'habitatInventory': <String, dynamic>{},
+      'habitatItemsByAlcoveId': <String, dynamic>{},
       // Items placed in the four visible Alcôve zones. They are deliberately
       // separate from both the player inventory and installed constructions.
       'sceneItemsByAlcoveId': <String, dynamic>{},
@@ -54,6 +56,8 @@ class ElevageSave {
     final normalized = _clone(json);
     normalized.putIfAbsent('runsByIndividualId', () => <String, dynamic>{});
     normalized.putIfAbsent('installationInventory', () => <String, dynamic>{});
+    normalized.putIfAbsent('habitatInventory', () => <String, dynamic>{});
+    normalized.putIfAbsent('habitatItemsByAlcoveId', () => <String, dynamic>{});
     normalized.putIfAbsent('sceneItemsByAlcoveId', () => <String, dynamic>{});
     normalized.putIfAbsent('discoveredItemIds', () => <String>[]);
     normalized.putIfAbsent('coRearingReturnLedger', () => <String, dynamic>{});
@@ -82,6 +86,7 @@ class ElevageSave {
                 });
         raw.putIfAbsent('activeRequest', () => null);
         raw.putIfAbsent('communicationCounts', () => <String, int>{});
+        raw.putIfAbsent('decorPreferences', () => <String, dynamic>{});
         raw.putIfAbsent(
             'sleep',
             () => <String, dynamic>{
@@ -481,6 +486,7 @@ class ElevageDomain {
       'wellbeing': <String, dynamic>{'value': 60, 'lastUpdatedAt': now},
       'activeRequest': null,
       'communicationCounts': <String, int>{},
+      'decorPreferences': <String, dynamic>{},
       'sleep': <String, dynamic>{
         'awakeUntil': 0,
         'wakeCount': 0,
@@ -544,6 +550,8 @@ class ElevageDomain {
     state.data['individuals'] = <String, dynamic>{};
     state.data['activeIndividualIds'] = <String>[];
     state.data['installationInventory'] = <String, dynamic>{};
+    state.data['habitatInventory'] = <String, dynamic>{};
+    state.data['habitatItemsByAlcoveId'] = <String, dynamic>{};
     state.data['sceneItemsByAlcoveId'] = <String, dynamic>{};
     state.data['runsByIndividualId'] = <String, dynamic>{};
     state.data['memoryEvents'] = <String, dynamic>{};
@@ -711,6 +719,267 @@ class ElevageDomain {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
+  }
+
+  /// Meubles et décorations sont des instances libres, distinctes des
+  /// ressources posées et des structures techniques attachées aux slots.
+  static List<Map<String, dynamic>> habitatItems(
+      ElevageSave state, String alcoveId) {
+    final all = state.data['habitatItemsByAlcoveId'] as Map;
+    return ((all[alcoveId] as List?) ?? const <dynamic>[])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  static ElevageSave placeHabitatItem(ElevageSave source, String alcoveId,
+      String instanceId, String zoneId, int now, ElevageConfig config) {
+    if (config.sceneZone(zoneId) == null) throw StateError('Zone invalide.');
+    final state = source.copy();
+    final inventory = state.data['habitatInventory'] as Map<String, dynamic>;
+    final instance = inventory.remove(instanceId);
+    if (instance == null) throw StateError('Objet d’habitat indisponible.');
+    final definition = config.installation(instance['definitionId'] as String);
+    if (definition == null || definition.category == 'STRUCTURE') {
+      throw StateError('Cet objet doit être placé dans un slot Structure.');
+    }
+    final all = state.data['habitatItemsByAlcoveId'] as Map<String, dynamic>;
+    final placed = (all.putIfAbsent(alcoveId, () => <dynamic>[]) as List);
+    placed.add(<String, dynamic>{
+      ...Map<String, dynamic>.from(instance),
+      'zoneId': zoneId,
+      'positionOrder': placed
+          .whereType<Map>()
+          .where((entry) => entry['zoneId'] == zoneId)
+          .length,
+      'placedAt': now,
+      'interactionCount': 0,
+      'reorganizationCooldownUntil': 0,
+    });
+    return state;
+  }
+
+  static ElevageSave recoverHabitatItem(
+      ElevageSave source, String alcoveId, String instanceId) {
+    final state = source.copy();
+    final all = state.data['habitatItemsByAlcoveId'] as Map<String, dynamic>;
+    final placed = (all[alcoveId] as List? ?? <dynamic>[]);
+    final index = placed.indexWhere(
+        (entry) => entry is Map && entry['instanceId'] == instanceId);
+    if (index < 0) throw StateError('Objet d’habitat introuvable.');
+    final item = Map<String, dynamic>.from(placed.removeAt(index) as Map);
+    item.removeWhere((key, _) => <String>{
+          'zoneId',
+          'positionOrder',
+          'placedAt',
+          'interactionCount',
+          'reorganizationCooldownUntil'
+        }.contains(key));
+    (state.data['habitatInventory'] as Map<String, dynamic>)[instanceId] = item;
+    return state;
+  }
+
+  static bool canCarryHabitatItem(
+      Map individual, ElevageInstallationDefinition definition) {
+    final stage = individual['lifecycle']['stage'] as String;
+    if (definition.category == 'STRUCTURE' || stage == 'BABY') return false;
+    if (definition.category == 'DECORATION') return stage != 'BABY';
+    return stage == 'MATURE' && definition.movableByPtipote;
+  }
+
+  static ElevageSave moveHabitatItem(
+      ElevageSave source,
+      String individualId,
+      String alcoveId,
+      String instanceId,
+      String targetZoneId,
+      int now,
+      ElevageConfig config) {
+    if (config.sceneZone(targetZoneId) == null) {
+      throw StateError('Zone cible invalide.');
+    }
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    final all = state.data['habitatItemsByAlcoveId'] as Map<String, dynamic>;
+    final placed = all[alcoveId] as List? ?? <dynamic>[];
+    Map? item;
+    for (final entry in placed.whereType<Map>()) {
+      if (entry['instanceId'] == instanceId) {
+        item = entry;
+        break;
+      }
+    }
+    if (item == null) throw StateError('Objet d’habitat introuvable.');
+    final definition = config.installation(item['definitionId'] as String);
+    if (definition == null || !canCarryHabitatItem(individual, definition)) {
+      throw StateError('Cet objet ne peut pas être déplacé par ce P’TIPOTE.');
+    }
+    if ((item['reorganizationCooldownUntil'] as num? ?? 0).toInt() > now) {
+      return state;
+    }
+    item['zoneId'] = targetZoneId;
+    item['reorganizationCooldownUntil'] =
+        now + const Duration(minutes: 10).inMilliseconds;
+    item['interactionCount'] =
+        (item['interactionCount'] as num? ?? 0).toInt() + 1;
+    return state;
+  }
+
+  /// Returns one low-frequency decorative reorganization when an autonomous
+  /// individual has already discovered that it likes the object. The caller
+  /// remains responsible for rendering the pickup/carry/drop sequence.
+  static Map<String, String>? nextHabitatReorganization(ElevageSave state,
+      String individualId, String alcoveId, int now, ElevageConfig config,
+      {String? phaseOverride}) {
+    final individual = _individual(state, individualId);
+    if (personalityValue(individual, 'initiative') < .5) return null;
+    final preferences = individual['decorPreferences'] as Map?;
+    if (preferences == null || preferences.isEmpty) return null;
+    final items = habitatItems(state, alcoveId)
+      ..sort((a, b) => '${a['instanceId']}'.compareTo('${b['instanceId']}'));
+    for (final item in items) {
+      if ((item['reorganizationCooldownUntil'] as num? ?? 0).toInt() > now) {
+        continue;
+      }
+      final definition = config.installation(item['definitionId'] as String);
+      if (definition == null || !canCarryHabitatItem(individual, definition)) {
+        continue;
+      }
+      final preference = preferences[definition.id] as Map?;
+      if (preference?['liked'] != true) continue;
+      final target = findBestSafeZone(state, alcoveId, config, now,
+          phaseOverride: phaseOverride,
+          excludingZoneId: item['zoneId'] as String);
+      if (target == item['zoneId']) continue;
+      return <String, String>{
+        'instanceId': item['instanceId'] as String,
+        'fromZoneId': item['zoneId'] as String,
+        'targetZoneId': target,
+      };
+    }
+    return null;
+  }
+
+  static int zoneStaySeconds(
+      Map individual, String comfort, ElevageConfig config) {
+    final stage = individual['lifecycle']['stage'] as String;
+    var seconds = switch (stage) {
+      'BABY' => config.baseStayBabySeconds,
+      'INTERMEDIATE' => config.baseStayIntermediateSeconds,
+      _ => config.baseStayMatureSeconds,
+    };
+    seconds += personalityValue(individual, 'tempo') >= .5
+        ? config.tempoPosedStayModifierSeconds
+        : config.tempoSpontaneousStayModifierSeconds;
+    seconds += switch (comfort) {
+      'IDEAL' || 'GOOD' => config.perfectZoneStayModifierSeconds,
+      'BAD' => config.badZoneStayModifierSeconds,
+      'EXTREME' => config.extremeZoneStayModifierSeconds,
+      _ => 0,
+    };
+    return max(config.minStaySeconds, seconds);
+  }
+
+  /// Rolls a decorative affinity once from the persistent individual seed.
+  /// Similarity adds a single capped +20 bonus, never a bonus per object.
+  static ElevageSave persistDecorPreference(ElevageSave source,
+      String individualId, ElevageInstallationDefinition definition) {
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    final category = definition.decorCategory;
+    if (definition.category != 'DECORATION' || category == null) return state;
+    final preferences = individual.putIfAbsent(
+        'decorPreferences', () => <String, dynamic>{}) as Map;
+    // Each decorative instance is evaluated once. Keeping the group alongside
+    // the instance lets a second decoration from the same family inherit one
+    // bounded similarity bonus without ever rerolling the first result.
+    if (preferences[definition.id] != null) return state;
+    var chance = switch (category) {
+      'CRYSTAL' => 80,
+      'MINERAL' => 70,
+      _ => 50,
+    };
+    final tempo = personalityValue(individual, 'tempo');
+    if (category == 'MUSIC_SOFT' && tempo >= .5) chance += 15;
+    if (category == 'MUSIC_ENERGETIC' && tempo < .5) chance += 15;
+    if (category == 'MUSIC_ENERGETIC' && tempo >= .5) chance -= 15;
+    if (preferences.values
+        .whereType<Map>()
+        .any((entry) => entry['liked'] == true && entry['group'] == category)) {
+      chance += 20;
+    }
+    chance = chance.clamp(0, 100);
+    final seed = '${individual['individualSeed']}:decor:${definition.id}';
+    preferences[definition.id] = <String, dynamic>{
+      'liked': _hash(seed).abs() % 100 < chance,
+      'chance': chance,
+      'group': category,
+    };
+    return state;
+  }
+
+  static ElevageSave interactDecoration(ElevageSave source, String individualId,
+      String alcoveId, String instanceId, int now, ElevageConfig config) {
+    final state = source.copy();
+    final all = state.data['habitatItemsByAlcoveId'] as Map;
+    final entries = all[alcoveId] as List? ?? <dynamic>[];
+    Map? item;
+    for (final entry in entries.whereType<Map>()) {
+      if (entry['instanceId'] == instanceId) {
+        item = entry;
+        break;
+      }
+    }
+    if (item == null) throw StateError('Décoration introuvable.');
+    final definition = config.installation(item['definitionId'] as String);
+    if (definition?.category != 'DECORATION') return state;
+    final preferred = persistDecorPreference(state, individualId, definition!);
+    final individual = _individual(preferred, individualId);
+    final preference =
+        (individual['decorPreferences'] as Map)[definition.id] as Map;
+    final persistedItems =
+        (preferred.data['habitatItemsByAlcoveId'] as Map)[alcoveId] as List;
+    final persistedItem = persistedItems
+        .whereType<Map>()
+        .firstWhere((entry) => entry['instanceId'] == instanceId);
+    persistedItem['interactionCount'] =
+        (persistedItem['interactionCount'] as num? ?? 0).toInt() + 1;
+    if (preference['liked'] == true) _adjustWellbeing(individual, 1, now);
+    return preferred;
+  }
+
+  static ElevageSave resonateFormation(ElevageSave source, String individualId,
+      String alcoveId, String instanceId, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    if ((individual['lifecycle'] as Map)['stage'] == 'BABY') {
+      throw StateError('La résonance autonome demande un stade plus avancé.');
+    }
+    Map? slot;
+    for (final entry
+        in (_alcove(state, alcoveId)['slots'] as List).whereType<Map>()) {
+      if (entry['instanceId'] == instanceId) {
+        slot = entry;
+        break;
+      }
+    }
+    final definition = slot == null
+        ? null
+        : config.installation(slot['definitionId'] as String);
+    if (definition?.resonanceMaterial == null) {
+      throw StateError('Cette structure ne soutient pas la résonance.');
+    }
+    final care = individual['care'] as Map;
+    final structural = care['structuralIntake'] as Map;
+    structural['total'] =
+        (structural['total'] as num).toInt() + config.resonanceGainPerUse;
+    final byMaterial = structural['byMaterial'] as Map;
+    final material = definition!.resonanceMaterial!;
+    byMaterial[material] = (byMaterial[material] as num? ?? 0).toInt() +
+        config.resonanceGainPerUse;
+    _adjustWellbeing(individual, 1, now);
+    _interaction(individual, 'RESONATE', initiative: 1, tempo: 1);
+    return state;
   }
 
   /// Moves a compatible item out of the player inventory and into one physical
@@ -973,11 +1242,13 @@ class ElevageDomain {
     // La nuit n'est pas une « ombre » additionnelle : seul le niveau lumineux
     // local hors offset nocturne peut refroidir la zone.
     final lightWithoutNight = result['light']! - nightOffset;
-    if ((lightWithoutNight + 3).clamp(1, 5) <= 2) {
+    if (lightWithoutNight.clamp(0, 5) <= 2) {
       result['temperature'] =
           result['temperature']! + config.strongShadeTemperatureDelta;
     }
-    return result;
+    // L’environnement est désormais une donnée métier 0–5, jamais une
+    // valeur relative négative masquée uniquement par l’interface.
+    return result.map((key, value) => MapEntry(key, value.clamp(0, 5)));
   }
 
   /// Les effets ±1 sont strictement locaux. Les effets de magnitude ≥2
@@ -1080,7 +1351,7 @@ class ElevageDomain {
     };
     final axes = <String>['light', 'temperature', 'humidity']
         .map((axis) => config.resonanceAxisComfort(
-            axis, ((environment[axis] ?? 0) + 3).clamp(1, 5)))
+            axis, (environment[axis] ?? 0).clamp(0, 5)))
         .toList()
       ..sort((left, right) => severity[right]!.compareTo(severity[left]!));
     // Le pire axe l’emporte : aucun extrême ne peut être masqué par une
@@ -1305,11 +1576,16 @@ class ElevageDomain {
     generic['mineral'] = generic['mineral']! - recipe.mineral;
     recipe.special
         .forEach((item, amount) => special[item] = special[item]! - amount);
-    final instanceId = 'installation-$now-${recipe.id}';
-    (state.data['installationInventory'] as Map<String, dynamic>)[instanceId] =
-        <String, dynamic>{
+    final definition = config.installation(recipe.installationId);
+    if (definition == null) throw StateError('Définition d’habitat inconnue.');
+    final instanceId = '${definition.category.toLowerCase()}-$now-${recipe.id}';
+    final inventory = definition.category == 'STRUCTURE'
+        ? state.data['installationInventory'] as Map<String, dynamic>
+        : state.data['habitatInventory'] as Map<String, dynamic>;
+    inventory[instanceId] = <String, dynamic>{
       'instanceId': instanceId,
       'definitionId': recipe.installationId,
+      'category': definition.category,
       'acquisitionMode': 'CRAFTED',
       'craftedAt': now,
       'paidCost': <String, dynamic>{
@@ -1624,6 +1900,9 @@ class ElevageDomain {
     final alcove = _alcove(state, alcoveId);
     alcove['slots'] =
         List<dynamic>.filled((alcove['slotLimit'] as num).toInt(), null);
+    // Free furniture and decorations are Alcôve-bound too. They do not leak
+    // into a fresh Alcôve after a move-out.
+    (state.data['habitatItemsByAlcoveId'] as Map).remove(alcoveId);
     return state;
   }
 

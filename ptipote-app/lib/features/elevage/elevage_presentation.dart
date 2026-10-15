@@ -42,22 +42,38 @@ class ElevagePresentation {
     return stacks;
   }
 
-  static int environmentScale(int relativeValue) =>
-      (relativeValue + 3).clamp(1, 5);
+  static int environmentScale(int value) => value.clamp(0, 5);
 
   static String installationLabel(String id) => switch (id) {
         'BASSIN' => 'Bassin',
         'MOSS_STONE' => 'Pierre de mousse',
         'CULTURE_POTAGERE' => 'Culture potagère',
         'BUTTE_ARBUSTE' => 'Butte d’arbuste',
-        'GEODE_FERRIQUE' => 'Géode ferrique',
-        'GEODE_CRISTALLINE' => 'Géode cristalline',
+        'GEODE_FERRIQUE' || 'FORMATION_METALLIQUE' => 'Formation métallique',
+        'GEODE_CRISTALLINE' ||
+        'FORMATION_CRISTALLINE' =>
+          'Formation cristalline',
+        'FORMATION_MINERALE' => 'Formation minérale',
         'LAMPE_SOLAIRE' => 'Lampe solaire',
         'ABRI_FIBREUX' => 'Abri fibreux',
         'ABRI_MINERAL_PROFOND' => 'Abri minéral profond',
         'VENTILATION' => 'Ventilation',
         'TROU_GEOTHERMIQUE_CHAUD' => 'Trou géothermique chaud',
         'TOIT_SERRE' => 'Toit de serre',
+        'HAMAC' => 'Hamac',
+        'NID_COUCHETTE' => 'Nid / couchette',
+        'POTAGER_VERTICAL' => 'Potager vertical',
+        'LITIERE_FONGIQUE' => 'Litière fongique',
+        'BAC_GRAVIER' => 'Bac à gravier',
+        'BIBLIOTHEQUE_DATABUG' => 'Bibliothèque Databug',
+        'PARCOURS_OBSTACLES' => 'Parcours d’obstacles',
+        'PLANTE_DECORATIVE' => 'Plante décorative',
+        'MOUSSE_DECORATIVE' => 'Mousse décorative',
+        'CRISTAL_DECORATIF' => 'Cristal décoratif',
+        'GEODE_DECORATIVE' => 'Géode décorative',
+        'PIERRE_DECORATIVE' => 'Pierre décorative',
+        'CARILLON' => 'Carillon',
+        'CONQUE_MUSICALE' => 'Conque musicale',
         _ => 'Installation inconnue',
       };
 
@@ -66,10 +82,29 @@ class ElevagePresentation {
         'MOSS_STONE' => Icons.terrain_outlined,
         'CULTURE_POTAGERE' => Icons.grass_outlined,
         'BUTTE_ARBUSTE' => Icons.park_outlined,
-        'GEODE_FERRIQUE' || 'GEODE_CRISTALLINE' => Icons.diamond_outlined,
+        'GEODE_FERRIQUE' ||
+        'GEODE_CRISTALLINE' ||
+        'FORMATION_METALLIQUE' ||
+        'FORMATION_CRISTALLINE' ||
+        'FORMATION_MINERALE' =>
+          Icons.diamond_outlined,
         'LAMPE_SOLAIRE' => Icons.light_mode_outlined,
         'VENTILATION' => Icons.air_outlined,
         'TOIT_SERRE' => Icons.roofing_outlined,
+        'HAMAC' || 'NID_COUCHETTE' => Icons.bed_outlined,
+        'POTAGER_VERTICAL' => Icons.yard_outlined,
+        'LITIERE_FONGIQUE' => Icons.terrain_outlined,
+        'BAC_GRAVIER' => Icons.grain_outlined,
+        'BIBLIOTHEQUE_DATABUG' => Icons.menu_book_outlined,
+        'PARCOURS_OBSTACLES' => Icons.route_outlined,
+        'PLANTE_DECORATIVE' ||
+        'MOUSSE_DECORATIVE' =>
+          Icons.local_florist_outlined,
+        'CRISTAL_DECORATIF' ||
+        'GEODE_DECORATIVE' ||
+        'PIERRE_DECORATIVE' =>
+          Icons.auto_awesome_outlined,
+        'CARILLON' || 'CONQUE_MUSICALE' => Icons.music_note_outlined,
         _ => Icons.cabin_outlined,
       };
 

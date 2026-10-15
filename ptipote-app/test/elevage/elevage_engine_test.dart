@@ -430,8 +430,8 @@ void main() {
     final zone2 = ElevageDomain.zoneEnvironment(
         state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
         now: 0);
-    expect(zone3['humidity'], 1); // baseline 2/5 + bassin local +2
-    expect(zone2['humidity'], 0); // diffusion +1 vers la zone adjacente
+    expect(zone3['humidity'], 4); // baseline 2/5 + bassin local +2
+    expect(zone2['humidity'], 3); // diffusion +1 vers la zone adjacente
   });
 
   test('FOLLOW et CUDDLE créent des actions et des observations plafonnées',
@@ -608,8 +608,8 @@ void main() {
     final other = ElevageDomain.zoneEnvironment(
         state, 'alcove-1', 'ZONE_3', defaultElevageConfig,
         now: now, phaseOverride: 'DAY');
-    expect(day['humidity'], 1);
-    expect(other['humidity'], 0); // diffusion bassin Z2 → Z3, pas de reliquat.
+    expect(day['humidity'], 4);
+    expect(other['humidity'], 3); // diffusion bassin Z2 → Z3, pas de reliquat.
     expect(night['light'], lessThan(day['light']!));
     expect(
         ElevageDomain.dayNightRemainingMs(now, defaultElevageConfig,
@@ -661,12 +661,12 @@ void main() {
     expect(defaultElevageConfig.resonanceLightComfort(5), -2);
     expect(
         ElevageDomain.localComfort(
-            <String, int>{'light': -1, 'temperature': -1, 'humidity': -1},
+            <String, int>{'light': 2, 'temperature': 2, 'humidity': 2},
             defaultElevageConfig),
         'GOOD');
     expect(
         ElevageDomain.localComfort(
-            <String, int>{'light': 1, 'temperature': 0, 'humidity': 0},
+            <String, int>{'light': 4, 'temperature': 3, 'humidity': 3},
             defaultElevageConfig),
         'BAD');
   });
@@ -831,30 +831,30 @@ void main() {
                 now: now, phaseOverride: 'DAY')['humidity']!,
         };
     expect(humidity(), <String, int>{
-      'ZONE_1': -1,
-      'ZONE_2': -1,
-      'ZONE_3': -1,
-      'ZONE_4': -1,
+      'ZONE_1': 2,
+      'ZONE_2': 2,
+      'ZONE_3': 2,
+      'ZONE_4': 2,
     });
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'BASSIN',
       'zoneId': 'ZONE_2',
     };
     expect(humidity(), <String, int>{
-      'ZONE_1': 0,
-      'ZONE_2': 1,
-      'ZONE_3': 0,
-      'ZONE_4': -1,
+      'ZONE_1': 3,
+      'ZONE_2': 4,
+      'ZONE_3': 3,
+      'ZONE_4': 2,
     });
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'VENTILATION',
       'zoneId': 'ZONE_2',
     };
     expect(humidity(), <String, int>{
-      'ZONE_1': -2,
-      'ZONE_2': -3,
-      'ZONE_3': -2,
-      'ZONE_4': -1,
+      'ZONE_1': 1,
+      'ZONE_2': 0,
+      'ZONE_3': 1,
+      'ZONE_4': 2,
     });
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'BASSIN',
@@ -865,32 +865,32 @@ void main() {
       'zoneId': 'ZONE_4',
     };
     expect(humidity(), <String, int>{
-      'ZONE_1': 0,
-      'ZONE_2': 1,
-      'ZONE_3': -1,
-      'ZONE_4': -3,
+      'ZONE_1': 3,
+      'ZONE_2': 4,
+      'ZONE_3': 2,
+      'ZONE_4': 0,
     }); // somme complète avant le clamp visuel 1–5.
     alcove['slots'][3] = null;
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'TROU_GEOTHERMIQUE_CHAUD',
       'zoneId': 'ZONE_2',
     };
-    expect(humidity()['ZONE_2'], -2);
+    expect(humidity()['ZONE_2'], 1);
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'ABRI_MINERAL_PROFOND',
       'zoneId': 'ZONE_2',
     };
-    expect(humidity()['ZONE_2'], 0);
+    expect(humidity()['ZONE_2'], 3);
     final diagnostics = ElevageDomain.environmentDiagnostics(
         state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
         now: now, phaseOverride: 'DAY');
-    expect(diagnostics['finalHumidity'], 0);
+    expect(diagnostics['finalHumidity'], 3);
     final reloaded = ElevageSave.fromJson(state.toJson());
     expect(
         ElevageDomain.zoneEnvironment(
             reloaded, 'alcove-1', 'ZONE_2', defaultElevageConfig,
             now: now, phaseOverride: 'DAY')['humidity'],
-        0);
+        3);
   });
 
   test('température part de 2 la nuit, gagne 1 le jour et diffuse à +2', () {
@@ -1131,5 +1131,229 @@ void main() {
               'CONTENT': '   ',
             })),
         throwsFormatException);
+  });
+
+  test('Lot 20 distingue structure, meuble et décoration', () {
+    const config = defaultElevageConfig;
+    expect(config.installation('BASSIN')!.category, 'STRUCTURE');
+    expect(config.installation('HAMAC')!.category, 'MEUBLE');
+    expect(config.installation('CRISTAL_DECORATIF')!.category, 'DECORATION');
+    expect(config.installation('FORMATION_METALLIQUE')!.productive, isFalse);
+    expect(
+        config.installation('FORMATION_METALLIQUE')!.resonanceMaterial, 'IRON');
+  });
+
+  test('formation métallique coûte du fer et résonne sans être consommée', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'INTERMEDIATE';
+    (state.data['inventory']['special'] as Map)['IRON'] = 10;
+    (state.data['discoveredItemIds'] as List).add('IRON');
+    final recipe = defaultElevageConfig.recipes
+        .firstWhere((entry) => entry.id == 'FORMATION_METALLIQUE');
+    state = ElevageDomain.craft(state, recipe, now, defaultElevageConfig);
+    expect((state.data['inventory']['special'] as Map)['IRON'], 0);
+    final instanceId =
+        (state.data['installationInventory'] as Map).keys.single as String;
+    state = ElevageDomain.place(state, 'alcove-1', 1, instanceId, now + 1);
+    final before = ((state.data['individuals'] as Map)[id]['care']
+        ['structuralIntake'] as Map)['total'];
+    state = ElevageDomain.resonateFormation(
+        state, id, 'alcove-1', instanceId, now + 2, defaultElevageConfig);
+    expect(
+        ((state.data['individuals'] as Map)[id]['care']['structuralIntake']
+            as Map)['total'],
+        before + defaultElevageConfig.resonanceGainPerUse);
+    expect(
+        ((state.data['alcoves'] as List).first as Map)['slots'][1], isNotNull);
+  });
+
+  test('mobilité habitat respecte les stades et garde les structures fixes',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect(
+        ElevageDomain.canCarryHabitatItem(individual,
+            defaultElevageConfig.installation('CRISTAL_DECORATIF')!),
+        isFalse);
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    expect(
+        ElevageDomain.canCarryHabitatItem(individual,
+            defaultElevageConfig.installation('CRISTAL_DECORATIF')!),
+        isTrue);
+    expect(
+        ElevageDomain.canCarryHabitatItem(
+            individual, defaultElevageConfig.installation('HAMAC')!),
+        isFalse);
+    (individual['lifecycle'] as Map)['stage'] = 'MATURE';
+    expect(
+        ElevageDomain.canCarryHabitatItem(
+            individual, defaultElevageConfig.installation('HAMAC')!),
+        isTrue);
+    expect(
+        ElevageDomain.canCarryHabitatItem(
+            individual, defaultElevageConfig.installation('BASSIN')!),
+        isFalse);
+  });
+
+  test('séjour configuré et environnement restent strictement entre 0 et 5',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final individual =
+        ((state.data['individuals'] as Map).values.single as Map);
+    expect(
+        ElevageDomain.zoneStaySeconds(
+            individual, 'NEUTRAL', defaultElevageConfig),
+        anyOf(25, 35));
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][0] = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'zoneId': 'ZONE_1',
+    };
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'zoneId': 'ZONE_2',
+    };
+    final environment = ElevageDomain.zoneEnvironment(
+        state, 'alcove-1', 'ZONE_1', defaultElevageConfig,
+        now: now, phaseOverride: 'NIGHT');
+    expect(
+        environment.values.every((value) => value >= 0 && value <= 5), isTrue);
+    expect(environment['humidity'], 0);
+  });
+
+  test('objet habitat quitte l’inventaire, se récupère et reste déplacé', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    const instanceId = 'decor-crystal-1';
+    (state.data['habitatInventory'] as Map)[instanceId] = <String, dynamic>{
+      'instanceId': instanceId,
+      'definitionId': 'CRISTAL_DECORATIF',
+    };
+    state = ElevageDomain.placeHabitatItem(
+        state, 'alcove-1', instanceId, 'ZONE_2', now, defaultElevageConfig);
+    expect((state.data['habitatInventory'] as Map), isEmpty);
+    expect(ElevageDomain.habitatItems(state, 'alcove-1').single['zoneId'],
+        'ZONE_2');
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'INTERMEDIATE';
+    state = ElevageDomain.moveHabitatItem(
+        state, id, 'alcove-1', instanceId, 'ZONE_3', now, defaultElevageConfig);
+    expect(ElevageDomain.habitatItems(state, 'alcove-1').single['zoneId'],
+        'ZONE_3');
+    state = ElevageDomain.recoverHabitatItem(state, 'alcove-1', instanceId);
+    expect((state.data['habitatInventory'] as Map)[instanceId], isNotNull);
+  });
+
+  test('affinité décorative est déterministe, persistée et plafonnée', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final crystal = defaultElevageConfig.installation('CRISTAL_DECORATIF')!;
+    state = ElevageDomain.persistDecorPreference(state, id, crystal);
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    final first = Map<String, dynamic>.from(
+        (individual['decorPreferences'] as Map)[crystal.id] as Map);
+    state = ElevageDomain.persistDecorPreference(state, id, crystal);
+    expect(
+        (state.data['individuals'] as Map)[id]['decorPreferences'][crystal.id],
+        first);
+    final updatedIndividual = (state.data['individuals'] as Map)[id] as Map;
+    (updatedIndividual['decorPreferences'] as Map)['already-liked'] =
+        <String, dynamic>{'liked': true, 'group': 'CRYSTAL'};
+    const secondCrystal = ElevageInstallationDefinition(
+        id: 'CRISTAL_DECORATIF_2',
+        label: 'Cristal de test',
+        description: 'Test',
+        category: 'DECORATION',
+        decorCategory: 'CRYSTAL',
+        light: 0,
+        temperature: 0,
+        humidity: 0);
+    state = ElevageDomain.persistDecorPreference(state, id, secondCrystal);
+    final second = ((state.data['individuals'] as Map)[id]['decorPreferences']
+        ['CRISTAL_DECORATIF_2'] as Map);
+    expect(second['chance'], 100);
+  });
+
+  test('un P’TIPOTE autonome réorganise rarement une décoration appréciée', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    ((individual['personality'] as Map)['baseline'] as Map)['initiative'] = 90;
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    (individual['decorPreferences'] as Map)['CRISTAL_DECORATIF'] =
+        <String, dynamic>{'liked': true, 'group': 'CRYSTAL'};
+    (state.data['habitatItemsByAlcoveId'] as Map)['alcove-1'] =
+        <Map<String, dynamic>>[
+      <String, dynamic>{
+        'instanceId': 'decor-crystal-1',
+        'definitionId': 'CRISTAL_DECORATIF',
+        'zoneId': 'ZONE_2',
+        'reorganizationCooldownUntil': 0,
+      }
+    ];
+    final decision = ElevageDomain.nextHabitatReorganization(
+        state, id, 'alcove-1', now, defaultElevageConfig,
+        phaseOverride: 'DAY');
+    expect(decision, isNotNull);
+    expect(decision!['instanceId'], 'decor-crystal-1');
+    expect(decision['targetZoneId'], isNot('ZONE_2'));
+    state = ElevageDomain.moveHabitatItem(
+        state,
+        id,
+        'alcove-1',
+        decision['instanceId']!,
+        decision['targetZoneId']!,
+        now,
+        defaultElevageConfig);
+    expect(
+        ElevageDomain.nextHabitatReorganization(
+            state, id, 'alcove-1', now + 1, defaultElevageConfig,
+            phaseOverride: 'DAY'),
+        isNull);
   });
 }

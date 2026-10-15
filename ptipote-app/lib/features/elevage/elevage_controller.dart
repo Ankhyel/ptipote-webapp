@@ -92,6 +92,25 @@ class ElevageController extends ChangeNotifier {
           String alcoveId, String instanceId, String targetZoneId) =>
       _mutate((current) => ElevageDomain.relocateSceneItem(
           current, alcoveId, instanceId, targetZoneId, config));
+  Future<void> placeHabitatItem(
+          String alcoveId, String instanceId, String zoneId) =>
+      _mutate((current) => ElevageDomain.placeHabitatItem(
+          current, alcoveId, instanceId, zoneId, _now, config));
+  Future<void> recoverHabitatItem(String alcoveId, String instanceId) =>
+      _mutate((current) =>
+          ElevageDomain.recoverHabitatItem(current, alcoveId, instanceId));
+  Future<void> moveHabitatItem(String individualId, String alcoveId,
+          String instanceId, String zoneId) =>
+      _mutate((current) => ElevageDomain.moveHabitatItem(
+          current, individualId, alcoveId, instanceId, zoneId, _now, config));
+  Future<void> resonateFormation(
+          String individualId, String alcoveId, String instanceId) =>
+      _mutate((current) => ElevageDomain.resonateFormation(
+          current, individualId, alcoveId, instanceId, _now, config));
+  Future<void> interactDecoration(
+          String individualId, String alcoveId, String instanceId) =>
+      _mutate((current) => ElevageDomain.interactDecoration(
+          current, individualId, alcoveId, instanceId, _now, config));
   Future<ElevageSceneItemOutcome?> interactSceneItem(
       String individualId, String alcoveId, String instanceId) async {
     final current = state;

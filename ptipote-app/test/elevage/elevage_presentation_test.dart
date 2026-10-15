@@ -15,11 +15,11 @@ void main() {
     expect(feedback, isNot(contains('RUSH_SHAKE')));
   });
 
-  test('le HUD environnement utilise une échelle de jeu de 1 à 5', () {
-    expect(ElevagePresentation.environmentScale(-4), 1);
-    expect(ElevagePresentation.environmentScale(-1), 2);
-    expect(ElevagePresentation.environmentScale(0), 3);
-    expect(ElevagePresentation.environmentScale(1), 4);
+  test('le HUD environnement conserve l’échelle métier directe de 0 à 5', () {
+    expect(ElevagePresentation.environmentScale(-4), 0);
+    expect(ElevagePresentation.environmentScale(-1), 0);
+    expect(ElevagePresentation.environmentScale(0), 0);
+    expect(ElevagePresentation.environmentScale(2), 2);
     expect(ElevagePresentation.environmentScale(6), 5);
   });
 
@@ -30,6 +30,6 @@ void main() {
     expect(basin.description, contains('algues'));
     expect(basin.outputs, <String, int>{'ALGAE': 1, 'MOSS': 1});
     expect(basin.humidity, 2);
-    expect(ElevagePresentation.environmentScale(basin.humidity), 5);
+    expect(ElevagePresentation.environmentScale(basin.humidity), 2);
   });
 }

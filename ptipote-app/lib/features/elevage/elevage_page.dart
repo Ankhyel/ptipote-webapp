@@ -590,7 +590,15 @@ class _IndividualPageState extends State<_IndividualPage> {
             lastBehavior: playerTriggered ? null : _lastAutonomousBehavior,
             phaseOverride: widget.controller.forcedDayNightPhase)
         : _decisionForInstance(state, alcoveId, targetInstanceId, now, config);
-    if (decision == null) return;
+    if (decision == null) {
+      final reorganization = ElevageDomain.nextHabitatReorganization(
+          state, widget.individualId, alcoveId, now, config,
+          phaseOverride: widget.controller.forcedDayNightPhase);
+      if (reorganization != null) {
+        await _executeHabitatReorganization(reorganization, individual);
+      }
+      return;
+    }
     _autonomousInFlight = true;
     final targetZone = decision.zoneId;
     final carriesToSafety = decision.outcome.behavior == 'FLEE_WITH_ITEM';
@@ -690,6 +698,29 @@ class _IndividualPageState extends State<_IndividualPage> {
           state, widget.individualId, alcoveId, instanceId, now, config,
           phaseOverride: widget.controller.forcedDayNightPhase),
     );
+  }
+
+  Future<void> _executeHabitatReorganization(
+      Map<String, String> reorganization, Map individual) async {
+    _autonomousInFlight = true;
+    try {
+      _setSceneAction('PICKUP', zoneId: reorganization['fromZoneId']);
+      await _waitSceneAction(
+          (widget.controller.config.objectReactionDelayMs / 2).round(),
+          interruptible: false);
+      await widget.controller.moveHabitatItem(
+          widget.individualId,
+          individual['alcoveId'] as String,
+          reorganization['instanceId']!,
+          reorganization['targetZoneId']!);
+      if (!mounted || widget.controller.error != null) return;
+      _setSceneAction('MOVE_ITEM', zoneId: reorganization['targetZoneId']);
+      await _waitSceneAction(ElevageDomain.normalMoveDurationFor(
+          individual, widget.controller.config));
+      _setSceneAction('IDLE');
+    } finally {
+      _autonomousInFlight = false;
+    }
   }
 
   void _placeFromInventory(String item) {
@@ -905,6 +936,56 @@ class _IndividualPageState extends State<_IndividualPage> {
     );
   }
 
+  Future<void> _openHabitatItemActions(Map item) async {
+    final state = widget.controller.state!;
+    final individual =
+        (state.data['individuals'] as Map)[widget.individualId] as Map;
+    final alcoveId = individual['alcoveId'] as String;
+    final definition =
+        widget.controller.config.installation(item['definitionId'] as String);
+    if (definition == null) return;
+    final affinity = definition.category == 'DECORATION'
+        ? ((individual['decorPreferences'] as Map?)?[definition.id] as Map?)
+        : null;
+    final affinityLabel = affinity == null
+        ? 'Affinité à observer.'
+        : affinity['liked'] == true
+            ? 'Cette décoration semble lui plaire.'
+            : 'Cette décoration lui paraît plutôt neutre.';
+    await showModalBottomSheet<void>(
+        context: context,
+        builder: (sheetContext) => SafeArea(
+                child: Wrap(children: <Widget>[
+              ListTile(
+                  leading:
+                      Icon(ElevagePresentation.installationIcon(definition.id)),
+                  title: Text(definition.label),
+                  subtitle: Text(
+                      '${definition.category.toLowerCase()} · Z${(item['zoneId'] as String).split('_').last}\n${definition.description}${definition.category == 'DECORATION' ? '\n$affinityLabel' : ''}')),
+              if (definition.category == 'DECORATION')
+                ListTile(
+                    leading: const Icon(Icons.auto_awesome_outlined),
+                    title: const Text('Observer la réaction'),
+                    subtitle: const Text(
+                        'Les goûts se révèlent par les comportements répétés.'),
+                    onTap: () async {
+                      await widget.controller.interactDecoration(
+                          widget.individualId,
+                          alcoveId,
+                          item['instanceId'] as String);
+                      if (sheetContext.mounted) Navigator.pop(sheetContext);
+                    }),
+              ListTile(
+                  leading: const Icon(Icons.undo_outlined),
+                  title: const Text('Récupérer'),
+                  onTap: () async {
+                    await widget.controller.recoverHabitatItem(
+                        alcoveId, item['instanceId'] as String);
+                    if (sheetContext.mounted) Navigator.pop(sheetContext);
+                  }),
+            ])));
+  }
+
   Future<void> _openInstallationSlot(
       String alcoveId, int slot, Map<String, int> localEnvironment) async {
     final alcove = (widget.controller.state!.data['alcoves'] as List)
@@ -936,6 +1017,28 @@ class _IndividualPageState extends State<_IndividualPage> {
                           widget.controller.config,
                           definition,
                           localEnvironment)),
+                if (definition?.resonanceMaterial != null)
+                  ListTile(
+                      leading: const Icon(Icons.diamond_outlined),
+                      title: const Text('Entrer en résonance'),
+                      subtitle: Text(
+                          'Renforce lentement la structure via ${ElevagePresentation.itemLabel(definition!.resonanceMaterial!)} sans consommer la Formation.'),
+                      onTap: () async {
+                        await widget.controller.resonateFormation(
+                            widget.individualId,
+                            alcoveId,
+                            raw['instanceId'] as String);
+                        if (sheetContext.mounted &&
+                            widget.controller.error == null) {
+                          final updated =
+                              (widget.controller.state!.data['individuals']
+                                  as Map)[widget.individualId] as Map;
+                          _setSceneAction('RESONATE');
+                          _showSceneExpression('STRUCTURAL_ABSORB', updated,
+                              itemId: definition.resonanceMaterial);
+                          Navigator.pop(sheetContext);
+                        }
+                      }),
                 ...(((raw['productionState'] as Map?)?['availableByItemId']
                             as Map?)
                         ?.entries
@@ -1037,6 +1140,11 @@ class _IndividualPageState extends State<_IndividualPage> {
               tooltip: 'Inventaire',
               onPressed: () => _openInventory(
                   context, controller, individual, _placeFromInventory)),
+          IconButton(
+              icon: const Icon(Icons.chair_outlined),
+              tooltip: 'Meubles et décorations',
+              onPressed: () =>
+                  _openHabitatInventory(context, controller, alcoveId)),
           if (controller.config.devMode)
             IconButton(
                 icon: const Icon(Icons.settings_outlined),
@@ -1061,8 +1169,11 @@ class _IndividualPageState extends State<_IndividualPage> {
                 environment: environment,
                 sceneItems:
                     ElevageDomain.sceneItems(state, alcove['id'] as String),
+                habitatItems:
+                    ElevageDomain.habitatItems(state, alcove['id'] as String),
                 zones: controller.config.sceneZones,
                 onSceneItemTap: (item) => _openSceneItemActions(item),
+                onHabitatItemTap: (item) => _openHabitatItemActions(item),
                 onZoneTap: (zoneId) =>
                     _pendingPlacementItem == null ? null : _placeInZone(zoneId),
                 onZoneHoldStart: _startFollowHold,
@@ -1451,6 +1562,58 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               (value) => config = config.copyWith(nightDurationHours: value)),
           _number(context, 'Taille d’une pile', config.inventoryStackSize,
               (value) => config = config.copyWith(inventoryStackSize: value)),
+          _heading('Séjour dans une zone'),
+          _number(
+              context,
+              'Bébé · séjour neutre (s)',
+              config.baseStayBabySeconds,
+              (value) => config = config.copyWith(baseStayBabySeconds: value)),
+          _number(
+              context,
+              'Intermédiaire · séjour neutre (s)',
+              config.baseStayIntermediateSeconds,
+              (value) =>
+                  config = config.copyWith(baseStayIntermediateSeconds: value)),
+          _number(
+              context,
+              'Mature · séjour neutre (s)',
+              config.baseStayMatureSeconds,
+              (value) =>
+                  config = config.copyWith(baseStayMatureSeconds: value)),
+          _number(
+              context,
+              'Modificateur Posé (s)',
+              config.tempoPosedStayModifierSeconds,
+              (value) => config =
+                  config.copyWith(tempoPosedStayModifierSeconds: value)),
+          _number(
+              context,
+              'Modificateur Spontané (s)',
+              config.tempoSpontaneousStayModifierSeconds,
+              (value) => config =
+                  config.copyWith(tempoSpontaneousStayModifierSeconds: value)),
+          _number(
+              context,
+              'Zone idéale / bonne (s)',
+              config.perfectZoneStayModifierSeconds,
+              (value) => config =
+                  config.copyWith(perfectZoneStayModifierSeconds: value)),
+          _number(
+              context,
+              'Zone inconfortable (s)',
+              config.badZoneStayModifierSeconds,
+              (value) =>
+                  config = config.copyWith(badZoneStayModifierSeconds: value)),
+          _number(
+              context,
+              'Zone extrême (s)',
+              config.extremeZoneStayModifierSeconds,
+              (value) => config =
+                  config.copyWith(extremeZoneStayModifierSeconds: value)),
+          _number(context, 'Minimum absolu (s)', config.minStaySeconds,
+              (value) => config = config.copyWith(minStaySeconds: value)),
+          _number(context, 'Gain de résonance', config.resonanceGainPerUse,
+              (value) => config = config.copyWith(resonanceGainPerUse: value)),
           _heading('Mini-Lisière et installations'),
           _number(
               context,
@@ -1751,8 +1914,10 @@ class _AlcoveScene extends StatefulWidget {
     required this.slots,
     required this.environment,
     required this.sceneItems,
+    required this.habitatItems,
     required this.zones,
     required this.onSceneItemTap,
+    required this.onHabitatItemTap,
     required this.onZoneTap,
     required this.onZoneHoldStart,
     required this.onZoneHoldEnd,
@@ -1782,8 +1947,10 @@ class _AlcoveScene extends StatefulWidget {
   final List<dynamic> slots;
   final Map<String, int> environment;
   final List<Map<String, dynamic>> sceneItems;
+  final List<Map<String, dynamic>> habitatItems;
   final List<ElevageSceneZone> zones;
   final ValueChanged<Map> onSceneItemTap;
+  final ValueChanged<Map> onHabitatItemTap;
   final ValueChanged<String>? onZoneTap;
   final ValueChanged<String> onZoneHoldStart;
   final VoidCallback onZoneHoldEnd;
@@ -1962,6 +2129,47 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                             style: const TextStyle(fontSize: 11))
                         : Icon(ElevagePresentation.itemIcon(
                             item['itemId'] as String)),
+                  ),
+                ),
+              ),
+            );
+          }),
+          ...widget.habitatItems.asMap().entries.map((entry) {
+            final item = entry.value;
+            final zoneIndex = widget.zones
+                .indexWhere((zone) => zone.id == item['zoneId'] as String?);
+            final safeZoneIndex = zoneIndex < 0 ? 0 : zoneIndex;
+            final order = (item['positionOrder'] as num? ?? entry.key).toInt();
+            final x = <double>[
+              -.82,
+              -.45,
+              -.08,
+              .30,
+              .68
+            ][(safeZoneIndex + order) % 5];
+            return AnimatedAlign(
+              duration: const Duration(milliseconds: 260),
+              alignment: Alignment(x, order.isEven ? .04 : -.06),
+              child: Semantics(
+                button: true,
+                label: 'Objet d’habitat',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => widget.onHabitatItemTap(item),
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .tertiaryContainer
+                            .withValues(alpha: .88),
+                        borderRadius: BorderRadius.circular(10)),
+                    child: Icon(
+                        ElevagePresentation.installationIcon(
+                            item['definitionId'] as String),
+                        size: 18),
                   ),
                 ),
               ),
@@ -2232,6 +2440,7 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       'NEUTRAL' => Icons.sentiment_neutral_outlined,
       'RUSH_SHAKE' || 'EAT' => Icons.restaurant_outlined,
       'VIBRATE' || 'STRUCTURAL_ABSORB' => Icons.diamond_outlined,
+      'RESONATE' => Icons.auto_awesome,
       'STEP_BACK' || 'REJECT' => Icons.sentiment_very_dissatisfied_outlined,
       'DISCOMFORT' => Icons.sentiment_dissatisfied_outlined,
       'IRRITATED' => Icons.sentiment_very_dissatisfied_outlined,
@@ -2686,6 +2895,58 @@ Future<void> _placeInstallation(BuildContext context,
           ]));
 }
 
+Future<void> _openHabitatInventory(
+    BuildContext context, ElevageController controller, String alcoveId) async {
+  await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final inventory =
+            controller.state!.data['habitatInventory'] as Map<String, dynamic>;
+        return SafeArea(
+            child: DraggableScrollableSheet(
+                expand: false,
+                builder: (_, scrollController) =>
+                    ListView(controller: scrollController, children: <Widget>[
+                      const ListTile(
+                          leading: Icon(Icons.chair_outlined),
+                          title: Text('Meubles et décorations')),
+                      if (inventory.isEmpty)
+                        const Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Text(
+                                'Aucun objet libre. Fabriquez un meuble ou une décoration.')),
+                      ...inventory.entries.map((entry) {
+                        final raw = entry.value as Map;
+                        final definition = controller.config
+                            .installation(raw['definitionId'] as String);
+                        if (definition == null) return const SizedBox.shrink();
+                        return ListTile(
+                            leading: Icon(ElevagePresentation.installationIcon(
+                                definition.id)),
+                            title: Text(definition.label),
+                            subtitle: Text(definition.category == 'MEUBLE'
+                                ? 'Meuble · ${definition.description}'
+                                : 'Décoration · ${definition.description}'),
+                            trailing: Wrap(spacing: 2, children: <Widget>[
+                              for (final zone in controller.config.sceneZones)
+                                IconButton(
+                                    tooltip: 'Placer dans ${zone.label}',
+                                    icon: Text('Z${zone.id.split('_').last}'),
+                                    onPressed: () async {
+                                      await controller.placeHabitatItem(
+                                          alcoveId, entry.key, zone.id);
+                                      if (sheetContext.mounted &&
+                                          controller.error == null) {
+                                        Navigator.pop(sheetContext);
+                                      }
+                                    })
+                            ]));
+                      })
+                    ])));
+      });
+}
+
 Future<void> _openBiofabricator(
     BuildContext context, ElevageController controller, String alcoveId) async {
   await showModalBottomSheet<void>(
@@ -2693,66 +2954,102 @@ Future<void> _openBiofabricator(
       isScrollControlled: true,
       builder: (sheetContext) {
         final state = controller.state!;
-        return DraggableScrollableSheet(
-            expand: false,
-            builder: (_, scrollController) =>
-                ListView(controller: scrollController, children: <Widget>[
-                  const ListTile(title: Text('Bio-fabricateur')),
-                  ...controller.config.recipes.map((recipe) {
-                    final known = ElevageDomain.recipeKnown(state, recipe);
-                    final definition =
-                        controller.config.installation(recipe.installationId);
-                    final environment = ElevageDomain.environment(
-                        state, alcoveId, controller.config);
-                    return ListTile(
-                        isThreeLine: known,
-                        minLeadingWidth: 28,
-                        leading: Icon(definition == null
-                            ? Icons.help_outline
-                            : ElevagePresentation.installationIcon(
-                                definition.id)),
-                        title: Text(known ? recipe.label : 'Recette inconnue',
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
-                        subtitle: known
-                            ? Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Text(
-                                      '${recipe.organic} Organique · ${recipe.mineral} Minéral'),
-                                  if (definition != null)
-                                    Text(
-                                        _installationImpactSentence(definition),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                            fontSize: 11,
-                                            fontStyle: FontStyle.italic)),
-                                ],
-                              )
-                            : null,
-                        onTap: !known || definition == null
-                            ? null
-                            : () => _showInstallationDetails(sheetContext,
-                                controller.config, definition, environment),
-                        trailing: known
-                            ? SizedBox(
-                                width: 100,
-                                child: FilledButton(
-                                    onPressed: () async {
-                                      await controller.craft(recipe);
-                                      if (sheetContext.mounted &&
-                                          controller.error == null) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(SnackBar(
-                                                content: Text(
-                                                    '${recipe.label} a été bio-fabriqué.')));
-                                        Navigator.pop(sheetContext);
-                                      }
-                                    },
-                                    child: const Text('Fabriquer')))
-                            : null);
-                  })
-                ]));
+        var category = 'STRUCTURE';
+        return StatefulBuilder(
+            builder: (context, setLocal) => DraggableScrollableSheet(
+                expand: false,
+                builder: (_, scrollController) =>
+                    ListView(controller: scrollController, children: <Widget>[
+                      const ListTile(title: Text('Bio-fabricateur')),
+                      Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: SegmentedButton<String>(
+                              segments: const <ButtonSegment<String>>[
+                                ButtonSegment(
+                                    value: 'STRUCTURE',
+                                    label: Text('Structures')),
+                                ButtonSegment(
+                                    value: 'MEUBLE', label: Text('Meubles')),
+                                ButtonSegment(
+                                    value: 'DECORATION',
+                                    label: Text('Décorations')),
+                              ],
+                              selected: <String>{
+                                category
+                              },
+                              onSelectionChanged: (value) =>
+                                  setLocal(() => category = value.single))),
+                      ...controller.config.recipes
+                          .where((recipe) =>
+                              controller.config
+                                  .installation(recipe.installationId)
+                                  ?.category ==
+                              category)
+                          .map((recipe) {
+                        final known = ElevageDomain.recipeKnown(state, recipe);
+                        final definition = controller.config
+                            .installation(recipe.installationId);
+                        final environment = ElevageDomain.environment(
+                            state, alcoveId, controller.config);
+                        return ListTile(
+                            isThreeLine: known,
+                            minLeadingWidth: 28,
+                            leading: Icon(definition == null
+                                ? Icons.help_outline
+                                : ElevagePresentation.installationIcon(
+                                    definition.id)),
+                            title: Text(
+                                known ? recipe.label : 'Recette inconnue',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                            subtitle: known
+                                ? Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(<String>[
+                                        if (recipe.organic > 0)
+                                          '${recipe.organic} Organique',
+                                        if (recipe.mineral > 0)
+                                          '${recipe.mineral} Minéral',
+                                        ...recipe.special.entries.map((entry) =>
+                                            '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}'),
+                                      ].join(' · ')),
+                                      if (definition != null)
+                                        Text(
+                                            _installationImpactSentence(
+                                                definition),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                                fontSize: 11,
+                                                fontStyle: FontStyle.italic)),
+                                    ],
+                                  )
+                                : null,
+                            onTap: !known || definition == null
+                                ? null
+                                : () => _showInstallationDetails(sheetContext,
+                                    controller.config, definition, environment),
+                            trailing: known
+                                ? SizedBox(
+                                    width: 100,
+                                    child: FilledButton(
+                                        onPressed: () async {
+                                          await controller.craft(recipe);
+                                          if (sheetContext.mounted &&
+                                              controller.error == null) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(SnackBar(
+                                                    content: Text(
+                                                        '${recipe.label} a été bio-fabriqué.')));
+                                            Navigator.pop(sheetContext);
+                                          }
+                                        },
+                                        child: const Text('Fabriquer')))
+                                : null);
+                      })
+                    ])));
       });
 }
 
