@@ -775,7 +775,7 @@ L’Eau n’est pas une ressource globale du Camp.
   `BAD` déclenche une fuite lisible à vitesse ×2 et `EXTREME` une fuite ×3.
 - **Installations et recettes.** L’Abri minéral profond conserve ombre et
   fraîcheur mais augmente désormais l’humidité de **+1** seulement. Les slots
-  restent Z1↔slot1 à Z4↔slot4, sans diffusion. Le Bio-fabricateur contraint
+  restent Z1↔slot1 à Z4↔slot4. Le Bio-fabricateur contraint
   ses libellés sur mobile et affiche une phrase italique dérivée des impacts
   configurés, en plus des valeurs numériques de la fiche.
 - **FOLLOW et actions ciblées.** Maintenir une zone trois secondes lance un
@@ -834,3 +834,42 @@ L’Eau n’est pas une ressource globale du Camp.
   des ressources à l’individu. Bébé dépend de cette aide manuelle ;
   Intermédiaire et Mature utilisent progressivement ces stocks selon leur
   initiative.
+
+## P’TIPOTE Élevage — Lot 19.5 : environnement et préhension
+
+- **Audit humidité et modèle explicite.** La cause des anciens 5/5 inattendus
+  était un reliquat de décor dans la configuration des zones : `ZONE_3`
+  portait `humidity: +2` même sans installation. Les bases sont désormais
+  explicites et configurables (`baseHumidity`), les zones décoratives ne les
+  modifient plus, et le domaine peut exposer un diagnostic dev par zone
+  (base, contribution locale, diffusion, température jour/nuit et final).
+  Aucun clamp intermédiaire ne masque une contribution ; l’échelle 1–5 est
+  appliquée seulement à la présentation après la somme complète.
+- **Diffusion locale.** Humidité et température suivent la même règle : un
+  effet de magnitude 1 reste dans sa zone ; une magnitude 2 conserve son
+  effet principal et transmet ±1 à chaque voisine immédiate. Ainsi le Bassin
+  `+2` humidifie localement et `+1` les voisines ; Ventilation vaut maintenant
+  humidité `-2`, le Trou géothermique chaud `-1`, et l’Abri minéral profond
+  reste à `+1`.
+- **Température.** La base est 2/5 partout ; le Jour ajoute +1 et la Nuit
+  revient à la base. Une forte ombre retire localement un niveau, dans le
+  domaine et non dans la vue. Les installations thermiques de magnitude 2
+  diffusent donc également ±1 aux zones adjacentes.
+- **Fuite intelligente et préhension.** `findBestSafeZone()` score toutes les
+  zones accessibles par confort local (lumière, température, humidité et
+  profil de Nature), exclut la zone problématique quand possible et tranche
+  de façon déterministe. Le P’TIPOTE ne revient donc pas mécaniquement à sa
+  zone précédente. Bébé ne transporte rien ; Intermédiaire peut porter les
+  ressources libres simples et structurelles ; Mature peut porter tous les
+  objets libres compatibles. Installations, mobilier ancré et structures sont
+  exclus de cette préhension.
+- **Séquence atomique.** Pour une ressource intéressante située dans une zone
+  `BAD` ou `EXTREME`, la file conserve l’`instanceId` : approche, `PICKUP`,
+  sélection de zone sûre, `FLEE_WITH_ITEM`, puis consommation/absorption ou
+  conclusion. Une zone extrême raccourcit l’inspection, mais n’abandonne plus
+  automatiquement le Fer, la Racine ou une autre ressource portable.
+- **Carte État.** L’ordre joueur est désormais faim/satiété, tempérament,
+  structure ferrique, puis un seul bloc réunissant confort global informatif
+  et ressenti de la zone actuelle. Le comportement reste toujours fondé sur le
+  confort local, jamais sur la moyenne. **Point à arbitrer futur :** passer de
+  une à deux installations par zone afin d’enrichir le contrôle local.

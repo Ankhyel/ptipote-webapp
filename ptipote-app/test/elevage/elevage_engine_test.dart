@@ -300,7 +300,8 @@ void main() {
     expect((state.data['inventory']['special'] as Map)['ROOT'], 1);
   });
 
-  test('une racine désirée est déplacée hors d’une zone trop humide', () {
+  test('un Intermédiaire emporte une racine désirée hors d’une zone extrême',
+      () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     state = ElevageDomain.adopt(
         source: state,
@@ -310,25 +311,31 @@ void main() {
         now: now,
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'INTERMEDIATE';
     ((state.data['individuals'] as Map)[id]['generatedProfile']
         as Map)['foodPreference'] = 'ROOT';
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][2] = <String, dynamic>{
+      'definitionId': 'BASSIN',
+      'zoneId': 'ZONE_3',
+    };
     state = ElevageDomain.placeSceneItem(
         state, 'alcove-1', 'ROOT', 'ZONE_3', now + 1, defaultElevageConfig);
     final first = ElevageDomain.sceneItems(state, 'alcove-1').single;
     final outcome = ElevageDomain.sceneItemOutcome(state, id, 'alcove-1',
         first['instanceId'] as String, now + 2, defaultElevageConfig);
-    expect(outcome.behavior, 'MOVE_ITEM');
+    expect(outcome.behavior, 'FLEE_WITH_ITEM');
     expect(outcome.targetZoneId, 'ZONE_1');
     expect(outcome.observationCount, 1);
-    state = ElevageDomain.interactSceneItem(state, id, 'alcove-1',
-        first['instanceId'] as String, now + 2, defaultElevageConfig);
+    state = ElevageDomain.relocateSceneItem(
+        state,
+        'alcove-1',
+        first['instanceId'] as String,
+        outcome.targetZoneId!,
+        defaultElevageConfig);
     expect(
         ElevageDomain.sceneItems(state, 'alcove-1').single['zoneId'], 'ZONE_1');
-    final observation = ((state.data['individuals'] as Map)[id]
-            ['observationJournal']['observations']
-        as Map)['HUMIDITY_AVOIDANCE:HUMIDITY'] as Map;
-    expect(observation['count'], 1);
-    expect(observation['status'], 'OBSERVED');
   });
 
   test(
@@ -423,8 +430,8 @@ void main() {
     final zone2 = ElevageDomain.zoneEnvironment(
         state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
         now: 0);
-    expect(zone3['humidity'], 4); // zone +2, bassin +2
-    expect(zone2['humidity'], 0); // le bassin ne diffuse pas dans Z2
+    expect(zone3['humidity'], 2); // base explicite + bassin local +2
+    expect(zone2['humidity'], 1); // diffusion +1 vers la zone adjacente
   });
 
   test('FOLLOW et CUDDLE créent des actions et des observations plafonnées',
@@ -584,7 +591,8 @@ void main() {
     expect(second?.outcome.behavior, isNot(first.outcome.behavior));
   });
 
-  test('phase forcée et installation restent locales à leur zone', () {
+  test('phase forcée et installation diffusent uniquement aux zones adjacentes',
+      () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     final alcove = (state.data['alcoves'] as List).first as Map;
     alcove['slots'][1] = <String, dynamic>{
@@ -601,7 +609,7 @@ void main() {
         state, 'alcove-1', 'ZONE_3', defaultElevageConfig,
         now: now, phaseOverride: 'DAY');
     expect(day['humidity'], 2);
-    expect(other['humidity'], 2); // Z3 de base, sans bassin.
+    expect(other['humidity'], 1); // diffusion bassin Z2 → Z3, pas de reliquat.
     expect(night['light'], lessThan(day['light']!));
     expect(
         ElevageDomain.dayNightRemainingMs(now, defaultElevageConfig,
@@ -811,5 +819,177 @@ void main() {
         as Map)['productionState'] as Map)['availableByItemId'] as Map;
     expect(harvestedStock['ROOT'], 5);
     expect((state.data['inventory']['special'] as Map)['ROOT'], 2);
+  });
+
+  test('humidité explicite diffuse une seule fois et reste traçable', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    Map<String, int> humidity() => <String, int>{
+          for (final zone in defaultElevageConfig.sceneZones)
+            zone.id: ElevageDomain.zoneEnvironment(
+                state, 'alcove-1', zone.id, defaultElevageConfig,
+                now: now, phaseOverride: 'DAY')['humidity']!,
+        };
+    expect(humidity(), <String, int>{
+      'ZONE_1': 0,
+      'ZONE_2': 0,
+      'ZONE_3': 0,
+      'ZONE_4': 0,
+    });
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'BASSIN',
+      'zoneId': 'ZONE_2',
+    };
+    expect(humidity(), <String, int>{
+      'ZONE_1': 1,
+      'ZONE_2': 2,
+      'ZONE_3': 1,
+      'ZONE_4': 0,
+    });
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'zoneId': 'ZONE_2',
+    };
+    expect(humidity(), <String, int>{
+      'ZONE_1': -1,
+      'ZONE_2': -2,
+      'ZONE_3': -1,
+      'ZONE_4': 0,
+    });
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'BASSIN',
+      'zoneId': 'ZONE_2',
+    };
+    alcove['slots'][3] = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'zoneId': 'ZONE_4',
+    };
+    expect(humidity(), <String, int>{
+      'ZONE_1': 1,
+      'ZONE_2': 2,
+      'ZONE_3': 0,
+      'ZONE_4': -2,
+    }); // somme complète avant le clamp visuel 1–5.
+    alcove['slots'][3] = null;
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'TROU_GEOTHERMIQUE_CHAUD',
+      'zoneId': 'ZONE_2',
+    };
+    expect(humidity()['ZONE_2'], -1);
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'ABRI_MINERAL_PROFOND',
+      'zoneId': 'ZONE_2',
+    };
+    expect(humidity()['ZONE_2'], 1);
+    final diagnostics = ElevageDomain.environmentDiagnostics(
+        state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+        now: now, phaseOverride: 'DAY');
+    expect(diagnostics['finalHumidity'], 1);
+    final reloaded = ElevageSave.fromJson(state.toJson());
+    expect(
+        ElevageDomain.zoneEnvironment(
+            reloaded, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+            now: now, phaseOverride: 'DAY')['humidity'],
+        1);
+  });
+
+  test('température part de 2 la nuit, gagne 1 le jour et diffuse à +2', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    int scale(String zone, String phase) =>
+        ElevagePresentation.environmentScale(ElevageDomain.zoneEnvironment(
+            state, 'alcove-1', zone, defaultElevageConfig,
+            now: now, phaseOverride: phase)['temperature']!);
+    expect(scale('ZONE_2', 'NIGHT'), 2);
+    expect(scale('ZONE_2', 'DAY'), 3);
+    expect(scale('ZONE_1', 'DAY'), 2); // ombre forte : -1 local.
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'TROU_GEOTHERMIQUE_CHAUD',
+      'zoneId': 'ZONE_2',
+    };
+    expect(scale('ZONE_2', 'DAY'), 5);
+    expect(scale('ZONE_3', 'DAY'), 4); // +1 diffusé depuis Z2.
+    expect(scale('ZONE_4', 'DAY'), 3); // pas de diffusion à distance 2.
+  });
+
+  test('fuite choisit la meilleure zone sûre au lieu de la zone précédente',
+      () {
+    final state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][0] = <String, dynamic>{
+      'definitionId': 'LAMPE_SOLAIRE',
+      'zoneId': 'ZONE_1',
+    };
+    alcove['slots'][2] = <String, dynamic>{
+      'definitionId': 'TOIT_SERRE',
+      'zoneId': 'ZONE_3',
+    };
+    alcove['slots'][3] = <String, dynamic>{
+      'definitionId': 'ABRI_FIBREUX',
+      'zoneId': 'ZONE_4',
+    };
+    expect(
+        ElevageDomain.findBestSafeZone(
+            state, 'alcove-1', defaultElevageConfig, now,
+            phaseOverride: 'DAY', excludingZoneId: 'ZONE_3'),
+        'ZONE_4');
+  });
+
+  test('préhension par stade emporte le bon objet sans déplacer de structure',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final individual =
+        ((state.data['individuals'] as Map).values.single as Map);
+    expect(ElevageDomain.canCarrySceneItem(individual, 'IRON'), isFalse);
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    expect(ElevageDomain.canCarrySceneItem(individual, 'IRON'), isTrue);
+    expect(ElevageDomain.canCarrySceneItem(individual, 'ROOT'), isTrue);
+    expect(ElevageDomain.canCarrySceneItem(individual, 'BASSIN'), isFalse);
+  });
+
+  test('fer en zone extrême est emporté, puis absorbé dans une zone sûre', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'INTERMEDIATE';
+    (state.data['inventory']['special'] as Map)['IRON'] = 1;
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][2] = <String, dynamic>{
+      'definitionId': 'BASSIN',
+      'zoneId': 'ZONE_3',
+    };
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'IRON', 'ZONE_3', now + 1, defaultElevageConfig);
+    final item = ElevageDomain.sceneItems(state, 'alcove-1').single;
+    final outcome = ElevageDomain.sceneItemOutcome(state, id, 'alcove-1',
+        item['instanceId'] as String, now + 2, defaultElevageConfig);
+    expect(outcome.behavior, 'FLEE_WITH_ITEM');
+    state = ElevageDomain.relocateSceneItem(
+        state,
+        'alcove-1',
+        item['instanceId'] as String,
+        outcome.targetZoneId!,
+        defaultElevageConfig);
+    state = ElevageDomain.interactSceneItem(state, id, 'alcove-1',
+        item['instanceId'] as String, now + 3, defaultElevageConfig);
+    expect(ElevageDomain.sceneItems(state, 'alcove-1'), isEmpty);
+    expect(
+        ((state.data['individuals'] as Map)[id]['care']['structuralIntake']
+            as Map)['total'],
+        greaterThan(0));
   });
 }

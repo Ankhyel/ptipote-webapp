@@ -482,6 +482,7 @@ class _IndividualPageState extends State<_IndividualPage> {
     if (decision == null) return;
     _autonomousInFlight = true;
     final targetZone = decision.zoneId;
+    final carriesToSafety = decision.outcome.behavior == 'FLEE_WITH_ITEM';
     try {
       _setSceneAction('NOTICE_ITEM');
       await Future<void>.delayed(
@@ -490,10 +491,30 @@ class _IndividualPageState extends State<_IndividualPage> {
       await Future<void>.delayed(Duration(
           milliseconds:
               ElevageDomain.normalMoveDurationFor(individual, config)));
-      if (await _respondToArrivalComfort(alcoveId, config)) return;
+      // Une ressource intéressante dans une mauvaise zone doit être saisie
+      // avant la fuite. Les autres arrivées gardent la réaction instinctive.
+      if (!carriesToSafety &&
+          await _respondToArrivalComfort(alcoveId, config)) {
+        return;
+      }
       _setSceneAction('INSPECT_ITEM');
-      await Future<void>.delayed(
-          Duration(milliseconds: config.objectReactionDelayMs));
+      await Future<void>.delayed(Duration(
+          milliseconds: carriesToSafety
+              ? (config.objectReactionDelayMs / 2).round()
+              : config.objectReactionDelayMs));
+      if (carriesToSafety) {
+        _setSceneAction('PICKUP');
+        await Future<void>.delayed(
+            Duration(milliseconds: (config.objectReactionDelayMs / 2).round()));
+        final safeZone = decision.outcome.targetZoneId;
+        if (safeZone == null) return;
+        await widget.controller
+            .relocateSceneItem(alcoveId, decision.instanceId, safeZone);
+        if (widget.controller.error != null) return;
+        _setSceneAction('FLEE_WITH_ITEM', zoneId: safeZone);
+        await Future<void>.delayed(
+            Duration(milliseconds: config.runMoveDurationMs));
+      }
       _setSceneAction('THINK');
       await Future<void>.delayed(
           Duration(milliseconds: config.objectReactionDelayMs));
@@ -538,7 +559,8 @@ class _IndividualPageState extends State<_IndividualPage> {
     _setSceneAction(comfort == 'EXTREME' ? 'EXTREME' : 'DISCOMFORT');
     await Future<void>.delayed(
         Duration(milliseconds: config.objectReactionDelayMs));
-    final target = ElevageDomain.bestComfortZone(current, alcoveId, config, now,
+    final target = ElevageDomain.findBestSafeZone(
+        current, alcoveId, config, now,
         phaseOverride: widget.controller.forcedDayNightPhase,
         excludingZoneId: _ptipoteZoneId);
     _setSceneAction(comfort == 'EXTREME' ? 'FLEE_FAST' : 'FLEE_NORMAL',
@@ -961,15 +983,6 @@ class _IndividualPageState extends State<_IndividualPage> {
                       padding: const EdgeInsets.only(top: 8),
                       child: LinearProgressIndicator(value: satiety / 100)),
                   trailing: Text('$satiety %')),
-              ListTile(
-                leading: const Icon(Icons.favorite_outline),
-                title: const Text('Confort de l’Alcôve'),
-                subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: LinearProgressIndicator(
-                        value: alcoveComfort['value'] as double)),
-                trailing: Text(alcoveComfort['label'] as String),
-              ),
               if (stage != 'BABY') ...<Widget>[
                 ListTile(
                   leading: const Icon(Icons.auto_awesome_outlined),
@@ -990,12 +1003,34 @@ class _IndividualPageState extends State<_IndividualPage> {
                   ),
                 ),
               ],
-              ListTile(
-                  leading: const Icon(Icons.landscape_outlined),
-                  title: Text(
-                      'Zone actuelle : ☀️ ${ElevagePresentation.environmentScale(localEnvironment['light'] ?? 0)}/5 · 🌡️ ${ElevagePresentation.environmentScale(localEnvironment['temperature'] ?? 0)}/5 · 💧 ${ElevagePresentation.environmentScale(localEnvironment['humidity'] ?? 0)}/5'),
-                  subtitle: Text(_localComfortLabel(ElevageDomain.localComfort(
-                      localEnvironment, controller.config)))),
+              Card(
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('Confort de l’Alcôve : ${alcoveComfort['label']}',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                          value: alcoveComfort['value'] as double),
+                      const SizedBox(height: 12),
+                      Text(
+                          'Zone actuelle (${_ptipoteZoneId.replaceFirst('ZONE_', 'Z')})',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 3),
+                      Text(_localComfortLabel(ElevageDomain.localComfort(
+                          localEnvironment, controller.config))),
+                      const SizedBox(height: 6),
+                      Text(
+                          '☀️ ${ElevagePresentation.environmentScale(localEnvironment['light'] ?? 0)}/5 · '
+                          '🌡️ ${ElevagePresentation.environmentScale(localEnvironment['temperature'] ?? 0)}/5 · '
+                          '💧 ${ElevagePresentation.environmentScale(localEnvironment['humidity'] ?? 0)}/5'),
+                    ],
+                  ),
+                ),
+              ),
               FilledButton.tonal(
                   onPressed: () =>
                       controller.refreshAlcove(alcove['id'] as String),
@@ -1891,6 +1926,8 @@ IconData _reactionIcon(String? behavior) => switch (behavior) {
       'VIBRATE' => Icons.hexagon_outlined,
       'STEP_BACK' => Icons.close,
       'MOVE_ITEM' => Icons.redo,
+      'PICKUP' => Icons.pan_tool_alt_outlined,
+      'FLEE_WITH_ITEM' => Icons.running_with_errors_outlined,
       'OBSERVE' => Icons.more_horiz,
       _ => Icons.arrow_forward,
     };
@@ -1904,6 +1941,8 @@ String _sceneActionForOutcome(String behavior, String itemId) =>
       'VIBRATE' => 'STRUCTURAL_ABSORB',
       'STEP_BACK' => 'REJECT',
       'MOVE_ITEM' => 'MOVE_ITEM',
+      'PICKUP' => 'PICKUP',
+      'FLEE_WITH_ITEM' => 'FLEE_WITH_ITEM',
       'OBSERVE' => 'IGNORE',
       _ => 'IDLE',
     };
@@ -1981,6 +2020,8 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       'OBSERVE' => Icons.question_mark,
       'CUDDLE' => Icons.favorite,
       'MOVE_ITEM' => Icons.redo,
+      'PICKUP' => Icons.pan_tool_alt_outlined,
+      'FLEE_WITH_ITEM' => Icons.running_with_errors_outlined,
       'METAMORPHOSIS' => Icons.egg_outlined,
       _ => stage == 'BABY' ? Icons.egg_outlined : Icons.pets,
     };

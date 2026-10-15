@@ -88,6 +88,10 @@ class ElevageController extends ChangeNotifier {
   Future<void> recoverSceneItem(String alcoveId, String instanceId) =>
       _mutate((current) =>
           ElevageDomain.recoverSceneItem(current, alcoveId, instanceId));
+  Future<void> relocateSceneItem(
+          String alcoveId, String instanceId, String targetZoneId) =>
+      _mutate((current) => ElevageDomain.relocateSceneItem(
+          current, alcoveId, instanceId, targetZoneId, config));
   Future<ElevageSceneItemOutcome?> interactSceneItem(
       String individualId, String alcoveId, String instanceId) async {
     final current = state;

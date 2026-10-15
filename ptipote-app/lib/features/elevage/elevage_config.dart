@@ -143,6 +143,10 @@ class ElevageConfig {
     required this.warmCuddleCooldownSeconds,
     required this.reservedCuddleCooldownSeconds,
     required this.requestDurationSeconds,
+    required this.baseHumidity,
+    required this.baseTemperature,
+    required this.dayTemperatureDelta,
+    required this.strongShadeTemperatureDelta,
     required this.recipes,
   });
 
@@ -186,6 +190,13 @@ class ElevageConfig {
   final int warmCuddleCooldownSeconds;
   final int reservedCuddleCooldownSeconds;
   final int requestDurationSeconds;
+
+  /// Valeurs relatives converties vers l'échelle joueur avec +3. Elles sont
+  /// explicites afin que les libellés de zones ne modifient jamais le climat.
+  final int baseHumidity;
+  final int baseTemperature;
+  final int dayTemperatureDelta;
+  final int strongShadeTemperatureDelta;
   final List<ElevageRecipe> recipes;
 
   int get babyMinimumHours => preset == ElevagePreset.prototype ? 24 : 48;
@@ -282,7 +293,7 @@ class ElevageConfig {
           description: 'Un courant d’air qui rafraîchit et assèche légèrement.',
           light: 0,
           temperature: -2,
-          humidity: -1,
+          humidity: -2,
         ),
         const ElevageInstallationDefinition(
           id: 'TROU_GEOTHERMIQUE_CHAUD',
@@ -290,7 +301,7 @@ class ElevageConfig {
           description: 'Une ouverture chaude qui réchauffe l’espace.',
           light: 0,
           temperature: 2,
-          humidity: 0,
+          humidity: -1,
         ),
         const ElevageInstallationDefinition(
           id: 'TOIT_SERRE',
@@ -303,10 +314,9 @@ class ElevageConfig {
       ];
 
   List<ElevageSceneZone> get sceneZones => const <ElevageSceneZone>[
-        ElevageSceneZone(
-            id: 'ZONE_1', label: 'Abri ombragé', light: -1, humidity: -1),
+        ElevageSceneZone(id: 'ZONE_1', label: 'Abri ombragé', light: -1),
         ElevageSceneZone(id: 'ZONE_2', label: 'Nid central'),
-        ElevageSceneZone(id: 'ZONE_3', label: 'Coin humide', humidity: 2),
+        ElevageSceneZone(id: 'ZONE_3', label: 'Coin central'),
         ElevageSceneZone(id: 'ZONE_4', label: 'Bord éclairé', light: 1),
       ];
 
@@ -394,6 +404,10 @@ class ElevageConfig {
     int? warmCuddleCooldownSeconds,
     int? reservedCuddleCooldownSeconds,
     int? requestDurationSeconds,
+    int? baseHumidity,
+    int? baseTemperature,
+    int? dayTemperatureDelta,
+    int? strongShadeTemperatureDelta,
     List<ElevageRecipe>? recipes,
   }) =>
       ElevageConfig(
@@ -454,6 +468,11 @@ class ElevageConfig {
             reservedCuddleCooldownSeconds ?? this.reservedCuddleCooldownSeconds,
         requestDurationSeconds:
             requestDurationSeconds ?? this.requestDurationSeconds,
+        baseHumidity: baseHumidity ?? this.baseHumidity,
+        baseTemperature: baseTemperature ?? this.baseTemperature,
+        dayTemperatureDelta: dayTemperatureDelta ?? this.dayTemperatureDelta,
+        strongShadeTemperatureDelta:
+            strongShadeTemperatureDelta ?? this.strongShadeTemperatureDelta,
         recipes: recipes ?? this.recipes,
       );
 
@@ -500,6 +519,10 @@ class ElevageConfig {
         'warmCuddleCooldownSeconds': warmCuddleCooldownSeconds,
         'reservedCuddleCooldownSeconds': reservedCuddleCooldownSeconds,
         'requestDurationSeconds': requestDurationSeconds,
+        'baseHumidity': baseHumidity,
+        'baseTemperature': baseTemperature,
+        'dayTemperatureDelta': dayTemperatureDelta,
+        'strongShadeTemperatureDelta': strongShadeTemperatureDelta,
         'recipes': recipes.map((recipe) => recipe.toJson()).toList(),
       };
 
@@ -583,6 +606,12 @@ class ElevageConfig {
           base.reservedCuddleCooldownSeconds),
       requestDurationSeconds: _positive(
           json['requestDurationSeconds'], base.requestDurationSeconds),
+      baseHumidity: _number(json['baseHumidity'], base.baseHumidity),
+      baseTemperature: _number(json['baseTemperature'], base.baseTemperature),
+      dayTemperatureDelta:
+          _number(json['dayTemperatureDelta'], base.dayTemperatureDelta),
+      strongShadeTemperatureDelta: _number(json['strongShadeTemperatureDelta'],
+          base.strongShadeTemperatureDelta),
       recipes: (json['recipes'] as List?)
               ?.whereType<Map>()
               .map((raw) =>
@@ -599,6 +628,8 @@ int _positive(Object? value, int fallback) =>
     value is num && value > 0 ? value.round() : fallback;
 int _nonNegative(Object? value, int fallback) =>
     value is num && value >= 0 ? value.round() : fallback;
+int _number(Object? value, int fallback) =>
+    value is num ? value.round() : fallback;
 double _rate(Object? value, double fallback) =>
     value is num && value >= 0 && value <= 1 ? value.toDouble() : fallback;
 
@@ -669,6 +700,10 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
   warmCuddleCooldownSeconds: 45,
   reservedCuddleCooldownSeconds: 90,
   requestDurationSeconds: 90,
+  baseHumidity: 0,
+  baseTemperature: -1,
+  dayTemperatureDelta: 1,
+  strongShadeTemperatureDelta: -1,
   recipes: <ElevageRecipe>[
     ElevageRecipe(
         id: 'ABRI_FIBREUX',

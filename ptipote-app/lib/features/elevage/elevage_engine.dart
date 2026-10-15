@@ -629,6 +629,36 @@ class ElevageDomain {
     return state;
   }
 
+  /// Les installations et structures ne sont jamais des objets de scène : la
+  /// préhension ne concerne que les unités libres déposées par le joueur.
+  static bool canCarrySceneItem(Map individual, String itemId) {
+    final stage = individual['lifecycle']['stage'] as String;
+    if (stage == 'BABY') return false;
+    if (stage == 'MATURE') return _placeableSceneItems.contains(itemId);
+    return foodItems.contains(itemId) ||
+        treatItems.contains(itemId) ||
+        structuralItems.contains(itemId) ||
+        itemId == 'FRUIT';
+  }
+
+  static ElevageSave relocateSceneItem(ElevageSave source, String alcoveId,
+      String instanceId, String targetZoneId, ElevageConfig config) {
+    if (config.sceneZone(targetZoneId) == null) {
+      throw StateError('Zone invalide.');
+    }
+    final state = source.copy();
+    final placed = _sceneItems(state, alcoveId);
+    final index =
+        placed.indexWhere((entry) => entry['instanceId'] == instanceId);
+    if (index < 0) return state; // objet récupéré : annulation propre de queue
+    if (placed.any((entry) =>
+        entry['instanceId'] != instanceId && entry['zoneId'] == targetZoneId)) {
+      return state;
+    }
+    placed[index]['zoneId'] = targetZoneId;
+    return state;
+  }
+
   /// Evaluates only facts already present in the domain: item, hunger and the
   /// relative environment of its zone. No preference is revealed by this API.
   static ElevageSceneItemOutcome sceneItemOutcome(
@@ -649,21 +679,27 @@ class ElevageDomain {
         state, alcoveId, item['zoneId'] as String, config,
         now: now, phaseOverride: phaseOverride);
     final favorite = individual['generatedProfile']['foodPreference'] as String;
+    final isInteresting = itemId == favorite ||
+        treatItems.contains(itemId) ||
+        itemId == 'IRON' ||
+        itemId == 'LIMESTONE' ||
+        itemId == 'QUARTZ';
+    final comfort = localComfort(effective, config);
 
-    if (foodItems.contains(itemId) &&
-        itemId == favorite &&
-        (effective['humidity'] ?? 0) >= 2) {
-      final target = _drierSceneZone(
-          state, alcoveId, item['zoneId'] as String, config, now,
-          phaseOverride: phaseOverride);
-      if (target != null) {
-        return ElevageSceneItemOutcome(
-          behavior: 'MOVE_ITEM',
-          targetZoneId: target,
-          observationCount:
-              _observationCount(individual, 'HUMIDITY_AVOIDANCE:ROOT') + 1,
-        );
-      }
+    // Un objet pertinent dans une zone défavorable est d'abord saisi, puis
+    // emporté vers la meilleure zone sûre. BABY observe mais ne transporte
+    // jamais ; les installations ne sont pas des objets de cette chaîne.
+    if (isInteresting &&
+        canCarrySceneItem(individual, itemId) &&
+        (comfort == 'BAD' || comfort == 'EXTREME')) {
+      return ElevageSceneItemOutcome(
+        behavior: 'FLEE_WITH_ITEM',
+        targetZoneId: findBestSafeZone(state, alcoveId, config, now,
+            phaseOverride: phaseOverride,
+            excludingZoneId: item['zoneId'] as String),
+        observationCount:
+            _observationCount(individual, 'HUMIDITY_AVOIDANCE:$itemId') + 1,
+      );
     }
     if (itemId == 'QUARTZ') {
       return ElevageSceneItemOutcome(
@@ -778,10 +814,15 @@ class ElevageDomain {
     final phase = phaseOverride ??
         dayNightPhase(now ?? DateTime.now().millisecondsSinceEpoch, config);
     final nightOffset = phase == 'NIGHT' ? config.nightLightOffset(zoneId) : 0;
+    // Les valeurs de base sont indépendantes des labels décoratifs des zones.
+    // Le reliquat historique « Coin humide +2 » est ainsi éliminé : seule une
+    // installation peut désormais faire monter l'humidité locale.
     final result = <String, int>{
       'light': zone.light + nightOffset,
-      'temperature': zone.temperature,
-      'humidity': zone.humidity,
+      'temperature': config.baseTemperature +
+          (phase == 'DAY' ? config.dayTemperatureDelta : 0) +
+          zone.temperature,
+      'humidity': config.baseHumidity + zone.humidity,
     };
     final slots = _alcove(state, alcoveId)['slots'] as List;
     for (var index = 0; index < slots.length; index++) {
@@ -790,13 +831,96 @@ class ElevageDomain {
       // Les anciennes sauvegardes n'avaient pas encore la position spatiale
       // des installations : leur slot reste une position de repli stable.
       final installedZone = raw['zoneId'] as String? ?? 'ZONE_${index + 1}';
-      if (installedZone != zoneId) continue;
       final definition = config.installation(raw['definitionId'] as String);
       if (definition == null) continue;
-      result['light'] = result['light']! + definition.light;
-      result['temperature'] = result['temperature']! + definition.temperature;
-      result['humidity'] = result['humidity']! + definition.humidity;
+      if (installedZone == zoneId) {
+        result['light'] = result['light']! + definition.light;
+      }
+      result['temperature'] = result['temperature']! +
+          _localOrAdjacentContribution(
+              definition.temperature, installedZone, zoneId, config);
+      result['humidity'] = result['humidity']! +
+          _localOrAdjacentContribution(
+              definition.humidity, installedZone, zoneId, config);
     }
+    // Une zone naturellement très ombragée refroidit localement. Cette règle
+    // reste dans le domaine et utilise la lumière effective, pas la vue.
+    // La nuit n'est pas une « ombre » additionnelle : seul le niveau lumineux
+    // local hors offset nocturne peut refroidir la zone.
+    final lightWithoutNight = result['light']! - nightOffset;
+    if ((lightWithoutNight + 3).clamp(1, 5) <= 2) {
+      result['temperature'] =
+          result['temperature']! + config.strongShadeTemperatureDelta;
+    }
+    return result;
+  }
+
+  /// Les effets ±1 sont strictement locaux. Les effets de magnitude ≥2
+  /// conservent leur valeur au centre et diffusent ±1 vers les deux voisins.
+  static int _localOrAdjacentContribution(int magnitude, String originZoneId,
+      String targetZoneId, ElevageConfig config) {
+    if (magnitude == 0) return 0;
+    if (originZoneId == targetZoneId) return magnitude;
+    if (magnitude.abs() < 2) return 0;
+    final originIndex =
+        config.sceneZones.indexWhere((z) => z.id == originZoneId);
+    final targetIndex =
+        config.sceneZones.indexWhere((z) => z.id == targetZoneId);
+    if (originIndex < 0 ||
+        targetIndex < 0 ||
+        (originIndex - targetIndex).abs() != 1) {
+      return 0;
+    }
+    return magnitude.isNegative ? -1 : 1;
+  }
+
+  /// Donne l'origine de chaque terme pour les diagnostics dev. La valeur
+  /// finale est toujours calculée par [zoneEnvironment], sans double compte.
+  static Map<String, int> environmentDiagnostics(
+      ElevageSave state, String alcoveId, String zoneId, ElevageConfig config,
+      {required int now, String? phaseOverride}) {
+    final phase = phaseOverride ?? dayNightPhase(now, config);
+    final zone = config.sceneZone(zoneId)!;
+    final result = <String, int>{
+      'baseHumidity': config.baseHumidity,
+      'zoneHumidity': zone.humidity,
+      'baseTemperature': config.baseTemperature,
+      'dayTemperature': phase == 'DAY' ? config.dayTemperatureDelta : 0,
+    };
+    var localHumidity = 0;
+    var diffusionHumidity = 0;
+    var localTemperature = 0;
+    var diffusionTemperature = 0;
+    for (var index = 0;
+        index < (_alcove(state, alcoveId)['slots'] as List).length;
+        index++) {
+      final raw = (_alcove(state, alcoveId)['slots'] as List)[index];
+      if (raw is! Map) continue;
+      final definition = config.installation(raw['definitionId'] as String);
+      if (definition == null) continue;
+      final origin = raw['zoneId'] as String? ?? 'ZONE_${index + 1}';
+      final humidity = _localOrAdjacentContribution(
+          definition.humidity, origin, zoneId, config);
+      final temperature = _localOrAdjacentContribution(
+          definition.temperature, origin, zoneId, config);
+      if (origin == zoneId) {
+        localHumidity += humidity;
+        localTemperature += temperature;
+      } else {
+        diffusionHumidity += humidity;
+        diffusionTemperature += temperature;
+      }
+    }
+    result.addAll(<String, int>{
+      'localHumidity': localHumidity,
+      'diffusionHumidity': diffusionHumidity,
+      'localTemperature': localTemperature,
+      'diffusionTemperature': diffusionTemperature,
+      'finalHumidity': zoneEnvironment(state, alcoveId, zoneId, config,
+          now: now, phaseOverride: phaseOverride)['humidity']!,
+      'finalTemperature': zoneEnvironment(state, alcoveId, zoneId, config,
+          now: now, phaseOverride: phaseOverride)['temperature']!,
+    });
     return result;
   }
 
@@ -842,6 +966,16 @@ class ElevageDomain {
   static String bestComfortZone(
       ElevageSave state, String alcoveId, ElevageConfig config, int now,
       {String? phaseOverride, String? excludingZoneId}) {
+    return findBestSafeZone(state, alcoveId, config, now,
+        phaseOverride: phaseOverride, excludingZoneId: excludingZoneId);
+  }
+
+  /// Choisit une destination sûre parmi toutes les zones accessibles, sans se
+  /// rabattre mécaniquement sur la zone précédente. Le tri est stable par
+  /// confort puis par ordre spatial afin que la décision reste déterministe.
+  static String findBestSafeZone(
+      ElevageSave state, String alcoveId, ElevageConfig config, int now,
+      {String? phaseOverride, String? excludingZoneId}) {
     const severity = <String, int>{
       'IDEAL': 0,
       'GOOD': 1,
@@ -849,8 +983,10 @@ class ElevageDomain {
       'BAD': 3,
       'EXTREME': 4,
     };
+    final alternatives =
+        config.sceneZones.where((zone) => zone.id != excludingZoneId).toList();
     final zones =
-        config.sceneZones.where((zone) => zone.id != excludingZoneId).toList()
+        (alternatives.isEmpty ? config.sceneZones : alternatives).toList()
           ..sort((left, right) {
             final leftComfort = localComfort(
                 zoneEnvironment(state, alcoveId, left.id, config,
@@ -860,7 +996,9 @@ class ElevageDomain {
                 zoneEnvironment(state, alcoveId, right.id, config,
                     now: now, phaseOverride: phaseOverride),
                 config);
-            return severity[leftComfort]!.compareTo(severity[rightComfort]!);
+            final comparison =
+                severity[leftComfort]!.compareTo(severity[rightComfort]!);
+            return comparison != 0 ? comparison : left.id.compareTo(right.id);
           });
     return zones.first.id;
   }
@@ -1452,24 +1590,6 @@ class ElevageDomain {
         .map((entry) => Map<String, dynamic>.from(entry))
         .toList()
       ..also((items) => byAlcove[alcoveId] = items);
-  }
-
-  static String? _drierSceneZone(ElevageSave state, String alcoveId,
-      String currentZoneId, ElevageConfig config, int now,
-      {String? phaseOverride}) {
-    final occupied = _sceneItems(state, alcoveId)
-        .where((entry) => entry['zoneId'] != currentZoneId)
-        .map((entry) => entry['zoneId'] as String)
-        .toSet();
-    final candidates = config.sceneZones
-        .where(
-            (zone) => zone.id != currentZoneId && !occupied.contains(zone.id))
-        .toList()
-      ..sort((left, right) => zoneEnvironment(state, alcoveId, left.id, config,
-              now: now, phaseOverride: phaseOverride)['humidity']!
-          .compareTo(zoneEnvironment(state, alcoveId, right.id, config,
-              now: now, phaseOverride: phaseOverride)['humidity']!));
-    return candidates.isEmpty ? null : candidates.first.id;
   }
 
   static int _observationCount(Map<String, dynamic> individual, String id) {
