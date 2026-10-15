@@ -873,3 +873,38 @@ L’Eau n’est pas une ressource globale du Camp.
   et ressenti de la zone actuelle. Le comportement reste toujours fondé sur le
   confort local, jamais sur la moyenne. **Point à arbitrer futur :** passer de
   une à deux installations par zone afin d’enrichir le contrôle local.
+
+## P’TIPOTE Élevage — Lot 19.6 : communication et réveil
+
+- **Trois lectures simultanées.** Le placeholder/sprite principal ne change
+  jamais pour devenir une émotion : mouvement et position décrivent l’action,
+  une bulle compacte affiche son picto, et une vocalisation exprime la
+  réaction. Les onomatopées configurables V0 sont notamment `Pti ?` (curiosité),
+  `Mm !` (absorption), `Prr !` (contentement), `Nnh…` (inconfort), `Ptik !`
+  (surprise), `Nh !` (refus) et `Pti !` (appel). Une réaction usuelle reste
+  visible au plus 7 s ; une absorption structurelle jusqu’à 20 s, avec l’icône
+  de la ressource concernée.
+- **Langage par stade.** Bébé demeure non verbal : picto d’action et
+  onomatopée uniquement. Intermédiaire apprend catégorie par catégorie : un
+  profil réservé utilise une onomatopée aux trois premières occurrences puis
+  un mot à la quatrième ; un profil chaleureux aux cinq premières puis à la
+  sixième. Mature peut employer immédiatement un mot précis déjà connu (par
+  exemple « Fer » ou « Racine »), tout en gardant parfois une vocalisation.
+- **Interruption naturelle.** Les événements n’annulent pas une action en
+  cours : ils réduisent sa durée restante, puis attendent la file. Pour un
+  nouvel objet, Bébé Posé retire 4 s et Bébé Spontané 6 s ; Intermédiaire et
+  Mature retirent respectivement 2 s et 3 s. Pour une sollicitation de câlin,
+  Bébé Autonome retire 4 s et Accompagné 6 s ; les stades suivants retirent
+  2 s ou 3 s. `PICKUP`, `FLEE_FAST` et les transitions critiques restent
+  atomiques.
+- **Réveil consenti.** `LongPressProgressInteraction` est commun à FOLLOW et
+  WAKE : un appui maintenu configurable (3 s par défaut) sur un P’TIPOTE
+  endormi crée une demande de réveil ; un tap bref ne le réveille jamais.
+  Le réveil passe par la file d’actions. Un Posé reprend plus lentement et
+  tolère moins les réveils répétés ; un Spontané réagit plus vite. Ces réveils
+  affectent seulement le wellbeing temporaire.
+- **Humidité de départ.** La baseline globale est désormais **2/5**
+  (`baseHumidity: -1` dans l’échelle interne convertie pour l’UI). Sans
+  installation, l’Alcôve Résonance est viable ; +1 local donne 3/5, +2 donne
+  4/5. Le niveau 5/5 nécessite donc une combinaison explicite d’effets et ne
+  survient plus dans l’environnement standard.

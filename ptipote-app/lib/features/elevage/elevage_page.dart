@@ -292,7 +292,7 @@ class _IndividualPage extends StatefulWidget {
   State<_IndividualPage> createState() => _IndividualPageState();
 }
 
-enum _SceneEventType { autonomous, follow, cuddle }
+enum _SceneEventType { autonomous, follow, cuddle, wake }
 
 class _SceneEvent {
   const _SceneEvent.autonomous({this.direct = false, this.targetInstanceId})
@@ -304,6 +304,11 @@ class _SceneEvent {
         direct = true;
   const _SceneEvent.cuddle()
       : type = _SceneEventType.cuddle,
+        zoneId = null,
+        targetInstanceId = null,
+        direct = true;
+  const _SceneEvent.wake()
+      : type = _SceneEventType.wake,
         zoneId = null,
         targetInstanceId = null,
         direct = true;
@@ -329,9 +334,15 @@ class _IndividualPageState extends State<_IndividualPage> {
   int _lastIdleMoveAt = 0;
   final List<_SceneEvent> _actionQueue = <_SceneEvent>[];
   Timer? _followHoldTimer;
+  Timer? _ptipoteHoldTimer;
+  Timer? _bubbleTimer;
   String? _followHoldZoneId;
   bool _followFingerHeld = false;
   int? _followHoldStartedAt;
+  bool _ptipoteHoldActive = false;
+  String? _sceneVoice;
+  String? _bubbleItemId;
+  int _actionRemainingMs = 0;
 
   @override
   void initState() {
@@ -389,6 +400,8 @@ class _IndividualPageState extends State<_IndividualPage> {
     _autonomousTimer?.cancel();
     _idleTimer?.cancel();
     _followHoldTimer?.cancel();
+    _ptipoteHoldTimer?.cancel();
+    _bubbleTimer?.cancel();
     super.dispose();
   }
 
@@ -400,7 +413,8 @@ class _IndividualPageState extends State<_IndividualPage> {
       _followHoldZoneId = zoneId;
       _followHoldStartedAt = DateTime.now().millisecondsSinceEpoch;
     });
-    _followHoldTimer = Timer(const Duration(seconds: 3), () {
+    _followHoldTimer = Timer(
+        Duration(seconds: widget.controller.config.longPressHoldSeconds), () {
       if (_followFingerHeld && _followHoldZoneId == zoneId) {
         _followZone(zoneId);
       }
@@ -426,10 +440,105 @@ class _IndividualPageState extends State<_IndividualPage> {
     });
   }
 
+  Future<void> _waitSceneAction(int milliseconds,
+      {bool interruptible = true}) async {
+    _actionRemainingMs = milliseconds;
+    while (mounted && _actionRemainingMs > 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (interruptible) {
+        _actionRemainingMs = max(0, _actionRemainingMs - 100);
+      }
+    }
+    _actionRemainingMs = 0;
+  }
+
+  void _showSceneExpression(String action, Map individual, {String? itemId}) {
+    final category = ElevageDomain.vocalCategoryForAction(action);
+    final expression = ElevageDomain.communicationExpression(
+        individual, category, widget.controller.config,
+        precise: itemId == null ? null : ElevagePresentation.itemLabel(itemId));
+    _bubbleTimer?.cancel();
+    setState(() {
+      _sceneVoice = expression['word'] ?? expression['vocal'];
+      _bubbleItemId = action == 'STRUCTURAL_ABSORB' ||
+              action == 'EAT' ||
+              action == 'FLEE_WITH_ITEM'
+          ? itemId
+          : null;
+    });
+    widget.controller.recordCommunication(widget.individualId, category);
+    _bubbleTimer = Timer(
+        Duration(
+            seconds: ElevageDomain.bubbleDurationSeconds(
+                action, widget.controller.config)), () {
+      if (mounted) {
+        setState(() {
+          _sceneVoice = null;
+          _bubbleItemId = null;
+        });
+      }
+    });
+  }
+
+  void _startPtipoteHold() {
+    final state = widget.controller.state;
+    if (state == null) return;
+    final individual =
+        (state.data['individuals'] as Map)[widget.individualId] as Map?;
+    if (individual == null ||
+        !ElevageDomain.isSleeping(individual,
+            DateTime.now().millisecondsSinceEpoch, widget.controller.config)) {
+      return;
+    }
+    _ptipoteHoldTimer?.cancel();
+    setState(() => _ptipoteHoldActive = true);
+    _ptipoteHoldTimer = Timer(
+        Duration(seconds: widget.controller.config.longPressHoldSeconds), () {
+      if (_ptipoteHoldActive) _enqueueSceneEvent(const _SceneEvent.wake());
+    });
+  }
+
+  void _endPtipoteHold() {
+    _ptipoteHoldTimer?.cancel();
+    if (mounted) setState(() => _ptipoteHoldActive = false);
+  }
+
+  void _onPtipoteTap() {
+    final state = widget.controller.state;
+    if (state == null) return;
+    final individual =
+        (state.data['individuals'] as Map)[widget.individualId] as Map?;
+    if (individual == null) return;
+    if (ElevageDomain.isSleeping(individual,
+        DateTime.now().millisecondsSinceEpoch, widget.controller.config)) {
+      _setSceneAction('SLEEP');
+      return;
+    }
+    _cuddle();
+  }
+
   /// Les gestes joueur et les nouveaux objets attendent la fin de l’action
   /// atomique courante. Ainsi, aucune inspection ne peut survenir à distance.
   void _enqueueSceneEvent(_SceneEvent event) {
     if (!mounted) return;
+    if (_autonomousInFlight &&
+        _sceneAction != 'PICKUP' &&
+        _sceneAction != 'FLEE_FAST' &&
+        (event.type == _SceneEventType.autonomous ||
+            event.type == _SceneEventType.cuddle)) {
+      final state = widget.controller.state;
+      final individual = state == null
+          ? null
+          : (state.data['individuals'] as Map)[widget.individualId] as Map?;
+      if (individual != null) {
+        _actionRemainingMs = ElevageDomain.interruptedRemainingMs(
+          individual,
+          _actionRemainingMs,
+          eventType:
+              event.type == _SceneEventType.cuddle ? 'CUDDLE' : 'NEW_ITEM',
+        );
+      }
+    }
     _actionQueue.add(event);
     _drainActionQueue();
   }
@@ -443,8 +552,10 @@ class _IndividualPageState extends State<_IndividualPage> {
           targetInstanceId: event.targetInstanceId);
     } else if (event.type == _SceneEventType.follow) {
       await _executeFollow(event.zoneId!);
-    } else {
+    } else if (event.type == _SceneEventType.cuddle) {
       await _executeCuddle();
+    } else {
+      await _executeWake();
     }
     if (mounted) _drainActionQueue();
   }
@@ -485,12 +596,10 @@ class _IndividualPageState extends State<_IndividualPage> {
     final carriesToSafety = decision.outcome.behavior == 'FLEE_WITH_ITEM';
     try {
       _setSceneAction('NOTICE_ITEM');
-      await Future<void>.delayed(
-          Duration(milliseconds: config.objectReactionDelayMs));
+      await _waitSceneAction(config.objectReactionDelayMs);
       _setSceneAction('APPROACH_ITEM', zoneId: targetZone);
-      await Future<void>.delayed(Duration(
-          milliseconds:
-              ElevageDomain.normalMoveDurationFor(individual, config)));
+      await _waitSceneAction(
+          ElevageDomain.normalMoveDurationFor(individual, config));
       // Une ressource intéressante dans une mauvaise zone doit être saisie
       // avant la fuite. Les autres arrivées gardent la réaction instinctive.
       if (!carriesToSafety &&
@@ -498,35 +607,30 @@ class _IndividualPageState extends State<_IndividualPage> {
         return;
       }
       _setSceneAction('INSPECT_ITEM');
-      await Future<void>.delayed(Duration(
-          milliseconds: carriesToSafety
-              ? (config.objectReactionDelayMs / 2).round()
-              : config.objectReactionDelayMs));
+      await _waitSceneAction(carriesToSafety
+          ? (config.objectReactionDelayMs / 2).round()
+          : config.objectReactionDelayMs);
       if (carriesToSafety) {
         _setSceneAction('PICKUP');
-        await Future<void>.delayed(
-            Duration(milliseconds: (config.objectReactionDelayMs / 2).round()));
+        await _waitSceneAction((config.objectReactionDelayMs / 2).round(),
+            interruptible: false);
         final safeZone = decision.outcome.targetZoneId;
         if (safeZone == null) return;
         await widget.controller
             .relocateSceneItem(alcoveId, decision.instanceId, safeZone);
         if (widget.controller.error != null) return;
         _setSceneAction('FLEE_WITH_ITEM', zoneId: safeZone);
-        await Future<void>.delayed(
-            Duration(milliseconds: config.runMoveDurationMs));
+        await _waitSceneAction(config.runMoveDurationMs, interruptible: false);
       }
       _setSceneAction('THINK');
-      await Future<void>.delayed(
-          Duration(milliseconds: config.objectReactionDelayMs));
+      await _waitSceneAction(config.objectReactionDelayMs);
       if (decision.outcome.behavior == 'MOVE_ITEM') {
         // L'objet est désiré, mais la zone elle-même gêne le Résonance : le
         // signal d'inconfort précède une course visible vers un meilleur coin.
         _setSceneAction('DISCOMFORT');
-        await Future<void>.delayed(
-            Duration(milliseconds: config.objectReactionDelayMs));
+        await _waitSceneAction(config.objectReactionDelayMs);
         _setSceneAction('MOVE_ITEM', zoneId: decision.outcome.targetZoneId);
-        await Future<void>.delayed(
-            Duration(milliseconds: config.runMoveDurationMs));
+        await _waitSceneAction(config.runMoveDurationMs);
       }
       // L’objet peut avoir été récupéré uniquement par une action déjà en
       // file ; dans ce cas l’événement devient inoffensif.
@@ -539,7 +643,7 @@ class _IndividualPageState extends State<_IndividualPage> {
       if (target != null) await _interactSceneItem(target, automatic: true);
       _lastAutonomousAt = DateTime.now().millisecondsSinceEpoch;
       _lastAutonomousBehavior = decision.outcome.behavior;
-      await Future<void>.delayed(const Duration(milliseconds: 900));
+      await _waitSceneAction(900);
       _setSceneAction('IDLE');
     } finally {
       _autonomousInFlight = false;
@@ -557,18 +661,16 @@ class _IndividualPageState extends State<_IndividualPage> {
     final comfort = ElevageDomain.localComfort(environment, config);
     if (comfort != 'BAD' && comfort != 'EXTREME') return false;
     _setSceneAction(comfort == 'EXTREME' ? 'EXTREME' : 'DISCOMFORT');
-    await Future<void>.delayed(
-        Duration(milliseconds: config.objectReactionDelayMs));
+    await _waitSceneAction(config.objectReactionDelayMs);
     final target = ElevageDomain.findBestSafeZone(
         current, alcoveId, config, now,
         phaseOverride: widget.controller.forcedDayNightPhase,
         excludingZoneId: _ptipoteZoneId);
     _setSceneAction(comfort == 'EXTREME' ? 'FLEE_FAST' : 'FLEE_NORMAL',
         zoneId: target);
-    await Future<void>.delayed(Duration(
-        milliseconds:
-            (config.normalMoveDurationMs / (comfort == 'EXTREME' ? 3 : 2))
-                .round()));
+    await _waitSceneAction(
+        (config.normalMoveDurationMs / (comfort == 'EXTREME' ? 3 : 2)).round(),
+        interruptible: false);
     _setSceneAction('IDLE');
     return true;
   }
@@ -644,8 +746,10 @@ class _IndividualPageState extends State<_IndividualPage> {
         ? ElevagePresentation.sceneObservationFeedback(
             outcome, item['itemId'] as String, individual['name'] as String)
         : null;
-    _setSceneAction(
-        _sceneActionForOutcome(outcome.behavior, item['itemId'] as String));
+    final action =
+        _sceneActionForOutcome(outcome.behavior, item['itemId'] as String);
+    _setSceneAction(action);
+    _showSceneExpression(action, individual, itemId: item['itemId'] as String);
     _showSceneFeedback(automatic ? (feedback ?? '') : (feedback ?? ''),
         reaction: outcome.behavior);
     if (feedback != null && !automatic) {
@@ -695,11 +799,10 @@ class _IndividualPageState extends State<_IndividualPage> {
       return;
     }
     _showSceneFeedback('', reaction: 'FOLLOW');
-    await Future<void>.delayed(Duration(
-        milliseconds: ElevageDomain.normalMoveDurationFor(
-            (widget.controller.state!.data['individuals']
-                as Map)[widget.individualId] as Map,
-            widget.controller.config)));
+    await _waitSceneAction(ElevageDomain.normalMoveDurationFor(
+        (widget.controller.state!.data['individuals']
+            as Map)[widget.individualId] as Map,
+        widget.controller.config));
     final state = widget.controller.state;
     if (state != null) {
       final individual =
@@ -739,8 +842,31 @@ class _IndividualPageState extends State<_IndividualPage> {
         : socialReaction == 'RESERVED'
             ? 'NEUTRAL'
             : 'CUDDLE');
+    _showSceneExpression(_sceneAction, updated);
     _showSceneFeedback('', reaction: socialReaction);
-    await Future<void>.delayed(Duration(milliseconds: elapsed));
+    await _waitSceneAction(elapsed);
+    _setSceneAction('IDLE');
+    _autonomousInFlight = false;
+  }
+
+  Future<void> _executeWake() async {
+    final state = widget.controller.state;
+    if (state == null) return;
+    final individual =
+        (state.data['individuals'] as Map)[widget.individualId] as Map?;
+    if (individual == null) return;
+    _autonomousInFlight = true;
+    await widget.controller.wake(widget.individualId);
+    if (!mounted || widget.controller.error != null) {
+      _autonomousInFlight = false;
+      return;
+    }
+    final updated = (widget.controller.state!.data['individuals']
+        as Map)[widget.individualId] as Map;
+    _setSceneAction('WAKE');
+    _showSceneExpression('WAKE', updated);
+    final posed = ElevageDomain.personalityValue(updated, 'tempo') >= .5;
+    await _waitSceneAction(posed ? 1400 : 700, interruptible: false);
     _setSceneAction('IDLE');
     _autonomousInFlight = false;
   }
@@ -941,7 +1067,9 @@ class _IndividualPageState extends State<_IndividualPage> {
                     _pendingPlacementItem == null ? null : _placeInZone(zoneId),
                 onZoneHoldStart: _startFollowHold,
                 onZoneHoldEnd: _endFollowHold,
-                onPtipoteTap: _cuddle,
+                onPtipoteTap: _onPtipoteTap,
+                onPtipoteHoldStart: _startPtipoteHold,
+                onPtipoteHoldEnd: _endPtipoteHold,
                 onInstallationSlotTap: (slot) => _openInstallationSlot(
                     alcoveId, slot, zoneEnvironments['ZONE_${slot + 1}']!),
                 onEnvironmentTap: () => _showEnvironmentPanel(
@@ -949,6 +1077,9 @@ class _IndividualPageState extends State<_IndividualPage> {
                 pendingItem: _pendingPlacementItem,
                 followHoldZoneId: _followHoldZoneId,
                 action: _sceneAction,
+                voice: _sceneVoice,
+                bubbleItemId: _bubbleItemId,
+                ptipoteHoldActive: _ptipoteHoldActive,
                 requestSignal: request?['signal'] as String?,
                 sleeping: sleeping,
                 ptipoteZoneId: _ptipoteZoneId,
@@ -1600,11 +1731,16 @@ class _AlcoveScene extends StatefulWidget {
     required this.onZoneHoldStart,
     required this.onZoneHoldEnd,
     required this.onPtipoteTap,
+    required this.onPtipoteHoldStart,
+    required this.onPtipoteHoldEnd,
     required this.onInstallationSlotTap,
     required this.onEnvironmentTap,
     required this.pendingItem,
     required this.followHoldZoneId,
     required this.action,
+    required this.voice,
+    required this.bubbleItemId,
+    required this.ptipoteHoldActive,
     required this.requestSignal,
     required this.sleeping,
     required this.ptipoteZoneId,
@@ -1626,11 +1762,16 @@ class _AlcoveScene extends StatefulWidget {
   final ValueChanged<String> onZoneHoldStart;
   final VoidCallback onZoneHoldEnd;
   final VoidCallback onPtipoteTap;
+  final VoidCallback onPtipoteHoldStart;
+  final VoidCallback onPtipoteHoldEnd;
   final ValueChanged<int> onInstallationSlotTap;
   final VoidCallback onEnvironmentTap;
   final String? pendingItem;
   final String? followHoldZoneId;
   final String action;
+  final String? voice;
+  final String? bubbleItemId;
+  final bool ptipoteHoldActive;
   final String? requestSignal;
   final bool sleeping;
   final String ptipoteZoneId;
@@ -1745,11 +1886,11 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                         ),
                       ),
                       if (widget.followHoldZoneId == zone.id)
-                        const Center(
-                            child: SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator())),
+                        Center(
+                            child: LongPressProgressInteraction(
+                                duration: Duration(
+                                    seconds:
+                                        widget.config.longPressHoldSeconds))),
                     ]),
                   ),
                 );
@@ -1858,22 +1999,33 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
             child: AnimatedScale(
               duration: const Duration(milliseconds: 220),
               scale: reactionScale,
-              child: Container(
-                width: size,
-                height: size,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Theme.of(context).colorScheme.secondaryContainer,
-                    boxShadow: const <BoxShadow>[
-                      BoxShadow(blurRadius: 8, color: Colors.black26)
-                    ]),
-                child: GestureDetector(
-                  onLongPress: widget.onPtipoteTap,
-                  onTap: widget.onPtipoteTap,
-                  child: Icon(_ptipoteIcon(widget.stage), size: size * .62),
+              child: Stack(clipBehavior: Clip.none, children: <Widget>[
+                Container(
+                  width: size,
+                  height: size,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      boxShadow: const <BoxShadow>[
+                        BoxShadow(blurRadius: 8, color: Colors.black26)
+                      ]),
+                  child: GestureDetector(
+                    onLongPressStart: (_) => widget.onPtipoteHoldStart(),
+                    onLongPressEnd: (_) => widget.onPtipoteHoldEnd(),
+                    onLongPressCancel: widget.onPtipoteHoldEnd,
+                    onTap: widget.onPtipoteTap,
+                    child: Icon(_ptipoteIcon(widget.stage), size: size * .62),
+                  ),
                 ),
-              ),
+                if (widget.ptipoteHoldActive)
+                  Positioned.fill(
+                      child: IgnorePointer(
+                          child: LongPressProgressInteraction(
+                              duration: Duration(
+                                  seconds:
+                                      widget.config.longPressHoldSeconds)))),
+              ]),
             ),
           ),
           if (widget.sleeping ||
@@ -1885,6 +2037,8 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
               child: _StatusBubble(
                 signal: widget.requestSignal,
                 action: widget.sleeping ? 'SLEEP' : widget.action,
+                voice: widget.voice,
+                itemId: widget.bubbleItemId,
               ),
             ),
           if (widget.pendingItem != null)
@@ -1967,9 +2121,16 @@ IconData _ptipoteIcon(String stage) =>
     stage == 'BABY' ? Icons.egg_outlined : Icons.pets;
 
 class _StatusBubble extends StatelessWidget {
-  const _StatusBubble({required this.signal, required this.action});
+  const _StatusBubble({
+    required this.signal,
+    required this.action,
+    required this.voice,
+    required this.itemId,
+  });
   final String? signal;
   final String action;
+  final String? voice;
+  final String? itemId;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -1977,23 +2138,58 @@ class _StatusBubble extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          child: signal == null
-              ? Icon(_actionIcon(action, 'INTERMEDIATE'), size: 17)
-              : signal == 'Pti ?'
-                  ? const Text('Pti ?',
-                      style: TextStyle(fontWeight: FontWeight.w800))
-                  : Icon(_requestIcon(signal!), size: 17),
+          child: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Icon(_actionIcon(action, 'INTERMEDIATE'), size: 17),
+            if (itemId != null) ...<Widget>[
+              const SizedBox(width: 3),
+              Icon(ElevagePresentation.itemIcon(itemId!), size: 15),
+            ],
+            if (signal != null || voice != null) ...<Widget>[
+              const SizedBox(width: 4),
+              Flexible(
+                  child: Text(
+                      voice ??
+                          (signal == 'Pti ?'
+                              ? 'Pti ?'
+                              : _requestLabel(signal!)),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w800))),
+            ],
+          ]),
         ),
       );
 }
 
-IconData _requestIcon(String request) => switch (request) {
-      'FOOD' || 'ROOT' || 'LEAF' => Icons.restaurant_outlined,
-      'STRUCTURAL' || 'IRON' || 'LIMESTONE' => Icons.diamond_outlined,
-      'CONTACT' => Icons.favorite_outline,
-      'SLEEP' => Icons.bedtime_outlined,
-      _ => Icons.waving_hand_outlined,
+String _requestLabel(String request) => switch (request) {
+      'FOOD' || 'ROOT' || 'LEAF' => 'Pti !',
+      'STRUCTURAL' || 'IRON' || 'LIMESTONE' => 'Mm !',
+      'CONTACT' => 'Pti !',
+      'SLEEP' => 'Nnh…',
+      _ => 'Pti ?',
     };
+
+/// Shared three-second consent/attention affordance for FOLLOW and WAKE.
+class LongPressProgressInteraction extends StatelessWidget {
+  const LongPressProgressInteraction({super.key, required this.duration});
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 28,
+        height: 28,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: duration,
+          builder: (context, value, _) => CircularProgressIndicator(
+            value: value,
+            strokeWidth: 3,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+      );
+}
 
 String _clockLabel(int remainingMs) {
   final minutes =
@@ -2017,6 +2213,7 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       'FLEE' || 'FLEE_NORMAL' => Icons.priority_high,
       'FLEE_FAST' => Icons.running_with_errors_outlined,
       'SLEEP' => Icons.bedtime_outlined,
+      'WAKE' => Icons.wb_sunny_outlined,
       'OBSERVE' => Icons.question_mark,
       'CUDDLE' => Icons.favorite,
       'MOVE_ITEM' => Icons.redo,

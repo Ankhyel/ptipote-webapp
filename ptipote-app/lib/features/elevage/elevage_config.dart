@@ -147,6 +147,11 @@ class ElevageConfig {
     required this.baseTemperature,
     required this.dayTemperatureDelta,
     required this.strongShadeTemperatureDelta,
+    required this.reactionBubbleSeconds,
+    required this.absorptionBubbleSeconds,
+    required this.longPressHoldSeconds,
+    required this.wakeGraceSeconds,
+    required this.vocalizations,
     required this.recipes,
   });
 
@@ -197,6 +202,11 @@ class ElevageConfig {
   final int baseTemperature;
   final int dayTemperatureDelta;
   final int strongShadeTemperatureDelta;
+  final int reactionBubbleSeconds;
+  final int absorptionBubbleSeconds;
+  final int longPressHoldSeconds;
+  final int wakeGraceSeconds;
+  final Map<String, String> vocalizations;
   final List<ElevageRecipe> recipes;
 
   int get babyMinimumHours => preset == ElevagePreset.prototype ? 24 : 48;
@@ -408,6 +418,11 @@ class ElevageConfig {
     int? baseTemperature,
     int? dayTemperatureDelta,
     int? strongShadeTemperatureDelta,
+    int? reactionBubbleSeconds,
+    int? absorptionBubbleSeconds,
+    int? longPressHoldSeconds,
+    int? wakeGraceSeconds,
+    Map<String, String>? vocalizations,
     List<ElevageRecipe>? recipes,
   }) =>
       ElevageConfig(
@@ -473,6 +488,13 @@ class ElevageConfig {
         dayTemperatureDelta: dayTemperatureDelta ?? this.dayTemperatureDelta,
         strongShadeTemperatureDelta:
             strongShadeTemperatureDelta ?? this.strongShadeTemperatureDelta,
+        reactionBubbleSeconds:
+            reactionBubbleSeconds ?? this.reactionBubbleSeconds,
+        absorptionBubbleSeconds:
+            absorptionBubbleSeconds ?? this.absorptionBubbleSeconds,
+        longPressHoldSeconds: longPressHoldSeconds ?? this.longPressHoldSeconds,
+        wakeGraceSeconds: wakeGraceSeconds ?? this.wakeGraceSeconds,
+        vocalizations: vocalizations ?? this.vocalizations,
         recipes: recipes ?? this.recipes,
       );
 
@@ -523,6 +545,11 @@ class ElevageConfig {
         'baseTemperature': baseTemperature,
         'dayTemperatureDelta': dayTemperatureDelta,
         'strongShadeTemperatureDelta': strongShadeTemperatureDelta,
+        'reactionBubbleSeconds': reactionBubbleSeconds,
+        'absorptionBubbleSeconds': absorptionBubbleSeconds,
+        'longPressHoldSeconds': longPressHoldSeconds,
+        'wakeGraceSeconds': wakeGraceSeconds,
+        'vocalizations': vocalizations,
         'recipes': recipes.map((recipe) => recipe.toJson()).toList(),
       };
 
@@ -612,6 +639,18 @@ class ElevageConfig {
           _number(json['dayTemperatureDelta'], base.dayTemperatureDelta),
       strongShadeTemperatureDelta: _number(json['strongShadeTemperatureDelta'],
           base.strongShadeTemperatureDelta),
+      reactionBubbleSeconds:
+          _positive(json['reactionBubbleSeconds'], base.reactionBubbleSeconds),
+      absorptionBubbleSeconds: _positive(
+          json['absorptionBubbleSeconds'], base.absorptionBubbleSeconds),
+      longPressHoldSeconds:
+          _positive(json['longPressHoldSeconds'], base.longPressHoldSeconds),
+      wakeGraceSeconds:
+          _positive(json['wakeGraceSeconds'], base.wakeGraceSeconds),
+      vocalizations: (json['vocalizations'] as Map?)?.map(
+            (key, value) => MapEntry('$key', '$value'),
+          ) ??
+          base.vocalizations,
       recipes: (json['recipes'] as List?)
               ?.whereType<Map>()
               .map((raw) =>
@@ -653,6 +692,11 @@ void validateElevageConfig(ElevageConfig config) {
       config.warmCuddleCooldownSeconds <= 0 ||
       config.reservedCuddleCooldownSeconds <= 0 ||
       config.requestDurationSeconds <= 0 ||
+      config.reactionBubbleSeconds <= 0 ||
+      config.absorptionBubbleSeconds < config.reactionBubbleSeconds ||
+      config.longPressHoldSeconds <= 0 ||
+      config.wakeGraceSeconds <= 0 ||
+      config.vocalizations.values.any((value) => value.trim().isEmpty) ||
       config.recipes.map((recipe) => recipe.id).toSet().length !=
           config.recipes.length) {
     throw const FormatException('Configuration Élevage invalide.');
@@ -700,10 +744,24 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
   warmCuddleCooldownSeconds: 45,
   reservedCuddleCooldownSeconds: 90,
   requestDurationSeconds: 90,
-  baseHumidity: 0,
+  // 2/5 est la baseline viable Résonance ; l'échelle joueur ajoute +3.
+  baseHumidity: -1,
   baseTemperature: -1,
   dayTemperatureDelta: 1,
   strongShadeTemperatureDelta: -1,
+  reactionBubbleSeconds: 7,
+  absorptionBubbleSeconds: 20,
+  longPressHoldSeconds: 3,
+  wakeGraceSeconds: 60,
+  vocalizations: <String, String>{
+    'CURIOSITY': 'Pti ?',
+    'ABSORB': 'Mm !',
+    'CONTENT': 'Prr !',
+    'DISCOMFORT': 'Nnh…',
+    'SURPRISE': 'Ptik !',
+    'REJECT': 'Nh !',
+    'CALL': 'Pti !',
+  },
   recipes: <ElevageRecipe>[
     ElevageRecipe(
         id: 'ABRI_FIBREUX',

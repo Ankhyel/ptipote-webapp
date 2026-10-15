@@ -430,8 +430,8 @@ void main() {
     final zone2 = ElevageDomain.zoneEnvironment(
         state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
         now: 0);
-    expect(zone3['humidity'], 2); // base explicite + bassin local +2
-    expect(zone2['humidity'], 1); // diffusion +1 vers la zone adjacente
+    expect(zone3['humidity'], 1); // baseline 2/5 + bassin local +2
+    expect(zone2['humidity'], 0); // diffusion +1 vers la zone adjacente
   });
 
   test('FOLLOW et CUDDLE créent des actions et des observations plafonnées',
@@ -608,8 +608,8 @@ void main() {
     final other = ElevageDomain.zoneEnvironment(
         state, 'alcove-1', 'ZONE_3', defaultElevageConfig,
         now: now, phaseOverride: 'DAY');
-    expect(day['humidity'], 2);
-    expect(other['humidity'], 1); // diffusion bassin Z2 → Z3, pas de reliquat.
+    expect(day['humidity'], 1);
+    expect(other['humidity'], 0); // diffusion bassin Z2 → Z3, pas de reliquat.
     expect(night['light'], lessThan(day['light']!));
     expect(
         ElevageDomain.dayNightRemainingMs(now, defaultElevageConfig,
@@ -831,30 +831,30 @@ void main() {
                 now: now, phaseOverride: 'DAY')['humidity']!,
         };
     expect(humidity(), <String, int>{
-      'ZONE_1': 0,
-      'ZONE_2': 0,
-      'ZONE_3': 0,
-      'ZONE_4': 0,
+      'ZONE_1': -1,
+      'ZONE_2': -1,
+      'ZONE_3': -1,
+      'ZONE_4': -1,
     });
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'BASSIN',
       'zoneId': 'ZONE_2',
     };
     expect(humidity(), <String, int>{
-      'ZONE_1': 1,
-      'ZONE_2': 2,
-      'ZONE_3': 1,
-      'ZONE_4': 0,
+      'ZONE_1': 0,
+      'ZONE_2': 1,
+      'ZONE_3': 0,
+      'ZONE_4': -1,
     });
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'VENTILATION',
       'zoneId': 'ZONE_2',
     };
     expect(humidity(), <String, int>{
-      'ZONE_1': -1,
-      'ZONE_2': -2,
-      'ZONE_3': -1,
-      'ZONE_4': 0,
+      'ZONE_1': -2,
+      'ZONE_2': -3,
+      'ZONE_3': -2,
+      'ZONE_4': -1,
     });
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'BASSIN',
@@ -865,32 +865,32 @@ void main() {
       'zoneId': 'ZONE_4',
     };
     expect(humidity(), <String, int>{
-      'ZONE_1': 1,
-      'ZONE_2': 2,
-      'ZONE_3': 0,
-      'ZONE_4': -2,
+      'ZONE_1': 0,
+      'ZONE_2': 1,
+      'ZONE_3': -1,
+      'ZONE_4': -3,
     }); // somme complète avant le clamp visuel 1–5.
     alcove['slots'][3] = null;
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'TROU_GEOTHERMIQUE_CHAUD',
       'zoneId': 'ZONE_2',
     };
-    expect(humidity()['ZONE_2'], -1);
+    expect(humidity()['ZONE_2'], -2);
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'ABRI_MINERAL_PROFOND',
       'zoneId': 'ZONE_2',
     };
-    expect(humidity()['ZONE_2'], 1);
+    expect(humidity()['ZONE_2'], 0);
     final diagnostics = ElevageDomain.environmentDiagnostics(
         state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
         now: now, phaseOverride: 'DAY');
-    expect(diagnostics['finalHumidity'], 1);
+    expect(diagnostics['finalHumidity'], 0);
     final reloaded = ElevageSave.fromJson(state.toJson());
     expect(
         ElevageDomain.zoneEnvironment(
             reloaded, 'alcove-1', 'ZONE_2', defaultElevageConfig,
             now: now, phaseOverride: 'DAY')['humidity'],
-        1);
+        0);
   });
 
   test('température part de 2 la nuit, gagne 1 le jour et diffuse à +2', () {
@@ -991,5 +991,127 @@ void main() {
         ((state.data['individuals'] as Map)[id]['care']['structuralIntake']
             as Map)['total'],
         greaterThan(0));
+  });
+
+  test('baseline humidité 2/5 reste viable et les effets s’additionnent', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    int scale(String zone) =>
+        ElevagePresentation.environmentScale(ElevageDomain.zoneEnvironment(
+            state, 'alcove-1', zone, defaultElevageConfig,
+            now: now, phaseOverride: 'DAY')['humidity']!);
+    expect(scale('ZONE_2'), 2);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'ABRI_MINERAL_PROFOND',
+      'zoneId': 'ZONE_2',
+    };
+    expect(scale('ZONE_2'), 3);
+    alcove['slots'][2] = <String, dynamic>{
+      'definitionId': 'BASSIN',
+      'zoneId': 'ZONE_3',
+    };
+    expect(scale('ZONE_3'), 4);
+  });
+
+  test('communication garde Baby non verbal et apprend selon Contact', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect(
+        ElevageDomain.communicationExpression(
+            individual, 'CONTENT', defaultElevageConfig)['word'],
+        isNull);
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    ((individual['personality'] as Map)['baseline'] as Map)['contact'] = 40;
+    for (var index = 0; index < 3; index++) {
+      state = ElevageDomain.recordCommunication(state, id, 'CONTENT');
+    }
+    expect(
+        ElevageDomain.communicationExpression(
+            (state.data['individuals'] as Map)[id] as Map,
+            'CONTENT',
+            defaultElevageConfig)['word'],
+        'Bien');
+    ((state.data['individuals'] as Map)[id]['personality']['baseline']
+        as Map)['contact'] = 60;
+    ((state.data['individuals'] as Map)[id]['communicationCounts'] as Map)
+        .clear();
+    for (var index = 0; index < 5; index++) {
+      state = ElevageDomain.recordCommunication(state, id, 'CONTENT');
+    }
+    expect(
+        ElevageDomain.communicationExpression(
+            (state.data['individuals'] as Map)[id] as Map,
+            'CONTENT',
+            defaultElevageConfig)['word'],
+        'Bien');
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'MATURE';
+    expect(
+        ElevageDomain.communicationExpression(
+            (state.data['individuals'] as Map)[id] as Map,
+            'ABSORB',
+            defaultElevageConfig,
+            precise: 'Fer')['word'],
+        'Fer');
+  });
+
+  test('interruption réduit sans annuler selon Tempo et Initiative', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final individual =
+        ((state.data['individuals'] as Map).values.single as Map);
+    ((individual['personality'] as Map)['baseline'] as Map)['tempo'] = 40;
+    ((individual['personality'] as Map)['baseline'] as Map)['initiative'] = 40;
+    expect(
+        ElevageDomain.interruptedRemainingMs(individual, 10000,
+            eventType: 'NEW_ITEM'),
+        4000); // Baby spontané : -6 s.
+    expect(
+        ElevageDomain.interruptedRemainingMs(individual, 10000,
+            eventType: 'CUDDLE'),
+        4000); // Baby accompagné : -6 s.
+    ((individual['personality'] as Map)['baseline'] as Map)['tempo'] = 60;
+    ((individual['personality'] as Map)['baseline'] as Map)['initiative'] = 60;
+    expect(
+        ElevageDomain.interruptedRemainingMs(individual, 10000,
+            eventType: 'NEW_ITEM'),
+        6000); // Baby posé : -4 s.
+    expect(
+        ElevageDomain.interruptedRemainingMs(individual, 10000,
+            eventType: 'CUDDLE'),
+        6000); // Baby autonome : -4 s.
+  });
+
+  test('réveil manuel sort du sommeil sans réveil sur simple lecture', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Faradet',
+        physical: false,
+        now: 0,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect(
+        ElevageDomain.isSleeping(individual, 0, defaultElevageConfig), isTrue);
+    state = ElevageDomain.wake(state, id, 0, defaultElevageConfig);
+    final woken = (state.data['individuals'] as Map)[id] as Map;
+    expect(ElevageDomain.isSleeping(woken, 1, defaultElevageConfig), isFalse);
+    expect((woken['sleep'] as Map)['wakeCount'], 1);
   });
 }

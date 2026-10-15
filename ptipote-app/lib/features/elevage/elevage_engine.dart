@@ -81,6 +81,14 @@ class ElevageSave {
                   'lastUpdatedAt': normalized['savedAt'] ?? 0,
                 });
         raw.putIfAbsent('activeRequest', () => null);
+        raw.putIfAbsent('communicationCounts', () => <String, int>{});
+        raw.putIfAbsent(
+            'sleep',
+            () => <String, dynamic>{
+                  'awakeUntil': 0,
+                  'wakeCount': 0,
+                  'lastWakeAt': null,
+                });
         raw.putIfAbsent(
             'social',
             () => <String, dynamic>{
@@ -264,6 +272,8 @@ class ElevageDomain {
       };
 
   static bool isSleeping(Map individual, int now, ElevageConfig config) {
+    final sleep = individual['sleep'] as Map?;
+    if ((sleep?['awakeUntil'] as num? ?? 0).toInt() > now) return false;
     final cycleMs =
         config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
     final position = (now % cycleMs) / cycleMs;
@@ -277,6 +287,115 @@ class ElevageDomain {
     final individual = _individual(state, individualId);
     return bestComfortZone(state, individual['alcoveId'] as String, config, now,
         phaseOverride: phaseOverride);
+  }
+
+  /// Communication stays deliberately tiny: a Baby only vocalises, while an
+  /// Intermediate gradually associates a word with an already familiar cue.
+  static String vocalCategoryForAction(String action) => switch (action) {
+        'STRUCTURAL_ABSORB' => 'ABSORB',
+        'EAT' => 'CONTENT',
+        'REJECT' => 'REJECT',
+        'DISCOMFORT' || 'FLEE' || 'FLEE_WITH_ITEM' => 'DISCOMFORT',
+        'CUDDLE' => 'CONTENT',
+        'WAKE' => 'SURPRISE',
+        'INSPECT' || 'THINK' => 'CURIOSITY',
+        _ => 'CALL',
+      };
+
+  static Map<String, String?> communicationExpression(
+    Map individual,
+    String category,
+    ElevageConfig config, {
+    String? precise,
+  }) {
+    final vocal = config.vocalizations[category] ??
+        config.vocalizations['CALL'] ??
+        'Pti !';
+    final stage =
+        ((individual['lifecycle'] as Map)['stage'] as String?) ?? 'BABY';
+    if (stage == 'BABY') return {'vocal': vocal, 'word': null};
+
+    final genericWords = <String, String>{
+      'ABSORB': 'Matière',
+      'CONTENT': 'Bien',
+      'REJECT': 'Non',
+      'DISCOMFORT': 'Aïe',
+      'SURPRISE': 'Oh',
+      'CURIOSITY': 'Regarde',
+      'CALL': 'Viens',
+    };
+    if (stage == 'MATURE') {
+      return {'vocal': vocal, 'word': precise ?? genericWords[category]};
+    }
+    final counts = individual['communicationCounts'] as Map?;
+    final count = (counts?[category] as num? ?? 0).toInt();
+    final warm = personalityValue(individual, 'contact') >= .5;
+    final threshold = warm ? 5 : 3;
+    return {
+      'vocal': vocal,
+      'word': count >= threshold ? (precise ?? genericWords[category]) : null,
+    };
+  }
+
+  static ElevageSave recordCommunication(
+      ElevageSave source, String individualId, String category) {
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    final counts = individual.putIfAbsent(
+        'communicationCounts', () => <String, int>{}) as Map;
+    counts[category] = (counts[category] as num? ?? 0).toInt() + 1;
+    return state;
+  }
+
+  static int bubbleDurationSeconds(String action, ElevageConfig config) =>
+      action == 'STRUCTURAL_ABSORB'
+          ? config.absorptionBubbleSeconds
+          : config.reactionBubbleSeconds;
+
+  /// A new stimulus shortens, but never cancels, an interruptible action.
+  static int interruptedRemainingMs(
+    Map individual,
+    int remainingMs, {
+    required String eventType,
+  }) {
+    final stage =
+        ((individual['lifecycle'] as Map)['stage'] as String?) ?? 'BABY';
+    final isBaby = stage == 'BABY';
+    final seconds = switch (eventType) {
+      'NEW_ITEM' => isBaby
+          ? (personalityValue(individual, 'tempo') >= .5 ? 4 : 6)
+          : (personalityValue(individual, 'tempo') >= .5 ? 2 : 3),
+      'CUDDLE' => isBaby
+          ? (personalityValue(individual, 'initiative') >= .5 ? 4 : 6)
+          : (personalityValue(individual, 'initiative') >= .5 ? 2 : 3),
+      _ => 0,
+    };
+    return max(0, remainingMs - seconds * 1000);
+  }
+
+  static ElevageSave wake(
+      ElevageSave source, String individualId, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    final sleep = individual.putIfAbsent(
+        'sleep',
+        () => <String, dynamic>{
+              'awakeUntil': 0,
+              'wakeCount': 0,
+              'lastWakeAt': null,
+            }) as Map;
+    final previousWake = (sleep['lastWakeAt'] as num?)?.toInt();
+    final repeated = previousWake != null &&
+        now - previousWake <
+            config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
+    final posed = personalityValue(individual, 'tempo') >= .5;
+    sleep['awakeUntil'] = now + config.wakeGraceSeconds * 1000;
+    sleep['lastWakeAt'] = now;
+    sleep['wakeCount'] = (sleep['wakeCount'] as num? ?? 0).toInt() + 1;
+    _adjustWellbeing(
+        individual, repeated ? (posed ? -5 : -2) : (posed ? -2 : -1), now);
+    _interaction(individual, 'WAKE', tempo: posed ? -1 : 1);
+    return state;
   }
 
   static ElevageSave adopt({
@@ -361,6 +480,12 @@ class ElevageDomain {
       },
       'wellbeing': <String, dynamic>{'value': 60, 'lastUpdatedAt': now},
       'activeRequest': null,
+      'communicationCounts': <String, int>{},
+      'sleep': <String, dynamic>{
+        'awakeUntil': 0,
+        'wakeCount': 0,
+        'lastWakeAt': null,
+      },
       'social': <String, dynamic>{
         'cuddleCooldownUntil': 0,
         'cuddleAttempts': 0,
