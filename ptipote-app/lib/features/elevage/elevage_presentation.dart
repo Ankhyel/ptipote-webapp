@@ -22,6 +22,7 @@ class ElevagePresentation {
     'ORGANIC': _ItemVisual('Organique', Icons.spa_outlined, 'Ressources'),
     'MINERAL': _ItemVisual('Minéral', Icons.category_outlined, 'Ressources'),
     'SEED': _ItemVisual('Graine', Icons.grain_outlined, 'Ressources'),
+    'SPORE': _ItemVisual('Spore', Icons.bubble_chart_outlined, 'Ressources'),
     'SPROUT': _ItemVisual('Pousse', Icons.yard_outlined, 'Ressources'),
     'ALGAE_FRAGMENT': _ItemVisual(
         'Fragment d’algue', Icons.water_drop_outlined, 'Ressources'),
@@ -49,11 +50,14 @@ class ElevagePresentation {
         'MOSS_STONE' => 'Pierre de mousse',
         'CULTURE_POTAGERE' => 'Culture potagère',
         'BUTTE_ARBUSTE' => 'Butte d’arbuste',
+        'SUPPORT_FONGIQUE' => 'Support fongique',
         'GEODE_FERRIQUE' || 'FORMATION_METALLIQUE' => 'Formation métallique',
         'GEODE_CRISTALLINE' ||
         'FORMATION_CRISTALLINE' =>
           'Formation cristalline',
         'FORMATION_MINERALE' => 'Formation minérale',
+        'BOSQUET_SYMBIOTIQUE' => 'Bosquet symbiotique',
+        'COLONIE_MYCELIENNE' => 'Colonie mycélienne',
         'LAMPE_SOLAIRE' => 'Lampe solaire',
         'ABRI_FIBREUX' => 'Abri fibreux',
         'ABRI_MINERAL_PROFOND' => 'Abri minéral profond',
@@ -82,12 +86,15 @@ class ElevagePresentation {
         'MOSS_STONE' => Icons.terrain_outlined,
         'CULTURE_POTAGERE' => Icons.grass_outlined,
         'BUTTE_ARBUSTE' => Icons.park_outlined,
+        'SUPPORT_FONGIQUE' => Icons.park_outlined,
         'GEODE_FERRIQUE' ||
         'GEODE_CRISTALLINE' ||
         'FORMATION_METALLIQUE' ||
         'FORMATION_CRISTALLINE' ||
         'FORMATION_MINERALE' =>
           Icons.diamond_outlined,
+        'BOSQUET_SYMBIOTIQUE' => Icons.forest_outlined,
+        'COLONIE_MYCELIENNE' => Icons.hub_outlined,
         'LAMPE_SOLAIRE' => Icons.light_mode_outlined,
         'VENTILATION' => Icons.air_outlined,
         'TOIT_SERRE' => Icons.roofing_outlined,

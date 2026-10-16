@@ -692,12 +692,17 @@ class _IndividualPageState extends State<_IndividualPage> {
         ElevageDomain.localComfort(environment, config, individual: individual);
     if (comfort != 'BAD' && comfort != 'EXTREME') return false;
     _setSceneAction(comfort == 'EXTREME' ? 'EXTREME' : 'DISCOMFORT');
+    _showSceneExpression('DISCOMFORT', individual);
     await _waitSceneAction(config.objectReactionDelayMs);
-    final target = ElevageDomain.findBestSafeZone(
-        current, alcoveId, config, now,
-        phaseOverride: widget.controller.forcedDayNightPhase,
-        excludingZoneId: _ptipoteZoneId,
-        individual: individual);
+    final target = ElevageDomain.exploratoryZoneTarget(
+      current,
+      alcoveId,
+      _ptipoteZoneId,
+      individual,
+      config,
+      now,
+      phaseOverride: widget.controller.forcedDayNightPhase,
+    );
     _setSceneAction(comfort == 'EXTREME' ? 'FLEE_FAST' : 'FLEE_NORMAL',
         zoneId: target);
     await _waitSceneAction(
@@ -1081,12 +1086,14 @@ class _IndividualPageState extends State<_IndividualPage> {
                           widget.controller.config,
                           definition,
                           localEnvironment)),
-                if (definition?.resonanceMaterial != null)
+                if (definition?.resonanceMaterial != null ||
+                    definition?.resonanceFamily != null)
                   ListTile(
                       leading: const Icon(Icons.diamond_outlined),
                       title: const Text('Entrer en résonance'),
-                      subtitle: Text(
-                          'Renforce lentement la structure via ${ElevagePresentation.itemLabel(definition!.resonanceMaterial!)} sans consommer la Formation.'),
+                      subtitle: Text(definition!.resonanceMaterial == null
+                          ? 'Renforce lentement la structure sans consommer la structure biologique.'
+                          : 'Renforce lentement la structure via ${ElevagePresentation.itemLabel(definition.resonanceMaterial!)} sans consommer la Formation.'),
                       onTap: () async {
                         await widget.controller.resonateFormation(
                             widget.individualId,
@@ -1112,7 +1119,7 @@ class _IndividualPageState extends State<_IndividualPage> {
                                 leading: Icon(ElevagePresentation.itemIcon(
                                     entry.key as String)),
                                 title: Text(
-                                    '${ElevagePresentation.itemLabel(entry.key as String)} : ${entry.value}/${widget.controller.config.productionMaxStock}'),
+                                    '${ElevagePresentation.itemLabel(entry.key as String)} : ${entry.value}/${widget.controller.config.outputsFor(definition!.id).where((output) => output.resourceId == entry.key).map((output) => output.maxLocalStock).firstOrNull ?? widget.controller.config.productionMaxStock}'),
                                 trailing: OutlinedButton(
                                   onPressed: () async {
                                     await widget.controller.harvestLocal(
@@ -1330,12 +1337,6 @@ class _IndividualPageState extends State<_IndividualPage> {
                       Text(
                           'Zone actuelle (${_ptipoteZoneId.replaceFirst('ZONE_', 'Z')})',
                           style: Theme.of(context).textTheme.titleSmall),
-                      const SizedBox(height: 3),
-                      Text(_localComfortLabel(
-                          ElevageDomain.localComfort(
-                              localEnvironment, controller.config,
-                              individual: individual),
-                          individual['name'] as String)),
                       const SizedBox(height: 6),
                       Text(
                           '☀️ ${ElevagePresentation.environmentScale(localEnvironment['light'] ?? 0)}/5 · '
@@ -1705,6 +1706,21 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                   config = config.copyWith(productionIntervalSeconds: value)),
           _number(context, 'Stock local maximum', config.productionMaxStock,
               (value) => config = config.copyWith(productionMaxStock: value)),
+          _heading('Producteurs biologiques'),
+          const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                  'Chaque sortie possède son propre rythme, stock maximal et état actif.')),
+          ...config.producerOutputs.entries
+              .expand((entry) => entry.value.map((output) => ListTile(
+                    title: Text(
+                        '${ElevagePresentation.installationLabel(entry.key)} · ${ElevagePresentation.itemLabel(output.resourceId)}'),
+                    subtitle: Text(
+                        '${output.quantityPerCycle}/cycle · ${output.productionSeconds}s · stock ${output.maxLocalStock}${output.enabled ? '' : ' · désactivé'}'),
+                    trailing: const Icon(Icons.tune),
+                    onTap: () =>
+                        _editProducerOutput(context, entry.key, output),
+                  ))),
           _heading('Co-élevage et Sourcier'),
           _number(
               context,
@@ -2045,6 +2061,69 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     }
     setState(() => config = config.copyWith(
         vocalizations: <String, String>{...config.vocalizations, key: clean}));
+  }
+
+  Future<void> _editProducerOutput(BuildContext context, String installationId,
+      ElevageProductionOutput output) async {
+    var draft = output;
+    final next = await showDialog<ElevageProductionOutput>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+              builder: (dialogContext, setLocal) => AlertDialog(
+                title: Text(
+                    '${ElevagePresentation.installationLabel(installationId)} · ${ElevagePresentation.itemLabel(output.resourceId)}'),
+                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                  SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Production active'),
+                      value: draft.enabled,
+                      onChanged: (value) => setLocal(
+                          () => draft = draft.copyWith(enabled: value))),
+                  TextFormField(
+                      initialValue: '${draft.quantityPerCycle}',
+                      decoration: const InputDecoration(
+                          labelText: 'Quantité par cycle'),
+                      keyboardType: TextInputType.number,
+                      onChanged: (value) => draft = draft.copyWith(
+                          quantityPerCycle:
+                              int.tryParse(value) ?? draft.quantityPerCycle)),
+                  TextFormField(
+                      initialValue: '${draft.productionSeconds}',
+                      decoration: const InputDecoration(
+                          labelText: 'Production (secondes)'),
+                      keyboardType: TextInputType.number,
+                      onChanged: (value) => draft = draft.copyWith(
+                          productionSeconds:
+                              int.tryParse(value) ?? draft.productionSeconds)),
+                  TextFormField(
+                      initialValue: '${draft.maxLocalStock}',
+                      decoration: const InputDecoration(
+                          labelText: 'Stock local maximum'),
+                      keyboardType: TextInputType.number,
+                      onChanged: (value) => draft = draft.copyWith(
+                          maxLocalStock:
+                              int.tryParse(value) ?? draft.maxLocalStock)),
+                ]),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('Annuler')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(dialogContext, draft),
+                      child: const Text('Valider')),
+                ],
+              ),
+            ));
+    if (!context.mounted || next == null) return;
+    final outputs = <String, List<ElevageProductionOutput>>{
+      for (final entry in config.producerOutputs.entries)
+        entry.key: List<ElevageProductionOutput>.from(entry.value),
+    };
+    outputs[installationId] = outputs[installationId]!
+        .map((candidate) =>
+            candidate.resourceId == next.resourceId ? next : candidate)
+        .toList(growable: false);
+    setState(() => config = config.copyWith(producerOutputs: outputs));
   }
 
   Future<void> _editNatureProfile(
@@ -2944,13 +3023,6 @@ Color _zoneColor(BuildContext context, int light, bool selected) {
       ? Color.alphaBlend(Colors.white.withValues(alpha: .24), base)
       : base;
 }
-
-String _localComfortLabel(String comfort, String name) => switch (comfort) {
-      'IDEAL' || 'GOOD' => 'Cette zone lui convient très bien.',
-      'BAD' => '$name semble mal à l’aise ici.',
-      'EXTREME' => '$name semble vouloir quitter cet endroit.',
-      _ => 'Cette zone lui paraît neutre.',
-    };
 
 Map<String, Object> _alcoveComfort(
     Map<String, Map<String, int>> zones, ElevageConfig config, Map individual) {

@@ -767,6 +767,7 @@ void main() {
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
     final individual = (state.data['individuals'] as Map)[id] as Map;
+    individual['onboardingAwakeLock'] = false;
     expect(ElevageDomain.circadianProfile(individual), 'SHIFTED_DIURNAL');
     expect(ElevageDomain.sleepWindows(individual), hasLength(2));
     expect(
@@ -1029,6 +1030,7 @@ void main() {
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
     final individual = (state.data['individuals'] as Map)[id] as Map;
+    individual['onboardingAwakeLock'] = false;
     expect(
         ElevageDomain.communicationExpression(
             individual, 'CONTENT', defaultElevageConfig)['word'],
@@ -1112,6 +1114,7 @@ void main() {
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
     final individual = (state.data['individuals'] as Map)[id] as Map;
+    individual['onboardingAwakeLock'] = false;
     expect(
         ElevageDomain.isSleeping(individual, 0, defaultElevageConfig), isTrue);
     state = ElevageDomain.wake(state, id, 0, defaultElevageConfig);
@@ -1620,5 +1623,103 @@ void main() {
             .natureProfile('VEGETAL', 'PHOTOSYNTHESIS')
             .preferredLight,
         4);
+  });
+
+  test('producteurs biologiques suivent leurs sorties Dashboard indépendantes',
+      () {
+    final configured = defaultElevageConfig
+        .copyWith(producerOutputs: <String, List<ElevageProductionOutput>>{
+      ...defaultElevageConfig.producerOutputs,
+      'CULTURE_POTAGERE': const <ElevageProductionOutput>[
+        ElevageProductionOutput(
+            resourceId: 'ROOT',
+            quantityPerCycle: 2,
+            productionSeconds: 10,
+            maxLocalStock: 3),
+        ElevageProductionOutput(
+            resourceId: 'LEAF',
+            quantityPerCycle: 1,
+            productionSeconds: 20,
+            maxLocalStock: 4),
+      ],
+    });
+    validateElevageConfig(configured);
+    var state = ElevageSave.initial(configured, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    (alcove['slots'] as List)[0] = <String, dynamic>{
+      'instanceId': 'culture-test',
+      'definitionId': 'CULTURE_POTAGERE',
+      'productionState': <String, dynamic>{
+        'lastResolvedAt': now,
+        'lastResolvedAtByItemId': <String, int>{'ROOT': now, 'LEAF': now},
+        'availableByItemId': <String, int>{},
+      },
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(seconds: 20).inMilliseconds, configured);
+    final refreshedAlcove = (state.data['alcoves'] as List).first as Map;
+    final stock = (((refreshedAlcove['slots'] as List).first
+        as Map)['productionState'] as Map)['availableByItemId'] as Map;
+    expect(stock['ROOT'], 3,
+        reason: 'cap par sortie appliqué après deux cycles');
+    expect(stock['LEAF'], 1, reason: 'horloge LEAF indépendante');
+    final restored = ElevageConfig.fromJson(configured.toJson());
+    expect(restored.outputsFor('CULTURE_POTAGERE').first.quantityPerCycle, 2);
+  });
+
+  test('résonance végétale et fongique conserve la structure cible', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Mycel',
+        physical: false,
+        family: 'FUNGAL',
+        nature: 'DECOMPOSITION',
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    final slots =
+        ((state.data['alcoves'] as List).first as Map)['slots'] as List;
+    slots[0] = <String, dynamic>{
+      'instanceId': 'mycelium',
+      'definitionId': 'COLONIE_MYCELIENNE',
+    };
+    state = ElevageDomain.resonateFormation(
+        state, id, 'alcove-1', 'mycelium', now + 1, defaultElevageConfig);
+    final structure = ((state.data['individuals'] as Map)[id]['care']
+        ['structuralIntake'] as Map);
+    expect(structure['total'], 1);
+    expect((structure['byMaterial'] as Map)['FUNGAL_RESONANCE'], 1);
+    expect((slots[0] as Map)['definitionId'], 'COLONIE_MYCELIENNE');
+  });
+
+  test(
+      'onboarding garde une nouvelle adoption éveillée puis Baby explore localement',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Hawl',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect(individual['onboardingAwakeLock'], isTrue);
+    expect(ElevageDomain.isSleeping(individual, now, defaultElevageConfig),
+        isFalse);
+    final target = ElevageDomain.exploratoryZoneTarget(
+        state, 'alcove-1', 'ZONE_1', individual, defaultElevageConfig, now);
+    expect(target, 'ZONE_2', reason: 'Baby n’obtient pas un GPS vers Z4');
+    final signal = ElevageDomain.environmentalSignal(
+        <String, int>{'light': 3, 'temperature': 3, 'humidity': 2},
+        individual,
+        defaultElevageConfig);
+    expect(signal?['icon'], 'DISCOMFORT');
+    expect(signal?['vocalization'], 'Nnh…');
   });
 }

@@ -1041,3 +1041,29 @@ L’Eau n’est pas une ressource globale du Camp.
   `MINERAL_CALCIFICATION` : calcification biologique type coquille.
   **Point à arbitrer :** leurs courbes détaillées ne sont pas canonisées et
   elles ne sont pas encore jouables.
+
+## P’TIPOTE Élevage — portage Lots 20.75 et 20.9
+
+- **Production biologique.** Culture potagère (Racine/Feuille), Butte
+  d’arbuste (Fruit) et Support fongique (Champignon) ont des sorties
+  indépendantes : quantité, intervalle, plafond local et activation sont
+  configurables dans le Dashboard. Le plafond d’une sortie n’interrompt pas
+  les autres sorties du même producteur.
+- **Résonance par Type.** Les Formations minérales restent non productives.
+  Le Bosquet symbiotique permet la résonance végétale, et la Colonie
+  mycélienne la résonance fongique ; ces structures restent intactes. Les
+  objets minéraux libres conservent l’absorption directe spécifique aux
+  Minéraux. `SPORE` est une ressource inventaire et un loot Lisière futur,
+  non une production infinie de l’Alcôve. Les recettes exactes des nouvelles
+  structures restent un point d’équilibrage à arbitrer.
+- **Onboarding écologique.** Une adoption commence avec
+  `onboardingAwakeLock`, qui suspend le sommeil jusqu’à la première
+  interaction volontaire dans l’Alcôve. Les résidents historiques sont
+  considérés comme déjà onboardés. La carte État ne diagnostique plus chaque
+  zone : un P’TIPOTE exprime son inconfort dans la scène.
+- **Recherche locale.** Un Bébé confronte d’abord une zone adjacente et garde
+  une mémoire temporaire des zones rejetées ; il ne reçoit pas de GPS direct
+  vers l’optimum. Une zone extrême conserve le repli sûr, avec priorité à une
+  zone favorite ou sûre connue lorsqu’elle est disponible. Les signaux
+  environnementaux sont dérivés de la courbe réelle de Nature : Résonance à
+  `3/3/2` peut ainsi signaler qu’il recherche davantage de chaleur.

@@ -18,6 +18,7 @@ const List<String> elevageRecipeSpecialComponentIds = <String>[
   'LIMESTONE',
   'QUARTZ',
   'SEED',
+  'SPORE',
   'SPROUT',
   'ALGAE_FRAGMENT',
 ];
@@ -168,6 +169,61 @@ class ElevageRecipe {
       );
 }
 
+/// One independently configurable output of a biological producer.  Keeping
+/// the clock and cap on the output (rather than on the building) lets a full
+/// ROOT stock pause while LEAF continues to grow.
+class ElevageProductionOutput {
+  const ElevageProductionOutput({
+    required this.resourceId,
+    required this.quantityPerCycle,
+    required this.productionSeconds,
+    required this.maxLocalStock,
+    this.enabled = true,
+  });
+
+  final String resourceId;
+  final int quantityPerCycle;
+  final int productionSeconds;
+  final int maxLocalStock;
+  final bool enabled;
+
+  ElevageProductionOutput copyWith({
+    int? quantityPerCycle,
+    int? productionSeconds,
+    int? maxLocalStock,
+    bool? enabled,
+  }) =>
+      ElevageProductionOutput(
+        resourceId: resourceId,
+        quantityPerCycle: quantityPerCycle ?? this.quantityPerCycle,
+        productionSeconds: productionSeconds ?? this.productionSeconds,
+        maxLocalStock: maxLocalStock ?? this.maxLocalStock,
+        enabled: enabled ?? this.enabled,
+      );
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'resourceId': resourceId,
+        'quantityPerCycle': quantityPerCycle,
+        'productionSeconds': productionSeconds,
+        'maxLocalStock': maxLocalStock,
+        'enabled': enabled,
+      };
+
+  factory ElevageProductionOutput.fromJson(
+          Map<String, dynamic> json, ElevageProductionOutput fallback) =>
+      ElevageProductionOutput(
+        resourceId: fallback.resourceId,
+        quantityPerCycle:
+            _positive(json['quantityPerCycle'], fallback.quantityPerCycle),
+        productionSeconds:
+            _positive(json['productionSeconds'], fallback.productionSeconds),
+        maxLocalStock: _positive(json['maxLocalStock'], fallback.maxLocalStock),
+        enabled: json['enabled'] is bool
+            ? json['enabled'] as bool
+            : fallback.enabled,
+      );
+}
+
 class ElevageInstallationDefinition {
   const ElevageInstallationDefinition({
     required this.id,
@@ -182,6 +238,7 @@ class ElevageInstallationDefinition {
     this.activity,
     this.decorCategory,
     this.resonanceMaterial,
+    this.resonanceFamily,
     this.outputs = const <String, int>{},
   });
 
@@ -205,6 +262,9 @@ class ElevageInstallationDefinition {
   final String? activity;
   final String? decorCategory;
   final String? resonanceMaterial;
+
+  /// Family accepted by a durable biological resonance support.
+  final String? resonanceFamily;
   final Map<String, int> outputs;
 
   bool get productive => outputs.isNotEmpty;
@@ -228,6 +288,7 @@ class ElevageInstallationDefinition {
         activity: activity,
         decorCategory: decorCategory,
         resonanceMaterial: resonanceMaterial,
+        resonanceFamily: resonanceFamily,
         outputs: outputs,
       );
 }
@@ -313,6 +374,7 @@ class ElevageConfig {
     required this.vocalizations,
     required this.recipes,
     required this.natureProfiles,
+    this.producerOutputs = const <String, List<ElevageProductionOutput>>{},
     this.installationEffects = const <String, Map<String, int>>{},
   });
 
@@ -381,6 +443,10 @@ class ElevageConfig {
   final List<ElevageRecipe> recipes;
   final List<ElevageNatureProfile> natureProfiles;
 
+  /// Production is configured per resource, not as a hidden global building
+  /// timer.  Only the three biological producers expose entries here.
+  final Map<String, List<ElevageProductionOutput>> producerOutputs;
+
   /// Dashboard-only overrides. Structures expose light/temperature/humidity;
   /// furniture and decorations expose wellbeing only. Individual affinity
   /// remains part of the domain, not of the configuration UI.
@@ -442,6 +508,16 @@ class ElevageConfig {
           outputs: <String, int>{'FRUIT': 1},
         ),
         const ElevageInstallationDefinition(
+          id: 'SUPPORT_FONGIQUE',
+          label: 'Support fongique',
+          description:
+              'Permet la culture progressive de champignons utilisables comme ressource organique.',
+          light: 0,
+          temperature: 0,
+          humidity: 1,
+          outputs: <String, int>{'MUSHROOM': 1},
+        ),
+        const ElevageInstallationDefinition(
           id: 'FORMATION_METALLIQUE',
           label: 'Formation métallique',
           description:
@@ -469,6 +545,27 @@ class ElevageConfig {
           temperature: 0,
           humidity: 0,
           resonanceMaterial: 'LIMESTONE',
+          resonanceFamily: 'MINERAL',
+        ),
+        const ElevageInstallationDefinition(
+          id: 'BOSQUET_SYMBIOTIQUE',
+          label: 'Bosquet symbiotique',
+          description:
+              'Écosystème végétal dense où les P’TIPOTES végétaux renforcent progressivement leur structure.',
+          light: 0,
+          temperature: 0,
+          humidity: 1,
+          resonanceFamily: 'VEGETAL',
+        ),
+        const ElevageInstallationDefinition(
+          id: 'COLONIE_MYCELIENNE',
+          label: 'Colonie mycélienne',
+          description:
+              'Réseau durable où les P’TIPOTES fongiques renforcent progressivement leur structure.',
+          light: -1,
+          temperature: 0,
+          humidity: 1,
+          resonanceFamily: 'FUNGAL',
         ),
         const ElevageInstallationDefinition(
           id: 'LAMPE_SOLAIRE',
@@ -730,6 +827,9 @@ class ElevageConfig {
     return null;
   }
 
+  List<ElevageProductionOutput> outputsFor(String installationId) =>
+      producerOutputs[installationId] ?? const <ElevageProductionOutput>[];
+
   ElevageSceneZone? sceneZone(String id) {
     for (final zone in sceneZones) {
       if (zone.id == id) return zone;
@@ -798,6 +898,7 @@ class ElevageConfig {
     Map<String, String>? vocalizations,
     List<ElevageRecipe>? recipes,
     List<ElevageNatureProfile>? natureProfiles,
+    Map<String, List<ElevageProductionOutput>>? producerOutputs,
     Map<String, Map<String, int>>? installationEffects,
   }) =>
       ElevageConfig(
@@ -890,6 +991,16 @@ class ElevageConfig {
         vocalizations: vocalizations ?? this.vocalizations,
         recipes: recipes ?? this.recipes,
         natureProfiles: natureProfiles ?? this.natureProfiles,
+        producerOutputs: producerOutputs ??
+            ((productionIntervalSeconds != null || productionMaxStock != null)
+                ? this.producerOutputs.map((installation, outputs) => MapEntry(
+                    installation,
+                    outputs
+                        .map((output) => output.copyWith(
+                            productionSeconds: productionIntervalSeconds,
+                            maxLocalStock: productionMaxStock))
+                        .toList(growable: false)))
+                : this.producerOutputs),
         installationEffects: installationEffects ?? this.installationEffects,
       );
 
@@ -959,6 +1070,9 @@ class ElevageConfig {
         'recipes': recipes.map((recipe) => recipe.toJson()).toList(),
         'natureProfiles':
             natureProfiles.map((profile) => profile.toJson()).toList(),
+        'producerOutputs': producerOutputs.map((installation, outputs) =>
+            MapEntry(installation,
+                outputs.map((output) => output.toJson()).toList())),
         'installationEffects': installationEffects,
       };
 
@@ -1092,6 +1206,8 @@ class ElevageConfig {
           base.recipes,
       natureProfiles:
           _natureProfiles(json['natureProfiles'], base.natureProfiles),
+      producerOutputs:
+          _producerOutputs(json['producerOutputs'], base.producerOutputs),
       installationEffects: _installationEffects(
           json['installationEffects'], base.installationEffects),
     );
@@ -1126,6 +1242,27 @@ Map<String, Map<String, int>> _installationEffects(
     result[entry.key as String] = effects;
   }
   return result;
+}
+
+Map<String, List<ElevageProductionOutput>> _producerOutputs(
+    Object? value, Map<String, List<ElevageProductionOutput>> fallback) {
+  if (value is! Map) return fallback;
+  return fallback.map((installationId, defaults) {
+    final rawOutputs = value[installationId];
+    if (rawOutputs is! List) return MapEntry(installationId, defaults);
+    final byResource = <String, Map>{
+      for (final raw in rawOutputs.whereType<Map>())
+        if (raw['resourceId'] is String) raw['resourceId'] as String: raw,
+    };
+    return MapEntry(
+        installationId,
+        defaults
+            .map((output) => ElevageProductionOutput.fromJson(
+                Map<String, dynamic>.from(
+                    byResource[output.resourceId] ?? const <String, dynamic>{}),
+                output))
+            .toList(growable: false));
+  });
 }
 
 Map<String, List<String>> _natureCurves(
@@ -1193,6 +1330,15 @@ void validateElevageConfig(ElevageConfig config) {
     return entry.value.keys.any((key) => !allowed.contains(key)) ||
         entry.value.values.any((value) => value < -5 || value > 5);
   });
+  final invalidProducerOutputs = config.producerOutputs.entries.any((entry) =>
+      !const <String>{'CULTURE_POTAGERE', 'BUTTE_ARBUSTE', 'SUPPORT_FONGIQUE'}
+          .contains(entry.key) ||
+      entry.value.isEmpty ||
+      entry.value.any((output) =>
+          !elevageRecipeSpecialComponentIds.contains(output.resourceId) ||
+          output.quantityPerCycle <= 0 ||
+          output.productionSeconds <= 0 ||
+          output.maxLocalStock <= 0));
   if (config.hungerNormalHours > config.hungerHungryHours ||
       config.hungerHungryHours > config.hungerVeryHungryHours ||
       config.suspectedThreshold > config.confirmedThreshold ||
@@ -1226,6 +1372,7 @@ void validateElevageConfig(ElevageConfig config) {
       config.natureProfiles.map((profile) => profile.id).toSet().length !=
           config.natureProfiles.length ||
       config.natureProfiles.any((profile) => !_validNatureProfile(profile)) ||
+      invalidProducerOutputs ||
       invalidInstallationEffects ||
       config.recipes.any((recipe) =>
           recipe.organic < 0 ||
@@ -1306,6 +1453,34 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
     'SURPRISE': 'Ptik !',
     'REJECT': 'Nh !',
     'CALL': 'Pti !',
+  },
+  producerOutputs: <String, List<ElevageProductionOutput>>{
+    'CULTURE_POTAGERE': <ElevageProductionOutput>[
+      ElevageProductionOutput(
+          resourceId: 'ROOT',
+          quantityPerCycle: 1,
+          productionSeconds: 10800,
+          maxLocalStock: 6),
+      ElevageProductionOutput(
+          resourceId: 'LEAF',
+          quantityPerCycle: 1,
+          productionSeconds: 10800,
+          maxLocalStock: 6),
+    ],
+    'BUTTE_ARBUSTE': <ElevageProductionOutput>[
+      ElevageProductionOutput(
+          resourceId: 'FRUIT',
+          quantityPerCycle: 1,
+          productionSeconds: 10800,
+          maxLocalStock: 6),
+    ],
+    'SUPPORT_FONGIQUE': <ElevageProductionOutput>[
+      ElevageProductionOutput(
+          resourceId: 'MUSHROOM',
+          quantityPerCycle: 1,
+          productionSeconds: 10800,
+          maxLocalStock: 6),
+    ],
   },
   natureProfiles: <ElevageNatureProfile>[
     ElevageNatureProfile(
@@ -1503,6 +1678,30 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         mineral: 0,
         special: <String, int>{'QUARTZ': 10},
         unlockItems: <String>['QUARTZ']),
+    ElevageRecipe(
+        id: 'SUPPORT_FONGIQUE',
+        label: 'Support fongique',
+        installationId: 'SUPPORT_FONGIQUE',
+        organic: 5,
+        mineral: 1,
+        special: <String, int>{'MOSS': 2},
+        unlockItems: <String>['MOSS']),
+    ElevageRecipe(
+        id: 'BOSQUET_SYMBIOTIQUE',
+        label: 'Bosquet symbiotique',
+        installationId: 'BOSQUET_SYMBIOTIQUE',
+        organic: 5,
+        mineral: 1,
+        special: <String, int>{'SEED': 10},
+        unlockItems: <String>['SEED']),
+    ElevageRecipe(
+        id: 'COLONIE_MYCELIENNE',
+        label: 'Colonie mycélienne',
+        installationId: 'COLONIE_MYCELIENNE',
+        organic: 6,
+        mineral: 0,
+        special: <String, int>{'SPORE': 10},
+        unlockItems: <String>['SPORE']),
     ElevageRecipe(
         id: 'HAMAC',
         label: 'Hamac',

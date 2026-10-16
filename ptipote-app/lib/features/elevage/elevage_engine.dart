@@ -110,6 +110,11 @@ class ElevageSave {
                   'wakeCount': 0,
                   'lastWakeAt': null,
                 });
+        // Existing residents have already completed their introduction. New
+        // adoptions set this explicitly to true below.
+        raw.putIfAbsent('onboardingAwakeLock', () => false);
+        raw.putIfAbsent('environmentalMemory',
+            () => <String, dynamic>{'temporaryRejectedZones': <String>[]});
         raw.putIfAbsent(
             'social',
             () => <String, dynamic>{
@@ -187,6 +192,7 @@ class ElevageDomain {
     'MOSS',
     'ALGAE',
     'MUSHROOM',
+    'FRUIT',
   ];
   static const List<String> treatItems = <String>[
     'FIBROUS_FRUIT',
@@ -296,6 +302,7 @@ class ElevageDomain {
       };
 
   static bool isSleeping(Map individual, int now, ElevageConfig config) {
+    if (individual['onboardingAwakeLock'] == true) return false;
     final sleep = individual['sleep'] as Map?;
     if ((sleep?['awakeUntil'] as num? ?? 0).toInt() > now) return false;
     final cycleMs =
@@ -516,6 +523,12 @@ class ElevageDomain {
         'awakeUntil': 0,
         'wakeCount': 0,
         'lastWakeAt': null,
+      },
+      'onboardingAwakeLock': true,
+      'environmentalMemory': <String, dynamic>{
+        'temporaryRejectedZones': <String>[],
+        'favoriteZone': null,
+        'lastKnownSafeZone': null,
       },
       'social': <String, dynamic>{
         'cuddleCooldownUntil': 0,
@@ -1078,7 +1091,10 @@ class ElevageDomain {
     final definition = slot == null
         ? null
         : config.installation(slot['definitionId'] as String);
-    if (definition?.resonanceMaterial == null) {
+    final supportedFamily = definition?.resonanceFamily ??
+        (definition?.resonanceMaterial == null ? null : 'MINERAL');
+    if (supportedFamily == null ||
+        supportedFamily != (individual['family'] as String? ?? 'MINERAL')) {
       throw StateError('Cette structure ne soutient pas la résonance.');
     }
     final care = individual['care'] as Map;
@@ -1086,7 +1102,12 @@ class ElevageDomain {
     structural['total'] =
         (structural['total'] as num).toInt() + config.resonanceGainPerUse;
     final byMaterial = structural['byMaterial'] as Map;
-    final material = definition!.resonanceMaterial!;
+    final material = definition!.resonanceMaterial ??
+        switch (supportedFamily) {
+          'VEGETAL' => 'VEGETAL_RESONANCE',
+          'FUNGAL' => 'FUNGAL_RESONANCE',
+          _ => 'MINERAL_RESONANCE',
+        };
     byMaterial[material] = (byMaterial[material] as num? ?? 0).toInt() +
         config.resonanceGainPerUse;
     _adjustWellbeing(individual, 1, now);
@@ -1119,6 +1140,13 @@ class ElevageDomain {
       'source': 'PLAYER',
       'interactionCount': 0,
     });
+    // The first deliberate scene interaction completes the introduction.
+    // Until then a newly adopted P’TIPOTE can never be hidden asleep.
+    final residentId =
+        _alcove(state, alcoveId)['occupantIndividualId'] as String?;
+    if (residentId != null) {
+      _individual(state, residentId)['onboardingAwakeLock'] = false;
+    }
     return state;
   }
 
@@ -1476,6 +1504,113 @@ class ElevageDomain {
     return axes.first;
   }
 
+  /// One expressive environmental need.  The result intentionally names an
+  /// axis only once the individual is intermediate; Babies communicate it via
+  /// body language and configured onomatopoeia.
+  static Map<String, String>? environmentalSignal(
+      Map<String, int> environment, Map individual, ElevageConfig config) {
+    final profile = config.profileForIndividual(individual);
+    const axes = <String>['temperature', 'light', 'humidity'];
+    const severity = <String, int>{
+      'IDEAL': 0,
+      'GOOD': 1,
+      'NEUTRAL': 2,
+      'BAD': 3,
+      'EXTREME': 4,
+    };
+    final candidates = axes.map((axis) {
+      final value = (environment[axis] ?? 0).clamp(0, 5);
+      return <String, Object>{
+        'axis': axis,
+        'value': value,
+        'comfort': profile.axisComfort(axis, value),
+        'direction': value < profile.preferredForAxis(axis) ? 'LOW' : 'HIGH',
+      };
+    }).toList()
+      ..sort(
+          (a, b) => severity[b['comfort']]!.compareTo(severity[a['comfort']]!));
+    final leading = candidates.first;
+    // A non-perfect but still tolerable axis can be expressed as a direction
+    // of search (e.g. Résonance at 3/3/2 asks for more heat). Perfect local
+    // alignment remains silent.
+    if (candidates.every((candidate) =>
+        candidate['value'] ==
+        profile.preferredForAxis(candidate['axis'] as String))) {
+      return null;
+    }
+    final stage = (individual['lifecycle'] as Map)['stage'] as String;
+    final axis = leading['axis'] as String;
+    final low = leading['direction'] == 'LOW';
+    final icon = switch ('$axis:$low') {
+      'temperature:true' => 'COLD',
+      'temperature:false' => 'HOT',
+      'light:true' => 'MORE_LIGHT',
+      'light:false' => 'LESS_LIGHT',
+      'humidity:true' => 'DRY',
+      _ => 'WET',
+    };
+    return <String, String>{
+      'axis': axis,
+      'direction': low ? 'TOO_LOW' : 'TOO_HIGH',
+      'comfort': leading['comfort'] as String,
+      'icon': stage == 'BABY' ? 'DISCOMFORT' : icon,
+      'vocalization': config.vocalizations['DISCOMFORT'] ?? 'Nnh…',
+      if (stage != 'BABY') 'label': axis,
+    };
+  }
+
+  /// Baby searches one adjacent zone at a time and never receives a perfect
+  /// global GPS target outside an emergency. Intermediate keeps the same
+  /// exploratory principle but evaluates the available local candidates faster.
+  static String exploratoryZoneTarget(ElevageSave state, String alcoveId,
+      String currentZoneId, Map individual, ElevageConfig config, int now,
+      {String? phaseOverride}) {
+    final current = zoneEnvironment(state, alcoveId, currentZoneId, config,
+        now: now, phaseOverride: phaseOverride);
+    final comfort = localComfort(current, config, individual: individual);
+    final memory = individual['environmentalMemory'] as Map?;
+    final rejected = (memory?['temporaryRejectedZones'] as List? ?? const [])
+        .whereType<String>()
+        .toSet();
+    if (comfort == 'BAD' || comfort == 'EXTREME') {
+      rejected.add(currentZoneId);
+      memory?['temporaryRejectedZones'] = rejected.toList(growable: false);
+    }
+    if (comfort == 'EXTREME') {
+      final favorite = memory?['favoriteZone'] as String?;
+      final knownSafe = memory?['lastKnownSafeZone'] as String?;
+      for (final candidate in <String?>[favorite, knownSafe]) {
+        if (candidate == null || candidate == currentZoneId) continue;
+        final candidateComfort = localComfort(
+            zoneEnvironment(state, alcoveId, candidate, config,
+                now: now, phaseOverride: phaseOverride),
+            config,
+            individual: individual);
+        if (candidateComfort != 'EXTREME') return candidate;
+      }
+      return findBestSafeZone(state, alcoveId, config, now,
+          phaseOverride: phaseOverride,
+          excludingZoneId: currentZoneId,
+          individual: individual);
+    }
+    final index =
+        config.sceneZones.indexWhere((zone) => zone.id == currentZoneId);
+    final adjacent = <String>[
+      if (index > 0) config.sceneZones[index - 1].id,
+      if (index >= 0 && index + 1 < config.sceneZones.length)
+        config.sceneZones[index + 1].id,
+    ].where((zone) => !rejected.contains(zone)).toList();
+    if (adjacent.isEmpty) {
+      return findBestSafeZone(state, alcoveId, config, now,
+          phaseOverride: phaseOverride,
+          excludingZoneId: currentZoneId,
+          individual: individual);
+    }
+    // Deterministic alternation gives the Baby a visible left/right trial
+    // without relying on a process-local random generator.
+    return adjacent[(now ~/ 1000 + index).abs() % adjacent.length];
+  }
+
   static String bestComfortZone(
       ElevageSave state, String alcoveId, ElevageConfig config, int now,
       {String? phaseOverride, String? excludingZoneId, Map? individual}) {
@@ -1795,18 +1930,40 @@ class ElevageDomain {
                 'lastResolvedAt': now,
                 'availableByItemId': <String, int>{}
               }) as Map;
-      final last = production['lastResolvedAt'] as int? ?? now;
-      final cycles =
-          max(0, (now - last) ~/ (config.productionIntervalSeconds * 1000));
-      if (cycles > 0) {
-        final stock = production['availableByItemId'] as Map;
-        definition.outputs.forEach((item, quantity) {
-          final current = (stock[item] as num?)?.toInt() ?? 0;
-          stock[item] =
-              min(config.productionMaxStock, current + cycles * quantity);
-        });
-        production['lastResolvedAt'] =
-            last + cycles * config.productionIntervalSeconds * 1000;
+      final configuredOutputs = config.outputsFor(definition.id);
+      final stock = production['availableByItemId'] as Map;
+      if (configuredOutputs.isNotEmpty) {
+        final lastByItem = production.putIfAbsent(
+            'lastResolvedAtByItemId', () => <String, int>{}) as Map;
+        for (final output
+            in configuredOutputs.where((entry) => entry.enabled)) {
+          // Existing saves carry one timestamp for the whole producer. Use it
+          // exactly once as the seed for the new per-output clocks.
+          final last = (lastByItem[output.resourceId] as num?)?.toInt() ??
+              (production['lastResolvedAt'] as num?)?.toInt() ??
+              now;
+          final cycles =
+              max(0, (now - last) ~/ (output.productionSeconds * 1000));
+          if (cycles == 0) continue;
+          final current = (stock[output.resourceId] as num?)?.toInt() ?? 0;
+          stock[output.resourceId] = min(
+              output.maxLocalStock, current + cycles * output.quantityPerCycle);
+          lastByItem[output.resourceId] =
+              last + cycles * output.productionSeconds * 1000;
+        }
+      } else {
+        final last = production['lastResolvedAt'] as int? ?? now;
+        final cycles =
+            max(0, (now - last) ~/ (config.productionIntervalSeconds * 1000));
+        if (cycles > 0) {
+          definition.outputs.forEach((item, quantity) {
+            final current = (stock[item] as num?)?.toInt() ?? 0;
+            stock[item] =
+                min(config.productionMaxStock, current + cycles * quantity);
+          });
+          production['lastResolvedAt'] =
+              last + cycles * config.productionIntervalSeconds * 1000;
+        }
       }
     }
     final residentId = alcove['occupantIndividualId'] as String?;
@@ -1834,6 +1991,13 @@ class ElevageDomain {
       final food = _consumeLocal(alcove, <String>[
         favorite,
         favorite == 'ROOT' ? 'LEAF' : 'ROOT',
+        if (individual['family'] == 'FUNGAL') ...<String>[
+          'MUSHROOM',
+          'FRUIT',
+          'MOSS',
+          'LEAF',
+          'ROOT',
+        ],
         'ALGAE',
         'MOSS',
         'MUSHROOM'
@@ -2327,7 +2491,8 @@ class ElevageDomain {
           'SEED',
           'SPROUT',
           'MOSS',
-          'MUSHROOM'
+          'MUSHROOM',
+          'SPORE'
         ],
       'COAST' => <String>['ALGAE', 'ALGAE_FRAGMENT', 'LIMESTONE'],
       _ => <String>['LIMESTONE', 'QUARTZ', 'IRON'],
