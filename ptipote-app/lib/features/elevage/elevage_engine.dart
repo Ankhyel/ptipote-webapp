@@ -113,6 +113,7 @@ class ElevageSave {
         // Existing residents have already completed their introduction. New
         // adoptions set this explicitly to true below.
         raw.putIfAbsent('onboardingAwakeLock', () => false);
+        raw.putIfAbsent('onboardingSleepAllowedAt', () => 0);
         raw.putIfAbsent('environmentalMemory',
             () => <String, dynamic>{'temporaryRejectedZones': <String>[]});
         raw.putIfAbsent(
@@ -302,7 +303,11 @@ class ElevageDomain {
       };
 
   static bool isSleeping(Map individual, int now, ElevageConfig config) {
-    if (individual['onboardingAwakeLock'] == true) return false;
+    if (individual['onboardingAwakeLock'] == true &&
+        now <
+            ((individual['onboardingSleepAllowedAt'] as num?)?.toInt() ?? 0)) {
+      return false;
+    }
     final sleep = individual['sleep'] as Map?;
     if ((sleep?['awakeUntil'] as num? ?? 0).toInt() > now) return false;
     final cycleMs =
@@ -462,6 +467,16 @@ class ElevageDomain {
     final random = Random(_hash(seed));
     final id = 'elevage-$now-${random.nextInt(99999)}';
     final favorite = random.nextBool() ? 'ROOT' : 'LEAF';
+    final cycleMs =
+        config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
+    final dayMs =
+        config.dayDurationHours * const Duration(hours: 1).inMilliseconds;
+    final cyclePosition = now % cycleMs;
+    // The first night is dedicated to onboarding. A shifted mineral sleep
+    // window may cross into the following day, so it is also held awake until
+    // the *next* night starts.
+    final onboardingSleepAllowedAt =
+        now - cyclePosition + (cyclePosition < dayMs ? dayMs : cycleMs + dayMs);
     final individual = <String, dynamic>{
       'id': id,
       'name': cleanName,
@@ -525,6 +540,7 @@ class ElevageDomain {
         'lastWakeAt': null,
       },
       'onboardingAwakeLock': true,
+      'onboardingSleepAllowedAt': onboardingSleepAllowedAt,
       'environmentalMemory': <String, dynamic>{
         'temporaryRejectedZones': <String>[],
         'favoriteZone': null,
@@ -1140,13 +1156,6 @@ class ElevageDomain {
       'source': 'PLAYER',
       'interactionCount': 0,
     });
-    // The first deliberate scene interaction completes the introduction.
-    // Until then a newly adopted P’TIPOTE can never be hidden asleep.
-    final residentId =
-        _alcove(state, alcoveId)['occupantIndividualId'] as String?;
-    if (residentId != null) {
-      _individual(state, residentId)['onboardingAwakeLock'] = false;
-    }
     return state;
   }
 

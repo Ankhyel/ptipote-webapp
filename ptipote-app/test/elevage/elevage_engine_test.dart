@@ -1722,4 +1722,26 @@ void main() {
     expect(signal?['icon'], 'DISCOMFORT');
     expect(signal?['vocalization'], 'Nnh…');
   });
+
+  test('une adoption nocturne reste éveillée jusqu’à la nuit suivante', () {
+    final cycle = defaultElevageConfig.dayNightCycleHours *
+        const Duration(hours: 1).inMilliseconds;
+    final day = defaultElevageConfig.dayDurationHours *
+        const Duration(hours: 1).inMilliseconds;
+    final adoptedAt = day + 1;
+    var state = ElevageSave.initial(defaultElevageConfig, now: adoptedAt);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Veille',
+        physical: false,
+        now: adoptedAt,
+        config: defaultElevageConfig);
+    final individual =
+        ((state.data['individuals'] as Map).values.single as Map);
+    expect(individual['onboardingSleepAllowedAt'], cycle + day);
+    expect(
+        ElevageDomain.isSleeping(individual, cycle + 1, defaultElevageConfig),
+        isFalse);
+  });
 }
