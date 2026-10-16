@@ -326,7 +326,8 @@ void main() {
     final outcome = ElevageDomain.sceneItemOutcome(state, id, 'alcove-1',
         first['instanceId'] as String, now + 2, defaultElevageConfig);
     expect(outcome.behavior, 'FLEE_WITH_ITEM');
-    expect(outcome.targetZoneId, 'ZONE_1');
+    // Résonance choisit désormais le refuge le plus chaud et viable : Z2.
+    expect(outcome.targetZoneId, 'ZONE_2');
     expect(outcome.observationCount, 1);
     state = ElevageDomain.relocateSceneItem(
         state,
@@ -335,7 +336,7 @@ void main() {
         outcome.targetZoneId!,
         defaultElevageConfig);
     expect(
-        ElevageDomain.sceneItems(state, 'alcove-1').single['zoneId'], 'ZONE_1');
+        ElevageDomain.sceneItems(state, 'alcove-1').single['zoneId'], 'ZONE_2');
   });
 
   test(
@@ -654,7 +655,7 @@ void main() {
     expect(ElevagePresentation.environmentScale(average['light']!), 3);
   });
 
-  test('confort lumineux Résonance reste local et dérivé de la config', () {
+  test('courbe Résonance reste locale et dérivée de la configuration', () {
     expect(defaultElevageConfig.resonanceLightComfort(2), 1);
     expect(defaultElevageConfig.resonanceLightComfort(3), 0);
     expect(defaultElevageConfig.resonanceLightComfort(4), -1);
@@ -663,12 +664,12 @@ void main() {
         ElevageDomain.localComfort(
             <String, int>{'light': 2, 'temperature': 2, 'humidity': 2},
             defaultElevageConfig),
-        'GOOD');
+        'NEUTRAL');
     expect(
         ElevageDomain.localComfort(
             <String, int>{'light': 4, 'temperature': 3, 'humidity': 3},
             defaultElevageConfig),
-        'BAD');
+        'NEUTRAL');
   });
 
   test('nuit canonique, moyenne arrondie et Abri minéral restent exacts', () {
@@ -936,7 +937,7 @@ void main() {
         ElevageDomain.findBestSafeZone(
             state, 'alcove-1', defaultElevageConfig, now,
             phaseOverride: 'DAY', excludingZoneId: 'ZONE_3'),
-        'ZONE_4');
+        'ZONE_2');
   });
 
   test('préhension par stade emporte le bon objet sans déplacer de structure',
@@ -1476,5 +1477,148 @@ void main() {
         () => ElevageDomain.harvestLocal(
             state, 'alcove-1', 0, 'IRON', now, defaultElevageConfig),
         throwsStateError);
+  });
+
+  test('matrice écologique distingue les trois Natures de test', () {
+    String comfort(String family, String nature, Map<String, int> zone) =>
+        ElevageDomain.localComfort(zone, defaultElevageConfig,
+            family: family, nature: nature);
+
+    // Les trois zones centrales demandées ne racontent pas la même histoire
+    // biologique selon la Nature active.
+    expect(
+        comfort('VEGETAL', 'PHOTOSYNTHESIS', <String, int>{
+          'light': 5,
+          'temperature': 3,
+          'humidity': 2,
+        }),
+        'IDEAL');
+    expect(
+        comfort('MINERAL', 'RESONANCE', <String, int>{
+          'light': 3,
+          'temperature': 4,
+          'humidity': 2,
+        }),
+        'IDEAL');
+    expect(
+        comfort('FUNGAL', 'DECOMPOSITION', <String, int>{
+          'light': 1,
+          'temperature': 2,
+          'humidity': 4,
+        }),
+        'IDEAL');
+
+    // 2/2/2 n'est plus l'optimum implicite de toutes les familles.
+    expect(
+        comfort('VEGETAL', 'PHOTOSYNTHESIS', <String, int>{
+          'light': 2,
+          'temperature': 2,
+          'humidity': 2,
+        }),
+        'BAD');
+    expect(
+        comfort('MINERAL', 'RESONANCE', <String, int>{
+          'light': 2,
+          'temperature': 2,
+          'humidity': 2,
+        }),
+        'NEUTRAL');
+    expect(
+        comfort('FUNGAL', 'DECOMPOSITION', <String, int>{
+          'light': 2,
+          'temperature': 2,
+          'humidity': 2,
+        }),
+        'NEUTRAL');
+  });
+
+  test('worst axis et safe-zone utilisent le profil de Nature actif', () {
+    String comfort(String family, String nature, Map<String, int> zone) =>
+        ElevageDomain.localComfort(zone, defaultElevageConfig,
+            family: family, nature: nature);
+    expect(
+        comfort('MINERAL', 'RESONANCE', <String, int>{
+          'light': 3,
+          'temperature': 4,
+          'humidity': 5,
+        }),
+        'EXTREME');
+    expect(
+        comfort('VEGETAL', 'PHOTOSYNTHESIS', <String, int>{
+          'light': 1,
+          'temperature': 3,
+          'humidity': 2,
+        }),
+        'BAD');
+    expect(
+        comfort('VEGETAL', 'PHOTOSYNTHESIS', <String, int>{
+          'light': 5,
+          'temperature': 5,
+          'humidity': 2,
+        }),
+        'EXTREME');
+    expect(
+        comfort('FUNGAL', 'DECOMPOSITION', <String, int>{
+          'light': 5,
+          'temperature': 2,
+          'humidity': 4,
+        }),
+        'EXTREME');
+    expect(
+        comfort('FUNGAL', 'DECOMPOSITION', <String, int>{
+          'light': 1,
+          'temperature': 5,
+          'humidity': 4,
+        }),
+        'EXTREME');
+
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Chloro',
+        physical: false,
+        family: 'VEGETAL',
+        nature: 'PHOTOSYNTHESIS',
+        now: now,
+        config: defaultElevageConfig);
+    final individual =
+        ((state.data['individuals'] as Map).values.single as Map);
+    expect(individual['family'], 'VEGETAL');
+    expect(individual['nature'], 'PHOTOSYNTHESIS');
+    expect(defaultElevageConfig.profileForIndividual(individual).preferredLight,
+        5);
+
+    const zones = <String, Map<String, int>>{
+      'A': <String, int>{'light': 5, 'temperature': 3, 'humidity': 2},
+      'B': <String, int>{'light': 3, 'temperature': 4, 'humidity': 2},
+      'C': <String, int>{'light': 1, 'temperature': 2, 'humidity': 4},
+    };
+    expect(
+        ElevageDomain.bestZoneFromEnvironment(zones, defaultElevageConfig,
+            family: 'VEGETAL', nature: 'PHOTOSYNTHESIS'),
+        'A');
+    expect(
+        ElevageDomain.bestZoneFromEnvironment(zones, defaultElevageConfig,
+            family: 'MINERAL', nature: 'RESONANCE'),
+        'B');
+    expect(
+        ElevageDomain.bestZoneFromEnvironment(zones, defaultElevageConfig,
+            family: 'FUNGAL', nature: 'DECOMPOSITION'),
+        'C');
+
+    final photo = defaultElevageConfig
+        .natureProfile('VEGETAL', 'PHOTOSYNTHESIS')
+        .copyWith(preferredLight: 4);
+    final configured = defaultElevageConfig.copyWith(
+        natureProfiles: defaultElevageConfig.natureProfiles
+            .map((entry) => entry.id == photo.id ? photo : entry)
+            .toList());
+    validateElevageConfig(configured);
+    expect(
+        ElevageConfig.fromJson(configured.toJson())
+            .natureProfile('VEGETAL', 'PHOTOSYNTHESIS')
+            .preferredLight,
+        4);
   });
 }

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-const int elevageConfigSchemaVersion = 2;
+const int elevageConfigSchemaVersion = 3;
 
 /// Every non-generic resource that can be selected as an explicit recipe
 /// component in the local Élevage Dashboard. Organic and Mineral stay as their
@@ -23,6 +23,93 @@ const List<String> elevageRecipeSpecialComponentIds = <String>[
 ];
 
 enum ElevagePreset { prototype, target }
+
+/// A Nature owns its complete ecological curve.  Keeping the six values per
+/// axis in configuration prevents a hidden universal "2/2/2" optimum.
+class ElevageNatureProfile {
+  const ElevageNatureProfile({
+    required this.id,
+    required this.family,
+    required this.nature,
+    required this.label,
+    required this.placeholder,
+    required this.preferredLight,
+    required this.preferredTemperature,
+    required this.preferredHumidity,
+    required this.curves,
+  });
+
+  final String id;
+  final String family;
+  final String nature;
+  final String label;
+  final String placeholder;
+  final int preferredLight;
+  final int preferredTemperature;
+  final int preferredHumidity;
+
+  /// `light`, `temperature` and `humidity`, each indexed from 0 through 5.
+  final Map<String, List<String>> curves;
+
+  String axisComfort(String axis, int value) {
+    final values = curves[axis];
+    if (values == null || values.length != 6) return 'NEUTRAL';
+    return values[value.clamp(0, 5)];
+  }
+
+  int preferredForAxis(String axis) => switch (axis) {
+        'light' => preferredLight,
+        'temperature' => preferredTemperature,
+        'humidity' => preferredHumidity,
+        _ => 0,
+      };
+
+  ElevageNatureProfile copyWith({
+    int? preferredLight,
+    int? preferredTemperature,
+    int? preferredHumidity,
+    Map<String, List<String>>? curves,
+  }) =>
+      ElevageNatureProfile(
+        id: id,
+        family: family,
+        nature: nature,
+        label: label,
+        placeholder: placeholder,
+        preferredLight: preferredLight ?? this.preferredLight,
+        preferredTemperature: preferredTemperature ?? this.preferredTemperature,
+        preferredHumidity: preferredHumidity ?? this.preferredHumidity,
+        curves: curves ?? this.curves,
+      );
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'family': family,
+        'nature': nature,
+        'label': label,
+        'placeholder': placeholder,
+        'preferredLight': preferredLight,
+        'preferredTemperature': preferredTemperature,
+        'preferredHumidity': preferredHumidity,
+        'curves': curves,
+      };
+
+  factory ElevageNatureProfile.fromJson(
+          Map<String, dynamic> json, ElevageNatureProfile fallback) =>
+      ElevageNatureProfile(
+        id: fallback.id,
+        family: fallback.family,
+        nature: fallback.nature,
+        label: fallback.label,
+        placeholder: fallback.placeholder,
+        preferredLight: _scale(json['preferredLight'], fallback.preferredLight),
+        preferredTemperature:
+            _scale(json['preferredTemperature'], fallback.preferredTemperature),
+        preferredHumidity:
+            _scale(json['preferredHumidity'], fallback.preferredHumidity),
+        curves: _natureCurves(json['curves'], fallback.curves),
+      );
+}
 
 class ElevageRecipe {
   const ElevageRecipe({
@@ -225,6 +312,7 @@ class ElevageConfig {
     required this.resonanceGainPerUse,
     required this.vocalizations,
     required this.recipes,
+    required this.natureProfiles,
     this.installationEffects = const <String, Map<String, int>>{},
   });
 
@@ -291,6 +379,7 @@ class ElevageConfig {
   final int resonanceGainPerUse;
   final Map<String, String> vocalizations;
   final List<ElevageRecipe> recipes;
+  final List<ElevageNatureProfile> natureProfiles;
 
   /// Dashboard-only overrides. Structures expose light/temperature/humidity;
   /// furniture and decorations expose wellbeing only. Individual affinity
@@ -301,6 +390,17 @@ class ElevageConfig {
   int get intermediateMinimumHours =>
       preset == ElevagePreset.prototype ? 72 : 168;
   int get dayNightCycleHours => dayDurationHours + nightDurationHours;
+
+  ElevageNatureProfile natureProfile(String family, String nature) {
+    return natureProfiles.firstWhere(
+        (profile) => profile.family == family && profile.nature == nature,
+        orElse: () => natureProfiles
+            .firstWhere((profile) => profile.id == 'MINERAL_RESONANCE'));
+  }
+
+  ElevageNatureProfile profileForIndividual(Map individual) => natureProfile(
+      individual['family'] as String? ?? 'MINERAL',
+      individual['nature'] as String? ?? 'RESONANCE');
 
   List<ElevageInstallationDefinition> get _defaultInstallations =>
       <ElevageInstallationDefinition>[
@@ -615,16 +715,7 @@ class ElevageConfig {
       };
 
   String resonanceAxisComfort(String axis, int scale) {
-    // Résonance V0 préfère froid, sec et peu lumineux. Les trois axes
-    // utilisent la même échelle lisible jusqu’à l’arrivée d’autres Natures.
-    return switch (scale) {
-      0 => 'EXTREME',
-      1 => 'IDEAL',
-      2 => 'GOOD',
-      3 => 'NEUTRAL',
-      4 => 'BAD',
-      _ => 'EXTREME',
-    };
+    return natureProfile('MINERAL', 'RESONANCE').axisComfort(axis, scale);
   }
 
   ElevageInstallationDefinition? installation(String id) {
@@ -706,6 +797,7 @@ class ElevageConfig {
     int? resonanceGainPerUse,
     Map<String, String>? vocalizations,
     List<ElevageRecipe>? recipes,
+    List<ElevageNatureProfile>? natureProfiles,
     Map<String, Map<String, int>>? installationEffects,
   }) =>
       ElevageConfig(
@@ -797,6 +889,7 @@ class ElevageConfig {
         resonanceGainPerUse: resonanceGainPerUse ?? this.resonanceGainPerUse,
         vocalizations: vocalizations ?? this.vocalizations,
         recipes: recipes ?? this.recipes,
+        natureProfiles: natureProfiles ?? this.natureProfiles,
         installationEffects: installationEffects ?? this.installationEffects,
       );
 
@@ -864,6 +957,8 @@ class ElevageConfig {
         'resonanceGainPerUse': resonanceGainPerUse,
         'vocalizations': vocalizations,
         'recipes': recipes.map((recipe) => recipe.toJson()).toList(),
+        'natureProfiles':
+            natureProfiles.map((profile) => profile.toJson()).toList(),
         'installationEffects': installationEffects,
       };
 
@@ -995,6 +1090,8 @@ class ElevageConfig {
                   ElevageRecipe.fromJson(Map<String, dynamic>.from(raw)))
               .toList() ??
           base.recipes,
+      natureProfiles:
+          _natureProfiles(json['natureProfiles'], base.natureProfiles),
       installationEffects: _installationEffects(
           json['installationEffects'], base.installationEffects),
     );
@@ -1009,6 +1106,8 @@ int _nonNegative(Object? value, int fallback) =>
     value is num && value >= 0 ? value.round() : fallback;
 int _number(Object? value, int fallback) =>
     value is num ? value.round() : fallback;
+int _scale(Object? value, int fallback) =>
+    value is num && value >= 0 && value <= 5 ? value.round() : fallback;
 double _rate(Object? value, double fallback) =>
     value is num && value >= 0 && value <= 1 ? value.toDouble() : fallback;
 
@@ -1027,6 +1126,55 @@ Map<String, Map<String, int>> _installationEffects(
     result[entry.key as String] = effects;
   }
   return result;
+}
+
+Map<String, List<String>> _natureCurves(
+    Object? value, Map<String, List<String>> fallback) {
+  const axes = <String>['light', 'temperature', 'humidity'];
+  const states = <String>{'IDEAL', 'GOOD', 'NEUTRAL', 'BAD', 'EXTREME'};
+  if (value is! Map) return fallback;
+  final result = <String, List<String>>{};
+  for (final axis in axes) {
+    final raw = value[axis];
+    if (raw is! List ||
+        raw.length != 6 ||
+        raw.any((entry) => entry is! String || !states.contains(entry))) {
+      result[axis] = fallback[axis]!;
+    } else {
+      result[axis] = raw.cast<String>();
+    }
+  }
+  return result;
+}
+
+List<ElevageNatureProfile> _natureProfiles(
+    Object? value, List<ElevageNatureProfile> fallback) {
+  if (value is! List) return fallback;
+  final byId = <String, Map>{
+    for (final raw in value.whereType<Map>()) '${raw['id']}': raw,
+  };
+  return fallback
+      .map((profile) => ElevageNatureProfile.fromJson(
+          Map<String, dynamic>.from(
+              byId[profile.id] ?? const <String, dynamic>{}),
+          profile))
+      .toList(growable: false);
+}
+
+bool _validNatureProfile(ElevageNatureProfile profile) {
+  const axes = <String>['light', 'temperature', 'humidity'];
+  const states = <String>{'IDEAL', 'GOOD', 'NEUTRAL', 'BAD', 'EXTREME'};
+  return <int>[
+        profile.preferredLight,
+        profile.preferredTemperature,
+        profile.preferredHumidity,
+      ].every((value) => value >= 0 && value <= 5) &&
+      axes.every((axis) {
+        final curve = profile.curves[axis];
+        return curve != null &&
+            curve.length == 6 &&
+            curve.every(states.contains);
+      });
 }
 
 void validateElevageConfig(ElevageConfig config) {
@@ -1074,6 +1222,10 @@ void validateElevageConfig(ElevageConfig config) {
       config.minStaySeconds <= 0 ||
       config.resonanceGainPerUse <= 0 ||
       config.vocalizations.values.any((value) => value.trim().isEmpty) ||
+      config.natureProfiles.length != 3 ||
+      config.natureProfiles.map((profile) => profile.id).toSet().length !=
+          config.natureProfiles.length ||
+      config.natureProfiles.any((profile) => !_validNatureProfile(profile)) ||
       invalidInstallationEffects ||
       config.recipes.any((recipe) =>
           recipe.organic < 0 ||
@@ -1155,6 +1307,109 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
     'REJECT': 'Nh !',
     'CALL': 'Pti !',
   },
+  natureProfiles: <ElevageNatureProfile>[
+    ElevageNatureProfile(
+      id: 'MINERAL_RESONANCE',
+      family: 'MINERAL',
+      nature: 'RESONANCE',
+      label: 'Minéral · Résonance',
+      placeholder: '◇',
+      preferredLight: 3,
+      preferredTemperature: 4,
+      preferredHumidity: 2,
+      curves: <String, List<String>>{
+        'light': <String>['BAD', 'GOOD', 'GOOD', 'IDEAL', 'NEUTRAL', 'BAD'],
+        'temperature': <String>[
+          'EXTREME',
+          'BAD',
+          'NEUTRAL',
+          'GOOD',
+          'IDEAL',
+          'EXTREME',
+        ],
+        'humidity': <String>[
+          'BAD',
+          'GOOD',
+          'IDEAL',
+          'NEUTRAL',
+          'BAD',
+          'EXTREME',
+        ],
+      },
+    ),
+    ElevageNatureProfile(
+      id: 'VEGETAL_PHOTOSYNTHESIS',
+      family: 'VEGETAL',
+      nature: 'PHOTOSYNTHESIS',
+      label: 'Végétal · Photosynthèse',
+      placeholder: '✦',
+      preferredLight: 5,
+      preferredTemperature: 3,
+      preferredHumidity: 2,
+      curves: <String, List<String>>{
+        'light': <String>[
+          'EXTREME',
+          'BAD',
+          'BAD',
+          'NEUTRAL',
+          'GOOD',
+          'IDEAL',
+        ],
+        'temperature': <String>[
+          'BAD',
+          'BAD',
+          'GOOD',
+          'IDEAL',
+          'NEUTRAL',
+          'EXTREME',
+        ],
+        'humidity': <String>[
+          'BAD',
+          'GOOD',
+          'IDEAL',
+          'GOOD',
+          'NEUTRAL',
+          'BAD',
+        ],
+      },
+    ),
+    ElevageNatureProfile(
+      id: 'FUNGAL_DECOMPOSITION',
+      family: 'FUNGAL',
+      nature: 'DECOMPOSITION',
+      label: 'Fongique · Décomposition',
+      placeholder: '♣',
+      preferredLight: 1,
+      preferredTemperature: 2,
+      preferredHumidity: 4,
+      curves: <String, List<String>>{
+        'light': <String>[
+          'GOOD',
+          'IDEAL',
+          'GOOD',
+          'NEUTRAL',
+          'BAD',
+          'EXTREME',
+        ],
+        'temperature': <String>[
+          'BAD',
+          'GOOD',
+          'IDEAL',
+          'GOOD',
+          'BAD',
+          'EXTREME',
+        ],
+        'humidity': <String>[
+          'EXTREME',
+          'BAD',
+          'NEUTRAL',
+          'GOOD',
+          'IDEAL',
+          'GOOD',
+        ],
+      },
+    ),
+  ],
   recipes: <ElevageRecipe>[
     ElevageRecipe(
         id: 'ABRI_FIBREUX',

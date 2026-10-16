@@ -63,6 +63,8 @@ class ElevageController extends ChangeNotifier {
     required String name,
     required bool physical,
     String? physicalFigureRef,
+    String family = 'MINERAL',
+    String nature = 'RESONANCE',
   }) =>
       _mutate((current) => ElevageDomain.adopt(
             source: current,
@@ -70,6 +72,8 @@ class ElevageController extends ChangeNotifier {
             name: name,
             physical: physical,
             physicalFigureRef: physicalFigureRef,
+            family: family,
+            nature: nature,
             now: _now,
             config: config,
           ));

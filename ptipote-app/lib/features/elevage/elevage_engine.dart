@@ -310,7 +310,7 @@ class ElevageDomain {
       {String? phaseOverride}) {
     final individual = _individual(state, individualId);
     return bestComfortZone(state, individual['alcoveId'] as String, config, now,
-        phaseOverride: phaseOverride);
+        phaseOverride: phaseOverride, individual: individual);
   }
 
   /// Communication stays deliberately tiny: a Baby only vocalises, while an
@@ -430,6 +430,8 @@ class ElevageDomain {
     required int now,
     required ElevageConfig config,
     String? physicalFigureRef,
+    String family = 'MINERAL',
+    String nature = 'RESONANCE',
   }) {
     final state = source.copy();
     final alcove = _alcove(state, alcoveId);
@@ -441,6 +443,10 @@ class ElevageDomain {
       throw StateError('Choisissez un nom entre 1 et 32 caractères.');
     }
     final ref = physicalFigureRef ?? '';
+    final profile = config.natureProfile(family, nature);
+    if (profile.family != family || profile.nature != nature) {
+      throw StateError('Nature Élevage invalide.');
+    }
     if (physical && (ref.isEmpty || _physicalAlreadyLinked(state, ref))) {
       throw StateError('Cette figurine est déjà liée à un P’TIPOTE actif.');
     }
@@ -452,8 +458,8 @@ class ElevageDomain {
     final individual = <String, dynamic>{
       'id': id,
       'name': cleanName,
-      'family': 'MINERAL',
-      'nature': 'RESONANCE',
+      'family': family,
+      'nature': nature,
       'individualSeed': seed,
       'seedAlgorithmVersion': 1,
       'ownership': physical
@@ -464,7 +470,7 @@ class ElevageDomain {
               'expiresAt': now +
                   config.coRearingDurationHours *
                       const Duration(hours: 1).inMilliseconds,
-              'sourcePoolId': 'MINERAL_RESONANCE',
+              'sourcePoolId': profile.id,
               'returnProcessedAt': null,
             },
       'lifecycle': <String, dynamic>{'stage': 'BABY', 'stageEnteredAt': now},
@@ -868,7 +874,8 @@ class ElevageDomain {
       if (preference?['liked'] != true) continue;
       final target = findBestSafeZone(state, alcoveId, config, now,
           phaseOverride: phaseOverride,
-          excludingZoneId: item['zoneId'] as String);
+          excludingZoneId: item['zoneId'] as String,
+          individual: individual);
       if (target == item['zoneId']) continue;
       return <String, String>{
         'instanceId': item['instanceId'] as String,
@@ -894,9 +901,13 @@ class ElevageDomain {
     }).toList()
       ..sort((a, b) {
         final aScore = _furnitureAffinityScore(
-            config.installation(a['definitionId'] as String)?.activity, tempo);
+            config.installation(a['definitionId'] as String),
+            tempo,
+            individual['family'] as String? ?? 'MINERAL');
         final bScore = _furnitureAffinityScore(
-            config.installation(b['definitionId'] as String)?.activity, tempo);
+            config.installation(b['definitionId'] as String),
+            tempo,
+            individual['family'] as String? ?? 'MINERAL');
         return bScore == aScore
             ? '${a['instanceId']}'.compareTo('${b['instanceId']}')
             : bScore.compareTo(aScore);
@@ -906,7 +917,17 @@ class ElevageDomain {
         : Map<String, dynamic>.from(candidates.first);
   }
 
-  static int _furnitureAffinityScore(String? activity, double tempo) {
+  static int _furnitureAffinityScore(
+      ElevageInstallationDefinition? definition, double tempo, String family) {
+    final ecologicalScore = switch ('$family:${definition?.id}') {
+      'VEGETAL:POTAGER_VERTICAL' ||
+      'FUNGAL:LITIERE_FONGIQUE' ||
+      'MINERAL:BAC_GRAVIER' =>
+        3,
+      _ => 0,
+    };
+    if (ecologicalScore > 0) return ecologicalScore;
+    final activity = definition?.activity;
     if (activity == 'REST' || activity == 'READ') return tempo >= .5 ? 2 : 1;
     if (activity == 'PLAY') return tempo < .5 ? 2 : 1;
     return 1;
@@ -980,9 +1001,12 @@ class ElevageDomain {
     // the instance lets a second decoration from the same family inherit one
     // bounded similarity bonus without ever rerolling the first result.
     if (preferences[definition.id] != null) return state;
-    var chance = switch (category) {
-      'CRYSTAL' => 80,
-      'MINERAL' => 70,
+    final family = individual['family'] as String? ?? 'MINERAL';
+    var chance = switch (family) {
+      'VEGETAL' when category == 'VEGETAL' || category == 'MOSS' => 70,
+      'FUNGAL' when category == 'MOSS' || category == 'VEGETAL' => 70,
+      'MINERAL' when category == 'CRYSTAL' => 80,
+      'MINERAL' when category == 'MINERAL' => 70,
       _ => 50,
     };
     final tempo = personalityValue(individual, 'tempo');
@@ -1166,7 +1190,7 @@ class ElevageDomain {
         itemId == 'IRON' ||
         itemId == 'LIMESTONE' ||
         itemId == 'QUARTZ';
-    final comfort = localComfort(effective, config);
+    final comfort = localComfort(effective, config, individual: individual);
 
     // Un objet pertinent dans une zone défavorable est d'abord saisi, puis
     // emporté vers la meilleure zone sûre. BABY observe mais ne transporte
@@ -1178,7 +1202,8 @@ class ElevageDomain {
         behavior: 'FLEE_WITH_ITEM',
         targetZoneId: findBestSafeZone(state, alcoveId, config, now,
             phaseOverride: phaseOverride,
-            excludingZoneId: item['zoneId'] as String),
+            excludingZoneId: item['zoneId'] as String,
+            individual: individual),
         observationCount:
             _observationCount(individual, 'HUMIDITY_AVOIDANCE:$itemId') + 1,
       );
@@ -1426,10 +1451,11 @@ class ElevageDomain {
     return result;
   }
 
-  /// V0 Résonance : le confort provient de la zone locale. Il prépare les
-  /// observations sans devenir une seconde source de préférence persistée.
-  static String localComfort(
-      Map<String, int> environment, ElevageConfig config) {
+  /// Every Nature evaluates the three local axes through its own configured
+  /// ecological curve. The worst axis wins: a favourable average can never
+  /// conceal one extreme condition.
+  static String localComfort(Map<String, int> environment, ElevageConfig config,
+      {Map? individual, String? family, String? nature}) {
     const severity = <String, int>{
       'IDEAL': 0,
       'GOOD': 1,
@@ -1437,9 +1463,12 @@ class ElevageDomain {
       'BAD': 3,
       'EXTREME': 4,
     };
+    final profile = individual == null
+        ? config.natureProfile(family ?? 'MINERAL', nature ?? 'RESONANCE')
+        : config.profileForIndividual(individual);
     final axes = <String>['light', 'temperature', 'humidity']
-        .map((axis) => config.resonanceAxisComfort(
-            axis, (environment[axis] ?? 0).clamp(0, 5)))
+        .map((axis) =>
+            profile.axisComfort(axis, (environment[axis] ?? 0).clamp(0, 5)))
         .toList()
       ..sort((left, right) => severity[right]!.compareTo(severity[left]!));
     // Le pire axe l’emporte : aucun extrême ne peut être masqué par une
@@ -1449,17 +1478,22 @@ class ElevageDomain {
 
   static String bestComfortZone(
       ElevageSave state, String alcoveId, ElevageConfig config, int now,
-      {String? phaseOverride, String? excludingZoneId}) {
+      {String? phaseOverride, String? excludingZoneId, Map? individual}) {
     return findBestSafeZone(state, alcoveId, config, now,
-        phaseOverride: phaseOverride, excludingZoneId: excludingZoneId);
+        phaseOverride: phaseOverride,
+        excludingZoneId: excludingZoneId,
+        individual: individual);
   }
 
   /// Choisit une destination sûre parmi toutes les zones accessibles, sans se
   /// rabattre mécaniquement sur la zone précédente. Le tri est stable par
   /// confort puis par ordre spatial afin que la décision reste déterministe.
-  static String findBestSafeZone(
-      ElevageSave state, String alcoveId, ElevageConfig config, int now,
-      {String? phaseOverride, String? excludingZoneId}) {
+  static String bestZoneFromEnvironment(
+      Map<String, Map<String, int>> environments, ElevageConfig config,
+      {String? excludingZoneId,
+      Map? individual,
+      String? family,
+      String? nature}) {
     const severity = <String, int>{
       'IDEAL': 0,
       'GOOD': 1,
@@ -1467,24 +1501,31 @@ class ElevageDomain {
       'BAD': 3,
       'EXTREME': 4,
     };
-    final alternatives =
-        config.sceneZones.where((zone) => zone.id != excludingZoneId).toList();
-    final zones =
-        (alternatives.isEmpty ? config.sceneZones : alternatives).toList()
-          ..sort((left, right) {
-            final leftComfort = localComfort(
-                zoneEnvironment(state, alcoveId, left.id, config,
-                    now: now, phaseOverride: phaseOverride),
-                config);
-            final rightComfort = localComfort(
-                zoneEnvironment(state, alcoveId, right.id, config,
-                    now: now, phaseOverride: phaseOverride),
-                config);
-            final comparison =
-                severity[leftComfort]!.compareTo(severity[rightComfort]!);
-            return comparison != 0 ? comparison : left.id.compareTo(right.id);
-          });
-    return zones.first.id;
+    final candidates = environments.entries
+        .where((entry) => entry.key != excludingZoneId)
+        .toList();
+    final available =
+        candidates.isEmpty ? environments.entries.toList() : candidates;
+    available.sort((left, right) {
+      final leftComfort = localComfort(left.value, config,
+          individual: individual, family: family, nature: nature);
+      final rightComfort = localComfort(right.value, config,
+          individual: individual, family: family, nature: nature);
+      final comparison =
+          severity[leftComfort]!.compareTo(severity[rightComfort]!);
+      return comparison != 0 ? comparison : left.key.compareTo(right.key);
+    });
+    return available.first.key;
+  }
+
+  static String findBestSafeZone(
+      ElevageSave state, String alcoveId, ElevageConfig config, int now,
+      {String? phaseOverride, String? excludingZoneId, Map? individual}) {
+    return bestZoneFromEnvironment(<String, Map<String, int>>{
+      for (final zone in config.sceneZones)
+        zone.id: zoneEnvironment(state, alcoveId, zone.id, config,
+            now: now, phaseOverride: phaseOverride),
+    }, config, excludingZoneId: excludingZoneId, individual: individual);
   }
 
   static String dayNightPhase(int now, ElevageConfig config) {

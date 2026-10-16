@@ -1000,3 +1000,44 @@ L’Eau n’est pas une ressource globale du Camp.
   long est utilisé pour FOLLOW et WAKE, avec un diamètre de 76 px et un trait
   de 6 px afin de rester visible sous le doigt. Taper une zone sans objet en
   cours de placement ne sélectionne plus de zone ni ne filtre sa couleur.
+
+## P’TIPOTE Élevage — Lot 20.5 : matrice écologique des Natures
+
+- **Échelle environnementale canonique.** Lumière : `0` est l’absence totale
+  de lumière et `5` la lumière directe maximale. Humidité : `0` correspond à
+  0 % et `5` à 100 %. Température : `0 = -20 °C`, `1 = 0 °C`, `2 = 25 °C`,
+  `3 = 35 °C`, `4 = 50 °C`, `5 = 120 °C`. L’interface conserve l’échelle
+  ludique 0–5 ; ces équivalences servent à l’équilibrage et aux diagnostics.
+- **Matrice générique.** Une `ElevageNatureProfile` configure, pour chaque
+  Nature, un optimum (`preferredLight`, `preferredTemperature`,
+  `preferredHumidity`) et trois courbes de six valeurs. Chaque valeur renvoie
+  `IDEAL`, `GOOD`, `NEUTRAL`, `BAD` ou `EXTREME`. Le pire axe détermine le
+  confort local : aucune moyenne ne masque une contrainte extrême.
+- **Trois Natures testables.** Résonance (Minéral) a l’optimum `3/4/2` et
+  privilégie la chaleur ; Photosynthèse (Végétal), archétype cactus/batterie
+  biologique, a l’optimum `5/3/2` et privilégie la lumière ; Décomposition
+  (Fongique), archétype champignon forestier, a l’optimum `1/2/4` et
+  privilégie l’ombre humide. Ainsi, `2/2/2` n’est pas un optimum universel.
+- **Autonomie et sommeil.** `findBestSafeZone`, le choix du spot de sommeil,
+  la fuite, le transport d’objet et le confort affiché consultent le profil
+  de l’individu actif. Les profils circadiens restent respectivement diurne,
+  minéral décalé et fongique biphasique. Les trois Natures sont créables via
+  les actions de test du flow Élevage et utilisent des placeholders visuels
+  distincts.
+- **Habitat.** Les stations gardent leur logique existante, avec une affinité
+  écologique supplémentaire : Potager vertical pour Photosynthèse, Litière
+  fongique pour Décomposition, Bac à gravier pour Résonance. Les décorations
+  végétales/mousse favorisent les deux premiers profils ; cristal/minéral
+  favorisent Résonance. Les affinités restent internes au domaine.
+- **Dashboard.** La section « Matrice écologique des Natures » rend éditables
+  les trois optimums et les 18 points de courbe de chaque profil ; les
+  overrides sont validés et persistés avec la configuration Élevage, sans être
+  affichés comme une révélation au joueur.
+- **Natures futures — archétypes seulement.** `VEGETAL_POISON` : algues ou
+  sargasses résistantes / conversion de déchets ; `VEGETAL_GROWTH` : plante
+  tropicale de croissance ; `FUNGAL_FILTRATION` : champignon extrêmophile
+  marin ou des grands fonds ; `FUNGAL_CONTROL` : champignon associé à des
+  insectes ou animaux ; `MINERAL_PROTECTION` : cristallin structurel ;
+  `MINERAL_CALCIFICATION` : calcification biologique type coquille.
+  **Point à arbitrer :** leurs courbes détaillées ne sont pas canonisées et
+  elles ne sont pas encore jouables.

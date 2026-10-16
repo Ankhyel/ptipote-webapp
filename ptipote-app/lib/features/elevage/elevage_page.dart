@@ -250,7 +250,7 @@ class _AlcoveOverviewCard extends StatelessWidget {
               const SizedBox(height: 7),
               Text(
                 occupied
-                    ? 'Minéral · Résonance · $stage'
+                    ? '${_individualNatureLabel(individual!)} · $stage'
                     : 'Un espace calme attend un P’TIPOTE.',
               ),
               if (occupied) ...<Widget>[
@@ -681,18 +681,23 @@ class _IndividualPageState extends State<_IndividualPage> {
       String alcoveId, ElevageConfig config) async {
     final current = widget.controller.state;
     if (current == null) return true;
+    final individual =
+        (current.data['individuals'] as Map)[widget.individualId] as Map?;
+    if (individual == null) return true;
     final now = widget.controller.now;
     final environment = ElevageDomain.zoneEnvironment(
         current, alcoveId, _ptipoteZoneId, config,
         now: now, phaseOverride: widget.controller.forcedDayNightPhase);
-    final comfort = ElevageDomain.localComfort(environment, config);
+    final comfort =
+        ElevageDomain.localComfort(environment, config, individual: individual);
     if (comfort != 'BAD' && comfort != 'EXTREME') return false;
     _setSceneAction(comfort == 'EXTREME' ? 'EXTREME' : 'DISCOMFORT');
     await _waitSceneAction(config.objectReactionDelayMs);
     final target = ElevageDomain.findBestSafeZone(
         current, alcoveId, config, now,
         phaseOverride: widget.controller.forcedDayNightPhase,
-        excludingZoneId: _ptipoteZoneId);
+        excludingZoneId: _ptipoteZoneId,
+        individual: individual);
     _setSceneAction(comfort == 'EXTREME' ? 'FLEE_FAST' : 'FLEE_NORMAL',
         zoneId: target);
     await _waitSceneAction(
@@ -1146,6 +1151,7 @@ class _IndividualPageState extends State<_IndividualPage> {
     final state = controller.state!;
     final individual =
         (state.data['individuals'] as Map)[widget.individualId] as Map;
+    final profile = controller.config.profileForIndividual(individual);
     final alcove = (state.data['alcoves'] as List)
         .cast<Map>()
         .firstWhere((item) => item['id'] == individual['alcoveId']);
@@ -1162,7 +1168,8 @@ class _IndividualPageState extends State<_IndividualPage> {
         now: now, phaseOverride: controller.forcedDayNightPhase);
     final localEnvironment =
         zoneEnvironments[_ptipoteZoneId] ?? const <String, int>{};
-    final alcoveComfort = _alcoveComfort(zoneEnvironments, controller.config);
+    final alcoveComfort =
+        _alcoveComfort(zoneEnvironments, controller.config, individual);
     final hunger = ElevageDomain.hunger(
         state, widget.individualId, now, controller.config);
     final satiety = ElevageDomain.satietyPercent(
@@ -1217,6 +1224,7 @@ class _IndividualPageState extends State<_IndividualPage> {
             const SizedBox(height: 12),
             _AlcoveScene(
                 stage: stage,
+                family: individual['family'] as String,
                 reaction: _reaction,
                 feedback: _feedback,
                 slots: (alcove['slots'] as List).cast<dynamic>(),
@@ -1260,7 +1268,7 @@ class _IndividualPageState extends State<_IndividualPage> {
             Center(
                 child: Text('${individual['name']}',
                     style: Theme.of(context).textTheme.headlineMedium)),
-            Center(child: Text('Minéral · Résonance · ${_stageLabel(stage)}')),
+            Center(child: Text('${profile.label} · ${_stageLabel(stage)}')),
             const SizedBox(height: 12),
             if (communication != null)
               Center(
@@ -1325,7 +1333,8 @@ class _IndividualPageState extends State<_IndividualPage> {
                       const SizedBox(height: 3),
                       Text(_localComfortLabel(
                           ElevageDomain.localComfort(
-                              localEnvironment, controller.config),
+                              localEnvironment, controller.config,
+                              individual: individual),
                           individual['name'] as String)),
                       const SizedBox(height: 6),
                       Text(
@@ -1726,6 +1735,19 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               subtitle: Text(_installationEffectSummary(definition)),
               trailing: const Icon(Icons.tune),
               onTap: () => _editInstallationEffects(context, definition))),
+          _heading('Matrice écologique des Natures'),
+          const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                  'Chaque Nature possède ses propres optima et courbes 0–5. Le pire axe local détermine le confort.')),
+          ...config.natureProfiles.map((profile) => ListTile(
+              leading: Text(profile.placeholder,
+                  style: const TextStyle(fontSize: 26)),
+              title: Text(profile.label),
+              subtitle: Text(
+                  'Optimum · ☀️ ${profile.preferredLight}/5 · 🌡️ ${profile.preferredTemperature}/5 · 💧 ${profile.preferredHumidity}/5'),
+              trailing: const Icon(Icons.tune),
+              onTap: () => _editNatureProfile(context, profile))),
           _heading('Métamorphose'),
           _number(
               context,
@@ -2025,6 +2047,111 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
         vocalizations: <String, String>{...config.vocalizations, key: clean}));
   }
 
+  Future<void> _editNatureProfile(
+      BuildContext context, ElevageNatureProfile profile) async {
+    var draft = profile;
+    final next = await showDialog<ElevageNatureProfile>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+              builder: (dialogContext, setLocal) {
+                void updateCurve(String axis, int index, String value) {
+                  final curves = <String, List<String>>{
+                    for (final entry in draft.curves.entries)
+                      entry.key: List<String>.from(entry.value),
+                  };
+                  curves[axis]![index] = value;
+                  setLocal(() => draft = draft.copyWith(curves: curves));
+                }
+
+                Widget preference(String axis, int current) =>
+                    DropdownButtonFormField<int>(
+                        key: ValueKey('$axis:$current'),
+                        initialValue: current,
+                        decoration: InputDecoration(
+                            labelText:
+                                'Optimum ${_environmentAxisLabel(axis)}'),
+                        items: List<DropdownMenuItem<int>>.generate(
+                            6,
+                            (value) => DropdownMenuItem(
+                                value: value, child: Text('$value / 5'))),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setLocal(() => draft = switch (axis) {
+                                'light' =>
+                                  draft.copyWith(preferredLight: value),
+                                'temperature' =>
+                                  draft.copyWith(preferredTemperature: value),
+                                _ => draft.copyWith(preferredHumidity: value),
+                              });
+                        });
+
+                return AlertDialog(
+                    title: Text(draft.label),
+                    content: SizedBox(
+                        width: double.maxFinite,
+                        child: SingleChildScrollView(
+                            child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                              const Text(
+                                  'Les valeurs servent au domaine, aux diagnostics et aux futures découvertes ; elles ne révèlent rien au joueur avant observation.'),
+                              const SizedBox(height: 12),
+                              preference('light', draft.preferredLight),
+                              preference(
+                                  'temperature', draft.preferredTemperature),
+                              preference('humidity', draft.preferredHumidity),
+                              const SizedBox(height: 16),
+                              for (final axis in <String>[
+                                'light',
+                                'temperature',
+                                'humidity'
+                              ]) ...<Widget>[
+                                Text(_environmentAxisLabel(axis),
+                                    style:
+                                        Theme.of(context).textTheme.titleSmall),
+                                for (var index = 0; index <= 5; index++)
+                                  DropdownButtonFormField<String>(
+                                      key: ValueKey(
+                                          '$axis:$index:${draft.curves[axis]![index]}'),
+                                      initialValue: draft.curves[axis]![index],
+                                      decoration: InputDecoration(
+                                          labelText: '$index / 5'),
+                                      items: const <String>[
+                                        'IDEAL',
+                                        'GOOD',
+                                        'NEUTRAL',
+                                        'BAD',
+                                        'EXTREME'
+                                      ]
+                                          .map((state) => DropdownMenuItem(
+                                              value: state, child: Text(state)))
+                                          .toList(),
+                                      onChanged: (value) {
+                                        if (value != null) {
+                                          updateCurve(axis, index, value);
+                                        }
+                                      }),
+                                const SizedBox(height: 8),
+                              ],
+                            ]))),
+                    actions: <Widget>[
+                      TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Annuler')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(dialogContext, draft),
+                          child: const Text('Valider')),
+                    ]);
+              },
+            ));
+    if (!context.mounted || next == null) return;
+    setState(() => config = config.copyWith(
+        natureProfiles: config.natureProfiles
+            .map((current) => current.id == next.id ? next : current)
+            .toList(growable: false)));
+  }
+
   Future<void> _confirmReset(BuildContext context, bool wholeGame) async {
     final accepted = await showDialog<bool>(
         context: context,
@@ -2139,6 +2266,21 @@ String _stageLabel(String value) => switch (value) {
       'INTERMEDIATE' => 'Intermédiaire',
       _ => 'Mature'
     };
+String _individualNatureLabel(Map individual) {
+  final family = individual['family'] as String? ?? 'MINERAL';
+  final nature = individual['nature'] as String? ?? 'RESONANCE';
+  return switch ('$family:$nature') {
+    'VEGETAL:PHOTOSYNTHESIS' => 'Végétal · Photosynthèse',
+    'FUNGAL:DECOMPOSITION' => 'Fongique · Décomposition',
+    _ => 'Minéral · Résonance',
+  };
+}
+
+String _environmentAxisLabel(String axis) => switch (axis) {
+      'light' => 'Lumière',
+      'temperature' => 'Température',
+      _ => 'Humidité',
+    };
 String _hungerLabel(String value) => switch (value) {
       'SATIATED' => 'Rassasié',
       'NORMAL' => 'Bien',
@@ -2192,6 +2334,7 @@ String _memoryLabel(String memory) => switch (memory) {
 class _AlcoveScene extends StatefulWidget {
   const _AlcoveScene({
     required this.stage,
+    required this.family,
     required this.reaction,
     required this.feedback,
     required this.slots,
@@ -2226,6 +2369,7 @@ class _AlcoveScene extends StatefulWidget {
     required this.zoneEnvironments,
   });
   final String stage;
+  final String family;
   final String? reaction;
   final String? feedback;
   final List<dynamic> slots;
@@ -2413,7 +2557,9 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(18),
                   onTap: item == null
-                      ? () => widget.onZoneTap?.call(zone.id)
+                      ? (widget.pendingItem == null
+                          ? null
+                          : () => widget.onZoneTap?.call(zone.id))
                       : () => widget.onSceneItemTap(item),
                   child: Container(
                     width: 46,
@@ -2557,7 +2703,7 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                       child: Icon(
                         widget.crystallizing
                             ? Icons.diamond_outlined
-                            : _ptipoteIcon(widget.stage),
+                            : _ptipoteIcon(widget.stage, widget.family),
                         size: size * .62,
                       ),
                     ),
@@ -2667,8 +2813,14 @@ Alignment _bubbleAlignment(String zoneId) => switch (zoneId) {
       _ => const Alignment(-.25, -.22),
     };
 
-IconData _ptipoteIcon(String stage) =>
-    stage == 'BABY' ? Icons.egg_outlined : Icons.pets;
+IconData _ptipoteIcon(String stage, String family) {
+  if (stage == 'BABY') return Icons.egg_outlined;
+  return switch (family) {
+    'VEGETAL' => Icons.spa_outlined,
+    'FUNGAL' => Icons.emoji_nature_outlined,
+    _ => Icons.diamond_outlined,
+  };
+}
 
 class _StatusBubble extends StatelessWidget {
   const _StatusBubble({
@@ -2801,7 +2953,7 @@ String _localComfortLabel(String comfort, String name) => switch (comfort) {
     };
 
 Map<String, Object> _alcoveComfort(
-    Map<String, Map<String, int>> zones, ElevageConfig config) {
+    Map<String, Map<String, int>> zones, ElevageConfig config, Map individual) {
   const scores = <String, int>{
     'IDEAL': 4,
     'GOOD': 3,
@@ -2809,8 +2961,12 @@ Map<String, Object> _alcoveComfort(
     'BAD': 1,
     'EXTREME': 0,
   };
-  final total = zones.values.fold<int>(0,
-      (sum, zone) => sum + scores[ElevageDomain.localComfort(zone, config)]!);
+  final total = zones.values.fold<int>(
+      0,
+      (sum, zone) =>
+          sum +
+          scores[ElevageDomain.localComfort(zone, config,
+              individual: individual)]!);
   final average = total / zones.length;
   final label = switch (average) {
     >= 3.5 => 'Très adaptée',
@@ -3129,19 +3285,32 @@ Future<void> _welcome(
                 onPressed: () =>
                     _nameAdoption(sheetContext, controller, alcoveId, false),
                 child: Text(
-                    'Co-élevage · ${controller.config.coRearingDurationHours ~/ 24} jours'))
+                    'Co-élevage · ${controller.config.coRearingDurationHours ~/ 24} jours')),
+            if (controller.config.devMode) ...<Widget>[
+              const Divider(),
+              const Text('Natures de test',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              for (final profile in controller.config.natureProfiles)
+                OutlinedButton(
+                    onPressed: () => _nameAdoption(
+                        sheetContext, controller, alcoveId, false,
+                        family: profile.family, nature: profile.nature),
+                    child: Text('Créer ${profile.label}')),
+            ],
           ])));
 }
 
 Future<void> _nameAdoption(BuildContext context, ElevageController controller,
-    String alcoveId, bool physical) async {
+    String alcoveId, bool physical,
+    {String family = 'MINERAL', String nature = 'RESONANCE'}) async {
+  final profile = controller.config.natureProfile(family, nature);
   final name = TextEditingController();
   final accepted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
               title: Text(physical
-                  ? 'Figurine détectée · Minéral Résonance'
-                  : 'Les Sourciers confient un Résonance aléatoire'),
+                  ? 'Figurine détectée · ${profile.label}'
+                  : 'Les Sourciers confient un ${profile.label}'),
               content: TextField(
                   controller: name,
                   autofocus: true,
@@ -3161,8 +3330,10 @@ Future<void> _nameAdoption(BuildContext context, ElevageController controller,
         alcoveId: alcoveId,
         name: name.text,
         physical: physical,
+        family: family,
+        nature: nature,
         physicalFigureRef: physical
-            ? 'mock:mineral-resonance-${DateTime.now().millisecondsSinceEpoch}'
+            ? 'mock:${profile.id.toLowerCase()}-${controller.now}'
             : null);
     if (context.mounted) Navigator.of(context).pop();
   }
