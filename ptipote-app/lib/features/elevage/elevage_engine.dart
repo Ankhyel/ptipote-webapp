@@ -4,6 +4,11 @@ import 'dart:math';
 import 'elevage_config.dart';
 
 const int elevageSaveSchemaVersion = 1;
+const Set<String> _resonanceFormationIds = <String>{
+  'FORMATION_METALLIQUE',
+  'FORMATION_CRISTALLINE',
+  'FORMATION_MINERALE',
+};
 
 class ElevageSave {
   ElevageSave(this.data);
@@ -62,6 +67,17 @@ class ElevageSave {
     normalized.putIfAbsent('discoveredItemIds', () => <String>[]);
     normalized.putIfAbsent('coRearingReturnLedger', () => <String, dynamic>{});
     normalized.putIfAbsent('pendingNotifications', () => <dynamic>[]);
+    // Formations are resonance supports, never resource producers. Remove
+    // any legacy local stock that a previous prototype may have persisted.
+    for (final alcove in (normalized['alcoves'] as List? ?? const <dynamic>[])
+        .whereType<Map>()) {
+      for (final slot
+          in (alcove['slots'] as List? ?? const <dynamic>[]).whereType<Map>()) {
+        if (_resonanceFormationIds.contains(slot['definitionId'])) {
+          slot.remove('productionState');
+        }
+      }
+    }
     // Migration QA one-shot, strictement limitée à la sauvegarde Élevage.
     // Elle enlève les stocks de test historiques sans toucher Zone 0 ni la
     // configuration locale, puis restitue le starter normal minimal.
@@ -271,8 +287,11 @@ class ElevageDomain {
             <double>[.61, .74],
           ],
         _ => const <List<double>>[
-            <double>[0, .25],
-            <double>[.84, 1],
+            // Résonance est active au début de la nuit, dort dans sa seconde
+            // moitié puis poursuit son repos pendant le début de journée.
+            // Avec Jour 3 h / Nuit 1 h, il se réveille vers 2 h 30 de jour.
+            <double>[0, .625],
+            <double>[.875, 1],
           ],
       };
 
@@ -1724,7 +1743,11 @@ class ElevageDomain {
     for (final raw in alcove['slots'] as List) {
       if (raw is! Map) continue;
       final definition = config.installation(raw['definitionId'] as String);
-      if (definition == null || !definition.productive) continue;
+      if (definition == null) continue;
+      if (!definition.productive) {
+        raw.remove('productionState');
+        continue;
+      }
       final production = raw.putIfAbsent(
           'productionState',
           () => <String, dynamic>{
@@ -1799,12 +1822,17 @@ class ElevageDomain {
     return state;
   }
 
-  static ElevageSave harvestLocal(
-      ElevageSave source, String alcoveId, int slot, String itemId, int now) {
+  static ElevageSave harvestLocal(ElevageSave source, String alcoveId, int slot,
+      String itemId, int now, ElevageConfig config) {
     final state = source.copy();
     final slots = _alcove(state, alcoveId)['slots'] as List;
     if (slot < 0 || slot >= slots.length || slots[slot] is! Map) {
       throw StateError('Installation indisponible.');
+    }
+    final definition =
+        config.installation((slots[slot] as Map)['definitionId'] as String);
+    if (definition == null || !definition.productive) {
+      throw StateError('Cette structure ne produit pas de ressource.');
     }
     final stock = ((slots[slot] as Map)['productionState']
         as Map?)?['availableByItemId'] as Map?;

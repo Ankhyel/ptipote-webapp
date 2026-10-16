@@ -186,6 +186,7 @@ class _AlcovesPage extends StatelessWidget {
                           .contains(occupant);
                   return _AlcoveOverviewCard(
                     index: index + 1,
+                    now: controller.now,
                     occupied: occupied,
                     individual: individual,
                     onOpen: occupied
@@ -212,6 +213,7 @@ class _AlcovesPage extends StatelessWidget {
 class _AlcoveOverviewCard extends StatelessWidget {
   const _AlcoveOverviewCard({
     required this.index,
+    required this.now,
     required this.occupied,
     required this.individual,
     required this.onOpen,
@@ -219,6 +221,7 @@ class _AlcoveOverviewCard extends StatelessWidget {
   });
 
   final int index;
+  final int now;
   final bool occupied;
   final Map? individual;
   final VoidCallback onOpen;
@@ -255,7 +258,7 @@ class _AlcoveOverviewCard extends StatelessWidget {
                 Text(
                   individual!['ownership']['mode'] == 'PHYSICAL'
                       ? 'Figurine'
-                      : _coRemaining(individual!['ownership'] as Map),
+                      : _coRemaining(individual!['ownership'] as Map, now),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -358,13 +361,13 @@ class _IndividualPageState extends State<_IndividualPage> {
       final individual =
           (state.data['individuals'] as Map)[widget.individualId] as Map?;
       if (individual == null ||
+          ElevageDomain.metamorphosisAvailable(state, widget.individualId,
+              widget.controller.now, widget.controller.config) ||
           ElevageDomain.isSleeping(
-              individual,
-              DateTime.now().millisecondsSinceEpoch,
-              widget.controller.config)) {
+              individual, widget.controller.now, widget.controller.config)) {
         return;
       }
-      final now = DateTime.now().millisecondsSinceEpoch;
+      final now = widget.controller.now;
       if (now - _lastIdleMoveAt <
           ElevageDomain.idlePauseFor(individual, widget.controller.config) *
               1000) {
@@ -411,7 +414,7 @@ class _IndividualPageState extends State<_IndividualPage> {
     setState(() {
       _followFingerHeld = true;
       _followHoldZoneId = zoneId;
-      _followHoldStartedAt = DateTime.now().millisecondsSinceEpoch;
+      _followHoldStartedAt = widget.controller.now;
     });
     _followHoldTimer = Timer(
         Duration(seconds: widget.controller.config.longPressHoldSeconds), () {
@@ -486,8 +489,8 @@ class _IndividualPageState extends State<_IndividualPage> {
     final individual =
         (state.data['individuals'] as Map)[widget.individualId] as Map?;
     if (individual == null ||
-        !ElevageDomain.isSleeping(individual,
-            DateTime.now().millisecondsSinceEpoch, widget.controller.config)) {
+        !ElevageDomain.isSleeping(
+            individual, widget.controller.now, widget.controller.config)) {
       return;
     }
     _ptipoteHoldTimer?.cancel();
@@ -509,8 +512,13 @@ class _IndividualPageState extends State<_IndividualPage> {
     final individual =
         (state.data['individuals'] as Map)[widget.individualId] as Map?;
     if (individual == null) return;
-    if (ElevageDomain.isSleeping(individual,
-        DateTime.now().millisecondsSinceEpoch, widget.controller.config)) {
+    if (ElevageDomain.metamorphosisAvailable(state, widget.individualId,
+        widget.controller.now, widget.controller.config)) {
+      _metamorphosis(context, widget.controller, widget.individualId);
+      return;
+    }
+    if (ElevageDomain.isSleeping(
+        individual, widget.controller.now, widget.controller.config)) {
       _setSceneAction('SLEEP');
       return;
     }
@@ -563,7 +571,7 @@ class _IndividualPageState extends State<_IndividualPage> {
   Future<void> _executeAutonomousCycle(
       {bool playerTriggered = false, String? targetInstanceId}) async {
     if (!mounted || _autonomousInFlight) return;
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = widget.controller.now;
     final config = widget.controller.config;
     if (!playerTriggered &&
         now - _lastAutonomousAt <
@@ -575,6 +583,11 @@ class _IndividualPageState extends State<_IndividualPage> {
     final individual =
         (state.data['individuals'] as Map)[widget.individualId] as Map?;
     if (individual == null) return;
+    if (ElevageDomain.metamorphosisAvailable(
+        state, widget.individualId, now, config)) {
+      _setSceneAction('METAMORPHOSIS');
+      return;
+    }
     final alcoveId = individual['alcoveId'] as String;
     if (ElevageDomain.isSleeping(individual, now, config)) {
       _setSceneAction('SLEEP',
@@ -655,7 +668,7 @@ class _IndividualPageState extends State<_IndividualPage> {
               .where((item) => item['instanceId'] == decision.instanceId)
               .firstOrNull;
       if (target != null) await _interactSceneItem(target, automatic: true);
-      _lastAutonomousAt = DateTime.now().millisecondsSinceEpoch;
+      _lastAutonomousAt = widget.controller.now;
       _lastAutonomousBehavior = decision.outcome.behavior;
       await _waitSceneAction(900);
       _setSceneAction('IDLE');
@@ -668,7 +681,7 @@ class _IndividualPageState extends State<_IndividualPage> {
       String alcoveId, ElevageConfig config) async {
     final current = widget.controller.state;
     if (current == null) return true;
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = widget.controller.now;
     final environment = ElevageDomain.zoneEnvironment(
         current, alcoveId, _ptipoteZoneId, config,
         now: now, phaseOverride: widget.controller.forcedDayNightPhase);
@@ -892,8 +905,7 @@ class _IndividualPageState extends State<_IndividualPage> {
     _setSceneAction('CUDDLE');
     final elapsed = _followHoldStartedAt == null
         ? 1000
-        : (DateTime.now().millisecondsSinceEpoch - _followHoldStartedAt!)
-            .clamp(1000, 5000);
+        : (widget.controller.now - _followHoldStartedAt!).clamp(1000, 5000);
     await widget.controller.cuddle(widget.individualId, durationMs: elapsed);
     if (!mounted || widget.controller.error != null) {
       _autonomousInFlight = false;
@@ -1086,28 +1098,29 @@ class _IndividualPageState extends State<_IndividualPage> {
                           Navigator.pop(sheetContext);
                         }
                       }),
-                ...(((raw['productionState'] as Map?)?['availableByItemId']
-                            as Map?)
-                        ?.entries
-                        .where((entry) => (entry.value as num).toInt() > 0)
-                        .map<Widget>((entry) => ListTile(
-                              leading: Icon(ElevagePresentation.itemIcon(
-                                  entry.key as String)),
-                              title: Text(
-                                  '${ElevagePresentation.itemLabel(entry.key as String)} : ${entry.value}/${widget.controller.config.productionMaxStock}'),
-                              trailing: OutlinedButton(
-                                onPressed: () async {
-                                  await widget.controller.harvestLocal(
-                                      alcoveId, slot, entry.key as String);
-                                  if (sheetContext.mounted) {
-                                    Navigator.pop(sheetContext);
-                                  }
-                                },
-                                child: const Text('Récolter'),
-                              ),
-                            ))
-                        .toList() ??
-                    const <Widget>[]),
+                if (definition?.productive == true)
+                  ...(((raw['productionState'] as Map?)?['availableByItemId']
+                              as Map?)
+                          ?.entries
+                          .where((entry) => (entry.value as num).toInt() > 0)
+                          .map<Widget>((entry) => ListTile(
+                                leading: Icon(ElevagePresentation.itemIcon(
+                                    entry.key as String)),
+                                title: Text(
+                                    '${ElevagePresentation.itemLabel(entry.key as String)} : ${entry.value}/${widget.controller.config.productionMaxStock}'),
+                                trailing: OutlinedButton(
+                                  onPressed: () async {
+                                    await widget.controller.harvestLocal(
+                                        alcoveId, slot, entry.key as String);
+                                    if (sheetContext.mounted) {
+                                      Navigator.pop(sheetContext);
+                                    }
+                                  },
+                                  child: const Text('Récolter'),
+                                ),
+                              ))
+                          .toList() ??
+                      const <Widget>[]),
                 ListTile(
                     leading: const Icon(Icons.swap_horiz_outlined),
                     title: const Text('Remplacer'),
@@ -1136,7 +1149,7 @@ class _IndividualPageState extends State<_IndividualPage> {
     final alcove = (state.data['alcoves'] as List)
         .cast<Map>()
         .firstWhere((item) => item['id'] == individual['alcoveId']);
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = controller.now;
     final alcoveId = alcove['id'] as String;
     final zoneEnvironments = <String, Map<String, int>>{
       for (final zone in controller.config.sceneZones)
@@ -1150,20 +1163,14 @@ class _IndividualPageState extends State<_IndividualPage> {
     final localEnvironment =
         zoneEnvironments[_ptipoteZoneId] ?? const <String, int>{};
     final alcoveComfort = _alcoveComfort(zoneEnvironments, controller.config);
-    final hunger = ElevageDomain.hunger(state, widget.individualId,
-        DateTime.now().millisecondsSinceEpoch, controller.config);
-    final satiety = ElevageDomain.satietyPercent(state, widget.individualId,
-        DateTime.now().millisecondsSinceEpoch, controller.config);
+    final hunger = ElevageDomain.hunger(
+        state, widget.individualId, now, controller.config);
+    final satiety = ElevageDomain.satietyPercent(
+        state, widget.individualId, now, controller.config);
     final communication = ElevageDomain.communication(
-        state,
-        widget.individualId,
-        DateTime.now().millisecondsSinceEpoch,
-        controller.config);
+        state, widget.individualId, now, controller.config);
     final available = ElevageDomain.metamorphosisAvailable(
-        state,
-        widget.individualId,
-        DateTime.now().millisecondsSinceEpoch,
-        controller.config);
+        state, widget.individualId, now, controller.config);
     final stage = individual['lifecycle']['stage'] as String;
     final request =
         ElevageDomain.activeRequest(state, widget.individualId, now);
@@ -1240,6 +1247,7 @@ class _IndividualPageState extends State<_IndividualPage> {
                 ptipoteHoldActive: _ptipoteHoldActive,
                 requestSignal: request?['signal'] as String?,
                 sleeping: sleeping,
+                crystallizing: available,
                 ptipoteZoneId: _ptipoteZoneId,
                 phase: controller.dayNightPhase(now),
                 phaseRemainingMs: ElevageDomain.dayNightRemainingMs(
@@ -1272,6 +1280,12 @@ class _IndividualPageState extends State<_IndividualPage> {
                       padding: const EdgeInsets.only(top: 8),
                       child: LinearProgressIndicator(value: satiety / 100)),
                   trailing: Text('$satiety %')),
+              if (controller.config.devMode && available)
+                FilledButton.tonalIcon(
+                    onPressed: () => _metamorphosis(
+                        context, controller, widget.individualId),
+                    icon: const Icon(Icons.diamond_outlined),
+                    label: const Text('Debug · lancer l’évolution')),
               if (stage != 'BABY') ...<Widget>[
                 ListTile(
                   leading: const Icon(Icons.auto_awesome_outlined),
@@ -1309,8 +1323,10 @@ class _IndividualPageState extends State<_IndividualPage> {
                           'Zone actuelle (${_ptipoteZoneId.replaceFirst('ZONE_', 'Z')})',
                           style: Theme.of(context).textTheme.titleSmall),
                       const SizedBox(height: 3),
-                      Text(_localComfortLabel(ElevageDomain.localComfort(
-                          localEnvironment, controller.config))),
+                      Text(_localComfortLabel(
+                          ElevageDomain.localComfort(
+                              localEnvironment, controller.config),
+                          individual['name'] as String)),
                       const SizedBox(height: 6),
                       Text(
                           '☀️ ${ElevagePresentation.environmentScale(localEnvironment['light'] ?? 0)}/5 · '
@@ -1361,7 +1377,11 @@ class _IndividualPageState extends State<_IndividualPage> {
                 if (raw is Map) {
                   final definition = controller.config
                       .installation(raw['definitionId'] as String);
-                  final stock = raw['productionState']?['availableByItemId'];
+                  final production = raw['productionState'];
+                  final stock =
+                      (definition?.productive ?? false) && production is Map
+                          ? production['availableByItemId']
+                          : null;
                   return ListTile(
                     leading: const Icon(Icons.cabin_outlined),
                     title: Text(ElevagePresentation.installationLabel(
@@ -2132,10 +2152,8 @@ String _communicationLabel(String value) => switch (value) {
       'FOOD' => 'A faim',
       _ => 'Besoin minéral'
     };
-String _coRemaining(Map ownership) {
-  final remaining =
-      ((ownership['expiresAt'] as int) - DateTime.now().millisecondsSinceEpoch)
-          .clamp(0, 999999999);
+String _coRemaining(Map ownership, int now) {
+  final remaining = ((ownership['expiresAt'] as int) - now).clamp(0, 999999999);
   return 'Co-élevage · encore ${(remaining / const Duration(days: 1).inMilliseconds).ceil()} j';
 }
 
@@ -2199,6 +2217,7 @@ class _AlcoveScene extends StatefulWidget {
     required this.ptipoteHoldActive,
     required this.requestSignal,
     required this.sleeping,
+    required this.crystallizing,
     required this.ptipoteZoneId,
     required this.phase,
     required this.phaseRemainingMs,
@@ -2232,6 +2251,7 @@ class _AlcoveScene extends StatefulWidget {
   final bool ptipoteHoldActive;
   final String? requestSignal;
   final bool sleeping;
+  final bool crystallizing;
   final String ptipoteZoneId;
   final String phase;
   final int phaseRemainingMs;
@@ -2244,7 +2264,24 @@ class _AlcoveScene extends StatefulWidget {
 }
 
 class _AlcoveSceneState extends State<_AlcoveScene> {
-  String _selectedZoneId = 'ZONE_1';
+  Timer? _crystalPulseTimer;
+  bool _crystalPulse = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _crystalPulseTimer = Timer.periodic(const Duration(milliseconds: 650), (_) {
+      if (mounted && widget.crystallizing) {
+        setState(() => _crystalPulse = !_crystalPulse);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _crystalPulseTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2307,19 +2344,17 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
             child: Row(
               children: widget.zones.asMap().entries.map((entry) {
                 final zone = entry.value;
-                final selected = _selectedZoneId == zone.id;
                 return Expanded(
                   child: GestureDetector(
                     onLongPressStart: (_) => widget.onZoneHoldStart(zone.id),
                     onLongPressEnd: (_) => widget.onZoneHoldEnd(),
                     onLongPressCancel: widget.onZoneHoldEnd,
-                    onTap: () {
-                      setState(() => _selectedZoneId = zone.id);
-                      final item = widget.sceneItems
-                          .where((placed) => placed['zoneId'] == zone.id)
-                          .firstOrNull;
-                      if (item == null) widget.onZoneTap?.call(zone.id);
-                    },
+                    // A normal tap only matters while the player is placing
+                    // an item. It no longer leaves a decorative selection
+                    // filter behind when the scene has nothing to do.
+                    onTap: widget.pendingItem == null
+                        ? null
+                        : () => widget.onZoneTap?.call(zone.id),
                     child: Stack(children: <Widget>[
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
@@ -2328,7 +2363,7 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                               context,
                               ElevagePresentation.environmentScale(
                                   widget.zoneEnvironments[zone.id]!['light']!),
-                              selected),
+                              false),
                           border: Border(
                               right: BorderSide(
                                   color: Colors.white.withValues(alpha: .32))),
@@ -2514,7 +2549,18 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                     onLongPressEnd: (_) => widget.onPtipoteHoldEnd(),
                     onLongPressCancel: widget.onPtipoteHoldEnd,
                     onTap: widget.onPtipoteTap,
-                    child: Icon(_ptipoteIcon(widget.stage), size: size * .62),
+                    child: AnimatedScale(
+                      duration: const Duration(milliseconds: 620),
+                      scale: widget.crystallizing
+                          ? (_crystalPulse ? 1.16 : .92)
+                          : 1,
+                      child: Icon(
+                        widget.crystallizing
+                            ? Icons.diamond_outlined
+                            : _ptipoteIcon(widget.stage),
+                        size: size * .62,
+                      ),
+                    ),
                   ),
                 ),
                 if (widget.ptipoteHoldActive)
@@ -2527,7 +2573,8 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
               ]),
             ),
           ),
-          if (widget.sleeping ||
+          if (widget.crystallizing ||
+              widget.sleeping ||
               widget.requestSignal != null ||
               widget.action != 'IDLE')
             AnimatedAlign(
@@ -2535,8 +2582,12 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
               alignment: _bubbleAlignment(widget.ptipoteZoneId),
               child: _StatusBubble(
                 signal: widget.requestSignal,
-                action: widget.sleeping ? 'SLEEP' : widget.action,
-                voice: widget.voice,
+                action: widget.crystallizing
+                    ? 'METAMORPHOSIS'
+                    : widget.sleeping
+                        ? 'SLEEP'
+                        : widget.action,
+                voice: widget.crystallizing ? '…' : widget.voice,
                 itemId: widget.bubbleItemId,
               ),
             ),
@@ -2676,14 +2727,14 @@ class LongPressProgressInteraction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 28,
-        height: 28,
+        width: 76,
+        height: 76,
         child: TweenAnimationBuilder<double>(
           tween: Tween<double>(begin: 0, end: 1),
           duration: duration,
           builder: (context, value, _) => CircularProgressIndicator(
             value: value,
-            strokeWidth: 3,
+            strokeWidth: 6,
             color: Theme.of(context).colorScheme.primary,
           ),
         ),
@@ -2700,7 +2751,8 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       'MOVE' => Icons.directions_walk_outlined,
       'NOTICE_ITEM' || 'INSPECT_ITEM' || 'CURIOUS' => Icons.visibility_outlined,
       'APPROACH_ITEM' || 'FOLLOW' => Icons.arrow_forward,
-      'THINK' || 'IGNORE' => Icons.more_horiz,
+      'THINK' => Icons.question_mark,
+      'IGNORE' => Icons.more_horiz,
       'LIKE' || 'CONTENT' => Icons.sentiment_satisfied_alt_outlined,
       'NEUTRAL' => Icons.sentiment_neutral_outlined,
       'RUSH_SHAKE' || 'EAT' => Icons.restaurant_outlined,
@@ -2722,7 +2774,7 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       'REST' => Icons.weekend_outlined,
       'PLAY' => Icons.sports_handball_outlined,
       'USE_FURNITURE' => Icons.chair_outlined,
-      'METAMORPHOSIS' => Icons.egg_outlined,
+      'METAMORPHOSIS' => Icons.diamond_outlined,
       _ => stage == 'BABY' ? Icons.egg_outlined : Icons.pets,
     };
 
@@ -2741,10 +2793,10 @@ Color _zoneColor(BuildContext context, int light, bool selected) {
       : base;
 }
 
-String _localComfortLabel(String comfort) => switch (comfort) {
+String _localComfortLabel(String comfort, String name) => switch (comfort) {
       'IDEAL' || 'GOOD' => 'Cette zone lui convient très bien.',
-      'BAD' => 'Faradet semble mal à l’aise ici.',
-      'EXTREME' => 'Faradet semble vouloir quitter cet endroit.',
+      'BAD' => '$name semble mal à l’aise ici.',
+      'EXTREME' => '$name semble vouloir quitter cet endroit.',
       _ => 'Cette zone lui paraît neutre.',
     };
 
@@ -3348,8 +3400,8 @@ String _installationImpactSentence(ElevageInstallationDefinition definition) {
 
 Future<void> _foraging(
     BuildContext context, ElevageController controller, String id) async {
-  final status = ElevageDomain.foragingStatus(
-      controller.state!, id, DateTime.now().millisecondsSinceEpoch);
+  final status =
+      ElevageDomain.foragingStatus(controller.state!, id, controller.now);
   if (status == 'NONE' || status == 'COMPLETED') {
     await showModalBottomSheet<void>(
         context: context,
@@ -3373,8 +3425,7 @@ Future<void> _foraging(
   }
   final run = (controller.state!.data['runsByIndividualId'] as Map)[id] as Map;
   if (status == 'IN_PROGRESS') {
-    final remaining =
-        max(0, (run['readyAt'] as int) - DateTime.now().millisecondsSinceEpoch);
+    final remaining = max(0, (run['readyAt'] as int) - controller.now);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content:
@@ -3510,9 +3561,9 @@ Future<void> _metamorphosis(
                   title: const Text('Métamorphose Résonance'),
                   content:
                       Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-                    const Icon(Icons.auto_awesome, size: 64),
+                    const Icon(Icons.diamond_outlined, size: 64),
                     Text('Motif ${stage + 1}/3'),
-                    const Text('TAM · TAM · … · TAM'),
+                    const Text('Le cristal pulse : TAM · TAM · … · TAM'),
                     const SizedBox(height: 12),
                     FilledButton(
                         onPressed: () async {

@@ -17,6 +17,9 @@ class ElevageController extends ChangeNotifier {
   String dayNightPhase(int now) =>
       forcedDayNightPhase ?? ElevageDomain.dayNightPhase(now, config);
 
+  /// All Élevage elapsed-time systems use this calibrated server clock.
+  int get now => _repository.now;
+
   void forceDayNightPhase(String? phase) {
     if (!config.devMode) return;
     forcedDayNightPhase = phase;
@@ -157,8 +160,8 @@ class ElevageController extends ChangeNotifier {
   Future<void> refreshAlcove(String alcoveId) => _mutate((current) =>
       ElevageDomain.refreshAlcove(current, alcoveId, _now, config));
   Future<void> harvestLocal(String alcoveId, int slot, String itemId) =>
-      _mutate((current) =>
-          ElevageDomain.harvestLocal(current, alcoveId, slot, itemId, _now));
+      _mutate((current) => ElevageDomain.harvestLocal(
+          current, alcoveId, slot, itemId, _now, config));
   Future<void> refreshRequest(String individualId) => _mutate((current) =>
       ElevageDomain.refreshRequest(current, individualId, _now, config));
   Future<void> buyTreat(String item) =>
@@ -239,5 +242,5 @@ class ElevageController extends ChangeNotifier {
     await _repository.save(current);
   }
 
-  int get _now => DateTime.now().millisecondsSinceEpoch;
+  int get _now => now;
 }

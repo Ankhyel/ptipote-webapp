@@ -969,3 +969,34 @@ L’Eau n’est pas une ressource globale du Camp.
   extrême -20 s, avec un minimum absolu de 3 s. **Point à arbitrer futur :**
   passer de une à deux Structures par zone. `RELATIONAL_OBJECT` reste le hook
   réservé à la future Poupée familière.
+
+## P’TIPOTE Élevage — correctifs cycle, formations et cristallisation
+
+- **Formations de résonance.** Formation minérale, métallique et cristalline
+  ne possèdent pas de production locale et ne peuvent donc ni générer ni
+  récolter Calcaire, Fer ou Quartz. Les anciens `productionState` de ces
+  structures sont retirés à la lecture et au rafraîchissement de l’Alcôve.
+  Elles restent des points de connexion : la résonance structurelle augmente
+  la jauge du P’TIPOTE sans détruire la Formation. La Culture potagère et la
+  Butte d’arbuste restent productives.
+- **Horloge et hors-ligne.** Les calculs Élevage (cycle Jour/Nuit, sommeil,
+  faim et maturations) utilisent une horloge calibrée sur un horodatage
+  Firestore quand un compte est connecté. Son décalage est mis en cache, puis
+  l’horloge réelle continue de progresser application fermée. En absence de
+  réseau ou d’autorisation Firestore, le dernier décalage calibré est conservé
+  et l’horloge locale sert de repli temporaire.
+- **Rythme minéral.** Résonance utilise deux fenêtres de sommeil extensibles :
+  il dort de la seconde moitié de nuit jusqu’au début du Jour. Avec Jour 3 h
+  et Nuit 1 h, son réveil se produit vers 2 h 30 de Jour. Les autres profils
+  gardent leurs fenêtres propres.
+- **Cristallisation.** Lorsqu’une métamorphose est disponible, le P’TIPOTE
+  reste immobile, prend l’icône cristal pulsante et signale régulièrement `…`.
+  Le joueur ouvre ensuite la séquence rythmique en le touchant. En mode dev,
+  un bouton « Debug · lancer l’évolution » est affiché sous la satiété pour
+  lancer exactement cette même séquence. Le pictogramme normal de réflexion
+  est désormais `?` ; les ellipses sont réservées à l’attente/cristallisation.
+- **Lecture de scène.** Les cartes de confort interpolent toujours le nom de
+  l’occupant de l’Alcôve, jamais « Faradet » en dur. Le même anneau d’appui
+  long est utilisé pour FOLLOW et WAKE, avec un diamètre de 76 px et un trait
+  de 6 px afin de rester visible sous le doigt. Taper une zone sans objet en
+  cours de placement ne sélectionne plus de zone ni ne filtre sa couleur.

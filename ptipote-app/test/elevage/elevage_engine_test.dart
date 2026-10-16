@@ -732,9 +732,12 @@ void main() {
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
     final individual = (state.data['individuals'] as Map)[id] as Map;
+    // Résonance dort jusqu'au début de matinée ; choisir une phase éveillée
+    // pour vérifier la Request indépendamment du rythme circadien.
     final requestAt = defaultElevageConfig.dayNightCycleHours *
-        const Duration(hours: 1).inMilliseconds ~/
-        2;
+        const Duration(hours: 1).inMilliseconds *
+        3 ~/
+        4;
     (individual['care'] as Map)['lastMealAt'] =
         requestAt - const Duration(hours: 200).inMilliseconds;
     expect(ElevageDomain.hunger(state, id, requestAt, requestConfig),
@@ -813,7 +816,8 @@ void main() {
     final stock = ((refreshedAlcove['slots'][0] as Map)['productionState']
         as Map)['availableByItemId'] as Map;
     expect(stock['ROOT'], 6);
-    state = ElevageDomain.harvestLocal(state, 'alcove-1', 0, 'ROOT', now + 1);
+    state = ElevageDomain.harvestLocal(
+        state, 'alcove-1', 0, 'ROOT', now + 1, defaultElevageConfig);
     final harvestedAlcove = (state.data['alcoves'] as List).first as Map;
     final harvestedStock = ((harvestedAlcove['slots'][0]
         as Map)['productionState'] as Map)['availableByItemId'] as Map;
@@ -1440,5 +1444,37 @@ void main() {
               'HAMAC': <String, int>{'humidity': 2},
             })),
         throwsFormatException);
+  });
+
+  test('les Formations ne conservent jamais de stock de production', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][0] = <String, dynamic>{
+      'definitionId': 'FORMATION_METALLIQUE',
+      'productionState': <String, dynamic>{
+        'lastResolvedAt': now,
+        'availableByItemId': <String, int>{'IRON': 6},
+      },
+    };
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'CULTURE_POTAGERE',
+      'productionState': <String, dynamic>{
+        'lastResolvedAt': now,
+        'availableByItemId': <String, int>{},
+      },
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 3).inMilliseconds, defaultElevageConfig);
+    final slots =
+        ((state.data['alcoves'] as List).first as Map)['slots'] as List;
+    expect((slots[0] as Map).containsKey('productionState'), isFalse);
+    expect(
+        ((slots[1] as Map)['productionState'] as Map)['availableByItemId']
+            ['ROOT'],
+        1);
+    expect(
+        () => ElevageDomain.harvestLocal(
+            state, 'alcove-1', 0, 'IRON', now, defaultElevageConfig),
+        throwsStateError);
   });
 }
