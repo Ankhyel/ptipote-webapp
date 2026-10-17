@@ -21,7 +21,7 @@ class ElevageSave {
       'savedAt': now,
       'activeConfigRevision': config.revision,
       'inventory': <String, dynamic>{
-        'generic': <String, int>{'organic': 0, 'mineral': 0},
+        'generic': <String, int>{'organic': 0, 'mineral': 0, 'energy': 0},
         'special': <String, int>{'ROOT': 1, 'LEAF': 1},
         'bioPiles': 0,
       },
@@ -123,6 +123,21 @@ class ElevageSave {
       normalized['inventory'] = reserve;
       normalized['sharedReserveMigrationV21'] = true;
     }
+    final generic = (normalized['inventory'] as Map)['generic'] as Map;
+    generic.putIfAbsent('energy', () => 0);
+    // Canonical resource migration: ALGAE_FRAGMENT was a legacy duplicate of
+    // ALGAE. Merge numeric stock keys and rewrite all preference/loot/recipe
+    // references once, leaving no second resource for runtime behaviour.
+    if (normalized['algaeNormalizationV211'] != true) {
+      _normalizeLegacyAlgae(normalized);
+      normalized['algaeNormalizationV211'] = true;
+    }
+    // Installed geothermal holes become active bio-organic ovens in place,
+    // preserving their instance ID, zone and any user placement metadata.
+    if (normalized['bioOrganicOvenMigrationV211'] != true) {
+      _normalizeLegacyGeothermal(normalized);
+      normalized['bioOrganicOvenMigrationV211'] = true;
+    }
     final individuals = normalized['individuals'] as Map?;
     individuals?.forEach((_, raw) {
       if (raw is Map) {
@@ -220,6 +235,52 @@ class ElevageAutonomousSceneDecision {
 Map<String, dynamic> _clone(Map<String, dynamic> value) =>
     Map<String, dynamic>.from(jsonDecode(jsonEncode(value)) as Map);
 
+void _normalizeLegacyAlgae(Object? value) {
+  if (value is Map) {
+    final legacy = value.remove('ALGAE_FRAGMENT');
+    if (legacy != null) {
+      if (legacy is num && value['ALGAE'] is num) {
+        value['ALGAE'] = (value['ALGAE'] as num).toInt() + legacy.toInt();
+      } else if (legacy is num) {
+        value['ALGAE'] = legacy.toInt();
+      } else if (!value.containsKey('ALGAE')) {
+        value['ALGAE'] = legacy;
+      }
+    }
+    for (final entry in value.entries.toList()) {
+      if (entry.value == 'ALGAE_FRAGMENT') {
+        value[entry.key] = 'ALGAE';
+      } else {
+        _normalizeLegacyAlgae(entry.value);
+      }
+    }
+  } else if (value is List) {
+    for (var index = 0; index < value.length; index++) {
+      if (value[index] == 'ALGAE_FRAGMENT') {
+        value[index] = 'ALGAE';
+      } else {
+        _normalizeLegacyAlgae(value[index]);
+      }
+    }
+  }
+}
+
+void _normalizeLegacyGeothermal(Object? value) {
+  if (value is Map) {
+    for (final entry in value.entries.toList()) {
+      if (entry.value == 'TROU_GEOTHERMIQUE_CHAUD') {
+        value[entry.key] = 'FOUR_BIO_ORGANIQUE';
+      } else {
+        _normalizeLegacyGeothermal(entry.value);
+      }
+    }
+  } else if (value is List) {
+    for (final entry in value) {
+      _normalizeLegacyGeothermal(entry);
+    }
+  }
+}
+
 class ElevageDomain {
   static const List<String> foodItems = <String>[
     'ROOT',
@@ -228,7 +289,6 @@ class ElevageDomain {
     'ALGAE',
     'MUSHROOM',
     'FRUIT',
-    'ALGAE_FRAGMENT',
   ];
   static const List<String> treatItems = <String>[
     'FIBROUS_FRUIT',
@@ -252,7 +312,6 @@ class ElevageDomain {
     'MOSS',
     'MUSHROOM',
     'ALGAE',
-    'ALGAE_FRAGMENT',
     'LIMESTONE',
     'QUARTZ',
     'IRON',
@@ -265,7 +324,6 @@ class ElevageDomain {
     'LEAF',
     'MOSS',
     'ALGAE',
-    'ALGAE_FRAGMENT',
     'MUSHROOM',
     'FRUIT',
     'FIBROUS_FRUIT',
@@ -778,7 +836,7 @@ class ElevageDomain {
       ...structuralItems,
       'SEED',
       'SPROUT',
-      'ALGAE_FRAGMENT'
+      'ALGAE'
     ]) {
       special[item] = (special[item] ?? 0) + 3;
     }
@@ -1446,6 +1504,7 @@ class ElevageDomain {
       final installedZone = raw['zoneId'] as String? ?? 'ZONE_${index + 1}';
       final definition = config.installation(raw['definitionId'] as String);
       if (definition == null) continue;
+      if (!structureIsActive(raw, config)) continue;
       if (installedZone == zoneId) {
         result['light'] = result['light']! + definition.light;
       }
@@ -1940,6 +1999,11 @@ class ElevageDomain {
         'lastResolvedAt': now,
         'availableByItemId': <String, int>{}
       },
+      'maintenanceState': <String, dynamic>{
+        'status': 'ACTIVE',
+        'reason': null,
+        'lastResolvedAt': now,
+      },
     };
     return state;
   }
@@ -1983,6 +2047,7 @@ class ElevageDomain {
       if (raw is! Map) continue;
       final definition = config.installation(raw['definitionId'] as String);
       if (definition == null) continue;
+      if (!structureIsActive(raw, config)) continue;
       result['light'] = result['light']! + definition.light;
       result['temperature'] = result['temperature']! + definition.temperature;
       result['humidity'] = result['humidity']! + definition.humidity;
@@ -1990,14 +2055,146 @@ class ElevageDomain {
     return result;
   }
 
+  /// State exposed to the UI and deliberately shared with the future Mature
+  /// maintenance API. A passive structure has no hidden fuel state.
+  static bool structureIsActive(Map raw, ElevageConfig config) {
+    final specification =
+        config.consumptionFor(raw['definitionId'] as String? ?? '');
+    if (!specification.enabled || specification.mode == 'NONE') return true;
+    final maintenance = raw['maintenanceState'] as Map?;
+    return maintenance?['status'] != 'INACTIVE_NO_RESOURCE';
+  }
+
+  static Map<String, int> getMissingResources(
+      ElevageSave state, Map raw, ElevageConfig config) {
+    final specification =
+        config.consumptionFor(raw['definitionId'] as String? ?? '');
+    if (!specification.enabled || specification.mode == 'NONE') {
+      return const <String, int>{};
+    }
+    final generic = _generic(state);
+    if (specification.mode == 'ENERGY') {
+      final missingEnergy =
+          max(0, specification.energyCost - (generic['energy'] ?? 0));
+      if (missingEnergy == 0) return const <String, int>{};
+      final canConvert =
+          (generic['organic'] ?? 0) >= config.energyOrganicCost &&
+              (generic['mineral'] ?? 0) >= config.energyMineralCost;
+      return canConvert
+          ? const <String, int>{}
+          : <String, int>{
+              'ENERGY': missingEnergy,
+            };
+    }
+    final missing = <String, int>{};
+    specification.resourceCosts.forEach((itemId, quantity) {
+      final key = itemId.toLowerCase();
+      final available = generic[key] ?? 0;
+      if (available < quantity) missing[itemId] = quantity - available;
+    });
+    return missing;
+  }
+
+  static void _refreshStructureMaintenance(
+      ElevageSave state, int now, ElevageConfig config) {
+    for (final alcove in state.data['alcoves'] as List) {
+      final slots = (alcove as Map)['slots'] as List? ?? const <dynamic>[];
+      for (final raw in slots.whereType<Map>()) {
+        final specification =
+            config.consumptionFor(raw['definitionId'] as String? ?? '');
+        if (!specification.enabled || specification.mode == 'NONE') {
+          continue;
+        }
+        final intervalMs = specification.consumptionIntervalSeconds * 1000;
+        if (intervalMs <= 0) continue;
+        final maintenance = raw.putIfAbsent(
+            'maintenanceState',
+            () => <String, dynamic>{
+                  'status': 'ACTIVE',
+                  'reason': null,
+                  'lastResolvedAt': now,
+                }) as Map;
+        final last = (maintenance['lastResolvedAt'] as num?)?.toInt() ?? now;
+        if (maintenance['status'] == 'INACTIVE_NO_RESOURCE') {
+          // A refill never back-bills the time spent paused. One successful
+          // cycle restarts the structure, then its normal clock resumes.
+          if (_consumeMaintenanceCost(state, specification, config)) {
+            maintenance['status'] = 'ACTIVE';
+            maintenance['reason'] = null;
+            maintenance['lastResolvedAt'] = now;
+          }
+          continue;
+        }
+        final cycles = max(0, (now - last) ~/ intervalMs);
+        if (cycles == 0) continue;
+        var consumedCycles = 0;
+        while (consumedCycles < cycles &&
+            _consumeMaintenanceCost(state, specification, config)) {
+          consumedCycles++;
+        }
+        if (consumedCycles < cycles) {
+          maintenance['status'] = 'INACTIVE_NO_RESOURCE';
+          maintenance['reason'] = _maintenanceReason(specification);
+          // Stop precisely at depletion; later offline time is paused.
+          maintenance['lastResolvedAt'] = now;
+        } else {
+          maintenance['status'] = 'ACTIVE';
+          maintenance['reason'] = null;
+          maintenance['lastResolvedAt'] = last + consumedCycles * intervalMs;
+        }
+      }
+    }
+  }
+
+  static bool _consumeMaintenanceCost(ElevageSave state,
+      ElevageStructureConsumption specification, ElevageConfig config) {
+    final generic = _generic(state);
+    if (specification.mode == 'ENERGY') {
+      while ((generic['energy'] ?? 0) < specification.energyCost) {
+        if ((generic['organic'] ?? 0) < config.energyOrganicCost ||
+            (generic['mineral'] ?? 0) < config.energyMineralCost) {
+          return false;
+        }
+        generic['organic'] = generic['organic']! - config.energyOrganicCost;
+        generic['mineral'] = generic['mineral']! - config.energyMineralCost;
+        generic['energy'] = (generic['energy'] ?? 0) + config.energyProduced;
+      }
+      generic['energy'] = generic['energy']! - specification.energyCost;
+      return true;
+    }
+    if (specification.mode == 'DIRECT_RESOURCE' ||
+        specification.mode == 'MULTI_RESOURCE') {
+      if (specification.resourceCosts.entries.any(
+          (entry) => (generic[entry.key.toLowerCase()] ?? 0) < entry.value)) {
+        return false;
+      }
+      specification.resourceCosts.forEach((itemId, quantity) {
+        final key = itemId.toLowerCase();
+        generic[key] = generic[key]! - quantity;
+      });
+    }
+    return true;
+  }
+
+  static String _maintenanceReason(ElevageStructureConsumption specification) {
+    if (specification.mode == 'ENERGY') return 'Manque d’Énergie';
+    if (specification.resourceCosts.length == 1) {
+      final item = specification.resourceCosts.keys.single;
+      return 'Manque d’${item == 'ORGANIC' ? 'Organique' : item}';
+    }
+    return 'Ressources insuffisantes';
+  }
+
   static ElevageSave refreshAlcove(
       ElevageSave source, String alcoveId, int now, ElevageConfig config) {
     final state = source.copy();
+    _refreshStructureMaintenance(state, now, config);
     final alcove = _alcove(state, alcoveId);
     for (final raw in alcove['slots'] as List) {
       if (raw is! Map) continue;
       final definition = config.installation(raw['definitionId'] as String);
       if (definition == null) continue;
+      if (!structureIsActive(raw, config)) continue;
       if (!definition.productive) {
         raw.remove('productionState');
         continue;
@@ -2600,7 +2797,7 @@ class ElevageDomain {
           'MUSHROOM',
           'SPORE'
         ],
-      'COAST' => <String>['ALGAE', 'ALGAE_FRAGMENT', 'LIMESTONE'],
+      'COAST' => <String>['ALGAE', 'LIMESTONE'],
       _ => <String>['LIMESTONE', 'QUARTZ', 'IRON'],
     };
     final labels = switch (biome) {

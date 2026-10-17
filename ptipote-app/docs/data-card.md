@@ -41,9 +41,9 @@ idempotents ; une friandise n’est pas un repas.
 La Mini-Lisière Élevage est séparée de la Lisière Zone 0 : Forêt, Littoral ou
 Colline, durée timestampée configurable, exactement trois pistes persistées et
 un seul choix atomique. La Forêt donne Organic et ressources végétales, le
-Littoral ALGAE/ALGAE_FRAGMENT/LIMESTONE, la Colline MINERAL/LIMESTONE/QUARTZ/
+Littoral ALGAE/LIMESTONE, la Colline MINERAL/LIMESTONE/QUARTZ/
 IRON. Le Bio-fabricateur consomme réellement l’inventaire : BASSIN exige
-LIMESTONE + ALGAE_FRAGMENT, MOSS_STONE exige MOSS, et les recettes découvertes
+LIMESTONE + ALGAE, MOSS_STONE exige MOSS, et les recettes découvertes
 restent connues après consommation du composant.
 
 Les installations productives ont un stock local plafonné dérivé de timestamps
@@ -1098,3 +1098,36 @@ L’Eau n’est pas une ressource globale du Camp.
   fongiques. Elles sont ancrées à leur période biologique et persistent dans
   la configuration ; une durée Jour/Nuit modifiée ne laisse donc plus un
   sommeil exprimé en fractions fixes du cycle.
+
+# Lot 21.1 — Algue normalisée, énergie et entretien
+
+- **Algue unique.** `ALGAE_FRAGMENT` est obsolète. La migration idempotente
+  `algaeNormalizationV211` additionne ses stocks à `ALGAE`, réécrit les
+  préférences, recettes, loots et références historiques, puis ne laisse plus
+  qu’**Algue** en interface, alimentation et Recycleur (`ALGAE → 1 ORGANIC`).
+  Aucune table active ne peut créer un Fragment d’algue.
+- **Énergie de la Réserve.** `ENERGY` rejoint la Réserve commune. Le preset
+  Prototype configure `2 ORGANIC + 1 MINERAL → 10 ENERGY`. Quand une
+  structure ENERGY en a besoin, le domaine consomme d’abord l’Énergie déjà
+  disponible puis exécute cette recette entière autant de fois que nécessaire;
+  aucune conversion fractionnaire ni aucun stock négatif n’est possible. Les
+  trois valeurs sont éditables dans le Dashboard.
+- **Entretien générique.** Une structure configure `NONE`, `ENERGY`,
+  `DIRECT_RESOURCE` ou `MULTI_RESOURCE`, ses coûts, son intervalle et son
+  activation. Les coûts sont toujours prélevés dans la Réserve du Refuge. Une
+  insuffisance passe l’instance à `INACTIVE_NO_RESOURCE` : elle reste posée,
+  n’est ni détruite ni dégradée et ses effets/production s’arrêtent. Après un
+  réapprovisionnement, un cycle réussi la relance sans rétrofacturer le temps
+  de pause. Le calcul hors ligne s’arrête donc exactement à l’épuisement.
+- **Four bio-organique.** `TROU_GEOTHERMIQUE_CHAUD` migre en place vers
+  `FOUR_BIO_ORGANIQUE`, en gardant son instance et sa zone. Il conserve son
+  effet thermique local `+2` et adjacent `+1`, mais il consomme directement
+  `1 ORGANIC / 3600 s` (prototype). Sans Organique, la chaleur disparaît et sa
+  fiche indique une pause. La Ventilation utilise actuellement `1 ENERGY /
+  7200 s`; Lampe solaire, producteurs biologiques et structures de résonance
+  restent `NONE` tant que leur coût final n’est pas arbitré.
+- **Préparation Mature.** Le domaine expose l’état, les ressources manquantes
+  et le coût d’entretien; aucune recharge ou sortie autonome de Mature n’est
+  introduite dans ce lot.
+- **Points à arbitrer.** Coûts Target du Four, de la Ventilation, de
+  l’éclairage, des producteurs et des futures structures actives.

@@ -112,7 +112,7 @@ void main() {
         now: now,
         config: defaultElevageConfig);
     state = ElevageDomain.addDevInventory(state);
-    state.data['discoveredItemIds'] = <String>['LIMESTONE', 'ALGAE_FRAGMENT'];
+    state.data['discoveredItemIds'] = <String>['LIMESTONE', 'ALGAE'];
     final basin = defaultElevageConfig.recipes
         .firstWhere((recipe) => recipe.id == 'BASSIN');
     state = ElevageDomain.craft(state, basin, now + 1, defaultElevageConfig);
@@ -628,7 +628,8 @@ void main() {
     };
     final cleaned = ElevageSave.fromJson(legacy);
     final inventory = cleaned.data['inventory'] as Map;
-    expect(inventory['generic'], <String, int>{'organic': 0, 'mineral': 0});
+    expect(inventory['generic'],
+        <String, int>{'organic': 0, 'mineral': 0, 'energy': 0});
     expect(inventory['special'], <String, int>{'ROOT': 1, 'LEAF': 1});
     expect(inventory['bioPiles'], 0);
     expect(cleaned.data['qaInventoryResetV17'], isTrue);
@@ -912,7 +913,7 @@ void main() {
     }); // somme complète avant le clamp visuel 1–5.
     alcove['slots'][3] = null;
     alcove['slots'][1] = <String, dynamic>{
-      'definitionId': 'TROU_GEOTHERMIQUE_CHAUD',
+      'definitionId': 'FOUR_BIO_ORGANIQUE',
       'zoneId': 'ZONE_2',
     };
     expect(humidity()['ZONE_2'], 1);
@@ -944,7 +945,7 @@ void main() {
     expect(scale('ZONE_1', 'DAY'), 2); // ombre forte : -1 local.
     final alcove = (state.data['alcoves'] as List).first as Map;
     alcove['slots'][1] = <String, dynamic>{
-      'definitionId': 'TROU_GEOTHERMIQUE_CHAUD',
+      'definitionId': 'FOUR_BIO_ORGANIQUE',
       'zoneId': 'ZONE_2',
     };
     expect(scale('ZONE_2', 'DAY'), 5);
@@ -1846,5 +1847,132 @@ void main() {
         () => ElevageDomain.placeSceneItem(
             state, 'alcove-1', 'SEED', 'ZONE_3', now + 1, defaultElevageConfig),
         throwsStateError);
+  });
+
+  test('migration Algues fusionne le fragment legacy une seule fois', () {
+    final legacy = ElevageSave.initial(defaultElevageConfig, now: now).toJson();
+    final special = legacy['inventory']['special'] as Map;
+    special['ALGAE'] = 2;
+    special['ALGAE_FRAGMENT'] = 5;
+    (legacy['individuals'] as Map)['legacy'] = <String, dynamic>{
+      'generatedProfile': <String, dynamic>{'foodPreference': 'ALGAE_FRAGMENT'},
+    };
+    final migrated = ElevageSave.fromJson(legacy);
+    expect((migrated.data['inventory']['special'] as Map)['ALGAE'], 7);
+    expect(
+        (migrated.data['inventory']['special'] as Map)
+            .containsKey('ALGAE_FRAGMENT'),
+        isFalse);
+    expect(
+        ((migrated.data['individuals'] as Map)['legacy']['generatedProfile']
+            ['foodPreference']),
+        'ALGAE');
+    final reloaded = ElevageSave.fromJson(migrated.toJson());
+    expect((reloaded.data['inventory']['special'] as Map)['ALGAE'], 7);
+  });
+
+  test('énergie convertit Organic et Mineral seulement quand nécessaire', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final generic = state.data['inventory']['generic'] as Map;
+    generic['organic'] = 4;
+    generic['mineral'] = 2;
+    generic['energy'] = 0;
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][0] = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'zoneId': 'ZONE_1',
+      'maintenanceState': <String, dynamic>{
+        'status': 'ACTIVE',
+        'lastResolvedAt': now,
+      },
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 4).inMilliseconds, defaultElevageConfig);
+    final after = state.data['inventory']['generic'] as Map;
+    expect(after['organic'], 2);
+    expect(after['mineral'], 1);
+    expect(after['energy'], 8); // 10 created, then two 1-Energy ticks.
+  });
+
+  test('structure ENERGY en pause ne crée ni énergie ni stock négatif', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final generic = state.data['inventory']['generic'] as Map;
+    generic['organic'] = 1;
+    generic['mineral'] = 0;
+    generic['energy'] = 0;
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    final installation = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'zoneId': 'ZONE_2',
+      'maintenanceState': <String, dynamic>{
+        'status': 'ACTIVE',
+        'lastResolvedAt': now,
+      },
+    };
+    alcove['slots'][1] = installation;
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 2).inMilliseconds, defaultElevageConfig);
+    expect((state.data['inventory']['generic'] as Map)['energy'], 0);
+    expect((state.data['inventory']['generic'] as Map)['organic'], 1);
+    final refreshedInstallation =
+        ((state.data['alcoves'] as List).first as Map)['slots'][1] as Map;
+    expect(refreshedInstallation['maintenanceState']['status'],
+        'INACTIVE_NO_RESOURCE');
+  });
+
+  test('Four bio-organique consomme Organic, s’arrête et redémarre', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final generic = state.data['inventory']['generic'] as Map;
+    generic['organic'] = 1;
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'FOUR_BIO_ORGANIQUE',
+      'zoneId': 'ZONE_2',
+      'maintenanceState': <String, dynamic>{
+        'status': 'ACTIVE',
+        'lastResolvedAt': now,
+      },
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 1).inMilliseconds, defaultElevageConfig);
+    expect((state.data['inventory']['generic'] as Map)['organic'], 0);
+    expect(
+        ElevageDomain.zoneEnvironment(
+            state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+            now: now, phaseOverride: 'NIGHT')['temperature'],
+        4);
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 2).inMilliseconds, defaultElevageConfig);
+    expect(
+        ElevageDomain.zoneEnvironment(
+            state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+            now: now, phaseOverride: 'NIGHT')['temperature'],
+        2);
+    (state.data['inventory']['generic'] as Map)['organic'] = 1;
+    state = ElevageDomain.refreshAlcove(
+        state,
+        'alcove-1',
+        now + const Duration(hours: 2).inMilliseconds + 1,
+        defaultElevageConfig);
+    expect(
+        ElevageDomain.zoneEnvironment(
+            state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+            now: now, phaseOverride: 'NIGHT')['temperature'],
+        4);
+  });
+
+  test('migration Trou géothermique conserve l’installation en Four', () {
+    final legacy = ElevageSave.initial(defaultElevageConfig, now: now).toJson();
+    final alcove = (legacy['alcoves'] as List).first as Map;
+    alcove['slots'][1] = <String, dynamic>{
+      'instanceId': 'legacy-hole',
+      'definitionId': 'TROU_GEOTHERMIQUE_CHAUD',
+      'zoneId': 'ZONE_2',
+    };
+    final migrated = ElevageSave.fromJson(legacy);
+    final installed =
+        ((migrated.data['alcoves'] as List).first as Map)['slots'][1] as Map;
+    expect(installed['instanceId'], 'legacy-hole');
+    expect(installed['definitionId'], 'FOUR_BIO_ORGANIQUE');
   });
 }

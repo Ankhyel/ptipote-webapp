@@ -1085,7 +1085,8 @@ class _IndividualPageState extends State<_IndividualPage> {
                           context,
                           widget.controller.config,
                           definition,
-                          localEnvironment)),
+                          localEnvironment,
+                          instance: raw)),
                 if (definition?.resonanceMaterial != null ||
                     definition?.resonanceFamily != null)
                   ListTile(
@@ -1676,6 +1677,17 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                   config.copyWith(fungalTransitionSleepMinutes: value)),
           _number(context, 'Taille d’une pile', config.inventoryStackSize,
               (value) => config = config.copyWith(inventoryStackSize: value)),
+          _heading('Énergie du Refuge'),
+          const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                  'Conversion automatique : les structures utilisent d’abord l’Énergie stockée, puis cette recette si nécessaire.')),
+          _number(context, 'Organique / conversion', config.energyOrganicCost,
+              (value) => config = config.copyWith(energyOrganicCost: value)),
+          _number(context, 'Minéral / conversion', config.energyMineralCost,
+              (value) => config = config.copyWith(energyMineralCost: value)),
+          _number(context, 'Énergie produite', config.energyProduced,
+              (value) => config = config.copyWith(energyProduced: value)),
           _heading('Séjour dans une zone'),
           _number(
               context,
@@ -1758,6 +1770,18 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                     onTap: () =>
                         _editProducerOutput(context, entry.key, output),
                   ))),
+          _heading('Entretien des structures actives'),
+          const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                  'Les coûts sont prélevés dans la Réserve commune. NONE laisse une structure passive.')),
+          ...config.structureConsumptions.entries.map((entry) => ListTile(
+                title: Text(ElevagePresentation.installationLabel(entry.key)),
+                subtitle: Text(_consumptionSummary(entry.value)),
+                trailing: const Icon(Icons.tune),
+                onTap: () =>
+                    _editStructureConsumption(context, entry.key, entry.value),
+              )),
           _heading('Co-élevage et Sourcier'),
           _number(
               context,
@@ -1876,6 +1900,136 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     return '☀️ ${_signed(definition.light)} · '
         '🌡️ ${_signed(definition.temperature)} · '
         '💧 ${_signed(definition.humidity)}';
+  }
+
+  String _consumptionSummary(ElevageStructureConsumption consumption) {
+    if (consumption.mode == 'NONE') return 'Passive';
+    if (!consumption.enabled) return 'Désactivée';
+    final cost = consumption.mode == 'ENERGY'
+        ? '${consumption.energyCost} Énergie'
+        : consumption.resourceCosts.entries
+            .map((entry) =>
+                '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}')
+            .join(' · ');
+    return '${consumption.mode} · $cost / ${consumption.consumptionIntervalSeconds}s';
+  }
+
+  Future<void> _editStructureConsumption(BuildContext context,
+      String installationId, ElevageStructureConsumption current) async {
+    var mode = current.mode;
+    var enabled = current.enabled;
+    final energy = TextEditingController(text: '${current.energyCost}');
+    final organic =
+        TextEditingController(text: '${current.resourceCosts['ORGANIC'] ?? 0}');
+    final mineral =
+        TextEditingController(text: '${current.resourceCosts['MINERAL'] ?? 0}');
+    final interval =
+        TextEditingController(text: '${current.consumptionIntervalSeconds}');
+    ElevageStructureConsumption? next;
+    try {
+      next = await showDialog<ElevageStructureConsumption>(
+          context: context,
+          builder: (dialogContext) => StatefulBuilder(
+              builder: (dialogContext, setLocal) => AlertDialog(
+                    title: Text(
+                        '${ElevagePresentation.installationLabel(installationId)} · entretien'),
+                    content: SingleChildScrollView(
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                      DropdownButtonFormField<String>(
+                          initialValue: mode,
+                          decoration: const InputDecoration(labelText: 'Mode'),
+                          items: const <String>[
+                            'NONE',
+                            'ENERGY',
+                            'DIRECT_RESOURCE',
+                            'MULTI_RESOURCE'
+                          ]
+                              .map((value) => DropdownMenuItem(
+                                  value: value, child: Text(value)))
+                              .toList(),
+                          onChanged: (value) =>
+                              setLocal(() => mode = value ?? mode)),
+                      SwitchListTile(
+                          title: const Text('Activé'),
+                          value: enabled,
+                          onChanged: (value) =>
+                              setLocal(() => enabled = value)),
+                      if (mode == 'ENERGY')
+                        TextField(
+                            controller: energy,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Coût Énergie')),
+                      if (mode == 'DIRECT_RESOURCE' || mode == 'MULTI_RESOURCE')
+                        TextField(
+                            controller: organic,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Coût Organique')),
+                      if (mode == 'MULTI_RESOURCE')
+                        TextField(
+                            controller: mineral,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Coût Minéral')),
+                      if (mode != 'NONE')
+                        TextField(
+                            controller: interval,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Intervalle (s)')),
+                    ])),
+                    actions: <Widget>[
+                      TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Annuler')),
+                      FilledButton(
+                          onPressed: () {
+                            final energyCost = int.tryParse(energy.text) ?? 0;
+                            final organicCost = int.tryParse(organic.text) ?? 0;
+                            final mineralCost = int.tryParse(mineral.text) ?? 0;
+                            final seconds = int.tryParse(interval.text) ?? 0;
+                            if (mode != 'NONE' &&
+                                (seconds <= 0 ||
+                                    (mode == 'ENERGY' && energyCost <= 0) ||
+                                    (mode != 'ENERGY' && organicCost <= 0) ||
+                                    (mode == 'MULTI_RESOURCE' &&
+                                        mineralCost <= 0))) {
+                              return;
+                            }
+                            Navigator.pop(
+                                dialogContext,
+                                ElevageStructureConsumption(
+                                  mode: mode,
+                                  enabled: enabled,
+                                  energyCost: mode == 'ENERGY' ? energyCost : 0,
+                                  resourceCosts: mode == 'DIRECT_RESOURCE'
+                                      ? <String, int>{'ORGANIC': organicCost}
+                                      : mode == 'MULTI_RESOURCE'
+                                          ? <String, int>{
+                                              'ORGANIC': organicCost,
+                                              'MINERAL': mineralCost,
+                                            }
+                                          : const <String, int>{},
+                                  consumptionIntervalSeconds:
+                                      mode == 'NONE' ? 0 : seconds,
+                                ));
+                          },
+                          child: const Text('Valider')),
+                    ],
+                  )));
+    } finally {
+      energy.dispose();
+      organic.dispose();
+      mineral.dispose();
+      interval.dispose();
+    }
+    if (!context.mounted || next == null) return;
+    setState(() => config = config.copyWith(structureConsumptions: {
+          ...config.structureConsumptions,
+          installationId: next!,
+        }));
   }
 
   Future<void> _editInstallationEffects(
@@ -3129,7 +3283,8 @@ Future<void> _showInstallationDetails(
     BuildContext context,
     ElevageConfig config,
     ElevageInstallationDefinition definition,
-    Map<String, int> currentEnvironment) async {
+    Map<String, int> currentEnvironment,
+    {Map? instance}) async {
   final recipe = config.recipes
       .where((entry) => entry.installationId == definition.id)
       .firstOrNull;
@@ -3146,6 +3301,21 @@ Future<void> _showInstallationDetails(
           ...recipe.special.entries.map((entry) =>
               '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}'),
         ].join(' · ');
+  final consumption = config.consumptionFor(definition.id);
+  final active =
+      instance == null || ElevageDomain.structureIsActive(instance, config);
+  final maintenance =
+      instance == null ? null : instance['maintenanceState'] as Map?;
+  final pauseReason =
+      maintenance?['reason'] as String? ?? 'Ressources insuffisantes';
+  final consumptionText = switch (consumption.mode) {
+    'ENERGY' =>
+      '${consumption.energyCost} Énergie / ${consumption.consumptionIntervalSeconds}s',
+    'DIRECT_RESOURCE' ||
+    'MULTI_RESOURCE' =>
+      '${consumption.resourceCosts.entries.map((entry) => '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}').join(' · ')} / ${consumption.consumptionIntervalSeconds}s',
+    _ => 'Aucun entretien',
+  };
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -3164,6 +3334,14 @@ Future<void> _showInstallationDetails(
               ]),
               const SizedBox(height: 12),
               Text(definition.description),
+              if (consumption.mode != 'NONE') ...<Widget>[
+                const SizedBox(height: 12),
+                Text(active ? 'Actif' : 'En pause',
+                    style: Theme.of(sheetContext).textTheme.titleSmall),
+                Text(active
+                    ? 'Consomme : $consumptionText'
+                    : '$pauseReason\nConsomme : $consumptionText'),
+              ],
               const SizedBox(height: 16),
               Text('Fabrication',
                   style: Theme.of(sheetContext).textTheme.titleSmall),
@@ -3222,6 +3400,7 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
           ...special.map((key, value) => MapEntry(key as String, value as int)),
           'ORGANIC': (generic['organic'] as num?)?.toInt() ?? 0,
           'MINERAL': (generic['mineral'] as num?)?.toInt() ?? 0,
+          'ENERGY': (generic['energy'] as num?)?.toInt() ?? 0,
         }..removeWhere((_, amount) => amount <= 0);
         final stacks = <_ElevageInventoryStack>[];
         for (final entry in items.entries) {

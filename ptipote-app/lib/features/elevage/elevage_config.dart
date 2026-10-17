@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-const int elevageConfigSchemaVersion = 5;
+const int elevageConfigSchemaVersion = 6;
 
 /// Every non-generic resource that can be selected as an explicit recipe
 /// component in the local Élevage Dashboard. Organic and Mineral stay as their
@@ -20,7 +20,6 @@ const List<String> elevageRecipeSpecialComponentIds = <String>[
   'SEED',
   'SPORE',
   'SPROUT',
-  'ALGAE_FRAGMENT',
 ];
 
 enum ElevagePreset { prototype, target }
@@ -156,9 +155,13 @@ class ElevageRecipe {
       };
 
   factory ElevageRecipe.fromJson(Map<String, dynamic> json) => ElevageRecipe(
-        id: json['id'] as String,
+        id: json['id'] == 'TROU_GEOTHERMIQUE_CHAUD'
+            ? 'FOUR_BIO_ORGANIQUE'
+            : json['id'] as String,
         label: json['label'] as String,
-        installationId: json['installationId'] as String,
+        installationId: json['installationId'] == 'TROU_GEOTHERMIQUE_CHAUD'
+            ? 'FOUR_BIO_ORGANIQUE'
+            : json['installationId'] as String,
         organic: (json['organic'] as num).toInt(),
         mineral: (json['mineral'] as num).toInt(),
         special: (json['special'] as Map? ?? const <String, dynamic>{}).map(
@@ -199,6 +202,50 @@ class ElevageRecycleRule {
             json['recycleOutputType'] as String? ?? fallback.recycleOutputType,
         recycleOutputQuantity: _nonNegative(
             json['recycleOutputQuantity'], fallback.recycleOutputQuantity),
+      );
+}
+
+/// A structure may be passive, use stored Energy, or consume reserve matter
+/// directly. The state is persisted on each placed structure, while costs stay
+/// editable and serialised at the Refuge configuration level.
+class ElevageStructureConsumption {
+  const ElevageStructureConsumption({
+    this.mode = 'NONE',
+    this.energyCost = 0,
+    this.resourceCosts = const <String, int>{},
+    this.consumptionIntervalSeconds = 0,
+    this.enabled = true,
+  });
+
+  final String mode;
+  final int energyCost;
+  final Map<String, int> resourceCosts;
+  final int consumptionIntervalSeconds;
+  final bool enabled;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'mode': mode,
+        'energyCost': energyCost,
+        'resourceCosts': resourceCosts,
+        'consumptionIntervalSeconds': consumptionIntervalSeconds,
+        'enabled': enabled,
+      };
+
+  factory ElevageStructureConsumption.fromJson(
+          Map<String, dynamic> json, ElevageStructureConsumption fallback) =>
+      ElevageStructureConsumption(
+        mode: json['mode'] as String? ?? fallback.mode,
+        energyCost: _nonNegative(json['energyCost'], fallback.energyCost),
+        resourceCosts: (json['resourceCosts'] as Map?)
+                ?.map((key, value) => MapEntry('$key', _nonNegative(value, 0)))
+                .cast<String, int>() ??
+            fallback.resourceCosts,
+        consumptionIntervalSeconds: _nonNegative(
+            json['consumptionIntervalSeconds'],
+            fallback.consumptionIntervalSeconds),
+        enabled: json['enabled'] is bool
+            ? json['enabled'] as bool
+            : fallback.enabled,
       );
 }
 
@@ -372,6 +419,9 @@ class ElevageConfig {
     required this.inventoryStackSize,
     required this.dayDurationHours,
     required this.nightDurationHours,
+    required this.energyOrganicCost,
+    required this.energyMineralCost,
+    required this.energyProduced,
     required this.vegetalSleepMinutes,
     required this.mineralDaySleepMinutes,
     required this.mineralLateNightSleepMinutes,
@@ -415,6 +465,7 @@ class ElevageConfig {
     required this.natureProfiles,
     this.producerOutputs = const <String, List<ElevageProductionOutput>>{},
     this.installationEffects = const <String, Map<String, int>>{},
+    this.structureConsumptions = const <String, ElevageStructureConsumption>{},
   });
 
   final String revision;
@@ -443,6 +494,9 @@ class ElevageConfig {
   final int inventoryStackSize;
   final int dayDurationHours;
   final int nightDurationHours;
+  final int energyOrganicCost;
+  final int energyMineralCost;
+  final int energyProduced;
 
   /// Durées réglables des fenêtres circadiennes. Les profils conservent leur
   /// position biologique (nuit, début de jour, etc.), mais ne dépendent plus
@@ -500,6 +554,7 @@ class ElevageConfig {
   /// furniture and decorations expose wellbeing only. Individual affinity
   /// remains part of the domain, not of the configuration UI.
   final Map<String, Map<String, int>> installationEffects;
+  final Map<String, ElevageStructureConsumption> structureConsumptions;
 
   int get babyMinimumHours => preset == ElevagePreset.prototype ? 24 : 48;
   int get intermediateMinimumHours =>
@@ -518,6 +573,9 @@ class ElevageConfig {
       individual['nature'] as String? ?? 'RESONANCE');
 
   ElevageRecycleRule? recycleRule(String itemId) => recycleRules[itemId];
+  ElevageStructureConsumption consumptionFor(String installationId) =>
+      structureConsumptions[installationId] ??
+      const ElevageStructureConsumption();
 
   List<ElevageInstallationDefinition> get _defaultInstallations =>
       <ElevageInstallationDefinition>[
@@ -653,9 +711,10 @@ class ElevageConfig {
           humidity: -2,
         ),
         const ElevageInstallationDefinition(
-          id: 'TROU_GEOTHERMIQUE_CHAUD',
-          label: 'Trou géothermique chaud',
-          description: 'Une ouverture chaude qui réchauffe l’espace.',
+          id: 'FOUR_BIO_ORGANIQUE',
+          label: 'Four bio-organique',
+          description:
+              'Un four vivant qui réchauffe l’espace en consommant de l’Organique.',
           light: 0,
           temperature: 2,
           humidity: -1,
@@ -914,6 +973,9 @@ class ElevageConfig {
     int? inventoryStackSize,
     int? dayDurationHours,
     int? nightDurationHours,
+    int? energyOrganicCost,
+    int? energyMineralCost,
+    int? energyProduced,
     int? vegetalSleepMinutes,
     int? mineralDaySleepMinutes,
     int? mineralLateNightSleepMinutes,
@@ -957,6 +1019,7 @@ class ElevageConfig {
     List<ElevageNatureProfile>? natureProfiles,
     Map<String, List<ElevageProductionOutput>>? producerOutputs,
     Map<String, Map<String, int>>? installationEffects,
+    Map<String, ElevageStructureConsumption>? structureConsumptions,
   }) =>
       ElevageConfig(
         revision: revision ?? this.revision,
@@ -990,6 +1053,9 @@ class ElevageConfig {
         inventoryStackSize: inventoryStackSize ?? this.inventoryStackSize,
         dayDurationHours: dayDurationHours ?? this.dayDurationHours,
         nightDurationHours: nightDurationHours ?? this.nightDurationHours,
+        energyOrganicCost: energyOrganicCost ?? this.energyOrganicCost,
+        energyMineralCost: energyMineralCost ?? this.energyMineralCost,
+        energyProduced: energyProduced ?? this.energyProduced,
         vegetalSleepMinutes: vegetalSleepMinutes ?? this.vegetalSleepMinutes,
         mineralDaySleepMinutes:
             mineralDaySleepMinutes ?? this.mineralDaySleepMinutes,
@@ -1069,6 +1135,8 @@ class ElevageConfig {
                         .toList(growable: false)))
                 : this.producerOutputs),
         installationEffects: installationEffects ?? this.installationEffects,
+        structureConsumptions:
+            structureConsumptions ?? this.structureConsumptions,
       );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -1099,6 +1167,9 @@ class ElevageConfig {
         'inventoryStackSize': inventoryStackSize,
         'dayDurationHours': dayDurationHours,
         'nightDurationHours': nightDurationHours,
+        'energyOrganicCost': energyOrganicCost,
+        'energyMineralCost': energyMineralCost,
+        'energyProduced': energyProduced,
         'vegetalSleepMinutes': vegetalSleepMinutes,
         'mineralDaySleepMinutes': mineralDaySleepMinutes,
         'mineralLateNightSleepMinutes': mineralLateNightSleepMinutes,
@@ -1148,6 +1219,9 @@ class ElevageConfig {
             MapEntry(installation,
                 outputs.map((output) => output.toJson()).toList())),
         'installationEffects': installationEffects,
+        'structureConsumptions': structureConsumptions.map(
+            (installationId, consumption) =>
+                MapEntry(installationId, consumption.toJson())),
       };
 
   factory ElevageConfig.fromJson(Map<String, dynamic> json) {
@@ -1197,6 +1271,11 @@ class ElevageConfig {
           _positive(json['dayDurationHours'], base.dayDurationHours),
       nightDurationHours:
           _positive(json['nightDurationHours'], base.nightDurationHours),
+      energyOrganicCost:
+          _positive(json['energyOrganicCost'], base.energyOrganicCost),
+      energyMineralCost:
+          _positive(json['energyMineralCost'], base.energyMineralCost),
+      energyProduced: _positive(json['energyProduced'], base.energyProduced),
       vegetalSleepMinutes:
           _positive(json['vegetalSleepMinutes'], base.vegetalSleepMinutes),
       mineralDaySleepMinutes: _positive(
@@ -1297,6 +1376,8 @@ class ElevageConfig {
           _producerOutputs(json['producerOutputs'], base.producerOutputs),
       installationEffects: _installationEffects(
           json['installationEffects'], base.installationEffects),
+      structureConsumptions: _structureConsumptions(
+          json['structureConsumptions'], base.structureConsumptions),
     );
     validateElevageConfig(config);
     return config;
@@ -1342,6 +1423,19 @@ Map<String, ElevageRecycleRule> _recycleRules(
         Map<String, dynamic>.from(entry.value as Map), fallbackRule);
   }
   return <String, ElevageRecycleRule>{...fallback, ...result};
+}
+
+Map<String, ElevageStructureConsumption> _structureConsumptions(
+    Object? value, Map<String, ElevageStructureConsumption> fallback) {
+  if (value is! Map) return fallback;
+  final result = <String, ElevageStructureConsumption>{};
+  for (final entry in value.entries) {
+    final defaultValue = fallback['${entry.key}'];
+    if (defaultValue == null || entry.value is! Map) continue;
+    result['${entry.key}'] = ElevageStructureConsumption.fromJson(
+        Map<String, dynamic>.from(entry.value as Map), defaultValue);
+  }
+  return <String, ElevageStructureConsumption>{...fallback, ...result};
 }
 
 Map<String, List<ElevageProductionOutput>> _producerOutputs(
@@ -1447,6 +1541,24 @@ void validateElevageConfig(ElevageConfig config) {
             .contains(rule.recycleOutputType) ||
         rule.recycleOutputQuantity <= 0;
   });
+  const consumptionModes = <String>{
+    'NONE',
+    'ENERGY',
+    'DIRECT_RESOURCE',
+    'MULTI_RESOURCE',
+  };
+  final invalidConsumption = config.structureConsumptions.values.any((entry) =>
+      !consumptionModes.contains(entry.mode) ||
+      (entry.mode == 'ENERGY' &&
+          (entry.energyCost <= 0 || entry.consumptionIntervalSeconds <= 0)) ||
+      (entry.mode == 'DIRECT_RESOURCE' &&
+          (entry.resourceCosts.length != 1 ||
+              entry.resourceCosts.values.any((value) => value <= 0) ||
+              entry.consumptionIntervalSeconds <= 0)) ||
+      (entry.mode == 'MULTI_RESOURCE' &&
+          (entry.resourceCosts.isEmpty ||
+              entry.resourceCosts.values.any((value) => value <= 0) ||
+              entry.consumptionIntervalSeconds <= 0)));
   if (config.hungerNormalHours > config.hungerHungryHours ||
       config.hungerHungryHours > config.hungerVeryHungryHours ||
       config.suspectedThreshold > config.confirmedThreshold ||
@@ -1475,6 +1587,9 @@ void validateElevageConfig(ElevageConfig config) {
       config.baseStayMatureSeconds <= 0 ||
       config.minStaySeconds <= 0 ||
       config.resonanceGainPerUse <= 0 ||
+      config.energyOrganicCost <= 0 ||
+      config.energyMineralCost <= 0 ||
+      config.energyProduced <= 0 ||
       config.vegetalSleepMinutes <= 0 ||
       config.mineralDaySleepMinutes <= 0 ||
       config.mineralLateNightSleepMinutes <= 0 ||
@@ -1488,6 +1603,7 @@ void validateElevageConfig(ElevageConfig config) {
         config.fungalTransitionSleepMinutes,
       ].any((minutes) => minutes > config.dayNightCycleHours * 60) ||
       invalidRecycleRules ||
+      invalidConsumption ||
       config.vocalizations.values.any((value) => value.trim().isEmpty) ||
       config.natureProfiles.length != 3 ||
       config.natureProfiles.map((profile) => profile.id).toSet().length !=
@@ -1534,6 +1650,9 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
   inventoryStackSize: 12,
   dayDurationHours: 4,
   nightDurationHours: 2,
+  energyOrganicCost: 2,
+  energyMineralCost: 1,
+  energyProduced: 10,
   vegetalSleepMinutes: 120,
   // Résonance dort à la fin de nuit puis au début du jour. Ces valeurs font
   // notamment un réveil vers 2 h 30 avec un cycle de Jour 3 h / Nuit 1 h.
@@ -1617,10 +1736,6 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         recyclable: true,
         recycleOutputType: 'ORGANIC',
         recycleOutputQuantity: 1),
-    'ALGAE_FRAGMENT': ElevageRecycleRule(
-        recyclable: true,
-        recycleOutputType: 'ORGANIC',
-        recycleOutputQuantity: 1),
     'SPROUT': ElevageRecycleRule(
         recyclable: true,
         recycleOutputType: 'ORGANIC',
@@ -1637,6 +1752,20 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         recyclable: true,
         recycleOutputType: 'MINERAL',
         recycleOutputQuantity: 1),
+  },
+  structureConsumptions: <String, ElevageStructureConsumption>{
+    // Prototype values: visible during a TestFlight session without rapidly
+    // emptying a normal Refuge reserve. Target balance remains open.
+    'FOUR_BIO_ORGANIQUE': ElevageStructureConsumption(
+      mode: 'DIRECT_RESOURCE',
+      resourceCosts: <String, int>{'ORGANIC': 1},
+      consumptionIntervalSeconds: 3600,
+    ),
+    'VENTILATION': ElevageStructureConsumption(
+      mode: 'ENERGY',
+      energyCost: 1,
+      consumptionIntervalSeconds: 7200,
+    ),
   },
   producerOutputs: <String, List<ElevageProductionOutput>>{
     'CULTURE_POTAGERE': <ElevageProductionOutput>[
@@ -1789,9 +1918,9 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         organic: 2,
         mineral: 5),
     ElevageRecipe(
-        id: 'TROU_GEOTHERMIQUE_CHAUD',
-        label: 'Trou géothermique chaud',
-        installationId: 'TROU_GEOTHERMIQUE_CHAUD',
+        id: 'FOUR_BIO_ORGANIQUE',
+        label: 'Four bio-organique',
+        installationId: 'FOUR_BIO_ORGANIQUE',
         organic: 0,
         mineral: 7),
     ElevageRecipe(
@@ -1812,8 +1941,8 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         installationId: 'BASSIN',
         organic: 2,
         mineral: 10,
-        special: <String, int>{'LIMESTONE': 1, 'ALGAE_FRAGMENT': 1},
-        unlockItems: <String>['LIMESTONE', 'ALGAE_FRAGMENT']),
+        special: <String, int>{'LIMESTONE': 1, 'ALGAE': 1},
+        unlockItems: <String>['LIMESTONE', 'ALGAE']),
     ElevageRecipe(
         id: 'MOSS_STONE',
         label: 'Pierre de mousse',

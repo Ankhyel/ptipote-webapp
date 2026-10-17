@@ -21,11 +21,10 @@ class ElevagePresentation {
     'QUARTZ': _ItemVisual('Quartz', Icons.diamond_outlined, 'Matériaux'),
     'ORGANIC': _ItemVisual('Organique', Icons.spa_outlined, 'Ressources'),
     'MINERAL': _ItemVisual('Minéral', Icons.category_outlined, 'Ressources'),
+    'ENERGY': _ItemVisual('Énergie', Icons.bolt_outlined, 'Ressources'),
     'SEED': _ItemVisual('Graine', Icons.grain_outlined, 'Ressources'),
     'SPORE': _ItemVisual('Spore', Icons.bubble_chart_outlined, 'Ressources'),
     'SPROUT': _ItemVisual('Pousse', Icons.yard_outlined, 'Ressources'),
-    'ALGAE_FRAGMENT': _ItemVisual(
-        'Fragment d’algue', Icons.water_drop_outlined, 'Ressources'),
   };
 
   static String itemLabel(String id) => _items[id]?.label ?? 'Objet inconnu';
@@ -62,7 +61,7 @@ class ElevagePresentation {
         'ABRI_FIBREUX' => 'Abri fibreux',
         'ABRI_MINERAL_PROFOND' => 'Abri minéral profond',
         'VENTILATION' => 'Ventilation',
-        'TROU_GEOTHERMIQUE_CHAUD' => 'Trou géothermique chaud',
+        'FOUR_BIO_ORGANIQUE' => 'Four bio-organique',
         'TOIT_SERRE' => 'Toit de serre',
         'HAMAC' => 'Hamac',
         'NID_COUCHETTE' => 'Nid / couchette',
@@ -97,6 +96,7 @@ class ElevagePresentation {
         'COLONIE_MYCELIENNE' => Icons.hub_outlined,
         'LAMPE_SOLAIRE' => Icons.light_mode_outlined,
         'VENTILATION' => Icons.air_outlined,
+        'FOUR_BIO_ORGANIQUE' => Icons.local_fire_department_outlined,
         'TOIT_SERRE' => Icons.roofing_outlined,
         'HAMAC' || 'NID_COUCHETTE' => Icons.bed_outlined,
         'POTAGER_VERTICAL' => Icons.yard_outlined,

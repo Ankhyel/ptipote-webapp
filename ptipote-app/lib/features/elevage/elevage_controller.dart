@@ -33,6 +33,13 @@ class ElevageController extends ChangeNotifier {
     state = await _repository.loadSave();
     if (state != null) {
       state = ElevageDomain.processReturns(state!, _now);
+      // Resolve every local producer and the shared maintenance ledger on
+      // return from background. The domain caps consumption at depletion, so
+      // an offline absence can never create an energy debt.
+      for (final alcove in state!.data['alcoves'] as List) {
+        state = ElevageDomain.refreshAlcove(
+            state!, (alcove as Map)['id'] as String, _now, config);
+      }
       await _persist();
     }
     loading = false;
