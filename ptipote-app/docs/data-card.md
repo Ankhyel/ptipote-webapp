@@ -1067,3 +1067,34 @@ L’Eau n’est pas une ressource globale du Camp.
   zone favorite ou sûre connue lorsqu’elle est disponible. Les signaux
   environnementaux sont dérivés de la courbe réelle de Nature : Résonance à
   `3/3/2` peut ainsi signaler qu’il recherche davantage de chaleur.
+# Lot 21.0 — Réserve commune et Recycleur V1
+
+- La **Réserve du Refuge** est l'unique stock économique portable Élevage :
+  ressources spécifiques, Organique, Minéral et Bio-piles. Elle est commune à
+  toutes les Alcôves.
+- Restent locaux : instances d'objets posés (`placedItemInstanceId`), meubles,
+  décorations, structures et leurs stocks de production, ainsi que tout objet
+  actuellement porté par un P'TIPOTE.
+- La migration `sharedReserveMigrationV21` absorbe une fois les éventuels
+  inventaires historiques portés par des Alcôves, puis retire ces champs. Les
+  objets de scène et stocks producteurs ne sont jamais transférés.
+- Les producteurs gardent leurs stocks physiques locaux ; une récolte unitaire
+  les transfère vers la Réserve.
+- Le Recycleur V1 agit seulement depuis la Réserve. Une ressource spécifique
+  recyclable devient une matière terminale : organique ou minérale. Les règles
+  par item (`recyclable`, `recycleOutputType`, `recycleOutputQuantity`) vivent
+  dans la configuration et sont sérialisées pour une édition Dashboard future.
+- V1 : Fruit, Racine, Feuille, Graine, Spore, Mousse, Champignon, Algues,
+  Fragment d'algue et Pousse donnent 1 Organique ; Fer, Calcaire et Quartz
+  donnent 1 Minéral. Organique et Minéral ne sont pas recyclables.
+- Les objets libres posables sont validés par `placeableSceneItems`. Fruit,
+  nourriture, friandises et matériaux compatibles créent une instance physique
+  cible exacte ; Graine et Spore restent non posables tant qu'elles n'ont pas
+  de comportement de scène.
+- Limites V1 : pas de recyclage de structure/meuble/décoration, pas de
+  démontage à récupération partielle, pas d'énergie ni de Lisière V2.
+- Les fenêtres de sommeil sont configurables dans le Dashboard en minutes :
+  nuit végétale, début de jour et fin de nuit minéraux, puis deux phases
+  fongiques. Elles sont ancrées à leur période biologique et persistent dans
+  la configuration ; une durée Jour/Nuit modifiée ne laisse donc plus un
+  sommeil exprimé en fractions fixes du cycle.

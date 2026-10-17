@@ -1245,6 +1245,13 @@ class _IndividualPageState extends State<_IndividualPage> {
                 onHabitatItemTap: (item) => _openHabitatItemActions(item),
                 onZoneTap: (zoneId) =>
                     _pendingPlacementItem == null ? null : _placeInZone(zoneId),
+                onSceneItemDrop: (itemId, zoneId) {
+                  if (!ElevageDomain.placeableSceneItems.contains(itemId)) {
+                    return;
+                  }
+                  setState(() => _pendingPlacementItem = itemId);
+                  _placeInZone(zoneId);
+                },
                 onZoneHoldStart: _startFollowHold,
                 onZoneHoldEnd: _endFollowHold,
                 onPtipoteTap: _onPtipoteTap,
@@ -1637,6 +1644,36 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               (value) => config = config.copyWith(dayDurationHours: value)),
           _number(context, 'Nuit (h)', config.nightDurationHours,
               (value) => config = config.copyWith(nightDurationHours: value)),
+          _heading('Rythmes de sommeil'),
+          _number(
+              context,
+              'Végétal · sommeil nocturne (min)',
+              config.vegetalSleepMinutes,
+              (value) => config = config.copyWith(vegetalSleepMinutes: value)),
+          _number(
+              context,
+              'Minéral · début du jour (min)',
+              config.mineralDaySleepMinutes,
+              (value) =>
+                  config = config.copyWith(mineralDaySleepMinutes: value)),
+          _number(
+              context,
+              'Minéral · fin de nuit (min)',
+              config.mineralLateNightSleepMinutes,
+              (value) => config =
+                  config.copyWith(mineralLateNightSleepMinutes: value)),
+          _number(
+              context,
+              'Fongique · milieu du jour (min)',
+              config.fungalMidDaySleepMinutes,
+              (value) =>
+                  config = config.copyWith(fungalMidDaySleepMinutes: value)),
+          _number(
+              context,
+              'Fongique · transition jour/nuit (min)',
+              config.fungalTransitionSleepMinutes,
+              (value) => config =
+                  config.copyWith(fungalTransitionSleepMinutes: value)),
           _number(context, 'Taille d’une pile', config.inventoryStackSize,
               (value) => config = config.copyWith(inventoryStackSize: value)),
           _heading('Séjour dans une zone'),
@@ -2424,6 +2461,7 @@ class _AlcoveScene extends StatefulWidget {
     required this.onSceneItemTap,
     required this.onHabitatItemTap,
     required this.onZoneTap,
+    required this.onSceneItemDrop,
     required this.onZoneHoldStart,
     required this.onZoneHoldEnd,
     required this.onPtipoteTap,
@@ -2459,6 +2497,7 @@ class _AlcoveScene extends StatefulWidget {
   final ValueChanged<Map> onSceneItemTap;
   final ValueChanged<Map> onHabitatItemTap;
   final ValueChanged<String>? onZoneTap;
+  final void Function(String itemId, String zoneId) onSceneItemDrop;
   final ValueChanged<String> onZoneHoldStart;
   final VoidCallback onZoneHoldEnd;
   final VoidCallback onPtipoteTap;
@@ -2568,46 +2607,55 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
               children: widget.zones.asMap().entries.map((entry) {
                 final zone = entry.value;
                 return Expanded(
-                  child: GestureDetector(
-                    onLongPressStart: (_) => widget.onZoneHoldStart(zone.id),
-                    onLongPressEnd: (_) => widget.onZoneHoldEnd(),
-                    onLongPressCancel: widget.onZoneHoldEnd,
-                    // A normal tap only matters while the player is placing
-                    // an item. It no longer leaves a decorative selection
-                    // filter behind when the scene has nothing to do.
-                    onTap: widget.pendingItem == null
-                        ? null
-                        : () => widget.onZoneTap?.call(zone.id),
-                    child: Stack(children: <Widget>[
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        decoration: BoxDecoration(
-                          color: _zoneColor(
-                              context,
-                              ElevagePresentation.environmentScale(
-                                  widget.zoneEnvironments[zone.id]!['light']!),
-                              false),
-                          border: Border(
-                              right: BorderSide(
-                                  color: Colors.white.withValues(alpha: .32))),
-                        ),
-                        child: Align(
-                          alignment: Alignment.bottomCenter,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text('Z${entry.key + 1}',
-                                style: const TextStyle(
-                                    fontSize: 11, fontWeight: FontWeight.w800)),
+                  child: DragTarget<String>(
+                    onWillAcceptWithDetails: (details) => ElevageDomain
+                        .placeableSceneItems
+                        .contains(details.data),
+                    onAcceptWithDetails: (details) =>
+                        widget.onSceneItemDrop(details.data, zone.id),
+                    builder: (context, candidates, _) => GestureDetector(
+                      onLongPressStart: (_) => widget.onZoneHoldStart(zone.id),
+                      onLongPressEnd: (_) => widget.onZoneHoldEnd(),
+                      onLongPressCancel: widget.onZoneHoldEnd,
+                      // A normal tap only matters while the player is placing
+                      // an item. It no longer leaves a decorative selection
+                      // filter behind when the scene has nothing to do.
+                      onTap: widget.pendingItem == null
+                          ? null
+                          : () => widget.onZoneTap?.call(zone.id),
+                      child: Stack(children: <Widget>[
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          decoration: BoxDecoration(
+                            color: _zoneColor(
+                                context,
+                                ElevagePresentation.environmentScale(widget
+                                    .zoneEnvironments[zone.id]!['light']!),
+                                candidates.isNotEmpty),
+                            border: Border(
+                                right: BorderSide(
+                                    color:
+                                        Colors.white.withValues(alpha: .32))),
+                          ),
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text('Z${entry.key + 1}',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800)),
+                            ),
                           ),
                         ),
-                      ),
-                      if (widget.followHoldZoneId == zone.id)
-                        Center(
-                            child: LongPressProgressInteraction(
-                                duration: Duration(
-                                    seconds:
-                                        widget.config.longPressHoldSeconds))),
-                    ]),
+                        if (widget.followHoldZoneId == zone.id)
+                          Center(
+                              child: LongPressProgressInteraction(
+                                  duration: Duration(
+                                      seconds:
+                                          widget.config.longPressHoldSeconds))),
+                      ]),
+                    ),
                   ),
                 );
               }).toList(),
@@ -3198,9 +3246,20 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
               children: <Widget>[
                 ListTile(
                     leading: const Icon(Icons.inventory_2_outlined),
-                    title: const Text('Inventaire'),
+                    title: const Text('Réserve du Refuge'),
                     subtitle: Text(
                         '${state.data['inventory']['bioPiles']} Bio-piles')),
+                if (items.keys.any((itemId) =>
+                    controller.config.recycleRule(itemId)?.recyclable == true))
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonalIcon(
+                      icon: const Icon(Icons.recycling_outlined),
+                      label: const Text('Recycler'),
+                      onPressed: () => _showRecycler(
+                          sheetContext, controller, items, setSheetState),
+                    ),
+                  ),
                 Wrap(spacing: 6, runSpacing: 4, children: <Widget>[
                   for (final choice in const <String>[
                     'TOUT',
@@ -3235,10 +3294,8 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
                     itemCount: visible.length,
                     itemBuilder: (_, index) {
                       final stack = visible[index];
-                      final canPlace = ElevageDomain.foodItems
-                              .contains(stack.itemId) ||
-                          ElevageDomain.treatItems.contains(stack.itemId) ||
-                          ElevageDomain.structuralItems.contains(stack.itemId);
+                      final canPlace = ElevageDomain.placeableSceneItems
+                          .contains(stack.itemId);
                       void select() {
                         if (!canPlace) return;
                         Navigator.of(sheetContext).pop();
@@ -3260,6 +3317,81 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
       },
     ),
   );
+}
+
+Future<void> _showRecycler(BuildContext context, ElevageController controller,
+    Map<String, int> items, StateSetter refreshReserve) async {
+  final recyclable = items.entries
+      .where((entry) =>
+          controller.config.recycleRule(entry.key)?.recyclable == true)
+      .toList(growable: false);
+  if (recyclable.isEmpty) return;
+  await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+              child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(16),
+            children: <Widget>[
+              const ListTile(
+                  leading: Icon(Icons.recycling_outlined),
+                  title: Text('Recycleur'),
+                  subtitle: Text(
+                      'Une ressource spécifique devient une matière générique.')),
+              ...recyclable.map((entry) {
+                final rule = controller.config.recycleRule(entry.key)!;
+                final output = rule.recycleOutputType!;
+                return ListTile(
+                  leading: Icon(ElevagePresentation.itemIcon(entry.key)),
+                  title: Text(ElevagePresentation.itemLabel(entry.key)),
+                  subtitle: Text(
+                      '${entry.value} disponible(s) · 1 → ${rule.recycleOutputQuantity} ${ElevagePresentation.itemLabel(output)}'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    final quantity = await _numberDialog(
+                        sheetContext,
+                        'Recycler ${ElevagePresentation.itemLabel(entry.key)}',
+                        1);
+                    if (!sheetContext.mounted || quantity == null) return;
+                    final safeQuantity = quantity.clamp(1, entry.value);
+                    var confirmed = true;
+                    if (safeQuantity > 1) {
+                      confirmed = await showDialog<bool>(
+                            context: sheetContext,
+                            builder: (dialogContext) => AlertDialog(
+                              title: const Text('Confirmer le recyclage'),
+                              content: Text(
+                                  '${ElevagePresentation.itemLabel(entry.key)} ×$safeQuantity\n→ ${ElevagePresentation.itemLabel(output)} ×${safeQuantity * rule.recycleOutputQuantity}'),
+                              actions: <Widget>[
+                                TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, false),
+                                    child: const Text('Annuler')),
+                                FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, true),
+                                    child: const Text('Recycler')),
+                              ],
+                            ),
+                          ) ==
+                          true;
+                    }
+                    if (!confirmed) return;
+                    await controller.recycle(entry.key, safeQuantity);
+                    if (!sheetContext.mounted) return;
+                    if (controller.error != null) {
+                      ScaffoldMessenger.of(sheetContext).showSnackBar(SnackBar(
+                          content: Text(ElevagePresentation.friendlyError(
+                              controller.error))));
+                      return;
+                    }
+                    refreshReserve(() {});
+                    Navigator.pop(sheetContext);
+                  },
+                );
+              }),
+            ],
+          )));
 }
 
 class _ElevageInventoryStack {
@@ -3324,14 +3456,20 @@ class _ElevageInventorySlot extends StatelessWidget {
                     fontSize: 11, fontWeight: FontWeight.w800))),
       ]),
     );
+    final gesture = InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(16),
+        child: tile);
+    if (!enabled) return gesture;
     return LongPressDraggable<String>(
       data: stack.itemId,
       feedback: Material(
           color: Colors.transparent,
           child: Icon(ElevagePresentation.itemIcon(stack.itemId), size: 48)),
-      onDragEnd: (_) => onLongPress(),
-      child: InkWell(
-          onTap: onTap, borderRadius: BorderRadius.circular(16), child: tile),
+      // Tap remains the accessibility fallback; an actual drop is accepted
+      // by the scene DragTarget and never starts placement for unsupported IDs.
+      onDragStarted: onLongPress,
+      child: gesture,
     );
   }
 }

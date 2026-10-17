@@ -92,7 +92,13 @@ class ElevageRepository {
     if (raw == null) return defaultElevageConfig;
     try {
       final record = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-      if (record['schemaVersion'] != elevageConfigSchemaVersion ||
+      final schemaVersion = (record['schemaVersion'] as num?)?.toInt();
+      // Configuration additive: older Dashboard records keep every known
+      // setting and receive safe defaults for newly introduced fields (such as
+      // sleep windows and Recycler rules). Only an unknown future schema is
+      // rejected so an app downgrade cannot silently reinterpret it.
+      if (schemaVersion == null ||
+          schemaVersion > elevageConfigSchemaVersion ||
           record['overrides'] is! Map) {
         return defaultElevageConfig;
       }

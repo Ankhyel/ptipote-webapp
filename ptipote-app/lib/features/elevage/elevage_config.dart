@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-const int elevageConfigSchemaVersion = 3;
+const int elevageConfigSchemaVersion = 5;
 
 /// Every non-generic resource that can be selected as an explicit recipe
 /// component in the local Élevage Dashboard. Organic and Mineral stay as their
@@ -166,6 +166,39 @@ class ElevageRecipe {
         ),
         unlockItems:
             List<String>.from(json['unlockItems'] as List? ?? const []),
+      );
+}
+
+/// Recycling intentionally reduces a specific resource to a generic one.
+/// Rules live in Élevage configuration so the domain never guesses a UI-only
+/// conversion and a future Dashboard editor can safely expose them.
+class ElevageRecycleRule {
+  const ElevageRecycleRule({
+    required this.recyclable,
+    this.recycleOutputType,
+    this.recycleOutputQuantity = 0,
+  });
+
+  final bool recyclable;
+  final String? recycleOutputType;
+  final int recycleOutputQuantity;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'recyclable': recyclable,
+        'recycleOutputType': recycleOutputType,
+        'recycleOutputQuantity': recycleOutputQuantity,
+      };
+
+  factory ElevageRecycleRule.fromJson(
+          Map<String, dynamic> json, ElevageRecycleRule fallback) =>
+      ElevageRecycleRule(
+        recyclable: json['recyclable'] is bool
+            ? json['recyclable'] as bool
+            : fallback.recyclable,
+        recycleOutputType:
+            json['recycleOutputType'] as String? ?? fallback.recycleOutputType,
+        recycleOutputQuantity: _nonNegative(
+            json['recycleOutputQuantity'], fallback.recycleOutputQuantity),
       );
 }
 
@@ -339,6 +372,11 @@ class ElevageConfig {
     required this.inventoryStackSize,
     required this.dayDurationHours,
     required this.nightDurationHours,
+    required this.vegetalSleepMinutes,
+    required this.mineralDaySleepMinutes,
+    required this.mineralLateNightSleepMinutes,
+    required this.fungalMidDaySleepMinutes,
+    required this.fungalTransitionSleepMinutes,
     required this.observationTextThreshold,
     required this.observationEvidenceCooldownMinutes,
     required this.autonomousReactionIntervalSeconds,
@@ -372,6 +410,7 @@ class ElevageConfig {
     required this.minStaySeconds,
     required this.resonanceGainPerUse,
     required this.vocalizations,
+    required this.recycleRules,
     required this.recipes,
     required this.natureProfiles,
     this.producerOutputs = const <String, List<ElevageProductionOutput>>{},
@@ -404,6 +443,15 @@ class ElevageConfig {
   final int inventoryStackSize;
   final int dayDurationHours;
   final int nightDurationHours;
+
+  /// Durées réglables des fenêtres circadiennes. Les profils conservent leur
+  /// position biologique (nuit, début de jour, etc.), mais ne dépendent plus
+  /// de fractions codées en dur du cycle Jour/Nuit.
+  final int vegetalSleepMinutes;
+  final int mineralDaySleepMinutes;
+  final int mineralLateNightSleepMinutes;
+  final int fungalMidDaySleepMinutes;
+  final int fungalTransitionSleepMinutes;
   final int observationTextThreshold;
   final int observationEvidenceCooldownMinutes;
   final int autonomousReactionIntervalSeconds;
@@ -440,6 +488,7 @@ class ElevageConfig {
   final int minStaySeconds;
   final int resonanceGainPerUse;
   final Map<String, String> vocalizations;
+  final Map<String, ElevageRecycleRule> recycleRules;
   final List<ElevageRecipe> recipes;
   final List<ElevageNatureProfile> natureProfiles;
 
@@ -467,6 +516,8 @@ class ElevageConfig {
   ElevageNatureProfile profileForIndividual(Map individual) => natureProfile(
       individual['family'] as String? ?? 'MINERAL',
       individual['nature'] as String? ?? 'RESONANCE');
+
+  ElevageRecycleRule? recycleRule(String itemId) => recycleRules[itemId];
 
   List<ElevageInstallationDefinition> get _defaultInstallations =>
       <ElevageInstallationDefinition>[
@@ -863,6 +914,11 @@ class ElevageConfig {
     int? inventoryStackSize,
     int? dayDurationHours,
     int? nightDurationHours,
+    int? vegetalSleepMinutes,
+    int? mineralDaySleepMinutes,
+    int? mineralLateNightSleepMinutes,
+    int? fungalMidDaySleepMinutes,
+    int? fungalTransitionSleepMinutes,
     int? observationTextThreshold,
     int? observationEvidenceCooldownMinutes,
     int? autonomousReactionIntervalSeconds,
@@ -896,6 +952,7 @@ class ElevageConfig {
     int? minStaySeconds,
     int? resonanceGainPerUse,
     Map<String, String>? vocalizations,
+    Map<String, ElevageRecycleRule>? recycleRules,
     List<ElevageRecipe>? recipes,
     List<ElevageNatureProfile>? natureProfiles,
     Map<String, List<ElevageProductionOutput>>? producerOutputs,
@@ -933,6 +990,15 @@ class ElevageConfig {
         inventoryStackSize: inventoryStackSize ?? this.inventoryStackSize,
         dayDurationHours: dayDurationHours ?? this.dayDurationHours,
         nightDurationHours: nightDurationHours ?? this.nightDurationHours,
+        vegetalSleepMinutes: vegetalSleepMinutes ?? this.vegetalSleepMinutes,
+        mineralDaySleepMinutes:
+            mineralDaySleepMinutes ?? this.mineralDaySleepMinutes,
+        mineralLateNightSleepMinutes:
+            mineralLateNightSleepMinutes ?? this.mineralLateNightSleepMinutes,
+        fungalMidDaySleepMinutes:
+            fungalMidDaySleepMinutes ?? this.fungalMidDaySleepMinutes,
+        fungalTransitionSleepMinutes:
+            fungalTransitionSleepMinutes ?? this.fungalTransitionSleepMinutes,
         observationTextThreshold:
             observationTextThreshold ?? this.observationTextThreshold,
         observationEvidenceCooldownMinutes:
@@ -989,6 +1055,7 @@ class ElevageConfig {
         minStaySeconds: minStaySeconds ?? this.minStaySeconds,
         resonanceGainPerUse: resonanceGainPerUse ?? this.resonanceGainPerUse,
         vocalizations: vocalizations ?? this.vocalizations,
+        recycleRules: recycleRules ?? this.recycleRules,
         recipes: recipes ?? this.recipes,
         natureProfiles: natureProfiles ?? this.natureProfiles,
         producerOutputs: producerOutputs ??
@@ -1032,6 +1099,11 @@ class ElevageConfig {
         'inventoryStackSize': inventoryStackSize,
         'dayDurationHours': dayDurationHours,
         'nightDurationHours': nightDurationHours,
+        'vegetalSleepMinutes': vegetalSleepMinutes,
+        'mineralDaySleepMinutes': mineralDaySleepMinutes,
+        'mineralLateNightSleepMinutes': mineralLateNightSleepMinutes,
+        'fungalMidDaySleepMinutes': fungalMidDaySleepMinutes,
+        'fungalTransitionSleepMinutes': fungalTransitionSleepMinutes,
         'observationTextThreshold': observationTextThreshold,
         'observationEvidenceCooldownMinutes':
             observationEvidenceCooldownMinutes,
@@ -1067,6 +1139,8 @@ class ElevageConfig {
         'minStaySeconds': minStaySeconds,
         'resonanceGainPerUse': resonanceGainPerUse,
         'vocalizations': vocalizations,
+        'recycleRules':
+            recycleRules.map((itemId, rule) => MapEntry(itemId, rule.toJson())),
         'recipes': recipes.map((recipe) => recipe.toJson()).toList(),
         'natureProfiles':
             natureProfiles.map((profile) => profile.toJson()).toList(),
@@ -1123,6 +1197,18 @@ class ElevageConfig {
           _positive(json['dayDurationHours'], base.dayDurationHours),
       nightDurationHours:
           _positive(json['nightDurationHours'], base.nightDurationHours),
+      vegetalSleepMinutes:
+          _positive(json['vegetalSleepMinutes'], base.vegetalSleepMinutes),
+      mineralDaySleepMinutes: _positive(
+          json['mineralDaySleepMinutes'], base.mineralDaySleepMinutes),
+      mineralLateNightSleepMinutes: _positive(
+          json['mineralLateNightSleepMinutes'],
+          base.mineralLateNightSleepMinutes),
+      fungalMidDaySleepMinutes: _positive(
+          json['fungalMidDaySleepMinutes'], base.fungalMidDaySleepMinutes),
+      fungalTransitionSleepMinutes: _positive(
+          json['fungalTransitionSleepMinutes'],
+          base.fungalTransitionSleepMinutes),
       observationTextThreshold: _positive(
           json['observationTextThreshold'], base.observationTextThreshold),
       observationEvidenceCooldownMinutes: _nonNegative(
@@ -1198,6 +1284,7 @@ class ElevageConfig {
             (key, value) => MapEntry('$key', '$value'),
           ) ??
           base.vocalizations,
+      recycleRules: _recycleRules(json['recycleRules'], base.recycleRules),
       recipes: (json['recipes'] as List?)
               ?.whereType<Map>()
               .map((raw) =>
@@ -1242,6 +1329,19 @@ Map<String, Map<String, int>> _installationEffects(
     result[entry.key as String] = effects;
   }
   return result;
+}
+
+Map<String, ElevageRecycleRule> _recycleRules(
+    Object? value, Map<String, ElevageRecycleRule> fallback) {
+  if (value is! Map) return fallback;
+  final result = <String, ElevageRecycleRule>{};
+  for (final entry in value.entries) {
+    final fallbackRule = fallback['${entry.key}'];
+    if (fallbackRule == null || entry.value is! Map) continue;
+    result['${entry.key}'] = ElevageRecycleRule.fromJson(
+        Map<String, dynamic>.from(entry.value as Map), fallbackRule);
+  }
+  return <String, ElevageRecycleRule>{...fallback, ...result};
 }
 
 Map<String, List<ElevageProductionOutput>> _producerOutputs(
@@ -1339,6 +1439,14 @@ void validateElevageConfig(ElevageConfig config) {
           output.quantityPerCycle <= 0 ||
           output.productionSeconds <= 0 ||
           output.maxLocalStock <= 0));
+  final invalidRecycleRules = config.recycleRules.entries.any((entry) {
+    final rule = entry.value;
+    return !elevageRecipeSpecialComponentIds.contains(entry.key) ||
+        !rule.recyclable ||
+        !const <String>{'ORGANIC', 'MINERAL'}
+            .contains(rule.recycleOutputType) ||
+        rule.recycleOutputQuantity <= 0;
+  });
   if (config.hungerNormalHours > config.hungerHungryHours ||
       config.hungerHungryHours > config.hungerVeryHungryHours ||
       config.suspectedThreshold > config.confirmedThreshold ||
@@ -1367,6 +1475,19 @@ void validateElevageConfig(ElevageConfig config) {
       config.baseStayMatureSeconds <= 0 ||
       config.minStaySeconds <= 0 ||
       config.resonanceGainPerUse <= 0 ||
+      config.vegetalSleepMinutes <= 0 ||
+      config.mineralDaySleepMinutes <= 0 ||
+      config.mineralLateNightSleepMinutes <= 0 ||
+      config.fungalMidDaySleepMinutes <= 0 ||
+      config.fungalTransitionSleepMinutes <= 0 ||
+      <int>[
+        config.vegetalSleepMinutes,
+        config.mineralDaySleepMinutes,
+        config.mineralLateNightSleepMinutes,
+        config.fungalMidDaySleepMinutes,
+        config.fungalTransitionSleepMinutes,
+      ].any((minutes) => minutes > config.dayNightCycleHours * 60) ||
+      invalidRecycleRules ||
       config.vocalizations.values.any((value) => value.trim().isEmpty) ||
       config.natureProfiles.length != 3 ||
       config.natureProfiles.map((profile) => profile.id).toSet().length !=
@@ -1413,6 +1534,15 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
   inventoryStackSize: 12,
   dayDurationHours: 4,
   nightDurationHours: 2,
+  vegetalSleepMinutes: 120,
+  // Résonance dort à la fin de nuit puis au début du jour. Ces valeurs font
+  // notamment un réveil vers 2 h 30 avec un cycle de Jour 3 h / Nuit 1 h.
+  mineralDaySleepMinutes: 150,
+  mineralLateNightSleepMinutes: 30,
+  // Les Fongiques gardent deux sommeils : chaleur du milieu de jour puis
+  // transition jour/nuit. Les durées peuvent être affinées dans le Dashboard.
+  fungalMidDaySleepMinutes: 50,
+  fungalTransitionSleepMinutes: 45,
   observationTextThreshold: 2,
   observationEvidenceCooldownMinutes: 10,
   autonomousReactionIntervalSeconds: 60,
@@ -1453,6 +1583,60 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
     'SURPRISE': 'Ptik !',
     'REJECT': 'Nh !',
     'CALL': 'Pti !',
+  },
+  recycleRules: <String, ElevageRecycleRule>{
+    'FRUIT': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'ROOT': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'LEAF': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'SEED': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'SPORE': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'MOSS': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'MUSHROOM': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'ALGAE': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'ALGAE_FRAGMENT': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'SPROUT': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'ORGANIC',
+        recycleOutputQuantity: 1),
+    'IRON': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'MINERAL',
+        recycleOutputQuantity: 1),
+    'LIMESTONE': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'MINERAL',
+        recycleOutputQuantity: 1),
+    'QUARTZ': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'MINERAL',
+        recycleOutputQuantity: 1),
   },
   producerOutputs: <String, List<ElevageProductionOutput>>{
     'CULTURE_POTAGERE': <ElevageProductionOutput>[

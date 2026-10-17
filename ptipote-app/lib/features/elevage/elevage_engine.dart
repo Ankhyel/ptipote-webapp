@@ -51,6 +51,9 @@ class ElevageSave {
       // Marqueur déjà appliqué aux nouvelles parties : les anciennes saves
       // reçoivent le même starter lors de leur première ouverture Lot 17.
       'qaInventoryResetV17': true,
+      // `inventory` is the Refuge-wide reserve. It is intentionally not
+      // attached to an Alcôve; only scene items and producer stocks are local.
+      'sharedReserveMigrationV21': true,
     });
   }
 
@@ -88,6 +91,37 @@ class ElevageSave {
         'bioPiles': 0,
       };
       normalized['qaInventoryResetV17'] = true;
+    }
+    // Lot 21: historic Alcôve-bound portable inventories are folded exactly
+    // once into the existing player-level inventory, now named Réserve in UI.
+    // Physical scene items and producer stocks stay where they are.
+    if (normalized['sharedReserveMigrationV21'] != true) {
+      final reserve = normalized['inventory'] as Map? ?? <String, dynamic>{};
+      reserve.putIfAbsent(
+          'generic', () => <String, int>{'organic': 0, 'mineral': 0});
+      reserve.putIfAbsent('special', () => <String, int>{});
+      reserve.putIfAbsent('bioPiles', () => 0);
+      final reserveGeneric = reserve['generic'] as Map;
+      final reserveSpecial = reserve['special'] as Map;
+      for (final alcove in (normalized['alcoves'] as List? ?? const <dynamic>[])
+          .whereType<Map>()) {
+        final legacy = alcove.remove('inventory');
+        if (legacy is! Map) continue;
+        final generic = legacy['generic'] as Map?;
+        final special = legacy['special'] as Map?;
+        generic?.forEach((key, value) {
+          final amount = (value as num?)?.toInt() ?? 0;
+          reserveGeneric[key] =
+              ((reserveGeneric[key] as num?)?.toInt() ?? 0) + amount;
+        });
+        special?.forEach((key, value) {
+          final amount = (value as num?)?.toInt() ?? 0;
+          reserveSpecial[key] =
+              ((reserveSpecial[key] as num?)?.toInt() ?? 0) + amount;
+        });
+      }
+      normalized['inventory'] = reserve;
+      normalized['sharedReserveMigrationV21'] = true;
     }
     final individuals = normalized['individuals'] as Map?;
     individuals?.forEach((_, raw) {
@@ -194,6 +228,7 @@ class ElevageDomain {
     'ALGAE',
     'MUSHROOM',
     'FRUIT',
+    'ALGAE_FRAGMENT',
   ];
   static const List<String> treatItems = <String>[
     'FIBROUS_FRUIT',
@@ -222,12 +257,17 @@ class ElevageDomain {
     'QUARTZ',
     'IRON',
   ];
-  static const Set<String> _placeableSceneItems = <String>{
+
+  /// Free resources that can physically exist in an Alcôve. Seeds and spores
+  /// stay in the Refuge reserve for now: they have no valid scene behaviour.
+  static const Set<String> placeableSceneItems = <String>{
     'ROOT',
     'LEAF',
     'MOSS',
     'ALGAE',
+    'ALGAE_FRAGMENT',
     'MUSHROOM',
+    'FRUIT',
     'FIBROUS_FRUIT',
     'FRUIT_JELLY',
     'IRON',
@@ -283,24 +323,51 @@ class ElevageDomain {
       };
 
   /// Les fenêtres peuvent être multiples : le profil fongique est biphasique.
-  /// Chaque couple est exprimé en fraction du cycle complet [0–1].
-  static List<List<double>> sleepWindows(Map individual) =>
-      switch (circadianProfile(individual)) {
-        'DIURNAL' => const <List<double>>[
-            <double>[.667, 1],
-          ],
-        'BIPHASIC' => const <List<double>>[
-            <double>[.34, .48],
-            <double>[.61, .74],
-          ],
-        _ => const <List<double>>[
-            // Résonance est active au début de la nuit, dort dans sa seconde
-            // moitié puis poursuit son repos pendant le début de journée.
-            // Avec Jour 3 h / Nuit 1 h, il se réveille vers 2 h 30 de jour.
-            <double>[0, .625],
-            <double>[.875, 1],
-          ],
-      };
+  /// Chaque couple est une fraction du cycle [0–1] construite depuis les
+  /// durées du Dashboard, et non plus depuis des fractions codées en dur.
+  static List<List<double>> sleepWindows(Map individual,
+      [ElevageConfig config = defaultElevageConfig]) {
+    final cycleMinutes = config.dayNightCycleHours * 60;
+    final dayMinutes = config.dayDurationHours * 60;
+
+    List<double> endingAtCycle(int duration) => <double>[
+          (cycleMinutes - duration) / cycleMinutes,
+          1,
+        ];
+    List<double> startingAtCycleStart(int duration) =>
+        <double>[0, duration / cycleMinutes];
+    List<double> centredAt(int centre, int duration) {
+      final safeDuration = duration.clamp(1, cycleMinutes).toDouble();
+      final start = (centre - safeDuration / 2)
+          .clamp(0.0, cycleMinutes - safeDuration)
+          .toDouble();
+      return <double>[
+        start / cycleMinutes,
+        (start + safeDuration) / cycleMinutes
+      ];
+    }
+
+    return switch (circadianProfile(individual)) {
+      // Le Végétal dort à la fin du cycle : sa fenêtre reste nocturne tant que
+      // sa durée ne dépasse pas la nuit configurée.
+      'DIURNAL' => <List<double>>[
+          endingAtCycle(config.vegetalSleepMinutes),
+        ],
+      // Le Fongique conserve son sommeil polyphasique, centré sur le milieu
+      // du jour puis sur la transition Jour/Nuit.
+      'BIPHASIC' => <List<double>>[
+          centredAt(dayMinutes ~/ 2, config.fungalMidDaySleepMinutes),
+          centredAt(dayMinutes, config.fungalTransitionSleepMinutes),
+        ],
+      // Résonance dort en fin de nuit puis au début du jour. Les deux durées
+      // sont indépendantes afin que les testeurs puissent régler précisément
+      // l'heure de réveil sans modifier le cycle de l'Alcôve.
+      _ => <List<double>>[
+          startingAtCycleStart(config.mineralDaySleepMinutes),
+          endingAtCycle(config.mineralLateNightSleepMinutes),
+        ],
+    };
+  }
 
   static bool isSleeping(Map individual, int now, ElevageConfig config) {
     if (individual['onboardingAwakeLock'] == true &&
@@ -313,7 +380,7 @@ class ElevageDomain {
     final cycleMs =
         config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
     final position = (now % cycleMs) / cycleMs;
-    return sleepWindows(individual)
+    return sleepWindows(individual, config)
         .any((window) => position >= window[0] && position < window[1]);
   }
 
@@ -1135,7 +1202,7 @@ class ElevageDomain {
   /// zone of an Alcôve. A zone holds at most one item in the V0 prototype.
   static ElevageSave placeSceneItem(ElevageSave source, String alcoveId,
       String item, String zoneId, int now, ElevageConfig config) {
-    if (!_placeableSceneItems.contains(item)) {
+    if (!placeableSceneItems.contains(item)) {
       throw StateError('Cet objet ne peut pas être posé dans l’Alcôve.');
     }
     if (config.sceneZone(zoneId) == null) throw StateError('Zone invalide.');
@@ -1150,6 +1217,8 @@ class ElevageDomain {
     special[item] = special[item]! - 1;
     placed.add(<String, dynamic>{
       'instanceId': 'scene-$now-${placed.length}-$item',
+      // Stable target carried through NEW_ITEM → APPROACH → INSPECT.
+      'placedItemInstanceId': 'scene-$now-${placed.length}-$item',
       'itemId': item,
       'zoneId': zoneId,
       'placedAt': now,
@@ -1177,7 +1246,7 @@ class ElevageDomain {
   static bool canCarrySceneItem(Map individual, String itemId) {
     final stage = individual['lifecycle']['stage'] as String;
     if (stage == 'BABY') return false;
-    if (stage == 'MATURE') return _placeableSceneItems.contains(itemId);
+    if (stage == 'MATURE') return placeableSceneItems.contains(itemId);
     return foodItems.contains(itemId) ||
         treatItems.contains(itemId) ||
         structuralItems.contains(itemId) ||
@@ -2056,6 +2125,34 @@ class ElevageDomain {
     stock[itemId] = (stock[itemId] as num).toInt() - 1;
     final special = _special(state);
     special[itemId] = (special[itemId] ?? 0) + 1;
+    return state;
+  }
+
+  /// Atomic Recycler V1 transaction. Only specific reserve resources can be
+  /// reduced; Organic and Mineral are terminal outputs and have no rule.
+  static ElevageSave recycle(
+      ElevageSave source, String itemId, int quantity, ElevageConfig config) {
+    final rule = config.recycleRule(itemId);
+    if (quantity <= 0 ||
+        rule == null ||
+        !rule.recyclable ||
+        rule.recycleOutputType == null ||
+        rule.recycleOutputQuantity <= 0) {
+      throw StateError('Cette ressource ne peut pas être recyclée.');
+    }
+    final state = source.copy();
+    final special = _special(state);
+    if ((special[itemId] ?? 0) < quantity) {
+      throw StateError('Quantité insuffisante dans la Réserve.');
+    }
+    final outputKey = rule.recycleOutputType!.toLowerCase();
+    if (outputKey != 'organic' && outputKey != 'mineral') {
+      throw StateError('Sortie de recyclage invalide.');
+    }
+    final generic = _generic(state);
+    special[itemId] = special[itemId]! - quantity;
+    generic[outputKey] =
+        (generic[outputKey] ?? 0) + quantity * rule.recycleOutputQuantity;
     return state;
   }
 

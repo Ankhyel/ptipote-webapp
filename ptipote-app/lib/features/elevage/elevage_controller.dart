@@ -166,6 +166,8 @@ class ElevageController extends ChangeNotifier {
   Future<void> harvestLocal(String alcoveId, int slot, String itemId) =>
       _mutate((current) => ElevageDomain.harvestLocal(
           current, alcoveId, slot, itemId, _now, config));
+  Future<void> recycle(String itemId, int quantity) => _mutate(
+      (current) => ElevageDomain.recycle(current, itemId, quantity, config));
   Future<void> refreshRequest(String individualId) => _mutate((current) =>
       ElevageDomain.refreshRequest(current, individualId, _now, config));
   Future<void> buyTreat(String item) =>

@@ -776,6 +776,40 @@ void main() {
         isNotEmpty);
   });
 
+  test('les durées de sommeil du Dashboard règlent réellement Résonance', () {
+    final config = defaultElevageConfig.copyWith(
+      dayDurationHours: 3,
+      nightDurationHours: 1,
+      mineralDaySleepMinutes: 150,
+      mineralLateNightSleepMinutes: 30,
+    );
+    var state = ElevageSave.initial(config, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Réglé',
+        physical: false,
+        now: now,
+        config: config);
+    final individual = ((state.data['individuals'] as Map).values.single as Map)
+      ..['onboardingAwakeLock'] = false;
+    const minute = Duration(minutes: 1);
+    expect(ElevageDomain.isSleeping(individual, 0, config), isTrue);
+    expect(
+        ElevageDomain.isSleeping(
+            individual, 149 * minute.inMilliseconds, config),
+        isTrue);
+    expect(
+        ElevageDomain.isSleeping(
+            individual, 150 * minute.inMilliseconds, config),
+        isFalse);
+    expect(
+        ElevageDomain.isSleeping(
+            individual, 210 * minute.inMilliseconds, config),
+        isTrue);
+    expect(ElevageConfig.fromJson(config.toJson()).mineralDaySleepMinutes, 150);
+  });
+
   test('cooldown de câlin ne modifie ni faim ni structure durablement', () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     state = ElevageDomain.adopt(
@@ -1743,5 +1777,74 @@ void main() {
     expect(
         ElevageDomain.isSleeping(individual, cycle + 1, defaultElevageConfig),
         isFalse);
+  });
+
+  test('migration Réserve V21 agrège les inventaires historiques une fois', () {
+    final legacy = ElevageSave.initial(defaultElevageConfig, now: now).toJson();
+    legacy['sharedReserveMigrationV21'] = false;
+    final alcoves = legacy['alcoves'] as List;
+    (alcoves[0] as Map)['inventory'] = <String, dynamic>{
+      'generic': <String, int>{'organic': 1},
+      'special': <String, int>{'FRUIT': 2},
+    };
+    (alcoves[1] as Map)['inventory'] = <String, dynamic>{
+      'generic': <String, int>{'mineral': 4},
+      'special': <String, int>{'FRUIT': 3},
+    };
+    final migrated = ElevageSave.fromJson(legacy);
+    final inventory = migrated.data['inventory'] as Map;
+    expect((inventory['special'] as Map)['FRUIT'], 5);
+    expect((inventory['generic'] as Map)['organic'], 1);
+    expect((inventory['generic'] as Map)['mineral'], 4);
+    final reloaded = ElevageSave.fromJson(migrated.toJson());
+    expect(((reloaded.data['inventory'] as Map)['special'] as Map)['FRUIT'], 5);
+    expect(
+        (reloaded.data['alcoves'] as List)
+            .every((alcove) => !(alcove as Map).containsKey('inventory')),
+        isTrue);
+  });
+
+  test('Recycleur V1 échange des ressources spécifiques sans duplication', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final special = state.data['inventory']['special'] as Map;
+    special['FRUIT'] = 2;
+    special['QUARTZ'] = 3;
+    state = ElevageDomain.recycle(state, 'FRUIT', 2, defaultElevageConfig);
+    state = ElevageDomain.recycle(state, 'QUARTZ', 3, defaultElevageConfig);
+    final inventory = state.data['inventory'] as Map;
+    expect((inventory['special'] as Map)['FRUIT'], 0);
+    expect((inventory['special'] as Map)['QUARTZ'], 0);
+    expect((inventory['generic'] as Map)['organic'], 2);
+    expect((inventory['generic'] as Map)['mineral'], 3);
+    expect(defaultElevageConfig.recycleRule('ORGANIC'), isNull);
+    expect(
+        ElevageConfig.fromJson(defaultElevageConfig.toJson())
+            .recycleRule('QUARTZ')
+            ?.recycleOutputType,
+        'MINERAL');
+    expect(
+        () => ElevageDomain.recycle(state, 'ORGANIC', 1, defaultElevageConfig),
+        throwsStateError);
+  });
+
+  test(
+      'placement utilise la Réserve et refuse clairement les objets non posables',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final special = state.data['inventory']['special'] as Map;
+    special['FRUIT'] = 2;
+    special['SEED'] = 1;
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'FRUIT', 'ZONE_2', now, defaultElevageConfig);
+    expect((state.data['inventory']['special'] as Map)['FRUIT'], 1);
+    final placed = ElevageDomain.sceneItems(state, 'alcove-1');
+    expect(placed, hasLength(1));
+    expect(placed.single['itemId'], 'FRUIT');
+    expect(placed.single['placedItemInstanceId'], placed.single['instanceId']);
+    expect(ElevageDomain.placeableSceneItems.contains('SEED'), isFalse);
+    expect(
+        () => ElevageDomain.placeSceneItem(
+            state, 'alcove-1', 'SEED', 'ZONE_3', now + 1, defaultElevageConfig),
+        throwsStateError);
   });
 }
