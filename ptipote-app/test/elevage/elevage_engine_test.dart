@@ -2111,4 +2111,130 @@ void main() {
         ((reloaded.data['alcoves'] as List).first as Map)['slots'][1] as Map;
     expect((installed['installedModules'] as List), hasLength(2));
   });
+
+  test('Refuge démarre avec une seule Alcôve prête et Contribution cumulée',
+      () {
+    final target = defaultElevageConfig.copyWith(
+        devMode: false, preset: ElevagePreset.target);
+    var state = ElevageSave.initial(target, now: now);
+    final alcoves = state.data['alcoves'] as List;
+    expect((alcoves.first as Map)['progressState'], 'READY');
+    expect((alcoves[1] as Map)['progressState'], 'LOCKED');
+    state = ElevageDomain.addContribution(state, 10);
+    expect(ElevageDomain.contribution(state), 10);
+    expect(ElevageDomain.alcoveProgressState(state, 'alcove-2', target, now),
+        'AVAILABLE_TO_BUILD');
+  });
+
+  test('chantier assisté consomme moins de Bio-piles et devient prêt', () {
+    final target = defaultElevageConfig.copyWith(
+        devMode: false, preset: ElevagePreset.target);
+    var state = ElevageSave.initial(target, now: now);
+    state = ElevageDomain.setContribution(state, 10);
+    final inventory = state.data['inventory'] as Map;
+    inventory['bioPiles'] = 4;
+    final generic = inventory['generic'] as Map;
+    generic['organic'] = 10;
+    generic['mineral'] = 6;
+    state = ElevageDomain.startAlcoveConstruction(
+        state, 'alcove-2', 'ASSISTED', now, target);
+    expect(((state.data['alcoves'] as List)[1] as Map)['progressState'],
+        'UNDER_CONSTRUCTION');
+    state = ElevageDomain.refreshRefugeProgress(
+        state, now + const Duration(hours: 1).inMilliseconds, target);
+    expect(
+        ((state.data['alcoves'] as List)[1] as Map)['progressState'], 'READY');
+    expect(ElevageDomain.contribution(state), 10);
+  });
+
+  test('Bio-pile respecte la recette et alimente localement la ventilation',
+      () {
+    final target = defaultElevageConfig.copyWith(
+        devMode: false, preset: ElevagePreset.target);
+    var state = ElevageSave.initial(target, now: now);
+    final inventory = state.data['inventory'] as Map;
+    final generic = inventory['generic'] as Map;
+    final special = inventory['special'] as Map;
+    generic['organic'] = 5;
+    generic['mineral'] = 5;
+    special['MUSHROOM'] = 1;
+    special['ALGAE'] = 1;
+    special['SALT'] = 5;
+    state = ElevageDomain.craftBioBattery(state, now, target);
+    final batteries = state.data['batteryInventory'] as Map;
+    final batteryId = batteries.keys.last as String;
+    state = ElevageDomain.insertBattery(state, 'alcove-1', batteryId, now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][0] = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'alcoveId': 'alcove-1',
+      'maintenanceState': <String, dynamic>{
+        'status': 'ACTIVE',
+        'lastResolvedAt': now
+      },
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 2).inMilliseconds, target);
+    final refreshed = (state.data['alcoves'] as List).first as Map;
+    expect((refreshed['batterySlot'] as Map)['currentEnergy'], 9);
+    expect(((state.data['inventory'] as Map)['generic'] as Map)['organic'], 0);
+    expect(((state.data['inventory'] as Map)['generic'] as Map)['mineral'], 0);
+  });
+
+  test(
+      'Sel se recycle en Minéral et aucun prélèvement magique ne remplace la pile',
+      () {
+    final target = defaultElevageConfig.copyWith(
+        devMode: false, preset: ElevagePreset.target);
+    var state = ElevageSave.initial(target, now: now);
+    final special = (state.data['inventory'] as Map)['special'] as Map;
+    special['SALT'] = 1;
+    state = ElevageDomain.recycle(state, 'SALT', 1, target);
+    expect(((state.data['inventory'] as Map)['generic'] as Map)['mineral'], 1);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][0] = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'alcoveId': 'alcove-1',
+      'maintenanceState': <String, dynamic>{
+        'status': 'ACTIVE',
+        'lastResolvedAt': now
+      },
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 2).inMilliseconds, target);
+    final refreshed = (state.data['alcoves'] as List).first as Map;
+    expect((refreshed['slots'][0] as Map)['maintenanceState']['status'],
+        'INACTIVE_NO_RESOURCE');
+  });
+
+  test('prêt juvénile propose deux choix puis est restitué après Mature', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Prêt',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    state = ElevageDomain.metamorphose(state, id, now, defaultElevageConfig);
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect((individual['loanOffer'] as Map)['choices'], hasLength(2));
+    state = ElevageDomain.chooseJuvenileLoan(
+        state, id, 'FORMATION_METALLIQUE', now, defaultElevageConfig);
+    final loanId = (((state.data['individuals'] as Map)[id] as Map)['loan']
+        as Map)['instanceId'] as String;
+    expect(
+        (state.data['installationInventory'] as Map)[loanId]
+            ['loanedFromRefuge'],
+        isTrue);
+    state =
+        ElevageDomain.metamorphose(state, id, now + 1, defaultElevageConfig);
+    final due = ((state.data['individuals'] as Map)[id]['loan']
+        as Map)['returnDueAt'] as int;
+    state =
+        ElevageDomain.refreshRefugeProgress(state, due, defaultElevageConfig);
+    expect((state.data['installationInventory'] as Map).containsKey(loanId),
+        isFalse);
+  });
 }

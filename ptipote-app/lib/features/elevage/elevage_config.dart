@@ -20,6 +20,7 @@ const List<String> elevageRecipeSpecialComponentIds = <String>[
   'SEED',
   'SPORE',
   'SPROUT',
+  'SALT',
 ];
 
 enum ElevagePreset { prototype, target }
@@ -605,6 +606,7 @@ class ElevageConfig {
     this.structureConsumptions = const <String, ElevageStructureConsumption>{},
     this.structureModules = const <String, ElevageStructureModuleProfile>{},
     this.modules = const <String, ElevageModuleDefinition>{},
+    this.refugeProgression = const <String, dynamic>{},
   });
 
   final String revision;
@@ -696,6 +698,37 @@ class ElevageConfig {
   final Map<String, ElevageStructureConsumption> structureConsumptions;
   final Map<String, ElevageStructureModuleProfile> structureModules;
   final Map<String, ElevageModuleDefinition> modules;
+
+  /// Paramètres de méta-progression du Refuge. Une map versionnable évite de
+  /// figer prématurément une économie encore en prototypage, tout en gardant
+  /// chaque valeur éditable depuis le Dashboard.
+  final Map<String, dynamic> refugeProgression;
+
+  int get startingAlcoveCount =>
+      ((refugeProgression['startingAlcoveCount'] as num?)?.toInt() ?? 1)
+          .clamp(1, alcoveCount);
+  int get loanChoiceCount =>
+      ((refugeProgression['loanChoiceCount'] as num?)?.toInt() ?? 2)
+          .clamp(2, 2);
+  int get loanReturnDelayDays =>
+      ((refugeProgression['loanReturnDelayDays'] as num?)?.toInt() ?? 21)
+          .clamp(1, 3650);
+  int get startingBioBatteryCount =>
+      ((refugeProgression['startingBioBatteryCount'] as num?)?.toInt() ?? 2)
+          .clamp(0, 99);
+  int get bioBatteryEnergy =>
+      ((refugeProgression['bioBatteryEnergy'] as num?)?.toInt() ?? 10)
+          .clamp(1, 999);
+  List<Map<String, dynamic>> get alcoveRequirements =>
+      ((refugeProgression['alcoveRequirements'] as List?) ?? const <dynamic>[])
+          .whereType<Map>()
+          .map((raw) => Map<String, dynamic>.from(raw))
+          .toList(growable: false);
+
+  Map<String, dynamic> requirementForAlcove(int index) =>
+      index <= 1 || index - 2 >= alcoveRequirements.length
+          ? const <String, dynamic>{}
+          : alcoveRequirements[index - 2];
 
   int get babyMinimumHours => preset == ElevagePreset.prototype ? 24 : 48;
   int get intermediateMinimumHours =>
@@ -1166,6 +1199,7 @@ class ElevageConfig {
     Map<String, ElevageStructureConsumption>? structureConsumptions,
     Map<String, ElevageStructureModuleProfile>? structureModules,
     Map<String, ElevageModuleDefinition>? modules,
+    Map<String, dynamic>? refugeProgression,
   }) =>
       ElevageConfig(
         revision: revision ?? this.revision,
@@ -1285,6 +1319,7 @@ class ElevageConfig {
             structureConsumptions ?? this.structureConsumptions,
         structureModules: structureModules ?? this.structureModules,
         modules: modules ?? this.modules,
+        refugeProgression: refugeProgression ?? this.refugeProgression,
       );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -1374,6 +1409,7 @@ class ElevageConfig {
             MapEntry(installationId, profile.toJson())),
         'modules': modules
             .map((moduleId, module) => MapEntry(moduleId, module.toJson())),
+        'refugeProgression': refugeProgression,
       };
 
   factory ElevageConfig.fromJson(Map<String, dynamic> json) {
@@ -1385,6 +1421,9 @@ class ElevageConfig {
       preset: ElevagePreset.values
           .byName(json['preset'] as String? ?? base.preset.name),
       alcoveCount: _positive(json['alcoveCount'], base.alcoveCount),
+      refugeProgression: json['refugeProgression'] is Map
+          ? Map<String, dynamic>.from(json['refugeProgression'] as Map)
+          : base.refugeProgression,
       hungerNormalHours:
           _nonNegative(json['hungerNormalHours'], base.hungerNormalHours),
       hungerHungryHours:
@@ -1899,6 +1938,10 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
     'CALL': 'Pti !',
   },
   recycleRules: <String, ElevageRecycleRule>{
+    'SALT': ElevageRecycleRule(
+        recyclable: true,
+        recycleOutputType: 'MINERAL',
+        recycleOutputQuantity: 1),
     'FRUIT': ElevageRecycleRule(
         recyclable: true,
         recycleOutputType: 'ORGANIC',
@@ -2211,18 +2254,18 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         id: 'CULTURE_POTAGERE',
         label: 'Culture potagère',
         installationId: 'CULTURE_POTAGERE',
-        organic: 5,
-        mineral: 2,
-        special: <String, int>{'SEED': 1},
+        organic: 0,
+        mineral: 0,
+        special: <String, int>{'ROOT': 10},
         unlockItems: <String>['SEED']),
     ElevageRecipe(
         id: 'BUTTE_ARBUSTE',
         label: 'Butte d’arbuste',
         installationId: 'BUTTE_ARBUSTE',
-        organic: 4,
-        mineral: 3,
-        special: <String, int>{'SPROUT': 1},
-        unlockItems: <String>['SPROUT']),
+        organic: 0,
+        mineral: 0,
+        special: <String, int>{'SEED': 10},
+        unlockItems: <String>['SEED']),
     ElevageRecipe(
         id: 'FORMATION_MINERALE',
         label: 'Formation minérale',
@@ -2251,10 +2294,10 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         id: 'SUPPORT_FONGIQUE',
         label: 'Support fongique',
         installationId: 'SUPPORT_FONGIQUE',
-        organic: 5,
-        mineral: 1,
-        special: <String, int>{'MOSS': 2},
-        unlockItems: <String>['MOSS']),
+        organic: 0,
+        mineral: 0,
+        special: <String, int>{'MUSHROOM': 10},
+        unlockItems: <String>['MUSHROOM']),
     ElevageRecipe(
         id: 'BOSQUET_SYMBIOTIQUE',
         label: 'Bosquet symbiotique',
@@ -2364,6 +2407,41 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         organic: 2,
         mineral: 1),
   ],
+  refugeProgression: <String, dynamic>{
+    'startingAlcoveCount': 1,
+    'loanChoiceCount': 2,
+    'loanReturnDelayDays': 21,
+    'startingBioBatteryCount': 2,
+    'bioBatteryEnergy': 10,
+    'bioBatteryRecipe': <String, dynamic>{
+      'organic': 5,
+      'mineral': 5,
+      'special': <String, int>{'MUSHROOM': 1, 'ALGAE': 1, 'SALT': 5},
+    },
+    'alcoveRequirements': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'requiredContribution': 10,
+        'turnkeyBiopileCost': 12,
+        'assistedBiopileCost': 4,
+        'assistedResourceCosts': <String, int>{'ORGANIC': 10, 'MINERAL': 6},
+        'constructionDurationSeconds': 3600,
+      },
+      <String, dynamic>{
+        'requiredContribution': 30,
+        'turnkeyBiopileCost': 24,
+        'assistedBiopileCost': 8,
+        'assistedResourceCosts': <String, int>{'ORGANIC': 18, 'MINERAL': 12},
+        'constructionDurationSeconds': 7200,
+      },
+      <String, dynamic>{
+        'requiredContribution': 70,
+        'turnkeyBiopileCost': 40,
+        'assistedBiopileCost': 14,
+        'assistedResourceCosts': <String, int>{'ORGANIC': 30, 'MINERAL': 20},
+        'constructionDurationSeconds': 10800,
+      },
+    ],
+  },
 );
 
 String encodeConfig(ElevageConfig config) => jsonEncode(<String, dynamic>{

@@ -33,6 +33,7 @@ class ElevageController extends ChangeNotifier {
     state = await _repository.loadSave();
     if (state != null) {
       state = ElevageDomain.processReturns(state!, _now);
+      state = ElevageDomain.refreshRefugeProgress(state!, _now, config);
       // Resolve every local producer and the shared maintenance ledger on
       // return from background. The domain caps consumption at depletion, so
       // an offline absence can never create an energy debt.
@@ -165,6 +166,21 @@ class ElevageController extends ChangeNotifier {
       _mutate((current) => ElevageDomain.craft(current, recipe, _now, config));
   Future<void> craftModule(ElevageModuleDefinition module) => _mutate(
       (current) => ElevageDomain.craftModule(current, module, _now, config));
+  Future<void> craftBioBattery() => _mutate(
+      (current) => ElevageDomain.craftBioBattery(current, _now, config));
+  Future<void> insertBattery(String alcoveId, String batteryInstanceId) =>
+      _mutate((current) => ElevageDomain.insertBattery(
+          current, alcoveId, batteryInstanceId, _now));
+  Future<void> addContribution(int amount) =>
+      _mutate((current) => ElevageDomain.addContribution(current, amount));
+  Future<void> setContribution(int value) =>
+      _mutate((current) => ElevageDomain.setContribution(current, value));
+  Future<void> startAlcoveConstruction(String alcoveId, String route) =>
+      _mutate((current) => ElevageDomain.startAlcoveConstruction(
+          current, alcoveId, route, _now, config));
+  Future<void> chooseJuvenileLoan(String individualId, String structureId) =>
+      _mutate((current) => ElevageDomain.chooseJuvenileLoan(
+          current, individualId, structureId, _now, config));
   Future<void> place(String alcoveId, int slot, String instanceId) =>
       _mutate((current) =>
           ElevageDomain.place(current, alcoveId, slot, instanceId, _now));
@@ -193,8 +209,8 @@ class ElevageController extends ChangeNotifier {
       _mutate((current) => ElevageDomain.sellGeneric(current, item, config));
   Future<void> moveOut(String alcoveId) =>
       _mutate((current) => ElevageDomain.moveOut(current, alcoveId, config));
-  Future<void> metamorphose(String id) =>
-      _mutate((current) => ElevageDomain.metamorphose(current, id, _now));
+  Future<void> metamorphose(String id) => _mutate(
+      (current) => ElevageDomain.metamorphose(current, id, _now, config));
 
   Future<void> saveConfig(ElevageConfig next) async {
     try {

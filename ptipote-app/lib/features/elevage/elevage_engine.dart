@@ -31,6 +31,13 @@ class ElevageSave {
           'id': 'alcove-${index + 1}',
           'slotLimit': config.installationSlotCount,
           'occupantIndividualId': null,
+          'progressState': index <
+                  (config.devMode && config.preset == ElevagePreset.prototype
+                      ? config.alcoveCount
+                      : config.startingAlcoveCount)
+              ? 'READY'
+              : 'LOCKED',
+          'batterySlot': null,
           'slots': List<dynamic>.filled(config.installationSlotCount, null),
           'createdAt': now,
         },
@@ -40,6 +47,17 @@ class ElevageSave {
       'discoveredItemIds': <String>[],
       'installationInventory': <String, dynamic>{},
       'moduleInventory': <String, dynamic>{},
+      'batteryInventory': <String, dynamic>{
+        for (var index = 0; index < config.startingBioBatteryCount; index++)
+          'battery-$now-$index': <String, dynamic>{
+            'instanceId': 'battery-$now-$index',
+            'itemId': 'BIO_BATTERY',
+            'currentEnergy': config.bioBatteryEnergy,
+            'maxEnergy': config.bioBatteryEnergy,
+            'createdAt': now,
+          },
+      },
+      'refugeProgress': <String, dynamic>{'contribution': 0},
       'habitatInventory': <String, dynamic>{},
       'habitatItemsByAlcoveId': <String, dynamic>{},
       // Items placed in the four visible Alcôve zones. They are deliberately
@@ -66,6 +84,9 @@ class ElevageSave {
     normalized.putIfAbsent('runsByIndividualId', () => <String, dynamic>{});
     normalized.putIfAbsent('installationInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('moduleInventory', () => <String, dynamic>{});
+    normalized.putIfAbsent('batteryInventory', () => <String, dynamic>{});
+    normalized.putIfAbsent(
+        'refugeProgress', () => <String, dynamic>{'contribution': 0});
     normalized.putIfAbsent('habitatInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('habitatItemsByAlcoveId', () => <String, dynamic>{});
     normalized.putIfAbsent('sceneItemsByAlcoveId', () => <String, dynamic>{});
@@ -76,6 +97,8 @@ class ElevageSave {
     // any legacy local stock that a previous prototype may have persisted.
     for (final alcove in (normalized['alcoves'] as List? ?? const <dynamic>[])
         .whereType<Map>()) {
+      alcove.putIfAbsent('progressState', () => 'READY');
+      alcove.putIfAbsent('batterySlot', () => null);
       for (final slot
           in (alcove['slots'] as List? ?? const <dynamic>[]).whereType<Map>()) {
         slot.putIfAbsent('installedModules', () => <dynamic>[]);
@@ -145,6 +168,21 @@ class ElevageSave {
     if (normalized['bioOrganicOvenMigrationV211'] != true) {
       _normalizeLegacyGeothermal(normalized);
       normalized['bioOrganicOvenMigrationV211'] = true;
+    }
+    // Apply Refuge locks only once. Occupied legacy Alcôves remain available
+    // to avoid evicting a resident when upgrading an existing save.
+    if (normalized['refugeProgressMigrationV213'] != true) {
+      final alcoves = normalized['alcoves'] as List? ?? const <dynamic>[];
+      for (var index = 1; index < alcoves.length; index++) {
+        final alcove = alcoves[index];
+        if (alcove is Map &&
+            alcove['occupantIndividualId'] == null &&
+            !(alcove['slots'] as List? ?? const <dynamic>[])
+                .any((slot) => slot != null)) {
+          alcove['progressState'] = 'LOCKED';
+        }
+      }
+      normalized['refugeProgressMigrationV213'] = true;
     }
     final individuals = normalized['individuals'] as Map?;
     individuals?.forEach((_, raw) {
@@ -580,6 +618,9 @@ class ElevageDomain {
   }) {
     final state = source.copy();
     final alcove = _alcove(state, alcoveId);
+    if (alcove['progressState'] != 'READY') {
+      throw StateError('Cette Alcôve n’est pas encore construite.');
+    }
     if (alcove['occupantIndividualId'] != null) {
       throw StateError('Cette Alcôve est déjà occupée.');
     }
@@ -731,6 +772,14 @@ class ElevageDomain {
               'id': 'alcove-${index + 1}',
               'slotLimit': config.installationSlotCount,
               'occupantIndividualId': null,
+              'progressState': index <
+                      (config.devMode &&
+                              config.preset == ElevagePreset.prototype
+                          ? config.alcoveCount
+                          : config.startingAlcoveCount)
+                  ? 'READY'
+                  : 'LOCKED',
+              'batterySlot': null,
               'slots': List<dynamic>.filled(config.installationSlotCount, null),
               'createdAt': now,
             });
@@ -844,7 +893,8 @@ class ElevageDomain {
       ...structuralItems,
       'SEED',
       'SPROUT',
-      'ALGAE'
+      'ALGAE',
+      'SALT'
     ]) {
       special[item] = (special[item] ?? 0) + 3;
     }
@@ -853,6 +903,162 @@ class ElevageDomain {
     generic['mineral'] = (generic['mineral'] ?? 0) + 30;
     state.data['inventory']['bioPiles'] =
         (state.data['inventory']['bioPiles'] as int) + 10;
+    final batteries = _batteryInventory(state);
+    final batteryId = 'battery-dev-${DateTime.now().microsecondsSinceEpoch}';
+    batteries[batteryId] = <String, dynamic>{
+      'instanceId': batteryId,
+      'itemId': 'BIO_BATTERY',
+      'currentEnergy': 10,
+      'maxEnergy': 10,
+    };
+    return state;
+  }
+
+  static int contribution(ElevageSave state) =>
+      ((state.data['refugeProgress'] as Map?)?['contribution'] as num?)
+          ?.toInt() ??
+      0;
+
+  static ElevageSave addContribution(ElevageSave source, int amount) {
+    final state = source.copy();
+    final progress = _refugeProgress(state);
+    progress['contribution'] = max(0, contribution(state) + amount);
+    return state;
+  }
+
+  static ElevageSave setContribution(ElevageSave source, int value) {
+    final state = source.copy();
+    _refugeProgress(state)['contribution'] = max(0, value);
+    return state;
+  }
+
+  static String alcoveProgressState(
+      ElevageSave state, String alcoveId, ElevageConfig config, int now) {
+    final alcove = _alcove(state, alcoveId);
+    final status = alcove['progressState'] as String? ?? 'READY';
+    if (status == 'UNDER_CONSTRUCTION') {
+      final due =
+          ((alcove['construction'] as Map?)?['readyAt'] as num?)?.toInt() ??
+              now + 1;
+      if (now >= due) return 'READY';
+      return status;
+    }
+    if (status == 'LOCKED') {
+      final index = (state.data['alcoves'] as List).indexOf(alcove) + 1;
+      final required =
+          (config.requirementForAlcove(index)['requiredContribution'] as num?)
+                  ?.toInt() ??
+              0;
+      return contribution(state) >= required ? 'AVAILABLE_TO_BUILD' : status;
+    }
+    return status;
+  }
+
+  static ElevageSave refreshRefugeProgress(
+      ElevageSave source, int now, ElevageConfig config) {
+    final state = source.copy();
+    for (final raw in state.data['alcoves'] as List) {
+      final alcove = raw as Map<String, dynamic>;
+      final status =
+          alcoveProgressState(state, alcove['id'] as String, config, now);
+      if (status == 'READY') {
+        alcove['progressState'] = 'READY';
+        alcove.remove('construction');
+      } else if (status == 'AVAILABLE_TO_BUILD') {
+        alcove['progressState'] = 'AVAILABLE_TO_BUILD';
+      }
+    }
+    _processLoanReturns(state, now);
+    return state;
+  }
+
+  static ElevageSave startAlcoveConstruction(ElevageSave source,
+      String alcoveId, String route, int now, ElevageConfig config) {
+    final state = refreshRefugeProgress(source, now, config);
+    final alcove = _alcove(state, alcoveId);
+    if (alcove['progressState'] != 'AVAILABLE_TO_BUILD') {
+      throw StateError('Cette Alcôve n’est pas encore disponible.');
+    }
+    final index = (state.data['alcoves'] as List).indexOf(alcove) + 1;
+    final requirement = config.requirementForAlcove(index);
+    final bioPiles = state.data['inventory']['bioPiles'] as int;
+    final isTurnkey = route == 'TURNKEY';
+    final biopileCost =
+        (requirement[isTurnkey ? 'turnkeyBiopileCost' : 'assistedBiopileCost']
+                    as num?)
+                ?.toInt() ??
+            0;
+    if (bioPiles < biopileCost) throw StateError('Bio-piles insuffisantes.');
+    final generic = _generic(state);
+    final assisted = isTurnkey
+        ? const <String, dynamic>{}
+        : Map<String, dynamic>.from(
+            requirement['assistedResourceCosts'] as Map? ??
+                const <dynamic, dynamic>{});
+    if (assisted.entries.any((entry) =>
+        (generic[entry.key.toLowerCase()] ?? 0) <
+        (entry.value as num).toInt())) {
+      throw StateError('Ressources insuffisantes pour le chantier.');
+    }
+    state.data['inventory']['bioPiles'] = bioPiles - biopileCost;
+    assisted.forEach((key, value) {
+      final resource = key.toLowerCase();
+      generic[resource] = generic[resource]! - (value as num).toInt();
+    });
+    final duration =
+        (requirement['constructionDurationSeconds'] as num?)?.toInt() ?? 0;
+    alcove['progressState'] = 'UNDER_CONSTRUCTION';
+    alcove['construction'] = <String, dynamic>{
+      'route': isTurnkey ? 'TURNKEY' : 'ASSISTED',
+      'startedAt': now,
+      'readyAt': now + duration * 1000,
+    };
+    return state;
+  }
+
+  static ElevageSave craftBioBattery(
+      ElevageSave source, int now, ElevageConfig config) {
+    final state = source.copy();
+    final recipe = Map<String, dynamic>.from(
+        config.refugeProgression['bioBatteryRecipe'] as Map? ??
+            const <dynamic, dynamic>{});
+    final generic = _generic(state);
+    final special = _special(state);
+    final organic = (recipe['organic'] as num?)?.toInt() ?? 5;
+    final mineral = (recipe['mineral'] as num?)?.toInt() ?? 5;
+    final parts = Map<String, dynamic>.from(
+        recipe['special'] as Map? ?? const <dynamic, dynamic>{});
+    if ((generic['organic'] ?? 0) < organic ||
+        (generic['mineral'] ?? 0) < mineral ||
+        parts.entries.any((entry) =>
+            (special[entry.key] ?? 0) < (entry.value as num).toInt())) {
+      throw StateError('Ressources insuffisantes pour une Bio-pile.');
+    }
+    generic['organic'] = generic['organic']! - organic;
+    generic['mineral'] = generic['mineral']! - mineral;
+    parts.forEach(
+        (key, value) => special[key] = special[key]! - (value as num).toInt());
+    final id = 'battery-$now-${_batteryInventory(state).length}';
+    _batteryInventory(state)[id] = <String, dynamic>{
+      'instanceId': id,
+      'itemId': 'BIO_BATTERY',
+      'currentEnergy': config.bioBatteryEnergy,
+      'maxEnergy': config.bioBatteryEnergy,
+      'craftedAt': now,
+    };
+    return state;
+  }
+
+  static ElevageSave insertBattery(
+      ElevageSave source, String alcoveId, String batteryInstanceId, int now) {
+    final state = source.copy();
+    final alcove = _alcove(state, alcoveId);
+    final batteries = _batteryInventory(state);
+    final battery = batteries.remove(batteryInstanceId);
+    if (battery == null) throw StateError('Bio-pile non disponible.');
+    final previous = alcove['batterySlot'];
+    if (previous is Map) batteries[previous['instanceId'] as String] = previous;
+    alcove['batterySlot'] = battery;
     return state;
   }
 
@@ -2163,6 +2369,7 @@ class ElevageDomain {
       inventory[(slots[slot] as Map)['instanceId'] as String] = slots[slot];
     }
     (instance as Map)['installedAt'] = now;
+    instance['alcoveId'] = alcoveId;
     instance['zoneId'] = 'ZONE_${slot + 1}';
     slots[slot] = instance;
     return state;
@@ -2214,17 +2421,16 @@ class ElevageDomain {
     }
     final generic = _generic(state);
     if (specification.mode == 'ENERGY') {
+      final alcoveId = raw['alcoveId'] as String?;
+      final battery =
+          alcoveId == null ? null : _alcove(state, alcoveId)['batterySlot'];
+      final available =
+          (battery is Map ? battery['currentEnergy'] : 0) as num? ?? 0;
       final missingEnergy =
-          max(0, specification.energyCost - (generic['energy'] ?? 0));
-      if (missingEnergy == 0) return const <String, int>{};
-      final canConvert =
-          (generic['organic'] ?? 0) >= config.energyOrganicCost &&
-              (generic['mineral'] ?? 0) >= config.energyMineralCost;
-      return canConvert
+          max(0, specification.energyCost - available.toInt());
+      return missingEnergy == 0
           ? const <String, int>{}
-          : <String, int>{
-              'ENERGY': missingEnergy,
-            };
+          : <String, int>{'ENERGY': missingEnergy};
     }
     final missing = <String, int>{};
     specification.resourceCosts.forEach((itemId, quantity) {
@@ -2260,7 +2466,7 @@ class ElevageDomain {
         if (maintenance['status'] == 'INACTIVE_NO_RESOURCE') {
           // A refill never back-bills the time spent paused. One successful
           // cycle restarts the structure, then its normal clock resumes.
-          if (_consumeMaintenanceCost(state, specification, config)) {
+          if (_consumeMaintenanceCost(state, alcove, specification, config)) {
             maintenance['status'] = 'ACTIVE';
             maintenance['reason'] = null;
             maintenance['lastResolvedAt'] = now;
@@ -2271,7 +2477,7 @@ class ElevageDomain {
         if (cycles == 0) continue;
         var consumedCycles = 0;
         while (consumedCycles < cycles &&
-            _consumeMaintenanceCost(state, specification, config)) {
+            _consumeMaintenanceCost(state, alcove, specification, config)) {
           consumedCycles++;
         }
         if (consumedCycles < cycles) {
@@ -2288,20 +2494,37 @@ class ElevageDomain {
     }
   }
 
-  static bool _consumeMaintenanceCost(ElevageSave state,
+  static bool _consumeMaintenanceCost(ElevageSave state, Map alcove,
       ElevageStructureConsumption specification, ElevageConfig config) {
     final generic = _generic(state);
     if (specification.mode == 'ENERGY') {
-      while ((generic['energy'] ?? 0) < specification.energyCost) {
-        if ((generic['organic'] ?? 0) < config.energyOrganicCost ||
-            (generic['mineral'] ?? 0) < config.energyMineralCost) {
-          return false;
+      final battery = alcove['batterySlot'];
+      if (battery is! Map ||
+          ((battery['currentEnergy'] as num?)?.toInt() ?? 0) <
+              specification.energyCost) {
+        // Compatibility only for the pre-21.3 Prototype preset. Target
+        // Alcôves never turn Organic/Mineral into invisible local power.
+        if (config.preset == ElevagePreset.prototype) {
+          while ((generic['energy'] ?? 0) < specification.energyCost) {
+            if ((generic['organic'] ?? 0) < config.energyOrganicCost ||
+                (generic['mineral'] ?? 0) < config.energyMineralCost) {
+              return false;
+            }
+            generic['organic'] = generic['organic']! - config.energyOrganicCost;
+            generic['mineral'] = generic['mineral']! - config.energyMineralCost;
+            generic['energy'] =
+                (generic['energy'] ?? 0) + config.energyProduced;
+          }
+          generic['energy'] = generic['energy']! - specification.energyCost;
+          return true;
         }
-        generic['organic'] = generic['organic']! - config.energyOrganicCost;
-        generic['mineral'] = generic['mineral']! - config.energyMineralCost;
-        generic['energy'] = (generic['energy'] ?? 0) + config.energyProduced;
+        return false;
       }
-      generic['energy'] = generic['energy']! - specification.energyCost;
+      battery['currentEnergy'] =
+          (battery['currentEnergy'] as num).toInt() - specification.energyCost;
+      if ((battery['currentEnergy'] as num).toInt() <= 0) {
+        alcove['batterySlot'] = null;
+      }
       return true;
     }
     if (specification.mode == 'DIRECT_RESOURCE' ||
@@ -2690,18 +2913,93 @@ class ElevageDomain {
         (evidence['personalityEvents'] as int) >= 5;
   }
 
-  static ElevageSave metamorphose(ElevageSave source, String id, int now) {
+  static ElevageSave metamorphose(
+      ElevageSave source, String id, int now, ElevageConfig config) {
     final state = source.copy();
     final individual = _individual(state, id);
     final lifecycle = individual['lifecycle'] as Map;
     final next = lifecycle['stage'] == 'BABY' ? 'INTERMEDIATE' : 'MATURE';
     lifecycle['stage'] = next;
     lifecycle['stageEnteredAt'] = now;
+    if (next == 'INTERMEDIATE') {
+      individual['loanOffer'] = <String, dynamic>{
+        'offeredAt': now,
+        'choices': _loanChoicesFor(individual),
+        'selectedStructureId': null,
+      };
+    } else {
+      final loan = individual['loan'] as Map?;
+      if (loan != null && loan['returnDueAt'] == null) {
+        loan['returnDueAt'] = now +
+            config.loanReturnDelayDays * const Duration(days: 1).inMilliseconds;
+        (state.data['pendingNotifications'] as List).add(<String, dynamic>{
+          'id': 'loan-return-$id',
+          'type': 'LOAN_RETURN_SCHEDULED',
+          'name': individual['name'],
+          'createdAt': now,
+          'acknowledgedAt': null,
+        });
+      }
+    }
     _memory(
         state,
         id,
         next == 'INTERMEDIATE' ? 'FIRST_METAMORPHOSIS' : 'SECOND_METAMORPHOSIS',
         now);
+    return state;
+  }
+
+  static List<String> _loanChoicesFor(Map individual) =>
+      switch ('${individual['family']}_${individual['nature']}') {
+        'VEGETAL_PHOTOSYNTHESIS' => <String>[
+            'CULTURE_POTAGERE',
+            'BOSQUET_SYMBIOTIQUE'
+          ],
+        'FUNGAL_DECOMPOSITION' => <String>[
+            'SUPPORT_FONGIQUE',
+            'COLONIE_MYCELIENNE'
+          ],
+        _ => <String>['FOUR_BIO_ORGANIQUE', 'FORMATION_METALLIQUE'],
+      };
+
+  static ElevageSave chooseJuvenileLoan(ElevageSave source, String id,
+      String structureId, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, id);
+    final offer = individual['loanOffer'] as Map?;
+    if (offer == null ||
+        offer['selectedStructureId'] != null ||
+        !(offer['choices'] as List).contains(structureId)) {
+      throw StateError('Ce prêt n’est pas disponible.');
+    }
+    final definition = config.installation(structureId);
+    if (definition == null || definition.category != 'STRUCTURE') {
+      throw StateError('Structure de prêt invalide.');
+    }
+    final instanceId = 'loan-$id-$now';
+    (state.data['installationInventory'] as Map<String, dynamic>)[instanceId] =
+        <String, dynamic>{
+      'instanceId': instanceId,
+      'definitionId': structureId,
+      'category': 'STRUCTURE',
+      'acquisitionMode': 'LOANED_FROM_REFUGE',
+      'loanedFromRefuge': true,
+      'loanOwnerIndividualId': id,
+      'craftedAt': now,
+      'installedModules': <dynamic>[],
+      'maintenanceState': <String, dynamic>{
+        'status': 'ACTIVE',
+        'reason': null,
+        'lastResolvedAt': now,
+      },
+    };
+    offer['selectedStructureId'] = structureId;
+    individual['loan'] = <String, dynamic>{
+      'instanceId': instanceId,
+      'structureId': structureId,
+      'selectedAt': now,
+      'returnDueAt': null,
+    };
     return state;
   }
 
@@ -2897,6 +3195,57 @@ class ElevageDomain {
     final current = (wellbeing['value'] as num?)?.toInt() ?? 60;
     wellbeing['value'] = (current + delta).clamp(0, 100);
     wellbeing['lastUpdatedAt'] = now;
+  }
+
+  static Map<String, dynamic> _refugeProgress(ElevageSave state) =>
+      Map<String, dynamic>.from(state.data['refugeProgress'] as Map)
+        ..also((map) => state.data['refugeProgress'] = map);
+
+  static Map<String, dynamic> _batteryInventory(ElevageSave state) =>
+      Map<String, dynamic>.from(state.data['batteryInventory'] as Map)
+        ..also((map) => state.data['batteryInventory'] = map);
+
+  static void _processLoanReturns(ElevageSave state, int now) {
+    final inventory =
+        state.data['installationInventory'] as Map<String, dynamic>;
+    for (final individual
+        in (state.data['individuals'] as Map).values.whereType<Map>()) {
+      final loan = individual['loan'] as Map?;
+      final due = (loan?['returnDueAt'] as num?)?.toInt();
+      if (due == null || now < due || loan?['returnedAt'] != null) continue;
+      final instanceId = loan?['instanceId'] as String?;
+      Map? found = inventory[instanceId] as Map?;
+      if (found == null && instanceId != null) {
+        for (final alcove in state.data['alcoves'] as List) {
+          final slots = (alcove as Map)['slots'] as List;
+          final index = slots.indexWhere(
+              (raw) => raw is Map && raw['instanceId'] == instanceId);
+          if (index >= 0) {
+            found = slots[index] as Map;
+            slots[index] = null;
+            break;
+          }
+        }
+      } else if (instanceId != null) {
+        inventory.remove(instanceId);
+      }
+      if (found != null) {
+        for (final module
+            in (found['installedModules'] as List? ?? const <dynamic>[])
+                .whereType<Map>()) {
+          _moduleInventory(state)[module['instanceId'] as String] =
+              Map<String, dynamic>.from(module);
+        }
+      }
+      loan!['returnedAt'] = now;
+      (state.data['pendingNotifications'] as List).add(<String, dynamic>{
+        'id': 'loan-returned-${loan['instanceId']}',
+        'type': 'LOAN_RETURNED',
+        'name': individual['name'],
+        'createdAt': now,
+        'acknowledgedAt': null,
+      });
+    }
   }
 
   static bool _hasLocal(Map<String, dynamic> alcove, List<String> choices) {

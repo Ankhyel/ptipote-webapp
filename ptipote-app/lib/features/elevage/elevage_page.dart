@@ -143,6 +143,15 @@ class _AlcovesPage extends StatelessWidget {
                   style: Theme.of(context).textTheme.displayLarge),
               const SizedBox(height: 12),
               const Text('Chaque Alcôve peut accueillir un P’TIPOTE.'),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.volunteer_activism_outlined),
+                  title: const Text('Contribution'),
+                  subtitle: const Text(
+                      'Confiance cumulée du Refuge · elle ne se dépense pas.'),
+                  trailing: Text('${ElevageDomain.contribution(state)}'),
+                ),
+              ),
               if (controller.notifications.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 20),
                 Card(
@@ -189,6 +198,13 @@ class _AlcovesPage extends StatelessWidget {
                     now: controller.now,
                     occupied: occupied,
                     individual: individual,
+                    progressState: ElevageDomain.alcoveProgressState(
+                        state,
+                        alcove['id'] as String,
+                        controller.config,
+                        controller.now),
+                    requirement:
+                        controller.config.requirementForAlcove(index + 1),
                     onOpen: occupied
                         ? () => onOpenIndividual(occupant!)
                         : () => _welcome(
@@ -199,6 +215,8 @@ class _AlcovesPage extends StatelessWidget {
                         ? () => _moveOut(
                             context, controller, alcove['id'] as String)
                         : null,
+                    onBuild: (route) => controller.startAlcoveConstruction(
+                        alcove['id'] as String, route),
                   );
                 },
               ),
@@ -216,20 +234,31 @@ class _AlcoveOverviewCard extends StatelessWidget {
     required this.now,
     required this.occupied,
     required this.individual,
+    required this.progressState,
+    required this.requirement,
     required this.onOpen,
     this.onMoveOut,
+    required this.onBuild,
   });
 
   final int index;
   final int now;
   final bool occupied;
   final Map? individual;
+  final String progressState;
+  final Map<String, dynamic> requirement;
   final VoidCallback onOpen;
   final VoidCallback? onMoveOut;
+  final Future<void> Function(String route) onBuild;
 
   @override
   Widget build(BuildContext context) {
-    final name = occupied ? individual!['name'] as String : 'Libre';
+    final locked = progressState != 'READY';
+    final name = locked
+        ? 'Verrouillée'
+        : occupied
+            ? individual!['name'] as String
+            : 'Libre';
     final stage = occupied
         ? _stageLabel(individual!['lifecycle']['stage'] as String)
         : null;
@@ -249,9 +278,16 @@ class _AlcoveOverviewCard extends StatelessWidget {
               Text(name, style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 7),
               Text(
-                occupied
-                    ? '${_individualNatureLabel(individual!)} · $stage'
-                    : 'Un espace calme attend un P’TIPOTE.',
+                locked
+                    ? switch (progressState) {
+                        'UNDER_CONSTRUCTION' => 'Chantier en cours.',
+                        'AVAILABLE_TO_BUILD' => 'Prête à être construite.',
+                        _ =>
+                          'Contribution requise : ${requirement['requiredContribution'] ?? '—'}',
+                      }
+                    : occupied
+                        ? '${_individualNatureLabel(individual!)} · $stage'
+                        : 'Un espace calme attend un P’TIPOTE.',
               ),
               if (occupied) ...<Widget>[
                 const SizedBox(height: 4),
@@ -264,9 +300,47 @@ class _AlcoveOverviewCard extends StatelessWidget {
               ],
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: onOpen,
-                child: Text(
-                    occupied ? 'Ouvrir l’Alcôve' : 'Accueillir un P’TIPOTE'),
+                onPressed: locked
+                    ? progressState == 'AVAILABLE_TO_BUILD'
+                        ? () => showModalBottomSheet<void>(
+                              context: context,
+                              builder: (sheet) => SafeArea(
+                                  child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                    const ListTile(
+                                        title: Text('Construire cette Alcôve')),
+                                    ListTile(
+                                        title: const Text('Alcôve clé en main'),
+                                        subtitle: Text(
+                                            '${requirement['turnkeyBiopileCost']} Bio-piles'),
+                                        onTap: () async {
+                                          await onBuild('TURNKEY');
+                                          if (sheet.mounted) {
+                                            Navigator.pop(sheet);
+                                          }
+                                        }),
+                                    ListTile(
+                                        title: const Text('Chantier assisté'),
+                                        subtitle: Text(
+                                            '${requirement['assistedBiopileCost']} Bio-piles + matériaux'),
+                                        onTap: () async {
+                                          await onBuild('ASSISTED');
+                                          if (sheet.mounted) {
+                                            Navigator.pop(sheet);
+                                          }
+                                        }),
+                                  ])),
+                            )
+                        : null
+                    : onOpen,
+                child: Text(locked
+                    ? (progressState == 'AVAILABLE_TO_BUILD'
+                        ? 'Construire'
+                        : 'Indisponible')
+                    : occupied
+                        ? 'Ouvrir l’Alcôve'
+                        : 'Accueillir un P’TIPOTE'),
               ),
               if (onMoveOut != null)
                 Align(
@@ -1417,6 +1491,14 @@ class _IndividualPageState extends State<_IndividualPage> {
                   ),
                 ),
               ],
+              _BatterySlotCard(alcove: alcove, controller: controller),
+              if (individual['loanOffer'] is Map &&
+                  (individual['loanOffer'] as Map)['selectedStructureId'] ==
+                      null)
+                _LoanOfferCard(
+                    controller: controller,
+                    individualId: widget.individualId,
+                    offer: individual['loanOffer'] as Map),
               Card(
                 clipBehavior: Clip.antiAlias,
                 child: Padding(
@@ -1671,6 +1753,63 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     config = widget.controller.config;
   }
 
+  void _setRefugeNumber(String key, int value) {
+    final next = Map<String, dynamic>.from(config.refugeProgression)
+      ..[key] = value;
+    setState(() => config = config.copyWith(refugeProgression: next));
+  }
+
+  void _setAlcoveRequirement(int alcoveIndex, String key, int value) {
+    final progression = Map<String, dynamic>.from(config.refugeProgression);
+    final requirements = config.alcoveRequirements
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    if (alcoveIndex - 2 < 0 || alcoveIndex - 2 >= requirements.length) return;
+    requirements[alcoveIndex - 2][key] = value;
+    progression['alcoveRequirements'] = requirements;
+    setState(() => config = config.copyWith(refugeProgression: progression));
+  }
+
+  void _setAssistedCost(int alcoveIndex, String resourceId, int value) {
+    final requirement = config.requirementForAlcove(alcoveIndex);
+    final costs = Map<String, dynamic>.from(
+        requirement['assistedResourceCosts'] as Map? ??
+            const <dynamic, dynamic>{});
+    costs[resourceId] = value;
+    final progression = Map<String, dynamic>.from(config.refugeProgression);
+    final requirements = config.alcoveRequirements
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+    requirements[alcoveIndex - 2]['assistedResourceCosts'] = costs;
+    progression['alcoveRequirements'] = requirements;
+    setState(() => config = config.copyWith(refugeProgression: progression));
+  }
+
+  void _setBatteryRecipe(String key, int value) {
+    final progression = Map<String, dynamic>.from(config.refugeProgression);
+    final recipe = Map<String, dynamic>.from(
+        progression['bioBatteryRecipe'] as Map? ?? const <dynamic, dynamic>{});
+    if (key == 'organic' || key == 'mineral') {
+      recipe[key] = value;
+    } else {
+      final special = Map<String, dynamic>.from(
+          recipe['special'] as Map? ?? const <dynamic, dynamic>{});
+      special[key] = value;
+      recipe['special'] = special;
+    }
+    progression['bioBatteryRecipe'] = recipe;
+    setState(() => config = config.copyWith(refugeProgression: progression));
+  }
+
+  int _batteryRecipeCost(String key) {
+    final recipe = config.refugeProgression['bioBatteryRecipe'] as Map?;
+    if (key == 'organic' || key == 'mineral') {
+      return (recipe?[key] as num?)?.toInt() ?? 0;
+    }
+    final special = recipe?['special'] as Map?;
+    return (special?[key] as num?)?.toInt() ?? 0;
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Dashboard Élevage')),
@@ -1699,6 +1838,103 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                   setState(() => config = config.copyWith(preset: value))),
           _number(context, 'Alcôves (nouvelle partie)', config.alcoveCount,
               (value) => config = config.copyWith(alcoveCount: value)),
+          _heading('Refuge, Alcôves et Bio-piles'),
+          _number(
+              context,
+              'Alcôves actives au départ',
+              config.startingAlcoveCount,
+              (value) => _setRefugeNumber('startingAlcoveCount', value)),
+          _number(context, 'Choix de prêt juvénile', config.loanChoiceCount,
+              (value) => _setRefugeNumber('loanChoiceCount', value)),
+          _number(
+              context,
+              'Restitution prêt (jours)',
+              config.loanReturnDelayDays,
+              (value) => _setRefugeNumber('loanReturnDelayDays', value)),
+          _number(
+              context,
+              'Bio-piles de départ',
+              config.startingBioBatteryCount,
+              (value) => _setRefugeNumber('startingBioBatteryCount', value)),
+          _number(context, 'Énergie par Bio-pile', config.bioBatteryEnergy,
+              (value) => _setRefugeNumber('bioBatteryEnergy', value)),
+          _number(
+              context,
+              'Bio-pile · Organique',
+              _batteryRecipeCost('organic'),
+              (value) => _setBatteryRecipe('organic', value)),
+          _number(context, 'Bio-pile · Minéral', _batteryRecipeCost('mineral'),
+              (value) => _setBatteryRecipe('mineral', value)),
+          for (final itemId in <String>['MUSHROOM', 'ALGAE', 'SALT'])
+            _number(
+                context,
+                'Bio-pile · ${ElevagePresentation.itemLabel(itemId)}',
+                _batteryRecipeCost(itemId),
+                (value) => _setBatteryRecipe(itemId, value)),
+          if (config.devMode)
+            Wrap(spacing: 8, children: <Widget>[
+              OutlinedButton(
+                  onPressed: () => widget.controller.addContribution(10),
+                  child: const Text('+10 Contribution')),
+              OutlinedButton(
+                  onPressed: () => widget.controller.setContribution(100),
+                  child: const Text('Contribution 100')),
+            ]),
+          for (var index = 2; index <= config.alcoveCount; index++) ...<Widget>[
+            _heading('Alcôve $index · progression'),
+            _number(
+                context,
+                'Seuil Contribution',
+                (config.requirementForAlcove(index)['requiredContribution']
+                            as num?)
+                        ?.toInt() ??
+                    0,
+                (value) => _setAlcoveRequirement(
+                    index, 'requiredContribution', value)),
+            _number(
+                context,
+                'Clé en main · Bio-piles',
+                (config.requirementForAlcove(index)['turnkeyBiopileCost']
+                            as num?)
+                        ?.toInt() ??
+                    0,
+                (value) =>
+                    _setAlcoveRequirement(index, 'turnkeyBiopileCost', value)),
+            _number(
+                context,
+                'Chantier assisté · Bio-piles',
+                (config.requirementForAlcove(index)['assistedBiopileCost']
+                            as num?)
+                        ?.toInt() ??
+                    0,
+                (value) =>
+                    _setAlcoveRequirement(index, 'assistedBiopileCost', value)),
+            _number(
+                context,
+                'Durée chantier (s)',
+                (config.requirementForAlcove(
+                            index)['constructionDurationSeconds'] as num?)
+                        ?.toInt() ??
+                    0,
+                (value) => _setAlcoveRequirement(
+                    index, 'constructionDurationSeconds', value)),
+            _number(
+                context,
+                'Chantier · Organique',
+                ((config.requirementForAlcove(index)['assistedResourceCosts']
+                            as Map?)?['ORGANIC'] as num?)
+                        ?.toInt() ??
+                    0,
+                (value) => _setAssistedCost(index, 'ORGANIC', value)),
+            _number(
+                context,
+                'Chantier · Minéral',
+                ((config.requirementForAlcove(index)['assistedResourceCosts']
+                            as Map?)?['MINERAL'] as num?)
+                        ?.toInt() ??
+                    0,
+                (value) => _setAssistedCost(index, 'MINERAL', value)),
+          ],
           _heading('Maturation, faim et découverte'),
           Text(
               'Bébé : ${config.babyMinimumHours} h · Intermédiaire : ${config.intermediateMinimumHours} h'),
@@ -3363,6 +3599,108 @@ class _StatusBubble extends StatelessWidget {
       );
 }
 
+class _BatterySlotCard extends StatelessWidget {
+  const _BatterySlotCard({required this.alcove, required this.controller});
+  final Map alcove;
+  final ElevageController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final battery = alcove['batterySlot'];
+    final batteries = controller.state!.data['batteryInventory'] as Map;
+    final charge =
+        battery is Map ? (battery['currentEnergy'] as num).toInt() : 0;
+    final maxCharge =
+        battery is Map ? (battery['maxEnergy'] as num).toInt() : 0;
+    return Card(
+      child: ListTile(
+        leading: Icon(battery is Map
+            ? Icons.battery_charging_full_outlined
+            : Icons.battery_unknown_outlined),
+        title: const Text('Batterie'),
+        subtitle: Text(battery is Map
+            ? 'Bio-pile · $charge / $maxCharge ⚡'
+            : 'Aucune Bio-pile insérée'),
+        trailing: battery is Map
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                tooltip: 'Insérer une Bio-pile',
+                onPressed: batteries.isEmpty
+                    ? null
+                    : () => showModalBottomSheet<void>(
+                          context: context,
+                          builder: (sheetContext) => SafeArea(
+                            child: ListView(
+                              shrinkWrap: true,
+                              children: batteries.values
+                                  .whereType<Map>()
+                                  .map((entry) => ListTile(
+                                        leading: const Icon(Icons
+                                            .battery_charging_full_outlined),
+                                        title: const Text('Bio-pile'),
+                                        subtitle: Text(
+                                            '${entry['currentEnergy']} / ${entry['maxEnergy']} ⚡'),
+                                        onTap: () async {
+                                          await controller.insertBattery(
+                                              alcove['id'] as String,
+                                              entry['instanceId'] as String);
+                                          if (sheetContext.mounted) {
+                                            Navigator.pop(sheetContext);
+                                          }
+                                        },
+                                      ))
+                                  .toList(),
+                            ),
+                          ),
+                        ),
+              ),
+      ),
+    );
+  }
+}
+
+class _LoanOfferCard extends StatelessWidget {
+  const _LoanOfferCard({
+    required this.controller,
+    required this.individualId,
+    required this.offer,
+  });
+  final ElevageController controller;
+  final String individualId;
+  final Map offer;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text('Prêt du Refuge',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 4),
+                const Text(
+                    'Choisissez une structure adaptée pour cette période juvénile.'),
+                const SizedBox(height: 8),
+                Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: (offer['choices'] as List)
+                        .whereType<String>()
+                        .map((id) => OutlinedButton.icon(
+                            icon:
+                                Icon(ElevagePresentation.installationIcon(id)),
+                            label:
+                                Text(ElevagePresentation.installationLabel(id)),
+                            onPressed: () => controller.chooseJuvenileLoan(
+                                individualId, id)))
+                        .toList()),
+              ]),
+        ),
+      );
+}
+
 String _requestLabel(String request) => switch (request) {
       'FOOD' || 'ROOT' || 'LEAF' => 'Pti !',
       'STRUCTURAL' || 'IRON' || 'LIMESTONE' => 'Mm !',
@@ -3646,6 +3984,11 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
                     title: const Text('Réserve du Refuge'),
                     subtitle: Text(
                         '${state.data['inventory']['bioPiles']} Bio-piles')),
+                ListTile(
+                    leading: const Icon(Icons.battery_charging_full_outlined),
+                    title: const Text('Bio-piles disponibles'),
+                    subtitle: Text(
+                        '${(state.data['batteryInventory'] as Map).length} · alimentent une Alcôve localement')),
                 if ((state.data['moduleInventory'] as Map).isNotEmpty)
                   ListTile(
                       leading: const Icon(Icons.extension_outlined),
@@ -4081,24 +4424,31 @@ Future<void> _openBiofabricator(
                       const ListTile(title: Text('Bio-fabricateur')),
                       Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: SegmentedButton<String>(
-                              segments: const <ButtonSegment<String>>[
-                                ButtonSegment(
-                                    value: 'STRUCTURE',
-                                    label: Text('Structures')),
-                                ButtonSegment(
-                                    value: 'MEUBLE', label: Text('Meubles')),
-                                ButtonSegment(
-                                    value: 'DECORATION',
-                                    label: Text('Décorations')),
-                                ButtonSegment(
-                                    value: 'MODULE', label: Text('Modules')),
-                              ],
-                              selected: <String>{
-                                category
-                              },
-                              onSelectionChanged: (value) =>
-                                  setLocal(() => category = value.single))),
+                          child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SegmentedButton<String>(
+                                  segments: const <ButtonSegment<String>>[
+                                    ButtonSegment(
+                                        value: 'STRUCTURE',
+                                        label: Text('Structures')),
+                                    ButtonSegment(
+                                        value: 'MEUBLE',
+                                        label: Text('Meubles')),
+                                    ButtonSegment(
+                                        value: 'DECORATION',
+                                        label: Text('Décorations')),
+                                    ButtonSegment(
+                                        value: 'MODULE',
+                                        label: Text('Modules')),
+                                    ButtonSegment(
+                                        value: 'BATTERY',
+                                        label: Text('Bio-pile')),
+                                  ],
+                                  selected: <String>{
+                                    category
+                                  },
+                                  onSelectionChanged: (value) => setLocal(
+                                      () => category = value.single)))),
                       if (category == 'MODULE')
                         ...controller.config.modules.values
                             .where((module) => module.enabled)
@@ -4127,7 +4477,26 @@ Future<void> _openBiofabricator(
                                           },
                                           child: const Text('Fabriquer'))),
                                 )),
-                      if (category != 'MODULE')
+                      if (category == 'BATTERY')
+                        ListTile(
+                          leading:
+                              const Icon(Icons.battery_charging_full_outlined),
+                          title: const Text('Bio-pile'),
+                          subtitle: const Text(
+                              '5 Organique · 5 Minéral · 1 Champignon · 1 Algue · 5 Sel\nFournit 10 Énergie à une Alcôve.'),
+                          isThreeLine: true,
+                          trailing: FilledButton(
+                            onPressed: () async {
+                              await controller.craftBioBattery();
+                              if (sheetContext.mounted &&
+                                  controller.error == null) {
+                                Navigator.pop(sheetContext);
+                              }
+                            },
+                            child: const Text('Créer'),
+                          ),
+                        ),
+                      if (category != 'MODULE' && category != 'BATTERY')
                         ...controller.config.recipes
                             .where((recipe) =>
                                 controller.config

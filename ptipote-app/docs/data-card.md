@@ -1165,3 +1165,42 @@ L’Eau n’est pas une ressource globale du Camp.
   modules rares/spécifiques aux Natures, récupération lors d’un démontage futur
   et limites de cumul définitives. Ce système prépare les spécialisations
   d’Alcôves sans les implémenter.
+
+# Lot 21.3 — Progression du Refuge et Bio-piles
+
+- **Alcôves et Contribution.** En Target, une nouvelle partie possède une seule
+  Alcôve `READY`; les capacités 2–4 restent présentes mais passent de
+  `LOCKED` à `AVAILABLE_TO_BUILD`, `UNDER_CONSTRUCTION`, puis `READY`.
+  `Contribution` est un total cumulatif non dépensable. Seuils, coûts,
+  durée de chantier et nombre initial d’Alcôves sont configurables dans le
+  Dashboard. Le preset Prototype conserve les quatre Alcôves ouvertes pour QA.
+- **Deux constructions.** L’Alcôve clé en main consomme davantage de Bio-piles.
+  Le chantier assisté consomme moins de Bio-piles et prélève Organique/Minéral.
+  Une fois le chantier lancé, aucun second paiement n’est accepté et la
+  Contribution ne diminue jamais.
+- **Prêt juvénile.** Au passage `BABY → INTERMEDIATE`, deux structures
+  compatibles sont proposées selon Type/Nature : Culture/Bosquet pour Végétal,
+  Support/Colonie pour Fongique, Four/Formation métallique pour Résonance.
+  Une seule instance `LOANED_FROM_REFUGE` est créée. Au passage Mature, son
+  délai de restitution démarre (21 jours réels prototype, configurable), sans
+  dépendre d’une Alcôve supplémentaire. Les Modules personnels installés sont
+  retournés dans la Réserve avant retrait.
+- **Sel.** `SALT` / Sel est une ressource minérale spécifique, disponible en
+  QA et destinée au Littoral de la future Lisière V2. Elle se recycle en
+  `1 MINERAL`; aucune source littorale n’est créée ici.
+- **Bio-pile locale.** `BIO_BATTERY` est un objet à charge, distinct de
+  `ENERGY`. Sa recette prototype exacte est `5 ORGANIC + 5 MINERAL +
+  1 MUSHROOM + 1 ALGAE + 5 SALT`, et sa charge est `10 ENERGY`, toutes deux
+  configurables. Chaque Alcôve a un `BATTERY_SLOT` hors des slots de Structure.
+  Les structures ENERGY y prélèvent localement; à 0, la pile est consommée et
+  les structures se mettent en pause sans dette ni destruction.
+- **Migration 21.1.** L’ancienne énergie partagée reste lisible pour
+  compatibilité Prototype/biogénérateur futur, mais les Alcôves Target ne
+  convertissent plus automatiquement Organique + Minéral : une Bio-pile est
+  requise. Les ressources communes demeurent partagées, les charges des piles
+  sont indépendantes par Alcôve.
+- **Grammaire de coût.** Les structures majeures utilisent 10 unités spécifiques
+  (Culture ROOT, Butte SEED, Support MUSHROOM, Formations minérales, Bosquet,
+  Colonie). Les autres crafts importants visent environ 5 unités. Les coûts
+  Target définitifs, le Biogénérateur durable, la découverte du plan Bio-pile
+  par le Littoral et les gains de Contribution co-élevage restent à arbitrer.
