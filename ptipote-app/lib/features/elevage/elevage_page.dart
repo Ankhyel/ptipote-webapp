@@ -1087,6 +1087,20 @@ class _IndividualPageState extends State<_IndividualPage> {
                           definition,
                           localEnvironment,
                           instance: raw)),
+                if (definition != null &&
+                    widget.controller.config
+                            .modulesFor(definition.id)
+                            .moduleSlots >
+                        0)
+                  ListTile(
+                      leading: const Icon(Icons.extension_outlined),
+                      title: const Text('Modules'),
+                      subtitle: Text(_moduleSlotSummary(raw, definition.id)),
+                      onTap: () async {
+                        await _openModulePicker(
+                            sheetContext, alcoveId, slot, raw, definition.id);
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
+                      }),
                 if (definition?.resonanceMaterial != null ||
                     definition?.resonanceFamily != null)
                   ListTile(
@@ -1149,6 +1163,80 @@ class _IndividualPageState extends State<_IndividualPage> {
                       Navigator.pop(sheetContext);
                       await widget.controller.remove(alcoveId, slot);
                     }),
+              ]),
+            ));
+  }
+
+  String _moduleSlotSummary(Map raw, String definitionId) {
+    final profile = widget.controller.config.modulesFor(definitionId);
+    final installed =
+        ElevageDomain.installedModules(raw, widget.controller.config);
+    final labels = installed
+        .map((entry) =>
+            (entry['definition'] as ElevageModuleDefinition?)?.label ??
+            'Module')
+        .join(' · ');
+    return labels.isEmpty
+        ? '${installed.length}/${profile.moduleSlots} · slot libre'
+        : '${installed.length}/${profile.moduleSlots} · $labels';
+  }
+
+  Future<void> _openModulePicker(BuildContext context, String alcoveId,
+      int slot, Map raw, String definitionId) async {
+    final controller = widget.controller;
+    final profile = controller.config.modulesFor(definitionId);
+    final installed = ElevageDomain.installedModules(raw, controller.config);
+    final inventory = controller.state!.data['moduleInventory'] as Map;
+    final available = inventory.values.whereType<Map>().where((entry) {
+      final module =
+          controller.config.module(entry['moduleId'] as String? ?? '');
+      return module != null &&
+          module.enabled &&
+          profile.allowedModuleIds.contains(module.id) &&
+          module.compatibleStructures.contains(definitionId);
+    }).toList(growable: false);
+    await showModalBottomSheet<void>(
+        context: context,
+        builder: (sheetContext) => SafeArea(
+              child: ListView(shrinkWrap: true, children: <Widget>[
+                ListTile(
+                    title: const Text('Modules installés'),
+                    subtitle:
+                        Text('${installed.length}/${profile.moduleSlots}')),
+                ...installed.map((entry) {
+                  final definition =
+                      entry['definition'] as ElevageModuleDefinition?;
+                  return ListTile(
+                      leading: const Icon(Icons.extension_outlined),
+                      title: Text(definition?.label ?? 'Module'),
+                      subtitle: Text(definition?.description ?? ''),
+                      trailing: const Icon(Icons.remove_circle_outline),
+                      onTap: () async {
+                        await controller.removeModule(
+                            alcoveId, slot, entry['instanceId'] as String);
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
+                      });
+                }),
+                if (installed.length < profile.moduleSlots) ...<Widget>[
+                  const Divider(),
+                  const ListTile(title: Text('Installer un module')),
+                  if (available.isEmpty)
+                    const ListTile(
+                        subtitle: Text('Aucun module compatible en Réserve.')),
+                  ...available.map((entry) {
+                    final definition = controller.config
+                        .module(entry['moduleId'] as String? ?? '');
+                    return ListTile(
+                        leading: const Icon(Icons.add_circle_outline),
+                        title: Text(definition!.label),
+                        subtitle: Text(definition.description),
+                        onTap: () async {
+                          await controller.installModule(
+                              alcoveId, slot, entry['instanceId'] as String);
+                          if (sheetContext.mounted) Navigator.pop(sheetContext);
+                        });
+                  }),
+                ],
               ]),
             ));
   }
@@ -1782,6 +1870,21 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                 onTap: () =>
                     _editStructureConsumption(context, entry.key, entry.value),
               )),
+          _heading('Modules de structure'),
+          ...config.structureModules.entries.map((entry) => ListTile(
+                title: Text(ElevagePresentation.installationLabel(entry.key)),
+                subtitle: Text(
+                    '${entry.value.moduleSlots} slot(s) · ${entry.value.allowedModuleIds.map((id) => config.module(id)?.label ?? id).join(' · ')}'),
+                trailing: const Icon(Icons.tune),
+                onTap: () => _editModuleSlots(context, entry.key, entry.value),
+              )),
+          ...config.modules.values.map((module) => ListTile(
+                leading: const Icon(Icons.extension_outlined),
+                title: Text(module.label),
+                subtitle: Text(_moduleConfigSummary(module)),
+                trailing: const Icon(Icons.tune),
+                onTap: () => _editModuleDefinition(context, module),
+              )),
           _heading('Co-élevage et Sourcier'),
           _number(
               context,
@@ -1912,6 +2015,121 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                 '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}')
             .join(' · ');
     return '${consumption.mode} · $cost / ${consumption.consumptionIntervalSeconds}s';
+  }
+
+  String _moduleConfigSummary(ElevageModuleDefinition module) {
+    final effect = module.effects.entries
+        .map((entry) => '${entry.key} ${entry.value}')
+        .join(' · ');
+    return '${module.category} · $effect · ${module.stackable ? 'cumulable x${module.maxStacksPerStructure}' : 'unique'}${module.enabled ? '' : ' · désactivé'}';
+  }
+
+  Future<void> _editModuleSlots(BuildContext context, String structureId,
+      ElevageStructureModuleProfile profile) async {
+    final next = await _numberDialog(
+        context,
+        '${ElevagePresentation.installationLabel(structureId)} · slots',
+        profile.moduleSlots);
+    if (!context.mounted || next == null || next < 0) return;
+    setState(() => config = config.copyWith(structureModules: {
+          ...config.structureModules,
+          structureId: profile.copyWith(moduleSlots: next),
+        }));
+  }
+
+  Future<void> _editModuleDefinition(
+      BuildContext context, ElevageModuleDefinition module) async {
+    final controllers = <String, TextEditingController>{
+      'organic': TextEditingController(text: '${module.organicCost}'),
+      'mineral': TextEditingController(text: '${module.mineralCost}'),
+      'stacks': TextEditingController(text: '${module.maxStacksPerStructure}'),
+      'effect': TextEditingController(
+          text: '${module.effects.values.firstOrNull ?? 0}'),
+    };
+    var enabled = module.enabled;
+    var stackable = module.stackable;
+    ElevageModuleDefinition? next;
+    try {
+      next = await showDialog<ElevageModuleDefinition>(
+          context: context,
+          builder: (dialogContext) => StatefulBuilder(
+              builder: (dialogContext, setLocal) => AlertDialog(
+                    title: Text(module.label),
+                    content: SingleChildScrollView(
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                      Text(module.description),
+                      SwitchListTile(
+                          title: const Text('Activé'),
+                          value: enabled,
+                          onChanged: (value) =>
+                              setLocal(() => enabled = value)),
+                      SwitchListTile(
+                          title: const Text('Cumulable'),
+                          value: stackable,
+                          onChanged: (value) =>
+                              setLocal(() => stackable = value)),
+                      for (final entry in <String, String>{
+                        'organic': 'Coût Organique',
+                        'mineral': 'Coût Minéral',
+                        'stacks': 'Maximum par structure',
+                        'effect': 'Valeur de l’effet',
+                      }.entries)
+                        TextField(
+                            controller: controllers[entry.key],
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration:
+                                InputDecoration(labelText: entry.value)),
+                    ])),
+                    actions: <Widget>[
+                      TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Annuler')),
+                      FilledButton(
+                          onPressed: () {
+                            final organic =
+                                int.tryParse(controllers['organic']!.text);
+                            final mineral =
+                                int.tryParse(controllers['mineral']!.text);
+                            final stacks =
+                                int.tryParse(controllers['stacks']!.text);
+                            final effect =
+                                num.tryParse(controllers['effect']!.text);
+                            if (organic == null ||
+                                mineral == null ||
+                                stacks == null ||
+                                effect == null ||
+                                organic < 0 ||
+                                mineral < 0 ||
+                                stacks <= 0) {
+                              return;
+                            }
+                            Navigator.pop(
+                                dialogContext,
+                                module.copyWith(
+                                    enabled: enabled,
+                                    stackable: stackable,
+                                    maxStacksPerStructure: stacks,
+                                    organicCost: organic,
+                                    mineralCost: mineral,
+                                    effects: <String, num>{
+                                      module.effects.keys.first: effect,
+                                    }));
+                          },
+                          child: const Text('Valider')),
+                    ],
+                  )));
+    } finally {
+      for (final controller in controllers.values) {
+        controller.dispose();
+      }
+    }
+    if (!context.mounted || next == null) return;
+    setState(() => config = config.copyWith(modules: {
+          ...config.modules,
+          module.id: next!,
+        }));
   }
 
   Future<void> _editStructureConsumption(BuildContext context,
@@ -3428,6 +3646,19 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
                     title: const Text('Réserve du Refuge'),
                     subtitle: Text(
                         '${state.data['inventory']['bioPiles']} Bio-piles')),
+                if ((state.data['moduleInventory'] as Map).isNotEmpty)
+                  ListTile(
+                      leading: const Icon(Icons.extension_outlined),
+                      title: const Text('Modules'),
+                      subtitle: Text((state.data['moduleInventory'] as Map)
+                          .values
+                          .whereType<Map>()
+                          .map((entry) =>
+                              controller.config
+                                  .module(entry['moduleId'] as String? ?? '')
+                                  ?.label ??
+                              'Module')
+                          .join(' · '))),
                 if (items.keys.any((itemId) =>
                     controller.config.recycleRule(itemId)?.recyclable == true))
                   Align(
@@ -3860,82 +4091,117 @@ Future<void> _openBiofabricator(
                                 ButtonSegment(
                                     value: 'DECORATION',
                                     label: Text('Décorations')),
+                                ButtonSegment(
+                                    value: 'MODULE', label: Text('Modules')),
                               ],
                               selected: <String>{
                                 category
                               },
                               onSelectionChanged: (value) =>
                                   setLocal(() => category = value.single))),
-                      ...controller.config.recipes
-                          .where((recipe) =>
-                              controller.config
-                                  .installation(recipe.installationId)
-                                  ?.category ==
-                              category)
-                          .map((recipe) {
-                        final known = ElevageDomain.recipeKnown(state, recipe);
-                        final definition = controller.config
-                            .installation(recipe.installationId);
-                        final environment = ElevageDomain.environment(
-                            state, alcoveId, controller.config);
-                        return ListTile(
-                            isThreeLine: known,
-                            minLeadingWidth: 28,
-                            leading: Icon(definition == null
-                                ? Icons.help_outline
-                                : ElevagePresentation.installationIcon(
-                                    definition.id)),
-                            title: Text(
-                                known ? recipe.label : 'Recette inconnue',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis),
-                            subtitle: known
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Text(<String>[
-                                        if (recipe.organic > 0)
-                                          '${recipe.organic} Organique',
-                                        if (recipe.mineral > 0)
-                                          '${recipe.mineral} Minéral',
-                                        ...recipe.special.entries.map((entry) =>
-                                            '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}'),
-                                      ].join(' · ')),
-                                      if (definition != null)
-                                        Text(
-                                            _installationImpactSentence(
-                                                definition),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                                fontSize: 11,
-                                                fontStyle: FontStyle.italic)),
-                                    ],
-                                  )
-                                : null,
-                            onTap: !known || definition == null
-                                ? null
-                                : () => _showInstallationDetails(sheetContext,
-                                    controller.config, definition, environment),
-                            trailing: known
-                                ? SizedBox(
-                                    width: 100,
-                                    child: FilledButton(
-                                        onPressed: () async {
-                                          await controller.craft(recipe);
-                                          if (sheetContext.mounted &&
-                                              controller.error == null) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(SnackBar(
-                                                    content: Text(
-                                                        '${recipe.label} a été bio-fabriqué.')));
-                                            Navigator.pop(sheetContext);
-                                          }
-                                        },
-                                        child: const Text('Fabriquer')))
-                                : null);
-                      })
+                      if (category == 'MODULE')
+                        ...controller.config.modules.values
+                            .where((module) => module.enabled)
+                            .map((module) => ListTile(
+                                  leading: const Icon(Icons.extension_outlined),
+                                  title: Text(module.label),
+                                  subtitle: Text(
+                                      '${module.description}\n${module.organicCost} Organique · ${module.mineralCost} Minéral',
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis),
+                                  isThreeLine: true,
+                                  trailing: SizedBox(
+                                      width: 100,
+                                      child: FilledButton(
+                                          onPressed: () async {
+                                            await controller
+                                                .craftModule(module);
+                                            if (sheetContext.mounted &&
+                                                controller.error == null) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(SnackBar(
+                                                      content: Text(
+                                                          '${module.label} a été bio-fabriqué.')));
+                                              Navigator.pop(sheetContext);
+                                            }
+                                          },
+                                          child: const Text('Fabriquer'))),
+                                )),
+                      if (category != 'MODULE')
+                        ...controller.config.recipes
+                            .where((recipe) =>
+                                controller.config
+                                    .installation(recipe.installationId)
+                                    ?.category ==
+                                category)
+                            .map((recipe) {
+                          final known =
+                              ElevageDomain.recipeKnown(state, recipe);
+                          final definition = controller.config
+                              .installation(recipe.installationId);
+                          final environment = ElevageDomain.environment(
+                              state, alcoveId, controller.config);
+                          return ListTile(
+                              isThreeLine: known,
+                              minLeadingWidth: 28,
+                              leading: Icon(definition == null
+                                  ? Icons.help_outline
+                                  : ElevagePresentation.installationIcon(
+                                      definition.id)),
+                              title: Text(
+                                  known ? recipe.label : 'Recette inconnue',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis),
+                              subtitle: known
+                                  ? Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(<String>[
+                                          if (recipe.organic > 0)
+                                            '${recipe.organic} Organique',
+                                          if (recipe.mineral > 0)
+                                            '${recipe.mineral} Minéral',
+                                          ...recipe.special.entries.map((entry) =>
+                                              '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}'),
+                                        ].join(' · ')),
+                                        if (definition != null)
+                                          Text(
+                                              _installationImpactSentence(
+                                                  definition),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontStyle: FontStyle.italic)),
+                                      ],
+                                    )
+                                  : null,
+                              onTap: !known || definition == null
+                                  ? null
+                                  : () => _showInstallationDetails(
+                                      sheetContext,
+                                      controller.config,
+                                      definition,
+                                      environment),
+                              trailing: known
+                                  ? SizedBox(
+                                      width: 100,
+                                      child: FilledButton(
+                                          onPressed: () async {
+                                            await controller.craft(recipe);
+                                            if (sheetContext.mounted &&
+                                                controller.error == null) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(SnackBar(
+                                                      content: Text(
+                                                          '${recipe.label} a été bio-fabriqué.')));
+                                              Navigator.pop(sheetContext);
+                                            }
+                                          },
+                                          child: const Text('Fabriquer')))
+                                  : null);
+                        })
                     ])));
       });
 }

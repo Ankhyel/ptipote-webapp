@@ -163,11 +163,21 @@ class ElevageController extends ChangeNotifier {
       (current) => ElevageDomain.claimForaging(current, id, pointId, _now));
   Future<void> craft(ElevageRecipe recipe) =>
       _mutate((current) => ElevageDomain.craft(current, recipe, _now, config));
+  Future<void> craftModule(ElevageModuleDefinition module) => _mutate(
+      (current) => ElevageDomain.craftModule(current, module, _now, config));
   Future<void> place(String alcoveId, int slot, String instanceId) =>
       _mutate((current) =>
           ElevageDomain.place(current, alcoveId, slot, instanceId, _now));
   Future<void> remove(String alcoveId, int slot) =>
       _mutate((current) => ElevageDomain.remove(current, alcoveId, slot));
+  Future<void> installModule(
+          String alcoveId, int slot, String moduleInstanceId) =>
+      _mutate((current) => ElevageDomain.installModule(
+          current, alcoveId, slot, moduleInstanceId, config));
+  Future<void> removeModule(
+          String alcoveId, int slot, String moduleInstanceId) =>
+      _mutate((current) => ElevageDomain.removeModule(
+          current, alcoveId, slot, moduleInstanceId));
   Future<void> refreshAlcove(String alcoveId) => _mutate((current) =>
       ElevageDomain.refreshAlcove(current, alcoveId, _now, config));
   Future<void> harvestLocal(String alcoveId, int slot, String itemId) =>

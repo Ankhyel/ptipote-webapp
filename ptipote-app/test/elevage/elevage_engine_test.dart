@@ -1975,4 +1975,140 @@ void main() {
     expect(installed['instanceId'], 'legacy-hole');
     expect(installed['definitionId'], 'FOUR_BIO_ORGANIQUE');
   });
+
+  test('structures legacy reçoivent des slots modules vides sans changer effet',
+      () {
+    final legacy = ElevageSave.initial(defaultElevageConfig, now: now).toJson();
+    final alcove = (legacy['alcoves'] as List).first as Map;
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'FOUR_BIO_ORGANIQUE',
+      'zoneId': 'ZONE_2',
+    };
+    final migrated = ElevageSave.fromJson(legacy);
+    final installed =
+        ((migrated.data['alcoves'] as List).first as Map)['slots'][1] as Map;
+    expect(installed['installedModules'], isEmpty);
+    expect(
+        ElevageDomain.zoneEnvironment(
+            migrated, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+            now: now, phaseOverride: 'NIGHT')['temperature'],
+        4);
+  });
+
+  test('POWER augmente Four et Ventilation, EFFICIENCY allonge le coût réel',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'FOUR_BIO_ORGANIQUE',
+      'zoneId': 'ZONE_2',
+      'installedModules': <dynamic>[
+        <String, dynamic>{
+          'instanceId': 'power-one',
+          'moduleId': 'MODULE_POWER_BASIC'
+        }
+      ],
+    };
+    expect(
+        ElevageDomain.zoneEnvironment(
+            state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+            now: now, phaseOverride: 'NIGHT')['temperature'],
+        5);
+    alcove['slots'][1] = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'zoneId': 'ZONE_2',
+      'installedModules': <dynamic>[
+        <String, dynamic>{
+          'instanceId': 'power-two',
+          'moduleId': 'MODULE_POWER_BASIC'
+        }
+      ],
+    };
+    expect(
+        ElevageDomain.zoneEnvironment(
+            state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
+            now: now, phaseOverride: 'DAY')['humidity'],
+        0);
+    final generic = state.data['inventory']['generic'] as Map;
+    generic['energy'] = 0;
+    generic['organic'] = 2;
+    generic['mineral'] = 1;
+    alcove['slots'][1]['installedModules'] = <dynamic>[
+      <String, dynamic>{
+        'instanceId': 'efficient',
+        'moduleId': 'MODULE_EFFICIENCY_BASIC'
+      }
+    ];
+    alcove['slots'][1]['maintenanceState'] = <String, dynamic>{
+      'status': 'ACTIVE',
+      'lastResolvedAt': now,
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 2).inMilliseconds, defaultElevageConfig);
+    // 2 h is shorter than the 2 h 30 efficiency interval: no conversion.
+    expect((state.data['inventory']['generic'] as Map)['energy'], 0);
+  });
+
+  test('CAPACITY augmente le cap Culture puis le retrait revient au cap base',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][0] = <String, dynamic>{
+      'definitionId': 'CULTURE_POTAGERE',
+      'zoneId': 'ZONE_1',
+      'installedModules': <dynamic>[
+        <String, dynamic>{
+          'instanceId': 'capacity',
+          'moduleId': 'MODULE_CAPACITY_BASIC'
+        }
+      ],
+      'productionState': <String, dynamic>{
+        'lastResolvedAt': now,
+        'availableByItemId': <String, int>{},
+      },
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 30).inMilliseconds, defaultElevageConfig);
+    final culture =
+        ((state.data['alcoves'] as List).first as Map)['slots'][0] as Map;
+    expect((culture['productionState']['availableByItemId'] as Map)['ROOT'], 9);
+    culture['installedModules'] = <dynamic>[];
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 33).inMilliseconds, defaultElevageConfig);
+    final afterRemoval =
+        ((state.data['alcoves'] as List).first as Map)['slots'][0] as Map;
+    expect(
+        (afterRemoval['productionState']['availableByItemId'] as Map)['ROOT'],
+        9);
+  });
+
+  test('installation module respecte stacking, incompatibilité et persistance',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['slots'][1] = <String, dynamic>{
+      'instanceId': 'vent',
+      'definitionId': 'VENTILATION',
+      'zoneId': 'ZONE_2'
+    };
+    final modules = state.data['moduleInventory'] as Map;
+    for (final id in <String>['one', 'two', 'three']) {
+      modules[id] = <String, dynamic>{
+        'instanceId': id,
+        'moduleId': 'MODULE_POWER_BASIC'
+      };
+    }
+    state = ElevageDomain.installModule(
+        state, 'alcove-1', 1, 'one', defaultElevageConfig);
+    state = ElevageDomain.installModule(
+        state, 'alcove-1', 1, 'two', defaultElevageConfig);
+    expect(
+        () => ElevageDomain.installModule(
+            state, 'alcove-1', 1, 'three', defaultElevageConfig),
+        throwsStateError);
+    final reloaded = ElevageSave.fromJson(state.toJson());
+    final installed =
+        ((reloaded.data['alcoves'] as List).first as Map)['slots'][1] as Map;
+    expect((installed['installedModules'] as List), hasLength(2));
+  });
 }

@@ -39,6 +39,7 @@ class ElevageSave {
       'activeIndividualIds': <String>[],
       'discoveredItemIds': <String>[],
       'installationInventory': <String, dynamic>{},
+      'moduleInventory': <String, dynamic>{},
       'habitatInventory': <String, dynamic>{},
       'habitatItemsByAlcoveId': <String, dynamic>{},
       // Items placed in the four visible Alcôve zones. They are deliberately
@@ -64,6 +65,7 @@ class ElevageSave {
     final normalized = _clone(json);
     normalized.putIfAbsent('runsByIndividualId', () => <String, dynamic>{});
     normalized.putIfAbsent('installationInventory', () => <String, dynamic>{});
+    normalized.putIfAbsent('moduleInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('habitatInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('habitatItemsByAlcoveId', () => <String, dynamic>{});
     normalized.putIfAbsent('sceneItemsByAlcoveId', () => <String, dynamic>{});
@@ -76,10 +78,16 @@ class ElevageSave {
         .whereType<Map>()) {
       for (final slot
           in (alcove['slots'] as List? ?? const <dynamic>[]).whereType<Map>()) {
+        slot.putIfAbsent('installedModules', () => <dynamic>[]);
         if (_resonanceFormationIds.contains(slot['definitionId'])) {
           slot.remove('productionState');
         }
       }
+    }
+    for (final instance in (normalized['installationInventory'] as Map)
+        .values
+        .whereType<Map>()) {
+      instance.putIfAbsent('installedModules', () => <dynamic>[]);
     }
     // Migration QA one-shot, strictement limitée à la sauvegarde Élevage.
     // Elle enlève les stocks de test historiques sans toucher Zone 0 ni la
@@ -1505,15 +1513,16 @@ class ElevageDomain {
       final definition = config.installation(raw['definitionId'] as String);
       if (definition == null) continue;
       if (!structureIsActive(raw, config)) continue;
+      final effects = _effectiveEnvironmentEffects(raw, definition, config);
       if (installedZone == zoneId) {
-        result['light'] = result['light']! + definition.light;
+        result['light'] = result['light']! + effects['light']!;
       }
       result['temperature'] = result['temperature']! +
           _localOrAdjacentContribution(
-              definition.temperature, installedZone, zoneId, config);
+              effects['temperature']!, installedZone, zoneId, config);
       result['humidity'] = result['humidity']! +
           _localOrAdjacentContribution(
-              definition.humidity, installedZone, zoneId, config);
+              effects['humidity']!, installedZone, zoneId, config);
     }
     // Une zone naturellement très ombragée refroidit localement. Cette règle
     // reste dans le domaine et utilise la lumière effective, pas la vue.
@@ -1961,6 +1970,135 @@ class ElevageDomain {
       recipe.unlockItems.every(
           (item) => (state.data['discoveredItemIds'] as List).contains(item));
 
+  static ElevageSave craftModule(ElevageSave source,
+      ElevageModuleDefinition definition, int now, ElevageConfig config) {
+    if (!definition.enabled) throw StateError('Module indisponible.');
+    final state = source.copy();
+    final generic = _generic(state);
+    if ((generic['organic'] ?? 0) < definition.organicCost ||
+        (generic['mineral'] ?? 0) < definition.mineralCost) {
+      throw StateError('Ressources insuffisantes.');
+    }
+    generic['organic'] = generic['organic']! - definition.organicCost;
+    generic['mineral'] = generic['mineral']! - definition.mineralCost;
+    final instanceId = 'module-$now-${definition.id}';
+    _moduleInventory(state)[instanceId] = <String, dynamic>{
+      'instanceId': instanceId,
+      'moduleId': definition.id,
+      'craftedAt': now,
+    };
+    return state;
+  }
+
+  static List<Map<String, dynamic>> installedModules(
+      Map structure, ElevageConfig config) {
+    final raw = structure['installedModules'] as List? ?? const <dynamic>[];
+    return raw.whereType<Map>().map((entry) {
+      final copy = Map<String, dynamic>.from(entry);
+      copy['definition'] = config.module(copy['moduleId'] as String? ?? '');
+      return copy;
+    }).toList(growable: false);
+  }
+
+  static ElevageSave installModule(ElevageSave source, String alcoveId,
+      int slot, String moduleInstanceId, ElevageConfig config) {
+    final state = source.copy();
+    final structure = (_alcove(state, alcoveId)['slots'] as List)[slot];
+    if (structure is! Map) throw StateError('Structure indisponible.');
+    final profile = config.modulesFor(structure['definitionId'] as String);
+    final inventory = _moduleInventory(state);
+    final moduleInstance = inventory[moduleInstanceId] as Map?;
+    if (moduleInstance == null) throw StateError('Module indisponible.');
+    final module = config.module(moduleInstance['moduleId'] as String? ?? '');
+    if (module == null ||
+        !module.enabled ||
+        !profile.allowedModuleIds.contains(module.id) ||
+        !module.compatibleStructures
+            .contains(structure['definitionId'] as String)) {
+      throw StateError('Module incompatible.');
+    }
+    final installed =
+        structure.putIfAbsent('installedModules', () => <dynamic>[]) as List;
+    if (installed.length >= profile.moduleSlots) {
+      throw StateError('Aucun emplacement de module libre.');
+    }
+    final count = installed
+        .whereType<Map>()
+        .where((entry) => entry['moduleId'] == module.id)
+        .length;
+    if ((!module.stackable && count > 0) ||
+        count >= module.maxStacksPerStructure) {
+      throw StateError('Ce module ne peut plus être cumulé.');
+    }
+    installed.add(Map<String, dynamic>.from(moduleInstance));
+    inventory.remove(moduleInstanceId);
+    return state;
+  }
+
+  static ElevageSave removeModule(
+      ElevageSave source, String alcoveId, int slot, String moduleInstanceId) {
+    final state = source.copy();
+    final structure = (_alcove(state, alcoveId)['slots'] as List)[slot];
+    if (structure is! Map) throw StateError('Structure indisponible.');
+    final installed = structure['installedModules'] as List?;
+    final index = installed?.indexWhere((entry) =>
+            entry is Map && entry['instanceId'] == moduleInstanceId) ??
+        -1;
+    if (index < 0) throw StateError('Module absent.');
+    final module = Map<String, dynamic>.from(installed!.removeAt(index) as Map);
+    _moduleInventory(state)[moduleInstanceId] = module;
+    return state;
+  }
+
+  static Map<String, int> _effectiveEnvironmentEffects(
+      Map raw, ElevageInstallationDefinition definition, ElevageConfig config) {
+    final result = <String, int>{
+      'light': definition.light,
+      'temperature': definition.temperature,
+      'humidity': definition.humidity,
+    };
+    final axis = config.modulesFor(definition.id).primaryEnvironmentAxis;
+    if (axis == null) return result;
+    final delta = installedModules(raw, config).fold<num>(
+        0,
+        (sum, module) =>
+            sum +
+            (((module['definition'] as ElevageModuleDefinition?)
+                    ?.effects['environmentMagnitudeDelta']) ??
+                0));
+    if (delta == 0 || result[axis] == 0) return result;
+    result[axis] = result[axis]! + result[axis]!.sign * delta.round();
+    return result;
+  }
+
+  static ElevageStructureConsumption _effectiveConsumption(
+      Map raw, ElevageStructureConsumption base, ElevageConfig config) {
+    final multiplier = installedModules(raw, config).fold<num>(
+        1,
+        (value, module) =>
+            value *
+            (((module['definition'] as ElevageModuleDefinition?)
+                    ?.effects['consumptionIntervalMultiplier']) ??
+                1));
+    if (multiplier == 1) return base;
+    return base.copyWith(
+        consumptionIntervalSeconds:
+            max(1, (base.consumptionIntervalSeconds * multiplier).round()));
+  }
+
+  static ElevageProductionOutput _effectiveOutput(
+      Map raw, ElevageProductionOutput base, ElevageConfig config) {
+    final capacityDelta = installedModules(raw, config).fold<num>(
+        0,
+        (sum, module) =>
+            sum +
+            (((module['definition'] as ElevageModuleDefinition?)
+                    ?.effects['stockCapacityDelta']) ??
+                0));
+    return base.copyWith(
+        maxLocalStock: max(1, base.maxLocalStock + capacityDelta.round()));
+  }
+
   static ElevageSave craft(
       ElevageSave source, ElevageRecipe recipe, int now, ElevageConfig config) {
     final state = source.copy();
@@ -2004,6 +2142,7 @@ class ElevageDomain {
         'reason': null,
         'lastResolvedAt': now,
       },
+      'installedModules': <dynamic>[],
     };
     return state;
   }
@@ -2048,9 +2187,10 @@ class ElevageDomain {
       final definition = config.installation(raw['definitionId'] as String);
       if (definition == null) continue;
       if (!structureIsActive(raw, config)) continue;
-      result['light'] = result['light']! + definition.light;
-      result['temperature'] = result['temperature']! + definition.temperature;
-      result['humidity'] = result['humidity']! + definition.humidity;
+      final effects = _effectiveEnvironmentEffects(raw, definition, config);
+      result['light'] = result['light']! + effects['light']!;
+      result['temperature'] = result['temperature']! + effects['temperature']!;
+      result['humidity'] = result['humidity']! + effects['humidity']!;
     }
     return result;
   }
@@ -2100,8 +2240,10 @@ class ElevageDomain {
     for (final alcove in state.data['alcoves'] as List) {
       final slots = (alcove as Map)['slots'] as List? ?? const <dynamic>[];
       for (final raw in slots.whereType<Map>()) {
-        final specification =
-            config.consumptionFor(raw['definitionId'] as String? ?? '');
+        final specification = _effectiveConsumption(
+            raw,
+            config.consumptionFor(raw['definitionId'] as String? ?? ''),
+            config);
         if (!specification.enabled || specification.mode == 'NONE') {
           continue;
         }
@@ -2210,8 +2352,9 @@ class ElevageDomain {
       if (configuredOutputs.isNotEmpty) {
         final lastByItem = production.putIfAbsent(
             'lastResolvedAtByItemId', () => <String, int>{}) as Map;
-        for (final output
-            in configuredOutputs.where((entry) => entry.enabled)) {
+        for (final output in configuredOutputs
+            .where((entry) => entry.enabled)
+            .map((entry) => _effectiveOutput(raw, entry, config))) {
           // Existing saves carry one timestamp for the whole producer. Use it
           // exactly once as the seed for the new per-output clocks.
           final last = (lastByItem[output.resourceId] as num?)?.toInt() ??
@@ -2221,8 +2364,12 @@ class ElevageDomain {
               max(0, (now - last) ~/ (output.productionSeconds * 1000));
           if (cycles == 0) continue;
           final current = (stock[output.resourceId] as num?)?.toInt() ?? 0;
-          stock[output.resourceId] = min(
-              output.maxLocalStock, current + cycles * output.quantityPerCycle);
+          // Removing Capacity must never delete an already harvested/grown
+          // stock. Above the new cap, production simply remains paused.
+          if (current < output.maxLocalStock) {
+            stock[output.resourceId] = min(output.maxLocalStock,
+                current + cycles * output.quantityPerCycle);
+          }
           lastByItem[output.resourceId] =
               last + cycles * output.productionSeconds * 1000;
         }
@@ -2626,6 +2773,9 @@ class ElevageDomain {
       Map<String, int>.from((state.data['inventory']['special'] as Map)
           .map((key, value) => MapEntry('$key', (value as num).toInt())))
         ..also((map) => state.data['inventory']['special'] = map);
+  static Map<String, dynamic> _moduleInventory(ElevageSave state) =>
+      Map<String, dynamic>.from(state.data['moduleInventory'] as Map)
+        ..also((map) => state.data['moduleInventory'] = map);
 
   static bool _physicalAlreadyLinked(ElevageSave state, String ref) =>
       (state.data['activeIndividualIds'] as List).any((id) =>

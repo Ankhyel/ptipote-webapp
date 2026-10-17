@@ -1131,3 +1131,37 @@ L’Eau n’est pas une ressource globale du Camp.
   introduite dans ce lot.
 - **Points à arbitrer.** Coûts Target du Four, de la Ventilation, de
   l’éclairage, des producteurs et des futures structures actives.
+
+# Lot 21.2 — Structures modulaires
+
+- **Aucun niveau de structure.** Une structure garde son identité et son
+  effet de base. Elle reçoit seulement des `moduleSlots` optionnels et des
+  instances `installedModules` persistées sur son instance précise. Un retrait
+  ou déplacement conserve donc les modules attachés.
+- **Modèle générique.** Chaque module a un identifiant, catégorie, compatibilités,
+  effets déclaratifs, activation, règles de cumul, coûts prototype et métadonnées
+  UI. L’ordre de résolution est déterministe : bonus additifs, puis
+  multiplicateurs ; l’ordre du tableau installé ne change jamais le résultat.
+- **V1 pilote.** Four bio-organique et Ventilation ont 2 slots et acceptent
+  Puissance/Efficacité ; la Culture potagère possède 1 slot Capacité. Puissance
+  ajoute `+1` à l’axe environnemental principal configuré, Efficacité allonge
+  l’intervalle d’entretien de `×1,25` (aucun coût fractionnaire ou nul), et
+  Capacité ajoute `+3` au plafond local de chaque sortie de Culture.
+- **Modules prototype.** `MODULE_POWER_BASIC`, `MODULE_EFFICIENCY_BASIC` et
+  `MODULE_CAPACITY_BASIC` sont des objets fabriqués et stockés séparément dans
+  la Réserve. Ils ne sont pas recyclables. Puissance/Efficacité sont cumulables
+  jusqu’à 2 ; Capacité est unique. Les incompatibilités sont refusées par le
+  domaine, pas seulement cachées par l’UI.
+- **Maintenance, production, limites.** Les modules sont appliqués avant la
+  consommation d’entretien, la diffusion environnementale et le plafond de
+  production. Le clamp final reste 0–5. Après retrait de Capacité, un stock
+  déjà supérieur au nouveau plafond est conservé ; seule sa production est
+  suspendue jusqu’à redescendre.
+- **Dashboard et Bio-fabricateur.** Le Dashboard permet de régler les slots,
+  coûts, activation, cumul et valeur d’effet prototype ; le Bio-fabricateur
+  possède l’onglet Modules. Les fiches de structure montrent les slots et
+  permettent installer/retirer les instances compatibles.
+- **Points à arbitrer.** Nombre Target de slots, recettes et puissance finales,
+  modules rares/spécifiques aux Natures, récupération lors d’un démontage futur
+  et limites de cumul définitives. Ce système prépare les spécialisations
+  d’Alcôves sans les implémenter.

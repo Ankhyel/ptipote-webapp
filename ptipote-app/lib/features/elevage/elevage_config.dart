@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-const int elevageConfigSchemaVersion = 6;
+const int elevageConfigSchemaVersion = 7;
 
 /// Every non-generic resource that can be selected as an explicit recipe
 /// component in the local Élevage Dashboard. Organic and Mineral stay as their
@@ -223,6 +223,21 @@ class ElevageStructureConsumption {
   final int consumptionIntervalSeconds;
   final bool enabled;
 
+  ElevageStructureConsumption copyWith({
+    int? energyCost,
+    Map<String, int>? resourceCosts,
+    int? consumptionIntervalSeconds,
+    bool? enabled,
+  }) =>
+      ElevageStructureConsumption(
+        mode: mode,
+        energyCost: energyCost ?? this.energyCost,
+        resourceCosts: resourceCosts ?? this.resourceCosts,
+        consumptionIntervalSeconds:
+            consumptionIntervalSeconds ?? this.consumptionIntervalSeconds,
+        enabled: enabled ?? this.enabled,
+      );
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'mode': mode,
         'energyCost': energyCost,
@@ -246,6 +261,128 @@ class ElevageStructureConsumption {
         enabled: json['enabled'] is bool
             ? json['enabled'] as bool
             : fallback.enabled,
+      );
+}
+
+/// Structure identity never has a level. This profile describes only the
+/// optional module sockets available on each concrete structure type.
+class ElevageStructureModuleProfile {
+  const ElevageStructureModuleProfile({
+    this.moduleSlots = 0,
+    this.allowedModuleIds = const <String>[],
+    this.primaryEnvironmentAxis,
+  });
+
+  final int moduleSlots;
+  final List<String> allowedModuleIds;
+  final String? primaryEnvironmentAxis;
+
+  ElevageStructureModuleProfile copyWith({int? moduleSlots}) =>
+      ElevageStructureModuleProfile(
+        moduleSlots: moduleSlots ?? this.moduleSlots,
+        allowedModuleIds: allowedModuleIds,
+        primaryEnvironmentAxis: primaryEnvironmentAxis,
+      );
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'moduleSlots': moduleSlots,
+        'allowedModuleIds': allowedModuleIds,
+        'primaryEnvironmentAxis': primaryEnvironmentAxis,
+      };
+
+  factory ElevageStructureModuleProfile.fromJson(
+          Map<String, dynamic> json, ElevageStructureModuleProfile fallback) =>
+      ElevageStructureModuleProfile(
+        moduleSlots: _nonNegative(json['moduleSlots'], fallback.moduleSlots),
+        allowedModuleIds: List<String>.from(
+            json['allowedModuleIds'] as List? ?? fallback.allowedModuleIds),
+        primaryEnvironmentAxis: json['primaryEnvironmentAxis'] as String? ??
+            fallback.primaryEnvironmentAxis,
+      );
+}
+
+/// Module effects are data, not widget conditionals. V1 resolves additive
+/// values first then multiplicative values, independently of installed order.
+class ElevageModuleDefinition {
+  const ElevageModuleDefinition({
+    required this.id,
+    required this.label,
+    required this.description,
+    required this.category,
+    required this.compatibleStructures,
+    this.effects = const <String, num>{},
+    this.icon = 'extension',
+    this.enabled = true,
+    this.stackable = false,
+    this.maxStacksPerStructure = 1,
+    this.organicCost = 0,
+    this.mineralCost = 0,
+  });
+
+  final String id;
+  final String label;
+  final String description;
+  final String category;
+  final List<String> compatibleStructures;
+  final Map<String, num> effects;
+  final String icon;
+  final bool enabled;
+  final bool stackable;
+  final int maxStacksPerStructure;
+  final int organicCost;
+  final int mineralCost;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'label': label,
+        'description': description,
+        'category': category,
+        'compatibleStructures': compatibleStructures,
+        'effects': effects,
+        'icon': icon,
+        'enabled': enabled,
+        'stackable': stackable,
+        'maxStacksPerStructure': maxStacksPerStructure,
+        'organicCost': organicCost,
+        'mineralCost': mineralCost,
+      };
+
+  ElevageModuleDefinition copyWith({
+    bool? enabled,
+    bool? stackable,
+    int? maxStacksPerStructure,
+    Map<String, num>? effects,
+    int? organicCost,
+    int? mineralCost,
+  }) =>
+      ElevageModuleDefinition(
+        id: id,
+        label: label,
+        description: description,
+        category: category,
+        compatibleStructures: compatibleStructures,
+        effects: effects ?? this.effects,
+        icon: icon,
+        enabled: enabled ?? this.enabled,
+        stackable: stackable ?? this.stackable,
+        maxStacksPerStructure:
+            maxStacksPerStructure ?? this.maxStacksPerStructure,
+        organicCost: organicCost ?? this.organicCost,
+        mineralCost: mineralCost ?? this.mineralCost,
+      );
+
+  factory ElevageModuleDefinition.fromJson(
+          Map<String, dynamic> json, ElevageModuleDefinition fallback) =>
+      fallback.copyWith(
+        enabled: json['enabled'] is bool ? json['enabled'] as bool : null,
+        stackable: json['stackable'] is bool ? json['stackable'] as bool : null,
+        maxStacksPerStructure: _positive(
+            json['maxStacksPerStructure'], fallback.maxStacksPerStructure),
+        organicCost: _nonNegative(json['organicCost'], fallback.organicCost),
+        mineralCost: _nonNegative(json['mineralCost'], fallback.mineralCost),
+        effects: (json['effects'] as Map?)?.map(
+                (key, value) => MapEntry('$key', value is num ? value : 0)) ??
+            fallback.effects,
       );
 }
 
@@ -466,6 +603,8 @@ class ElevageConfig {
     this.producerOutputs = const <String, List<ElevageProductionOutput>>{},
     this.installationEffects = const <String, Map<String, int>>{},
     this.structureConsumptions = const <String, ElevageStructureConsumption>{},
+    this.structureModules = const <String, ElevageStructureModuleProfile>{},
+    this.modules = const <String, ElevageModuleDefinition>{},
   });
 
   final String revision;
@@ -555,6 +694,8 @@ class ElevageConfig {
   /// remains part of the domain, not of the configuration UI.
   final Map<String, Map<String, int>> installationEffects;
   final Map<String, ElevageStructureConsumption> structureConsumptions;
+  final Map<String, ElevageStructureModuleProfile> structureModules;
+  final Map<String, ElevageModuleDefinition> modules;
 
   int get babyMinimumHours => preset == ElevagePreset.prototype ? 24 : 48;
   int get intermediateMinimumHours =>
@@ -576,6 +717,9 @@ class ElevageConfig {
   ElevageStructureConsumption consumptionFor(String installationId) =>
       structureConsumptions[installationId] ??
       const ElevageStructureConsumption();
+  ElevageStructureModuleProfile modulesFor(String installationId) =>
+      structureModules[installationId] ?? const ElevageStructureModuleProfile();
+  ElevageModuleDefinition? module(String id) => modules[id];
 
   List<ElevageInstallationDefinition> get _defaultInstallations =>
       <ElevageInstallationDefinition>[
@@ -1020,6 +1164,8 @@ class ElevageConfig {
     Map<String, List<ElevageProductionOutput>>? producerOutputs,
     Map<String, Map<String, int>>? installationEffects,
     Map<String, ElevageStructureConsumption>? structureConsumptions,
+    Map<String, ElevageStructureModuleProfile>? structureModules,
+    Map<String, ElevageModuleDefinition>? modules,
   }) =>
       ElevageConfig(
         revision: revision ?? this.revision,
@@ -1137,6 +1283,8 @@ class ElevageConfig {
         installationEffects: installationEffects ?? this.installationEffects,
         structureConsumptions:
             structureConsumptions ?? this.structureConsumptions,
+        structureModules: structureModules ?? this.structureModules,
+        modules: modules ?? this.modules,
       );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -1222,6 +1370,10 @@ class ElevageConfig {
         'structureConsumptions': structureConsumptions.map(
             (installationId, consumption) =>
                 MapEntry(installationId, consumption.toJson())),
+        'structureModules': structureModules.map((installationId, profile) =>
+            MapEntry(installationId, profile.toJson())),
+        'modules': modules
+            .map((moduleId, module) => MapEntry(moduleId, module.toJson())),
       };
 
   factory ElevageConfig.fromJson(Map<String, dynamic> json) {
@@ -1378,6 +1530,9 @@ class ElevageConfig {
           json['installationEffects'], base.installationEffects),
       structureConsumptions: _structureConsumptions(
           json['structureConsumptions'], base.structureConsumptions),
+      structureModules:
+          _structureModules(json['structureModules'], base.structureModules),
+      modules: _modules(json['modules'], base.modules),
     );
     validateElevageConfig(config);
     return config;
@@ -1478,6 +1633,32 @@ Map<String, List<String>> _natureCurves(
   return result;
 }
 
+Map<String, ElevageStructureModuleProfile> _structureModules(
+    Object? value, Map<String, ElevageStructureModuleProfile> fallback) {
+  if (value is! Map) return fallback;
+  final result = <String, ElevageStructureModuleProfile>{...fallback};
+  for (final entry in value.entries) {
+    final profile = fallback['${entry.key}'];
+    if (profile == null || entry.value is! Map) continue;
+    result['${entry.key}'] = ElevageStructureModuleProfile.fromJson(
+        Map<String, dynamic>.from(entry.value as Map), profile);
+  }
+  return result;
+}
+
+Map<String, ElevageModuleDefinition> _modules(
+    Object? value, Map<String, ElevageModuleDefinition> fallback) {
+  if (value is! Map) return fallback;
+  final result = <String, ElevageModuleDefinition>{...fallback};
+  for (final entry in value.entries) {
+    final definition = fallback['${entry.key}'];
+    if (definition == null || entry.value is! Map) continue;
+    result['${entry.key}'] = ElevageModuleDefinition.fromJson(
+        Map<String, dynamic>.from(entry.value as Map), definition);
+  }
+  return result;
+}
+
 List<ElevageNatureProfile> _natureProfiles(
     Object? value, List<ElevageNatureProfile> fallback) {
   if (value is! List) return fallback;
@@ -1559,6 +1740,18 @@ void validateElevageConfig(ElevageConfig config) {
           (entry.resourceCosts.isEmpty ||
               entry.resourceCosts.values.any((value) => value <= 0) ||
               entry.consumptionIntervalSeconds <= 0)));
+  const moduleCategories = <String>{'POWER', 'EFFICIENCY', 'CAPACITY'};
+  final invalidModules = config.modules.values.any((module) =>
+      !moduleCategories.contains(module.category) ||
+      module.compatibleStructures.isEmpty ||
+      module.maxStacksPerStructure <= 0 ||
+      module.organicCost < 0 ||
+      module.mineralCost < 0);
+  final invalidStructureModules = config.structureModules.entries.any((entry) =>
+      entry.value.moduleSlots < 0 ||
+      entry.value.allowedModuleIds.any((id) =>
+          !config.modules.containsKey(id) ||
+          !config.modules[id]!.compatibleStructures.contains(entry.key)));
   if (config.hungerNormalHours > config.hungerHungryHours ||
       config.hungerHungryHours > config.hungerVeryHungryHours ||
       config.suspectedThreshold > config.confirmedThreshold ||
@@ -1604,6 +1797,8 @@ void validateElevageConfig(ElevageConfig config) {
       ].any((minutes) => minutes > config.dayNightCycleHours * 60) ||
       invalidRecycleRules ||
       invalidConsumption ||
+      invalidModules ||
+      invalidStructureModules ||
       config.vocalizations.values.any((value) => value.trim().isEmpty) ||
       config.natureProfiles.length != 3 ||
       config.natureProfiles.map((profile) => profile.id).toSet().length !=
@@ -1765,6 +1960,67 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       mode: 'ENERGY',
       energyCost: 1,
       consumptionIntervalSeconds: 7200,
+    ),
+  },
+  structureModules: <String, ElevageStructureModuleProfile>{
+    'FOUR_BIO_ORGANIQUE': ElevageStructureModuleProfile(
+      moduleSlots: 2,
+      allowedModuleIds: <String>[
+        'MODULE_POWER_BASIC',
+        'MODULE_EFFICIENCY_BASIC',
+      ],
+      primaryEnvironmentAxis: 'temperature',
+    ),
+    'VENTILATION': ElevageStructureModuleProfile(
+      moduleSlots: 2,
+      allowedModuleIds: <String>[
+        'MODULE_POWER_BASIC',
+        'MODULE_EFFICIENCY_BASIC',
+      ],
+      primaryEnvironmentAxis: 'humidity',
+    ),
+    'CULTURE_POTAGERE': ElevageStructureModuleProfile(
+      moduleSlots: 1,
+      allowedModuleIds: <String>['MODULE_CAPACITY_BASIC'],
+    ),
+  },
+  modules: <String, ElevageModuleDefinition>{
+    'MODULE_POWER_BASIC': ElevageModuleDefinition(
+      id: 'MODULE_POWER_BASIC',
+      label: 'Module de puissance',
+      description:
+          'Renforce l’effet environnemental principal de la structure.',
+      category: 'POWER',
+      compatibleStructures: <String>['FOUR_BIO_ORGANIQUE', 'VENTILATION'],
+      effects: <String, num>{'environmentMagnitudeDelta': 1},
+      stackable: true,
+      maxStacksPerStructure: 2,
+      organicCost: 2,
+      mineralCost: 1,
+    ),
+    'MODULE_EFFICIENCY_BASIC': ElevageModuleDefinition(
+      id: 'MODULE_EFFICIENCY_BASIC',
+      label: 'Module d’efficacité',
+      description: 'Allonge l’intervalle entre deux consommations de 25 %.',
+      category: 'EFFICIENCY',
+      compatibleStructures: <String>['FOUR_BIO_ORGANIQUE', 'VENTILATION'],
+      effects: <String, num>{'consumptionIntervalMultiplier': 1.25},
+      stackable: true,
+      maxStacksPerStructure: 2,
+      organicCost: 2,
+      mineralCost: 2,
+    ),
+    'MODULE_CAPACITY_BASIC': ElevageModuleDefinition(
+      id: 'MODULE_CAPACITY_BASIC',
+      label: 'Module de capacité',
+      description: 'Augmente de 3 le stock local maximal de chaque ressource.',
+      category: 'CAPACITY',
+      compatibleStructures: <String>['CULTURE_POTAGERE'],
+      effects: <String, num>{'stockCapacityDelta': 3},
+      stackable: false,
+      maxStacksPerStructure: 1,
+      organicCost: 3,
+      mineralCost: 1,
     ),
   },
   producerOutputs: <String, List<ElevageProductionOutput>>{
