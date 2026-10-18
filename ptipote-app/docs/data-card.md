@@ -1411,3 +1411,40 @@ L’Eau n’est pas une ressource globale du Camp.
 - **Limites.** Exploration autonome Mature, équipement, bonus additionnels,
   caisse personnelle, salle commune, nouveaux métiers, combat et événements
   restent hors scope.
+
+# Lot 22.2 — Satiété V2 et communication de la faim
+
+- **Jauge et persistance.** Chaque P’TIPOTE porte une `satiety` persistée de
+  0 à 100, accompagnée de `satietyUpdatedAt`. La valeur est calculée à la
+  demande depuis ce timestamp : elle fonctionne donc hors ligne sans ticker
+  permanent, est clampée à 0–100 et ne provoque ni mort, ni régression, ni
+  dégradation durable à zéro. Un nouveau résident démarre à 100, valeur
+  configurable. Toute mutation (repas, métamorphose, outil dev) résout d’abord
+  le temps passé, puis écrit un nouveau timestamp : un changement de stade ne
+  réinterprète jamais le passé.
+- **Rythmes Prototype.** La perte est Dashboard-configurable par stade : Baby
+  `10/h`, Intermediate/Juvénile `5/h`, Mature `3/h`. Les seuils sont aussi
+  configurables : `>=70` Rassasié, `50–69` Faim, `<50` Très faim. L’ancien
+  timer « un aliment nourrit pendant X heures » n’est plus lu par le runtime.
+  `lastMealAt` demeure uniquement un champ d’audit/migration legacy.
+- **Valeur des aliments.** Les valeurs brutes sont centralisées en config et
+  indépendantes des préférences : LEAF/MOSS `+10`, ALGAE `+15`,
+  ROOT/FRUIT/MUSHROOM `+20`, friandise `+10`. Un repas applique
+  `min(100, satiety + foodSatietyValue)`; aimer un aliment ne le rend pas plus
+  nourrissant. Les pools alimentaires par Type/stade du lot 21.5 restent le
+  garde-fou : un aliment encore verrouillé ne peut pas être mangé et ne donne
+  aucun point. Cuisine, recettes, buffs et demandes précises (« veux fruit »)
+  restent hors scope, mais la donnée permet ces évolutions.
+- **Communication.** La faim est un état ressenti distinct d’une future
+  demande alimentaire précise. Baby couine périodiquement (`Pti…`, plus
+  insistant à Très faim), sans mot. Juvénile conserve le couinement et un
+  pictogramme repas/ventre; il emploie `faim` seulement lorsque le concept
+  `HUNGER` est appris selon les seuils de langage existants (5 découvert
+  Juvénile, 10 si déjà rencontré Baby). Mature peut dire « J’ai faim » ou
+  « J’ai très faim ». Les cooldowns Baby/Juvénile sont configurables; le
+  Dashboard dev permet régler, ajouter et simuler une heure de satiété.
+- **Migration.** Au premier chargement d’une sauvegarde sans `satiety`, une
+  migration idempotente convertit `lastMealAt` sans mettre arbitrairement un
+  résident à zéro : absent/récemment nourri `100`, 25–72 h `70`, plus ancien
+  `50`. Le marqueur `satietyV22Migration` interdit toute reconversion et la
+  valeur/timestamp deviennent ensuite l’unique source de vérité.

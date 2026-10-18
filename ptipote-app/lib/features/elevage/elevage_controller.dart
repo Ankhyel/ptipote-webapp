@@ -34,6 +34,7 @@ class ElevageController extends ChangeNotifier {
     if (state != null) {
       state = ElevageDomain.processReturns(state!, _now);
       state = ElevageDomain.refreshRefugeProgress(state!, _now, config);
+      state = ElevageDomain.refreshSatietyState(state!, _now, config);
       state = ElevageDomain.refreshExploration(state!, _now, config);
       // Resolve every local producer and the shared maintenance ledger on
       // return from background. The domain caps consumption at depletion, so
@@ -89,6 +90,15 @@ class ElevageController extends ChangeNotifier {
 
   Future<void> offerFood(String id, String item) => _mutate(
       (current) => ElevageDomain.offerFood(current, id, item, _now, config));
+  Future<void> setSatiety(String id, int value) => _mutate((current) =>
+      ElevageDomain.setIndividualSatiety(current, id, value, _now));
+  Future<void> addSatiety(String id, int amount) => _mutate((current) =>
+      ElevageDomain.addIndividualSatiety(current, id, amount, _now, config));
+  Future<void> simulateSatietyElapsedHours(String id, int hours) =>
+      _mutate((current) => ElevageDomain.simulateSatietyElapsedHours(
+          current, id, hours, _now, config));
+  Future<void> refreshSatiety() => _mutate(
+      (current) => ElevageDomain.refreshSatietyState(current, _now, config));
   Future<void> offerStructural(String id, String item) => _mutate((current) =>
       ElevageDomain.offerStructural(current, id, item, _now, config));
   Future<String?> placeSceneItem(

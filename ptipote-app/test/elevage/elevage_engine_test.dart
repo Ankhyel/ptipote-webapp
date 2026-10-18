@@ -65,6 +65,7 @@ void main() {
     expect((state.data['inventory']['generic'] as Map)['organic'], 30);
     expect((state.data['inventory']['generic'] as Map)['mineral'], 30);
     expect((state.data['inventory']['special'] as Map)['LIMESTONE'], 3);
+    state = ElevageDomain.setIndividualSatiety(state, id, 80, now);
     final favorite = (state.data['individuals'] as Map)[id]['generatedProfile']
         ['foodPreference'] as String;
     state = ElevageDomain.offerFood(
@@ -204,6 +205,7 @@ void main() {
     final individual = (state.data['individuals'] as Map)[id] as Map;
     final favorite = individual['generatedProfile']['foodPreference'] as String;
     (state.data['inventory']['special'] as Map)[favorite] = 4;
+    state = ElevageDomain.setIndividualSatiety(state, id, 95, now);
     for (var index = 0; index < 4; index++) {
       state = ElevageDomain.offerFood(
           state,
@@ -225,7 +227,7 @@ void main() {
         4);
   });
 
-  test('satiété est dérivée et bloque seulement un repas normal immédiat', () {
+  test('satiété V2 est dérivée et bloque un repas à 100', () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     state = ElevageDomain.adopt(
         source: state,
@@ -238,6 +240,7 @@ void main() {
     final favorite = (state.data['individuals'] as Map)[id]['generatedProfile']
         ['foodPreference'] as String;
     (state.data['inventory']['special'] as Map)[favorite] = 2;
+    state = ElevageDomain.setIndividualSatiety(state, id, 95, now);
     state =
         ElevageDomain.offerFood(state, id, favorite, now, defaultElevageConfig);
     expect(ElevageDomain.satietyPercent(state, id, now, defaultElevageConfig),
@@ -248,7 +251,7 @@ void main() {
             id,
             now + const Duration(hours: 24).inMilliseconds,
             defaultElevageConfig),
-        50);
+        0);
     expect(
         () => ElevageDomain.offerFood(
             state, id, favorite, now + 1, defaultElevageConfig),
@@ -317,6 +320,7 @@ void main() {
         'INTERMEDIATE';
     ((state.data['individuals'] as Map)[id]['generatedProfile']
         as Map)['foodPreference'] = 'ROOT';
+    state = ElevageDomain.setIndividualSatiety(state, id, 60, now);
     final alcove = (state.data['alcoves'] as List).first as Map;
     alcove['slots'][2] = <String, dynamic>{
       'definitionId': 'BASSIN',
@@ -355,6 +359,7 @@ void main() {
     final id = (state.data['activeIndividualIds'] as List).single as String;
     ((state.data['individuals'] as Map)[id]['generatedProfile']
         as Map)['foodPreference'] = 'ROOT';
+    state = ElevageDomain.setIndividualSatiety(state, id, 60, now);
     state = ElevageDomain.placeSceneItem(
         state, 'alcove-1', 'ROOT', 'ZONE_2', now + 1, defaultElevageConfig);
     final item = ElevageDomain.sceneItems(state, 'alcove-1').single;
@@ -491,7 +496,7 @@ void main() {
     expect(entry()['rawBehaviorCount'], 5);
   });
 
-  test('le preset Prototype accélère la faim Bébé par cinq', () {
+  test('satiété V2 applique le taux propre à chaque stade', () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     state = ElevageDomain.adopt(
         source: state,
@@ -501,30 +506,34 @@ void main() {
         now: now,
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
-    final favorite = (state.data['individuals'] as Map)[id]['generatedProfile']
-        ['foodPreference'] as String;
-    (state.data['inventory']['special'] as Map)[favorite] = 1;
-    state =
-        ElevageDomain.offerFood(state, id, favorite, now, defaultElevageConfig);
-    expect(
-        ElevageDomain.hunger(
-            state,
-            id,
-            now + const Duration(hours: 34).inMilliseconds,
-            defaultElevageConfig),
-        'HUNGRY');
-    expect(
-        ElevageDomain.hunger(
-            state,
-            id,
-            now + const Duration(hours: 48).inMilliseconds,
-            defaultElevageConfig),
-        'VERY_HUNGRY');
-    final target = defaultElevageConfig.copyWith(preset: ElevagePreset.target);
+    state = ElevageDomain.setIndividualSatiety(state, id, 100, now);
     expect(
         ElevageDomain.satietyPercent(
-            state, id, now + const Duration(hours: 24).inMilliseconds, target),
-        90);
+            state,
+            id,
+            now + const Duration(hours: 3).inMilliseconds,
+            defaultElevageConfig),
+        70);
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'INTERMEDIATE';
+    state = ElevageDomain.setIndividualSatiety(state, id, 100, now);
+    expect(
+        ElevageDomain.satietyPercent(
+            state,
+            id,
+            now + const Duration(hours: 6).inMilliseconds,
+            defaultElevageConfig),
+        70);
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'MATURE';
+    state = ElevageDomain.setIndividualSatiety(state, id, 100, now);
+    expect(
+        ElevageDomain.satietyPercent(
+            state,
+            id,
+            now + const Duration(hours: 10).inMilliseconds,
+            defaultElevageConfig),
+        70);
   });
 
   test('un objet posé fournit une décision autonome sans bouton manuel', () {
@@ -539,6 +548,7 @@ void main() {
     final id = (state.data['activeIndividualIds'] as List).single as String;
     ((state.data['individuals'] as Map)[id]['generatedProfile']
         as Map)['foodPreference'] = 'ROOT';
+    state = ElevageDomain.setIndividualSatiety(state, id, 60, now);
     state = ElevageDomain.placeSceneItem(
         state, 'alcove-1', 'ROOT', 'ZONE_2', now + 1, defaultElevageConfig);
     final decision = ElevageDomain.nextAutonomousSceneDecision(
@@ -561,7 +571,6 @@ void main() {
         now: now,
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
-    ((state.data['individuals'] as Map)[id]['care'] as Map)['lastMealAt'] = now;
     state = ElevageDomain.placeSceneItem(
         state, 'alcove-1', 'ROOT', 'ZONE_1', now + 1, defaultElevageConfig);
     final item = ElevageDomain.sceneItems(state, 'alcove-1').single;
@@ -724,8 +733,6 @@ void main() {
   });
 
   test('need peut rester interne, request respecte âge et initiative', () {
-    final requestConfig = defaultElevageConfig.copyWith(
-        hungerNormalHours: 1, hungerHungryHours: 2, hungerVeryHungryHours: 3);
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     state = ElevageDomain.adopt(
         source: state,
@@ -742,16 +749,17 @@ void main() {
         const Duration(hours: 1).inMilliseconds *
         3 ~/
         4;
-    (individual['care'] as Map)['lastMealAt'] =
-        requestAt - const Duration(hours: 200).inMilliseconds;
-    expect(ElevageDomain.hunger(state, id, requestAt, requestConfig),
+    state = ElevageDomain.setIndividualSatiety(state, id, 0, requestAt);
+    expect(ElevageDomain.hunger(state, id, requestAt, defaultElevageConfig),
         anyOf('HUNGRY', 'VERY_HUNGRY'));
-    expect(ElevageDomain.isSleeping(individual, requestAt, requestConfig),
+    expect(
+        ElevageDomain.isSleeping(individual, requestAt, defaultElevageConfig),
         isFalse);
-    state = ElevageDomain.refreshRequest(state, id, requestAt, requestConfig);
+    state = ElevageDomain.refreshRequest(
+        state, id, requestAt, defaultElevageConfig);
     expect((state.data['individuals'] as Map)[id]['activeRequest'], isNotNull);
     expect(
-        ElevageDomain.activeRequest(state, id, requestAt)?['signal'], 'Pti ?');
+        ElevageDomain.activeRequest(state, id, requestAt)?['signal'], 'HUNGER');
     expect(
         ElevageDomain.activeRequest(
             state, id, requestAt + const Duration(seconds: 91).inMilliseconds),
@@ -2983,5 +2991,151 @@ void main() {
         as Map)['COLLINE_GROTTE'] as Map;
     expect(sector['mineral'], 2);
     expect(sector['organic'], 85);
+  });
+
+  test('Satiety V2 décroît hors ligne, se recharge par valeur et reste bornée',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Nourri',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    state = ElevageDomain.setIndividualSatiety(state, id, 80, now);
+    expect(
+        ElevageDomain.satietyPercent(
+            state,
+            id,
+            now + const Duration(hours: 3).inMilliseconds,
+            defaultElevageConfig),
+        50);
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    individual['family'] = 'VEGETAL';
+    state = ElevageDomain.setIndividualSatiety(state, id, 40, now);
+    (state.data['inventory']['special'] as Map)['FRUIT'] = 1;
+    state =
+        ElevageDomain.offerFood(state, id, 'FRUIT', now, defaultElevageConfig);
+    expect(
+        ElevageDomain.satietyPercent(state, id, now, defaultElevageConfig), 60);
+    ((state.data['individuals'] as Map)[id] as Map)['family'] = 'FUNGAL';
+    state = ElevageDomain.setIndividualSatiety(state, id, 60, now);
+    (state.data['inventory']['special'] as Map)['ROOT'] = 1;
+    state =
+        ElevageDomain.offerFood(state, id, 'ROOT', now, defaultElevageConfig);
+    expect(
+        ElevageDomain.satietyPercent(state, id, now, defaultElevageConfig), 80);
+    state = ElevageDomain.setIndividualSatiety(state, id, 95, now);
+    (state.data['inventory']['special'] as Map)['ROOT'] = 1;
+    state =
+        ElevageDomain.offerFood(state, id, 'ROOT', now, defaultElevageConfig);
+    expect(ElevageDomain.satietyPercent(state, id, now, defaultElevageConfig),
+        100);
+    state = ElevageDomain.setIndividualSatiety(state, id, 5, now);
+    expect(
+        ElevageDomain.satietyPercent(
+            state,
+            id,
+            now + const Duration(hours: 10).inMilliseconds,
+            defaultElevageConfig),
+        0);
+  });
+
+  test('Satiety V2 garde les seuils, pools et préférences séparés', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Seuil',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    state = ElevageDomain.setIndividualSatiety(state, id, 70, now);
+    expect(
+        ElevageDomain.hunger(state, id, now, defaultElevageConfig), 'SATIATED');
+    state = ElevageDomain.setIndividualSatiety(state, id, 69, now);
+    expect(
+        ElevageDomain.hunger(state, id, now, defaultElevageConfig), 'HUNGRY');
+    state = ElevageDomain.setIndividualSatiety(state, id, 49, now);
+    expect(ElevageDomain.hunger(state, id, now, defaultElevageConfig),
+        'VERY_HUNGRY');
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    individual['family'] = 'VEGETAL';
+    expect(ElevageDomain.canEat(individual, 'ALGAE', defaultElevageConfig),
+        isFalse);
+    expect(defaultElevageConfig.foodSatietyValue('LEAF'), 10);
+    expect(defaultElevageConfig.foodSatietyValue('MOSS'), 10);
+    expect(defaultElevageConfig.foodSatietyValue('ALGAE'), 15);
+    expect(defaultElevageConfig.foodSatietyValue('ROOT'), 20);
+    expect(defaultElevageConfig.foodSatietyValue('FRUIT'), 20);
+    expect(defaultElevageConfig.foodSatietyValue('MUSHROOM'), 20);
+    expect(defaultElevageConfig.foodSatietyValue('FIBROUS_FRUIT'), 10);
+  });
+
+  test('les expressions de faim respectent Baby, Juvénile et Mature', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Parleur',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    const signalAt = ((now ~/ 1000 ~/ 40) + 1) * 40 * 1000;
+    state = ElevageDomain.setIndividualSatiety(state, id, 60, signalAt);
+    expect(
+        ElevageDomain.hungerExpression(
+            state, id, signalAt, defaultElevageConfig)?['voice'],
+        'Pti…');
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    expect(
+        ElevageDomain.hungerExpression(
+            state, id, signalAt, defaultElevageConfig)?['voice'],
+        'Pti !');
+    (individual['conceptExposures'] as Map)['HUNGER'] = <String, dynamic>{
+      'total': 5,
+      'baby': 0
+    };
+    expect(
+        ElevageDomain.hungerExpression(
+            state, id, signalAt, defaultElevageConfig)?['voice'],
+        'faim');
+    (individual['lifecycle'] as Map)['stage'] = 'MATURE';
+    state = ElevageDomain.setIndividualSatiety(state, id, 30, signalAt);
+    expect(
+        ElevageDomain.hungerExpression(
+            state, id, signalAt, defaultElevageConfig)?['voice'],
+        'J’ai très faim.');
+  });
+
+  test('migration Satiety V2 protège une ancienne sauvegarde récemment nourrie',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Legacy',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final legacy = state.toJson();
+    legacy['satietyV22Migration'] = false;
+    legacy['savedAt'] = now;
+    final care = (legacy['individuals'] as Map)[id]['care'] as Map;
+    care
+      ..remove('satiety')
+      ..remove('satietyUpdatedAt')
+      ..['lastMealAt'] = now - const Duration(hours: 25).inMilliseconds;
+    final migrated = ElevageSave.fromJson(legacy);
+    expect(
+        ElevageDomain.satietyPercent(migrated, id, now, defaultElevageConfig),
+        70);
+    expect(migrated.data['satietyV22Migration'], isTrue);
   });
 }

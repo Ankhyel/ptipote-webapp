@@ -784,6 +784,45 @@ class ElevageConfig {
               as Map?)?['babyVocalCooldownSeconds'] as num?)
           ?.toInt() ??
       3;
+  Map<String, dynamic> get satietyConfig => Map<String, dynamic>.from(
+      refugeProgression['satiety'] as Map? ?? const <dynamic, dynamic>{});
+  int _satietyNumber(String key, int fallback) =>
+      ((satietyConfig[key] as num?)?.toInt() ?? fallback).clamp(0, 100);
+  int get initialSatiety => _satietyNumber('initialSatiety', 100);
+  int satietyLossPerHour(String stage) => switch (stage) {
+        'BABY' => _satietyNumber('babyLossPerHour', 10),
+        'INTERMEDIATE' => _satietyNumber('intermediateLossPerHour', 5),
+        _ => _satietyNumber('matureLossPerHour', 3),
+      };
+  int get satietySatiatedThreshold =>
+      _satietyNumber('satiatedThreshold', 70).clamp(0, 100);
+  int get satietyHungryThreshold =>
+      _satietyNumber('hungryThreshold', 50).clamp(0, satietySatiatedThreshold);
+  int foodSatietyValue(String itemId) {
+    final values = satietyConfig['foodSatietyValues'] as Map?;
+    final isTreat = itemId == 'FIBROUS_FRUIT' || itemId == 'FRUIT_JELLY';
+    final direct = values == null ? null : values[itemId];
+    final raw = direct ?? (isTreat && values != null ? values['TREAT'] : null);
+    return ((raw as num?)?.toInt() ?? 0).clamp(0, 100);
+  }
+
+  int hungerSignalCooldown(String stage, String hungerState) {
+    final key = switch (stage) {
+      'BABY' => hungerState == 'VERY_HUNGRY'
+          ? 'babyVeryHungrySignalCooldown'
+          : 'babyHungrySignalCooldown',
+      'INTERMEDIATE' => hungerState == 'VERY_HUNGRY'
+          ? 'juvenileVeryHungrySignalCooldown'
+          : 'juvenileHungrySignalCooldown',
+      _ => hungerState == 'VERY_HUNGRY'
+          ? 'matureVeryHungrySignalCooldown'
+          : 'matureHungrySignalCooldown',
+    };
+    return ((satietyConfig[key] as num?)?.toInt() ??
+            (hungerState == 'VERY_HUNGRY' ? 4 : 8))
+        .clamp(1, 3600);
+  }
+
   Map<String, dynamic> get languageConfig => Map<String, dynamic>.from(
       refugeProgression['language'] as Map? ?? const <dynamic, dynamic>{});
   int get juvenileNewConceptWordThreshold =>
@@ -2716,6 +2755,29 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'BABY': <String, bool>{'canAbsorb': false, 'canResonate': false},
       'INTERMEDIATE': <String, bool>{'canAbsorb': true, 'canResonate': true},
       'MATURE': <String, bool>{'canAbsorb': true, 'canResonate': true},
+    },
+    'satiety': <String, dynamic>{
+      'initialSatiety': 100,
+      'babyLossPerHour': 10,
+      'intermediateLossPerHour': 5,
+      'matureLossPerHour': 3,
+      'satiatedThreshold': 70,
+      'hungryThreshold': 50,
+      'foodSatietyValues': <String, int>{
+        'LEAF': 10,
+        'MOSS': 10,
+        'ALGAE': 15,
+        'ROOT': 20,
+        'FRUIT': 20,
+        'MUSHROOM': 20,
+        'TREAT': 10,
+      },
+      'babyHungrySignalCooldown': 8,
+      'babyVeryHungrySignalCooldown': 4,
+      'juvenileHungrySignalCooldown': 10,
+      'juvenileVeryHungrySignalCooldown': 5,
+      'matureHungrySignalCooldown': 12,
+      'matureVeryHungrySignalCooldown': 6,
     },
     'producerUi': <String, dynamic>{'showProducerStockBubble': true},
     'exploration': <String, dynamic>{

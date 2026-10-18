@@ -1411,6 +1411,8 @@ class _IndividualPageState extends State<_IndividualPage> {
         state, widget.individualId, now, controller.config);
     final satiety = ElevageDomain.satietyPercent(
         state, widget.individualId, now, controller.config);
+    final hungerExpression = ElevageDomain.hungerExpression(
+        state, widget.individualId, now, controller.config);
     final communication = ElevageDomain.communication(
         state, widget.individualId, now, controller.config);
     final available = ElevageDomain.metamorphosisAvailable(
@@ -1499,10 +1501,12 @@ class _IndividualPageState extends State<_IndividualPage> {
                 pendingItem: _pendingPlacementItem,
                 followHoldZoneId: _followHoldZoneId,
                 action: _sceneAction,
-                voice: _sceneVoice ?? ambientVoice,
+                voice:
+                    _sceneVoice ?? ambientVoice ?? hungerExpression?['voice'],
                 bubbleItemId: _bubbleItemId,
                 ptipoteHoldActive: _ptipoteHoldActive,
-                requestSignal: request?['signal'] as String?,
+                requestSignal:
+                    hungerExpression?['icon'] ?? request?['signal'] as String?,
                 ambientSignal: ambient,
                 expressedNeed: needText,
                 sleeping: sleeping,
@@ -1532,13 +1536,14 @@ class _IndividualPageState extends State<_IndividualPage> {
                   title: Text(_hungerLabel(hunger)),
                   subtitle: const Text(
                       'La faim est lente et ne comporte aucune punition irréversible.')),
-              ListTile(
-                  leading: const Text('🍴', style: TextStyle(fontSize: 22)),
-                  title: const Text('Satiété'),
-                  subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: LinearProgressIndicator(value: satiety / 100)),
-                  trailing: Text('$satiety %')),
+              if (controller.config.devMode)
+                ListTile(
+                    leading: const Text('🍴', style: TextStyle(fontSize: 22)),
+                    title: const Text('Debug · Satiété'),
+                    subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: LinearProgressIndicator(value: satiety / 100)),
+                    trailing: Text('$satiety %')),
               if (controller.config.devMode && available)
                 FilledButton.tonalIcon(
                     onPressed: () => _metamorphosis(
@@ -1942,6 +1947,25 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     setState(() => config = config.copyWith(refugeProgression: progression));
   }
 
+  void _setSatietyNumber(String key, int value) =>
+      _setRefugeNestedNumber('satiety', key, value);
+
+  int _satietyNumber(String key, int fallback) =>
+      ((config.satietyConfig[key] as num?)?.toInt() ?? fallback)
+          .clamp(0, 999999);
+
+  void _setFoodSatietyValue(String itemId, int value) {
+    final progression = Map<String, dynamic>.from(config.refugeProgression);
+    final satiety = Map<String, dynamic>.from(
+        progression['satiety'] as Map? ?? const <dynamic, dynamic>{});
+    final values = Map<String, dynamic>.from(
+        satiety['foodSatietyValues'] as Map? ?? const <dynamic, dynamic>{});
+    values[itemId] = value.clamp(0, 100);
+    satiety['foodSatietyValues'] = values;
+    progression['satiety'] = satiety;
+    setState(() => config = config.copyWith(refugeProgression: progression));
+  }
+
   Widget _trackerDevTools(BuildContext context) {
     final state = widget.controller.state;
     final individuals = state?.data['individuals'] as Map?;
@@ -1991,6 +2015,56 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               ],
               child: const Padding(
                   padding: EdgeInsets.all(8), child: Text('Niv.')),
+            ),
+          ]),
+        );
+      }),
+    ]);
+  }
+
+  Widget _satietyDevTools(BuildContext context) {
+    final state = widget.controller.state;
+    final individuals = state?.data['individuals'] as Map?;
+    final activeIds = state?.data['activeIndividualIds'] as List? ?? const [];
+    final active = activeIds
+        .whereType<String>()
+        .map((id) => individuals?[id])
+        .whereType<Map>()
+        .toList(growable: false);
+    if (active.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _heading('Outils dev Satiété'),
+      ...active.map((individual) {
+        final id = individual['id'] as String;
+        final value = ElevageDomain.satietyPercent(
+            state!, id, widget.controller.now, widget.controller.config);
+        final hunger = ElevageDomain.hunger(
+            state, id, widget.controller.now, widget.controller.config);
+        return ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+              '${individual['name']} · $value/100 · ${_hungerLabel(hunger)}'),
+          subtitle: Text(
+              '${widget.controller.config.satietyLossPerHour((individual['lifecycle'] as Map)['stage'] as String)}/h · calculée depuis le timestamp'),
+          trailing: Wrap(spacing: 4, children: [
+            TextButton(
+                onPressed: () => widget.controller.addSatiety(id, 10),
+                child: const Text('+10')),
+            TextButton(
+                onPressed: () =>
+                    widget.controller.simulateSatietyElapsedHours(id, 1),
+                child: const Text('+1 h')),
+            PopupMenuButton<int>(
+              tooltip: 'Définir satiété',
+              onSelected: (value) => widget.controller.setSatiety(id, value),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 0, child: Text('Satiété = 0')),
+                PopupMenuItem(value: 50, child: Text('Satiété = 50')),
+                PopupMenuItem(value: 70, child: Text('Satiété = 70')),
+                PopupMenuItem(value: 100, child: Text('Satiété = 100')),
+              ],
+              child: const Padding(
+                  padding: EdgeInsets.all(8), child: Text('Régler')),
             ),
           ]),
         );
@@ -2371,19 +2445,66 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                     0,
                 (value) => _setAssistedCost(index, 'MINERAL', value)),
           ],
-          _heading('Maturation, faim et découverte'),
+          _heading('Maturation, satiété et découverte'),
           Text(
               'Bébé : ${config.babyMinimumHours} h · Intermédiaire : ${config.intermediateMinimumHours} h'),
-          _number(context, 'Normal après (h)', config.hungerNormalHours,
-              (value) => config = config.copyWith(hungerNormalHours: value)),
-          _number(context, 'Faim après (h)', config.hungerHungryHours,
-              (value) => config = config.copyWith(hungerHungryHours: value)),
+          const Text('Satiété V2 · une jauge 0–100, sans timer par aliment.'),
+          _number(context, 'Satiété initiale', config.initialSatiety,
+              (value) => _setSatietyNumber('initialSatiety', value)),
+          _number(context, 'Perte Bébé / h', config.satietyLossPerHour('BABY'),
+              (value) => _setSatietyNumber('babyLossPerHour', value)),
           _number(
               context,
-              'Très faim après (h)',
-              config.hungerVeryHungryHours,
+              'Perte Juvénile / h',
+              config.satietyLossPerHour('INTERMEDIATE'),
+              (value) => _setSatietyNumber('intermediateLossPerHour', value)),
+          _number(
+              context,
+              'Perte Mature / h',
+              config.satietyLossPerHour('MATURE'),
+              (value) => _setSatietyNumber('matureLossPerHour', value)),
+          _number(context, 'Seuil Rassasié', config.satietySatiatedThreshold,
+              (value) => _setSatietyNumber('satiatedThreshold', value)),
+          _number(context, 'Seuil Faim', config.satietyHungryThreshold,
+              (value) => _setSatietyNumber('hungryThreshold', value)),
+          for (final item in <String>[
+            'LEAF',
+            'MOSS',
+            'ALGAE',
+            'ROOT',
+            'FRUIT',
+            'MUSHROOM',
+            'TREAT'
+          ])
+            _number(
+                context,
+                'Satiété ${item == 'TREAT' ? 'Friandise' : ElevagePresentation.itemLabel(item)}',
+                config.foodSatietyValue(item),
+                (value) => _setFoodSatietyValue(item, value)),
+          _number(
+              context,
+              'Signal Bébé faim (s)',
+              _satietyNumber('babyHungrySignalCooldown', 8),
+              (value) => _setSatietyNumber('babyHungrySignalCooldown', value)),
+          _number(
+              context,
+              'Signal Bébé très faim (s)',
+              _satietyNumber('babyVeryHungrySignalCooldown', 4),
               (value) =>
-                  config = config.copyWith(hungerVeryHungryHours: value)),
+                  _setSatietyNumber('babyVeryHungrySignalCooldown', value)),
+          _number(
+              context,
+              'Signal Juvénile faim (s)',
+              _satietyNumber('juvenileHungrySignalCooldown', 10),
+              (value) =>
+                  _setSatietyNumber('juvenileHungrySignalCooldown', value)),
+          _number(
+              context,
+              'Signal Juvénile très faim (s)',
+              _satietyNumber('juvenileVeryHungrySignalCooldown', 5),
+              (value) =>
+                  _setSatietyNumber('juvenileVeryHungrySignalCooldown', value)),
+          if (widget.controller.config.devMode) _satietyDevTools(context),
           _number(context, 'Preuves suspectées', config.suspectedThreshold,
               (value) => config = config.copyWith(suspectedThreshold: value)),
           _number(context, 'Preuves confirmées', config.confirmedThreshold,
@@ -3659,7 +3780,6 @@ String _environmentAxisLabel(String axis) => switch (axis) {
     };
 String _hungerLabel(String value) => switch (value) {
       'SATIATED' => 'Rassasié',
-      'NORMAL' => 'Bien',
       'HUNGRY' => 'A faim',
       _ => 'Très faim'
     };
@@ -3668,6 +3788,7 @@ String _communicationLabel(String value) => switch (value) {
       'LEAF' => 'Souhaite une feuille',
       'IRON' => 'Recherche du fer',
       'FOOD' => 'A faim',
+      'HUNGER' => 'A faim',
       _ => 'Besoin minéral'
     };
 String _coRemaining(Map ownership, int now) {
@@ -4349,10 +4470,7 @@ class _StatusBubble extends StatelessWidget {
               const SizedBox(width: 4),
               Flexible(
                   child: Text(
-                      voice ??
-                          (signal == 'Pti ?'
-                              ? 'Pti ?'
-                              : _requestLabel(signal!)),
+                      '${signal == 'HUNGER' ? '🍽️ ' : ''}${voice ?? (signal == 'Pti ?' ? 'Pti ?' : _requestLabel(signal!))}',
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                       style: const TextStyle(
@@ -4679,6 +4797,7 @@ class _LoanOfferCard extends StatelessWidget {
 }
 
 String _requestLabel(String request) => switch (request) {
+      'HUNGER' => '🍽️',
       'FOOD' || 'ROOT' || 'LEAF' => 'Pti !',
       'STRUCTURAL' || 'IRON' || 'LIMESTONE' => 'Mm !',
       'CONTACT' => 'Pti !',

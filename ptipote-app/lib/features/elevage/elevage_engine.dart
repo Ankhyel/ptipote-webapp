@@ -196,6 +196,28 @@ class ElevageSave {
     final individuals = normalized['individuals'] as Map?;
     individuals?.forEach((_, raw) {
       if (raw is Map) {
+        final care = raw.putIfAbsent('care', () => <String, dynamic>{}) as Map;
+        if (normalized['satietyV22Migration'] != true &&
+            care['satiety'] is! num) {
+          final lastMeal = (care['lastMealAt'] as num?)?.toInt();
+          final savedAt =
+              (normalized['savedAt'] as num?)?.toInt() ?? lastMeal ?? 0;
+          // V1 only knew the time of the last meal. Preserve a recently fed
+          // resident comfortably, while old/unknown meals become hungry but
+          // never arrive at an arbitrary zero on upgrade.
+          final elapsedHours = lastMeal == null
+              ? 0
+              : max(0, savedAt - lastMeal) ~/
+                  const Duration(hours: 1).inMilliseconds;
+          care['satiety'] = lastMeal == null
+              ? 100
+              : elapsedHours <= 24
+                  ? 100
+                  : elapsedHours <= 72
+                      ? 70
+                      : 50;
+          care['satietyUpdatedAt'] = savedAt;
+        }
         raw.putIfAbsent('observationJournal',
             () => <String, dynamic>{'observations': <String, dynamic>{}});
         raw.putIfAbsent(
@@ -269,6 +291,7 @@ class ElevageSave {
         }
       }
     });
+    normalized['satietyV22Migration'] = true;
     return ElevageSave(normalized);
   }
 
@@ -1107,6 +1130,8 @@ class ElevageDomain {
       },
       'care': <String, dynamic>{
         'lastMealAt': null,
+        'satiety': config.initialSatiety,
+        'satietyUpdatedAt': now,
         'metabolicMeals': 0,
         'structuralIntake': <String, dynamic>{
           'total': 0,
@@ -1188,6 +1213,8 @@ class ElevageDomain {
     final favorite = individual['generatedProfile']['foodPreference'] as String;
     if (treatItems.contains(item)) {
       special[item] = special[item]! - 1;
+      final current = refreshSatiety(individual, now, config);
+      setSatiety(individual, current + config.foodSatietyValue(item), now);
       _memory(state, id, 'FIRST_TREAT', now);
       _interaction(individual, 'TREAT', contact: 1);
       _adjustWellbeing(individual, 2, now);
@@ -1201,6 +1228,9 @@ class ElevageDomain {
     }
     special[item] = special[item]! - 1;
     final care = individual['care'] as Map<String, dynamic>;
+    final current = refreshSatiety(individual, now, config);
+    setSatiety(individual, current + config.foodSatietyValue(item), now);
+    // Kept as an audit field for legacy saves only. Satiety V2 never reads it.
     care['lastMealAt'] = now;
     care['metabolicMeals'] = (care['metabolicMeals'] as int) + 1;
     individual['activeRequest'] = null;
@@ -1597,44 +1627,138 @@ class ElevageDomain {
 
   static String hunger(
       ElevageSave state, String id, int now, ElevageConfig config) {
-    final lastMeal = _individual(state, id)['care']['lastMealAt'] as int?;
-    if (lastMeal == null) return 'SATIATED';
-    final hours = (now - lastMeal) / const Duration(hours: 1).inMilliseconds;
-    final speed = _hungerSpeed(state, id, config);
-    if (hours >= config.hungerVeryHungryHours / speed) return 'VERY_HUNGRY';
-    if (hours >= config.hungerHungryHours / speed) return 'HUNGRY';
-    if (hours >= config.hungerNormalHours / speed) return 'NORMAL';
-    return 'SATIATED';
+    final satiety = satietyPercent(state, id, now, config);
+    if (satiety >= config.satietySatiatedThreshold) return 'SATIATED';
+    if (satiety >= config.satietyHungryThreshold) return 'HUNGRY';
+    return 'VERY_HUNGRY';
   }
 
+  /// Derives the displayed value from a persisted 0–100 value and timestamp.
+  /// This makes offline loss deterministic without a permanent timer.
   static int satietyPercent(
       ElevageSave state, String id, int now, ElevageConfig config) {
-    final lastMeal = _individual(state, id)['care']['lastMealAt'] as int?;
-    if (lastMeal == null) return 100;
-    final elapsed = max(0, now - lastMeal);
-    final span = config.hungerVeryHungryHours /
-        _hungerSpeed(state, id, config) *
-        const Duration(hours: 1).inMilliseconds;
-    return (100 - elapsed * 100 / span).round().clamp(0, 100);
+    return _resolvedSatiety(_individual(state, id), now, config);
   }
 
-  /// Prototype accéléré pour que la boucle faim → objet posé → décision soit
-  /// observable en playtest ; TARGET conserve les durées de design lentes.
-  static double _hungerSpeed(
-      ElevageSave state, String id, ElevageConfig config) {
-    final stage = _individual(state, id)['lifecycle']['stage'] as String;
-    if (config.preset == ElevagePreset.prototype) {
-      return switch (stage) { 'BABY' => 5, 'INTERMEDIATE' => 3, _ => 1 };
+  static int _resolvedSatiety(Map individual, int now, ElevageConfig config) {
+    final care = individual['care'] as Map? ?? const <dynamic, dynamic>{};
+    final stored = (care['satiety'] as num?)?.toInt() ?? config.initialSatiety;
+    final updatedAt = (care['satietyUpdatedAt'] as num?)?.toInt() ?? now;
+    final elapsed = max(0, now - updatedAt);
+    final stage =
+        ((individual['lifecycle'] as Map?)?['stage'] as String?) ?? 'BABY';
+    final loss = elapsed *
+        config.satietyLossPerHour(stage) /
+        const Duration(hours: 1).inMilliseconds;
+    // A point is lost only after its complete duration elapsed. Flooring the
+    // final subtraction would turn 100 into 99 a millisecond after a meal.
+    return (stored - loss.floor()).clamp(0, 100);
+  }
+
+  /// Commits elapsed satiety before a meal, a stage transition or a debug
+  /// edit. The timestamp ensures a new biological stage only affects future
+  /// time, never the time that preceded the transition.
+  static int refreshSatiety(Map individual, int now, ElevageConfig config) {
+    final value = _resolvedSatiety(individual, now, config);
+    final care =
+        individual.putIfAbsent('care', () => <String, dynamic>{}) as Map;
+    care['satiety'] = value;
+    care['satietyUpdatedAt'] = now;
+    return value;
+  }
+
+  static int setSatiety(Map individual, int value, int now) {
+    final care =
+        individual.putIfAbsent('care', () => <String, dynamic>{}) as Map;
+    final clamped = value.clamp(0, 100);
+    care['satiety'] = clamped;
+    care['satietyUpdatedAt'] = now;
+    return clamped;
+  }
+
+  static ElevageSave setIndividualSatiety(
+      ElevageSave source, String id, int value, int now) {
+    final state = source.copy();
+    setSatiety(_individual(state, id), value, now);
+    return state;
+  }
+
+  static ElevageSave addIndividualSatiety(ElevageSave source, String id,
+      int amount, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, id);
+    final current = refreshSatiety(individual, now, config);
+    setSatiety(individual, current + amount, now);
+    return state;
+  }
+
+  /// Dashboard-only simulation using the exact same timestamp-based offline
+  /// calculation as a real save.
+  static ElevageSave simulateSatietyElapsedHours(
+      ElevageSave source, String id, int hours, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, id);
+    final care =
+        individual.putIfAbsent('care', () => <String, dynamic>{}) as Map;
+    care['satiety'] = refreshSatiety(individual, now, config);
+    care['satietyUpdatedAt'] =
+        now - max(0, hours) * const Duration(hours: 1).inMilliseconds;
+    refreshSatiety(individual, now, config);
+    return state;
+  }
+
+  static ElevageSave refreshSatietyState(
+      ElevageSave source, int now, ElevageConfig config) {
+    final state = source.copy();
+    for (final individual
+        in (state.data['individuals'] as Map? ?? const <dynamic, dynamic>{})
+            .values
+            .whereType<Map>()) {
+      refreshSatiety(individual, now, config);
     }
-    // TARGET conserve les seuils historiques : aucun accélérateur de
-    // playtest ne doit modifier son rythme dérivé.
-    return 1;
+    return state;
   }
 
   static bool canOfferNormalFood(
       ElevageSave state, String id, int now, ElevageConfig config) {
-    final lastMeal = _individual(state, id)['care']['lastMealAt'] as int?;
-    return lastMeal == null || satietyPercent(state, id, now, config) < 95;
+    return satietyPercent(state, id, now, config) < 100;
+  }
+
+  /// Hunger remains a body state. This compact presentation layer never turns
+  /// it into a detailed food request: a future "veux fruit" is separate.
+  static Map<String, String>? hungerExpression(
+      ElevageSave state, String id, int now, ElevageConfig config) {
+    final hungerState = hunger(state, id, now, config);
+    if (hungerState == 'SATIATED') return null;
+    final individual = _individual(state, id);
+    final stage = (individual['lifecycle'] as Map)['stage'] as String;
+    final cooldown = config.hungerSignalCooldown(stage, hungerState);
+    if ((now ~/ 1000) % cooldown != 0) return null;
+    if (stage == 'BABY') {
+      return <String, String>{
+        'icon': 'HUNGER',
+        'voice': hungerState == 'VERY_HUNGRY' ? 'Nnh…' : 'Pti…',
+      };
+    }
+    final exposure =
+        ((individual['conceptExposures'] as Map?)?['HUNGER'] as Map?);
+    final total = (exposure?['total'] as num?)?.toInt() ?? 0;
+    final baby = (exposure?['baby'] as num?)?.toInt() ?? 0;
+    final threshold = baby > 0
+        ? config.juvenileBabyKnownConceptWordThreshold
+        : config.juvenileNewConceptWordThreshold;
+    if (stage == 'INTERMEDIATE') {
+      return <String, String>{
+        'icon': 'HUNGER',
+        'voice': total >= threshold
+            ? (hungerState == 'VERY_HUNGRY' ? 'faim !' : 'faim')
+            : 'Pti !',
+      };
+    }
+    return <String, String>{
+      'icon': 'HUNGER',
+      'voice': hungerState == 'VERY_HUNGRY' ? 'J’ai très faim.' : 'J’ai faim.',
+    };
   }
 
   static List<Map<String, dynamic>> sceneItems(
@@ -3890,6 +4014,8 @@ class ElevageDomain {
       ].where((item) => canEat(individual, item, config)).toList();
       final food = _consumeLocal(alcove, candidates);
       if (food != null) {
+        final current = refreshSatiety(individual, now, config);
+        setSatiety(individual, current + config.foodSatietyValue(food), now);
         care['lastMealAt'] = now;
         care['autonomousMealCount'] = (care['autonomousMealCount'] as int) + 1;
         care['lastAutonomousAt'] = now;
@@ -3978,6 +4104,7 @@ class ElevageDomain {
       ElevageSave source, String id, int now, ElevageConfig config) {
     final state = source.copy();
     final individual = _individual(state, id);
+    refreshSatiety(individual, now, config);
     final active = individual['activeRequest'] as Map?;
     if (active != null && now >= (active['expiresAt'] as int)) {
       individual['activeRequest'] = null;
@@ -3997,12 +4124,11 @@ class ElevageDomain {
     // Les individus plus autonomes essaient d'abord le stock de leur Alcôve;
     // le besoin existe tout de même, mais ne devient pas une Request visible.
     if (stage != 'BABY' && initiative >= .5 && localFood) return state;
-    final preferred =
-        individual['generatedProfile']['foodPreference'] as String;
     final signal = switch (stage) {
-      'BABY' => 'Pti ?',
-      'INTERMEDIATE' => 'FOOD',
-      _ => preferred,
+      // Hunger is a body need, not a request for the current favourite food.
+      // Detailed food requests remain a later feature.
+      'BABY' || 'INTERMEDIATE' || 'MATURE' => 'HUNGER',
+      _ => 'HUNGER',
     };
     individual['activeRequest'] = <String, dynamic>{
       'need': need,
@@ -4013,6 +4139,9 @@ class ElevageDomain {
     final count = _observe(individual, 'REQUEST_FOOD', now, config: config);
     _setObservationStatus(
         individual, 'REQUEST_FOOD:GENERAL', count, config, now);
+    // Repeated experiences, including Baby experiences, are what make the
+    // HUNGER word learnable after metamorphosis.
+    _recordConceptExposure(individual, 'HUNGER');
     (state.data['individuals'] as Map<String, dynamic>)[id] = individual;
     return state;
   }
@@ -4197,6 +4326,7 @@ class ElevageDomain {
     }
     final state = source.copy();
     final individual = _individual(state, id);
+    refreshSatiety(individual, now, config);
     final lifecycle = individual['lifecycle'] as Map;
     final next = lifecycle['stage'] == 'BABY' ? 'INTERMEDIATE' : 'MATURE';
     lifecycle['stage'] = next;
@@ -4290,9 +4420,7 @@ class ElevageDomain {
     if (stage == 'BABY') return null;
     if (hunger(state, id, now, config) == 'HUNGRY' ||
         hunger(state, id, now, config) == 'VERY_HUNGRY') {
-      return stage == 'MATURE'
-          ? individual['generatedProfile']['foodPreference'] as String
-          : 'FOOD';
+      return 'HUNGER';
     }
     final structural = individual['care']['structuralIntake']['total'] as int;
     if (structural < 6) return stage == 'MATURE' ? 'IRON' : 'MINERAL';
