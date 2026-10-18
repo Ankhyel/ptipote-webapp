@@ -233,6 +233,12 @@ class ElevageSave {
                   },
                 });
         raw.putIfAbsent(
+            'explorationStamina',
+            () => <String, dynamic>{
+                  'current': 10,
+                  'lastUpdatedAt': normalized['savedAt'] ?? 0,
+                });
+        raw.putIfAbsent(
             'social',
             () => <String, dynamic>{
                   'cuddleCooldownUntil': 0,
@@ -1089,6 +1095,10 @@ class ElevageDomain {
           'xp': 0,
           'level': 0,
         },
+      },
+      'explorationStamina': <String, dynamic>{
+        'current': config.explorationInt('ptipoteStaminaMax', 10),
+        'lastUpdatedAt': now,
       },
       'social': <String, dynamic>{
         'cuddleCooldownUntil': 0,
@@ -2624,6 +2634,20 @@ class ElevageDomain {
     return state;
   }
 
+  /// Development-only counterpart of [addTrackerXp]. The ordinary UI never
+  /// calls this: Pisteur XP is earned by completed escorted explorations.
+  static ElevageSave setTrackerXp(ElevageSave source, String individualId,
+      int amount, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    final tracker = trackerProfession(individual, config);
+    final xp = max(0, amount);
+    tracker['xp'] = xp;
+    (individual['professions'] as Map)['TRACKER'] = tracker;
+    trackerProfession(individual, config);
+    return state;
+  }
+
   static ElevageSave forceTrackerLevel(ElevageSave source, String individualId,
       int level, ElevageConfig config) {
     final state = source.copy();
@@ -2634,6 +2658,61 @@ class ElevageDomain {
     (individual['professions'] as Map)['TRACKER'] = tracker;
     trackerProfession(individual, config);
     return state;
+  }
+
+  /// Exploration endurance belongs to the individual, never to wellbeing,
+  /// hunger or sleep. It is refreshed from timestamps for online and offline
+  /// returns alike.
+  static Map<String, dynamic> explorationEndurance(
+      Map individual, int now, ElevageConfig config) {
+    final maxStamina = config.explorationInt('ptipoteStaminaMax', 10);
+    final regen = config.explorationInt('ptipoteStaminaRegenPerMinute', 1);
+    final endurance = individual.putIfAbsent(
+        'explorationStamina',
+        () => <String, dynamic>{
+              'current': maxStamina,
+              'lastUpdatedAt': now
+            }) as Map;
+    final last = (endurance['lastUpdatedAt'] as num?)?.toInt() ?? now;
+    final cycles =
+        max(0, (now - last) ~/ const Duration(minutes: 1).inMilliseconds);
+    if (cycles > 0) {
+      endurance['current'] = min(
+          maxStamina,
+          ((endurance['current'] as num?)?.toInt() ?? maxStamina) +
+              cycles * regen);
+      endurance['lastUpdatedAt'] =
+          last + cycles * const Duration(minutes: 1).inMilliseconds;
+    }
+    endurance['current'] =
+        ((endurance['current'] as num?)?.toInt() ?? maxStamina)
+            .clamp(0, maxStamina);
+    return Map<String, dynamic>.from(endurance);
+  }
+
+  static bool canAccompanyExploration(
+      Map individual, int now, ElevageConfig config) {
+    final stage =
+        ((individual['lifecycle'] as Map?)?['stage'] as String?) ?? 'BABY';
+    return stage != 'BABY' &&
+        (explorationEndurance(individual, now, config)['current'] as num)
+                .toInt() >=
+            config.explorationInt('ptipoteStaminaCostPerRun', 1);
+  }
+
+  static List<Map<String, dynamic>> eligibleExplorationCompanions(
+      ElevageSave state, int now, ElevageConfig config) {
+    final active =
+        state.data['activeIndividualIds'] as List? ?? const <dynamic>[];
+    final individuals =
+        state.data['individuals'] as Map? ?? const <dynamic, dynamic>{};
+    return active
+        .whereType<String>()
+        .map((id) => individuals[id])
+        .whereType<Map>()
+        .where((individual) => canAccompanyExploration(individual, now, config))
+        .map((individual) => Map<String, dynamic>.from(individual))
+        .toList(growable: false);
   }
 
   /// Baby searches one adjacent zone at a time and never receives a perfect
@@ -2971,6 +3050,12 @@ class ElevageDomain {
       exploration['lastStaminaAt'] = lastStamina +
           staminaCycles * const Duration(minutes: 1).inMilliseconds;
     }
+    for (final individual
+        in (state.data['individuals'] as Map? ?? const <dynamic, dynamic>{})
+            .values
+            .whereType<Map>()) {
+      explorationEndurance(individual, now, config);
+    }
     final organicRegen = config.explorationInt('organicRegenPerHour', 5);
     final sectors = exploration['sectors'] as Map;
     for (final definition in explorationSectors) {
@@ -3007,7 +3092,8 @@ class ElevageDomain {
   }
 
   static ElevageSave startExploration(
-      ElevageSave source, String sectorId, int now, ElevageConfig config) {
+      ElevageSave source, String sectorId, int now, ElevageConfig config,
+      {String? companionPtipoteId}) {
     if (!config.explorationEnabled) {
       throw StateError('Exploration indisponible.');
     }
@@ -3027,13 +3113,29 @@ class ElevageDomain {
     final stamina = (exploration['stamina'] as num?)?.toInt() ?? 0;
     final staminaCost = config.explorationInt('staminaCostPerRun', 1);
     if (stamina < staminaCost) throw StateError('Stamina insuffisante.');
+    Map? companion;
+    var trackerBonus = 0;
+    String? typeBias;
+    if (companionPtipoteId != null) {
+      companion = _individual(state, companionPtipoteId);
+      if (!canAccompanyExploration(companion, now, config)) {
+        throw StateError(
+            'Ce P’TIPOTE ne peut pas accompagner cette exploration.');
+      }
+      final endurance = companion['explorationStamina'] as Map;
+      endurance['current'] = (endurance['current'] as num).toInt() -
+          config.explorationInt('ptipoteStaminaCostPerRun', 1);
+      trackerBonus = trackerCarryBonus(companion, config);
+      typeBias = companion['family'] as String?;
+    }
     final sector = (exploration['sectors'] as Map)[sectorId] as Map;
     exploration['stamina'] = stamina - staminaCost;
     sector['discovered'] = true;
-    final slots = config.explorationInt('baseCarrySlots', 3);
+    final slots = config.explorationInt('baseCarrySlots', 3) + trackerBonus;
     final results = <Map<String, dynamic>>[];
     for (var slot = 0; slot < slots; slot++) {
-      final loot = _rollExplorationLoot(sector, definition, config, now + slot);
+      final loot = _rollExplorationLoot(sector, definition, config, now + slot,
+          typeBias: typeBias);
       results.add(loot ?? <String, dynamic>{'resourceId': 'EMPTY'});
     }
     exploration['activeRun'] = <String, dynamic>{
@@ -3043,16 +3145,18 @@ class ElevageDomain {
       'endsAt': now + config.explorationInt('durationSeconds', 25) * 1000,
       'status': 'IN_PROGRESS',
       'results': results,
-      // Hooks deliberately inert in 22.0.
-      'companionPtipoteId': null,
-      'trackerCarryBonus': 0,
-      'typeLootBias': null,
+      'companionPtipoteId': companionPtipoteId,
+      'trackerCarryBonus': trackerBonus,
+      'typeLootBias': typeBias,
+      'slots': slots,
+      'trackerXpAwarded': false,
     };
     return state;
   }
 
   static Map<String, dynamic>? _rollExplorationLoot(Map sector,
-      Map<String, dynamic> definition, ElevageConfig config, int seed) {
+      Map<String, dynamic> definition, ElevageConfig config, int seed,
+      {String? typeBias}) {
     final table =
         (definition['lootTable'] as List).whereType<Map>().where((entry) {
       if (entry['enabled'] == false) return false;
@@ -3061,12 +3165,12 @@ class ElevageDomain {
           ((sector['mineral'] as num?)?.toInt() ?? 0) >= costs['mineral']!;
     }).toList(growable: false);
     if (table.isEmpty) return null;
-    final total = table.fold<int>(
-        0, (sum, entry) => sum + ((entry['weight'] as num?)?.toInt() ?? 0));
+    final total = table.fold<int>(0,
+        (sum, entry) => sum + _explorationLootWeight(entry, typeBias, config));
     if (total <= 0) return null;
     var cursor = Random(seed).nextInt(total);
     final selected = table.firstWhere((entry) {
-      cursor -= (entry['weight'] as num?)?.toInt() ?? 0;
+      cursor -= _explorationLootWeight(entry, typeBias, config);
       return cursor < 0;
     });
     final costs = _explorationLootCosts(selected, config);
@@ -3078,6 +3182,38 @@ class ElevageDomain {
       'resourceId': selected['resourceId'],
       'resourceCategory': selected['resourceCategory'],
     };
+  }
+
+  static int _explorationLootWeight(
+      Map entry, String? typeBias, ElevageConfig config) {
+    final base = (entry['weight'] as num?)?.toInt() ?? 0;
+    if (base <= 0 || typeBias == null) return base;
+    final resource = entry['resourceId'] as String? ?? '';
+    final compatible = switch (typeBias) {
+      'VEGETAL' => const <String>{
+          'LEAF',
+          'ROOT',
+          'FRUIT',
+          'MOSS',
+          'ALGAE',
+          'SEED'
+        }.contains(resource),
+      'MINERAL' => const <String>{
+          'MINERAL',
+          'IRON',
+          'LIMESTONE',
+          'QUARTZ',
+          'SALT'
+        }.contains(resource),
+      'FUNGAL' => const <String>{'MUSHROOM', 'SPORE', 'MOSS', 'ORGANIC'}
+          .contains(resource),
+      _ => false,
+    };
+    if (!compatible) return base;
+    final multipliers =
+        config.explorationConfig['typeLootBiasMultipliers'] as Map?;
+    final multiplier = (multipliers?[typeBias] as num?)?.toDouble() ?? 1.5;
+    return max(1, (base * multiplier).round());
   }
 
   static Map<String, int> _explorationLootCosts(
@@ -3140,6 +3276,21 @@ class ElevageDomain {
         final discovered = state.data['discoveredItemIds'] as List;
         if (!discovered.contains(resource)) discovered.add(resource);
       }
+    }
+    final companionId = run['companionPtipoteId'] as String?;
+    if (companionId != null && run['trackerXpAwarded'] != true) {
+      final individual = _individual(state, companionId);
+      final before = trackerProfession(individual, config);
+      final beforeLevel = (before['level'] as num).toInt();
+      final amount = config.explorationInt('trackerXpPerExploration', 10);
+      before['xp'] = ((before['xp'] as num).toInt() + amount).clamp(0, 999999);
+      (individual['professions'] as Map)['TRACKER'] = before;
+      final after = trackerProfession(individual, config);
+      run['trackerXpAwarded'] = true;
+      run['trackerXpGained'] = amount;
+      run['trackerLevelBefore'] = beforeLevel;
+      run['trackerLevelAfter'] = (after['level'] as num).toInt();
+      run['trackerXpAfter'] = (after['xp'] as num).toInt();
     }
     run['status'] = 'CLAIMED';
     run['claimedAt'] = now;

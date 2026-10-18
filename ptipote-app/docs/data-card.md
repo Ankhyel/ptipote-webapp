@@ -1369,3 +1369,45 @@ L’Eau n’est pas une ressource globale du Camp.
   Énergie expose Biogénérateur et Batterie exportable. Les meubles restent
   dans leur catalogue séparé. Recettes finales, vente Sourcier et structures
   d’activité/humidité futures restent à arbitrer.
+
+# Lot 22.1 — Compagnon d’Exploration et Pisteur
+
+- **Compagnon.** Avant chaque sortie, le joueur peut partir seul ou choisir un
+  unique P’TIPOTE actif. Baby n’est jamais sélectionnable (« Trop jeune pour
+  explorer ») ; Intermediate et Mature le sont s’ils ont de l’endurance. Le
+  `companionPtipoteId` est enregistré dans le run persistant : les gains, la
+  fatigue et le résultat restent donc attachés au bon individu.
+- **Endurance d’exploration.** Joueur et compagnon ont deux jauges séparées,
+  visibles avec l’icône `🥾` afin de ne pas les confondre avec l’Energy
+  électrique. Elles valent 10 au maximum, coûtent 1 par sortie concernée et
+  régénèrent de 1 par minute réelle, y compris hors ligne, sans effet sur
+  faim, sommeil ou bien-être. À 0, le compagnon est indisponible mais le
+  joueur peut encore partir seul.
+- **Pisteur.** Une sortie accompagnée terminée et récupérée attribue une fois
+  `+10 XP` au compagnon. Les seuils cumulés configurables sont désormais
+  niveau 1 à 100 XP, niveau 2 à 200, niveau 3 à 300 (cap V1). Le bonus de
+  transport est respectivement `+0/+1/+2/+3` : les sorties ont donc 3, 3, 4,
+  5 ou 6 tirages selon le niveau du compagnon. Il dépend de la compétence,
+  pas du stade. Le bouton de gain manuel a disparu de l’Alcôve ; les commandes
+  `+10`, définir XP et forcer un niveau restent limitées au Dashboard en mode
+  dev.
+- **Biais de Type.** Le Type ne crée aucune entrée de loot : il multiplie
+  seulement le poids des ressources compatibles déjà présentes dans la table.
+  Le prototype utilise `×1,5` pour les ensembles végétal
+  (`LEAF/ROOT/FRUIT/MOSS/ALGAE/SEED`), minéral
+  (`MINERAL/IRON/LIMESTONE/QUARTZ/SALT`) et fongique
+  (`MUSHROOM/SPORE/MOSS/ORGANIC`). Les contraintes écologiques sont filtrées
+  avant le tirage : un objet impossible par manque d’Organique ou de Minéral
+  reste impossible, même avec son Type favorable. Multiplicateurs et gains
+  sont Dashboard-configurables.
+- **Installations lisibles.** Les cartes du Bio-fabricateur affichent
+  désormais une description humaine et des mécaniques calculées depuis la
+  configuration réelle : résonance/compatibilité passive, outputs, stock/cap,
+  cycle, consommation et effet environnemental. Les Formations, Bosquet et
+  Colonie sont explicitement des supports de structuration par résonance,
+  jamais des producteurs miniers ; Culture, Butte et Support fongique exposent
+  leurs outputs effectifs. Les Modules restent dans leur zone dédiée et les
+  meubles ne changent pas dans ce lot.
+- **Limites.** Exploration autonome Mature, équipement, bonus additionnels,
+  caisse personnelle, salle commune, nouveaux métiers, combat et événements
+  restent hors scope.

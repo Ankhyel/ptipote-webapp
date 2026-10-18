@@ -1923,6 +1923,81 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     return ((recipe?['special'] as Map?)?[key] as num?)?.toInt() ?? 0;
   }
 
+  int _typeLootBiasPercent(String family) {
+    final multipliers =
+        (config.explorationConfig['typeLootBiasMultipliers'] as Map?);
+    return (((multipliers?[family] as num?)?.toDouble() ?? 1.5) * 100).round();
+  }
+
+  void _setTypeLootBiasPercent(String family, int percent) {
+    final progression = Map<String, dynamic>.from(config.refugeProgression);
+    final exploration = Map<String, dynamic>.from(
+        progression['exploration'] as Map? ?? const <dynamic, dynamic>{});
+    final multipliers = Map<String, dynamic>.from(
+        exploration['typeLootBiasMultipliers'] as Map? ??
+            const <dynamic, dynamic>{});
+    multipliers[family] = percent.clamp(100, 1000) / 100;
+    exploration['typeLootBiasMultipliers'] = multipliers;
+    progression['exploration'] = exploration;
+    setState(() => config = config.copyWith(refugeProgression: progression));
+  }
+
+  Widget _trackerDevTools(BuildContext context) {
+    final state = widget.controller.state;
+    final individuals = state?.data['individuals'] as Map?;
+    final activeIds = state?.data['activeIndividualIds'] as List? ?? const [];
+    final active = activeIds
+        .whereType<String>()
+        .map((id) => individuals?[id])
+        .whereType<Map>()
+        .toList(growable: false);
+    if (active.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _heading('Outils dev Pisteur'),
+      const Text('Disponibles uniquement en mode dev.'),
+      ...active.map((individual) {
+        final id = individual['id'] as String;
+        final tracker = ElevageDomain.trackerProfession(
+            individual, widget.controller.config);
+        return ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text('${individual['name']} · ${tracker['xp']} XP'),
+          subtitle: const Text('Tests XP et niveau, hors interface joueur.'),
+          trailing: Wrap(spacing: 4, children: [
+            TextButton(
+                onPressed: () => widget.controller.addTrackerXp(id, 10),
+                child: const Text('+10')),
+            PopupMenuButton<int>(
+              tooltip: 'Définir XP',
+              onSelected: (xp) => widget.controller.setTrackerXp(id, xp),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 0, child: Text('XP = 0')),
+                PopupMenuItem(value: 100, child: Text('XP = 100')),
+                PopupMenuItem(value: 200, child: Text('XP = 200')),
+                PopupMenuItem(value: 300, child: Text('XP = 300')),
+              ],
+              child:
+                  const Padding(padding: EdgeInsets.all(8), child: Text('XP')),
+            ),
+            PopupMenuButton<int>(
+              tooltip: 'Forcer niveau',
+              onSelected: (level) =>
+                  widget.controller.forceTrackerLevel(id, level),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 0, child: Text('Niveau 0')),
+                PopupMenuItem(value: 1, child: Text('Niveau 1')),
+                PopupMenuItem(value: 2, child: Text('Niveau 2')),
+                PopupMenuItem(value: 3, child: Text('Niveau 3')),
+              ],
+              child: const Padding(
+                  padding: EdgeInsets.all(8), child: Text('Niv.')),
+            ),
+          ]),
+        );
+      }),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Dashboard Élevage')),
@@ -2094,6 +2169,7 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                 ..['tracker'] = tracker;
               setState(() => config = config.copyWith(refugeProgression: next));
             }),
+          if (widget.controller.config.devMode) _trackerDevTools(context),
           _heading('Expression environnementale Bébé'),
           _number(
               context,
@@ -2460,6 +2536,36 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               config.explorationInt('staminaRegenPerMinute', 1),
               (value) => _setRefugeNestedNumber(
                   'exploration', 'staminaRegenPerMinute', value)),
+          _number(
+              context,
+              'Endurance P’TIPOTE maximum',
+              config.explorationInt('ptipoteStaminaMax', 10),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'ptipoteStaminaMax', value)),
+          _number(
+              context,
+              'Coût Endurance P’TIPOTE / sortie',
+              config.explorationInt('ptipoteStaminaCostPerRun', 1),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'ptipoteStaminaCostPerRun', value)),
+          _number(
+              context,
+              'Régénération Endurance P’TIPOTE / min',
+              config.explorationInt('ptipoteStaminaRegenPerMinute', 1),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'ptipoteStaminaRegenPerMinute', value)),
+          _number(
+              context,
+              'XP Pisteur / exploration accompagnée',
+              config.explorationInt('trackerXpPerExploration', 10),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'trackerXpPerExploration', value)),
+          for (final family in <String>['VEGETAL', 'MINERAL', 'FUNGAL'])
+            _number(
+                context,
+                'Biais loot $family (%)',
+                _typeLootBiasPercent(family),
+                (value) => _setTypeLootBiasPercent(family, value)),
           _number(
               context,
               'Régénération Organique / h',
@@ -4527,12 +4633,6 @@ class _TrackerCard extends StatelessWidget {
       subtitle: Text(next == null
           ? 'Niveau maximum · transport +${controller.config.trackerCarryBonus(level)}'
           : '$xp / $next XP · transport +${controller.config.trackerCarryBonus(level)}'),
-      trailing: controller.config.devMode
-          ? IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () =>
-                  controller.addTrackerXp(individual['id'] as String, 10))
-          : null,
     );
   }
 }
@@ -5497,6 +5597,14 @@ Widget _biofabricatorRecipeTile({
                     '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}'),
               ].join(' · ')),
               if (definition != null)
+                Text(definition.description,
+                    maxLines: 3, overflow: TextOverflow.ellipsis),
+              if (definition != null)
+                Text(_installationMechanics(definition, controller.config),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11)),
+              if (definition != null)
                 Text(_installationImpactSentence(definition),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -5525,6 +5633,32 @@ Widget _biofabricatorRecipeTile({
           : null);
 }
 
+String _installationMechanics(
+    ElevageInstallationDefinition definition, ElevageConfig config) {
+  final mechanics = <String>[];
+  final family = definition.resonanceFamily ??
+      (definition.resonanceMaterial == null ? null : 'MINERAL');
+  if (family != null) {
+    mechanics.add('Résonance : $family compatible · passif');
+  }
+  final outputs = config.outputsFor(definition.id);
+  if (outputs.isNotEmpty) {
+    mechanics.add(
+        'Produit : ${outputs.map((output) => '${ElevagePresentation.itemLabel(output.resourceId)} ${output.maxLocalStock}/${output.maxLocalStock} · ${output.productionSeconds}s').join(', ')}');
+  }
+  final consumption = config.consumptionFor(definition.id);
+  if (consumption.enabled && consumption.mode != 'NONE') {
+    if (consumption.mode == 'ENERGY') {
+      mechanics.add(
+          'Consomme : ${consumption.energyCost} Énergie / ${consumption.consumptionIntervalSeconds}s');
+    } else if (consumption.resourceCosts.isNotEmpty) {
+      mechanics.add(
+          'Consomme : ${consumption.resourceCosts.entries.map((entry) => '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}').join(' · ')} / ${consumption.consumptionIntervalSeconds}s');
+    }
+  }
+  return mechanics.isEmpty ? 'Passif' : mechanics.join('\n');
+}
+
 String _installationImpactSentence(ElevageInstallationDefinition definition) {
   if (definition.category != 'STRUCTURE') {
     return 'Apporte ${_signed(definition.wellbeingImpact)} de bien-être lors d’une interaction positive.';
@@ -5548,6 +5682,25 @@ String _explorationTimer(int milliseconds) {
   return '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
 }
 
+class _ExplorationEnduranceBar extends StatelessWidget {
+  const _ExplorationEnduranceBar(
+      {required this.current, required this.maximum, required this.label});
+  final int current;
+  final int maximum;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('🥾 $label · $current / $maximum'),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(value: maximum == 0 ? 0 : current / maximum),
+        const SizedBox(height: 3),
+        const Text('+1 / min', style: TextStyle(fontSize: 11)),
+      ]));
+}
+
 Future<void> _exploration(
     BuildContext context, ElevageController controller) async {
   await controller.refreshExploration();
@@ -5568,6 +5721,10 @@ Future<void> _exploration(
                   leading: Icon(Icons.explore_outlined),
                   title: Text('Exploration'),
                   subtitle: Text('Choisissez un milieu depuis le Refuge.')),
+              _ExplorationEnduranceBar(
+                  current: (exploration['stamina'] as num?)?.toInt() ?? 0,
+                  maximum: controller.config.explorationInt('staminaMax', 10),
+                  label: 'Joueur · Endurance d’exploration'),
               GridView.count(
                 shrinkWrap: true,
                 crossAxisCount: 2,
@@ -5641,7 +5798,7 @@ Future<void> _explorationBiome(
             ListTile(
                 title: Text(title),
                 subtitle: Text(
-                    'Stamina $stamina/${controller.config.explorationInt('staminaMax', 10)} · ${controller.config.explorationInt('baseCarrySlots', 3)} slots')),
+                    '🥾 Endurance $stamina/${controller.config.explorationInt('staminaMax', 10)} · ${controller.config.explorationInt('baseCarrySlots', 3)} slots')),
             ...ElevageDomain.explorationSectorsForBiome(
                     biomeId, controller.config)
                 .map((definition) {
@@ -5666,8 +5823,15 @@ Future<void> _explorationBiome(
                                   .explorationInt('staminaCostPerRun', 1)
                       ? null
                       : () async {
-                          await controller
-                              .startExploration(definition['id'] as String);
+                          final companionId = await _pickExplorationCompanion(
+                              sheetContext, controller);
+                          if (!sheetContext.mounted || companionId == null) {
+                            return;
+                          }
+                          await controller.startExploration(
+                              definition['id'] as String,
+                              companionPtipoteId:
+                                  companionId.isEmpty ? null : companionId);
                           if (sheetContext.mounted &&
                               controller.error == null) {
                             Navigator.pop(sheetContext);
@@ -5680,14 +5844,93 @@ Future<void> _explorationBiome(
           ])));
 }
 
+/// Returns an empty id for a solo departure, null when the user cancels.
+Future<String?> _pickExplorationCompanion(
+    BuildContext context, ElevageController controller) async {
+  final state = controller.state!;
+  final allIds =
+      state.data['activeIndividualIds'] as List? ?? const <dynamic>[];
+  final individuals =
+      state.data['individuals'] as Map? ?? const <dynamic, dynamic>{};
+  final candidates = allIds
+      .whereType<String>()
+      .map((id) => individuals[id])
+      .whereType<Map>()
+      .toList(growable: false);
+  return showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+              child: ListView(shrinkWrap: true, children: <Widget>[
+            const ListTile(
+                leading: Icon(Icons.hiking_outlined),
+                title: Text('Compagnon d’exploration'),
+                subtitle: Text('Partez seul ou avec un P’TIPOTE.')),
+            ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: const Text('Partir seul'),
+                subtitle: const Text('3 slots de récolte de base.'),
+                onTap: () => Navigator.pop(sheetContext, '')),
+            ...candidates.map((individual) {
+              final stage = (individual['lifecycle'] as Map)['stage'] as String;
+              final endurance = ElevageDomain.explorationEndurance(
+                  individual, controller.now, controller.config);
+              final tracker = ElevageDomain.trackerProfession(
+                  individual, controller.config);
+              final level = (tracker['level'] as num).toInt();
+              final xp = (tracker['xp'] as num).toInt();
+              final next = level < 3
+                  ? controller.config.trackerThreshold(level + 1)
+                  : null;
+              final eligible = ElevageDomain.canAccompanyExploration(
+                  individual, controller.now, controller.config);
+              return ListTile(
+                  enabled: eligible,
+                  leading: const Icon(Icons.pets_outlined),
+                  title: Text(individual['name'] as String),
+                  subtitle: Text(stage == 'BABY'
+                      ? 'Trop jeune pour explorer.'
+                      : '${individual['family']} · $stage\n👣 Pisteur $level · ${next == null ? '$xp XP' : '$xp / $next XP'} · 🥾 ${(endurance['current'] as num).toInt()}/${controller.config.explorationInt('ptipoteStaminaMax', 10)} · Transport +${controller.config.trackerCarryBonus(level)}'),
+                  isThreeLine: stage != 'BABY',
+                  onTap: eligible
+                      ? () => Navigator.pop(
+                          sheetContext, individual['id'] as String)
+                      : null);
+            }),
+          ])));
+}
+
 Future<void> _showExplorationResult(
     BuildContext context, ElevageController controller, Map run) async {
+  final companionId = run['companionPtipoteId'] as String?;
+  final companion = companionId == null
+      ? null
+      : (controller.state!.data['individuals'] as Map)[companionId] as Map?;
+  final playerEndurance =
+      (ElevageDomain.explorationState(controller.state!)['stamina'] as num?)
+              ?.toInt() ??
+          0;
+  final companionEndurance =
+      ((companion?['explorationStamina'] as Map?)?['current'] as num?)
+              ?.toInt() ??
+          0;
+  final slots =
+      (run['slots'] as num?)?.toInt() ?? (run['results'] as List).length;
   await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
             title: const Text('Exploration terminée'),
             content: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-              const Text('Résultats de vos 3 slots :'),
+              Text('Résultats de vos $slots slots :'),
+              if (companion != null) ...<Widget>[
+                const SizedBox(height: 6),
+                Text('${companion['name']} vous a accompagné.'),
+                Text(
+                    '🥾 Joueur $playerEndurance/${controller.config.explorationInt('staminaMax', 10)} · ${companion['name']} $companionEndurance/${controller.config.explorationInt('ptipoteStaminaMax', 10)}'),
+                const Text('👣 +10 XP Pisteur'),
+                if (run['trackerLevelAfter'] is num &&
+                    run['trackerLevelAfter'] != run['trackerLevelBefore'])
+                  Text('👣 Pisteur ${run['trackerLevelAfter']} atteint !'),
+              ],
               const SizedBox(height: 8),
               ...(run['results'] as List).whereType<Map>().map((result) {
                 final resource = result['resourceId'] as String? ?? 'EMPTY';

@@ -773,7 +773,7 @@ class ElevageConfig {
       refugeProgression['tracker'] as Map? ?? const <dynamic, dynamic>{});
   int trackerThreshold(int level) =>
       ((trackerConfig['xpForLevel$level'] as num?)?.toInt() ??
-              <int>[0, 10, 30, 60][level.clamp(0, 3)])
+              <int>[0, 100, 200, 300][level.clamp(0, 3)])
           .clamp(0, 999999);
   int trackerCarryBonus(int level) =>
       ((trackerConfig['carryBonusByLevel'] as Map?)?['$level'] as num?)
@@ -2730,13 +2730,22 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'specificOrganicCost': 5,
       'genericMineralCost': 1,
       'specificMineralCost': 3,
+      'ptipoteStaminaMax': 10,
+      'ptipoteStaminaCostPerRun': 1,
+      'ptipoteStaminaRegenPerMinute': 1,
+      'trackerXpPerExploration': 10,
+      'typeLootBiasMultipliers': <String, double>{
+        'VEGETAL': 1.5,
+        'MINERAL': 1.5,
+        'FUNGAL': 1.5,
+      },
       'sectorOverrides': <String, dynamic>{},
     },
     'tracker': <String, dynamic>{
       'enabled': true,
-      'xpForLevel1': 10,
-      'xpForLevel2': 30,
-      'xpForLevel3': 60,
+      'xpForLevel1': 100,
+      'xpForLevel2': 200,
+      'xpForLevel3': 300,
       'carryBonusByLevel': <String, int>{'0': 0, '1': 1, '2': 2, '3': 3},
     },
     'language': <String, dynamic>{

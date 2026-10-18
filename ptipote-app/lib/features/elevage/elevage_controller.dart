@@ -166,8 +166,11 @@ class ElevageController extends ChangeNotifier {
       ElevageDomain.startForaging(current, id, biome, _now, config));
   Future<void> claimForaging(String id, String pointId) => _mutate(
       (current) => ElevageDomain.claimForaging(current, id, pointId, _now));
-  Future<void> startExploration(String sectorId) => _mutate((current) =>
-      ElevageDomain.startExploration(current, sectorId, _now, config));
+  Future<void> startExploration(String sectorId,
+          {String? companionPtipoteId}) =>
+      _mutate((current) => ElevageDomain.startExploration(
+          current, sectorId, _now, config,
+          companionPtipoteId: companionPtipoteId));
   Future<void> claimExploration() => _mutate(
       (current) => ElevageDomain.claimExploration(current, _now, config));
   Future<void> refreshExploration() => _mutate(
@@ -204,6 +207,9 @@ class ElevageController extends ChangeNotifier {
   Future<void> addTrackerXp(String individualId, int amount) =>
       _mutate((current) =>
           ElevageDomain.addTrackerXp(current, individualId, amount, config));
+  Future<void> setTrackerXp(String individualId, int amount) =>
+      _mutate((current) =>
+          ElevageDomain.setTrackerXp(current, individualId, amount, config));
   Future<void> forceTrackerLevel(String individualId, int level) =>
       _mutate((current) => ElevageDomain.forceTrackerLevel(
           current, individualId, level, config));

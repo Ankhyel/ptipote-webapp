@@ -2421,7 +2421,7 @@ void main() {
         now: now,
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
-    state = ElevageDomain.addTrackerXp(state, id, 35, defaultElevageConfig);
+    state = ElevageDomain.addTrackerXp(state, id, 200, defaultElevageConfig);
     final individual = (state.data['individuals'] as Map)[id] as Map;
     expect(
         ElevageDomain.trackerProfession(
@@ -2436,6 +2436,13 @@ void main() {
         ElevageDomain.trackerProfession(
             persisted, defaultElevageConfig)['level'],
         2);
+    final reset =
+        ElevageDomain.setTrackerXp(reloaded, id, 100, defaultElevageConfig);
+    final resetIndividual = (reset.data['individuals'] as Map)[id] as Map;
+    expect(
+        ElevageDomain.trackerProfession(
+            resetIndividual, defaultElevageConfig)['level'],
+        1);
   });
 
   test('langage Juvénile garde le seuil 5 ou 10 selon la mémoire Bébé', () {
@@ -2830,5 +2837,151 @@ void main() {
         () =>
             ElevageDomain.startExploration(state, 'LITTORAL_DUNE', now, config),
         throwsStateError);
+  });
+
+  test(
+      'Exploration refuse Baby mais accepte un Juvénile et attribue XP à la fin',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Hawl',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    expect(
+        () => ElevageDomain.startExploration(
+            state, 'FORET_HUMIDE_LISIERE', now, defaultElevageConfig,
+            companionPtipoteId: id),
+        throwsStateError);
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    (individual['professions'] as Map)['TRACKER'] = <String, dynamic>{
+      'professionId': 'TRACKER',
+      'xp': 90,
+      'level': 0,
+    };
+    state = ElevageDomain.startExploration(
+        state, 'FORET_HUMIDE_LISIERE', now, defaultElevageConfig,
+        companionPtipoteId: id);
+    var run = ElevageDomain.explorationState(state)['activeRun'] as Map;
+    expect(run['companionPtipoteId'], id);
+    expect(run['slots'], 3);
+    final startedIndividual = (state.data['individuals'] as Map)[id] as Map;
+    expect(((startedIndividual['explorationStamina'] as Map)['current']), 9);
+    state = ElevageDomain.refreshExploration(state,
+        now + const Duration(seconds: 25).inMilliseconds, defaultElevageConfig);
+    state = ElevageDomain.claimExploration(state,
+        now + const Duration(seconds: 26).inMilliseconds, defaultElevageConfig);
+    final refreshed = (state.data['individuals'] as Map)[id] as Map;
+    expect(
+        ElevageDomain.trackerProfession(refreshed, defaultElevageConfig)['xp'],
+        100);
+    expect(
+        ElevageDomain.trackerProfession(
+            refreshed, defaultElevageConfig)['level'],
+        1);
+    run = ElevageDomain.explorationState(state)['activeRun'] as Map;
+    expect(run['trackerXpGained'], 10);
+    expect(run['trackerLevelAfter'], 1);
+  });
+
+  test('Pisteur ajoute ses slots cumulés et endurance régénère hors ligne', () {
+    for (final entry in <int, int>{0: 3, 1: 4, 2: 5, 3: 6}.entries) {
+      var state = ElevageSave.initial(defaultElevageConfig, now: now);
+      state = ElevageDomain.adopt(
+          source: state,
+          alcoveId: 'alcove-1',
+          name: 'Trace',
+          physical: false,
+          now: now,
+          config: defaultElevageConfig);
+      final id = (state.data['activeIndividualIds'] as List).single as String;
+      final individual = (state.data['individuals'] as Map)[id] as Map;
+      (individual['lifecycle'] as Map)['stage'] = 'MATURE';
+      state = ElevageDomain.forceTrackerLevel(
+          state, id, entry.key, defaultElevageConfig);
+      state = ElevageDomain.startExploration(
+          state, 'LITTORAL_CRIQUE', now, defaultElevageConfig,
+          companionPtipoteId: id);
+      expect(
+          (ElevageDomain.explorationState(state)['activeRun'] as Map)['slots'],
+          entry.value);
+    }
+    var enduranceState = ElevageSave.initial(defaultElevageConfig, now: now);
+    enduranceState = ElevageDomain.adopt(
+        source: enduranceState,
+        alcoveId: 'alcove-1',
+        name: 'Endure',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id =
+        (enduranceState.data['activeIndividualIds'] as List).single as String;
+    final individual = (enduranceState.data['individuals'] as Map)[id] as Map;
+    (individual['explorationStamina'] as Map)['current'] = 0;
+    (individual['explorationStamina'] as Map)['lastUpdatedAt'] = now;
+    enduranceState = ElevageDomain.refreshExploration(enduranceState,
+        now + const Duration(minutes: 5).inMilliseconds, defaultElevageConfig);
+    expect(
+        ((enduranceState.data['individuals'] as Map)[id]['explorationStamina']
+            ['current']),
+        5);
+  });
+
+  test('Le biais Minéral ne crée pas de loot ni ne contourne le stock local',
+      () {
+    final progression =
+        Map<String, dynamic>.from(defaultElevageConfig.refugeProgression);
+    final exploration =
+        Map<String, dynamic>.from(progression['exploration'] as Map)
+          ..['typeLootBiasMultipliers'] = <String, double>{'MINERAL': 10};
+    exploration['sectorOverrides'] = <String, dynamic>{
+      'COLLINE_GROTTE': <String, dynamic>{
+        'initialOrganic': 100,
+        'initialMineral': 2,
+        'lootTable': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'resourceId': 'ROOT',
+            'resourceCategory': 'ORGANIC_SPECIFIC',
+            'weight': 1,
+            'enabled': true,
+          },
+          <String, dynamic>{
+            'resourceId': 'IRON',
+            'resourceCategory': 'MINERAL_SPECIFIC',
+            'weight': 999,
+            'enabled': true,
+          },
+        ],
+      },
+    };
+    progression['exploration'] = exploration;
+    final config =
+        defaultElevageConfig.copyWith(refugeProgression: progression);
+    var state = ElevageSave.initial(config, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Ore',
+        physical: false,
+        now: now,
+        config: config);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    individual['family'] = 'MINERAL';
+    state = ElevageDomain.startExploration(state, 'COLLINE_GROTTE', now, config,
+        companionPtipoteId: id);
+    final results = (ElevageDomain.explorationState(state)['activeRun']
+        as Map)['results'] as List;
+    expect(results.map((entry) => (entry as Map)['resourceId']),
+        everyElement('ROOT'));
+    final sector = (ElevageDomain.explorationState(state)['sectors']
+        as Map)['COLLINE_GROTTE'] as Map;
+    expect(sector['mineral'], 2);
+    expect(sector['organic'], 85);
   });
 }
