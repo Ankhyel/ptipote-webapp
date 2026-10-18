@@ -2237,4 +2237,138 @@ void main() {
     expect((state.data['installationInventory'] as Map).containsKey(loanId),
         isFalse);
   });
+
+  test('Biogénérateur : cuves, Efficiency, Power et Capacity', () {
+    final target = defaultElevageConfig.copyWith(
+        devMode: false, preset: ElevagePreset.target);
+    var state = ElevageSave.initial(target, now: now);
+    final inventory = state.data['inventory'] as Map;
+    final generic = inventory['generic'] as Map;
+    generic['organic'] = 40;
+    generic['mineral'] = 20;
+    final generators = state.data['biogeneratorInventory'] as Map;
+    generators['generator-test'] = <String, dynamic>{
+      'instanceId': 'generator-test',
+      'definitionId': 'BIOGENERATOR',
+      'tanks': <String, int>{'organic': 0, 'mineral': 0},
+      'installedModules': <dynamic>[],
+    };
+    state = ElevageDomain.installBiogenerator(
+        state, 'alcove-1', 'generator-test', now);
+    state = ElevageDomain.transferBiogeneratorFuel(
+        state, 'alcove-1', 'ORGANIC', 30, target);
+    state = ElevageDomain.transferBiogeneratorFuel(
+        state, 'alcove-1', 'MINERAL', 10, target);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    final generator = alcove['biogeneratorSlot'] as Map;
+    expect(ElevageDomain.biogeneratorCycleProfile(generator, target),
+        <String, int>{'organic': 3, 'mineral': 2, 'energy': 10});
+    final modules = state.data['moduleInventory'] as Map;
+    modules['eff'] = <String, dynamic>{
+      'instanceId': 'eff',
+      'moduleId': 'MODULE_EFFICIENCY_BASIC'
+    };
+    modules['power'] = <String, dynamic>{
+      'instanceId': 'power',
+      'moduleId': 'MODULE_POWER_BASIC'
+    };
+    modules['cap'] = <String, dynamic>{
+      'instanceId': 'cap',
+      'moduleId': 'MODULE_CAPACITY_BASIC'
+    };
+    state = ElevageDomain.installBiogeneratorModule(
+        state, 'alcove-1', 'eff', target);
+    state = ElevageDomain.installBiogeneratorModule(
+        state, 'alcove-1', 'power', target);
+    state = ElevageDomain.installBiogeneratorModule(
+        state, 'alcove-1', 'cap', target);
+    final installed = ((state.data['alcoves'] as List).first
+        as Map)['biogeneratorSlot'] as Map;
+    expect(ElevageDomain.biogeneratorCycleProfile(installed, target),
+        <String, int>{'organic': 2, 'mineral': 1, 'energy': 15});
+    expect(ElevageDomain.biogeneratorTankCapacities(installed, target),
+        <String, int>{'organic': 40, 'mineral': 20});
+  });
+
+  test('Biogénérateur alimente localement sans aspirer la Réserve', () {
+    final target = defaultElevageConfig.copyWith(
+        devMode: false, preset: ElevagePreset.target);
+    var state = ElevageSave.initial(target, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['biogeneratorSlot'] = <String, dynamic>{
+      'instanceId': 'generator',
+      'definitionId': 'BIOGENERATOR',
+      'tanks': <String, int>{'organic': 3, 'mineral': 2},
+      'installedModules': <dynamic>[],
+    };
+    alcove['slots'][0] = <String, dynamic>{
+      'definitionId': 'VENTILATION',
+      'alcoveId': 'alcove-1',
+      'maintenanceState': <String, dynamic>{
+        'status': 'ACTIVE',
+        'lastResolvedAt': now,
+      },
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(hours: 2).inMilliseconds, target);
+    final refreshed = (state.data['alcoves'] as List).first as Map;
+    expect(refreshed['localEnergy'], 9);
+    expect(
+        ((refreshed['biogeneratorSlot'] as Map)['tanks'] as Map)['organic'], 0);
+    expect(
+        ((refreshed['biogeneratorSlot'] as Map)['tanks'] as Map)['mineral'], 0);
+  });
+
+  test('inconfort ambiant Baby persiste sans objet et cesse au retour optimal',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Hawl',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect(
+        ElevageDomain.ambientEnvironmentalFeedback(
+            <String, int>{'light': 3, 'temperature': 1, 'humidity': 2},
+            individual,
+            defaultElevageConfig)!['body'],
+        'SHIVER');
+    expect(
+        ElevageDomain.ambientEnvironmentalFeedback(
+            <String, int>{'light': 3, 'temperature': 4, 'humidity': 2},
+            individual,
+            defaultElevageConfig),
+        isNull);
+  });
+
+  test('Pisteur persiste par individu et reste séparé du stade', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Trace',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    state = ElevageDomain.addTrackerXp(state, id, 35, defaultElevageConfig);
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect(
+        ElevageDomain.trackerProfession(
+            individual, defaultElevageConfig)['level'],
+        2);
+    expect(
+        ElevageDomain.trackerCarryBonus(individual, defaultElevageConfig), 2);
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    final reloaded = ElevageSave.fromJson(state.toJson());
+    final persisted = (reloaded.data['individuals'] as Map)[id] as Map;
+    expect(
+        ElevageDomain.trackerProfession(
+            persisted, defaultElevageConfig)['level'],
+        2);
+  });
 }

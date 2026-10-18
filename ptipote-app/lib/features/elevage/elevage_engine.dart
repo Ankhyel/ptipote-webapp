@@ -38,6 +38,8 @@ class ElevageSave {
               ? 'READY'
               : 'LOCKED',
           'batterySlot': null,
+          'biogeneratorSlot': null,
+          'localEnergy': 0,
           'slots': List<dynamic>.filled(config.installationSlotCount, null),
           'createdAt': now,
         },
@@ -57,6 +59,7 @@ class ElevageSave {
             'createdAt': now,
           },
       },
+      'biogeneratorInventory': <String, dynamic>{},
       'refugeProgress': <String, dynamic>{'contribution': 0},
       'habitatInventory': <String, dynamic>{},
       'habitatItemsByAlcoveId': <String, dynamic>{},
@@ -85,6 +88,7 @@ class ElevageSave {
     normalized.putIfAbsent('installationInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('moduleInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('batteryInventory', () => <String, dynamic>{});
+    normalized.putIfAbsent('biogeneratorInventory', () => <String, dynamic>{});
     normalized.putIfAbsent(
         'refugeProgress', () => <String, dynamic>{'contribution': 0});
     normalized.putIfAbsent('habitatInventory', () => <String, dynamic>{});
@@ -99,6 +103,8 @@ class ElevageSave {
         .whereType<Map>()) {
       alcove.putIfAbsent('progressState', () => 'READY');
       alcove.putIfAbsent('batterySlot', () => null);
+      alcove.putIfAbsent('biogeneratorSlot', () => null);
+      alcove.putIfAbsent('localEnergy', () => 0);
       for (final slot
           in (alcove['slots'] as List? ?? const <dynamic>[]).whereType<Map>()) {
         slot.putIfAbsent('installedModules', () => <dynamic>[]);
@@ -211,6 +217,15 @@ class ElevageSave {
         raw.putIfAbsent('onboardingSleepAllowedAt', () => 0);
         raw.putIfAbsent('environmentalMemory',
             () => <String, dynamic>{'temporaryRejectedZones': <String>[]});
+        raw.putIfAbsent(
+            'professions',
+            () => <String, dynamic>{
+                  'TRACKER': <String, dynamic>{
+                    'professionId': 'TRACKER',
+                    'xp': 0,
+                    'level': 0,
+                  },
+                });
         raw.putIfAbsent(
             'social',
             () => <String, dynamic>{
@@ -720,6 +735,13 @@ class ElevageDomain {
         'favoriteZone': null,
         'lastKnownSafeZone': null,
       },
+      'professions': <String, dynamic>{
+        'TRACKER': <String, dynamic>{
+          'professionId': 'TRACKER',
+          'xp': 0,
+          'level': 0,
+        },
+      },
       'social': <String, dynamic>{
         'cuddleCooldownUntil': 0,
         'cuddleAttempts': 0,
@@ -780,6 +802,8 @@ class ElevageDomain {
                   ? 'READY'
                   : 'LOCKED',
               'batterySlot': null,
+              'biogeneratorSlot': null,
+              'localEnergy': 0,
               'slots': List<dynamic>.filled(config.installationSlotCount, null),
               'createdAt': now,
             });
@@ -1059,6 +1083,156 @@ class ElevageDomain {
     final previous = alcove['batterySlot'];
     if (previous is Map) batteries[previous['instanceId'] as String] = previous;
     alcove['batterySlot'] = battery;
+    return state;
+  }
+
+  /// The durable generator is an Alcôve technical appliance, never a Z1–Z4
+  /// construction. It must first be crafted, then explicitly installed.
+  static ElevageSave craftBiogenerator(
+      ElevageSave source, int now, ElevageConfig config) {
+    final state = source.copy();
+    final recipe = Map<String, dynamic>.from(
+        config.refugeProgression['biogeneratorRecipe'] as Map? ??
+            const <dynamic, dynamic>{});
+    final generic = _generic(state);
+    final special = _special(state);
+    final organic = (recipe['organic'] as num?)?.toInt() ?? 0;
+    final mineral = (recipe['mineral'] as num?)?.toInt() ?? 0;
+    final parts = Map<String, dynamic>.from(
+        recipe['special'] as Map? ?? const <dynamic, dynamic>{});
+    if ((generic['organic'] ?? 0) < organic ||
+        (generic['mineral'] ?? 0) < mineral ||
+        parts.entries.any((entry) =>
+            (special[entry.key] ?? 0) < (entry.value as num).toInt())) {
+      throw StateError('Ressources insuffisantes pour le Biogénérateur.');
+    }
+    generic['organic'] = generic['organic']! - organic;
+    generic['mineral'] = generic['mineral']! - mineral;
+    parts.forEach(
+        (key, value) => special[key] = special[key]! - (value as num).toInt());
+    final id = 'biogenerator-$now-${_biogeneratorInventory(state).length}';
+    _biogeneratorInventory(state)[id] = _newBiogenerator(id, now);
+    return state;
+  }
+
+  static ElevageSave installBiogenerator(
+      ElevageSave source, String alcoveId, String instanceId, int now) {
+    final state = source.copy();
+    final alcove = _alcove(state, alcoveId);
+    final inventory = _biogeneratorInventory(state);
+    final generator = inventory.remove(instanceId);
+    if (generator == null) throw StateError('Biogénérateur indisponible.');
+    final previous = alcove['biogeneratorSlot'];
+    if (previous is Map) {
+      inventory[previous['instanceId'] as String] = previous;
+    }
+    alcove['biogeneratorSlot'] = generator;
+    return state;
+  }
+
+  static ElevageSave transferBiogeneratorFuel(ElevageSave source,
+      String alcoveId, String resourceId, int quantity, ElevageConfig config) {
+    if (quantity <= 0 ||
+        !const <String>{'ORGANIC', 'MINERAL'}.contains(resourceId)) {
+      throw StateError('Transfert invalide.');
+    }
+    final state = source.copy();
+    final alcove = _alcove(state, alcoveId);
+    final generator = alcove['biogeneratorSlot'];
+    if (generator is! Map) throw StateError('Biogénérateur absent.');
+    final tanks = _generatorTanks(generator);
+    final capacities = biogeneratorTankCapacities(generator, config);
+    final key = resourceId.toLowerCase();
+    final space = max(0, capacities[key]! - (tanks[key] ?? 0));
+    if (quantity > space) throw StateError('Capacité de cuve insuffisante.');
+    final generic = _generic(state);
+    if ((generic[key] ?? 0) < quantity) {
+      throw StateError('Réserve insuffisante.');
+    }
+    generic[key] = generic[key]! - quantity;
+    tanks[key] = (tanks[key] ?? 0) + quantity;
+    return state;
+  }
+
+  static Map<String, int> biogeneratorTankCapacities(
+      Map generator, ElevageConfig config) {
+    final installed = installedModules(generator, config);
+    final capacityModules = installed
+        .where((module) =>
+            (module['definition'] as ElevageModuleDefinition?)?.category ==
+            'CAPACITY')
+        .length;
+    return <String, int>{
+      'organic': config.biogeneratorOrganicTankCapacity +
+          capacityModules * config.biogeneratorCapacityOrganicBonus,
+      'mineral': config.biogeneratorMineralTankCapacity +
+          capacityModules * config.biogeneratorCapacityMineralBonus,
+    };
+  }
+
+  static Map<String, int> biogeneratorCycleProfile(
+      Map generator, ElevageConfig config) {
+    final installed = installedModules(generator, config);
+    final efficiency = installed.any((module) =>
+        (module['definition'] as ElevageModuleDefinition?)?.category ==
+        'EFFICIENCY');
+    final power = installed.any((module) =>
+        (module['definition'] as ElevageModuleDefinition?)?.category ==
+        'POWER');
+    return <String, int>{
+      'organic': max(
+          config.biogeneratorMinimumOrganicCost,
+          config.biogeneratorOrganicCost -
+              (efficiency ? config.biogeneratorEfficiencyOrganicReduction : 0)),
+      'mineral': max(
+          config.biogeneratorMinimumMineralCost,
+          config.biogeneratorMineralCost -
+              (efficiency ? config.biogeneratorEfficiencyMineralReduction : 0)),
+      'energy': config.biogeneratorEnergyPerCycle +
+          (power ? config.biogeneratorPowerEnergyBonus : 0),
+    };
+  }
+
+  static ElevageSave installBiogeneratorModule(ElevageSave source,
+      String alcoveId, String moduleInstanceId, ElevageConfig config) {
+    final state = source.copy();
+    final generator = _alcove(state, alcoveId)['biogeneratorSlot'];
+    if (generator is! Map) throw StateError('Biogénérateur absent.');
+    final profile = config.modulesFor('BIOGENERATOR');
+    final inventory = _moduleInventory(state);
+    final instance = inventory[moduleInstanceId] as Map?;
+    final definition = config.module(instance?['moduleId'] as String? ?? '');
+    if (instance == null ||
+        definition == null ||
+        !definition.enabled ||
+        !profile.allowedModuleIds.contains(definition.id)) {
+      throw StateError('Module incompatible.');
+    }
+    final installed =
+        generator.putIfAbsent('installedModules', () => <dynamic>[]) as List;
+    if (installed.length >= profile.moduleSlots ||
+        installed
+            .whereType<Map>()
+            .any((entry) => entry['moduleId'] == definition.id)) {
+      throw StateError('Ce module ne peut plus être cumulé.');
+    }
+    installed.add(Map<String, dynamic>.from(instance));
+    inventory.remove(moduleInstanceId);
+    return state;
+  }
+
+  static ElevageSave removeBiogeneratorModule(
+      ElevageSave source, String alcoveId, String moduleInstanceId) {
+    final state = source.copy();
+    final generator = _alcove(state, alcoveId)['biogeneratorSlot'];
+    final installed =
+        generator is Map ? generator['installedModules'] as List? : null;
+    final index = installed?.indexWhere((entry) =>
+            entry is Map && entry['instanceId'] == moduleInstanceId) ??
+        -1;
+    if (index < 0) throw StateError('Module absent.');
+    final module = Map<String, dynamic>.from(installed!.removeAt(index) as Map);
+    _moduleInventory(state)[moduleInstanceId] = module;
     return state;
   }
 
@@ -1911,6 +2085,83 @@ class ElevageDomain {
     };
   }
 
+  /// Ambient feedback is deliberately independent from any scene item or
+  /// current action. It stays visible while a Baby has exhausted every
+  /// possible safe zone, making the discomfort an actual persistent state.
+  static Map<String, String>? ambientEnvironmentalFeedback(
+      Map<String, int> environment, Map individual, ElevageConfig config) {
+    final signal = environmentalSignal(environment, individual, config);
+    if (signal == null) return null;
+    final comfort = signal['comfort'];
+    if (comfort != 'BAD' && comfort != 'EXTREME') return null;
+    final stage =
+        ((individual['lifecycle'] as Map?)?['stage'] as String?) ?? 'BABY';
+    final icon = signal['icon'];
+    return <String, String>{
+      ...signal,
+      'body': stage == 'BABY' &&
+              icon == 'DISCOMFORT' &&
+              signal['axis'] == 'temperature' &&
+              signal['direction'] == 'TOO_LOW'
+          ? 'SHIVER'
+          : icon == 'HOT'
+              ? 'SWEAT'
+              : icon == 'DRY'
+                  ? 'DRY'
+                  : 'DISCOMFORT',
+    };
+  }
+
+  static Map<String, dynamic> trackerProfession(
+      Map individual, ElevageConfig config) {
+    final professions =
+        individual.putIfAbsent('professions', () => <String, dynamic>{}) as Map;
+    final tracker = professions.putIfAbsent(
+        'TRACKER',
+        () => <String, dynamic>{
+              'professionId': 'TRACKER',
+              'xp': 0,
+              'level': 0,
+            }) as Map;
+    final xp = (tracker['xp'] as num?)?.toInt() ?? 0;
+    var level = 0;
+    for (var candidate = 1; candidate <= 3; candidate++) {
+      if (xp >= config.trackerThreshold(candidate)) level = candidate;
+    }
+    tracker['professionId'] = 'TRACKER';
+    tracker['xp'] = max(0, xp);
+    tracker['level'] = level;
+    return Map<String, dynamic>.from(tracker);
+  }
+
+  static int trackerCarryBonus(Map individual, ElevageConfig config) =>
+      config.trackerCarryBonus(
+          (trackerProfession(individual, config)['level'] as num).toInt());
+
+  static ElevageSave addTrackerXp(ElevageSave source, String individualId,
+      int amount, ElevageConfig config) {
+    if (amount <= 0) return source.copy();
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    final tracker = trackerProfession(individual, config);
+    tracker['xp'] = ((tracker['xp'] as num).toInt() + amount).clamp(0, 999999);
+    (individual['professions'] as Map)['TRACKER'] = tracker;
+    trackerProfession(individual, config);
+    return state;
+  }
+
+  static ElevageSave forceTrackerLevel(ElevageSave source, String individualId,
+      int level, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    final clamped = level.clamp(0, 3);
+    final tracker = trackerProfession(individual, config);
+    tracker['xp'] = clamped == 0 ? 0 : config.trackerThreshold(clamped);
+    (individual['professions'] as Map)['TRACKER'] = tracker;
+    trackerProfession(individual, config);
+    return state;
+  }
+
   /// Baby searches one adjacent zone at a time and never receives a perfect
   /// global GPS target outside an emergency. Intermediate keeps the same
   /// exploratory principle but evaluates the available local candidates faster.
@@ -2422,10 +2673,11 @@ class ElevageDomain {
     final generic = _generic(state);
     if (specification.mode == 'ENERGY') {
       final alcoveId = raw['alcoveId'] as String?;
-      final battery =
-          alcoveId == null ? null : _alcove(state, alcoveId)['batterySlot'];
-      final available =
-          (battery is Map ? battery['currentEnergy'] : 0) as num? ?? 0;
+      final alcove = alcoveId == null ? null : _alcove(state, alcoveId);
+      final battery = alcove?['batterySlot'];
+      final available = ((alcove?['localEnergy'] as num?)?.toInt() ?? 0) +
+          ((battery is Map ? battery['currentEnergy'] : 0) as num? ?? 0)
+              .toInt();
       final missingEnergy =
           max(0, specification.energyCost - available.toInt());
       return missingEnergy == 0
@@ -2498,14 +2750,67 @@ class ElevageDomain {
       ElevageStructureConsumption specification, ElevageConfig config) {
     final generic = _generic(state);
     if (specification.mode == 'ENERGY') {
+      // Check the entire local chain before modifying it. This keeps a failed
+      // maintenance tick transactional even when a partly depleted battery is
+      // followed by an empty generator.
+      final initialLocal = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
+      final initialBattery = alcove['batterySlot'];
+      final batteryPotential = initialBattery is Map
+          ? (initialBattery['currentEnergy'] as num?)?.toInt() ?? 0
+          : 0;
+      final generator = alcove['biogeneratorSlot'];
+      var generatorPotential = 0;
+      if (generator is Map) {
+        final tanks = _generatorTanks(generator);
+        final profile = biogeneratorCycleProfile(generator, config);
+        generatorPotential = min((tanks['organic'] ?? 0) ~/ profile['organic']!,
+                (tanks['mineral'] ?? 0) ~/ profile['mineral']!) *
+            profile['energy']!;
+      }
+      final legacyPotential = config.preset == ElevagePreset.prototype
+          ? (generic['energy'] ?? 0) +
+              min((generic['organic'] ?? 0) ~/ config.energyOrganicCost,
+                      (generic['mineral'] ?? 0) ~/ config.energyMineralCost) *
+                  config.energyProduced
+          : 0;
+      if (initialLocal +
+              batteryPotential +
+              generatorPotential +
+              legacyPotential <
+          specification.energyCost) {
+        return false;
+      }
+      var remaining = specification.energyCost;
+      final localEnergy = initialLocal;
+      final consumedLocal = min(localEnergy, remaining);
+      alcove['localEnergy'] = localEnergy - consumedLocal;
+      remaining -= consumedLocal;
       final battery = alcove['batterySlot'];
-      if (battery is! Map ||
-          ((battery['currentEnergy'] as num?)?.toInt() ?? 0) <
-              specification.energyCost) {
+      if (remaining > 0 && battery is Map) {
+        final charge = (battery['currentEnergy'] as num?)?.toInt() ?? 0;
+        final consumedBattery = min(charge, remaining);
+        battery['currentEnergy'] = charge - consumedBattery;
+        remaining -= consumedBattery;
+        if ((battery['currentEnergy'] as num).toInt() <= 0) {
+          alcove['batterySlot'] = null;
+        }
+      }
+      if (remaining > 0) {
+        final generator = alcove['biogeneratorSlot'];
+        while (remaining > 0 &&
+            generator is Map &&
+            _runBiogeneratorCycle(generator, alcove, config)) {
+          final stored = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
+          final consumed = min(stored, remaining);
+          alcove['localEnergy'] = stored - consumed;
+          remaining -= consumed;
+        }
+      }
+      if (remaining > 0) {
         // Compatibility only for the pre-21.3 Prototype preset. Target
         // Alcôves never turn Organic/Mineral into invisible local power.
         if (config.preset == ElevagePreset.prototype) {
-          while ((generic['energy'] ?? 0) < specification.energyCost) {
+          while ((generic['energy'] ?? 0) < remaining) {
             if ((generic['organic'] ?? 0) < config.energyOrganicCost ||
                 (generic['mineral'] ?? 0) < config.energyMineralCost) {
               return false;
@@ -2515,15 +2820,10 @@ class ElevageDomain {
             generic['energy'] =
                 (generic['energy'] ?? 0) + config.energyProduced;
           }
-          generic['energy'] = generic['energy']! - specification.energyCost;
+          generic['energy'] = generic['energy']! - remaining;
           return true;
         }
         return false;
-      }
-      battery['currentEnergy'] =
-          (battery['currentEnergy'] as num).toInt() - specification.energyCost;
-      if ((battery['currentEnergy'] as num).toInt() <= 0) {
-        alcove['batterySlot'] = null;
       }
       return true;
     }
@@ -3204,6 +3504,40 @@ class ElevageDomain {
   static Map<String, dynamic> _batteryInventory(ElevageSave state) =>
       Map<String, dynamic>.from(state.data['batteryInventory'] as Map)
         ..also((map) => state.data['batteryInventory'] = map);
+
+  static Map<String, dynamic> _biogeneratorInventory(ElevageSave state) =>
+      Map<String, dynamic>.from(state.data['biogeneratorInventory'] as Map)
+        ..also((map) => state.data['biogeneratorInventory'] = map);
+
+  static Map<String, dynamic> _newBiogenerator(String id, int now) =>
+      <String, dynamic>{
+        'instanceId': id,
+        'definitionId': 'BIOGENERATOR',
+        'installedAt': now,
+        'tanks': <String, int>{'organic': 0, 'mineral': 0},
+        'installedModules': <dynamic>[],
+      };
+
+  static Map<String, int> _generatorTanks(Map generator) =>
+      Map<String, int>.from((generator.putIfAbsent(
+              'tanks', () => <String, int>{'organic': 0, 'mineral': 0}) as Map)
+          .map((key, value) => MapEntry('$key', (value as num).toInt())))
+        ..also((tanks) => generator['tanks'] = tanks);
+
+  static bool _runBiogeneratorCycle(
+      Map generator, Map alcove, ElevageConfig config) {
+    final tanks = _generatorTanks(generator);
+    final profile = biogeneratorCycleProfile(generator, config);
+    if ((tanks['organic'] ?? 0) < profile['organic']! ||
+        (tanks['mineral'] ?? 0) < profile['mineral']!) {
+      return false;
+    }
+    tanks['organic'] = tanks['organic']! - profile['organic']!;
+    tanks['mineral'] = tanks['mineral']! - profile['mineral']!;
+    alcove['localEnergy'] =
+        ((alcove['localEnergy'] as num?)?.toInt() ?? 0) + profile['energy']!;
+    return true;
+  }
 
   static void _processLoanReturns(ElevageSave state, int now) {
     final inventory =

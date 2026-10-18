@@ -171,6 +171,29 @@ class ElevageController extends ChangeNotifier {
   Future<void> insertBattery(String alcoveId, String batteryInstanceId) =>
       _mutate((current) => ElevageDomain.insertBattery(
           current, alcoveId, batteryInstanceId, _now));
+  Future<void> craftBiogenerator() => _mutate(
+      (current) => ElevageDomain.craftBiogenerator(current, _now, config));
+  Future<void> installBiogenerator(String alcoveId, String instanceId) =>
+      _mutate((current) => ElevageDomain.installBiogenerator(
+          current, alcoveId, instanceId, _now));
+  Future<void> transferBiogeneratorFuel(
+          String alcoveId, String resourceId, int quantity) =>
+      _mutate((current) => ElevageDomain.transferBiogeneratorFuel(
+          current, alcoveId, resourceId, quantity, config));
+  Future<void> installBiogeneratorModule(
+          String alcoveId, String moduleInstanceId) =>
+      _mutate((current) => ElevageDomain.installBiogeneratorModule(
+          current, alcoveId, moduleInstanceId, config));
+  Future<void> removeBiogeneratorModule(
+          String alcoveId, String moduleInstanceId) =>
+      _mutate((current) => ElevageDomain.removeBiogeneratorModule(
+          current, alcoveId, moduleInstanceId));
+  Future<void> addTrackerXp(String individualId, int amount) =>
+      _mutate((current) =>
+          ElevageDomain.addTrackerXp(current, individualId, amount, config));
+  Future<void> forceTrackerLevel(String individualId, int level) =>
+      _mutate((current) => ElevageDomain.forceTrackerLevel(
+          current, individualId, level, config));
   Future<void> addContribution(int amount) =>
       _mutate((current) => ElevageDomain.addContribution(current, amount));
   Future<void> setContribution(int value) =>

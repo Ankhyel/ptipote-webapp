@@ -1204,3 +1204,44 @@ L’Eau n’est pas une ressource globale du Camp.
   Colonie). Les autres crafts importants visent environ 5 unités. Les coûts
   Target définitifs, le Biogénérateur durable, la découverte du plan Bio-pile
   par le Littoral et les gains de Contribution co-élevage restent à arbitrer.
+
+# Lot 21.4 — Biogénérateur, inconfort Bébé et Pisteur
+
+- **Biogénérateur durable.** `BIOGENERATOR` est une infrastructure technique
+  de l’Alcôve, hors des slots Z1–Z4 et distincte de la `BIO_BATTERY`. Il est
+  craftable avec une recette **prototype configurable** (la recette Target est
+  un point à arbitrer), puis installé dans le slot technique de l’Alcôve.
+  Ses cuves sont alimentées uniquement par transfert explicite depuis la
+  Réserve commune : aucune aspiration invisible n’est autorisée.
+- **Cuves et priorité énergétique.** Les cuves de base font `30 ORGANIC` et
+  `10 MINERAL`. Lorsqu’une structure réclame de l’énergie, le moteur consomme
+  d’abord l’énergie locale déjà produite, puis la Bio-pile, puis un cycle du
+  Biogénérateur. La recette base est `3 ORGANIC + 2 MINERAL → 10 ENERGY`.
+  Hors ligne, les cycles s’arrêtent strictement au premier manque de matière;
+  ni dette ni stock négatif ne sont possibles.
+- **Modules du Biogénérateur.** Il reçoit un slot par catégorie V1 :
+  Efficacité, Puissance et Capacité. Efficacité donne `2 + 1 → 10` avec un
+  plancher de `1/1`; Puissance donne `3 + 2 → 15`; les deux donnent
+  `2 + 1 → 15`. Capacité porte les cuves à `40/20`. Ainsi, une cuve pleine
+  avec Capacité+Efficacité représente 200 Energy potentielles, ou 300 avec
+  Puissance. Capacités, coûts, sortie et bonus sont configurables dans le
+  Dashboard; un même module ne se cumule pas sur ce générateur V1.
+- **Inconfort ambiant.** L’expression environnementale est désormais une
+  couche d’état indépendante des objets et des actions. Un P’TIPOTE qui ne
+  trouve aucune zone meilleure continue donc d’exprimer son problème. Un Bébé
+  trop froid tremble par petites séquences horizontales sans changer de centre,
+  avec `Nnh…` au plus une fois toutes les 3 secondes (paramétrable). Chaleur et
+  sécheresse gardent leurs signaux persistants. Le retour à une zone optimale
+  retire immédiatement l’expression; les observations environnementales
+  existantes restent la source de découverte.
+- **Métier Pisteur.** Les compétences sont persistées par individu dans le
+  modèle générique `professionId/xp/level`, séparé du stade biologique. Le seul
+  métier V1 est `TRACKER` / Pisteur, niveaux 0 à 3 : les seuils XP et bonus de
+  transport `+0/+1/+2/+3` sont Dashboard-configurables. Le Baby commence au
+  niveau 0; l’accès futur à la Lisière dépendra du stade, mais la compétence
+  dépendra seulement de l’XP. Les hooks de sorties accompagnées, nouveaux
+  secteurs, ressources et sorties autonomes sont préparés sans refaire la
+  Lisière V2.
+- **Points à arbitrer.** Recette Target et découverte du plan Biogénérateur,
+  valeurs économiques finales, futurs modules rares/spécifiques, et sources
+  exactes d’XP Pisteur dans la Lisière V2.

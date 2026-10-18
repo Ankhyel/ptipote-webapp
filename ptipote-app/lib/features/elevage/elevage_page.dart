@@ -1338,6 +1338,14 @@ class _IndividualPageState extends State<_IndividualPage> {
         now: now, phaseOverride: controller.forcedDayNightPhase);
     final localEnvironment =
         zoneEnvironments[_ptipoteZoneId] ?? const <String, int>{};
+    final ambient = ElevageDomain.ambientEnvironmentalFeedback(
+        localEnvironment, individual, controller.config);
+    final ambientVoice = ambient == null ||
+            (now ~/ 1000) %
+                    max(1, controller.config.babyVocalCooldownSeconds) !=
+                0
+        ? null
+        : ambient['vocalization'];
     final alcoveComfort =
         _alcoveComfort(zoneEnvironments, controller.config, individual);
     final hunger = ElevageDomain.hunger(
@@ -1427,10 +1435,11 @@ class _IndividualPageState extends State<_IndividualPage> {
                 pendingItem: _pendingPlacementItem,
                 followHoldZoneId: _followHoldZoneId,
                 action: _sceneAction,
-                voice: _sceneVoice,
+                voice: _sceneVoice ?? ambientVoice,
                 bubbleItemId: _bubbleItemId,
                 ptipoteHoldActive: _ptipoteHoldActive,
                 requestSignal: request?['signal'] as String?,
+                ambientSignal: ambient,
                 sleeping: sleeping,
                 crystallizing: available,
                 ptipoteZoneId: _ptipoteZoneId,
@@ -1492,6 +1501,8 @@ class _IndividualPageState extends State<_IndividualPage> {
                 ),
               ],
               _BatterySlotCard(alcove: alcove, controller: controller),
+              _BiogeneratorCard(alcove: alcove, controller: controller),
+              _TrackerCard(individual: individual, controller: controller),
               if (individual['loanOffer'] is Map &&
                   (individual['loanOffer'] as Map)['selectedStructureId'] ==
                       null)
@@ -1759,6 +1770,15 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     setState(() => config = config.copyWith(refugeProgression: next));
   }
 
+  void _setRefugeNestedNumber(String section, String key, int value) {
+    final next = Map<String, dynamic>.from(config.refugeProgression);
+    final nested = Map<String, dynamic>.from(
+        next[section] as Map? ?? const <dynamic, dynamic>{});
+    nested[key] = value;
+    next[section] = nested;
+    setState(() => config = config.copyWith(refugeProgression: next));
+  }
+
   void _setAlcoveRequirement(int alcoveIndex, String key, int value) {
     final progression = Map<String, dynamic>.from(config.refugeProgression);
     final requirements = config.alcoveRequirements
@@ -1858,6 +1878,99 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               (value) => _setRefugeNumber('startingBioBatteryCount', value)),
           _number(context, 'Énergie par Bio-pile', config.bioBatteryEnergy,
               (value) => _setRefugeNumber('bioBatteryEnergy', value)),
+          _heading('Biogénérateur durable'),
+          const Text(
+              'Prototype configurable — la recette finale reste à arbitrer.'),
+          _number(
+              context,
+              'Cuve Organique',
+              config.biogeneratorOrganicTankCapacity,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'organicTankCapacity', value)),
+          _number(
+              context,
+              'Cuve Minéral',
+              config.biogeneratorMineralTankCapacity,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'mineralTankCapacity', value)),
+          _number(
+              context,
+              'Coût Organique / cycle',
+              config.biogeneratorOrganicCost,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'organicCostPerCycle', value)),
+          _number(
+              context,
+              'Coût Minéral / cycle',
+              config.biogeneratorMineralCost,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'mineralCostPerCycle', value)),
+          _number(
+              context,
+              'Énergie / cycle',
+              config.biogeneratorEnergyPerCycle,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'energyPerCycle', value)),
+          _number(
+              context,
+              'Bonus Puissance',
+              config.biogeneratorPowerEnergyBonus,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'powerEnergyBonus', value)),
+          _number(
+              context,
+              'Bonus Capacité Organique',
+              config.biogeneratorCapacityOrganicBonus,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'capacityOrganicBonus', value)),
+          _number(
+              context,
+              'Bonus Capacité Minéral',
+              config.biogeneratorCapacityMineralBonus,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'capacityMineralBonus', value)),
+          _heading('Pisteur'),
+          for (final level in <int>[1, 2, 3])
+            _number(
+                context,
+                'XP Pisteur niveau $level',
+                config.trackerThreshold(level),
+                (value) => _setRefugeNestedNumber(
+                    'tracker', 'xpForLevel$level', value)),
+          _heading('Expression environnementale Bébé'),
+          _number(
+              context,
+              'Amplitude tremblement (px)',
+              ((config.refugeProgression['ambientFeedback']
+                          as Map?)?['shiverAmplitudePx'] as num?)
+                      ?.toInt() ??
+                  3,
+              (value) => _setRefugeNestedNumber(
+                  'ambientFeedback', 'shiverAmplitudePx', value)),
+          _number(
+              context,
+              'Rafale tremblement (ms)',
+              ((config.refugeProgression['ambientFeedback']
+                          as Map?)?['shiverBurstDuration'] as num?)
+                      ?.toInt() ??
+                  650,
+              (value) => _setRefugeNestedNumber(
+                  'ambientFeedback', 'shiverBurstDuration', value)),
+          _number(
+              context,
+              'Pause tremblement (ms)',
+              ((config.refugeProgression['ambientFeedback']
+                          as Map?)?['shiverPauseDuration'] as num?)
+                      ?.toInt() ??
+                  1800,
+              (value) => _setRefugeNestedNumber(
+                  'ambientFeedback', 'shiverPauseDuration', value)),
+          _number(
+              context,
+              'Cooldown vocal Bébé (s)',
+              config.babyVocalCooldownSeconds,
+              (value) => _setRefugeNestedNumber(
+                  'ambientFeedback', 'babyVocalCooldownSeconds', value)),
           _number(
               context,
               'Bio-pile · Organique',
@@ -3084,6 +3197,7 @@ class _AlcoveScene extends StatefulWidget {
     required this.bubbleItemId,
     required this.ptipoteHoldActive,
     required this.requestSignal,
+    required this.ambientSignal,
     required this.sleeping,
     required this.crystallizing,
     required this.ptipoteZoneId,
@@ -3120,6 +3234,7 @@ class _AlcoveScene extends StatefulWidget {
   final String? bubbleItemId;
   final bool ptipoteHoldActive;
   final String? requestSignal;
+  final Map<String, String>? ambientSignal;
   final bool sleeping;
   final bool crystallizing;
   final String ptipoteZoneId;
@@ -3135,7 +3250,9 @@ class _AlcoveScene extends StatefulWidget {
 
 class _AlcoveSceneState extends State<_AlcoveScene> {
   Timer? _crystalPulseTimer;
+  Timer? _shiverTimer;
   bool _crystalPulse = false;
+  bool _shiverOffset = false;
 
   @override
   void initState() {
@@ -3145,11 +3262,26 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
         setState(() => _crystalPulse = !_crystalPulse);
       }
     });
+    final feedbackConfig =
+        widget.config.refugeProgression['ambientFeedback'] as Map?;
+    _shiverTimer = Timer.periodic(
+        Duration(
+            milliseconds:
+                (feedbackConfig?['shiverSpeed'] as num?)?.toInt() ?? 120), (_) {
+      if (!mounted || widget.ambientSignal?['body'] != 'SHIVER') return;
+      final feedback =
+          widget.config.refugeProgression['ambientFeedback'] as Map?;
+      final burst = (feedback?['shiverBurstDuration'] as num?)?.toInt() ?? 650;
+      final pause = (feedback?['shiverPauseDuration'] as num?)?.toInt() ?? 1800;
+      final elapsed = DateTime.now().millisecondsSinceEpoch % (burst + pause);
+      setState(() => _shiverOffset = elapsed < burst && !_shiverOffset);
+    });
   }
 
   @override
   void dispose() {
     _crystalPulseTimer?.cancel();
+    _shiverTimer?.cancel();
     super.dispose();
   }
 
@@ -3165,6 +3297,9 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
         : widget.reaction == 'STEP_BACK'
             ? .88
             : 1.0;
+    final feedback = widget.config.refugeProgression['ambientFeedback'] as Map?;
+    final shiverAmplitude =
+        (feedback?['shiverAmplitudePx'] as num?)?.toDouble() ?? 3;
     final installed = widget.slots.whereType<Map>().toList();
     return Semantics(
       label: 'Scène de l’Alcôve',
@@ -3411,58 +3546,65 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                             : widget.config.normalMoveDurationMs),
             curve: Curves.easeInOut,
             alignment: _zoneAlignment(widget.ptipoteZoneId),
-            child: AnimatedScale(
-              duration: const Duration(milliseconds: 220),
-              scale: reactionScale,
-              child: Stack(clipBehavior: Clip.none, children: <Widget>[
-                Container(
-                  width: size,
-                  height: size,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Theme.of(context).colorScheme.secondaryContainer,
-                      boxShadow: const <BoxShadow>[
-                        BoxShadow(blurRadius: 8, color: Colors.black26)
-                      ]),
-                  child: GestureDetector(
-                    onLongPressStart: (_) => widget.onPtipoteHoldStart(),
-                    onLongPressEnd: (_) => widget.onPtipoteHoldEnd(),
-                    onLongPressCancel: widget.onPtipoteHoldEnd,
-                    onTap: widget.onPtipoteTap,
-                    child: AnimatedScale(
-                      duration: const Duration(milliseconds: 620),
-                      scale: widget.crystallizing
-                          ? (_crystalPulse ? 1.16 : .92)
-                          : 1,
-                      child: Icon(
-                        widget.crystallizing
-                            ? Icons.diamond_outlined
-                            : _ptipoteIcon(widget.stage, widget.family),
-                        size: size * .62,
+            child: Transform.translate(
+              offset: widget.ambientSignal?['body'] == 'SHIVER'
+                  ? Offset(
+                      _shiverOffset ? shiverAmplitude : -shiverAmplitude, 0)
+                  : Offset.zero,
+              child: AnimatedScale(
+                duration: const Duration(milliseconds: 220),
+                scale: reactionScale,
+                child: Stack(clipBehavior: Clip.none, children: <Widget>[
+                  Container(
+                    width: size,
+                    height: size,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Theme.of(context).colorScheme.secondaryContainer,
+                        boxShadow: const <BoxShadow>[
+                          BoxShadow(blurRadius: 8, color: Colors.black26)
+                        ]),
+                    child: GestureDetector(
+                      onLongPressStart: (_) => widget.onPtipoteHoldStart(),
+                      onLongPressEnd: (_) => widget.onPtipoteHoldEnd(),
+                      onLongPressCancel: widget.onPtipoteHoldEnd,
+                      onTap: widget.onPtipoteTap,
+                      child: AnimatedScale(
+                        duration: const Duration(milliseconds: 620),
+                        scale: widget.crystallizing
+                            ? (_crystalPulse ? 1.16 : .92)
+                            : 1,
+                        child: Icon(
+                          widget.crystallizing
+                              ? Icons.diamond_outlined
+                              : _ptipoteIcon(widget.stage, widget.family),
+                          size: size * .62,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                if (widget.ptipoteHoldActive)
-                  Positioned.fill(
-                      child: IgnorePointer(
-                          child: LongPressProgressInteraction(
-                              duration: Duration(
-                                  seconds:
-                                      widget.config.longPressHoldSeconds)))),
-              ]),
+                  if (widget.ptipoteHoldActive)
+                    Positioned.fill(
+                        child: IgnorePointer(
+                            child: LongPressProgressInteraction(
+                                duration: Duration(
+                                    seconds:
+                                        widget.config.longPressHoldSeconds)))),
+                ]),
+              ),
             ),
           ),
           if (widget.crystallizing ||
               widget.sleeping ||
               widget.requestSignal != null ||
+              widget.ambientSignal != null ||
               widget.action != 'IDLE')
             AnimatedAlign(
               duration: const Duration(milliseconds: 180),
               alignment: _bubbleAlignment(widget.ptipoteZoneId),
               child: _StatusBubble(
-                signal: widget.requestSignal,
+                signal: widget.requestSignal ?? widget.ambientSignal?['icon'],
                 action: widget.crystallizing
                     ? 'METAMORPHOSIS'
                     : widget.sleeping
@@ -3656,6 +3798,204 @@ class _BatterySlotCard extends StatelessWidget {
                         ),
               ),
       ),
+    );
+  }
+}
+
+class _BiogeneratorCard extends StatelessWidget {
+  const _BiogeneratorCard({required this.alcove, required this.controller});
+  final Map alcove;
+  final ElevageController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final generator = alcove['biogeneratorSlot'];
+    final inventory = controller.state!.data['biogeneratorInventory'] as Map;
+    if (generator is! Map) {
+      return Card(
+        child: ListTile(
+          leading: const Icon(Icons.memory_outlined),
+          title: const Text('Biogénérateur'),
+          subtitle:
+              const Text('Infrastructure durable · aucune cuve installée'),
+          trailing: IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: 'Installer un Biogénérateur',
+            onPressed: inventory.isEmpty
+                ? null
+                : () => _selectGenerator(context, inventory),
+          ),
+        ),
+      );
+    }
+    final tanks = generator['tanks'] as Map? ?? const <dynamic, dynamic>{};
+    final caps =
+        ElevageDomain.biogeneratorTankCapacities(generator, controller.config);
+    final profile =
+        ElevageDomain.biogeneratorCycleProfile(generator, controller.config);
+    final modules =
+        ElevageDomain.installedModules(generator, controller.config);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Biogénérateur',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Row(children: <Widget>[
+                Expanded(child: _tank(context, 'ORGANIC', tanks, caps)),
+                const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(Icons.bolt_outlined)),
+                Expanded(child: _tank(context, 'MINERAL', tanks, caps)),
+              ]),
+              const SizedBox(height: 6),
+              Text(
+                  'À la demande · ${profile['organic']} Organique + ${profile['mineral']} Minéral → ${profile['energy']} ⚡'),
+              Text(
+                  'Modules : ${modules.isEmpty ? 'aucun' : modules.map((m) => (m['definition'] as ElevageModuleDefinition?)?.label ?? 'Module').join(' · ')}'),
+              TextButton.icon(
+                  onPressed: () => _selectModule(context, generator, modules),
+                  icon: const Icon(Icons.extension_outlined),
+                  label: const Text('Modules')),
+            ]),
+      ),
+    );
+  }
+
+  Widget _tank(BuildContext context, String resource, Map tanks,
+      Map<String, int> capacities) {
+    final key = resource.toLowerCase();
+    final current = (tanks[key] as num?)?.toInt() ?? 0;
+    return OutlinedButton(
+      onPressed: () => _transfer(context, resource),
+      child: Text(
+          '${resource == 'ORGANIC' ? 'Organique' : 'Minéral'}\n$current / ${capacities[key]}',
+          textAlign: TextAlign.center),
+    );
+  }
+
+  void _selectGenerator(BuildContext context, Map inventory) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+            shrinkWrap: true,
+            children: inventory.values
+                .whereType<Map>()
+                .map((entry) => ListTile(
+                      leading: const Icon(Icons.memory_outlined),
+                      title: const Text('Biogénérateur'),
+                      onTap: () async {
+                        await controller.installBiogenerator(
+                            alcove['id'] as String,
+                            entry['instanceId'] as String);
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
+                      },
+                    ))
+                .toList()),
+      ),
+    );
+  }
+
+  void _transfer(BuildContext context, String resource) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+          child: ListView(shrinkWrap: true, children: <Widget>[
+        ListTile(
+            title: Text(
+                'Cuve ${resource == 'ORGANIC' ? 'Organique' : 'Minéral'}')),
+        for (final amount in <int>[1, 5, 10])
+          ListTile(
+            title: Text('Transférer $amount'),
+            onTap: () async {
+              await controller.transferBiogeneratorFuel(
+                  alcove['id'] as String, resource, amount);
+              if (sheetContext.mounted && controller.error == null) {
+                Navigator.pop(sheetContext);
+              }
+            },
+          ),
+      ])),
+    );
+  }
+
+  void _selectModule(BuildContext context, Map generator,
+      List<Map<String, dynamic>> installed) {
+    final inventory = controller.state!.data['moduleInventory'] as Map;
+    final available = inventory.values.whereType<Map>().where((entry) {
+      final definition =
+          controller.config.module(entry['moduleId'] as String? ?? '');
+      return definition != null &&
+          controller.config
+              .modulesFor('BIOGENERATOR')
+              .allowedModuleIds
+              .contains(definition.id);
+    }).toList();
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+          child: ListView(shrinkWrap: true, children: <Widget>[
+        ...installed.map((entry) => ListTile(
+              title: Text(
+                  (entry['definition'] as ElevageModuleDefinition?)?.label ??
+                      'Module'),
+              trailing: const Icon(Icons.remove_circle_outline),
+              onTap: () async {
+                await controller.removeBiogeneratorModule(
+                    alcove['id'] as String, entry['instanceId'] as String);
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+              },
+            )),
+        if (installed.length <
+            controller.config.modulesFor('BIOGENERATOR').moduleSlots)
+          ...available.map((entry) {
+            final definition =
+                controller.config.module(entry['moduleId'] as String)!;
+            return ListTile(
+              leading: const Icon(Icons.add_circle_outline),
+              title: Text(definition.label),
+              subtitle: Text(definition.description),
+              onTap: () async {
+                await controller.installBiogeneratorModule(
+                    alcove['id'] as String, entry['instanceId'] as String);
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+              },
+            );
+          }),
+      ])),
+    );
+  }
+}
+
+class _TrackerCard extends StatelessWidget {
+  const _TrackerCard({required this.individual, required this.controller});
+  final Map individual;
+  final ElevageController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final tracker =
+        ElevageDomain.trackerProfession(individual, controller.config);
+    final level = (tracker['level'] as num).toInt();
+    final xp = (tracker['xp'] as num).toInt();
+    final next =
+        level < 3 ? controller.config.trackerThreshold(level + 1) : null;
+    return ListTile(
+      leading: const Text('👣', style: TextStyle(fontSize: 22)),
+      title: Text('Pisteur $level'),
+      subtitle: Text(next == null
+          ? 'Niveau maximum · transport +${controller.config.trackerCarryBonus(level)}'
+          : '$xp / $next XP · transport +${controller.config.trackerCarryBonus(level)}'),
+      trailing: controller.config.devMode
+          ? IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () =>
+                  controller.addTrackerXp(individual['id'] as String, 10))
+          : null,
     );
   }
 }
@@ -4443,6 +4783,9 @@ Future<void> _openBiofabricator(
                                     ButtonSegment(
                                         value: 'BATTERY',
                                         label: Text('Bio-pile')),
+                                    ButtonSegment(
+                                        value: 'BIOGENERATOR',
+                                        label: Text('Générateur')),
                                   ],
                                   selected: <String>{
                                     category
@@ -4496,7 +4839,27 @@ Future<void> _openBiofabricator(
                             child: const Text('Créer'),
                           ),
                         ),
-                      if (category != 'MODULE' && category != 'BATTERY')
+                      if (category == 'BIOGENERATOR')
+                        ListTile(
+                          leading: const Icon(Icons.memory_outlined),
+                          title: const Text('Biogénérateur'),
+                          subtitle: const Text(
+                              'Recette prototype configurable. Infrastructure durable à cuves Organique et Minéral.'),
+                          isThreeLine: true,
+                          trailing: FilledButton(
+                            onPressed: () async {
+                              await controller.craftBiogenerator();
+                              if (sheetContext.mounted &&
+                                  controller.error == null) {
+                                Navigator.pop(sheetContext);
+                              }
+                            },
+                            child: const Text('Créer'),
+                          ),
+                        ),
+                      if (category != 'MODULE' &&
+                          category != 'BATTERY' &&
+                          category != 'BIOGENERATOR')
                         ...controller.config.recipes
                             .where((recipe) =>
                                 controller.config

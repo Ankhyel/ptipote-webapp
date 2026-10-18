@@ -725,6 +725,55 @@ class ElevageConfig {
           .map((raw) => Map<String, dynamic>.from(raw))
           .toList(growable: false);
 
+  Map<String, dynamic> get biogeneratorConfig => Map<String, dynamic>.from(
+      refugeProgression['biogenerator'] as Map? ?? const <dynamic, dynamic>{});
+  int _biogeneratorNumber(String key, int fallback) =>
+      ((biogeneratorConfig[key] as num?)?.toInt() ?? fallback).clamp(1, 9999);
+  int get biogeneratorOrganicTankCapacity =>
+      _biogeneratorNumber('organicTankCapacity', 30);
+  int get biogeneratorMineralTankCapacity =>
+      _biogeneratorNumber('mineralTankCapacity', 10);
+  int get biogeneratorOrganicCost =>
+      _biogeneratorNumber('organicCostPerCycle', 3);
+  int get biogeneratorMineralCost =>
+      _biogeneratorNumber('mineralCostPerCycle', 2);
+  int get biogeneratorEnergyPerCycle =>
+      _biogeneratorNumber('energyPerCycle', 10);
+  int get biogeneratorEfficiencyOrganicReduction =>
+      ((biogeneratorConfig['efficiencyOrganicReduction'] as num?)?.toInt() ?? 1)
+          .clamp(0, 999);
+  int get biogeneratorEfficiencyMineralReduction =>
+      ((biogeneratorConfig['efficiencyMineralReduction'] as num?)?.toInt() ?? 1)
+          .clamp(0, 999);
+  int get biogeneratorPowerEnergyBonus =>
+      ((biogeneratorConfig['powerEnergyBonus'] as num?)?.toInt() ?? 5)
+          .clamp(0, 9999);
+  int get biogeneratorCapacityOrganicBonus =>
+      ((biogeneratorConfig['capacityOrganicBonus'] as num?)?.toInt() ?? 10)
+          .clamp(0, 9999);
+  int get biogeneratorCapacityMineralBonus =>
+      ((biogeneratorConfig['capacityMineralBonus'] as num?)?.toInt() ?? 10)
+          .clamp(0, 9999);
+  int get biogeneratorMinimumOrganicCost =>
+      _biogeneratorNumber('minimumOrganicCost', 1);
+  int get biogeneratorMinimumMineralCost =>
+      _biogeneratorNumber('minimumMineralCost', 1);
+  Map<String, dynamic> get trackerConfig => Map<String, dynamic>.from(
+      refugeProgression['tracker'] as Map? ?? const <dynamic, dynamic>{});
+  int trackerThreshold(int level) =>
+      ((trackerConfig['xpForLevel$level'] as num?)?.toInt() ??
+              <int>[0, 10, 30, 60][level.clamp(0, 3)])
+          .clamp(0, 999999);
+  int trackerCarryBonus(int level) =>
+      ((trackerConfig['carryBonusByLevel'] as Map?)?['$level'] as num?)
+          ?.toInt() ??
+      level.clamp(0, 3);
+  int get babyVocalCooldownSeconds =>
+      ((refugeProgression['ambientFeedback']
+              as Map?)?['babyVocalCooldownSeconds'] as num?)
+          ?.toInt() ??
+      3;
+
   Map<String, dynamic> requirementForAlcove(int index) =>
       index <= 1 || index - 2 >= alcoveRequirements.length
           ? const <String, dynamic>{}
@@ -2026,6 +2075,14 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       moduleSlots: 1,
       allowedModuleIds: <String>['MODULE_CAPACITY_BASIC'],
     ),
+    'BIOGENERATOR': ElevageStructureModuleProfile(
+      moduleSlots: 3,
+      allowedModuleIds: <String>[
+        'MODULE_POWER_BASIC',
+        'MODULE_EFFICIENCY_BASIC',
+        'MODULE_CAPACITY_BASIC',
+      ],
+    ),
   },
   modules: <String, ElevageModuleDefinition>{
     'MODULE_POWER_BASIC': ElevageModuleDefinition(
@@ -2034,7 +2091,11 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       description:
           'Renforce l’effet environnemental principal de la structure.',
       category: 'POWER',
-      compatibleStructures: <String>['FOUR_BIO_ORGANIQUE', 'VENTILATION'],
+      compatibleStructures: <String>[
+        'FOUR_BIO_ORGANIQUE',
+        'VENTILATION',
+        'BIOGENERATOR',
+      ],
       effects: <String, num>{'environmentMagnitudeDelta': 1},
       stackable: true,
       maxStacksPerStructure: 2,
@@ -2046,7 +2107,11 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       label: 'Module d’efficacité',
       description: 'Allonge l’intervalle entre deux consommations de 25 %.',
       category: 'EFFICIENCY',
-      compatibleStructures: <String>['FOUR_BIO_ORGANIQUE', 'VENTILATION'],
+      compatibleStructures: <String>[
+        'FOUR_BIO_ORGANIQUE',
+        'VENTILATION',
+        'BIOGENERATOR',
+      ],
       effects: <String, num>{'consumptionIntervalMultiplier': 1.25},
       stackable: true,
       maxStacksPerStructure: 2,
@@ -2058,7 +2123,7 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       label: 'Module de capacité',
       description: 'Augmente de 3 le stock local maximal de chaque ressource.',
       category: 'CAPACITY',
-      compatibleStructures: <String>['CULTURE_POTAGERE'],
+      compatibleStructures: <String>['CULTURE_POTAGERE', 'BIOGENERATOR'],
       effects: <String, num>{'stockCapacityDelta': 3},
       stackable: false,
       maxStacksPerStructure: 1,
@@ -2417,6 +2482,41 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'organic': 5,
       'mineral': 5,
       'special': <String, int>{'MUSHROOM': 1, 'ALGAE': 1, 'SALT': 5},
+    },
+    // Prototype accessible dans le Bio-fabricateur. La recette Target reste
+    // volontairement à arbitrer avec la future Lisière V2.
+    'biogeneratorRecipe': <String, dynamic>{
+      'organic': 8,
+      'mineral': 6,
+      'special': <String, int>{'MUSHROOM': 2, 'ALGAE': 2, 'SALT': 2},
+    },
+    'biogenerator': <String, dynamic>{
+      'organicTankCapacity': 30,
+      'mineralTankCapacity': 10,
+      'organicCostPerCycle': 3,
+      'mineralCostPerCycle': 2,
+      'energyPerCycle': 10,
+      'efficiencyOrganicReduction': 1,
+      'efficiencyMineralReduction': 1,
+      'powerEnergyBonus': 5,
+      'capacityOrganicBonus': 10,
+      'capacityMineralBonus': 10,
+      'minimumOrganicCost': 1,
+      'minimumMineralCost': 1,
+    },
+    'ambientFeedback': <String, dynamic>{
+      'shiverAmplitudePx': 3,
+      'shiverSpeed': 120,
+      'shiverBurstDuration': 650,
+      'shiverPauseDuration': 1800,
+      'babyVocalCooldownSeconds': 3,
+    },
+    'tracker': <String, dynamic>{
+      'enabled': true,
+      'xpForLevel1': 10,
+      'xpForLevel2': 30,
+      'xpForLevel3': 60,
+      'carryBonusByLevel': <String, int>{'0': 0, '1': 1, '2': 2, '3': 3},
     },
     'alcoveRequirements': <Map<String, dynamic>>[
       <String, dynamic>{
