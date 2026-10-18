@@ -34,6 +34,7 @@ class ElevageController extends ChangeNotifier {
     if (state != null) {
       state = ElevageDomain.processReturns(state!, _now);
       state = ElevageDomain.refreshRefugeProgress(state!, _now, config);
+      state = ElevageDomain.refreshExploration(state!, _now, config);
       // Resolve every local producer and the shared maintenance ledger on
       // return from background. The domain caps consumption at depletion, so
       // an offline absence can never create an energy debt.
@@ -165,6 +166,12 @@ class ElevageController extends ChangeNotifier {
       ElevageDomain.startForaging(current, id, biome, _now, config));
   Future<void> claimForaging(String id, String pointId) => _mutate(
       (current) => ElevageDomain.claimForaging(current, id, pointId, _now));
+  Future<void> startExploration(String sectorId) => _mutate((current) =>
+      ElevageDomain.startExploration(current, sectorId, _now, config));
+  Future<void> claimExploration() => _mutate(
+      (current) => ElevageDomain.claimExploration(current, _now, config));
+  Future<void> refreshExploration() => _mutate(
+      (current) => ElevageDomain.refreshExploration(current, _now, config));
   Future<void> craft(ElevageRecipe recipe) =>
       _mutate((current) => ElevageDomain.craft(current, recipe, _now, config));
   Future<void> craftModule(ElevageModuleDefinition module) => _mutate(

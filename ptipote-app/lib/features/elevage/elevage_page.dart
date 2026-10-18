@@ -1386,6 +1386,11 @@ class _IndividualPageState extends State<_IndividualPage> {
         ElevageDomain.activeRequest(state, widget.individualId, now);
     final sleeping =
         ElevageDomain.isSleeping(individual, now, controller.config);
+    final explorationRun =
+        (state.data['exploration'] as Map?)?['activeRun'] as Map?;
+    final explorationRemaining = explorationRun?['status'] == 'IN_PROGRESS'
+        ? max(0, (explorationRun?['endsAt'] as num? ?? now).toInt() - now)
+        : 0;
     return Scaffold(
       appBar: AppBar(
         leading: BackButton(onPressed: widget.onBack),
@@ -1642,10 +1647,13 @@ class _IndividualPageState extends State<_IndividualPage> {
             ]),
             _section(context, 'Explorer', <Widget>[
               FilledButton.icon(
-                  onPressed: () =>
-                      _foraging(context, controller, widget.individualId),
+                  onPressed: () => _exploration(context, controller),
                   icon: const Icon(Icons.forest_outlined),
-                  label: const Text('Explorer la Mini-Lisière')),
+                  label: Text(explorationRun?['status'] == 'IN_PROGRESS'
+                      ? 'Exploration · ⏱ ${_explorationTimer(explorationRemaining)}'
+                      : explorationRun?['status'] == 'READY'
+                          ? 'Exploration · terminée'
+                          : 'Exploration')),
               const SizedBox(height: 6),
               FilledButton.tonalIcon(
                   onPressed: () => _sourcier(context, controller),
@@ -1799,6 +1807,35 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     nested[key] = value;
     next[section] = nested;
     setState(() => config = config.copyWith(refugeProgression: next));
+  }
+
+  void _setRefugeNestedBool(String section, String key, bool value) {
+    final next = Map<String, dynamic>.from(config.refugeProgression);
+    final nested = Map<String, dynamic>.from(
+        next[section] as Map? ?? const <dynamic, dynamic>{});
+    nested[key] = value;
+    next[section] = nested;
+    setState(() => config = config.copyWith(refugeProgression: next));
+  }
+
+  void _setExplorationSectorValue(String sectorId, String key, dynamic value) {
+    final progression = Map<String, dynamic>.from(config.refugeProgression);
+    final exploration = Map<String, dynamic>.from(
+        progression['exploration'] as Map? ?? const <dynamic, dynamic>{});
+    final overrides = Map<String, dynamic>.from(
+        exploration['sectorOverrides'] as Map? ?? const <dynamic, dynamic>{});
+    final sector = Map<String, dynamic>.from(
+        overrides[sectorId] as Map? ?? const <dynamic, dynamic>{});
+    sector[key] = value;
+    overrides[sectorId] = sector;
+    exploration['sectorOverrides'] = overrides;
+    progression['exploration'] = exploration;
+    setState(() => config = config.copyWith(refugeProgression: progression));
+  }
+
+  void _setExplorationLootValue(
+      String sectorId, List<Map<String, dynamic>> table) {
+    _setExplorationSectorValue(sectorId, 'lootTable', table);
   }
 
   void _setAlcoveRequirement(int alcoveIndex, String key, int value) {
@@ -2358,13 +2395,84 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               (value) => config = config.copyWith(minStaySeconds: value)),
           _number(context, 'Gain de résonance', config.resonanceGainPerUse,
               (value) => config = config.copyWith(resonanceGainPerUse: value)),
-          _heading('Mini-Lisière et installations'),
+          _heading('Exploration et installations'),
+          SwitchListTile(
+              title: const Text('Exploration activée'),
+              value: config.explorationEnabled,
+              onChanged: (value) =>
+                  _setRefugeNestedBool('exploration', 'enabled', value)),
           _number(
               context,
-              'Durée de sortie (s)',
-              config.foragingDurationSeconds,
+              'Durée Exploration (s)',
+              config.explorationInt('durationSeconds', 25),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'durationSeconds', value)),
+          _number(
+              context,
+              'Slots de récolte joueur',
+              config.explorationInt('baseCarrySlots', 3),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'baseCarrySlots', value)),
+          _number(
+              context,
+              'Stamina maximum',
+              config.explorationInt('staminaMax', 10),
               (value) =>
-                  config = config.copyWith(foragingDurationSeconds: value)),
+                  _setRefugeNestedNumber('exploration', 'staminaMax', value)),
+          _number(
+              context,
+              'Coût Stamina / sortie',
+              config.explorationInt('staminaCostPerRun', 1),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'staminaCostPerRun', value)),
+          _number(
+              context,
+              'Régénération Stamina / min',
+              config.explorationInt('staminaRegenPerMinute', 1),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'staminaRegenPerMinute', value)),
+          _number(
+              context,
+              'Régénération Organique / h',
+              config.explorationInt('organicRegenPerHour', 5),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'organicRegenPerHour', value)),
+          _number(
+              context,
+              'Coût Organique générique (%)',
+              config.explorationInt('genericOrganicCost', 1),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'genericOrganicCost', value)),
+          _number(
+              context,
+              'Coût Organique spécifique (%)',
+              config.explorationInt('specificOrganicCost', 5),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'specificOrganicCost', value)),
+          _number(
+              context,
+              'Coût Minéral générique',
+              config.explorationInt('genericMineralCost', 1),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'genericMineralCost', value)),
+          _number(
+              context,
+              'Coût Minéral spécifique',
+              config.explorationInt('specificMineralCost', 3),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'specificMineralCost', value)),
+          const Padding(
+              padding: EdgeInsets.only(left: 16, right: 16, bottom: 4),
+              child: Text(
+                  'Chaque secteur possède ses valeurs initiales, son état activé et sa table de loot configurable.')),
+          ...ElevageDomain.explorationSectors.map((sector) => ListTile(
+                leading: const Icon(Icons.map_outlined),
+                title: Text(sector['label'] as String),
+                subtitle: Text(
+                    '${sector['biomeId']} · Organique ${sector['organic']}% · Minéral ${sector['mineral']}'),
+                trailing: const Icon(Icons.tune),
+                onTap: () => _editExplorationSector(context, sector),
+              )),
           _number(
               context,
               'Intervalle de production (s)',
@@ -2509,6 +2617,121 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
   Widget _heading(String text) => Padding(
       padding: const EdgeInsets.only(top: 20, bottom: 4),
       child: Text(text, style: Theme.of(context).textTheme.titleLarge));
+
+  Future<void> _editExplorationSector(
+      BuildContext context, Map<String, dynamic> base) async {
+    final sectorId = base['id'] as String;
+    await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) =>
+            StatefulBuilder(builder: (sheetContext, setSheetState) {
+              final sector =
+                  ElevageDomain.resolvedExplorationSector(base, config);
+              final table = (sector['lootTable'] as List)
+                  .whereType<Map>()
+                  .map((entry) => Map<String, dynamic>.from(entry))
+                  .toList(growable: false);
+              Future<void> editNumber(
+                  String label, String key, int value) async {
+                final next = await _numberDialog(sheetContext, label, value);
+                if (next == null || !sheetContext.mounted) return;
+                _setExplorationSectorValue(sectorId, key, next);
+                setSheetState(() {});
+              }
+
+              return SafeArea(
+                  child: DraggableScrollableSheet(
+                      expand: false,
+                      initialChildSize: .72,
+                      minChildSize: .4,
+                      maxChildSize: .94,
+                      builder: (_, scrollController) => ListView(
+                              controller: scrollController,
+                              padding: const EdgeInsets.all(16),
+                              children: <Widget>[
+                                ListTile(
+                                    leading: const Icon(Icons.explore_outlined),
+                                    title: Text(sector['label'] as String),
+                                    subtitle: const Text(
+                                        'Configuration persistante du secteur')),
+                                SwitchListTile(
+                                    title: const Text('Secteur activé'),
+                                    value: sector['enabled'] != false,
+                                    onChanged: (value) {
+                                      _setExplorationSectorValue(
+                                          sectorId, 'enabled', value);
+                                      setSheetState(() {});
+                                    }),
+                                ListTile(
+                                    title: const Text('Organique initial (%)'),
+                                    trailing: Text('${sector['organic']}'),
+                                    onTap: () => editNumber(
+                                        'Organique initial',
+                                        'initialOrganic',
+                                        (sector['organic'] as num).toInt())),
+                                ListTile(
+                                    title: const Text('Minéral initial'),
+                                    trailing: Text('${sector['mineral']}'),
+                                    onTap: () => editNumber(
+                                        'Minéral initial',
+                                        'initialMineral',
+                                        (sector['mineral'] as num).toInt())),
+                                ListTile(
+                                    title: const Text('Plafond Organique'),
+                                    trailing: Text('${sector['maxOrganic']}'),
+                                    onTap: () => editNumber(
+                                        'Plafond Organique',
+                                        'maxOrganic',
+                                        (sector['maxOrganic'] as num).toInt())),
+                                const Divider(),
+                                const Padding(
+                                    padding:
+                                        EdgeInsets.symmetric(horizontal: 16),
+                                    child: Text('Table de loot',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700))),
+                                ...table.asMap().entries.map((entry) {
+                                  final index = entry.key;
+                                  final loot = entry.value;
+                                  return ListTile(
+                                      title: Text(ElevagePresentation.itemLabel(
+                                          loot['resourceId'] as String)),
+                                      subtitle: Text(
+                                          '${loot['resourceCategory']} · poids ${loot['weight']}'),
+                                      trailing: Switch(
+                                          value: loot['enabled'] != false,
+                                          onChanged: (value) {
+                                            final next = table
+                                                .map(Map<String, dynamic>.from)
+                                                .toList(growable: false);
+                                            next[index]['enabled'] = value;
+                                            _setExplorationLootValue(
+                                                sectorId, next);
+                                            setSheetState(() {});
+                                          }),
+                                      onTap: () async {
+                                        final nextWeight = await _numberDialog(
+                                            sheetContext,
+                                            'Poids ${loot['resourceId']}',
+                                            (loot['weight'] as num).toInt());
+                                        if (nextWeight == null ||
+                                            !sheetContext.mounted) {
+                                          return;
+                                        }
+                                        final next = table
+                                            .map(Map<String, dynamic>.from)
+                                            .toList(growable: false);
+                                        next[index]['weight'] = nextWeight;
+                                        _setExplorationLootValue(
+                                            sectorId, next);
+                                        setSheetState(() {});
+                                      });
+                                }),
+                              ])));
+            }));
+  }
+
   Widget _number(BuildContext context, String label, int value,
           void Function(int) apply) =>
       ListTile(
@@ -4621,7 +4844,7 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
                       padding: EdgeInsets.all(24),
                       child: Center(
                           child: Text(
-                              'Votre inventaire est vide. Explorez la Mini-Lisière pour trouver des objets.'))),
+                              'Votre réserve est vide. Lancez une Exploration pour trouver des objets.'))),
                 if (visible.isNotEmpty)
                   GridView.builder(
                     shrinkWrap: true,
@@ -5204,84 +5427,177 @@ String _installationImpactSentence(ElevageInstallationDefinition definition) {
   return '${parts.join(', ')} la zone.';
 }
 
-Future<void> _foraging(
-    BuildContext context, ElevageController controller, String id) async {
-  final status =
-      ElevageDomain.foragingStatus(controller.state!, id, controller.now);
-  if (status == 'NONE' || status == 'COMPLETED') {
-    await showModalBottomSheet<void>(
-        context: context,
-        builder: (sheetContext) =>
-            Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-              const ListTile(title: Text('Choisir un biome')),
-              ...<String, String>{
-                'FOREST': 'Forêt',
-                'COAST': 'Littoral',
-                'HILL': 'Colline'
-              }.entries.map((entry) => ListTile(
-                  title: Text(entry.value),
-                  onTap: () async {
-                    await controller.startForaging(id, entry.key);
-                    if (sheetContext.mounted) {
-                      Navigator.pop(sheetContext);
-                    }
-                  }))
-            ]));
-    return;
-  }
-  final run = (controller.state!.data['runsByIndividualId'] as Map)[id] as Map;
-  if (status == 'IN_PROGRESS') {
-    final remaining = max(0, (run['readyAt'] as int) - controller.now);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content:
-              Text('Exploration en cours · ${(remaining / 1000).ceil()} s')));
-    }
+String _explorationTimer(int milliseconds) {
+  final seconds = max(0, milliseconds ~/ 1000);
+  return '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
+}
+
+Future<void> _exploration(
+    BuildContext context, ElevageController controller) async {
+  await controller.refreshExploration();
+  if (!context.mounted || controller.state == null) return;
+  final exploration = ElevageDomain.explorationState(controller.state!);
+  final run = exploration['activeRun'] as Map?;
+  if (run?['status'] == 'READY') {
+    await _showExplorationResult(context, controller, run!);
     return;
   }
   await showModalBottomSheet<void>(
       context: context,
-      builder: (sheetContext) => ListView(shrinkWrap: true, children: <Widget>[
-            const ListTile(title: Text('Choisir une piste')),
-            ...(run['points'] as List).cast<Map>().map((point) => ListTile(
-                title: Text(point['label'] as String),
-                onTap: () async {
-                  final reward = point['reward'] as Map;
-                  await controller.claimForaging(id, point['id'] as String);
-                  if (sheetContext.mounted && controller.error == null) {
-                    Navigator.pop(sheetContext);
-                  }
-                  if (context.mounted && controller.error == null) {
-                    await _showForagingResult(context, reward);
-                  }
-                }))
-          ]));
+      builder: (sheetContext) => SafeArea(
+              child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+              const ListTile(
+                  leading: Icon(Icons.explore_outlined),
+                  title: Text('Exploration'),
+                  subtitle: Text('Choisissez un milieu depuis le Refuge.')),
+              GridView.count(
+                shrinkWrap: true,
+                crossAxisCount: 2,
+                childAspectRatio: 1.45,
+                children: <Map<String, String>>[
+                  <String, String>{'id': 'BASE', 'label': 'Base', 'icon': '⌂'},
+                  <String, String>{
+                    'id': 'FORET_HUMIDE',
+                    'label': 'Forêt humide',
+                    'icon': '🌲'
+                  },
+                  <String, String>{
+                    'id': 'LITTORAL',
+                    'label': 'Littoral',
+                    'icon': '🌊'
+                  },
+                  <String, String>{
+                    'id': 'COLLINE',
+                    'label': 'Colline',
+                    'icon': '⛰️'
+                  },
+                ]
+                    .map((tile) => Card(
+                          child: InkWell(
+                            onTap: tile['id'] == 'BASE'
+                                ? null
+                                : () => _explorationBiome(
+                                    sheetContext, controller, tile['id']!),
+                            child: Center(
+                                child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: <Widget>[
+                                  Text(tile['icon']!,
+                                      style: const TextStyle(fontSize: 24)),
+                                  const SizedBox(height: 4),
+                                  Text(tile['label']!,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w700)),
+                                ])),
+                          ),
+                        ))
+                    .toList(),
+              ),
+              if (run?['status'] == 'IN_PROGRESS')
+                Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                        'Sortie en cours · ⏱ ${_explorationTimer(max(0, (run!['endsAt'] as num).toInt() - controller.now))}')),
+            ]),
+          )));
 }
 
-Future<void> _showForagingResult(BuildContext context, Map reward) async {
-  final generic = reward['generic'] as Map;
-  final rows = <String>[
-    ...generic.entries.where((entry) => entry.value != 0).map((entry) =>
-        '+${entry.value} ${ElevagePresentation.itemLabel((entry.key as String).toUpperCase())}'),
-    '+1 ${ElevagePresentation.itemLabel(reward['special'] as String)}',
-  ];
+Future<void> _explorationBiome(
+    BuildContext context, ElevageController controller, String biomeId) async {
+  await controller.refreshExploration();
+  if (!context.mounted || controller.state == null) return;
+  final exploration = ElevageDomain.explorationState(controller.state!);
+  final sectors = exploration['sectors'] as Map;
+  final stamina = (exploration['stamina'] as num?)?.toInt() ?? 0;
+  final run = exploration['activeRun'] as Map?;
+  final title = switch (biomeId) {
+    'FORET_HUMIDE' => 'Forêt humide',
+    'LITTORAL' => 'Littoral',
+    _ => 'Colline',
+  };
+  await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+              child: ListView(shrinkWrap: true, children: <Widget>[
+            ListTile(
+                title: Text(title),
+                subtitle: Text(
+                    'Stamina $stamina/${controller.config.explorationInt('staminaMax', 10)} · ${controller.config.explorationInt('baseCarrySlots', 3)} slots')),
+            ...ElevageDomain.explorationSectorsForBiome(
+                    biomeId, controller.config)
+                .map((definition) {
+              final sector = sectors[definition['id']] as Map;
+              final discovered = sector['discovered'] == true;
+              final active = run?['sectorId'] == definition['id'] &&
+                  run?['status'] == 'IN_PROGRESS';
+              return ListTile(
+                leading: Icon(discovered ? Icons.explore : Icons.help_outline),
+                title: Text(discovered
+                    ? definition['label'] as String
+                    : 'Secteur inconnu'),
+                subtitle: discovered
+                    ? Text(
+                        'Organique ${(sector['organic'] as num).toInt()} % · Minéral ${(sector['mineral'] as num).toInt()}${active ? ' · en cours' : ''}')
+                    : const Text(
+                        'Lancez une première sortie pour le découvrir.'),
+                trailing: FilledButton(
+                  onPressed: run != null && run['status'] != 'CLAIMED' ||
+                          stamina <
+                              controller.config
+                                  .explorationInt('staminaCostPerRun', 1)
+                      ? null
+                      : () async {
+                          await controller
+                              .startExploration(definition['id'] as String);
+                          if (sheetContext.mounted &&
+                              controller.error == null) {
+                            Navigator.pop(sheetContext);
+                          }
+                        },
+                  child: const Text('Explorer'),
+                ),
+              );
+            }),
+          ])));
+}
+
+Future<void> _showExplorationResult(
+    BuildContext context, ElevageController controller, Map run) async {
   await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-              title: const Text('Exploration terminée'),
-              content:
-                  Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-                const Text('Tu as trouvé :'),
-                const SizedBox(height: 8),
-                ...rows.map((row) => ListTile(
-                    leading: const Icon(Icons.add_circle_outline),
-                    title: Text(row))),
-              ]),
-              actions: <Widget>[
-                FilledButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('Retour à l’Alcôve'))
-              ]));
+            title: const Text('Exploration terminée'),
+            content: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+              const Text('Résultats de vos 3 slots :'),
+              const SizedBox(height: 8),
+              ...(run['results'] as List).whereType<Map>().map((result) {
+                final resource = result['resourceId'] as String? ?? 'EMPTY';
+                return ListTile(
+                    leading: Icon(resource == 'EMPTY'
+                        ? Icons.remove_circle_outline
+                        : ElevagePresentation.itemIcon(resource)),
+                    title: Text(resource == 'EMPTY'
+                        ? 'Aucune ressource'
+                        : '${ElevagePresentation.itemLabel(resource)} ×1'));
+              }),
+            ]),
+            actions: <Widget>[
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Plus tard')),
+              FilledButton(
+                  onPressed: () async {
+                    await controller.claimExploration();
+                    if (dialogContext.mounted && controller.error == null) {
+                      Navigator.pop(dialogContext);
+                    }
+                  },
+                  child: const Text('Récupérer')),
+            ],
+          ));
 }
 
 Future<void> _sourcier(

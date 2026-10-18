@@ -67,6 +67,7 @@ class ElevageSave {
       // separate from both the player inventory and installed constructions.
       'sceneItemsByAlcoveId': <String, dynamic>{},
       'runsByIndividualId': <String, dynamic>{},
+      'exploration': ElevageDomain.initialExplorationState(now, config),
       'memoryEvents': <String, dynamic>{},
       'coRearingReturnLedger': <String, dynamic>{},
       'pendingNotifications': <dynamic>[],
@@ -85,6 +86,8 @@ class ElevageSave {
     }
     final normalized = _clone(json);
     normalized.putIfAbsent('runsByIndividualId', () => <String, dynamic>{});
+    ElevageDomain.normalizeExplorationState(
+        normalized, (normalized['savedAt'] as num?)?.toInt() ?? 0);
     normalized.putIfAbsent('installationInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('moduleInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('batteryInventory', () => <String, dynamic>{});
@@ -381,6 +384,279 @@ class ElevageDomain {
     'LIMESTONE',
     'QUARTZ',
     'IRON',
+  ];
+
+  /// Fixed Exploration V2 sectors. They are data, not procedural nodes: a
+  /// save persists only mutable ecology/discovery while the dashboard may
+  /// override every numeric rule and loot entry through this schema later.
+  static const List<Map<String, dynamic>> explorationSectors =
+      <Map<String, dynamic>>[
+    <String, dynamic>{
+      'id': 'FORET_HUMIDE_LISIERE',
+      'biomeId': 'FORET_HUMIDE',
+      'label': 'Lisière',
+      'organic': 30,
+      'mineral': 30,
+      'lootTable': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'resourceId': 'ORGANIC',
+          'weight': 4,
+          'resourceCategory': 'GENERIC_ORGANIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'ROOT',
+          'weight': 3,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'LEAF',
+          'weight': 3,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'MINERAL',
+          'weight': 2,
+          'resourceCategory': 'GENERIC_MINERAL'
+        },
+      ],
+    },
+    <String, dynamic>{
+      'id': 'FORET_HUMIDE_SOUS_BOIS',
+      'biomeId': 'FORET_HUMIDE',
+      'label': 'Sous-bois',
+      'organic': 40,
+      'mineral': 20,
+      'lootTable': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'resourceId': 'LEAF',
+          'weight': 4,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'ROOT',
+          'weight': 4,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'MOSS',
+          'weight': 3,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'MUSHROOM',
+          'weight': 3,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'MINERAL',
+          'weight': 1,
+          'resourceCategory': 'GENERIC_MINERAL'
+        },
+      ],
+    },
+    <String, dynamic>{
+      'id': 'FORET_HUMIDE_FORET_PROFONDE',
+      'biomeId': 'FORET_HUMIDE',
+      'label': 'Forêt profonde',
+      'organic': 50,
+      'mineral': 10,
+      'lootTable': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'resourceId': 'MUSHROOM',
+          'weight': 4,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'SEED',
+          'weight': 3,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'SPORE',
+          'weight': 3,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'MOSS',
+          'weight': 3,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+      ],
+    },
+    <String, dynamic>{
+      'id': 'LITTORAL_PLAGE',
+      'biomeId': 'LITTORAL',
+      'label': 'Plage',
+      'organic': 5,
+      'mineral': 30,
+      'lootTable': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'resourceId': 'MINERAL',
+          'weight': 4,
+          'resourceCategory': 'GENERIC_MINERAL'
+        },
+        <String, dynamic>{
+          'resourceId': 'SALT',
+          'weight': 3,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'LIMESTONE',
+          'weight': 2,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'ALGAE',
+          'weight': 1,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+      ],
+    },
+    <String, dynamic>{
+      'id': 'LITTORAL_DUNE',
+      'biomeId': 'LITTORAL',
+      'label': 'Dune',
+      'organic': 10,
+      'mineral': 40,
+      'lootTable': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'resourceId': 'SALT',
+          'weight': 5,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'MINERAL',
+          'weight': 4,
+          'resourceCategory': 'GENERIC_MINERAL'
+        },
+        <String, dynamic>{
+          'resourceId': 'QUARTZ',
+          'weight': 2,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'ALGAE',
+          'weight': 1,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+      ],
+    },
+    <String, dynamic>{
+      'id': 'LITTORAL_CRIQUE',
+      'biomeId': 'LITTORAL',
+      'label': 'Crique',
+      'organic': 25,
+      'mineral': 70,
+      'lootTable': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'resourceId': 'ALGAE',
+          'weight': 4,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'SALT',
+          'weight': 4,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'LIMESTONE',
+          'weight': 3,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'MINERAL',
+          'weight': 3,
+          'resourceCategory': 'GENERIC_MINERAL'
+        },
+      ],
+    },
+    <String, dynamic>{
+      'id': 'COLLINE_PLATEAU',
+      'biomeId': 'COLLINE',
+      'label': 'Plateau',
+      'organic': 20,
+      'mineral': 40,
+      'lootTable': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'resourceId': 'MINERAL',
+          'weight': 4,
+          'resourceCategory': 'GENERIC_MINERAL'
+        },
+        <String, dynamic>{
+          'resourceId': 'IRON',
+          'weight': 3,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'LIMESTONE',
+          'weight': 3,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'ROOT',
+          'weight': 1,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+      ],
+    },
+    <String, dynamic>{
+      'id': 'COLLINE_GROTTE',
+      'biomeId': 'COLLINE',
+      'label': 'Grotte',
+      'organic': 20,
+      'mineral': 100,
+      'lootTable': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'resourceId': 'IRON',
+          'weight': 5,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'QUARTZ',
+          'weight': 4,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'LIMESTONE',
+          'weight': 4,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'MINERAL',
+          'weight': 2,
+          'resourceCategory': 'GENERIC_MINERAL'
+        },
+      ],
+    },
+    <String, dynamic>{
+      'id': 'COLLINE_SOMMET',
+      'biomeId': 'COLLINE',
+      'label': 'Sommet',
+      'organic': 30,
+      'mineral': 30,
+      'lootTable': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'resourceId': 'MINERAL',
+          'weight': 3,
+          'resourceCategory': 'GENERIC_MINERAL'
+        },
+        <String, dynamic>{
+          'resourceId': 'QUARTZ',
+          'weight': 3,
+          'resourceCategory': 'MINERAL_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'MOSS',
+          'weight': 2,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+        <String, dynamic>{
+          'resourceId': 'LEAF',
+          'weight': 2,
+          'resourceCategory': 'ORGANIC_SPECIFIC'
+        },
+      ],
+    },
   ];
 
   /// Free resources that can physically exist in an Alcôve. Seeds and spores
@@ -2549,6 +2825,280 @@ class ElevageDomain {
     _adjustWellbeing(individual, prolonged == prefersLong ? 3 : 1, now);
     final count = _observe(individual, 'CUDDLE', now, config: config);
     _setObservationStatus(individual, 'CUDDLE:GENERAL', count, config, now);
+    return state;
+  }
+
+  static Map<String, dynamic> initialExplorationState(int now,
+          [ElevageConfig? config]) =>
+      <String, dynamic>{
+        'stamina': 10,
+        'lastStaminaAt': now,
+        'activeRun': null,
+        'sectors': <String, dynamic>{
+          for (final base in explorationSectors)
+            (config == null
+                    ? base
+                    : resolvedExplorationSector(base, config))['id'] as String:
+                <String, dynamic>{
+              'discovered': false,
+              'organic': (config == null
+                  ? base
+                  : resolvedExplorationSector(base, config))['organic'],
+              'mineral': (config == null
+                  ? base
+                  : resolvedExplorationSector(base, config))['mineral'],
+              'lastOrganicAt': now,
+            },
+        },
+      };
+
+  /// Non-destructive migration from the retired Mini-Lisière. Its historical
+  /// runs remain readable, but only this one global Exploration run is active.
+  static void normalizeExplorationState(Map<String, dynamic> data, int now) {
+    final existing = data['exploration'];
+    final initial = initialExplorationState(now);
+    if (existing is! Map) {
+      data['exploration'] = initial;
+      return;
+    }
+    existing.putIfAbsent('stamina', () => initial['stamina']);
+    existing.putIfAbsent('lastStaminaAt', () => now);
+    existing.putIfAbsent('activeRun', () => null);
+    final sectors =
+        existing.putIfAbsent('sectors', () => <String, dynamic>{}) as Map;
+    for (final definition in explorationSectors) {
+      final id = definition['id'] as String;
+      final sector = sectors.putIfAbsent(id, () => <String, dynamic>{}) as Map;
+      sector.putIfAbsent('discovered', () => false);
+      sector.putIfAbsent('organic', () => definition['organic']);
+      sector.putIfAbsent('mineral', () => definition['mineral']);
+      sector.putIfAbsent('lastOrganicAt', () => now);
+    }
+  }
+
+  static Map explorationState(ElevageSave state) =>
+      state.data['exploration'] as Map;
+
+  static Map<String, dynamic>? explorationSectorDefinition(String sectorId) =>
+      explorationSectors
+          .where((sector) => sector['id'] == sectorId)
+          .cast<Map<String, dynamic>?>()
+          .firstOrNull;
+
+  static Map<String, dynamic> resolvedExplorationSector(
+      Map<String, dynamic> definition, ElevageConfig config) {
+    final override =
+        config.explorationSectorOverride(definition['id'] as String);
+    final resolved = <String, dynamic>{...definition, ...override};
+    if (override.containsKey('initialOrganic')) {
+      resolved['organic'] = override['initialOrganic'];
+    }
+    if (override.containsKey('initialMineral')) {
+      resolved['mineral'] = override['initialMineral'];
+    }
+    resolved['maxOrganic'] = (override['maxOrganic'] as num?)?.toInt() ?? 100;
+    return resolved;
+  }
+
+  static List<Map<String, dynamic>> explorationSectorsForBiome(String biomeId,
+          [ElevageConfig? config]) =>
+      explorationSectors
+          .where((sector) => sector['biomeId'] == biomeId)
+          .map((sector) => config == null
+              ? Map<String, dynamic>.from(sector)
+              : resolvedExplorationSector(sector, config))
+          .toList(growable: false);
+
+  static ElevageSave refreshExploration(
+      ElevageSave source, int now, ElevageConfig config) {
+    final state = source.copy();
+    normalizeExplorationState(state.data, now);
+    final exploration = explorationState(state);
+    final maxStamina = config.explorationInt('staminaMax', 10);
+    final regenPerMinute = config.explorationInt('staminaRegenPerMinute', 1);
+    final lastStamina = (exploration['lastStaminaAt'] as num?)?.toInt() ?? now;
+    final staminaCycles = max(
+        0, (now - lastStamina) ~/ const Duration(minutes: 1).inMilliseconds);
+    if (staminaCycles > 0) {
+      exploration['stamina'] = min(
+          maxStamina,
+          ((exploration['stamina'] as num?)?.toInt() ?? maxStamina) +
+              staminaCycles * regenPerMinute);
+      exploration['lastStaminaAt'] = lastStamina +
+          staminaCycles * const Duration(minutes: 1).inMilliseconds;
+    }
+    final organicRegen = config.explorationInt('organicRegenPerHour', 5);
+    final sectors = exploration['sectors'] as Map;
+    for (final definition in explorationSectors) {
+      final sector = sectors[definition['id']] as Map;
+      final last = (sector['lastOrganicAt'] as num?)?.toInt() ?? now;
+      final cycles =
+          max(0, (now - last) ~/ const Duration(hours: 1).inMilliseconds);
+      if (cycles > 0) {
+        final maxOrganic =
+            (resolvedExplorationSector(definition, config)['maxOrganic'] as num)
+                .toInt();
+        sector['organic'] = min(
+            maxOrganic,
+            ((sector['organic'] as num?)?.toInt() ?? 0) +
+                cycles * organicRegen);
+        sector['lastOrganicAt'] =
+            last + cycles * const Duration(hours: 1).inMilliseconds;
+      }
+    }
+    final run = exploration['activeRun'];
+    if (run is Map &&
+        run['status'] == 'IN_PROGRESS' &&
+        now >= (run['endsAt'] as num).toInt()) {
+      run['status'] = 'READY';
+    }
+    return state;
+  }
+
+  static String explorationStatus(
+      ElevageSave state, int now, ElevageConfig config) {
+    final refreshed = refreshExploration(state, now, config);
+    final run = explorationState(refreshed)['activeRun'];
+    return run is Map ? run['status'] as String? ?? 'NONE' : 'NONE';
+  }
+
+  static ElevageSave startExploration(
+      ElevageSave source, String sectorId, int now, ElevageConfig config) {
+    if (!config.explorationEnabled) {
+      throw StateError('Exploration indisponible.');
+    }
+    var state = refreshExploration(source, now, config);
+    final exploration = explorationState(state);
+    final previous = exploration['activeRun'];
+    if (previous is Map && previous['status'] != 'CLAIMED') {
+      throw StateError('Une exploration est déjà en cours ou à récupérer.');
+    }
+    final baseDefinition = explorationSectorDefinition(sectorId);
+    final definition = baseDefinition == null
+        ? null
+        : resolvedExplorationSector(baseDefinition, config);
+    if (definition == null || definition['enabled'] == false) {
+      throw StateError('Secteur inconnu.');
+    }
+    final stamina = (exploration['stamina'] as num?)?.toInt() ?? 0;
+    final staminaCost = config.explorationInt('staminaCostPerRun', 1);
+    if (stamina < staminaCost) throw StateError('Stamina insuffisante.');
+    final sector = (exploration['sectors'] as Map)[sectorId] as Map;
+    exploration['stamina'] = stamina - staminaCost;
+    sector['discovered'] = true;
+    final slots = config.explorationInt('baseCarrySlots', 3);
+    final results = <Map<String, dynamic>>[];
+    for (var slot = 0; slot < slots; slot++) {
+      final loot = _rollExplorationLoot(sector, definition, config, now + slot);
+      results.add(loot ?? <String, dynamic>{'resourceId': 'EMPTY'});
+    }
+    exploration['activeRun'] = <String, dynamic>{
+      'id': 'exploration-$now-$sectorId',
+      'sectorId': sectorId,
+      'startedAt': now,
+      'endsAt': now + config.explorationInt('durationSeconds', 25) * 1000,
+      'status': 'IN_PROGRESS',
+      'results': results,
+      // Hooks deliberately inert in 22.0.
+      'companionPtipoteId': null,
+      'trackerCarryBonus': 0,
+      'typeLootBias': null,
+    };
+    return state;
+  }
+
+  static Map<String, dynamic>? _rollExplorationLoot(Map sector,
+      Map<String, dynamic> definition, ElevageConfig config, int seed) {
+    final table =
+        (definition['lootTable'] as List).whereType<Map>().where((entry) {
+      if (entry['enabled'] == false) return false;
+      final costs = _explorationLootCosts(entry, config);
+      return ((sector['organic'] as num?)?.toInt() ?? 0) >= costs['organic']! &&
+          ((sector['mineral'] as num?)?.toInt() ?? 0) >= costs['mineral']!;
+    }).toList(growable: false);
+    if (table.isEmpty) return null;
+    final total = table.fold<int>(
+        0, (sum, entry) => sum + ((entry['weight'] as num?)?.toInt() ?? 0));
+    if (total <= 0) return null;
+    var cursor = Random(seed).nextInt(total);
+    final selected = table.firstWhere((entry) {
+      cursor -= (entry['weight'] as num?)?.toInt() ?? 0;
+      return cursor < 0;
+    });
+    final costs = _explorationLootCosts(selected, config);
+    sector['organic'] =
+        max(0, ((sector['organic'] as num?)?.toInt() ?? 0) - costs['organic']!);
+    sector['mineral'] =
+        max(0, ((sector['mineral'] as num?)?.toInt() ?? 0) - costs['mineral']!);
+    return <String, dynamic>{
+      'resourceId': selected['resourceId'],
+      'resourceCategory': selected['resourceCategory'],
+    };
+  }
+
+  static Map<String, int> _explorationLootCosts(
+      Map entry, ElevageConfig config) {
+    final category = entry['resourceCategory'] as String? ?? 'SPECIAL';
+    final organic = entry['organicCost'] as num?;
+    final mineral = entry['mineralCost'] as num?;
+    if (organic != null || mineral != null) {
+      return <String, int>{
+        'organic': organic?.toInt() ?? 0,
+        'mineral': mineral?.toInt() ?? 0
+      };
+    }
+    return switch (category) {
+      'GENERIC_ORGANIC' => <String, int>{
+          'organic': config.explorationInt('genericOrganicCost', 1),
+          'mineral': 0
+        },
+      'ORGANIC_SPECIFIC' => <String, int>{
+          'organic': config.explorationInt('specificOrganicCost', 5),
+          'mineral': 0
+        },
+      'GENERIC_MINERAL' => <String, int>{
+          'organic': 0,
+          'mineral': config.explorationInt('genericMineralCost', 1)
+        },
+      'MINERAL_SPECIFIC' => <String, int>{
+          'organic': 0,
+          'mineral': config.explorationInt('specificMineralCost', 3)
+        },
+      _ => <String, int>{'organic': 0, 'mineral': 0},
+    };
+  }
+
+  /// Shared by the exploration resolver and dashboard/test diagnostics. The
+  /// loot table remains declarative: no widget needs to duplicate its ecology
+  /// cost rules.
+  static Map<String, int> explorationLootCostsFor(
+          Map<String, dynamic> entry, ElevageConfig config) =>
+      _explorationLootCosts(entry, config);
+
+  static ElevageSave claimExploration(
+      ElevageSave source, int now, ElevageConfig config) {
+    final state = refreshExploration(source, now, config);
+    final exploration = explorationState(state);
+    final run = exploration['activeRun'];
+    if (run is! Map || run['status'] != 'READY') {
+      throw StateError('Aucun résultat d’exploration à récupérer.');
+    }
+    final generic = _generic(state);
+    final special = _special(state);
+    for (final result in (run['results'] as List).whereType<Map>()) {
+      final resource = result['resourceId'] as String?;
+      if (resource == null || resource == 'EMPTY') continue;
+      if (resource == 'ORGANIC' || resource == 'MINERAL') {
+        final key = resource.toLowerCase();
+        generic[key] = (generic[key] ?? 0) + 1;
+      } else {
+        special[resource] = (special[resource] ?? 0) + 1;
+        final discovered = state.data['discoveredItemIds'] as List;
+        if (!discovered.contains(resource)) discovered.add(resource);
+      }
+    }
+    run['status'] = 'CLAIMED';
+    run['claimedAt'] = now;
     return state;
   }
 

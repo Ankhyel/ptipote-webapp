@@ -853,6 +853,23 @@ class ElevageConfig {
           as bool?) ??
       true;
 
+  /// Exploration V2 stays inside the Elevage configuration payload so the
+  /// mobile Dashboard can tune it without coupling any Zone 0 data.
+  Map<String, dynamic> get explorationConfig => Map<String, dynamic>.from(
+      refugeProgression['exploration'] as Map? ?? const <dynamic, dynamic>{});
+
+  int explorationInt(String key, int fallback) =>
+      ((explorationConfig[key] as num?)?.toInt() ?? fallback).clamp(0, 999999);
+
+  bool get explorationEnabled =>
+      (explorationConfig['enabled'] as bool?) ?? true;
+
+  Map<String, dynamic> explorationSectorOverride(String sectorId) {
+    final sectors = explorationConfig['sectorOverrides'] as Map?;
+    return Map<String, dynamic>.from(
+        sectors?[sectorId] as Map? ?? const <dynamic, dynamic>{});
+  }
+
   Map<String, dynamic> requirementForAlcove(int index) =>
       index <= 1 || index - 2 >= alcoveRequirements.length
           ? const <String, dynamic>{}
@@ -2695,6 +2712,20 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'MATURE': <String, bool>{'canAbsorb': true, 'canResonate': true},
     },
     'producerUi': <String, dynamic>{'showProducerStockBubble': true},
+    'exploration': <String, dynamic>{
+      'enabled': true,
+      'durationSeconds': 25,
+      'baseCarrySlots': 3,
+      'staminaMax': 10,
+      'staminaCostPerRun': 1,
+      'staminaRegenPerMinute': 1,
+      'organicRegenPerHour': 5,
+      'genericOrganicCost': 1,
+      'specificOrganicCost': 5,
+      'genericMineralCost': 1,
+      'specificMineralCost': 3,
+      'sectorOverrides': <String, dynamic>{},
+    },
     'tracker': <String, dynamic>{
       'enabled': true,
       'xpForLevel1': 10,

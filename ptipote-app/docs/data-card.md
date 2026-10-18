@@ -1303,3 +1303,31 @@ L’Eau n’est pas une ressource globale du Camp.
 - **Points à arbitrer.** Catalogue Mature final, ressources structurelles
   futures, recettes Target des trois nids, meubles de confort supplémentaires
   et autonomie Mature nourriture/structuration restent hors scope.
+
+# Lot 22.0 — Exploration Core V2
+
+- **Accès et carte.** L’ancien accès joueur « Mini-Lisière » est remplacé par
+  **Exploration**. Sa carte 2×2 place la Base/Refuge en haut à gauche, puis
+  Forêt humide, Littoral et Colline. Chaque milieu ouvre trois secteurs fixes,
+  persistants et découvrables à la première sortie : Lisière/Sous-bois/Forêt
+  profonde, Plage/Dune/Crique, Plateau/Grotte/Sommet.
+- **Écologie locale.** Les neuf secteurs conservent leurs valeurs indépendantes
+  Organique/Minéral : 30/30, 40/20, 50/10, 5/30, 10/40, 25/70, 20/40,
+  20/100 et 30/30 dans l’ordre précédent. Organique régénère de 5 % par heure
+  réelle, plafonné à 100; Minéral ne régénère jamais. Un loot Organique
+  générique coûte 1 %, spécifique 5 %, Minéral générique 1 et spécifique 3,
+  sans valeur négative : les entrées impossibles sont retirées avant tirage.
+- **Sortie.** Le joueur possède 10 Stamina, récupère 1/minute réelle et paie 1
+  par sortie. Une sortie unique à la fois dure 25 secondes, persiste hors de
+  l’écran, dispose de 3 slots et effectue un tirage indépendant par slot. Le
+  timer est visible auprès du bouton Exploration; une sortie achevée garde son
+  résultat jusqu’à récupération dans la Réserve commune.
+- **Tables et avenir.** Les tables différencient les secteurs et rendent SEL
+  principalement accessible sur le Littoral; SEL est un Minéral spécifique.
+  Durée, stamina, slots, régénération et coûts sont réglables via Dashboard;
+  chaque secteur expose aussi son activation, ses valeurs initiales/plafond et
+  le poids ou l’activation de chaque entrée de loot. Les overrides restent
+  séparés des stocks persistants déjà prélevés.
+  Les hooks `companionPtipoteId`, bonus Pisteur et biais Type sont présents
+  dans le run mais volontairement inactifs : aucun compagnon, bonus métier,
+  stamina P’TIPOTE, autonomie Mature ou équipement n’est appliqué dans ce lot.

@@ -2604,4 +2604,178 @@ void main() {
     }, 'CULTURE_POTAGERE', defaultElevageConfig);
     expect(outputs.map((output) => output.maxLocalStock), everyElement(9));
   });
+
+  test('Exploration initialise les neuf secteurs avec leurs stocks canoniques',
+      () {
+    final state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final sectors = ElevageDomain.explorationState(state)['sectors']
+        as Map<String, dynamic>;
+    final expected = <String, List<int>>{
+      'FORET_HUMIDE_LISIERE': <int>[30, 30],
+      'FORET_HUMIDE_SOUS_BOIS': <int>[40, 20],
+      'FORET_HUMIDE_FORET_PROFONDE': <int>[50, 10],
+      'LITTORAL_PLAGE': <int>[5, 30],
+      'LITTORAL_DUNE': <int>[10, 40],
+      'LITTORAL_CRIQUE': <int>[25, 70],
+      'COLLINE_PLATEAU': <int>[20, 40],
+      'COLLINE_GROTTE': <int>[20, 100],
+      'COLLINE_SOMMET': <int>[30, 30],
+    };
+    expect(sectors, hasLength(9));
+    for (final entry in expected.entries) {
+      final sector = sectors[entry.key] as Map;
+      expect(sector['organic'], entry.value[0]);
+      expect(sector['mineral'], entry.value[1]);
+      expect(sector['discovered'], isFalse);
+    }
+  });
+
+  test('Exploration régénère seulement l’Organique et restaure la stamina', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.startExploration(
+        state, 'FORET_HUMIDE_LISIERE', now, defaultElevageConfig);
+    final exploration = ElevageDomain.explorationState(state);
+    expect(exploration['stamina'], 9);
+    final sector =
+        (exploration['sectors'] as Map)['FORET_HUMIDE_LISIERE'] as Map;
+    final mineralAfterRun = sector['mineral'];
+    sector['organic'] = 30;
+    sector['lastOrganicAt'] = now;
+
+    state = ElevageDomain.refreshExploration(state,
+        now + const Duration(hours: 14).inMilliseconds, defaultElevageConfig);
+    final refreshedSector = (ElevageDomain.explorationState(state)['sectors']
+        as Map)['FORET_HUMIDE_LISIERE'] as Map;
+    expect(refreshedSector['organic'], 100);
+    expect(refreshedSector['mineral'], mineralAfterRun);
+    expect(ElevageDomain.explorationState(state)['stamina'], 10);
+  });
+
+  test(
+      'Exploration applique les coûts déclaratifs et ne tire jamais un loot impossible',
+      () {
+    expect(
+        ElevageDomain.explorationLootCostsFor(
+            <String, dynamic>{'resourceCategory': 'GENERIC_ORGANIC'},
+            defaultElevageConfig),
+        <String, int>{'organic': 1, 'mineral': 0});
+    expect(
+        ElevageDomain.explorationLootCostsFor(
+            <String, dynamic>{'resourceCategory': 'ORGANIC_SPECIFIC'},
+            defaultElevageConfig),
+        <String, int>{'organic': 5, 'mineral': 0});
+    expect(
+        ElevageDomain.explorationLootCostsFor(
+            <String, dynamic>{'resourceCategory': 'GENERIC_MINERAL'},
+            defaultElevageConfig),
+        <String, int>{'organic': 0, 'mineral': 1});
+    expect(
+        ElevageDomain.explorationLootCostsFor(
+            <String, dynamic>{'resourceCategory': 'MINERAL_SPECIFIC'},
+            defaultElevageConfig),
+        <String, int>{'organic': 0, 'mineral': 3});
+
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final sector = (ElevageDomain.explorationState(state)['sectors']
+        as Map)['LITTORAL_DUNE'] as Map;
+    sector['organic'] = 0;
+    sector['mineral'] = 2;
+    state = ElevageDomain.startExploration(
+        state, 'LITTORAL_DUNE', now, defaultElevageConfig);
+    final results = (ElevageDomain.explorationState(state)['activeRun']
+        as Map)['results'] as List;
+    final resources =
+        results.whereType<Map>().map((result) => result['resourceId']).toList();
+    expect(resources, isNot(contains('SALT')));
+    expect(resources, isNot(contains('QUARTZ')));
+    expect(sector['organic'], greaterThanOrEqualTo(0));
+    expect(sector['mineral'], greaterThanOrEqualTo(0));
+  });
+
+  test(
+      'Exploration persiste un run, limite à trois slots et dépose le loot dans la Réserve',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.startExploration(
+        state, 'LITTORAL_CRIQUE', now, defaultElevageConfig);
+    final restored = ElevageSave.fromJson(state.toJson());
+    final run = ElevageDomain.explorationState(restored)['activeRun'] as Map;
+    expect((run['results'] as List), hasLength(3));
+    expect(run['status'], 'IN_PROGRESS');
+    expect(
+        () => ElevageDomain.startExploration(
+            restored, 'COLLINE_GROTTE', now + 1, defaultElevageConfig),
+        throwsStateError);
+
+    state = ElevageDomain.refreshExploration(restored,
+        now + const Duration(seconds: 25).inMilliseconds, defaultElevageConfig);
+    expect(
+        (ElevageDomain.explorationState(state)['activeRun'] as Map)['status'],
+        'READY');
+    final beforeInventory = state.data['inventory'] as Map;
+    final before = <Map>[
+      beforeInventory['generic'] as Map,
+      beforeInventory['special'] as Map,
+    ].fold<int>(0, (sum, stock) {
+      return sum +
+          stock.values.fold<int>(
+              0, (subtotal, value) => subtotal + (value as num).toInt());
+    });
+    state = ElevageDomain.claimExploration(state,
+        now + const Duration(seconds: 26).inMilliseconds, defaultElevageConfig);
+    final claimed = ElevageDomain.explorationState(state)['activeRun'] as Map;
+    expect(claimed['status'], 'CLAIMED');
+    final inventory = state.data['inventory'] as Map;
+    final after = <Map>[
+      inventory['generic'] as Map,
+      inventory['special'] as Map
+    ].fold<int>(0, (sum, stock) {
+      return sum +
+          stock.values.fold<int>(
+              0, (subtotal, value) => subtotal + (value as num).toInt());
+    });
+    expect(after, greaterThan(before));
+  });
+
+  test('Exploration refuse une sortie lorsque la stamina est épuisée', () {
+    final state = ElevageSave.initial(defaultElevageConfig, now: now);
+    ElevageDomain.explorationState(state)['stamina'] = 0;
+    expect(
+        () => ElevageDomain.startExploration(
+            state, 'COLLINE_GROTTE', now, defaultElevageConfig),
+        throwsStateError);
+  });
+
+  test('Exploration applique les overrides sectoriels du Dashboard', () {
+    final progression =
+        Map<String, dynamic>.from(defaultElevageConfig.refugeProgression);
+    final exploration =
+        Map<String, dynamic>.from(progression['exploration'] as Map);
+    exploration['sectorOverrides'] = <String, dynamic>{
+      'LITTORAL_DUNE': <String, dynamic>{
+        'initialOrganic': 12,
+        'initialMineral': 34,
+        'maxOrganic': 80,
+        'enabled': false,
+      },
+    };
+    progression['exploration'] = exploration;
+    final config =
+        defaultElevageConfig.copyWith(refugeProgression: progression);
+    final state = ElevageSave.initial(config, now: now);
+    final sector = (ElevageDomain.explorationState(state)['sectors']
+        as Map)['LITTORAL_DUNE'] as Map;
+    expect(sector['organic'], 12);
+    expect(sector['mineral'], 34);
+    final regenerated = ElevageDomain.refreshExploration(
+        state, now + const Duration(hours: 14).inMilliseconds, config);
+    expect(
+        ((ElevageDomain.explorationState(regenerated)['sectors']
+            as Map)['LITTORAL_DUNE'] as Map)['organic'],
+        80);
+    expect(
+        () =>
+            ElevageDomain.startExploration(state, 'LITTORAL_DUNE', now, config),
+        throwsStateError);
+  });
 }
