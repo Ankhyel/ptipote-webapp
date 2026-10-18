@@ -1245,3 +1245,27 @@ L’Eau n’est pas une ressource globale du Camp.
 - **Points à arbitrer.** Recette Target et découverte du plan Biogénérateur,
   valeurs économiques finales, futurs modules rares/spécifiques, et sources
   exactes d’XP Pisteur dans la Lisière V2.
+- **Langage par concept.** Baby utilise uniquement pictos et onomatopées.
+  Un Juvénile ne reçoit aucun vocabulaire gratuitement à la métamorphose :
+  chaque exposition est persistée par `conceptId`. Un concept rencontré pour
+  la première fois Juvénile donne son premier mot à 5 occurrences; un concept
+  déjà connu Baby demande 10 occurrences cumulées. Les Juvéniles produisent
+  des mots courts, jamais de phrase; les formulations et demandes complètes
+  restent réservées au Mature. Ces seuils sont Dashboard-configurables.
+- **Carnet de connaissance.** Les événements bruts restent dans
+  `observations`, mais la progression de connaissance est agrégée dans une
+  seule entrée par `conceptId` (`IRON_AFFINITY`, préférence alimentaire,
+  contact, lumière, humidité…). Cinq observations pertinentes créent une
+  Hypothèse, puis cinq preuves du même concept créent une Découverte confirmée
+  nommée. Une confirmation vide ou générique ne compte pas et les hypothèses
+  ne sont jamais dupliquées visuellement.
+- **Maturation verrouillée.** Baby → Intermediate vérifie réellement les
+  prérequis configurables `4 observations / 3 hypothèses / 1 confirmation`.
+  Le domaine les revalide au moment de la métamorphose : ni le bouton ni le
+  mini-jeu ne peuvent contourner ce verrouillage.
+- **Tam Tam rythmé.** Un seul timestamp de départ calcule les battements, le
+  pulse du visuel et la validation du tap. Fenêtres parfaites/bonnes,
+  intervalle, nombre de battements et réussites requises sont configurables.
+  Des taps rapides hors fenêtre échouent. Le portrait du P’TIPOTE est désormais
+  choisi par stade (Baby/Intermediate/Mature), séparé des icônes de Nature et
+  de structure : le cristal n’est plus un portrait permanent.

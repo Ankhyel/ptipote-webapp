@@ -153,8 +153,11 @@ class ElevageController extends ChangeNotifier {
   Future<void> cuddle(String id, {int durationMs = 1000}) =>
       _mutate((current) => ElevageDomain.cuddle(current, id, _now, config,
           durationMs: durationMs));
-  Future<void> recordCommunication(String id, String category) => _mutate(
-      (current) => ElevageDomain.recordCommunication(current, id, category));
+  Future<void> recordCommunication(String id, String category,
+          {String? conceptId}) =>
+      _mutate((current) => ElevageDomain.recordCommunication(
+          current, id, category,
+          conceptId: conceptId));
   Future<void> wake(String id) =>
       _mutate((current) => ElevageDomain.wake(current, id, _now, config));
   Future<void> addDevInventory() => _mutate(ElevageDomain.addDevInventory);

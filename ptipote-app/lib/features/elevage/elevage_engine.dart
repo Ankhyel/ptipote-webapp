@@ -203,6 +203,7 @@ class ElevageSave {
                 });
         raw.putIfAbsent('activeRequest', () => null);
         raw.putIfAbsent('communicationCounts', () => <String, int>{});
+        raw.putIfAbsent('conceptExposures', () => <String, dynamic>{});
         raw.putIfAbsent('decorPreferences', () => <String, dynamic>{});
         raw.putIfAbsent(
             'sleep',
@@ -217,6 +218,8 @@ class ElevageSave {
         raw.putIfAbsent('onboardingSleepAllowedAt', () => 0);
         raw.putIfAbsent('environmentalMemory',
             () => <String, dynamic>{'temporaryRejectedZones': <String>[]});
+        final journal = raw['observationJournal'] as Map?;
+        journal?.putIfAbsent('knowledge', () => <String, dynamic>{});
         raw.putIfAbsent(
             'professions',
             () => <String, dynamic>{
@@ -529,6 +532,7 @@ class ElevageDomain {
     String category,
     ElevageConfig config, {
     String? precise,
+    String? conceptId,
   }) {
     final vocal = config.vocalizations[category] ??
         config.vocalizations['CALL'] ??
@@ -549,23 +553,38 @@ class ElevageDomain {
     if (stage == 'MATURE') {
       return {'vocal': vocal, 'word': precise ?? genericWords[category]};
     }
-    final counts = individual['communicationCounts'] as Map?;
-    final count = (counts?[category] as num? ?? 0).toInt();
-    final warm = personalityValue(individual, 'contact') >= .5;
-    final threshold = warm ? 5 : 3;
+    final concept = conceptId ?? precise ?? category;
+    final exposure =
+        ((individual['conceptExposures'] as Map?)?[concept] as Map?);
+    final total = (exposure?['total'] as num?)?.toInt() ?? 0;
+    final baby = (exposure?['baby'] as num?)?.toInt() ?? 0;
+    final threshold = baby > 0
+        ? config.juvenileBabyKnownConceptWordThreshold
+        : config.juvenileNewConceptWordThreshold;
     return {
       'vocal': vocal,
-      'word': count >= threshold ? (precise ?? genericWords[category]) : null,
+      'word': total >= threshold ? (precise ?? genericWords[category]) : null,
     };
   }
 
   static ElevageSave recordCommunication(
-      ElevageSave source, String individualId, String category) {
+      ElevageSave source, String individualId, String category,
+      {String? conceptId}) {
     final state = source.copy();
     final individual = _individual(state, individualId);
     final counts = individual.putIfAbsent(
         'communicationCounts', () => <String, int>{}) as Map;
     counts[category] = (counts[category] as num? ?? 0).toInt() + 1;
+    _recordConceptExposure(individual, conceptId ?? category);
+    return state;
+  }
+
+  /// Persisted semantic exposure. Baby memories count, but require the longer
+  /// juvenile threshold so metamorphosis never grants a free vocabulary.
+  static ElevageSave recordConceptExposure(
+      ElevageSave source, String individualId, String conceptId) {
+    final state = source.copy();
+    _recordConceptExposure(_individual(state, individualId), conceptId);
     return state;
   }
 
@@ -722,6 +741,7 @@ class ElevageDomain {
       'wellbeing': <String, dynamic>{'value': 60, 'lastUpdatedAt': now},
       'activeRequest': null,
       'communicationCounts': <String, int>{},
+      'conceptExposures': <String, dynamic>{},
       'decorPreferences': <String, dynamic>{},
       'sleep': <String, dynamic>{
         'awakeUntil': 0,
@@ -761,6 +781,7 @@ class ElevageDomain {
       },
       'observationJournal': <String, dynamic>{
         'observations': <String, dynamic>{},
+        'knowledge': <String, dynamic>{},
       },
       'progressionEvidence': <String, dynamic>{
         'interactionTypes': <String>[],
@@ -3197,14 +3218,24 @@ class ElevageDomain {
     final discovery =
         individual['preferenceDiscovery']['foodPreference'] as Map;
     final evidence = individual['progressionEvidence'] as Map;
-    final slots =
-        _alcove(state, individual['alcoveId'] as String)['slots'] as List;
     if (stage == 'BABY') {
-      return discovery['status'] != 'UNKNOWN' &&
-          (care['metabolicMeals'] as int) >= 3 &&
-          ((care['structuralIntake'] as Map)['total'] as int) >= 2 &&
-          (evidence['interactionTypes'] as List).length >= 3 &&
-          slots.any((slot) => slot != null);
+      final knowledge = knowledgeEntries(individual);
+      final totalObservations = knowledge.fold<int>(
+          0,
+          (sum, entry) =>
+              sum + ((entry['observationCount'] as num?)?.toInt() ?? 0));
+      final hypotheses = knowledge
+          .where((entry) =>
+              entry['status'] == 'HYPOTHESIS' || entry['status'] == 'CONFIRMED')
+          .length;
+      final confirmations = knowledge
+          .where((entry) =>
+              entry['status'] == 'CONFIRMED' &&
+              (entry['conceptId'] as String?)?.isNotEmpty == true)
+          .length;
+      return totalObservations >= config.maturationObservationRequirement &&
+          hypotheses >= config.maturationHypothesisRequirement &&
+          confirmations >= config.maturationConfirmationRequirement;
     }
     return discovery['status'] == 'CONFIRMED' &&
         (care['metabolicMeals'] as int) >= 5 &&
@@ -3213,8 +3244,29 @@ class ElevageDomain {
         (evidence['personalityEvents'] as int) >= 5;
   }
 
+  /// Shared source of truth for the Tam Tam animation and touch validation.
+  /// A beat target is at `(index + 1) × interval` from the same start stamp
+  /// used by the UI, so rapid taps outside a target window cannot succeed.
+  static int tamTamBeatTargetMs(int beatIndex, ElevageConfig config) =>
+      (beatIndex + 1) * config.tamTamBeatIntervalMs;
+
+  static String tamTamTapGrade(
+      int elapsedMs, int beatIndex, ElevageConfig config) {
+    final delta = (elapsedMs - tamTamBeatTargetMs(beatIndex, config)).abs();
+    if (delta <= config.tamTamPerfectWindowMs) return 'PERFECT';
+    if (delta <= config.tamTamGoodWindowMs) return 'GOOD';
+    return 'MISS';
+  }
+
+  static bool tamTamSucceeded(Iterable<String> grades, ElevageConfig config) =>
+      grades.where((grade) => grade == 'PERFECT' || grade == 'GOOD').length >=
+      config.tamTamRequiredSuccessfulBeats;
+
   static ElevageSave metamorphose(
       ElevageSave source, String id, int now, ElevageConfig config) {
+    if (!metamorphosisAvailable(source, id, now, config)) {
+      throw StateError('Les prérequis de métamorphose ne sont pas remplis.');
+    }
     final state = source.copy();
     final individual = _individual(state, id);
     final lifecycle = individual['lifecycle'] as Map;
@@ -3387,6 +3439,98 @@ class ElevageDomain {
     individualEvents.putIfAbsent(event, () => now);
   }
 
+  static String knowledgeConceptId(String type,
+      {String? relatedItemId, String? relatedEnvironmentAxis}) {
+    return switch (type) {
+      'STRUCTURAL_REACTION' when relatedItemId == 'IRON' => 'IRON_AFFINITY',
+      'STRUCTURAL_REACTION' =>
+        '${relatedItemId ?? 'MINERAL'}_STRUCTURE_AFFINITY',
+      'STRUCTURAL_AVOIDED' => '${relatedItemId ?? 'MINERAL'}_AVOIDANCE',
+      'FOOD_FAVORITE' => '${relatedItemId ?? 'FOOD'}_FOOD_PREFERENCE',
+      'FOOD_ACCEPTED' => '${relatedItemId ?? 'FOOD'}_FOOD_ACCEPTANCE',
+      'LIGHT_SHADE' => 'LIGHT_PREFERENCE',
+      'HUMIDITY_AVOIDANCE' => 'HUMIDITY_PREFERENCE',
+      'FOLLOW' || 'CUDDLE' || 'CUDDLE_SPACE' => 'PLAYER_CONTACT',
+      'REQUEST_FOOD' => 'FOOD_NEED',
+      _ when relatedEnvironmentAxis != null =>
+        '${relatedEnvironmentAxis.toUpperCase()}_PREFERENCE',
+      _ => type,
+    };
+  }
+
+  static List<Map<String, dynamic>> knowledgeEntries(Map individual) {
+    final journal = individual['observationJournal'] as Map?;
+    final knowledge =
+        journal?['knowledge'] as Map? ?? const <dynamic, dynamic>{};
+    return knowledge.values
+        .whereType<Map>()
+        .map((entry) => Map<String, dynamic>.from(entry))
+        .toList(growable: false);
+  }
+
+  static ElevageSave recordKnowledgeObservation(ElevageSave source,
+      String individualId, String conceptId, int now, ElevageConfig config) {
+    final state = source.copy();
+    _recordKnowledgeObservation(
+        _individual(state, individualId), conceptId, now, config);
+    return state;
+  }
+
+  static void _recordConceptExposure(Map individual, String conceptId) {
+    final exposures = individual.putIfAbsent(
+        'conceptExposures', () => <String, dynamic>{}) as Map;
+    final entry = exposures.putIfAbsent(
+        conceptId,
+        () => <String, dynamic>{
+              'conceptId': conceptId,
+              'total': 0,
+              'baby': 0,
+              'juvenile': 0,
+            }) as Map;
+    entry['total'] = ((entry['total'] as num?)?.toInt() ?? 0) + 1;
+    final stage =
+        ((individual['lifecycle'] as Map?)?['stage'] as String?) ?? 'BABY';
+    final key = stage == 'BABY' ? 'baby' : 'juvenile';
+    entry[key] = ((entry[key] as num?)?.toInt() ?? 0) + 1;
+  }
+
+  static void _recordKnowledgeObservation(
+      Map individual, String conceptId, int now, ElevageConfig config) {
+    final journal = individual['observationJournal'] as Map;
+    final knowledge = journal.putIfAbsent(
+        'knowledge', () => <String, dynamic>{}) as Map<String, dynamic>;
+    final entry = knowledge.putIfAbsent(
+        conceptId,
+        () => <String, dynamic>{
+              'conceptId': conceptId,
+              'firstObservedAt': now,
+              'lastObservedAt': now,
+              'observationCount': 0,
+              'hypothesisEvidence': 0,
+              'status': 'OBSERVED',
+            }) as Map;
+    entry['lastObservedAt'] = now;
+    if (entry['status'] == 'CONFIRMED') return;
+    entry['observationCount'] =
+        ((entry['observationCount'] as num?)?.toInt() ?? 0) + 1;
+    if (entry['status'] == 'HYPOTHESIS') {
+      entry['hypothesisEvidence'] =
+          ((entry['hypothesisEvidence'] as num?)?.toInt() ?? 0) + 1;
+      if ((entry['hypothesisEvidence'] as int) >=
+          config.evidenceForConfirmation) {
+        entry['status'] = 'CONFIRMED';
+        entry['confirmedAt'] = now;
+      }
+      return;
+    }
+    if ((entry['observationCount'] as int) >=
+        config.observationsForHypothesis) {
+      entry['status'] = 'HYPOTHESIS';
+      entry['hypothesisCreatedAt'] = now;
+      entry['hypothesisEvidence'] = 0;
+    }
+  }
+
   static int _observe(Map<String, dynamic> individual, String type, int now,
       {String? relatedItemId,
       String? relatedEnvironmentAxis,
@@ -3434,6 +3578,13 @@ class ElevageDomain {
     entry['meaningfulEvidenceCount'] = evidence;
     entry['count'] = evidence;
     if (status != 'UNKNOWN') entry['status'] = status;
+    if (evidence != existing) {
+      final concept = knowledgeConceptId(type,
+          relatedItemId: relatedItemId,
+          relatedEnvironmentAxis: relatedEnvironmentAxis);
+      _recordConceptExposure(individual, concept);
+      _recordKnowledgeObservation(individual, concept, now, rules);
+    }
     return evidence;
   }
 

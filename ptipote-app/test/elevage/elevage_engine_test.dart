@@ -1054,7 +1054,7 @@ void main() {
     expect(scale('ZONE_3'), 4);
   });
 
-  test('communication garde Baby non verbal et apprend selon Contact', () {
+  test('communication garde Baby non verbal et apprend par concept', () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     state = ElevageDomain.adopt(
         source: state,
@@ -1071,20 +1071,6 @@ void main() {
             individual, 'CONTENT', defaultElevageConfig)['word'],
         isNull);
     (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
-    ((individual['personality'] as Map)['baseline'] as Map)['contact'] = 40;
-    for (var index = 0; index < 3; index++) {
-      state = ElevageDomain.recordCommunication(state, id, 'CONTENT');
-    }
-    expect(
-        ElevageDomain.communicationExpression(
-            (state.data['individuals'] as Map)[id] as Map,
-            'CONTENT',
-            defaultElevageConfig)['word'],
-        'Bien');
-    ((state.data['individuals'] as Map)[id]['personality']['baseline']
-        as Map)['contact'] = 60;
-    ((state.data['individuals'] as Map)[id]['communicationCounts'] as Map)
-        .clear();
     for (var index = 0; index < 5; index++) {
       state = ElevageDomain.recordCommunication(state, id, 'CONTENT');
     }
@@ -2217,19 +2203,45 @@ void main() {
         now: now,
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
-    state = ElevageDomain.metamorphose(state, id, now, defaultElevageConfig);
+    for (final concept in <String>[
+      'IRON_AFFINITY',
+      'ROOT_FOOD_PREFERENCE',
+      'PLAYER_CONTACT',
+    ]) {
+      for (var index = 0; index < 5; index++) {
+        state = ElevageDomain.recordKnowledgeObservation(
+            state, id, concept, now + index, defaultElevageConfig);
+      }
+    }
+    for (var index = 0; index < 5; index++) {
+      state = ElevageDomain.recordKnowledgeObservation(
+          state, id, 'IRON_AFFINITY', now + 10 + index, defaultElevageConfig);
+    }
+    final juvenileAt = now + const Duration(hours: 25).inMilliseconds;
+    state =
+        ElevageDomain.metamorphose(state, id, juvenileAt, defaultElevageConfig);
     final individual = (state.data['individuals'] as Map)[id] as Map;
     expect((individual['loanOffer'] as Map)['choices'], hasLength(2));
     state = ElevageDomain.chooseJuvenileLoan(
-        state, id, 'FORMATION_METALLIQUE', now, defaultElevageConfig);
+        state, id, 'FORMATION_METALLIQUE', juvenileAt, defaultElevageConfig);
     final loanId = (((state.data['individuals'] as Map)[id] as Map)['loan']
         as Map)['instanceId'] as String;
     expect(
         (state.data['installationInventory'] as Map)[loanId]
             ['loanedFromRefuge'],
         isTrue);
-    state =
-        ElevageDomain.metamorphose(state, id, now + 1, defaultElevageConfig);
+    final readyForMature = (state.data['individuals'] as Map)[id] as Map;
+    (readyForMature['lifecycle'] as Map)['stageEnteredAt'] =
+        juvenileAt - const Duration(hours: 73).inMilliseconds;
+    ((readyForMature['preferenceDiscovery'] as Map)['foodPreference']
+        as Map)['status'] = 'CONFIRMED';
+    final care = readyForMature['care'] as Map;
+    care['metabolicMeals'] = 5;
+    (care['structuralIntake'] as Map)['total'] = 6;
+    care['autonomousMealCount'] = 1;
+    (readyForMature['progressionEvidence'] as Map)['personalityEvents'] = 5;
+    state = ElevageDomain.metamorphose(
+        state, id, juvenileAt + 1, defaultElevageConfig);
     final due = ((state.data['individuals'] as Map)[id]['loan']
         as Map)['returnDueAt'] as int;
     state =
@@ -2370,5 +2382,128 @@ void main() {
         ElevageDomain.trackerProfession(
             persisted, defaultElevageConfig)['level'],
         2);
+  });
+
+  test('langage Juvénile garde le seuil 5 ou 10 selon la mémoire Bébé', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Parole',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    for (var index = 0; index < 5; index++) {
+      state = ElevageDomain.recordConceptExposure(state, id, 'IRON');
+    }
+    expect(
+        ElevageDomain.communicationExpression(
+            (state.data['individuals'] as Map)[id] as Map,
+            'ABSORB',
+            defaultElevageConfig,
+            precise: 'Fer',
+            conceptId: 'IRON')['word'],
+        'Fer');
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'BABY';
+    for (var index = 0; index < 5; index++) {
+      state = ElevageDomain.recordConceptExposure(state, id, 'ROOT');
+    }
+    (state.data['individuals'] as Map)[id]['lifecycle']['stage'] =
+        'INTERMEDIATE';
+    expect(
+        ElevageDomain.communicationExpression(
+            (state.data['individuals'] as Map)[id] as Map,
+            'CONTENT',
+            defaultElevageConfig,
+            precise: 'Racine',
+            conceptId: 'ROOT')['word'],
+        isNull);
+    for (var index = 0; index < 5; index++) {
+      state = ElevageDomain.recordConceptExposure(state, id, 'ROOT');
+    }
+    expect(
+        ElevageDomain.communicationExpression(
+            (state.data['individuals'] as Map)[id] as Map,
+            'CONTENT',
+            defaultElevageConfig,
+            precise: 'Racine',
+            conceptId: 'ROOT')['word'],
+        'Racine');
+  });
+
+  test(
+      'connaissance agrège par concept et bloque la maturation sans confirmation',
+      () {
+    final progression =
+        Map<String, dynamic>.from(defaultElevageConfig.refugeProgression);
+    progression['knowledge'] = <String, dynamic>{
+      'observationsForHypothesis': 1,
+      'evidenceForConfirmation': 99,
+    };
+    final hypothesisOnlyConfig =
+        defaultElevageConfig.copyWith(refugeProgression: progression);
+    var state = ElevageSave.initial(hypothesisOnlyConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Savoir',
+        physical: false,
+        now: now,
+        config: hypothesisOnlyConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    (individual['lifecycle'] as Map)['stageEnteredAt'] =
+        now - const Duration(hours: 25).inMilliseconds;
+    for (final concept in <String>[
+      'IRON_AFFINITY',
+      'ROOT_FOOD_PREFERENCE',
+      'PLAYER_CONTACT',
+    ]) {
+      state = ElevageDomain.recordKnowledgeObservation(
+          state, id, concept, now, hypothesisOnlyConfig);
+    }
+    state = ElevageDomain.recordKnowledgeObservation(
+        state, id, 'IRON_AFFINITY', now + 1, hypothesisOnlyConfig);
+    final knowledge = ElevageDomain.knowledgeEntries(
+        (state.data['individuals'] as Map)[id] as Map);
+    expect(knowledge.where((entry) => entry['conceptId'] == 'IRON_AFFINITY'),
+        hasLength(1));
+    expect(
+        ElevageDomain.metamorphosisAvailable(
+            state, id, now, hypothesisOnlyConfig),
+        isFalse);
+    final confirmationProgression =
+        Map<String, dynamic>.from(hypothesisOnlyConfig.refugeProgression);
+    confirmationProgression['knowledge'] = <String, dynamic>{
+      'observationsForHypothesis': 1,
+      'evidenceForConfirmation': 1,
+    };
+    final confirmationConfig = hypothesisOnlyConfig.copyWith(
+        refugeProgression: confirmationProgression);
+    state = ElevageDomain.recordKnowledgeObservation(
+        state, id, 'IRON_AFFINITY', now + 2, confirmationConfig);
+    expect(
+        ElevageDomain.metamorphosisAvailable(
+            state, id, now, confirmationConfig),
+        isTrue);
+  });
+
+  test('Tam Tam évalue les taps sur les mêmes beats que son animation', () {
+    const config = defaultElevageConfig;
+    expect(ElevageDomain.tamTamTapGrade(20, 0, config), 'MISS');
+    final grades = <String>[
+      for (var beat = 0; beat < config.tamTamTotalBeats; beat++)
+        ElevageDomain.tamTamTapGrade(
+            ElevageDomain.tamTamBeatTargetMs(beat, config), beat, config),
+    ];
+    expect(ElevageDomain.tamTamSucceeded(grades, config), isTrue);
+    expect(
+        ElevageDomain.tamTamSucceeded(
+            const <String>['MISS', 'MISS', 'MISS'], config),
+        isFalse);
   });
 }

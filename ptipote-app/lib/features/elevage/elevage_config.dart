@@ -773,6 +773,53 @@ class ElevageConfig {
               as Map?)?['babyVocalCooldownSeconds'] as num?)
           ?.toInt() ??
       3;
+  Map<String, dynamic> get languageConfig => Map<String, dynamic>.from(
+      refugeProgression['language'] as Map? ?? const <dynamic, dynamic>{});
+  int get juvenileNewConceptWordThreshold =>
+      ((languageConfig['juvenileNewConceptWordThreshold'] as num?)?.toInt() ??
+              5)
+          .clamp(1, 999);
+  int get juvenileBabyKnownConceptWordThreshold =>
+      ((languageConfig['juvenileBabyKnownConceptWordThreshold'] as num?)
+                  ?.toInt() ??
+              10)
+          .clamp(1, 999);
+  Map<String, dynamic> get knowledgeConfig => Map<String, dynamic>.from(
+      refugeProgression['knowledge'] as Map? ?? const <dynamic, dynamic>{});
+  int get observationsForHypothesis =>
+      ((knowledgeConfig['observationsForHypothesis'] as num?)?.toInt() ?? 5)
+          .clamp(1, 999);
+  int get evidenceForConfirmation =>
+      ((knowledgeConfig['evidenceForConfirmation'] as num?)?.toInt() ?? 5)
+          .clamp(1, 999);
+  Map<String, dynamic> get maturationConfig => Map<String, dynamic>.from(
+      refugeProgression['maturation'] as Map? ?? const <dynamic, dynamic>{});
+  int get maturationObservationRequirement =>
+      ((maturationConfig['observationRequirement'] as num?)?.toInt() ?? 4)
+          .clamp(0, 999);
+  int get maturationHypothesisRequirement =>
+      ((maturationConfig['hypothesisRequirement'] as num?)?.toInt() ?? 3)
+          .clamp(0, 999);
+  int get maturationConfirmationRequirement =>
+      ((maturationConfig['confirmationRequirement'] as num?)?.toInt() ?? 1)
+          .clamp(0, 999);
+  Map<String, dynamic> get tamTamConfig => Map<String, dynamic>.from(
+      refugeProgression['tamTam'] as Map? ?? const <dynamic, dynamic>{});
+  int get tamTamTotalBeats =>
+      ((tamTamConfig['totalBeats'] as num?)?.toInt() ?? 3).clamp(1, 32);
+  int get tamTamRequiredSuccessfulBeats =>
+      ((tamTamConfig['requiredSuccessfulBeats'] as num?)?.toInt() ?? 3)
+          .clamp(1, tamTamTotalBeats);
+  int get tamTamBeatIntervalMs =>
+      ((tamTamConfig['beatIntervalMs'] as num?)?.toInt() ?? 700)
+          .clamp(100, 10000);
+  int get tamTamPerfectWindowMs =>
+      ((tamTamConfig['perfectWindowMs'] as num?)?.toInt() ?? 120)
+          .clamp(1, 5000);
+  int get tamTamGoodWindowMs =>
+      ((tamTamConfig['goodWindowMs'] as num?)?.toInt() ?? 240)
+          .clamp(tamTamPerfectWindowMs, 10000)
+          .toInt();
 
   Map<String, dynamic> requirementForAlcove(int index) =>
       index <= 1 || index - 2 >= alcoveRequirements.length
@@ -2517,6 +2564,26 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'xpForLevel2': 30,
       'xpForLevel3': 60,
       'carryBonusByLevel': <String, int>{'0': 0, '1': 1, '2': 2, '3': 3},
+    },
+    'language': <String, dynamic>{
+      'juvenileNewConceptWordThreshold': 5,
+      'juvenileBabyKnownConceptWordThreshold': 10,
+    },
+    'knowledge': <String, dynamic>{
+      'observationsForHypothesis': 5,
+      'evidenceForConfirmation': 5,
+    },
+    'maturation': <String, dynamic>{
+      'observationRequirement': 4,
+      'hypothesisRequirement': 3,
+      'confirmationRequirement': 1,
+    },
+    'tamTam': <String, dynamic>{
+      'totalBeats': 3,
+      'requiredSuccessfulBeats': 3,
+      'beatIntervalMs': 700,
+      'perfectWindowMs': 120,
+      'goodWindowMs': 240,
     },
     'alcoveRequirements': <Map<String, dynamic>>[
       <String, dynamic>{

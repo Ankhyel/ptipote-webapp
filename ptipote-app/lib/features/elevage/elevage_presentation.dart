@@ -210,8 +210,47 @@ class ElevagePresentation {
           'Confort lumineux : 1–2/5 · neutre 3/5 · inconfort 4–5/5',
         'HUMIDITY_AVOIDANCE' =>
           'Sensibilité environnementale : humidité élevée',
-        _ => 'Découverte confirmée',
+        _ => 'Préférence confirmée : comportement observé',
       };
+
+  /// The notebook is keyed by a semantic concept rather than by an individual
+  /// scene event. These strings deliberately keep the subject and the learned
+  /// fact visible: a generic “Découverte confirmée” is not knowledge.
+  static String knowledgeHypothesisText(Map knowledge, String name) {
+    final concept = knowledge['conceptId'] as String? ?? '';
+    return switch (concept) {
+      'IRON_AFFINITY' => '$name semble réagir particulièrement au fer.',
+      'LIGHT_PREFERENCE' => '$name semble avoir une préférence de lumière.',
+      'HUMIDITY_PREFERENCE' => '$name semble sensible au niveau d’humidité.',
+      'PLAYER_CONTACT' => '$name semble apprécier votre présence.',
+      'FOOD_NEED' => '$name semble signaler son besoin de nourriture.',
+      _ when concept.endsWith('_FOOD_PREFERENCE') =>
+        '$name semble apprécier les ${_foodPlural(concept.replaceFirst('_FOOD_PREFERENCE', ''))}.',
+      _ when concept.endsWith('_FOOD_ACCEPTANCE') =>
+        '$name semble accepter ${itemLabel(concept.replaceFirst('_FOOD_ACCEPTANCE', '')).toLowerCase()}.',
+      _ when concept.endsWith('_STRUCTURE_AFFINITY') =>
+        '$name semble tirer parti de ${itemLabel(concept.replaceFirst('_STRUCTURE_AFFINITY', '')).toLowerCase()} pour sa structure.',
+      _ => '$name manifeste une préférence à approfondir.',
+    };
+  }
+
+  static String knowledgeConfirmedText(Map knowledge, String name) {
+    final concept = knowledge['conceptId'] as String? ?? '';
+    return switch (concept) {
+      'IRON_AFFINITY' => '$name utilise volontiers le fer pour sa structure.',
+      'LIGHT_PREFERENCE' => 'Préférence lumineuse confirmée pour $name.',
+      'HUMIDITY_PREFERENCE' => 'Sensibilité à l’humidité confirmée pour $name.',
+      'PLAYER_CONTACT' => '$name apprécie votre présence.',
+      'FOOD_NEED' => '$name communique son besoin de nourriture.',
+      _ when concept.endsWith('_FOOD_PREFERENCE') =>
+        'Préférence alimentaire de $name : ${itemLabel(concept.replaceFirst('_FOOD_PREFERENCE', '')).toLowerCase()}.',
+      _ when concept.endsWith('_FOOD_ACCEPTANCE') =>
+        '$name accepte ${itemLabel(concept.replaceFirst('_FOOD_ACCEPTANCE', '')).toLowerCase()}.',
+      _ when concept.endsWith('_STRUCTURE_AFFINITY') =>
+        '$name renforce volontiers sa structure avec ${itemLabel(concept.replaceFirst('_STRUCTURE_AFFINITY', '')).toLowerCase()}.',
+      _ => 'Une préférence de $name a été confirmée.',
+    };
+  }
 
   static String _foodPlural(String item) => switch (item) {
         'ROOT' => 'racines',

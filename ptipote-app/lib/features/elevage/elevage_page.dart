@@ -531,9 +531,19 @@ class _IndividualPageState extends State<_IndividualPage> {
 
   void _showSceneExpression(String action, Map individual, {String? itemId}) {
     final category = ElevageDomain.vocalCategoryForAction(action);
+    // Build the bubble from the state *after* this occurrence. The fifth
+    // exposure can therefore be the first one to say its learned word rather
+    // than waiting for a sixth, while the asynchronous persistence below is
+    // still the single durable mutation.
+    final preview = ElevageDomain.recordCommunication(
+        widget.controller.state!, widget.individualId, category,
+        conceptId: itemId ?? category);
+    final previewIndividual =
+        (preview.data['individuals'] as Map)[widget.individualId] as Map;
     final expression = ElevageDomain.communicationExpression(
-        individual, category, widget.controller.config,
-        precise: itemId == null ? null : ElevagePresentation.itemLabel(itemId));
+        previewIndividual, category, widget.controller.config,
+        precise: itemId == null ? null : ElevagePresentation.itemLabel(itemId),
+        conceptId: itemId ?? category);
     _bubbleTimer?.cancel();
     setState(() {
       _sceneVoice = expression['word'] ?? expression['vocal'];
@@ -543,7 +553,8 @@ class _IndividualPageState extends State<_IndividualPage> {
           ? itemId
           : null;
     });
-    widget.controller.recordCommunication(widget.individualId, category);
+    widget.controller.recordCommunication(widget.individualId, category,
+        conceptId: itemId ?? category);
     _bubbleTimer = Timer(
         Duration(
             seconds: ElevageDomain.bubbleDurationSeconds(
@@ -1657,12 +1668,13 @@ class ElevageNotebookPage extends StatelessWidget {
             .values
             .whereType<Map>()
             .toList();
-    final hypotheses = observations
-        .where((item) =>
-            item['status'] == 'SUSPECTED' || item['suspectedAt'] != null)
-        .toList();
-    final discoveries =
-        observations.where((item) => item['status'] == 'CONFIRMED').toList();
+    final knowledge = ElevageDomain.knowledgeEntries(individual);
+    final hypotheses = knowledge
+        .where((item) => item['status'] == 'HYPOTHESIS')
+        .toList(growable: false);
+    final discoveries = knowledge
+        .where((item) => item['status'] == 'CONFIRMED')
+        .toList(growable: false);
     final memories =
         ((controller.state!.data['memoryEvents'] as Map)[individualId] as Map?)
                 ?.keys
@@ -1699,15 +1711,10 @@ class ElevageNotebookPage extends StatelessWidget {
                 : hypotheses
                     .map((item) => ListTile(
                         leading: const Icon(Icons.lightbulb_outline),
-                        title: Text(
-                            ElevagePresentation.hypothesisText(item, name)),
-                        subtitle: ElevagePresentation.hypothesisAdvice(item) ==
-                                null
-                            ? null
-                            : Text(ElevagePresentation.hypothesisAdvice(item)!),
-                        trailing: item['status'] == 'CONFIRMED'
-                            ? const Icon(Icons.check_circle_outline)
-                            : null))
+                        title: Text(ElevagePresentation.knowledgeHypothesisText(
+                            item, name)),
+                        subtitle: Text(
+                            '${item['hypothesisEvidence'] ?? 0} preuve(s) recueillie(s)')))
                     .toList()),
         _notebookSection(
             context,
@@ -1717,7 +1724,8 @@ class ElevageNotebookPage extends StatelessWidget {
                 : discoveries
                     .map((item) => ListTile(
                         leading: const Icon(Icons.verified_outlined),
-                        title: Text(ElevagePresentation.confirmedText(item))))
+                        title: Text(ElevagePresentation.knowledgeConfirmedText(
+                            item, name))))
                     .toList()),
         _notebookSection(
             context,
@@ -1830,6 +1838,31 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     return (special?[key] as num?)?.toInt() ?? 0;
   }
 
+  void _setBiogeneratorRecipe(String key, int value) {
+    final progression = Map<String, dynamic>.from(config.refugeProgression);
+    final recipe = Map<String, dynamic>.from(
+        progression['biogeneratorRecipe'] as Map? ??
+            const <dynamic, dynamic>{});
+    if (key == 'organic' || key == 'mineral') {
+      recipe[key] = value;
+    } else {
+      final special = Map<String, dynamic>.from(
+          recipe['special'] as Map? ?? const <dynamic, dynamic>{});
+      special[key] = value;
+      recipe['special'] = special;
+    }
+    progression['biogeneratorRecipe'] = recipe;
+    setState(() => config = config.copyWith(refugeProgression: progression));
+  }
+
+  int _biogeneratorRecipeCost(String key) {
+    final recipe = config.refugeProgression['biogeneratorRecipe'] as Map?;
+    if (key == 'organic' || key == 'mineral') {
+      return (recipe?[key] as num?)?.toInt() ?? 0;
+    }
+    return ((recipe?['special'] as Map?)?[key] as num?)?.toInt() ?? 0;
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Dashboard Élevage')),
@@ -1883,6 +1916,22 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               'Prototype configurable — la recette finale reste à arbitrer.'),
           _number(
               context,
+              'Recette · Organique',
+              _biogeneratorRecipeCost('organic'),
+              (value) => _setBiogeneratorRecipe('organic', value)),
+          _number(
+              context,
+              'Recette · Minéral',
+              _biogeneratorRecipeCost('mineral'),
+              (value) => _setBiogeneratorRecipe('mineral', value)),
+          for (final itemId in <String>['MUSHROOM', 'ALGAE', 'SALT'])
+            _number(
+                context,
+                'Recette · ${ElevagePresentation.itemLabel(itemId)}',
+                _biogeneratorRecipeCost(itemId),
+                (value) => _setBiogeneratorRecipe(itemId, value)),
+          _number(
+              context,
               'Cuve Organique',
               config.biogeneratorOrganicTankCapacity,
               (value) => _setRefugeNestedNumber(
@@ -1929,6 +1978,30 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               config.biogeneratorCapacityMineralBonus,
               (value) => _setRefugeNestedNumber(
                   'biogenerator', 'capacityMineralBonus', value)),
+          _number(
+              context,
+              'Réduction Efficacité · Organique',
+              config.biogeneratorEfficiencyOrganicReduction,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'efficiencyOrganicReduction', value)),
+          _number(
+              context,
+              'Réduction Efficacité · Minéral',
+              config.biogeneratorEfficiencyMineralReduction,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'efficiencyMineralReduction', value)),
+          _number(
+              context,
+              'Coût plancher · Organique',
+              config.biogeneratorMinimumOrganicCost,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'minimumOrganicCost', value)),
+          _number(
+              context,
+              'Coût plancher · Minéral',
+              config.biogeneratorMinimumMineralCost,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'minimumMineralCost', value)),
           _heading('Pisteur'),
           for (final level in <int>[1, 2, 3])
             _number(
@@ -1937,6 +2010,21 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                 config.trackerThreshold(level),
                 (value) => _setRefugeNestedNumber(
                     'tracker', 'xpForLevel$level', value)),
+          for (final level in <int>[0, 1, 2, 3])
+            _number(context, 'Bonus transport Pisteur $level',
+                config.trackerCarryBonus(level), (value) {
+              final tracker = Map<String, dynamic>.from(
+                  config.refugeProgression['tracker'] as Map? ??
+                      const <dynamic, dynamic>{});
+              final bonuses = Map<String, dynamic>.from(
+                  tracker['carryBonusByLevel'] as Map? ??
+                      const <dynamic, dynamic>{});
+              bonuses['$level'] = value;
+              tracker['carryBonusByLevel'] = bonuses;
+              final next = Map<String, dynamic>.from(config.refugeProgression)
+                ..['tracker'] = tracker;
+              setState(() => config = config.copyWith(refugeProgression: next));
+            }),
           _heading('Expression environnementale Bébé'),
           _number(
               context,
@@ -1947,6 +2035,15 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                   3,
               (value) => _setRefugeNestedNumber(
                   'ambientFeedback', 'shiverAmplitudePx', value)),
+          _number(
+              context,
+              'Vitesse tremblement (ms)',
+              ((config.refugeProgression['ambientFeedback']
+                          as Map?)?['shiverSpeed'] as num?)
+                      ?.toInt() ??
+                  120,
+              (value) => _setRefugeNestedNumber(
+                  'ambientFeedback', 'shiverSpeed', value)),
           _number(
               context,
               'Rafale tremblement (ms)',
@@ -1971,6 +2068,76 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               config.babyVocalCooldownSeconds,
               (value) => _setRefugeNestedNumber(
                   'ambientFeedback', 'babyVocalCooldownSeconds', value)),
+          _heading('Langage et connaissance'),
+          _number(
+              context,
+              'Mot Juvénile · concept nouveau',
+              config.juvenileNewConceptWordThreshold,
+              (value) => _setRefugeNestedNumber(
+                  'language', 'juvenileNewConceptWordThreshold', value)),
+          _number(
+              context,
+              'Mot Juvénile · concept connu Bébé',
+              config.juvenileBabyKnownConceptWordThreshold,
+              (value) => _setRefugeNestedNumber(
+                  'language', 'juvenileBabyKnownConceptWordThreshold', value)),
+          _number(
+              context,
+              'Observations → hypothèse',
+              config.observationsForHypothesis,
+              (value) => _setRefugeNestedNumber(
+                  'knowledge', 'observationsForHypothesis', value)),
+          _number(
+              context,
+              'Preuves → confirmation',
+              config.evidenceForConfirmation,
+              (value) => _setRefugeNestedNumber(
+                  'knowledge', 'evidenceForConfirmation', value)),
+          _number(
+              context,
+              'Maturation · observations',
+              config.maturationObservationRequirement,
+              (value) => _setRefugeNestedNumber(
+                  'maturation', 'observationRequirement', value)),
+          _number(
+              context,
+              'Maturation · hypothèses',
+              config.maturationHypothesisRequirement,
+              (value) => _setRefugeNestedNumber(
+                  'maturation', 'hypothesisRequirement', value)),
+          _number(
+              context,
+              'Maturation · confirmations',
+              config.maturationConfirmationRequirement,
+              (value) => _setRefugeNestedNumber(
+                  'maturation', 'confirmationRequirement', value)),
+          _heading('Tam Tam'),
+          _number(context, 'Battements', config.tamTamTotalBeats,
+              (value) => _setRefugeNestedNumber('tamTam', 'totalBeats', value)),
+          _number(
+              context,
+              'Battements à réussir',
+              config.tamTamRequiredSuccessfulBeats,
+              (value) => _setRefugeNestedNumber(
+                  'tamTam', 'requiredSuccessfulBeats', value)),
+          _number(
+              context,
+              'Intervalle (ms)',
+              config.tamTamBeatIntervalMs,
+              (value) =>
+                  _setRefugeNestedNumber('tamTam', 'beatIntervalMs', value)),
+          _number(
+              context,
+              'Fenêtre parfaite (ms)',
+              config.tamTamPerfectWindowMs,
+              (value) =>
+                  _setRefugeNestedNumber('tamTam', 'perfectWindowMs', value)),
+          _number(
+              context,
+              'Fenêtre bonne (ms)',
+              config.tamTamGoodWindowMs,
+              (value) =>
+                  _setRefugeNestedNumber('tamTam', 'goodWindowMs', value)),
           _number(
               context,
               'Bio-pile · Organique',
@@ -3691,11 +3858,13 @@ Alignment _bubbleAlignment(String zoneId) => switch (zoneId) {
     };
 
 IconData _ptipoteIcon(String stage, String family) {
-  if (stage == 'BABY') return Icons.egg_outlined;
-  return switch (family) {
-    'VEGETAL' => Icons.spa_outlined,
-    'FUNGAL' => Icons.emoji_nature_outlined,
-    _ => Icons.diamond_outlined,
+  // A P'TIPOTE portrait represents the individual and its biological stage,
+  // never its mineral/vegetal/fungal structure icon.
+  return switch (stage) {
+    'BABY' => Icons.pets_outlined,
+    'INTERMEDIATE' => Icons.emoji_emotions_outlined,
+    'MATURE' => Icons.face_4_outlined,
+    _ => Icons.pets_outlined,
   };
 }
 
@@ -5111,34 +5280,149 @@ Future<void> _sourcier(
 
 Future<void> _metamorphosis(
     BuildContext context, ElevageController controller, String id) async {
-  var stage = 0;
+  final now = DateTime.now().millisecondsSinceEpoch;
+  if (!ElevageDomain.metamorphosisAvailable(
+      controller.state!, id, now, controller.config)) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:
+            Text('Les observations requises ne sont pas encore réunies.')));
+    return;
+  }
+  final individual = (controller.state!.data['individuals'] as Map)[id] as Map;
   await showDialog<void>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setLocal) => AlertDialog(
-                  title: const Text('Métamorphose Résonance'),
-                  content:
-                      Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-                    const Icon(Icons.diamond_outlined, size: 64),
-                    Text('Motif ${stage + 1}/3'),
-                    const Text('Le cristal pulse : TAM · TAM · … · TAM'),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                        onPressed: () async {
-                          if (stage == 2) {
-                            await controller.metamorphose(id);
-                            if (context.mounted) Navigator.pop(context);
-                          } else {
-                            setLocal(() => stage++);
-                          }
-                        },
-                        child: const Text('Reproduire le motif'))
-                  ]),
-                  actions: <Widget>[
-                    TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Plus tard'))
-                  ])));
+      builder: (_) => _TamTamDialog(
+          controller: controller,
+          individualId: id,
+          stage: (individual['lifecycle'] as Map)['stage'] as String,
+          family: individual['family'] as String));
+}
+
+class _TamTamDialog extends StatefulWidget {
+  const _TamTamDialog({
+    required this.controller,
+    required this.individualId,
+    required this.stage,
+    required this.family,
+  });
+
+  final ElevageController controller;
+  final String individualId;
+  final String stage;
+  final String family;
+
+  @override
+  State<_TamTamDialog> createState() => _TamTamDialogState();
+}
+
+class _TamTamDialogState extends State<_TamTamDialog> {
+  late final int _startedAt;
+  Timer? _ticker;
+  int _elapsedMs = 0;
+  final Map<int, String> _grades = <int, String>{};
+  String? _feedback;
+  bool _finishing = false;
+
+  ElevageConfig get _config => widget.controller.config;
+
+  @override
+  void initState() {
+    super.initState();
+    _startedAt = DateTime.now().millisecondsSinceEpoch;
+    _ticker = Timer.periodic(const Duration(milliseconds: 32), (_) {
+      if (!mounted) return;
+      setState(() =>
+          _elapsedMs = DateTime.now().millisecondsSinceEpoch - _startedAt);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  int _closestBeat() {
+    var closest = 0;
+    var delta = 1 << 30;
+    for (var index = 0; index < _config.tamTamTotalBeats; index++) {
+      final next =
+          (_elapsedMs - ElevageDomain.tamTamBeatTargetMs(index, _config)).abs();
+      if (next < delta) {
+        closest = index;
+        delta = next;
+      }
+    }
+    return closest;
+  }
+
+  Future<void> _tapBeat() async {
+    if (_finishing) return;
+    final beat = _closestBeat();
+    if (_grades.containsKey(beat)) {
+      setState(() => _feedback = 'Ce battement est déjà joué.');
+      return;
+    }
+    final grade = ElevageDomain.tamTamTapGrade(_elapsedMs, beat, _config);
+    setState(() {
+      _grades[beat] = grade;
+      _feedback = switch (grade) {
+        'PERFECT' => 'Parfait',
+        'GOOD' => 'Bien',
+        _ => 'Raté',
+      };
+    });
+    if (!ElevageDomain.tamTamSucceeded(_grades.values, _config)) return;
+    setState(() => _finishing = true);
+    try {
+      await widget.controller.metamorphose(widget.individualId);
+      if (mounted) Navigator.of(context).pop();
+    } on StateError {
+      if (mounted) {
+        setState(() {
+          _finishing = false;
+          _feedback = 'Les prérequis ne sont plus réunis.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final interval = _config.tamTamBeatIntervalMs;
+    final nearest = _closestBeat();
+    final pulseDelta =
+        (_elapsedMs - ElevageDomain.tamTamBeatTargetMs(nearest, _config)).abs();
+    final pulsing = pulseDelta <= min(180, interval ~/ 3);
+    final completed = _grades.values
+        .where((grade) => grade == 'PERFECT' || grade == 'GOOD')
+        .length;
+    return AlertDialog(
+      title: const Text('Métamorphose — Tam Tam'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        AnimatedScale(
+          scale: pulsing ? 1.22 : 1,
+          duration: const Duration(milliseconds: 90),
+          child: Icon(_ptipoteIcon(widget.stage, widget.family), size: 64),
+        ),
+        const SizedBox(height: 8),
+        Text(
+            'Reproduisez le rythme : $completed/${_config.tamTamRequiredSuccessfulBeats}'),
+        const SizedBox(height: 4),
+        Text(_feedback ?? 'Touchez quand le symbole grossit.'),
+        const SizedBox(height: 12),
+        FilledButton(
+          onPressed: _finishing ? null : _tapBeat,
+          child: Text(_finishing ? 'Métamorphose…' : 'TAM'),
+        ),
+      ]),
+      actions: <Widget>[
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Plus tard')),
+      ],
+    );
+  }
 }
 
 Future<int?> _numberDialog(
