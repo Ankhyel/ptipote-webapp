@@ -759,6 +759,13 @@ class _IndividualPageState extends State<_IndividualPage> {
       _setSceneAction('IDLE');
     } finally {
       _autonomousInFlight = false;
+      // A failed interaction (removed target, blocked relocation, etc.) must
+      // never strand the visual FSM on PICKUP/THINK/DISCOMFORT.
+      if (mounted &&
+          _sceneAction != 'SLEEP' &&
+          _sceneAction != 'METAMORPHOSIS') {
+        _setSceneAction('IDLE');
+      }
     }
   }
 
@@ -834,6 +841,11 @@ class _IndividualPageState extends State<_IndividualPage> {
       _setSceneAction('IDLE');
     } finally {
       _autonomousInFlight = false;
+      if (mounted &&
+          _sceneAction != 'SLEEP' &&
+          _sceneAction != 'METAMORPHOSIS') {
+        _setSceneAction('IDLE');
+      }
     }
   }
 
@@ -863,6 +875,11 @@ class _IndividualPageState extends State<_IndividualPage> {
       _setSceneAction('IDLE');
     } finally {
       _autonomousInFlight = false;
+      if (mounted &&
+          _sceneAction != 'SLEEP' &&
+          _sceneAction != 'METAMORPHOSIS') {
+        _setSceneAction('IDLE');
+      }
     }
   }
 
@@ -1365,6 +1382,23 @@ class _IndividualPageState extends State<_IndividualPage> {
         controller.config);
     final ambient = ElevageDomain.ambientEnvironmentalFeedback(
         localEnvironment, individual, controller.config);
+    final environmentalNeed = ElevageDomain.expressedEnvironmentalNeed(
+        localEnvironment, individual, controller.config);
+    final needCooldown =
+        ((controller.config.refugeProgression['ambientFeedback']
+                    as Map?)?['juvenileNeedCooldown'] as num?)
+                ?.toInt() ??
+            7;
+    final needsEnabled =
+        ((controller.config.refugeProgression['ambientFeedback']
+                as Map?)?['needPictogramEnabled'] as bool?) ??
+            true;
+    final needText = needsEnabled &&
+            environmentalNeed != null &&
+            (now ~/ 1000) % max(1, needCooldown) == 0
+        ? ElevageDomain.environmentalNeedExpression(
+            individual, environmentalNeed['need']!, controller.config)
+        : null;
     final ambientVoice = ambient == null ||
             (now ~/ 1000) %
                     max(1, controller.config.babyVocalCooldownSeconds) !=
@@ -1470,6 +1504,7 @@ class _IndividualPageState extends State<_IndividualPage> {
                 ptipoteHoldActive: _ptipoteHoldActive,
                 requestSignal: request?['signal'] as String?,
                 ambientSignal: ambient,
+                expressedNeed: needText,
                 sleeping: sleeping,
                 crystallizing: available,
                 ptipoteZoneId: _ptipoteZoneId,
@@ -1530,8 +1565,7 @@ class _IndividualPageState extends State<_IndividualPage> {
                   ),
                 ),
               ],
-              _BatterySlotCard(alcove: alcove, controller: controller),
-              _BiogeneratorCard(alcove: alcove, controller: controller),
+              _EnergySlotCard(alcove: alcove, controller: controller),
               _TrackerCard(individual: individual, controller: controller),
               if (individual['loanOffer'] is Map &&
                   (individual['loanOffer'] as Map)['selectedStructureId'] ==
@@ -1864,31 +1898,6 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     setState(() => config = config.copyWith(refugeProgression: progression));
   }
 
-  void _setBatteryRecipe(String key, int value) {
-    final progression = Map<String, dynamic>.from(config.refugeProgression);
-    final recipe = Map<String, dynamic>.from(
-        progression['bioBatteryRecipe'] as Map? ?? const <dynamic, dynamic>{});
-    if (key == 'organic' || key == 'mineral') {
-      recipe[key] = value;
-    } else {
-      final special = Map<String, dynamic>.from(
-          recipe['special'] as Map? ?? const <dynamic, dynamic>{});
-      special[key] = value;
-      recipe['special'] = special;
-    }
-    progression['bioBatteryRecipe'] = recipe;
-    setState(() => config = config.copyWith(refugeProgression: progression));
-  }
-
-  int _batteryRecipeCost(String key) {
-    final recipe = config.refugeProgression['bioBatteryRecipe'] as Map?;
-    if (key == 'organic' || key == 'mineral') {
-      return (recipe?[key] as num?)?.toInt() ?? 0;
-    }
-    final special = recipe?['special'] as Map?;
-    return (special?[key] as num?)?.toInt() ?? 0;
-  }
-
   void _setBiogeneratorRecipe(String key, int value) {
     final progression = Map<String, dynamic>.from(config.refugeProgression);
     final recipe = Map<String, dynamic>.from(
@@ -1981,6 +1990,15 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                 'Recette · ${ElevagePresentation.itemLabel(itemId)}',
                 _biogeneratorRecipeCost(itemId),
                 (value) => _setBiogeneratorRecipe(itemId, value)),
+          _number(
+              context,
+              'Batterie export · énergie locale',
+              ((config.refugeProgression['batteryExport'] as Map?)?['energy']
+                          as num?)
+                      ?.toInt() ??
+                  100,
+              (value) =>
+                  _setRefugeNestedNumber('batteryExport', 'energy', value)),
           _number(
               context,
               'Cuve Organique',
@@ -2119,6 +2137,30 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               config.babyVocalCooldownSeconds,
               (value) => _setRefugeNestedNumber(
                   'ambientFeedback', 'babyVocalCooldownSeconds', value)),
+          _number(
+              context,
+              'Cooldown demande Juvénile (s)',
+              ((config.refugeProgression['ambientFeedback']
+                          as Map?)?['juvenileNeedCooldown'] as num?)
+                      ?.toInt() ??
+                  7,
+              (value) => _setRefugeNestedNumber(
+                  'ambientFeedback', 'juvenileNeedCooldown', value)),
+          SwitchListTile(
+              value: ((config.refugeProgression['ambientFeedback']
+                      as Map?)?['needPictogramEnabled'] as bool?) ??
+                  true,
+              onChanged: (value) {
+                final ambient = Map<String, dynamic>.from(
+                    config.refugeProgression['ambientFeedback'] as Map? ??
+                        const <dynamic, dynamic>{})
+                  ..['needPictogramEnabled'] = value;
+                setState(() => config = config.copyWith(
+                    refugeProgression:
+                        Map<String, dynamic>.from(config.refugeProgression)
+                          ..['ambientFeedback'] = ambient));
+              },
+              title: const Text('Pictogrammes de besoin Juvénile')),
           _heading('Langage et connaissance'),
           _number(
               context,
@@ -2189,19 +2231,6 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               config.tamTamGoodWindowMs,
               (value) =>
                   _setRefugeNestedNumber('tamTam', 'goodWindowMs', value)),
-          _number(
-              context,
-              'Bio-pile · Organique',
-              _batteryRecipeCost('organic'),
-              (value) => _setBatteryRecipe('organic', value)),
-          _number(context, 'Bio-pile · Minéral', _batteryRecipeCost('mineral'),
-              (value) => _setBatteryRecipe('mineral', value)),
-          for (final itemId in <String>['MUSHROOM', 'ALGAE', 'SALT'])
-            _number(
-                context,
-                'Bio-pile · ${ElevagePresentation.itemLabel(itemId)}',
-                _batteryRecipeCost(itemId),
-                (value) => _setBatteryRecipe(itemId, value)),
           if (config.devMode)
             Wrap(spacing: 8, children: <Widget>[
               OutlinedButton(
@@ -3602,6 +3631,7 @@ class _AlcoveScene extends StatefulWidget {
     required this.ptipoteHoldActive,
     required this.requestSignal,
     required this.ambientSignal,
+    required this.expressedNeed,
     required this.sleeping,
     required this.crystallizing,
     required this.ptipoteZoneId,
@@ -3639,6 +3669,7 @@ class _AlcoveScene extends StatefulWidget {
   final bool ptipoteHoldActive;
   final String? requestSignal;
   final Map<String, String>? ambientSignal;
+  final String? expressedNeed;
   final bool sleeping;
   final bool crystallizing;
   final String ptipoteZoneId;
@@ -3678,7 +3709,8 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
       final burst = (feedback?['shiverBurstDuration'] as num?)?.toInt() ?? 650;
       final pause = (feedback?['shiverPauseDuration'] as num?)?.toInt() ?? 1800;
       final elapsed = DateTime.now().millisecondsSinceEpoch % (burst + pause);
-      setState(() => _shiverOffset = elapsed < burst && !_shiverOffset);
+      final shiveringNow = elapsed < burst;
+      setState(() => _shiverOffset = shiveringNow ? !_shiverOffset : false);
     });
   }
 
@@ -4053,6 +4085,11 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                   label: Text(
                       'À poser : ${ElevagePresentation.itemLabel(widget.pendingItem!)}')),
             ),
+          if (widget.expressedNeed != null)
+            Positioned(
+                bottom: 8,
+                left: 12,
+                child: _NeedBubble(text: widget.expressedNeed!)),
           if (widget.feedback != null)
             Positioned(
               top: 14,
@@ -4075,6 +4112,21 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
       ),
     );
   }
+}
+
+class _NeedBubble extends StatelessWidget {
+  const _NeedBubble({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Material(
+      color: Theme.of(context).colorScheme.tertiaryContainer,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          child: Text(text,
+              style:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w800))));
 }
 
 class _ProducerStockBubble extends StatelessWidget {
@@ -4160,12 +4212,7 @@ Alignment _bubbleAlignment(String zoneId) => switch (zoneId) {
 IconData _ptipoteIcon(String stage, String family) {
   // A P'TIPOTE portrait represents the individual and its biological stage,
   // never its mineral/vegetal/fungal structure icon.
-  return switch (stage) {
-    'BABY' => Icons.pets_outlined,
-    'INTERMEDIATE' => Icons.emoji_emotions_outlined,
-    'MATURE' => Icons.face_4_outlined,
-    _ => Icons.pets_outlined,
-  };
+  return Icons.pets_outlined;
 }
 
 class _StatusBubble extends StatelessWidget {
@@ -4210,15 +4257,17 @@ class _StatusBubble extends StatelessWidget {
       );
 }
 
-class _BatterySlotCard extends StatelessWidget {
-  const _BatterySlotCard({required this.alcove, required this.controller});
+class _EnergySlotCard extends StatelessWidget {
+  const _EnergySlotCard({required this.alcove, required this.controller});
   final Map alcove;
   final ElevageController controller;
 
   @override
   Widget build(BuildContext context) {
+    if (alcove['biogeneratorSlot'] is Map) {
+      return _BiogeneratorCard(alcove: alcove, controller: controller);
+    }
     final battery = alcove['batterySlot'];
-    final batteries = controller.state!.data['batteryInventory'] as Map;
     final charge =
         battery is Map ? (battery['currentEnergy'] as num).toInt() : 0;
     final maxCharge =
@@ -4228,47 +4277,56 @@ class _BatterySlotCard extends StatelessWidget {
         leading: Icon(battery is Map
             ? Icons.battery_charging_full_outlined
             : Icons.battery_unknown_outlined),
-        title: const Text('Batterie'),
+        title: const Text('Énergie'),
         subtitle: Text(battery is Map
-            ? 'Bio-pile · $charge / $maxCharge ⚡'
-            : 'Aucune Bio-pile insérée'),
-        trailing: battery is Map
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.add_circle_outline),
-                tooltip: 'Insérer une Bio-pile',
-                onPressed: batteries.isEmpty
-                    ? null
-                    : () => showModalBottomSheet<void>(
-                          context: context,
-                          builder: (sheetContext) => SafeArea(
-                            child: ListView(
-                              shrinkWrap: true,
-                              children: batteries.values
-                                  .whereType<Map>()
-                                  .map((entry) => ListTile(
-                                        leading: const Icon(Icons
-                                            .battery_charging_full_outlined),
-                                        title: const Text('Bio-pile'),
-                                        subtitle: Text(
-                                            '${entry['currentEnergy']} / ${entry['maxEnergy']} ⚡'),
-                                        onTap: () async {
-                                          await controller.insertBattery(
-                                              alcove['id'] as String,
-                                              entry['instanceId'] as String);
-                                          if (sheetContext.mounted) {
-                                            Navigator.pop(sheetContext);
-                                          }
-                                        },
-                                      ))
-                                  .toList(),
-                            ),
-                          ),
-                        ),
-              ),
+            ? 'Bio-batterie · $charge / $maxCharge\n⚡ ${(alcove['localEnergy'] as num?)?.toInt() ?? 0}'
+            : 'Emplacement énergétique vide\n⚡ ${(alcove['localEnergy'] as num?)?.toInt() ?? 0}'),
+        isThreeLine: true,
+        trailing: IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: 'Installer une source d’énergie',
+            onPressed: () => _showEnergyChoices(context, alcove, controller)),
       ),
     );
   }
+}
+
+Future<void> _showEnergyChoices(
+  BuildContext context,
+  Map alcove,
+  ElevageController controller, {
+  bool allowGenerator = true,
+}) async {
+  final batteries = controller.state!.data['batteryInventory'] as Map;
+  final generators = controller.state!.data['biogeneratorInventory'] as Map;
+  await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+              child: ListView(shrinkWrap: true, children: <Widget>[
+            const ListTile(
+                leading: Icon(Icons.bolt_outlined),
+                title: Text('Emplacement énergétique')),
+            ...batteries.values.whereType<Map>().map((entry) => ListTile(
+                leading: const Icon(Icons.battery_charging_full_outlined),
+                title: const Text('Bio-batterie'),
+                subtitle:
+                    Text('${entry['currentEnergy']} / ${entry['maxEnergy']} ⚡'),
+                onTap: () async {
+                  await controller.insertBattery(
+                      alcove['id'] as String, entry['instanceId'] as String);
+                  if (sheetContext.mounted) Navigator.pop(sheetContext);
+                })),
+            if (allowGenerator)
+              ...generators.values.whereType<Map>().map((entry) => ListTile(
+                  leading: const Icon(Icons.memory_outlined),
+                  title: const Text('Biogénérateur'),
+                  subtitle: const Text('Infrastructure durable à cuves'),
+                  onTap: () async {
+                    await controller.installBiogenerator(
+                        alcove['id'] as String, entry['instanceId'] as String);
+                    if (sheetContext.mounted) Navigator.pop(sheetContext);
+                  })),
+          ])));
 }
 
 class _BiogeneratorCard extends StatelessWidget {
@@ -4312,6 +4370,7 @@ class _BiogeneratorCard extends StatelessWidget {
             children: <Widget>[
               const Text('Biogénérateur',
                   style: TextStyle(fontWeight: FontWeight.w800)),
+              Text('⚡ ${(alcove['localEnergy'] as num?)?.toInt() ?? 0}'),
               const SizedBox(height: 8),
               Row(children: <Widget>[
                 Expanded(child: _tank(context, 'ORGANIC', tanks, caps)),
@@ -4329,6 +4388,15 @@ class _BiogeneratorCard extends StatelessWidget {
                   onPressed: () => _selectModule(context, generator, modules),
                   icon: const Icon(Icons.extension_outlined),
                   label: const Text('Modules')),
+              Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                      onPressed: () => _showEnergyChoices(
+                          context, alcove, controller, allowGenerator: false),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: Text(alcove['batterySlot'] is! Map
+                          ? 'Bio-batterie de secours'
+                          : 'Secours inséré'))),
             ]),
       ),
     );
@@ -4560,6 +4628,12 @@ IconData _actionIcon(String? action, String stage) => switch (action) {
       'RESONATE' => Icons.auto_awesome,
       'STEP_BACK' || 'REJECT' => Icons.sentiment_very_dissatisfied_outlined,
       'DISCOMFORT' => Icons.sentiment_dissatisfied_outlined,
+      'COLD' => Icons.ac_unit_outlined,
+      'HOT' => Icons.water_drop_outlined,
+      'MORE_LIGHT' => Icons.wb_sunny_outlined,
+      'LESS_LIGHT' => Icons.nights_stay_outlined,
+      'DRY' => Icons.water_drop_outlined,
+      'WET' => Icons.umbrella_outlined,
       'IRRITATED' => Icons.sentiment_very_dissatisfied_outlined,
       'EXTREME' => Icons.sentiment_very_dissatisfied_outlined,
       'FLEE' || 'FLEE_NORMAL' => Icons.priority_high,
@@ -5252,11 +5326,8 @@ Future<void> _openBiofabricator(
                                         value: 'MODULE',
                                         label: Text('Modules')),
                                     ButtonSegment(
-                                        value: 'BATTERY',
-                                        label: Text('Bio-pile')),
-                                    ButtonSegment(
                                         value: 'BIOGENERATOR',
-                                        label: Text('Générateur')),
+                                        label: Text('Énergie')),
                                   ],
                                   selected: <String>{
                                     category
@@ -5291,31 +5362,19 @@ Future<void> _openBiofabricator(
                                           },
                                           child: const Text('Fabriquer'))),
                                 )),
-                      if (category == 'BATTERY')
-                        ListTile(
-                          leading:
-                              const Icon(Icons.battery_charging_full_outlined),
-                          title: const Text('Bio-pile'),
-                          subtitle: const Text(
-                              '5 Organique · 5 Minéral · 1 Champignon · 1 Algue · 5 Sel\nFournit 10 Énergie à une Alcôve.'),
+                      if (category == 'BIOGENERATOR') ...<Widget>[
+                        const ListTile(
+                          leading: Icon(Icons.battery_charging_full_outlined),
+                          title: Text('Bio-batterie'),
+                          subtitle: Text(
+                              'Source de départ et de secours, fournie par le Refuge. Elle s’installe dans l’emplacement énergétique.'),
                           isThreeLine: true,
-                          trailing: FilledButton(
-                            onPressed: () async {
-                              await controller.craftBioBattery();
-                              if (sheetContext.mounted &&
-                                  controller.error == null) {
-                                Navigator.pop(sheetContext);
-                              }
-                            },
-                            child: const Text('Créer'),
-                          ),
                         ),
-                      if (category == 'BIOGENERATOR')
                         ListTile(
                           leading: const Icon(Icons.memory_outlined),
                           title: const Text('Biogénérateur'),
                           subtitle: const Text(
-                              'Recette prototype configurable. Infrastructure durable à cuves Organique et Minéral.'),
+                              '5 Organique · 5 Minéral · 1 Champignon · 1 Algue · 5 Sel\nInfrastructure durable à cuves Organique et Minéral.'),
                           isThreeLine: true,
                           trailing: FilledButton(
                             onPressed: () async {
@@ -5328,85 +5387,142 @@ Future<void> _openBiofabricator(
                             child: const Text('Créer'),
                           ),
                         ),
+                        ListTile(
+                          leading: const Icon(Icons.battery_saver_outlined),
+                          title: const Text('Batterie exportable'),
+                          subtitle: const Text(
+                              '1 Organique · 1 Minéral · 100 Énergie locale\nValeur future : 10 Bio-piles.'),
+                          isThreeLine: true,
+                          trailing: FilledButton(
+                            onPressed: () async {
+                              await controller.craftBatteryExport(alcoveId);
+                              if (sheetContext.mounted &&
+                                  controller.error == null) {
+                                Navigator.pop(sheetContext);
+                              }
+                            },
+                            child: const Text('Créer'),
+                          ),
+                        ),
+                      ],
+                      if (category == 'STRUCTURE')
+                        ..._structureCatalogGroups.entries.map((group) {
+                          final recipes = controller.config.recipes
+                              .where((recipe) =>
+                                  group.value.contains(recipe.installationId))
+                              .toList(growable: false);
+                          if (recipes.isEmpty) return const SizedBox.shrink();
+                          return ExpansionTile(
+                              leading: Icon(group.key == 'Énergie'
+                                  ? Icons.bolt_outlined
+                                  : group.key == 'Chauffage'
+                                      ? Icons.local_fire_department_outlined
+                                      : group.key == 'Ventilation'
+                                          ? Icons.air_outlined
+                                          : group.key == 'Production'
+                                              ? Icons.agriculture_outlined
+                                              : Icons.auto_awesome_outlined),
+                              title: Text(group.key),
+                              children: recipes
+                                  .map((recipe) => _biofabricatorRecipeTile(
+                                      sheetContext: sheetContext,
+                                      controller: controller,
+                                      state: state,
+                                      alcoveId: alcoveId,
+                                      recipe: recipe))
+                                  .toList(growable: false));
+                        }),
                       if (category != 'MODULE' &&
-                          category != 'BATTERY' &&
-                          category != 'BIOGENERATOR')
+                          category != 'BIOGENERATOR' &&
+                          category != 'STRUCTURE')
                         ...controller.config.recipes
                             .where((recipe) =>
                                 controller.config
                                     .installation(recipe.installationId)
                                     ?.category ==
                                 category)
-                            .map((recipe) {
-                          final known =
-                              ElevageDomain.recipeKnown(state, recipe);
-                          final definition = controller.config
-                              .installation(recipe.installationId);
-                          final environment = ElevageDomain.environment(
-                              state, alcoveId, controller.config);
-                          return ListTile(
-                              isThreeLine: known,
-                              minLeadingWidth: 28,
-                              leading: Icon(definition == null
-                                  ? Icons.help_outline
-                                  : ElevagePresentation.installationIcon(
-                                      definition.id)),
-                              title: Text(
-                                  known ? recipe.label : 'Recette inconnue',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis),
-                              subtitle: known
-                                  ? Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: <Widget>[
-                                        Text(<String>[
-                                          if (recipe.organic > 0)
-                                            '${recipe.organic} Organique',
-                                          if (recipe.mineral > 0)
-                                            '${recipe.mineral} Minéral',
-                                          ...recipe.special.entries.map((entry) =>
-                                              '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}'),
-                                        ].join(' · ')),
-                                        if (definition != null)
-                                          Text(
-                                              _installationImpactSentence(
-                                                  definition),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                  fontSize: 11,
-                                                  fontStyle: FontStyle.italic)),
-                                      ],
-                                    )
-                                  : null,
-                              onTap: !known || definition == null
-                                  ? null
-                                  : () => _showInstallationDetails(
-                                      sheetContext,
-                                      controller.config,
-                                      definition,
-                                      environment),
-                              trailing: known
-                                  ? SizedBox(
-                                      width: 100,
-                                      child: FilledButton(
-                                          onPressed: () async {
-                                            await controller.craft(recipe);
-                                            if (sheetContext.mounted &&
-                                                controller.error == null) {
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(SnackBar(
-                                                      content: Text(
-                                                          '${recipe.label} a été bio-fabriqué.')));
-                                              Navigator.pop(sheetContext);
-                                            }
-                                          },
-                                          child: const Text('Fabriquer')))
-                                  : null);
-                        })
+                            .map((recipe) => _biofabricatorRecipeTile(
+                                sheetContext: sheetContext,
+                                controller: controller,
+                                state: state,
+                                alcoveId: alcoveId,
+                                recipe: recipe))
                     ])));
       });
+}
+
+const Map<String, Set<String>> _structureCatalogGroups = <String, Set<String>>{
+  'Énergie': <String>{'BIOGENERATOR'},
+  'Chauffage': <String>{'FOUR_BIO_ORGANIQUE'},
+  'Ventilation': <String>{'VENTILATION'},
+  'Structuration': <String>{
+    'FORMATION_MINERALE',
+    'FORMATION_METALLIQUE',
+    'FORMATION_CRISTALLINE',
+    'BOSQUET_SYMBIOTIQUE',
+    'COLONIE_MYCELIENNE',
+  },
+  'Production': <String>{
+    'CULTURE_POTAGERE',
+    'BUTTE_ARBUSTE',
+    'SUPPORT_FONGIQUE',
+  },
+};
+
+Widget _biofabricatorRecipeTile({
+  required BuildContext sheetContext,
+  required ElevageController controller,
+  required ElevageSave state,
+  required String alcoveId,
+  required ElevageRecipe recipe,
+}) {
+  final known = ElevageDomain.recipeKnown(state, recipe);
+  final definition = controller.config.installation(recipe.installationId);
+  final environment =
+      ElevageDomain.environment(state, alcoveId, controller.config);
+  return ListTile(
+      isThreeLine: known,
+      minLeadingWidth: 28,
+      leading: Icon(definition == null
+          ? Icons.help_outline
+          : ElevagePresentation.installationIcon(definition.id)),
+      title: Text(known ? recipe.label : 'Recette inconnue',
+          maxLines: 2, overflow: TextOverflow.ellipsis),
+      subtitle: known
+          ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(<String>[
+                if (recipe.organic > 0) '${recipe.organic} Organique',
+                if (recipe.mineral > 0) '${recipe.mineral} Minéral',
+                ...recipe.special.entries.map((entry) =>
+                    '${entry.value} ${ElevagePresentation.itemLabel(entry.key)}'),
+              ].join(' · ')),
+              if (definition != null)
+                Text(_installationImpactSentence(definition),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11, fontStyle: FontStyle.italic)),
+            ])
+          : null,
+      onTap: !known || definition == null
+          ? null
+          : () => _showInstallationDetails(
+              sheetContext, controller.config, definition, environment),
+      trailing: known
+          ? SizedBox(
+              width: 100,
+              child: FilledButton(
+                  onPressed: () async {
+                    await controller.craft(recipe);
+                    if (sheetContext.mounted && controller.error == null) {
+                      ScaffoldMessenger.of(sheetContext).showSnackBar(SnackBar(
+                          content:
+                              Text('${recipe.label} a été bio-fabriqué.')));
+                      Navigator.pop(sheetContext);
+                    }
+                  },
+                  child: const Text('Fabriquer')))
+          : null);
 }
 
 String _installationImpactSentence(ElevageInstallationDefinition definition) {

@@ -2632,17 +2632,21 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
     'loanReturnDelayDays': 21,
     'startingBioBatteryCount': 2,
     'bioBatteryEnergy': 10,
-    'bioBatteryRecipe': <String, dynamic>{
+    // Bio-batteries are onboarding/relief objects, not crafted from biology.
+    // This legacy key is deliberately empty for save compatibility.
+    'bioBatteryRecipe': <String, dynamic>{},
+    // Prototype accessible dans le Bio-fabricateur. La recette Target reste
+    // volontairement à arbitrer avec la future Lisière V2.
+    'biogeneratorRecipe': <String, dynamic>{
       'organic': 5,
       'mineral': 5,
       'special': <String, int>{'MUSHROOM': 1, 'ALGAE': 1, 'SALT': 5},
     },
-    // Prototype accessible dans le Bio-fabricateur. La recette Target reste
-    // volontairement à arbitrer avec la future Lisière V2.
-    'biogeneratorRecipe': <String, dynamic>{
-      'organic': 8,
-      'mineral': 6,
-      'special': <String, int>{'MUSHROOM': 2, 'ALGAE': 2, 'SALT': 2},
+    'batteryExport': <String, dynamic>{
+      'organic': 1,
+      'mineral': 1,
+      'energy': 100,
+      'sellValueBiopile': 10,
     },
     'biogenerator': <String, dynamic>{
       'organicTankCapacity': 30,
@@ -2664,6 +2668,8 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'shiverBurstDuration': 650,
       'shiverPauseDuration': 1800,
       'babyVocalCooldownSeconds': 3,
+      'juvenileNeedCooldown': 7,
+      'needPictogramEnabled': true,
     },
     // These pools express access, never a hidden preference. The Mature list
     // is intentionally a complete compatible catalogue that can grow later.

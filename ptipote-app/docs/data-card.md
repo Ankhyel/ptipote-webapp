@@ -1331,3 +1331,41 @@ L’Eau n’est pas une ressource globale du Camp.
   Les hooks `companionPtipoteId`, bonus Pisteur et biais Type sont présents
   dans le run mais volontairement inactifs : aucun compagnon, bonus métier,
   stamina P’TIPOTE, autonomie Mature ou équipement n’est appliqué dans ce lot.
+
+# Lot 21.6 — Correctif comportemental et énergie unifiée
+
+- **Inconfort non bloquant.** Le froid est un `DISCOMFORT_STATE`, évalué à
+  chaque recalcul effectif d’environnement (pose, retrait ou déplacement d’une
+  Structure, changement jour/nuit, changement de zone, entrée/sortie d’un Nid
+  et module). Il ne peut plus occuper la machine d’actions. Le visuel oscille
+  horizontalement par rafales/pause pendant `IDLE`, déplacement ou recherche de
+  zone, et s’arrête dès que l’environnement ressenti redevient acceptable.
+  Baby vocalise `Nnh…` au plus une fois toutes les trois secondes. L’ancienne
+  main/doigt était l’icône Flutter `pan_tool_alt_outlined` de l’action interne
+  `PICKUP`; le nettoyage systématique de fin de cycle empêche désormais qu’une
+  action interrompue reste affichée.
+- **Ressenti et demande.** `DISCOMFORT_STATE` (par exemple « j’ai froid »)
+  est distinct de `EXPRESSED_NEED` (par exemple « je veux de la chaleur »).
+  Baby reste corporel/onomatopéique. Un Juvénile froid peut demander
+  `Pti ! 🔥`, puis `veux chaleur 🔥` une fois le concept appris; Mature peut
+  employer une phrase complète. Le même mapping générique couvre lumière,
+  ombre, humidité, sécheresse et repos. Les représentations individuelles
+  utilisent l’icône pattes P’TIPOTE, jamais une icône de Nature.
+- **Emplacement énergétique unique.** L’UI de l’Alcôve regroupe toujours
+  l’énergie locale, la Bio-batterie et le Biogénérateur au même emplacement
+  technique hors Z1–Z4. Vide, il propose les deux installations. Avec un
+  Biogénérateur, les cuves et le compteur `⚡` restent réunis et un carré `+`
+  permet d’insérer une Bio-batterie de secours. L’ordre de consommation est
+  strictement : Energy locale, charge de Bio-batterie, puis cycle possible du
+  Biogénérateur; il n’existe plus de conversion invisible depuis la Réserve.
+- **Recettes corrigées.** La Bio-pile/Bio-batterie est une dotation
+  d’onboarding ou de secours, sans recette `MUSHROOM/ALGAE/SALT`. Cette recette
+  appartient désormais au `BIOGENERATOR` durable : `5 ORGANIC + 5 MINERAL +
+  1 MUSHROOM + 1 ALGAE + 5 SALT`. `BATTERY_EXPORT` est le produit économique
+  distinct : `1 ORGANIC + 1 MINERAL + 100 ENERGY locale`, avec une valeur
+  future de `10 Bio-piles` pour le Sourcier; aucune boutique n’est créée ici.
+- **Catalogue Structures.** Le Bio-fabricateur regroupe les Structures dans
+  des accordéons Chauffage, Ventilation, Structuration et Production; l’accès
+  Énergie expose Biogénérateur et Batterie exportable. Les meubles restent
+  dans leur catalogue séparé. Recettes finales, vente Sourcier et structures
+  d’activité/humidité futures restent à arbitrer.

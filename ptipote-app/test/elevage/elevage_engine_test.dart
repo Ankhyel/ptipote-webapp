@@ -1858,7 +1858,7 @@ void main() {
     expect((reloaded.data['inventory']['special'] as Map)['ALGAE'], 7);
   });
 
-  test('énergie convertit Organic et Mineral seulement quand nécessaire', () {
+  test('énergie ne convertit plus la Réserve sans source locale', () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     final generic = state.data['inventory']['generic'] as Map;
     generic['organic'] = 4;
@@ -1876,9 +1876,12 @@ void main() {
     state = ElevageDomain.refreshAlcove(state, 'alcove-1',
         now + const Duration(hours: 4).inMilliseconds, defaultElevageConfig);
     final after = state.data['inventory']['generic'] as Map;
-    expect(after['organic'], 2);
-    expect(after['mineral'], 1);
-    expect(after['energy'], 8); // 10 created, then two 1-Energy ticks.
+    expect(after['organic'], 4);
+    expect(after['mineral'], 2);
+    expect(after['energy'], 0);
+    final refreshed =
+        ((state.data['alcoves'] as List).first as Map)['slots'][0] as Map;
+    expect(refreshed['maintenanceState']['status'], 'INACTIVE_NO_RESOURCE');
   });
 
   test('structure ENERGY en pause ne crée ni énergie ni stock négatif', () {
@@ -2134,22 +2137,13 @@ void main() {
     expect(ElevageDomain.contribution(state), 10);
   });
 
-  test('Bio-pile respecte la recette et alimente localement la ventilation',
-      () {
+  test('Bio-batterie de départ alimente localement la ventilation', () {
     final target = defaultElevageConfig.copyWith(
         devMode: false, preset: ElevagePreset.target);
     var state = ElevageSave.initial(target, now: now);
     final inventory = state.data['inventory'] as Map;
-    final generic = inventory['generic'] as Map;
-    final special = inventory['special'] as Map;
-    generic['organic'] = 5;
-    generic['mineral'] = 5;
-    special['MUSHROOM'] = 1;
-    special['ALGAE'] = 1;
-    special['SALT'] = 5;
-    state = ElevageDomain.craftBioBattery(state, now, target);
     final batteries = state.data['batteryInventory'] as Map;
-    final batteryId = batteries.keys.last as String;
+    final batteryId = batteries.keys.first as String;
     state = ElevageDomain.insertBattery(state, 'alcove-1', batteryId, now);
     final alcove = (state.data['alcoves'] as List).first as Map;
     alcove['slots'][0] = <String, dynamic>{
@@ -2164,8 +2158,33 @@ void main() {
         now + const Duration(hours: 2).inMilliseconds, target);
     final refreshed = (state.data['alcoves'] as List).first as Map;
     expect((refreshed['batterySlot'] as Map)['currentEnergy'], 9);
-    expect(((state.data['inventory'] as Map)['generic'] as Map)['organic'], 0);
-    expect(((state.data['inventory'] as Map)['generic'] as Map)['mineral'], 0);
+    expect(inventory['generic'], isNotNull);
+  });
+
+  test('Bio-pile n’utilise plus la recette du Biogénérateur', () {
+    final target = defaultElevageConfig.copyWith(
+        devMode: false, preset: ElevagePreset.target);
+    final state = ElevageSave.initial(target, now: now);
+    expect(() => ElevageDomain.craftBioBattery(state, now, target),
+        throwsStateError);
+  });
+
+  test('Batterie exportable consomme la Réserve et 100 Energy locale', () {
+    final target = defaultElevageConfig.copyWith(
+        devMode: false, preset: ElevagePreset.target);
+    var state = ElevageSave.initial(target, now: now);
+    final inventory = state.data['inventory'] as Map;
+    final generic = inventory['generic'] as Map;
+    generic['organic'] = 1;
+    generic['mineral'] = 1;
+    ((state.data['alcoves'] as List).first as Map)['localEnergy'] = 100;
+    state = ElevageDomain.craftBatteryExport(state, 'alcove-1', now, target);
+    final afterInventory = state.data['inventory'] as Map;
+    final afterGeneric = afterInventory['generic'] as Map;
+    expect(afterGeneric['organic'], 0);
+    expect(afterGeneric['mineral'], 0);
+    expect(((state.data['alcoves'] as List).first as Map)['localEnergy'], 0);
+    expect((afterInventory['special'] as Map)['BATTERY_EXPORT'], 1);
   });
 
   test(
@@ -2356,6 +2375,40 @@ void main() {
             individual,
             defaultElevageConfig),
         isNull);
+  });
+
+  test('besoin exprimé est distinct de l’inconfort corporel', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Hawl',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    const cold = <String, int>{'light': 3, 'temperature': 1, 'humidity': 2};
+    expect(
+        ElevageDomain.expressedEnvironmentalNeed(
+            cold, individual, defaultElevageConfig),
+        isNull);
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    expect(
+        ElevageDomain.expressedEnvironmentalNeed(
+            cold, individual, defaultElevageConfig),
+        <String, String>{'need': 'HEAT', 'axis': 'temperature'});
+    expect(
+        ElevageDomain.environmentalNeedExpression(
+            individual, 'HEAT', defaultElevageConfig),
+        'Pti ! 🔥');
+    individual['conceptExposures'] = <String, dynamic>{
+      'HEAT': <String, int>{'total': 5, 'baby': 0},
+    };
+    expect(
+        ElevageDomain.environmentalNeedExpression(
+            individual, 'HEAT', defaultElevageConfig),
+        'veux chaleur 🔥');
   });
 
   test('Pisteur persiste par individu et reste séparé du stade', () {

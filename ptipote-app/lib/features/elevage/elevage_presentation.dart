@@ -22,6 +22,8 @@ class ElevagePresentation {
     'SALT': _ItemVisual('Sel', Icons.grain_outlined, 'Matériaux'),
     'BIO_BATTERY': _ItemVisual(
         'Bio-pile', Icons.battery_charging_full_outlined, 'Ressources'),
+    'BATTERY_EXPORT':
+        _ItemVisual('Batterie', Icons.battery_saver_outlined, 'Ressources'),
     'ORGANIC': _ItemVisual('Organique', Icons.spa_outlined, 'Ressources'),
     'MINERAL': _ItemVisual('Minéral', Icons.category_outlined, 'Ressources'),
     'ENERGY': _ItemVisual('Énergie', Icons.bolt_outlined, 'Ressources'),

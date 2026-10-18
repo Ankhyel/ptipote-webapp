@@ -178,6 +178,9 @@ class ElevageController extends ChangeNotifier {
       (current) => ElevageDomain.craftModule(current, module, _now, config));
   Future<void> craftBioBattery() => _mutate(
       (current) => ElevageDomain.craftBioBattery(current, _now, config));
+
+  Future<void> craftBatteryExport(String alcoveId) => _mutate((current) =>
+      ElevageDomain.craftBatteryExport(current, alcoveId, _now, config));
   Future<void> insertBattery(String alcoveId, String batteryInstanceId) =>
       _mutate((current) => ElevageDomain.insertBattery(
           current, alcoveId, batteryInstanceId, _now));

@@ -1394,34 +1394,31 @@ class ElevageDomain {
 
   static ElevageSave craftBioBattery(
       ElevageSave source, int now, ElevageConfig config) {
+    throw StateError('Les Bio-batteries sont fournies par le Refuge.');
+  }
+
+  static ElevageSave craftBatteryExport(
+      ElevageSave source, String alcoveId, int now, ElevageConfig config) {
     final state = source.copy();
     final recipe = Map<String, dynamic>.from(
-        config.refugeProgression['bioBatteryRecipe'] as Map? ??
+        config.refugeProgression['batteryExport'] as Map? ??
             const <dynamic, dynamic>{});
+    final organic = (recipe['organic'] as num?)?.toInt() ?? 1;
+    final mineral = (recipe['mineral'] as num?)?.toInt() ?? 1;
+    final energy = (recipe['energy'] as num?)?.toInt() ?? 100;
     final generic = _generic(state);
-    final special = _special(state);
-    final organic = (recipe['organic'] as num?)?.toInt() ?? 5;
-    final mineral = (recipe['mineral'] as num?)?.toInt() ?? 5;
-    final parts = Map<String, dynamic>.from(
-        recipe['special'] as Map? ?? const <dynamic, dynamic>{});
+    final alcove = _alcove(state, alcoveId);
+    final local = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
     if ((generic['organic'] ?? 0) < organic ||
         (generic['mineral'] ?? 0) < mineral ||
-        parts.entries.any((entry) =>
-            (special[entry.key] ?? 0) < (entry.value as num).toInt())) {
-      throw StateError('Ressources insuffisantes pour une Bio-pile.');
+        local < energy) {
+      throw StateError('Ressources ou énergie insuffisantes.');
     }
     generic['organic'] = generic['organic']! - organic;
     generic['mineral'] = generic['mineral']! - mineral;
-    parts.forEach(
-        (key, value) => special[key] = special[key]! - (value as num).toInt());
-    final id = 'battery-$now-${_batteryInventory(state).length}';
-    _batteryInventory(state)[id] = <String, dynamic>{
-      'instanceId': id,
-      'itemId': 'BIO_BATTERY',
-      'currentEnergy': config.bioBatteryEnergy,
-      'maxEnergy': config.bioBatteryEnergy,
-      'craftedAt': now,
-    };
+    alcove['localEnergy'] = local - energy;
+    final special = _special(state);
+    special['BATTERY_EXPORT'] = (special['BATTERY_EXPORT'] ?? 0) + 1;
     return state;
   }
 
@@ -2524,22 +2521,69 @@ class ElevageDomain {
     if (signal == null) return null;
     final comfort = signal['comfort'];
     if (comfort != 'BAD' && comfort != 'EXTREME') return null;
-    final stage =
-        ((individual['lifecycle'] as Map?)?['stage'] as String?) ?? 'BABY';
     final icon = signal['icon'];
     return <String, String>{
       ...signal,
-      'body': stage == 'BABY' &&
-              icon == 'DISCOMFORT' &&
-              signal['axis'] == 'temperature' &&
-              signal['direction'] == 'TOO_LOW'
-          ? 'SHIVER'
-          : icon == 'HOT'
-              ? 'SWEAT'
-              : icon == 'DRY'
-                  ? 'DRY'
-                  : 'DISCOMFORT',
+      // The body layer is independent from the action machine. Cold is
+      // therefore visible while the P'TIPOTE is idle, moving or waiting.
+      'body':
+          signal['axis'] == 'temperature' && signal['direction'] == 'TOO_LOW'
+              ? 'SHIVER'
+              : icon == 'HOT'
+                  ? 'SWEAT'
+                  : icon == 'DRY'
+                      ? 'DRY'
+                      : 'DISCOMFORT',
     };
+  }
+
+  /// What can be asked for is not what is felt: a cold individual asks for
+  /// heat, while their [ambientEnvironmentalFeedback] still says "cold".
+  static Map<String, String>? expressedEnvironmentalNeed(
+      Map<String, int> environment, Map individual, ElevageConfig config) {
+    final discomfort =
+        ambientEnvironmentalFeedback(environment, individual, config);
+    if (discomfort == null ||
+        ((individual['lifecycle'] as Map?)?['stage'] as String?) == 'BABY') {
+      return null;
+    }
+    final axis = discomfort['axis'];
+    final direction = discomfort['direction'];
+    final need = switch ('$axis:$direction') {
+      'temperature:TOO_LOW' => 'HEAT',
+      'temperature:TOO_HIGH' => 'COOL',
+      'light:TOO_LOW' => 'LIGHT',
+      'light:TOO_HIGH' => 'SHADE',
+      'humidity:TOO_LOW' => 'HUMIDITY',
+      _ => 'DRYNESS',
+    };
+    return <String, String>{'need': need, 'axis': axis ?? ''};
+  }
+
+  static String environmentalNeedExpression(
+      Map individual, String need, ElevageConfig config) {
+    final stage =
+        ((individual['lifecycle'] as Map?)?['stage'] as String?) ?? 'BABY';
+    final details = switch (need) {
+      'HEAT' => <String>['chaleur', '🔥'],
+      'COOL' => <String>['fraîcheur', '💧'],
+      'LIGHT' => <String>['lumière', '☀️'],
+      'SHADE' => <String>['ombre', '🌑'],
+      'HUMIDITY' => <String>['humidité', '💦'],
+      _ => <String>['sec', '🍂'],
+    };
+    if (stage == 'MATURE') {
+      return 'Je voudrais ${details.first} ${details.last}';
+    }
+    final exposure = ((individual['conceptExposures'] as Map?)?[need] as Map?);
+    final total = (exposure?['total'] as num?)?.toInt() ?? 0;
+    final baby = (exposure?['baby'] as num?)?.toInt() ?? 0;
+    final threshold = baby > 0
+        ? config.juvenileBabyKnownConceptWordThreshold
+        : config.juvenileNewConceptWordThreshold;
+    return total >= threshold
+        ? 'veux ${details.first} ${details.last}'
+        : 'Pti ! ${details.last}';
   }
 
   static Map<String, dynamic> trackerProfession(
@@ -3439,9 +3483,19 @@ class ElevageDomain {
       final alcoveId = raw['alcoveId'] as String?;
       final alcove = alcoveId == null ? null : _alcove(state, alcoveId);
       final battery = alcove?['batterySlot'];
+      final generator = alcove?['biogeneratorSlot'];
+      var generatorPotential = 0;
+      if (generator is Map) {
+        final tanks = _generatorTanks(generator);
+        final profile = biogeneratorCycleProfile(generator, config);
+        generatorPotential = min((tanks['organic'] ?? 0) ~/ profile['organic']!,
+                (tanks['mineral'] ?? 0) ~/ profile['mineral']!) *
+            profile['energy']!;
+      }
       final available = ((alcove?['localEnergy'] as num?)?.toInt() ?? 0) +
           ((battery is Map ? battery['currentEnergy'] : 0) as num? ?? 0)
-              .toInt();
+              .toInt() +
+          generatorPotential;
       final missingEnergy =
           max(0, specification.energyCost - available.toInt());
       return missingEnergy == 0
@@ -3531,16 +3585,7 @@ class ElevageDomain {
                 (tanks['mineral'] ?? 0) ~/ profile['mineral']!) *
             profile['energy']!;
       }
-      final legacyPotential = config.preset == ElevagePreset.prototype
-          ? (generic['energy'] ?? 0) +
-              min((generic['organic'] ?? 0) ~/ config.energyOrganicCost,
-                      (generic['mineral'] ?? 0) ~/ config.energyMineralCost) *
-                  config.energyProduced
-          : 0;
-      if (initialLocal +
-              batteryPotential +
-              generatorPotential +
-              legacyPotential <
+      if (initialLocal + batteryPotential + generatorPotential <
           specification.energyCost) {
         return false;
       }
@@ -3570,26 +3615,7 @@ class ElevageDomain {
           remaining -= consumed;
         }
       }
-      if (remaining > 0) {
-        // Compatibility only for the pre-21.3 Prototype preset. Target
-        // Alcôves never turn Organic/Mineral into invisible local power.
-        if (config.preset == ElevagePreset.prototype) {
-          while ((generic['energy'] ?? 0) < remaining) {
-            if ((generic['organic'] ?? 0) < config.energyOrganicCost ||
-                (generic['mineral'] ?? 0) < config.energyMineralCost) {
-              return false;
-            }
-            generic['organic'] = generic['organic']! - config.energyOrganicCost;
-            generic['mineral'] = generic['mineral']! - config.energyMineralCost;
-            generic['energy'] =
-                (generic['energy'] ?? 0) + config.energyProduced;
-          }
-          generic['energy'] = generic['energy']! - remaining;
-          return true;
-        }
-        return false;
-      }
-      return true;
+      return remaining == 0;
     }
     if (specification.mode == 'DIRECT_RESOURCE' ||
         specification.mode == 'MULTI_RESOURCE') {
