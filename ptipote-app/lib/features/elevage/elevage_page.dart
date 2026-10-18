@@ -920,8 +920,11 @@ class _IndividualPageState extends State<_IndividualPage> {
         ? ElevagePresentation.sceneObservationFeedback(
             outcome, item['itemId'] as String, individual['name'] as String)
         : null;
-    final action =
-        _sceneActionForOutcome(outcome.behavior, item['itemId'] as String);
+    final action = _sceneActionForOutcome(
+        outcome.behavior, item['itemId'] as String,
+        isStructural: outcome.consumed &&
+            !ElevageDomain.canEat(individual, item['itemId'] as String,
+                widget.controller.config));
     _setSceneAction(action);
     _showSceneExpression(action, individual, itemId: item['itemId'] as String);
     _showSceneFeedback(automatic ? (feedback ?? '') : (feedback ?? ''),
@@ -1142,7 +1145,10 @@ class _IndividualPageState extends State<_IndividualPage> {
 
   Future<void> _openInstallationSlot(
       String alcoveId, int slot, Map<String, int> localEnvironment) async {
-    final alcove = (widget.controller.state!.data['alcoves'] as List)
+    final state = widget.controller.state!;
+    final individual =
+        (state.data['individuals'] as Map)[widget.individualId] as Map;
+    final alcove = (state.data['alcoves'] as List)
         .cast<Map>()
         .firstWhere((entry) => entry['id'] == alcoveId);
     final raw = (alcove['slots'] as List)[slot];
@@ -1186,8 +1192,10 @@ class _IndividualPageState extends State<_IndividualPage> {
                             sheetContext, alcoveId, slot, raw, definition.id);
                         if (sheetContext.mounted) Navigator.pop(sheetContext);
                       }),
-                if (definition?.resonanceMaterial != null ||
-                    definition?.resonanceFamily != null)
+                if ((definition?.resonanceMaterial != null ||
+                        definition?.resonanceFamily != null) &&
+                    ElevageDomain.canResonate(
+                        individual, widget.controller.config))
                   ListTile(
                       leading: const Icon(Icons.diamond_outlined),
                       title: const Text('Entrer en résonance'),
@@ -1219,7 +1227,7 @@ class _IndividualPageState extends State<_IndividualPage> {
                                 leading: Icon(ElevagePresentation.itemIcon(
                                     entry.key as String)),
                                 title: Text(
-                                    '${ElevagePresentation.itemLabel(entry.key as String)} : ${entry.value}/${widget.controller.config.outputsFor(definition!.id).where((output) => output.resourceId == entry.key).map((output) => output.maxLocalStock).firstOrNull ?? widget.controller.config.productionMaxStock}'),
+                                    '${ElevagePresentation.itemLabel(entry.key as String)} : ${entry.value}/${ElevageDomain.effectiveProducerOutputs(raw, definition!.id, widget.controller.config).where((output) => output.resourceId == entry.key).map((output) => output.maxLocalStock).firstOrNull ?? widget.controller.config.productionMaxStock}'),
                                 trailing: OutlinedButton(
                                   onPressed: () async {
                                     await widget.controller.harvestLocal(
@@ -1347,8 +1355,14 @@ class _IndividualPageState extends State<_IndividualPage> {
     final environment = ElevageDomain.averageZoneEnvironment(
         state, alcoveId, controller.config,
         now: now, phaseOverride: controller.forcedDayNightPhase);
-    final localEnvironment =
+    final rawLocalEnvironment =
         zoneEnvironments[_ptipoteZoneId] ?? const <String, int>{};
+    final localEnvironment = ElevageDomain.environmentExperiencedByPtipote(
+        state,
+        widget.individualId,
+        _ptipoteZoneId,
+        rawLocalEnvironment,
+        controller.config);
     final ambient = ElevageDomain.ambientEnvironmentalFeedback(
         localEnvironment, individual, controller.config);
     final ambientVoice = ambient == null ||
@@ -3700,6 +3714,31 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
               ),
             );
           }),
+          if (widget.config.showProducerStockBubble)
+            ...widget.slots.asMap().entries.map((entry) {
+              final raw = entry.value;
+              if (raw is! Map) return const SizedBox.shrink();
+              final definition = widget.config
+                  .installation(raw['definitionId'] as String? ?? '');
+              if (definition?.productive != true) {
+                return const SizedBox.shrink();
+              }
+              final stock = ((raw['productionState']
+                      as Map?)?['availableByItemId'] as Map?) ??
+                  const <dynamic, dynamic>{};
+              final outputs = ElevageDomain.effectiveProducerOutputs(
+                  raw, definition!.id, widget.config);
+              return AnimatedAlign(
+                duration: const Duration(milliseconds: 180),
+                alignment: <Alignment>[
+                  const Alignment(-.75, .45),
+                  const Alignment(-.25, .45),
+                  const Alignment(.25, .45),
+                  const Alignment(.75, .45),
+                ][entry.key],
+                child: _ProducerStockBubble(outputs: outputs, stock: stock),
+              );
+            }),
           if (installed.isEmpty)
             const Center(child: Text('Un foyer calme, prêt à être aménagé.')),
           AnimatedAlign(
@@ -3815,6 +3854,42 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
   }
 }
 
+class _ProducerStockBubble extends StatelessWidget {
+  const _ProducerStockBubble({required this.outputs, required this.stock});
+
+  final List<ElevageProductionOutput> outputs;
+  final Map stock;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Material(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: .9),
+        borderRadius: BorderRadius.circular(9),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: outputs
+                .map((output) => Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(ElevagePresentation.itemIcon(output.resourceId),
+                          size: 12),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${(stock[output.resourceId] as num?)?.toInt() ?? 0}/${output.maxLocalStock}',
+                        style: const TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.w800),
+                      ),
+                    ]))
+                .toList(growable: false),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 IconData _reactionIcon(String? behavior) => switch (behavior) {
       'RUSH_SHAKE' => Icons.priority_high,
       'VIBRATE' => Icons.hexagon_outlined,
@@ -3826,13 +3901,15 @@ IconData _reactionIcon(String? behavior) => switch (behavior) {
       _ => Icons.arrow_forward,
     };
 
-String _sceneActionForOutcome(String behavior, String itemId) =>
+String _sceneActionForOutcome(String behavior, String itemId,
+        {bool isStructural = false}) =>
     switch (behavior) {
       'RUSH_SHAKE' => 'EAT',
-      'APPROACH' when ElevageDomain.structuralItems.contains(itemId) =>
-        'STRUCTURAL_ABSORB',
+      'APPROACH' when isStructural => 'STRUCTURAL_ABSORB',
       'APPROACH' => 'EAT',
       'VIBRATE' => 'STRUCTURAL_ABSORB',
+      'SNIFF' => 'INSPECT_ITEM',
+      'STRUCTURAL_INTEREST' => 'THINK',
       'STEP_BACK' => 'REJECT',
       'MOVE_ITEM' => 'MOVE_ITEM',
       'PICKUP' => 'PICKUP',
@@ -4248,6 +4325,8 @@ String _clockLabel(int remainingMs) {
 IconData _actionIcon(String? action, String stage) => switch (action) {
       'MOVE' => Icons.directions_walk_outlined,
       'NOTICE_ITEM' || 'INSPECT_ITEM' || 'CURIOUS' => Icons.visibility_outlined,
+      'SNIFF' => Icons.sensors_outlined,
+      'STRUCTURAL_INTEREST' => Icons.auto_awesome_outlined,
       'APPROACH_ITEM' || 'FOLLOW' => Icons.arrow_forward,
       'THINK' => Icons.question_mark,
       'IGNORE' => Icons.more_horiz,

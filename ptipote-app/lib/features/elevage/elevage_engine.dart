@@ -362,6 +362,8 @@ class ElevageDomain {
     'IRON',
     'LIMESTONE',
     'QUARTZ',
+    'SEED',
+    'SPORE',
   ];
 
   /// Tout le loot spécifique actuellement atteignable dans la Mini-Lisière.
@@ -382,7 +384,7 @@ class ElevageDomain {
   ];
 
   /// Free resources that can physically exist in an Alcôve. Seeds and spores
-  /// stay in the Refuge reserve for now: they have no valid scene behaviour.
+  /// are now inspectable by Babies and structurally usable from Intermediate.
   static const Set<String> placeableSceneItems = <String>{
     'ROOT',
     'LEAF',
@@ -395,7 +397,57 @@ class ElevageDomain {
     'IRON',
     'LIMESTONE',
     'QUARTZ',
+    'SEED',
+    'SPORE',
   };
+
+  static List<String> structuralResourcesForFamily(String family) =>
+      switch (family) {
+        'VEGETAL' => const <String>['SEED'],
+        'FUNGAL' => const <String>['SPORE'],
+        _ => const <String>['IRON', 'LIMESTONE', 'QUARTZ'],
+      };
+
+  static List<String> accessibleFoodPool(Map individual, ElevageConfig config) {
+    final family = individual['family'] as String? ?? 'MINERAL';
+    final stage =
+        (individual['lifecycle'] as Map?)?['stage'] as String? ?? 'BABY';
+    if (stage == 'MATURE') {
+      return config.foodPool(family, 'matureCompatibleFoodPool');
+    }
+    final pool = <String>[...config.foodPool(family, 'babyFoodPool')];
+    if (stage == 'INTERMEDIATE') {
+      pool.addAll(config.foodPool(family, 'intermediateFoodUnlocks'));
+    }
+    return pool.toSet().toList(growable: false);
+  }
+
+  static bool canEat(Map individual, String itemId, ElevageConfig config) =>
+      treatItems.contains(itemId) ||
+      accessibleFoodPool(individual, config).contains(itemId);
+
+  static bool isFutureCompatibleFood(
+          Map individual, String itemId, ElevageConfig config) =>
+      config
+          .foodPool(individual['family'] as String? ?? 'MINERAL',
+              'matureCompatibleFoodPool')
+          .contains(itemId) &&
+      !canEat(individual, itemId, config);
+
+  static bool canAbsorb(Map individual, String itemId, ElevageConfig config) {
+    final stage =
+        (individual['lifecycle'] as Map?)?['stage'] as String? ?? 'BABY';
+    return config.stageAbility(stage, 'canAbsorb', stage != 'BABY') &&
+        structuralResourcesForFamily(
+                individual['family'] as String? ?? 'MINERAL')
+            .contains(itemId);
+  }
+
+  static bool canResonate(Map individual, ElevageConfig config) {
+    final stage =
+        (individual['lifecycle'] as Map?)?['stage'] as String? ?? 'BABY';
+    return config.stageAbility(stage, 'canResonate', stage != 'BABY');
+  }
 
   /// Répartition provisoire commune V0 : elle est volontairement centralisée
   /// ici pour que chaque axe puisse recevoir sa propre pondération plus tard.
@@ -855,8 +907,8 @@ class ElevageDomain {
       _adjustWellbeing(individual, 2, now);
       return state;
     }
-    if (!foodItems.contains(item)) {
-      throw StateError('Cet objet ne nourrit pas Résonance.');
+    if (!canEat(individual, item, config)) {
+      throw StateError('Cet aliment n’est pas encore accessible à ce stade.');
     }
     if (!canOfferNormalFood(state, id, now, config)) {
       throw StateError('P’TIPOTE n’a pas faim.');
@@ -901,18 +953,21 @@ class ElevageDomain {
       [ElevageConfig? config]) {
     final state = source.copy();
     final individual = _individual(state, id);
-    final gains = <String, int>{'IRON': 2, 'LIMESTONE': 1, 'QUARTZ': 0};
+    final resolvedConfig = config ?? defaultElevageConfig;
+    if (!canAbsorb(individual, item, resolvedConfig)) {
+      throw StateError('Cette ressource ne peut pas encore être absorbée.');
+    }
+    final gains = <String, int>{
+      'IRON': 2,
+      'LIMESTONE': 1,
+      'QUARTZ': 1,
+      'SEED': 1,
+      'SPORE': 1,
+    };
     final gain = gains[item];
     if (gain == null) throw StateError('Matériau inconnu.');
     final special = _special(state);
     if ((special[item] ?? 0) < 1) throw StateError('Matériau non disponible.');
-    if (gain == 0) {
-      final count = _observe(individual, 'STRUCTURAL_AVOIDED', now,
-          relatedItemId: item, config: config ?? defaultElevageConfig);
-      _setObservationStatus(individual, 'STRUCTURAL_AVOIDED:$item', count,
-          config ?? defaultElevageConfig, now);
-      return state;
-    }
     special[item] = special[item]! - 1;
     final intake =
         individual['care']['structuralIntake'] as Map<String, dynamic>;
@@ -923,9 +978,9 @@ class ElevageDomain {
     individual['activeRequest'] = null;
     _adjustWellbeing(individual, 1, now);
     final count = _observe(individual, 'STRUCTURAL_REACTION', now,
-        relatedItemId: item, config: config ?? defaultElevageConfig);
-    _setObservationStatus(individual, 'STRUCTURAL_REACTION:$item', count,
-        config ?? defaultElevageConfig, now);
+        relatedItemId: item, config: resolvedConfig);
+    _setObservationStatus(
+        individual, 'STRUCTURAL_REACTION:$item', count, resolvedConfig, now);
     return state;
   }
 
@@ -1518,8 +1573,21 @@ class ElevageDomain {
     item['interactionCount'] =
         (item['interactionCount'] as num? ?? 0).toInt() + 1;
     item['lastUsedAt'] = now;
+    if (definition!.experiencedLightDelta != 0 ||
+        definition.experiencedTemperatureDelta != 0 ||
+        definition.experiencedHumidityDelta != 0) {
+      individual['activeComfortFurniture'] = <String, dynamic>{
+        'instanceId': item['instanceId'],
+        'definitionId': definition.id,
+        'zoneId': item['zoneId'],
+      };
+    } else {
+      // A comfort effect is tied to the current activity, never to a zone
+      // forever. Starting another furniture activity ends the nest effect.
+      individual.remove('activeComfortFurniture');
+    }
     final posed = personalityValue(individual, 'tempo') >= .5;
-    final boost = definition!.wellbeingImpact +
+    final boost = definition.wellbeingImpact +
         ((definition.activity == 'REST' || definition.activity == 'READ') &&
                 posed
             ? 1
@@ -1527,6 +1595,16 @@ class ElevageDomain {
     _adjustWellbeing(individual, boost, now);
     _interaction(individual, 'FURNITURE_${definition.activity ?? 'USE'}',
         tempo: definition.activity == 'PLAY' ? -1 : 1);
+    return state;
+  }
+
+  /// Ends an individual comfort activity without changing the raw zone. The
+  /// presentation calls this when the P'TIPOTE leaves its nest; keeping it in
+  /// the domain also makes the transition deterministic for saves and tests.
+  static ElevageSave stopUsingComfortFurniture(
+      ElevageSave source, String individualId) {
+    final state = source.copy();
+    _individual(state, individualId).remove('activeComfortFurniture');
     return state;
   }
 
@@ -1627,8 +1705,8 @@ class ElevageDomain {
       String alcoveId, String instanceId, int now, ElevageConfig config) {
     final state = source.copy();
     final individual = _individual(state, individualId);
-    if ((individual['lifecycle'] as Map)['stage'] == 'BABY') {
-      throw StateError('La résonance autonome demande un stade plus avancé.');
+    if (!canResonate(individual, config)) {
+      throw StateError('La résonance demande un stade plus avancé.');
     }
     Map? slot;
     for (final entry
@@ -1754,15 +1832,15 @@ class ElevageDomain {
     if (item == null) throw StateError('Objet posé introuvable.');
     final individual = _individual(state, individualId);
     final itemId = item['itemId'] as String;
-    final effective = zoneEnvironment(
+    final rawEnvironment = zoneEnvironment(
         state, alcoveId, item['zoneId'] as String, config,
         now: now, phaseOverride: phaseOverride);
+    final effective = environmentExperiencedByPtipote(
+        state, individualId, item['zoneId'] as String, rawEnvironment, config);
     final favorite = individual['generatedProfile']['foodPreference'] as String;
     final isInteresting = itemId == favorite ||
         treatItems.contains(itemId) ||
-        itemId == 'IRON' ||
-        itemId == 'LIMESTONE' ||
-        itemId == 'QUARTZ';
+        structuralItems.contains(itemId);
     final comfort = localComfort(effective, config, individual: individual);
 
     // Un objet pertinent dans une zone défavorable est d'abord saisi, puis
@@ -1781,17 +1859,19 @@ class ElevageDomain {
             _observationCount(individual, 'HUMIDITY_AVOIDANCE:$itemId') + 1,
       );
     }
-    if (itemId == 'QUARTZ') {
-      return ElevageSceneItemOutcome(
-          behavior: 'STEP_BACK',
-          observationCount:
-              _observationCount(individual, 'STRUCTURAL_AVOIDED:QUARTZ') + 1);
-    }
     if (treatItems.contains(itemId)) {
       return const ElevageSceneItemOutcome(
           behavior: 'RUSH_SHAKE', observationCount: 0, consumed: true);
     }
-    if (foodItems.contains(itemId)) {
+    if (foodItems.contains(itemId) ||
+        isFutureCompatibleFood(individual, itemId, config) ||
+        canEat(individual, itemId, config)) {
+      // A locked, later-compatible food is curiosity only. It must neither
+      // consume the object nor leak the individual food preference early.
+      if (!canEat(individual, itemId, config)) {
+        return const ElevageSceneItemOutcome(
+            behavior: 'SNIFF', observationCount: 0);
+      }
       if (!canOfferNormalFood(state, individualId, now, config)) {
         return const ElevageSceneItemOutcome(
             behavior: 'OBSERVE', observationCount: 0);
@@ -1804,7 +1884,15 @@ class ElevageDomain {
         consumed: true,
       );
     }
-    if (itemId == 'IRON' || itemId == 'LIMESTONE') {
+    if (structuralItems.contains(itemId)) {
+      if (!canAbsorb(individual, itemId, config)) {
+        final interesting = structuralResourcesForFamily(
+                individual['family'] as String? ?? 'MINERAL')
+            .contains(itemId);
+        return ElevageSceneItemOutcome(
+            behavior: interesting ? 'STRUCTURAL_INTEREST' : 'OBSERVE',
+            observationCount: 0);
+      }
       return ElevageSceneItemOutcome(
         behavior: itemId == 'IRON' ? 'VIBRATE' : 'APPROACH',
         observationCount:
@@ -1877,9 +1965,14 @@ class ElevageDomain {
     // same atomic domain operation, then the placed instance is removed.
     final special = _special(state);
     special[item] = (special[item] ?? 0) + 1;
-    final consumed = structuralItems.contains(item)
-        ? offerStructural(state, individualId, item, now, config)
-        : offerFood(state, individualId, item, now, config);
+    // Some resources (notably LIMESTONE for a Vegetal) can be food for one
+    // Type and structural matter for another. Access is decided by the active
+    // stage/type pool before falling back to structural absorption.
+    final consumed = canEat(individual, item, config)
+        ? offerFood(state, individualId, item, now, config)
+        : structuralItems.contains(item)
+            ? offerStructural(state, individualId, item, now, config)
+            : offerFood(state, individualId, item, now, config);
     final consumedItems = _sceneItems(consumed, alcoveId);
     consumedItems
         .removeWhere((sceneItem) => sceneItem['instanceId'] == instanceId);
@@ -1937,6 +2030,46 @@ class ElevageDomain {
     // L’environnement est désormais une donnée métier 0–5, jamais une
     // valeur relative négative masquée uniquement par l’interface.
     return result.map((key, value) => MapEntry(key, value.clamp(0, 5)));
+  }
+
+  /// Applies a comfort item only to its current user. Raw zone values and
+  /// their HUD/diffusion are never altered by a nest.
+  static Map<String, int> experiencedEnvironment(
+      Map<String, int> raw, ElevageInstallationDefinition? furniture) {
+    if (furniture?.category != 'MEUBLE') return Map<String, int>.from(raw);
+    return <String, int>{
+      'light': ((raw['light'] ?? 0) + furniture!.experiencedLightDelta)
+          .clamp(0, 5)
+          .toInt(),
+      'temperature':
+          ((raw['temperature'] ?? 0) + furniture.experiencedTemperatureDelta)
+              .clamp(0, 5)
+              .toInt(),
+      'humidity': ((raw['humidity'] ?? 0) + furniture.experiencedHumidityDelta)
+          .clamp(0, 5)
+          .toInt(),
+    };
+  }
+
+  static Map<String, int> environmentExperiencedByPtipote(
+      ElevageSave state,
+      String individualId,
+      String currentZoneId,
+      Map<String, int> raw,
+      ElevageConfig config) {
+    final individual = _individual(state, individualId);
+    final active = individual['activeComfortFurniture'] as Map?;
+    if (active == null || active['zoneId'] != currentZoneId) {
+      return Map<String, int>.from(raw);
+    }
+    final alcoveId = individual['alcoveId'] as String?;
+    final stillUsing = alcoveId != null &&
+        habitatItems(state, alcoveId).any((item) =>
+            item['instanceId'] == active['instanceId'] &&
+            item['zoneId'] == currentZoneId);
+    if (!stillUsing) return Map<String, int>.from(raw);
+    return experiencedEnvironment(
+        raw, config.installation(active['definitionId'] as String? ?? ''));
   }
 
   /// Les effets ±1 sont strictement locaux. Les effets de magnitude ≥2
@@ -2282,9 +2415,57 @@ class ElevageDomain {
       {String? phaseOverride, String? excludingZoneId, Map? individual}) {
     return bestZoneFromEnvironment(<String, Map<String, int>>{
       for (final zone in config.sceneZones)
-        zone.id: zoneEnvironment(state, alcoveId, zone.id, config,
-            now: now, phaseOverride: phaseOverride),
+        zone.id: _bestExperiencedEnvironmentForZone(
+            state,
+            alcoveId,
+            zone.id,
+            zoneEnvironment(state, alcoveId, zone.id, config,
+                now: now, phaseOverride: phaseOverride),
+            individual,
+            config),
     }, config, excludingZoneId: excludingZoneId, individual: individual);
+  }
+
+  /// A nest never changes a zone's displayed environment. It can however be
+  /// a better destination for rest/sleep because the resident experiences its
+  /// single comfort delta while using it.
+  static Map<String, int> _bestExperiencedEnvironmentForZone(
+      ElevageSave state,
+      String alcoveId,
+      String zoneId,
+      Map<String, int> raw,
+      Map? individual,
+      ElevageConfig config) {
+    if (individual == null) return raw;
+    const severity = <String, int>{
+      'IDEAL': 0,
+      'GOOD': 1,
+      'NEUTRAL': 2,
+      'BAD': 3,
+      'EXTREME': 4,
+    };
+    var best = Map<String, int>.from(raw);
+    var bestScore =
+        severity[localComfort(best, config, individual: individual)]!;
+    for (final item in habitatItems(state, alcoveId)) {
+      if (item['zoneId'] != zoneId) continue;
+      final definition =
+          config.installation(item['definitionId'] as String? ?? '');
+      if (definition == null ||
+          (definition.experiencedLightDelta == 0 &&
+              definition.experiencedTemperatureDelta == 0 &&
+              definition.experiencedHumidityDelta == 0)) {
+        continue;
+      }
+      final experienced = experiencedEnvironment(raw, definition);
+      final score =
+          severity[localComfort(experienced, config, individual: individual)]!;
+      if (score < bestScore) {
+        best = experienced;
+        bestScore = score;
+      }
+    }
+    return best;
   }
 
   static String dayNightPhase(int now, ElevageConfig config) {
@@ -2575,6 +2756,18 @@ class ElevageDomain {
                 0));
     return base.copyWith(
         maxLocalStock: max(1, base.maxLocalStock + capacityDelta.round()));
+  }
+
+  /// Resolves output caps from the precise placed producer instance. This is
+  /// shared by ticking and UI, so a Capacity module can never display a stale
+  /// cap (for example 3/6 while the actual cap is 9).
+  static List<ElevageProductionOutput> effectiveProducerOutputs(
+      Map raw, String installationId, ElevageConfig config) {
+    return config
+        .outputsFor(installationId)
+        .where((output) => output.enabled)
+        .map((output) => _effectiveOutput(raw, output, config))
+        .toList(growable: false);
   }
 
   static ElevageSave craft(
@@ -2954,7 +3147,7 @@ class ElevageDomain {
             hunger(state, residentId, now, config) == 'VERY_HUNGRY')) {
       final favorite =
           individual['generatedProfile']['foodPreference'] as String;
-      final food = _consumeLocal(alcove, <String>[
+      final candidates = <String>[
         favorite,
         favorite == 'ROOT' ? 'LEAF' : 'ROOT',
         if (individual['family'] == 'FUNGAL') ...<String>[
@@ -2967,7 +3160,8 @@ class ElevageDomain {
         'ALGAE',
         'MOSS',
         'MUSHROOM'
-      ]);
+      ].where((item) => canEat(individual, item, config)).toList();
+      final food = _consumeLocal(alcove, candidates);
       if (food != null) {
         care['lastMealAt'] = now;
         care['autonomousMealCount'] = (care['autonomousMealCount'] as int) + 1;
@@ -2978,14 +3172,21 @@ class ElevageDomain {
       }
     }
     final structural = mayActAutonomously
-        ? _consumeLocal(alcove, const <String>['IRON'])
+        ? _consumeLocal(
+            alcove,
+            structuralResourcesForFamily(
+                    individual['family'] as String? ?? 'MINERAL')
+                .where((item) => canAbsorb(individual, item, config))
+                .toList())
         : null;
     if (structural != null) {
       final intake =
           individual['care']['structuralIntake'] as Map<String, dynamic>;
-      intake['total'] = (intake['total'] as int) + 2;
+      final gain = structural == 'IRON' ? 2 : 1;
+      intake['total'] = (intake['total'] as int) + gain;
       final byMaterial = intake['byMaterial'] as Map;
-      byMaterial['IRON'] = ((byMaterial['IRON'] as num?)?.toInt() ?? 0) + 2;
+      byMaterial[structural] =
+          ((byMaterial[structural] as num?)?.toInt() ?? 0) + gain;
       care['lastAutonomousAt'] = now;
       _interaction(individual, 'AUTONOMOUS_STRUCTURE', initiative: 1);
       _adjustWellbeing(individual, initiative >= .5 ? 2 : 1, now);

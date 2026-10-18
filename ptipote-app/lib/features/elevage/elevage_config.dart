@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-const int elevageConfigSchemaVersion = 7;
+const int elevageConfigSchemaVersion = 8;
 
 /// Every non-generic resource that can be selected as an explicit recipe
 /// component in the local Élevage Dashboard. Organic and Mineral stay as their
@@ -457,6 +457,9 @@ class ElevageInstallationDefinition {
     this.decorCategory,
     this.resonanceMaterial,
     this.resonanceFamily,
+    this.experiencedLightDelta = 0,
+    this.experiencedTemperatureDelta = 0,
+    this.experiencedHumidityDelta = 0,
     this.outputs = const <String, int>{},
   });
 
@@ -483,6 +486,11 @@ class ElevageInstallationDefinition {
 
   /// Family accepted by a durable biological resonance support.
   final String? resonanceFamily;
+
+  /// Personal comfort only: never added to the raw environment of a zone.
+  final int experiencedLightDelta;
+  final int experiencedTemperatureDelta;
+  final int experiencedHumidityDelta;
   final Map<String, int> outputs;
 
   bool get productive => outputs.isNotEmpty;
@@ -507,6 +515,9 @@ class ElevageInstallationDefinition {
         decorCategory: decorCategory,
         resonanceMaterial: resonanceMaterial,
         resonanceFamily: resonanceFamily,
+        experiencedLightDelta: experiencedLightDelta,
+        experiencedTemperatureDelta: experiencedTemperatureDelta,
+        experiencedHumidityDelta: experiencedHumidityDelta,
         outputs: outputs,
       );
 }
@@ -821,6 +832,27 @@ class ElevageConfig {
           .clamp(tamTamPerfectWindowMs, 10000)
           .toInt();
 
+  Map<String, dynamic> get foodProgression =>
+      Map<String, dynamic>.from(refugeProgression['foodProgression'] as Map? ??
+          const <dynamic, dynamic>{});
+
+  List<String> foodPool(String family, String key) =>
+      ((foodProgression[family] as Map?)?[key] as List? ?? const <dynamic>[])
+          .whereType<String>()
+          .toList(growable: false);
+
+  Map<String, dynamic> get stageAbilities =>
+      Map<String, dynamic>.from(refugeProgression['stageAbilities'] as Map? ??
+          const <dynamic, dynamic>{});
+
+  bool stageAbility(String stage, String ability, bool fallback) =>
+      ((stageAbilities[stage] as Map?)?[ability] as bool?) ?? fallback;
+
+  bool get showProducerStockBubble =>
+      ((refugeProgression['producerUi'] as Map?)?['showProducerStockBubble']
+          as bool?) ??
+      true;
+
   Map<String, dynamic> requirementForAlcove(int index) =>
       index <= 1 || index - 2 >= alcoveRequirements.length
           ? const <String, dynamic>{}
@@ -1021,6 +1053,45 @@ class ElevageConfig {
           category: 'MEUBLE',
           movableByPtipote: true,
           activity: 'REST',
+        ),
+        const ElevageInstallationDefinition(
+          id: 'THERMAL_NEST',
+          label: 'Nid thermique',
+          description:
+              'Un nid isolant : il réchauffe seulement le P’TIPOTE qui s’y repose.',
+          light: 0,
+          temperature: 0,
+          humidity: 0,
+          category: 'MEUBLE',
+          movableByPtipote: true,
+          activity: 'REST',
+          experiencedTemperatureDelta: 1,
+        ),
+        const ElevageInstallationDefinition(
+          id: 'SHADED_NEST',
+          label: 'Nid ombragé',
+          description:
+              'Un abri textile qui réduit uniquement la lumière ressentie pendant le repos.',
+          light: 0,
+          temperature: 0,
+          humidity: 0,
+          category: 'MEUBLE',
+          movableByPtipote: true,
+          activity: 'REST',
+          experiencedLightDelta: -1,
+        ),
+        const ElevageInstallationDefinition(
+          id: 'HYGROSCOPIC_NEST',
+          label: 'Nid hygroscopique',
+          description:
+              'Un nid humide qui augmente uniquement l’humidité ressentie pendant le repos.',
+          light: 0,
+          temperature: 0,
+          humidity: 0,
+          category: 'MEUBLE',
+          movableByPtipote: true,
+          activity: 'REST',
+          experiencedHumidityDelta: 1,
         ),
         const ElevageInstallationDefinition(
           id: 'POTAGER_VERTICAL',
@@ -2439,6 +2510,25 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         organic: 5,
         mineral: 2),
     ElevageRecipe(
+        id: 'THERMAL_NEST',
+        label: 'Nid thermique',
+        installationId: 'THERMAL_NEST',
+        organic: 5,
+        mineral: 3),
+    ElevageRecipe(
+        id: 'SHADED_NEST',
+        label: 'Nid ombragé',
+        installationId: 'SHADED_NEST',
+        organic: 6,
+        mineral: 1),
+    ElevageRecipe(
+        id: 'HYGROSCOPIC_NEST',
+        label: 'Nid hygroscopique',
+        installationId: 'HYGROSCOPIC_NEST',
+        organic: 5,
+        mineral: 2,
+        special: <String, int>{'MOSS': 1}),
+    ElevageRecipe(
         id: 'POTAGER_VERTICAL',
         label: 'Potager vertical',
         installationId: 'POTAGER_VERTICAL',
@@ -2558,6 +2648,53 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'shiverPauseDuration': 1800,
       'babyVocalCooldownSeconds': 3,
     },
+    // These pools express access, never a hidden preference. The Mature list
+    // is intentionally a complete compatible catalogue that can grow later.
+    'foodProgression': <String, dynamic>{
+      'VEGETAL': <String, dynamic>{
+        'babyFoodPool': <String>['LEAF', 'FRUIT', 'MOSS'],
+        'intermediateFoodUnlocks': <String>['LIMESTONE', 'ALGAE'],
+        'matureCompatibleFoodPool': <String>[
+          'LEAF',
+          'FRUIT',
+          'MOSS',
+          'LIMESTONE',
+          'ALGAE',
+          'ROOT',
+          'MUSHROOM'
+        ],
+      },
+      'FUNGAL': <String, dynamic>{
+        'babyFoodPool': <String>['LEAF', 'ALGAE', 'ROOT'],
+        'intermediateFoodUnlocks': <String>['FRUIT', 'MOSS'],
+        'matureCompatibleFoodPool': <String>[
+          'LEAF',
+          'ALGAE',
+          'ROOT',
+          'FRUIT',
+          'MOSS',
+          'MUSHROOM'
+        ],
+      },
+      'MINERAL': <String, dynamic>{
+        'babyFoodPool': <String>['ROOT', 'LEAF', 'MOSS'],
+        'intermediateFoodUnlocks': <String>['ALGAE', 'MUSHROOM'],
+        'matureCompatibleFoodPool': <String>[
+          'ROOT',
+          'LEAF',
+          'MOSS',
+          'ALGAE',
+          'MUSHROOM',
+          'FRUIT'
+        ],
+      },
+    },
+    'stageAbilities': <String, dynamic>{
+      'BABY': <String, bool>{'canAbsorb': false, 'canResonate': false},
+      'INTERMEDIATE': <String, bool>{'canAbsorb': true, 'canResonate': true},
+      'MATURE': <String, bool>{'canAbsorb': true, 'canResonate': true},
+    },
+    'producerUi': <String, dynamic>{'showProducerStockBubble': true},
     'tracker': <String, dynamic>{
       'enabled': true,
       'xpForLevel1': 10,

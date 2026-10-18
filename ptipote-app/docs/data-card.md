@@ -1269,3 +1269,37 @@ L’Eau n’est pas une ressource globale du Camp.
   Des taps rapides hors fenêtre échouent. Le portrait du P’TIPOTE est désormais
   choisi par stade (Baby/Intermediate/Mature), séparé des icônes de Nature et
   de structure : le cristal n’est plus un portrait permanent.
+
+# Lot 21.5 — Progression alimentaire et confort individuel
+
+- **Accès alimentaire par stade.** La compatibilité biologique, l’accès au
+  stade et la préférence individuelle sont trois données distinctes. Baby ne
+  teste que son pool : Végétal `LEAF/FRUIT/MOSS`, Fongique
+  `LEAF/ALGAE/ROOT`, Minéral `ROOT/LEAF/MOSS`. Juvénile ajoute respectivement
+  `LIMESTONE/ALGAE`, `FRUIT/MOSS` et `ALGAE/MUSHROOM`; Mature ouvre le
+  catalogue compatible complet configurable. Les friandises restent
+  relationnelles et accessibles dès Baby. Une ressource future compatible est
+  seulement inspectée (`SNIFF`) : elle ne consomme pas l’objet et ne révèle
+  aucun goût prématurément.
+- **Structuration.** Baby peut remarquer et inspecter une matière structurelle
+  pertinente (signal d’intérêt), mais ne l’absorbe jamais et ne peut pas
+  `RESONATE`. À partir d’Intermediate, Minéral absorbe IRON/LIMESTONE/QUARTZ,
+  Végétal SEED et Fongique SPORE; la Résonance devient alors disponible. La
+  philosophie est volontairement progressive : Baby ressent, Juvénile
+  expérimente, Mature saura ensuite s’autogérer.
+- **Nids de confort.** `THERMAL_NEST`, `SHADED_NEST` et `HYGROSCOPIC_NEST`
+  sont des meubles (pas des Structures) avec des recettes prototype
+  configurables. Pendant leur usage ils appliquent respectivement `+1`
+  température, `-1` lumière ou `+1` humidité **ressentie**, toujours clampée
+  de 0 à 5. L’environnement brut, son HUD et sa diffusion ne changent jamais.
+  Quitter ou remplacer l’activité met fin au bonus; les choix de repos/sommeil
+  peuvent considérer ce confort local.
+- **Producteurs lisibles.** Culture potagère, Butte d’arbuste et Support
+  fongique affichent directement au-dessus de leur instance leurs stocks par
+  output (`icône quantité/capacité`), y compris à zéro. L’information est
+  résolue depuis l’instance précise : un Module Capacité porte donc bien par
+  exemple `3/6` à `3/9`. Les stocks restent locaux jusqu’à récolte et la
+  Réserve commune reste la seule source économique globale.
+- **Points à arbitrer.** Catalogue Mature final, ressources structurelles
+  futures, recettes Target des trois nids, meubles de confort supplémentaires
+  et autonomie Mature nourriture/structuration restent hors scope.

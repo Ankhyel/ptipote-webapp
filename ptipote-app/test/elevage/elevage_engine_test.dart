@@ -69,6 +69,8 @@ void main() {
         ['foodPreference'] as String;
     state = ElevageDomain.offerFood(
         state, id, favorite, now + 1, defaultElevageConfig);
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'INTERMEDIATE';
     state = ElevageDomain.offerStructural(state, id, 'IRON', now + 2);
     final care = (state.data['individuals'] as Map)[id]['care'] as Map;
     expect(care['lastMealAt'], now + 1);
@@ -1828,11 +1830,10 @@ void main() {
     expect(placed, hasLength(1));
     expect(placed.single['itemId'], 'FRUIT');
     expect(placed.single['placedItemInstanceId'], placed.single['instanceId']);
-    expect(ElevageDomain.placeableSceneItems.contains('SEED'), isFalse);
-    expect(
-        () => ElevageDomain.placeSceneItem(
-            state, 'alcove-1', 'SEED', 'ZONE_3', now + 1, defaultElevageConfig),
-        throwsStateError);
+    expect(ElevageDomain.placeableSceneItems.contains('SEED'), isTrue);
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'SEED', 'ZONE_3', now + 1, defaultElevageConfig);
+    expect(ElevageDomain.sceneItems(state, 'alcove-1'), hasLength(2));
   });
 
   test('migration Algues fusionne le fragment legacy une seule fois', () {
@@ -2505,5 +2506,102 @@ void main() {
         ElevageDomain.tamTamSucceeded(
             const <String>['MISS', 'MISS', 'MISS'], config),
         isFalse);
+  });
+
+  test('pools alimentaires par Type et stade gardent les goûts inconnus', () {
+    Map<String, dynamic> individual(String family, String stage) =>
+        <String, dynamic>{
+          'family': family,
+          'lifecycle': <String, dynamic>{'stage': stage},
+        };
+
+    final vegetal = individual('VEGETAL', 'BABY');
+    expect(ElevageDomain.canEat(vegetal, 'LEAF', defaultElevageConfig), isTrue);
+    expect(
+        ElevageDomain.canEat(vegetal, 'ALGAE', defaultElevageConfig), isFalse);
+    expect(ElevageDomain.canEat(vegetal, 'FIBROUS_FRUIT', defaultElevageConfig),
+        isTrue);
+    vegetal['lifecycle']['stage'] = 'INTERMEDIATE';
+    expect(
+        ElevageDomain.canEat(vegetal, 'ALGAE', defaultElevageConfig), isTrue);
+    expect(ElevageDomain.canEat(vegetal, 'LIMESTONE', defaultElevageConfig),
+        isTrue);
+
+    final fungal = individual('FUNGAL', 'BABY');
+    expect(ElevageDomain.canEat(fungal, 'ROOT', defaultElevageConfig), isTrue);
+    expect(
+        ElevageDomain.canEat(fungal, 'FRUIT', defaultElevageConfig), isFalse);
+    fungal['lifecycle']['stage'] = 'INTERMEDIATE';
+    expect(ElevageDomain.canEat(fungal, 'FRUIT', defaultElevageConfig), isTrue);
+
+    final mineral = individual('MINERAL', 'BABY');
+    expect(ElevageDomain.canEat(mineral, 'MOSS', defaultElevageConfig), isTrue);
+    expect(ElevageDomain.canEat(mineral, 'MUSHROOM', defaultElevageConfig),
+        isFalse);
+    mineral['lifecycle']['stage'] = 'MATURE';
+    expect(
+        ElevageDomain.canEat(mineral, 'FRUIT', defaultElevageConfig), isTrue);
+  });
+
+  test('Baby inspecte la matière structurelle sans l’absorber', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Silex',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    (state.data['inventory']['special'] as Map)['IRON'] = 1;
+    state = ElevageDomain.placeSceneItem(
+        state, 'alcove-1', 'IRON', 'ZONE_1', now + 1, defaultElevageConfig);
+    final instance = (state.data['sceneItemsByAlcoveId'] as Map)['alcove-1'][0]
+        ['instanceId'] as String;
+    final babyOutcome = ElevageDomain.sceneItemOutcome(
+        state, id, 'alcove-1', instance, now + 2, defaultElevageConfig);
+    expect(babyOutcome.behavior, 'STRUCTURAL_INTEREST');
+    expect(babyOutcome.consumed, isFalse);
+    expect(
+        ElevageDomain.canAbsorb((state.data['individuals'] as Map)[id] as Map,
+            'IRON', defaultElevageConfig),
+        isFalse);
+
+    ((state.data['individuals'] as Map)[id]['lifecycle'] as Map)['stage'] =
+        'INTERMEDIATE';
+    expect(
+        ElevageDomain.canAbsorb((state.data['individuals'] as Map)[id] as Map,
+            'IRON', defaultElevageConfig),
+        isTrue);
+    (state.data['inventory']['special'] as Map)['IRON'] = 1;
+    state = ElevageDomain.offerStructural(
+        state, id, 'IRON', now + 3, defaultElevageConfig);
+    expect(
+        ((state.data['individuals'] as Map)[id]['care']['structuralIntake']
+            as Map)['total'],
+        2);
+  });
+
+  test(
+      'nids transforment seulement l’environnement ressenti et Capacity le cap',
+      () {
+    const raw = <String, int>{'light': 4, 'temperature': 2, 'humidity': 2};
+    final thermal = ElevageDomain.experiencedEnvironment(
+        raw, defaultElevageConfig.installation('THERMAL_NEST'));
+    final shaded = ElevageDomain.experiencedEnvironment(
+        raw, defaultElevageConfig.installation('SHADED_NEST'));
+    final hygroscopic = ElevageDomain.experiencedEnvironment(
+        raw, defaultElevageConfig.installation('HYGROSCOPIC_NEST'));
+    expect(raw, <String, int>{'light': 4, 'temperature': 2, 'humidity': 2});
+    expect(thermal['temperature'], 3);
+    expect(shaded['light'], 3);
+    expect(hygroscopic['humidity'], 3);
+
+    final outputs = ElevageDomain.effectiveProducerOutputs(<String, dynamic>{
+      'installedModules': <Map<String, dynamic>>[
+        <String, dynamic>{'moduleId': 'MODULE_CAPACITY_BASIC'},
+      ],
+    }, 'CULTURE_POTAGERE', defaultElevageConfig);
+    expect(outputs.map((output) => output.maxLocalStock), everyElement(9));
   });
 }
