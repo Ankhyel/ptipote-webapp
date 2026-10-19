@@ -60,7 +60,14 @@ class ElevageSave {
           },
       },
       'biogeneratorInventory': <String, dynamic>{},
-      'refugeProgress': <String, dynamic>{'contribution': 0},
+      // `contribution` is retained as a legacy mirror for older saves and
+      // integrations. `trust` is the canonical player-facing progression.
+      'refugeProgress': <String, dynamic>{
+        'contribution': 0,
+        'trust': 0,
+        'trustHistory': <dynamic>[],
+        'trustEventIds': <String, dynamic>{},
+      },
       'habitatInventory': <String, dynamic>{},
       'habitatItemsByAlcoveId': <String, dynamic>{},
       // Items placed in the four visible Alcôve zones. They are deliberately
@@ -92,8 +99,22 @@ class ElevageSave {
     normalized.putIfAbsent('moduleInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('batteryInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('biogeneratorInventory', () => <String, dynamic>{});
-    normalized.putIfAbsent(
-        'refugeProgress', () => <String, dynamic>{'contribution': 0});
+    normalized.putIfAbsent('refugeProgress',
+        () => <String, dynamic>{'contribution': 0, 'trust': 0});
+    final refugeProgress = normalized['refugeProgress'] as Map;
+    // Lot 22.4 migration: never discard historic Contribution. Older saves
+    // receive its exact value as their starting Confiance once, while keeping
+    // the legacy field readable for prior Dashboard/config integrations.
+    if (refugeProgress['trustMigrationV224'] != true) {
+      refugeProgress['trust'] = (refugeProgress['trust'] as num?)?.toInt() ??
+          (refugeProgress['contribution'] as num?)?.toInt() ??
+          0;
+      refugeProgress['trustMigrationV224'] = true;
+    }
+    refugeProgress.putIfAbsent('contribution', () => refugeProgress['trust']);
+    refugeProgress.putIfAbsent('trust', () => 0);
+    refugeProgress.putIfAbsent('trustHistory', () => <dynamic>[]);
+    refugeProgress.putIfAbsent('trustEventIds', () => <String, dynamic>{});
     normalized.putIfAbsent('habitatInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('habitatItemsByAlcoveId', () => <String, dynamic>{});
     normalized.putIfAbsent('sceneItemsByAlcoveId', () => <String, dynamic>{});
@@ -1161,6 +1182,13 @@ class ElevageDomain {
     (state.data['activeIndividualIds'] as List).add(id);
     alcove['occupantIndividualId'] = id;
     _memory(state, id, 'ADOPTED', now);
+    _applyTrustChange(state,
+        amount: config.trustGainAdoption,
+        now: now,
+        reasonType: 'ADOPTION',
+        ptipoteId: id,
+        text: _trustText('ADOPTION', cleanName),
+        eventId: 'adoption-$id');
     return state;
   }
 
@@ -1330,23 +1358,87 @@ class ElevageDomain {
     return state;
   }
 
-  static int contribution(ElevageSave state) =>
-      ((state.data['refugeProgress'] as Map?)?['contribution'] as num?)
-          ?.toInt() ??
-      0;
+  /// Canonical Refuge progression value. `contribution` remains an alias only
+  /// so existing saves and older debug calls stay valid after Lot 22.4.
+  static int trust(ElevageSave state) {
+    final progress = state.data['refugeProgress'] as Map?;
+    return ((progress?['trust'] ?? progress?['contribution']) as num?)
+            ?.toInt() ??
+        0;
+  }
 
-  static ElevageSave addContribution(ElevageSave source, int amount) {
+  static int contribution(ElevageSave state) => trust(state);
+
+  static List<Map<String, dynamic>> trustHistory(ElevageSave state) {
+    final history =
+        ((state.data['refugeProgress'] as Map?)?['trustHistory'] as List?) ??
+            const <dynamic>[];
+    return history
+        .whereType<Map>()
+        .map((entry) => Map<String, dynamic>.from(entry))
+        .toList(growable: false);
+  }
+
+  static ElevageSave addTrust(ElevageSave source, int amount,
+      {required int now,
+      String reasonType = 'DEBUG',
+      String? ptipoteId,
+      String? text,
+      String? eventId}) {
+    final state = source.copy();
+    _applyTrustChange(state,
+        amount: amount,
+        now: now,
+        reasonType: reasonType,
+        ptipoteId: ptipoteId,
+        text: text,
+        eventId: eventId);
+    return state;
+  }
+
+  static ElevageSave setTrust(ElevageSave source, int value,
+      {required int now}) {
     final state = source.copy();
     final progress = _refugeProgress(state);
-    progress['contribution'] = max(0, contribution(state) + amount);
+    final next = max(0, value);
+    final delta = next - trust(state);
+    progress['trust'] = next;
+    // Keep the old field synchronized for integrations that have not yet
+    // moved to the new name. Setting debug value is intentionally visible.
+    progress['contribution'] = next;
+    if (delta != 0) {
+      _appendTrustHistory(progress,
+          timestamp: now,
+          delta: delta,
+          reasonType: 'DEBUG_SET',
+          text: 'Confiance réglée en mode développement');
+    }
     return state;
   }
 
-  static ElevageSave setContribution(ElevageSave source, int value) {
+  /// Dashboard-only shortcut for validating the individual 24-hour rule. It
+  /// creates a real completed critical period, then uses the normal refresh
+  /// path rather than bypassing the penalty ledger.
+  static ElevageSave simulateCriticalWellbeingTrustPeriod(
+      ElevageSave source, String individualId, int now, ElevageConfig config) {
     final state = source.copy();
-    _refugeProgress(state)['contribution'] = max(0, value);
-    return state;
+    final individual = _individual(state, individualId);
+    final duration = config.criticalWellbeingPenaltyHours *
+        const Duration(hours: 1).inMilliseconds;
+    final wellbeing =
+        individual.putIfAbsent('wellbeing', () => <String, dynamic>{}) as Map;
+    wellbeing['value'] = max(0, config.criticalWellbeingThreshold - 1);
+    individual['criticalWellbeingSince'] = now - duration;
+    individual['lastCriticalWellbeingTrustPenaltyAt'] = now - duration;
+    return refreshRefugeProgress(state, now, config);
   }
+
+  static ElevageSave addContribution(ElevageSave source, int amount) =>
+      addTrust(source, amount,
+          now: DateTime.now().millisecondsSinceEpoch, reasonType: 'DEBUG');
+
+  static ElevageSave setContribution(ElevageSave source, int value) =>
+      setTrust(source, value, now: DateTime.now().millisecondsSinceEpoch);
 
   static String alcoveProgressState(
       ElevageSave state, String alcoveId, ElevageConfig config, int now) {
@@ -1365,7 +1457,7 @@ class ElevageDomain {
           (config.requirementForAlcove(index)['requiredContribution'] as num?)
                   ?.toInt() ??
               0;
-      return contribution(state) >= required ? 'AVAILABLE_TO_BUILD' : status;
+      return trust(state) >= required ? 'AVAILABLE_TO_BUILD' : status;
     }
     return status;
   }
@@ -1384,6 +1476,8 @@ class ElevageDomain {
         alcove['progressState'] = 'AVAILABLE_TO_BUILD';
       }
     }
+    _flushPendingTrustEvents(state, now, config);
+    _applyCriticalWellbeingTrustPenalties(state, now, config);
     _processLoanReturns(state, now);
     return state;
   }
@@ -4378,6 +4472,21 @@ class ElevageDomain {
         });
       }
     }
+    _applyTrustChange(state,
+        amount: next == 'INTERMEDIATE'
+            ? config.trustGainIntermediate
+            : config.trustGainMature,
+        now: now,
+        reasonType: next == 'INTERMEDIATE'
+            ? 'INTERMEDIATE_EVOLUTION'
+            : 'MATURE_EVOLUTION',
+        ptipoteId: id,
+        text: _trustText(
+            next == 'INTERMEDIATE'
+                ? 'INTERMEDIATE_EVOLUTION'
+                : 'MATURE_EVOLUTION',
+            individual['name'] as String?),
+        eventId: 'evolution-$id-$next');
     _memory(
         state,
         id,
@@ -4596,6 +4705,13 @@ class ElevageDomain {
     if (entry['status'] == 'CONFIRMED') return;
     entry['observationCount'] =
         ((entry['observationCount'] as num?)?.toInt() ?? 0) + 1;
+    final observationNumber = (entry['observationCount'] as num).toInt();
+    _queueTrustEvent(individual,
+        reasonType: 'OBSERVATION',
+        eventId:
+            'observation-${individual['id']}-$conceptId-$observationNumber',
+        timestamp: now,
+        conceptId: conceptId);
     if (entry['status'] == 'HYPOTHESIS') {
       entry['hypothesisEvidence'] =
           ((entry['hypothesisEvidence'] as num?)?.toInt() ?? 0) + 1;
@@ -4603,6 +4719,11 @@ class ElevageDomain {
           config.evidenceForConfirmation) {
         entry['status'] = 'CONFIRMED';
         entry['confirmedAt'] = now;
+        _queueTrustEvent(individual,
+            reasonType: 'DISCOVERY',
+            eventId: 'discovery-${individual['id']}-$conceptId',
+            timestamp: now,
+            conceptId: conceptId);
       }
       return;
     }
@@ -4611,6 +4732,11 @@ class ElevageDomain {
       entry['status'] = 'HYPOTHESIS';
       entry['hypothesisCreatedAt'] = now;
       entry['hypothesisEvidence'] = 0;
+      _queueTrustEvent(individual,
+          reasonType: 'HYPOTHESIS',
+          eventId: 'hypothesis-${individual['id']}-$conceptId',
+          timestamp: now,
+          conceptId: conceptId);
     }
   }
 
@@ -4730,6 +4856,160 @@ class ElevageDomain {
     wellbeing['value'] = (current + delta).clamp(0, 100);
     wellbeing['lastUpdatedAt'] = now;
   }
+
+  static void _appendTrustHistory(Map<String, dynamic> progress,
+      {required int timestamp,
+      required int delta,
+      required String reasonType,
+      String? ptipoteId,
+      String? text,
+      String? eventId}) {
+    final history =
+        progress.putIfAbsent('trustHistory', () => <dynamic>[]) as List;
+    history.add(<String, dynamic>{
+      'id': eventId ?? 'trust-$timestamp-${history.length}',
+      'timestamp': timestamp,
+      'delta': delta,
+      'reasonType': reasonType,
+      if (ptipoteId != null) 'ptipoteId': ptipoteId,
+      if (text != null) 'text': text,
+    });
+    // A compact audit trail is sufficient for the prototype and avoids an
+    // unbounded save growth from ordinary observations.
+    const maxEntries = 120;
+    if (history.length > maxEntries) {
+      history.removeRange(0, history.length - maxEntries);
+    }
+  }
+
+  static bool _applyTrustChange(ElevageSave state,
+      {required int amount,
+      required int now,
+      required String reasonType,
+      String? ptipoteId,
+      String? text,
+      String? eventId}) {
+    final progress = _refugeProgress(state);
+    final eventIds = Map<String, dynamic>.from(progress.putIfAbsent(
+        'trustEventIds', () => <String, dynamic>{}) as Map);
+    if (eventId != null && eventIds.containsKey(eventId)) return false;
+    final before = trust(state);
+    final after = max(0, before + amount);
+    final effectiveDelta = after - before;
+    if (eventId != null) {
+      eventIds[eventId] = now;
+      progress['trustEventIds'] = eventIds;
+    }
+    progress['trust'] = after;
+    progress['contribution'] = after;
+    if (effectiveDelta != 0) {
+      _appendTrustHistory(progress,
+          timestamp: now,
+          delta: effectiveDelta,
+          reasonType: reasonType,
+          ptipoteId: ptipoteId,
+          text: text,
+          eventId: eventId);
+    }
+    return effectiveDelta != 0;
+  }
+
+  static void _queueTrustEvent(Map individual,
+      {required String reasonType,
+      required String eventId,
+      required int timestamp,
+      required String conceptId}) {
+    final events =
+        individual.putIfAbsent('pendingTrustEvents', () => <dynamic>[]) as List;
+    if (events.whereType<Map>().any((event) => event['eventId'] == eventId)) {
+      return;
+    }
+    events.add(<String, dynamic>{
+      'reasonType': reasonType,
+      'eventId': eventId,
+      'timestamp': timestamp,
+      'conceptId': conceptId,
+    });
+  }
+
+  static void _flushPendingTrustEvents(
+      ElevageSave state, int now, ElevageConfig config) {
+    final individuals = state.data['individuals'] as Map<String, dynamic>;
+    for (final raw in individuals.values.whereType<Map>()) {
+      final individual = Map<String, dynamic>.from(raw);
+      final id = individual['id'] as String? ?? '';
+      final events = individual['pendingTrustEvents'] as List?;
+      if (events == null || events.isEmpty) continue;
+      for (final rawEvent in events.whereType<Map>()) {
+        final reason = rawEvent['reasonType'] as String? ?? 'OBSERVATION';
+        final gain = switch (reason) {
+          'OBSERVATION' => config.trustGainObservation,
+          'HYPOTHESIS' => config.trustGainHypothesis,
+          'DISCOVERY' => config.trustGainDiscovery,
+          _ => 0,
+        };
+        _applyTrustChange(state,
+            amount: gain,
+            now: (rawEvent['timestamp'] as num?)?.toInt() ?? now,
+            reasonType: reason,
+            ptipoteId: id,
+            text: _trustText(reason, individual['name'] as String?),
+            eventId: rawEvent['eventId'] as String?);
+      }
+      individual['pendingTrustEvents'] = <dynamic>[];
+      individuals[id] = individual;
+    }
+  }
+
+  static void _applyCriticalWellbeingTrustPenalties(
+      ElevageSave state, int now, ElevageConfig config) {
+    final periodMs = config.criticalWellbeingPenaltyHours *
+        const Duration(hours: 1).inMilliseconds;
+    final individuals = state.data['individuals'] as Map<String, dynamic>;
+    for (final raw in individuals.values.whereType<Map>()) {
+      final individual = Map<String, dynamic>.from(raw);
+      final id = individual['id'] as String? ?? '';
+      final wellbeing = individual['wellbeing'] as Map?;
+      final value = (wellbeing?['value'] as num?)?.toInt() ?? 60;
+      if (value >= config.criticalWellbeingThreshold) {
+        individual.remove('criticalWellbeingSince');
+        individuals[id] = individual;
+        continue;
+      }
+      final criticalSince =
+          (individual['criticalWellbeingSince'] as num?)?.toInt() ?? now;
+      individual['criticalWellbeingSince'] = criticalSince;
+      var lastPenalty =
+          (individual['lastCriticalWellbeingTrustPenaltyAt'] as num?)
+                  ?.toInt() ??
+              criticalSince;
+      while (now - lastPenalty >= periodMs) {
+        lastPenalty += periodMs;
+        _applyTrustChange(state,
+            amount: -config.criticalWellbeingTrustPenalty,
+            now: lastPenalty,
+            reasonType: 'CRITICAL_WELLBEING',
+            ptipoteId: id,
+            text:
+                'Bien-être critique de ${individual['name'] ?? 'ce P’TIPOTE'} pendant 24 h.',
+            eventId: 'critical-wellbeing-$id-$lastPenalty');
+      }
+      individual['lastCriticalWellbeingTrustPenaltyAt'] = lastPenalty;
+      individuals[id] = individual;
+    }
+  }
+
+  static String _trustText(String reasonType, String? name) =>
+      switch (reasonType) {
+        'ADOPTION' => 'Adoption de ${name ?? 'ce P’TIPOTE'}',
+        'OBSERVATION' => 'Nouvelle observation',
+        'HYPOTHESIS' => 'Nouvelle hypothèse',
+        'DISCOVERY' => 'Découverte confirmée',
+        'INTERMEDIATE_EVOLUTION' =>
+          '${name ?? 'Ce P’TIPOTE'} est devenu Juvénile',
+        'MATURE_EVOLUTION' => '${name ?? 'Ce P’TIPOTE'} est devenu Mature',
+        _ => 'Mise à jour de Confiance',
+      };
 
   static Map<String, dynamic> _refugeProgress(ElevageSave state) =>
       Map<String, dynamic>.from(state.data['refugeProgress'] as Map)

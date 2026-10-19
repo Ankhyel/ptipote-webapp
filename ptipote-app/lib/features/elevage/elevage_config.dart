@@ -736,6 +736,26 @@ class ElevageConfig {
           .map((raw) => Map<String, dynamic>.from(raw))
           .toList(growable: false);
 
+  /// Confiance is the player-facing name of the Refuge progression. The
+  /// underlying save keeps the legacy `contribution` value during migration,
+  /// but all new rules read these explicit, Dashboard-editable values.
+  Map<String, dynamic> get trustConfig => Map<String, dynamic>.from(
+      refugeProgression['trust'] as Map? ?? const <dynamic, dynamic>{});
+  int _trustNumber(String key, int fallback, {int minimum = 0}) =>
+      ((trustConfig[key] as num?)?.toInt() ?? fallback).clamp(minimum, 999999);
+  int get trustGainAdoption => _trustNumber('trustGainAdoption', 10);
+  int get trustGainObservation => _trustNumber('trustGainObservation', 1);
+  int get trustGainHypothesis => _trustNumber('trustGainHypothesis', 2);
+  int get trustGainDiscovery => _trustNumber('trustGainDiscovery', 5);
+  int get trustGainIntermediate => _trustNumber('trustGainIntermediate', 50);
+  int get trustGainMature => _trustNumber('trustGainMature', 70);
+  int get criticalWellbeingThreshold =>
+      _trustNumber('criticalWellbeingThreshold', 20).clamp(0, 100);
+  int get criticalWellbeingTrustPenalty =>
+      _trustNumber('criticalWellbeingTrustPenalty', 10);
+  int get criticalWellbeingPenaltyHours =>
+      _trustNumber('criticalWellbeingPenaltyHours', 24, minimum: 1);
+
   Map<String, dynamic> get biogeneratorConfig => Map<String, dynamic>.from(
       refugeProgression['biogenerator'] as Map? ?? const <dynamic, dynamic>{});
   int _biogeneratorNumber(String key, int fallback) =>
@@ -2673,6 +2693,17 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
     'loanReturnDelayDays': 21,
     'startingBioBatteryCount': 2,
     'bioBatteryEnergy': 10,
+    'trust': <String, dynamic>{
+      'trustGainAdoption': 10,
+      'trustGainObservation': 1,
+      'trustGainHypothesis': 2,
+      'trustGainDiscovery': 5,
+      'trustGainIntermediate': 50,
+      'trustGainMature': 70,
+      'criticalWellbeingThreshold': 20,
+      'criticalWellbeingTrustPenalty': 10,
+      'criticalWellbeingPenaltyHours': 24,
+    },
     // Bio-batteries are onboarding/relief objects, not crafted from biology.
     // This legacy key is deliberately empty for save compatibility.
     'bioBatteryRecipe': <String, dynamic>{},

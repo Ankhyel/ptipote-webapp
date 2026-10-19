@@ -129,6 +129,23 @@ class _AlcovesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = controller.state!;
     final alcoves = (state.data['alcoves'] as List).cast<Map>();
+    final trust = ElevageDomain.trust(state);
+    final criticalNames = (state.data['individuals'] as Map)
+        .values
+        .whereType<Map>()
+        .where((individual) =>
+            (((individual['wellbeing'] as Map?)?['value'] as num?)?.toInt() ??
+                60) <
+            controller.config.criticalWellbeingThreshold)
+        .map((individual) => individual['name'] as String? ?? 'P’TIPOTE')
+        .toList(growable: false);
+    final nextTrustThreshold = controller.config.alcoveRequirements
+        .map((entry) => (entry['requiredContribution'] as num?)?.toInt() ?? 0)
+        .where((threshold) => threshold > trust)
+        .fold<int?>(
+            null,
+            (current, threshold) =>
+                current == null || threshold < current ? threshold : current);
     return Scaffold(
       appBar: _appBar(context, controller),
       body: _elevageCanvas(
@@ -146,12 +163,24 @@ class _AlcovesPage extends StatelessWidget {
               Card(
                 child: ListTile(
                   leading: const Icon(Icons.volunteer_activism_outlined),
-                  title: const Text('Contribution'),
-                  subtitle: const Text(
-                      'Confiance cumulée du Refuge · elle ne se dépense pas.'),
-                  trailing: Text('${ElevageDomain.contribution(state)}'),
+                  title: const Text('Confiance'),
+                  subtitle: Text(nextTrustThreshold == null
+                      ? 'Confiance cumulée du Refuge · elle ne se dépense pas.'
+                      : 'Confiance cumulée · prochain palier : $nextTrustThreshold'),
+                  trailing: Text('$trust'),
+                  onTap: () => _showTrustHistory(context, state),
                 ),
               ),
+              if (criticalNames.isNotEmpty)
+                Card(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  child: ListTile(
+                    leading: const Icon(Icons.warning_amber_rounded),
+                    title: const Text('Bien-être critique'),
+                    subtitle: Text(
+                        '${criticalNames.join(', ')} · risque : -${controller.config.criticalWellbeingTrustPenalty} Confiance / ${controller.config.criticalWellbeingPenaltyHours} h'),
+                  ),
+                ),
               if (controller.notifications.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 20),
                 Card(
@@ -162,7 +191,7 @@ class _AlcovesPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          '${controller.notifications.first['name']} a été récupéré. Les Sourciers vous remercient pour votre contribution et le P’TIPOTE était en pleine forme.',
+                          '${controller.notifications.first['name']} a été récupéré. Les Sourciers vous remercient pour votre confiance et le P’TIPOTE était en pleine forme.',
                         ),
                         TextButton(
                           onPressed: controller.acknowledgeNotifications,
@@ -283,7 +312,7 @@ class _AlcoveOverviewCard extends StatelessWidget {
                         'UNDER_CONSTRUCTION' => 'Chantier en cours.',
                         'AVAILABLE_TO_BUILD' => 'Prête à être construite.',
                         _ =>
-                          'Contribution requise : ${requirement['requiredContribution'] ?? '—'}',
+                          'Confiance requise : ${requirement['requiredContribution'] ?? '—'}',
                       }
                     : occupied
                         ? '${_individualNatureLabel(individual!)} · $stage'
@@ -2469,20 +2498,91 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               config.tamTamGoodWindowMs,
               (value) =>
                   _setRefugeNestedNumber('tamTam', 'goodWindowMs', value)),
+          _heading('Confiance du Refuge'),
+          _number(
+              context,
+              'Gain · adoption',
+              config.trustGainAdoption,
+              (value) =>
+                  _setRefugeNestedNumber('trust', 'trustGainAdoption', value)),
+          _number(
+              context,
+              'Gain · observation',
+              config.trustGainObservation,
+              (value) => _setRefugeNestedNumber(
+                  'trust', 'trustGainObservation', value)),
+          _number(
+              context,
+              'Gain · hypothèse',
+              config.trustGainHypothesis,
+              (value) => _setRefugeNestedNumber(
+                  'trust', 'trustGainHypothesis', value)),
+          _number(
+              context,
+              'Gain · découverte',
+              config.trustGainDiscovery,
+              (value) =>
+                  _setRefugeNestedNumber('trust', 'trustGainDiscovery', value)),
+          _number(
+              context,
+              'Gain · passage Juvénile',
+              config.trustGainIntermediate,
+              (value) => _setRefugeNestedNumber(
+                  'trust', 'trustGainIntermediate', value)),
+          _number(
+              context,
+              'Gain · passage Mature',
+              config.trustGainMature,
+              (value) =>
+                  _setRefugeNestedNumber('trust', 'trustGainMature', value)),
+          _number(
+              context,
+              'Seuil bien-être critique',
+              config.criticalWellbeingThreshold,
+              (value) => _setRefugeNestedNumber(
+                  'trust', 'criticalWellbeingThreshold', value)),
+          _number(
+              context,
+              'Malus critique',
+              config.criticalWellbeingTrustPenalty,
+              (value) => _setRefugeNestedNumber(
+                  'trust', 'criticalWellbeingTrustPenalty', value)),
+          _number(
+              context,
+              'Période critique (heures)',
+              config.criticalWellbeingPenaltyHours,
+              (value) => _setRefugeNestedNumber(
+                  'trust', 'criticalWellbeingPenaltyHours', value)),
           if (config.devMode)
             Wrap(spacing: 8, children: <Widget>[
               OutlinedButton(
-                  onPressed: () => widget.controller.addContribution(10),
-                  child: const Text('+10 Contribution')),
+                  onPressed: () => widget.controller.addTrust(10),
+                  child: const Text('+10 Confiance')),
               OutlinedButton(
-                  onPressed: () => widget.controller.setContribution(100),
-                  child: const Text('Contribution 100')),
+                  onPressed: () => widget.controller.setTrust(100),
+                  child: const Text('Confiance 100')),
+              OutlinedButton(
+                  onPressed: () => widget.controller.addTrust(-10),
+                  child: const Text('-10 Confiance')),
+              if (((widget.controller.state?.data['activeIndividualIds']
+                          as List?) ??
+                      const <dynamic>[])
+                  .isNotEmpty)
+                OutlinedButton(
+                    onPressed: () {
+                      final id = (widget.controller.state!
+                              .data['activeIndividualIds'] as List)
+                          .first as String;
+                      widget.controller
+                          .simulateCriticalWellbeingTrustPeriod(id);
+                    },
+                    child: const Text('Simuler 24 h critique')),
             ]),
           for (var index = 2; index <= config.alcoveCount; index++) ...<Widget>[
             _heading('Alcôve $index · progression'),
             _number(
                 context,
-                'Seuil Contribution',
+                'Seuil Confiance',
                 (config.requirementForAlcove(index)['requiredContribution']
                             as num?)
                         ?.toInt() ??
@@ -6461,6 +6561,40 @@ Future<int?> _numberDialog(
               ]));
   text.dispose();
   return result;
+}
+
+Future<void> _showTrustHistory(BuildContext context, ElevageSave state) async {
+  final entries = ElevageDomain.trustHistory(state).reversed.toList();
+  await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+            title: const Text('Historique de Confiance'),
+            content: SizedBox(
+              width: 360,
+              child: entries.isEmpty
+                  ? const Text('Aucun changement de Confiance pour le moment.')
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: entries.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, index) {
+                        final entry = entries[index];
+                        final delta = (entry['delta'] as num?)?.toInt() ?? 0;
+                        final sign = delta >= 0 ? '+' : '';
+                        return ListTile(
+                          dense: true,
+                          title: Text(entry['text'] as String? ??
+                              'Mise à jour de Confiance'),
+                          trailing: Text('$sign$delta'),
+                        );
+                      }),
+            ),
+            actions: <Widget>[
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Fermer')),
+            ],
+          ));
 }
 
 const Map<String, String> _vocalizationLabels = <String, String>{

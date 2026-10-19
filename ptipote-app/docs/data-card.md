@@ -1168,16 +1168,16 @@ L’Eau n’est pas une ressource globale du Camp.
 
 # Lot 21.3 — Progression du Refuge et Bio-piles
 
-- **Alcôves et Contribution.** En Target, une nouvelle partie possède une seule
+- **Alcôves et Confiance.** En Target, une nouvelle partie possède une seule
   Alcôve `READY`; les capacités 2–4 restent présentes mais passent de
   `LOCKED` à `AVAILABLE_TO_BUILD`, `UNDER_CONSTRUCTION`, puis `READY`.
-  `Contribution` est un total cumulatif non dépensable. Seuils, coûts,
+  La `Confiance` est un total cumulatif non dépensable. Seuils, coûts,
   durée de chantier et nombre initial d’Alcôves sont configurables dans le
   Dashboard. Le preset Prototype conserve les quatre Alcôves ouvertes pour QA.
 - **Deux constructions.** L’Alcôve clé en main consomme davantage de Bio-piles.
   Le chantier assisté consomme moins de Bio-piles et prélève Organique/Minéral.
   Une fois le chantier lancé, aucun second paiement n’est accepté et la
-  Contribution ne diminue jamais.
+  La Confiance ne diminue pas lors d’une construction.
 - **Prêt juvénile.** Au passage `BABY → INTERMEDIATE`, deux structures
   compatibles sont proposées selon Type/Nature : Culture/Bosquet pour Végétal,
   Support/Colonie pour Fongique, Four/Formation métallique pour Résonance.
@@ -1203,7 +1203,7 @@ L’Eau n’est pas une ressource globale du Camp.
   (Culture ROOT, Butte SEED, Support MUSHROOM, Formations minérales, Bosquet,
   Colonie). Les autres crafts importants visent environ 5 unités. Les coûts
   Target définitifs, le Biogénérateur durable, la découverte du plan Bio-pile
-  par le Littoral et les gains de Contribution co-élevage restent à arbitrer.
+  par le Littoral et les gains de Confiance co-élevage restent à arbitrer.
 
 # Lot 21.4 — Biogénérateur, inconfort Bébé et Pisteur
 
@@ -1490,3 +1490,30 @@ L’Eau n’est pas une ressource globale du Camp.
   dans `Autres`; une entrée multiple pointe toujours vers la même recette.
   Les recettes Energie (Biogénérateur, Bio-batterie de secours et Batterie
   exportable) restent dans leur volet technique.
+
+# Lot 22.4 — Confiance du Refuge
+
+- **Terminologie et migration.** `Confiance` remplace `Contribution` dans
+  l’interface. Les sauvegardes historiques conservent le champ technique
+  `contribution` comme miroir de compatibilité, tandis que `trust` devient la
+  valeur canonique. À la première ouverture, toute ancienne valeur est reprise
+  à l’identique : aucune progression n’est perdue.
+- **Progression, pas monnaie.** La Confiance est cumulative et ne se dépense
+  jamais pour construire une Alcôve. Les seuils historiques de Refuge restent
+  des prérequis, désormais présentés comme des seuils de Confiance.
+- **Gains prototype configurables.** Adoption +10, observation significative
+  +1, création d’hypothèse +2, découverte confirmée +5, passage Juvénile +50
+  et passage Mature +70. Chaque événement possède un identifiant persistant :
+  rouvrir le Carnet, relancer une animation ou recharger l’application ne peut
+  pas attribuer le gain une seconde fois.
+- **Bien-être critique.** Sous 20 de bien-être, chaque P’TIPOTE cumule sa
+  propre durée critique. Une pénalité de -10 est appliquée par tranche complète
+  de 24 h et par individu, y compris hors ligne. Le retour à 20 ou plus clôt
+  l’épisode; la Confiance est toujours clampée à 0 minimum.
+- **Historique.** Le Refuge conserve les 120 derniers changements avec date,
+  delta, raison et individu éventuel. Le bloc Confiance ouvre cet historique
+  et signale sobrement un risque critique en cours.
+- **Dashboard.** Tous les gains, seuil critique, pénalité et période sont
+  réglables dans la section Confiance. Les outils dev permettent d’ajouter,
+  retirer ou fixer la valeur; les gains normaux restent uniquement pilotés par
+  les événements Élevage.

@@ -2126,6 +2126,138 @@ void main() {
         'AVAILABLE_TO_BUILD');
   });
 
+  test('migration Contribution vers Confiance conserve la progression', () {
+    final raw = ElevageSave.initial(defaultElevageConfig, now: now).toJson();
+    final progress = raw['refugeProgress'] as Map;
+    progress
+      ..remove('trust')
+      ..remove('trustHistory')
+      ..remove('trustEventIds')
+      ..remove('trustMigrationV224')
+      ..['contribution'] = 184;
+    final migrated = ElevageSave.fromJson(raw);
+    expect(ElevageDomain.trust(migrated), 184);
+    expect(ElevageDomain.contribution(migrated), 184);
+    expect(
+        (migrated.data['refugeProgress'] as Map)['trustMigrationV224'], isTrue);
+  });
+
+  test('Confiance crédite adoption puis connaissance une seule fois', () {
+    final progression =
+        Map<String, dynamic>.from(defaultElevageConfig.refugeProgression);
+    progression['knowledge'] = <String, dynamic>{
+      'observationsForHypothesis': 1,
+      'evidenceForConfirmation': 1,
+    };
+    final config =
+        defaultElevageConfig.copyWith(refugeProgression: progression);
+    var state = ElevageSave.initial(config, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Hawl',
+        physical: false,
+        now: now,
+        config: config);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    expect(ElevageDomain.trust(state), 10);
+    state = ElevageDomain.recordKnowledgeObservation(
+        state, id, 'IRON_AFFINITY', now + 1, config);
+    state = ElevageDomain.refreshRefugeProgress(state, now + 1, config);
+    expect(ElevageDomain.trust(state), 13); // Observation + Hypothèse.
+    state = ElevageDomain.recordKnowledgeObservation(
+        state, id, 'IRON_AFFINITY', now + 2, config);
+    state = ElevageDomain.refreshRefugeProgress(state, now + 2, config);
+    expect(ElevageDomain.trust(state), 19); // Observation + Découverte.
+    state = ElevageDomain.refreshRefugeProgress(state, now + 3, config);
+    expect(ElevageDomain.trust(state), 19);
+    expect(
+        ElevageDomain.trustHistory(state)
+            .where((entry) => entry['reasonType'] == 'HYPOTHESIS'),
+        hasLength(1));
+  });
+
+  test('Confiance pénalise chaque P’TIPOTE critique par tranches de 24h', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Hawl',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    state = ElevageDomain.setTrust(state, 100, now: now);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    ((state.data['individuals'] as Map)[id]['wellbeing'] as Map)['value'] = 19;
+    state =
+        ElevageDomain.refreshRefugeProgress(state, now, defaultElevageConfig);
+    state = ElevageDomain.refreshRefugeProgress(state,
+        now + const Duration(hours: 49).inMilliseconds, defaultElevageConfig);
+    expect(ElevageDomain.trust(state), 80);
+    state = ElevageDomain.refreshRefugeProgress(state,
+        now + const Duration(hours: 49).inMilliseconds, defaultElevageConfig);
+    expect(ElevageDomain.trust(state), 80);
+    ((state.data['individuals'] as Map)[id]['wellbeing'] as Map)['value'] = 21;
+    state = ElevageDomain.refreshRefugeProgress(state,
+        now + const Duration(hours: 50).inMilliseconds, defaultElevageConfig);
+    expect(ElevageDomain.trust(state), 80);
+  });
+
+  test('évolution Juvénile crédite la Confiance une seule fois', () {
+    final progression =
+        Map<String, dynamic>.from(defaultElevageConfig.refugeProgression);
+    progression['maturation'] = <String, dynamic>{
+      'observationRequirement': 0,
+      'hypothesisRequirement': 0,
+      'confirmationRequirement': 0,
+    };
+    final config =
+        defaultElevageConfig.copyWith(refugeProgression: progression);
+    var state = ElevageSave.initial(config, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Hawl',
+        physical: false,
+        now: now,
+        config: config);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final evolvedAt = now + const Duration(hours: 25).inMilliseconds;
+    state = ElevageDomain.metamorphose(state, id, evolvedAt, config);
+    expect(ElevageDomain.trust(state), 60);
+    final reloaded = ElevageSave.fromJson(state.toJson());
+    expect(
+        ElevageDomain.trustHistory(reloaded)
+            .where((entry) => entry['reasonType'] == 'INTERMEDIATE_EVOLUTION'),
+        hasLength(1));
+  });
+
+  test('Confiance applique le malus critique séparément à deux P’TIPOTES', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    for (final entry in <(String, String)>[
+      ('alcove-1', 'Hawl'),
+      ('alcove-2', 'Noma'),
+    ]) {
+      state = ElevageDomain.adopt(
+          source: state,
+          alcoveId: entry.$1,
+          name: entry.$2,
+          physical: false,
+          now: now,
+          config: defaultElevageConfig);
+    }
+    state = ElevageDomain.setTrust(state, 100, now: now);
+    for (final id in state.data['activeIndividualIds'] as List) {
+      (((state.data['individuals'] as Map)[id] as Map)['wellbeing']
+          as Map)['value'] = 19;
+    }
+    state =
+        ElevageDomain.refreshRefugeProgress(state, now, defaultElevageConfig);
+    state = ElevageDomain.refreshRefugeProgress(state,
+        now + const Duration(hours: 24).inMilliseconds, defaultElevageConfig);
+    expect(ElevageDomain.trust(state), 80);
+  });
+
   test('chantier assisté consomme moins de Bio-piles et devient prêt', () {
     final target = defaultElevageConfig.copyWith(
         devMode: false, preset: ElevagePreset.target);

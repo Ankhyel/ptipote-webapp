@@ -223,10 +223,16 @@ class ElevageController extends ChangeNotifier {
   Future<void> forceTrackerLevel(String individualId, int level) =>
       _mutate((current) => ElevageDomain.forceTrackerLevel(
           current, individualId, level, config));
-  Future<void> addContribution(int amount) =>
-      _mutate((current) => ElevageDomain.addContribution(current, amount));
-  Future<void> setContribution(int value) =>
-      _mutate((current) => ElevageDomain.setContribution(current, value));
+  Future<void> addTrust(int amount) => _mutate((current) =>
+      ElevageDomain.addTrust(current, amount, now: _now, reasonType: 'DEBUG'));
+  Future<void> setTrust(int value) =>
+      _mutate((current) => ElevageDomain.setTrust(current, value, now: _now));
+  Future<void> simulateCriticalWellbeingTrustPeriod(String individualId) =>
+      _mutate((current) => ElevageDomain.simulateCriticalWellbeingTrustPeriod(
+          current, individualId, _now, config));
+  // Legacy controller aliases kept for old dashboard callers.
+  Future<void> addContribution(int amount) => addTrust(amount);
+  Future<void> setContribution(int value) => setTrust(value);
   Future<void> startAlcoveConstruction(String alcoveId, String route) =>
       _mutate((current) => ElevageDomain.startAlcoveConstruction(
           current, alcoveId, route, _now, config));
@@ -317,7 +323,8 @@ class ElevageController extends ChangeNotifier {
     final current = state;
     if (current == null) return;
     try {
-      state = action(current);
+      state =
+          ElevageDomain.refreshRefugeProgress(action(current), _now, config);
       error = null;
       await _persist();
     } catch (exception) {
