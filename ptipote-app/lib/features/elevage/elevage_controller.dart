@@ -33,6 +33,7 @@ class ElevageController extends ChangeNotifier {
     state = await _repository.loadSave();
     if (state != null) {
       state = ElevageDomain.processReturns(state!, _now);
+      state = ElevageDomain.refreshWeather(state!, _now, config);
       state = ElevageDomain.refreshRefugeProgress(state!, _now, config);
       state = ElevageDomain.refreshSatietyState(state!, _now, config);
       state = ElevageDomain.refreshExploration(state!, _now, config);
@@ -90,6 +91,11 @@ class ElevageController extends ChangeNotifier {
 
   Future<void> offerFood(String id, String item) => _mutate(
       (current) => ElevageDomain.offerFood(current, id, item, _now, config));
+  Future<void> cookMeal(List<String> ingredients, bool usedWater) =>
+      _mutate((current) => ElevageDomain.cookMeal(
+          current, ingredients, usedWater, _now, config));
+  Future<void> offerCookedMeal(String id, String mealId) => _mutate((current) =>
+      ElevageDomain.offerCookedMeal(current, id, mealId, _now, config));
   Future<void> setSatiety(String id, int value) => _mutate((current) =>
       ElevageDomain.setIndividualSatiety(current, id, value, _now));
   Future<void> addSatiety(String id, int amount) => _mutate((current) =>
@@ -323,8 +329,12 @@ class ElevageController extends ChangeNotifier {
     final current = state;
     if (current == null) return;
     try {
-      state =
-          ElevageDomain.refreshRefugeProgress(action(current), _now, config);
+      final withWeather = ElevageDomain.refreshWeather(current, _now, config);
+      state = ElevageDomain.refreshRefugeProgress(
+        action(withWeather),
+        _now,
+        config,
+      );
       error = null;
       await _persist();
     } catch (exception) {

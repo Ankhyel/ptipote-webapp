@@ -60,6 +60,9 @@ class ElevageSave {
           },
       },
       'biogeneratorInventory': <String, dynamic>{},
+      'cookedMeals': <String, dynamic>{},
+      'waterTank': 0.0,
+      'weather': <String, dynamic>{'lastUpdatedAt': now},
       // `contribution` is retained as a legacy mirror for older saves and
       // integrations. `trust` is the canonical player-facing progression.
       'refugeProgress': <String, dynamic>{
@@ -99,6 +102,13 @@ class ElevageSave {
     normalized.putIfAbsent('moduleInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('batteryInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('biogeneratorInventory', () => <String, dynamic>{});
+    normalized.putIfAbsent('cookedMeals', () => <String, dynamic>{});
+    normalized.putIfAbsent('waterTank', () => 0.0);
+    normalized.putIfAbsent(
+        'weather',
+        () => <String, dynamic>{
+              'lastUpdatedAt': (normalized['savedAt'] as num?)?.toInt() ?? 0,
+            });
     normalized.putIfAbsent('refugeProgress',
         () => <String, dynamic>{'contribution': 0, 'trust': 0});
     final refugeProgress = normalized['refugeProgress'] as Map;
@@ -1289,6 +1299,95 @@ class ElevageDomain {
           individual, 'FOOD_ACCEPTED:$item', count, config, now);
     }
     _memory(state, id, 'FIRST_FOOD', now);
+    return state;
+  }
+
+  static List<Map<String, dynamic>> cookedMeals(ElevageSave state) =>
+      (state.data['cookedMeals'] as Map)
+          .values
+          .whereType<Map>()
+          .map((meal) => Map<String, dynamic>.from(meal))
+          .toList(growable: false);
+
+  static double waterTank(ElevageSave state) =>
+      ((state.data['waterTank'] as num?)?.toDouble() ?? 0)
+          .clamp(0, double.infinity);
+
+  static ElevageSave cookMeal(ElevageSave source, List<String> ingredients,
+      bool usedWater, int now, ElevageConfig config) {
+    final state = refreshWeather(source, now, config);
+    if (ingredients.length != 3 ||
+        ingredients.any((item) => config.foodSatietyValue(item) <= 0)) {
+      throw StateError('Choisissez exactement trois ingrédients alimentaires.');
+    }
+    final special = _special(state);
+    final required = <String, int>{};
+    for (final item in ingredients) {
+      required[item] = (required[item] ?? 0) + 1;
+    }
+    if (required.entries
+        .any((entry) => (special[entry.key] ?? 0) < entry.value)) {
+      throw StateError('Ingrédients insuffisants.');
+    }
+    final waterCost = usedWater ? config.waterCostPerWetRecipe : 0;
+    if (waterTank(state) < waterCost) throw StateError('Eau insuffisante.');
+    required.forEach((item, count) => special[item] = special[item]! - count);
+    state.data['waterTank'] = (waterTank(state) - waterCost)
+        .clamp(0, config.waterTankCapacity)
+        .toDouble();
+    final portions = usedWater ? config.wetPortions : config.dryPortions;
+    final ingredientSatiety = ingredients.fold<int>(
+        0, (sum, item) => sum + config.foodSatietyValue(item));
+    final batchSatiety = ingredientSatiety +
+        portions *
+            (usedWater ? config.wetBonusPerPortion : config.dryBonusPerPortion);
+    final base = batchSatiety ~/ portions;
+    final remainder = batchSatiety % portions;
+    final id = 'cooked-meal-$now-${(state.data['cookedMeals'] as Map).length}';
+    (state.data['cookedMeals'] as Map<String, dynamic>)[id] = <String, dynamic>{
+      'instanceId': id,
+      'itemId': 'COOKED_MEAL',
+      'ingredientIds': List<String>.from(ingredients),
+      'usedWater': usedWater,
+      'portionCount': portions,
+      'remainingPortions': portions,
+      'batchSatiety': batchSatiety,
+      'satietyPerPortionDistribution': <int>[
+        for (var index = 0; index < portions; index++)
+          base + (index < remainder ? 1 : 0),
+      ],
+      'createdAt': now,
+    };
+    return state;
+  }
+
+  static ElevageSave offerCookedMeal(ElevageSave source, String id,
+      String mealId, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, id);
+    final meals = state.data['cookedMeals'] as Map<String, dynamic>;
+    final meal = meals[mealId] as Map?;
+    if (meal == null ||
+        ((meal['remainingPortions'] as num?)?.toInt() ?? 0) <= 0) {
+      throw StateError('Cette préparation est épuisée.');
+    }
+    final ingredients = (meal['ingredientIds'] as List).cast<String>();
+    if (ingredients.any((item) => !canEat(individual, item, config))) {
+      throw StateError(
+          'Cette préparation contient un aliment non accessible à ce stade.');
+    }
+    if (!canOfferNormalFood(state, id, now, config)) {
+      throw StateError('P’TIPOTE n’a pas faim.');
+    }
+    final portions = meal['satietyPerPortionDistribution'] as List;
+    final index = ((meal['portionCount'] as num).toInt() -
+            (meal['remainingPortions'] as num).toInt())
+        .clamp(0, portions.length - 1);
+    final satiety = (portions[index] as num).toInt();
+    setSatiety(
+        individual, refreshSatiety(individual, now, config) + satiety, now);
+    meal['remainingPortions'] = (meal['remainingPortions'] as num).toInt() - 1;
+    if (meal['remainingPortions'] == 0) meals.remove(mealId);
     return state;
   }
 
@@ -2499,6 +2598,97 @@ class ElevageDomain {
     return consumed;
   }
 
+  static int weatherBlockStart(int now, ElevageConfig config) {
+    final local = DateTime.fromMillisecondsSinceEpoch(now).toLocal();
+    final blockHour =
+        local.hour - local.hour.remainder(config.weatherBlockHours);
+    return DateTime(local.year, local.month, local.day, blockHour)
+        .millisecondsSinceEpoch;
+  }
+
+  static String weatherTypeAt(int now, ElevageConfig config) {
+    final block = weatherBlockStart(now, config);
+    final weights = <String, int>{
+      'CLEAR': config.weatherClearWeight,
+      'LIGHT_RAIN': config.weatherLightRainWeight,
+      'HEAVY_RAIN': config.weatherHeavyRainWeight,
+    }..removeWhere((_, weight) => weight <= 0);
+    final total = weights.values.fold<int>(0, (sum, weight) => sum + weight);
+    if (total <= 0) return 'CLEAR';
+    var roll = _hash('weather-$block') % total;
+    for (final entry in weights.entries) {
+      if (roll < entry.value) return entry.key;
+      roll -= entry.value;
+    }
+    return 'CLEAR';
+  }
+
+  static Map<String, int> weatherEffectsAt(int now, ElevageConfig config) {
+    final type = weatherTypeAt(now, config);
+    final elapsedInBlock = now - weatherBlockStart(now, config);
+    final raining = switch (type) {
+      'HEAVY_RAIN' => true,
+      'LIGHT_RAIN' => elapsedInBlock <
+          config.lightRainDurationHours *
+              const Duration(hours: 1).inMilliseconds,
+      _ => false,
+    };
+    if (!raining) return const <String, int>{'light': 0, 'temperature': 0};
+    return switch (type) {
+      'HEAVY_RAIN' => <String, int>{
+          'light': config.heavyRainLightDelta,
+          'temperature': config.heavyRainTemperatureDelta
+        },
+      'LIGHT_RAIN' => <String, int>{
+          'light': config.lightRainLightDelta,
+          'temperature': config.lightRainTemperatureDelta
+        },
+      _ => const <String, int>{'light': 0, 'temperature': 0},
+    };
+  }
+
+  static bool _isRainingAt(int now, ElevageConfig config) {
+    final type = weatherTypeAt(now, config);
+    if (type == 'HEAVY_RAIN') return true;
+    return type == 'LIGHT_RAIN' &&
+        now - weatherBlockStart(now, config) <
+            config.lightRainDurationHours *
+                const Duration(hours: 1).inMilliseconds;
+  }
+
+  static ElevageSave refreshWeather(
+      ElevageSave source, int now, ElevageConfig config) {
+    final state = source.copy();
+    final weather = Map<String, dynamic>.from(state.data['weather'] as Map)
+      ..['weatherBlockStart'] = weatherBlockStart(now, config)
+      ..['weatherType'] = weatherTypeAt(now, config);
+    var last = (weather['lastUpdatedAt'] as num?)?.toInt() ?? now;
+    if (last <= 0 || last > now) last = now;
+    var collected = 0.0;
+    final hourMs = const Duration(hours: 1).inMilliseconds;
+    var cursor = last;
+    while (cursor < now) {
+      final blockEnd =
+          weatherBlockStart(cursor, config) + config.weatherBlockHours * hourMs;
+      final rainEnd = weatherTypeAt(cursor, config) == 'LIGHT_RAIN'
+          ? weatherBlockStart(cursor, config) +
+              config.lightRainDurationHours * hourMs
+          : blockEnd;
+      final segmentEnd =
+          min(now, min(blockEnd, cursor < rainEnd ? rainEnd : blockEnd));
+      if (_isRainingAt(cursor, config)) {
+        collected += (segmentEnd - cursor) / hourMs * config.rainWaterPerHour;
+      }
+      cursor = segmentEnd;
+    }
+    state.data['waterTank'] = (waterTank(state) + collected)
+        .clamp(0, config.waterTankCapacity)
+        .toDouble();
+    weather['lastUpdatedAt'] = now;
+    state.data['weather'] = weather;
+    return state;
+  }
+
   static Map<String, int> zoneEnvironment(
       ElevageSave state, String alcoveId, String zoneId, ElevageConfig config,
       {int? now, String? phaseOverride}) {
@@ -2517,6 +2707,10 @@ class ElevageDomain {
           zone.temperature,
       'humidity': config.baseHumidity + zone.humidity,
     };
+    final weather =
+        weatherEffectsAt(now ?? DateTime.now().millisecondsSinceEpoch, config);
+    result['light'] = result['light']! + weather['light']!;
+    result['temperature'] = result['temperature']! + weather['temperature']!;
     final slots = _alcove(state, alcoveId)['slots'] as List;
     for (var index = 0; index < slots.length; index++) {
       final raw = slots[index];
@@ -3103,11 +3297,11 @@ class ElevageDomain {
   }
 
   static String dayNightPhase(int now, ElevageConfig config) {
-    final dayMs =
-        config.dayDurationHours * const Duration(hours: 1).inMilliseconds;
-    final cycleMs =
-        config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
-    return now % cycleMs < dayMs ? 'DAY' : 'NIGHT';
+    final hour = DateTime.fromMillisecondsSinceEpoch(now).toLocal().hour;
+    final night = config.nightStartHour <= config.nightEndHour
+        ? hour >= config.nightStartHour && hour < config.nightEndHour
+        : hour >= config.nightStartHour || hour < config.nightEndHour;
+    return night ? 'NIGHT' : 'DAY';
   }
 
   static int dayNightRemainingMs(int now, ElevageConfig config,
@@ -3119,12 +3313,12 @@ class ElevageDomain {
               : config.nightDurationHours) *
           const Duration(hours: 1).inMilliseconds;
     }
-    final dayMs =
-        config.dayDurationHours * const Duration(hours: 1).inMilliseconds;
-    final cycleMs =
-        config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
-    final position = now % cycleMs;
-    return phase == 'DAY' ? dayMs - position : cycleMs - position;
+    final local = DateTime.fromMillisecondsSinceEpoch(now).toLocal();
+    final endHour =
+        phase == 'NIGHT' ? config.nightEndHour : config.nightStartHour;
+    var end = DateTime(local.year, local.month, local.day, endHour);
+    if (!end.isAfter(local)) end = end.add(const Duration(days: 1));
+    return end.millisecondsSinceEpoch - local.millisecondsSinceEpoch;
   }
 
   static ElevageSave observeShade(

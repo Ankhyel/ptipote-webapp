@@ -1628,6 +1628,29 @@ class _IndividualPageState extends State<_IndividualPage> {
                   child: Chip(
                       avatar: const Icon(Icons.chat_bubble_outline),
                       label: Text(_communicationLabel(communication)))),
+            _section(context, 'Météo et Eau', <Widget>[
+              ListTile(
+                leading: Text(
+                    _weatherEmoji(
+                        ElevageDomain.weatherTypeAt(now, controller.config)),
+                    style: const TextStyle(fontSize: 24)),
+                title: Text(_weatherLabel(
+                    ElevageDomain.weatherTypeAt(now, controller.config))),
+                subtitle: const Text(
+                    'La météo modifie la lumière et la température locales.'),
+                trailing: Text(
+                    '💧 ${ElevageDomain.waterTank(state).toStringAsFixed(1)}/${controller.config.waterTankCapacity}'),
+              ),
+            ]),
+            _section(context, 'Cuisine', <Widget>[
+              ListTile(
+                leading: const Icon(Icons.soup_kitchen_outlined),
+                title: const Text('Préparation libre'),
+                subtitle: const Text('3 ingrédients · Eau optionnelle'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openCooking(context, controller, individual),
+              ),
+            ]),
             _section(context, 'État', <Widget>[
               ListTile(
                   leading: const Icon(Icons.restaurant_outlined),
@@ -2693,6 +2716,79 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               (value) =>
                   _setSatietyNumber('juvenileVeryHungrySignalCooldown', value)),
           if (widget.controller.config.devMode) _satietyDevTools(context),
+          _heading('Cuisine et météo'),
+          _number(
+              context,
+              'Portions sèches',
+              config.dryPortions,
+              (value) =>
+                  _setRefugeNestedNumber('cooking', 'dryPortions', value)),
+          _number(
+              context,
+              'Portions humides',
+              config.wetPortions,
+              (value) =>
+                  _setRefugeNestedNumber('cooking', 'wetPortions', value)),
+          _number(
+              context,
+              'Bonus sec / portion',
+              config.dryBonusPerPortion,
+              (value) => _setRefugeNestedNumber(
+                  'cooking', 'dryBonusPerPortion', value)),
+          _number(
+              context,
+              'Bonus humide / portion',
+              config.wetBonusPerPortion,
+              (value) => _setRefugeNestedNumber(
+                  'cooking', 'wetBonusPerPortion', value)),
+          _number(
+              context,
+              'Réservoir Eau',
+              config.waterTankCapacity,
+              (value) => _setRefugeNestedNumber(
+                  'cooking', 'waterTankCapacity', value)),
+          _number(
+              context,
+              'Bloc météo (h)',
+              config.weatherBlockHours,
+              (value) => _setRefugeNestedNumber(
+                  'weather', 'weatherBlockHours', value)),
+          _number(
+              context,
+              'Poids beau temps',
+              config.weatherClearWeight,
+              (value) => _setRefugeNestedNumber(
+                  'weather', 'weatherClearWeight', value)),
+          _number(
+              context,
+              'Poids petite pluie',
+              config.weatherLightRainWeight,
+              (value) => _setRefugeNestedNumber(
+                  'weather', 'weatherLightRainWeight', value)),
+          _number(
+              context,
+              'Poids forte pluie',
+              config.weatherHeavyRainWeight,
+              (value) => _setRefugeNestedNumber(
+                  'weather', 'weatherHeavyRainWeight', value)),
+          _number(
+              context,
+              'Eau de pluie / h',
+              config.rainWaterPerHour,
+              (value) =>
+                  _setRefugeNestedNumber('weather', 'rainWaterPerHour', value)),
+          _number(
+              context,
+              'Début nuit locale',
+              config.nightStartHour,
+              (value) =>
+                  _setRefugeNestedNumber('weather', 'nightStartHour', value)),
+          _number(
+              context,
+              'Fin nuit locale',
+              config.nightEndHour,
+              (value) =>
+                  _setRefugeNestedNumber('weather', 'nightEndHour', value)),
           _number(context, 'Preuves suspectées', config.suspectedThreshold,
               (value) => config = config.copyWith(suspectedThreshold: value)),
           _number(context, 'Preuves confirmées', config.confirmedThreshold,
@@ -5248,6 +5344,120 @@ Future<void> _showInstallationDetails(
 }
 
 String _signed(int value) => value > 0 ? '+$value' : '$value';
+
+String _weatherLabel(String type) => switch (type) {
+      'LIGHT_RAIN' => 'Petite pluie',
+      'HEAVY_RAIN' => 'Forte pluie',
+      _ => 'Beau temps',
+    };
+
+String _weatherEmoji(String type) => switch (type) {
+      'LIGHT_RAIN' => '🌦️',
+      'HEAVY_RAIN' => '🌧️',
+      _ => '☀️',
+    };
+
+Future<void> _openCooking(
+    BuildContext context, ElevageController controller, Map individual) async {
+  final selected = <String?>[null, null, null];
+  var useWater = false;
+  await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(builder: (_, setSheetState) {
+            final state = controller.state!;
+            final special = state.data['inventory']['special'] as Map;
+            final foods = special.entries
+                .where((entry) =>
+                    (entry.value as num?)?.toInt() != null &&
+                    (entry.value as num).toInt() > 0 &&
+                    controller.config.foodSatietyValue(entry.key as String) > 0)
+                .map((entry) => entry.key as String)
+                .toList();
+            final complete = selected.every((item) => item != null);
+            final portions = useWater
+                ? controller.config.wetPortions
+                : controller.config.dryPortions;
+            final total = selected.whereType<String>().fold<int>(
+                    0,
+                    (sum, item) =>
+                        sum + controller.config.foodSatietyValue(item)) +
+                portions *
+                    (useWater
+                        ? controller.config.wetBonusPerPortion
+                        : controller.config.dryBonusPerPortion);
+            return SafeArea(
+                child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text('Cuisine',
+                              style:
+                                  Theme.of(sheetContext).textTheme.titleLarge),
+                          const SizedBox(height: 8),
+                          for (var index = 0; index < 3; index++)
+                            DropdownButtonFormField<String>(
+                              initialValue: selected[index],
+                              decoration: InputDecoration(
+                                  labelText: 'Ingrédient ${index + 1}'),
+                              items: foods
+                                  .map((item) => DropdownMenuItem(
+                                      value: item,
+                                      child: Text(
+                                          '${ElevagePresentation.itemLabel(item)} · ${special[item]}')))
+                                  .toList(),
+                              onChanged: (value) =>
+                                  setSheetState(() => selected[index] = value),
+                            ),
+                          SwitchListTile(
+                              value: useWater,
+                              title: const Text('Ajouter de l’eau'),
+                              subtitle: Text(
+                                  '💧 ${ElevageDomain.waterTank(state).toStringAsFixed(1)}/${controller.config.waterTankCapacity}'),
+                              onChanged: (value) =>
+                                  setSheetState(() => useWater = value)),
+                          ListTile(
+                              title: Text('Prévision : $portions portions'),
+                              subtitle: Text(
+                                  'Satiété totale : $total · moyenne : ${(total / portions).toStringAsFixed(1)}')),
+                          FilledButton(
+                              onPressed: !complete
+                                  ? null
+                                  : () async {
+                                      await controller.cookMeal(
+                                          selected.cast<String>(), useWater);
+                                      if (sheetContext.mounted) {
+                                        setSheetState(() {});
+                                      }
+                                    },
+                              child: const Text('Cuisiner')),
+                          const Divider(height: 28),
+                          ...ElevageDomain.cookedMeals(state)
+                              .map((meal) => ListTile(
+                                    leading:
+                                        const Icon(Icons.restaurant_outlined),
+                                    title: Text(
+                                        'Plat cuisiné · ${meal['remainingPortions']}/${meal['portionCount']}'),
+                                    subtitle: Text(
+                                        (meal['ingredientIds'] as List)
+                                            .cast<String>()
+                                            .map(ElevagePresentation.itemLabel)
+                                            .join(' + ')),
+                                    trailing: TextButton(
+                                        onPressed: () async {
+                                          await controller.offerCookedMeal(
+                                              individual['id'] as String,
+                                              meal['instanceId'] as String);
+                                          if (sheetContext.mounted) {
+                                            setSheetState(() {});
+                                          }
+                                        },
+                                        child: const Text('Donner')),
+                                  )),
+                        ])));
+          }));
+}
 
 Future<void> _openInventory(BuildContext context, ElevageController controller,
     Map individual, void Function(String item) onPlace) async {

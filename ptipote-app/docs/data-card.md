@@ -1517,3 +1517,19 @@ L’Eau n’est pas une ressource globale du Camp.
   réglables dans la section Confiance. Les outils dev permettent d’ajouter,
   retirer ou fixer la valeur; les gains normaux restent uniquement pilotés par
   les événements Élevage.
+
+# Lot 22.5 — Cuisine V1 et météo simple
+
+- **Cuisine.** Une préparation libre associe exactement trois aliments. Sans
+  Eau, elle crée 3 portions et ajoute `10` satiété par portion; avec une unité
+  d’Eau, elle crée 4 portions et ajoute `5` par portion. Chaque batch persiste
+  ses ingrédients, son usage d’Eau, son total, sa distribution déterministe et
+  ses portions restantes. Un P’TIPOTE ne peut manger le plat que si chacun de
+  ses ingrédients est accessible à son Type et à son stade.
+- **Météo et Eau.** La nuit locale est 00:00–04:00. Une météo déterministe est
+  choisie pour chaque bloc réel de 4 h selon les poids Dashboard : Beau temps,
+  Petite pluie (2 h de pluie puis 2 h calmes) ou Forte pluie (4 h). La pluie
+  remplit le réservoir partagé, borné à 30, à raison de 5 Eau/h. Petite pluie
+  applique Lumière -1, Forte pluie Lumière -1 et Température -1; ces effets se
+  cumulent au jour/nuit puis restent clampés à 0–5. L’Eau n’a pour V1 qu’un
+  usage : une recette humide coûte 1.

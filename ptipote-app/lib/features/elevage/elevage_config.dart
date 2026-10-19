@@ -756,6 +756,46 @@ class ElevageConfig {
   int get criticalWellbeingPenaltyHours =>
       _trustNumber('criticalWellbeingPenaltyHours', 24, minimum: 1);
 
+  Map<String, dynamic> get cookingConfig => Map<String, dynamic>.from(
+      refugeProgression['cooking'] as Map? ?? const <dynamic, dynamic>{});
+  int _cookingNumber(String key, int fallback) =>
+      ((cookingConfig[key] as num?)?.toInt() ?? fallback).clamp(0, 999);
+  int get dryPortions => _cookingNumber('dryPortions', 3).clamp(1, 99);
+  int get wetPortions => _cookingNumber('wetPortions', 4).clamp(1, 99);
+  int get dryBonusPerPortion => _cookingNumber('dryBonusPerPortion', 10);
+  int get wetBonusPerPortion => _cookingNumber('wetBonusPerPortion', 5);
+  int get waterTankCapacity =>
+      _cookingNumber('waterTankCapacity', 30).clamp(1, 999);
+  int get waterCostPerWetRecipe =>
+      _cookingNumber('waterCostPerWetRecipe', 1).clamp(1, 99);
+
+  Map<String, dynamic> get weatherConfig => Map<String, dynamic>.from(
+      refugeProgression['weather'] as Map? ?? const <dynamic, dynamic>{});
+  int _weatherNumber(String key, int fallback) =>
+      ((weatherConfig[key] as num?)?.toInt() ?? fallback).clamp(0, 999);
+  int get weatherBlockHours =>
+      _weatherNumber('weatherBlockHours', 4).clamp(1, 24);
+  int get weatherClearWeight => _weatherNumber('weatherClearWeight', 1);
+  int get weatherLightRainWeight => _weatherNumber('weatherLightRainWeight', 1);
+  int get weatherHeavyRainWeight => _weatherNumber('weatherHeavyRainWeight', 1);
+  int get lightRainDurationHours =>
+      _weatherNumber('lightRainDurationHours', 2).clamp(0, 24);
+  int get heavyRainDurationHours =>
+      _weatherNumber('heavyRainDurationHours', 4).clamp(0, 24);
+  int _weatherSignedNumber(String key, int fallback) =>
+      ((weatherConfig[key] as num?)?.toInt() ?? fallback).clamp(-5, 5);
+  int get lightRainLightDelta =>
+      _weatherSignedNumber('lightRainLightDelta', -1);
+  int get lightRainTemperatureDelta =>
+      _weatherSignedNumber('lightRainTemperatureDelta', 0);
+  int get heavyRainLightDelta =>
+      _weatherSignedNumber('heavyRainLightDelta', -1);
+  int get heavyRainTemperatureDelta =>
+      _weatherSignedNumber('heavyRainTemperatureDelta', -1);
+  int get rainWaterPerHour => _weatherNumber('rainWaterPerHour', 5);
+  int get nightStartHour => _weatherNumber('nightStartHour', 0).clamp(0, 23);
+  int get nightEndHour => _weatherNumber('nightEndHour', 4).clamp(1, 24);
+
   Map<String, dynamic> get biogeneratorConfig => Map<String, dynamic>.from(
       refugeProgression['biogenerator'] as Map? ?? const <dynamic, dynamic>{});
   int _biogeneratorNumber(String key, int fallback) =>
@@ -2703,6 +2743,29 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'criticalWellbeingThreshold': 20,
       'criticalWellbeingTrustPenalty': 10,
       'criticalWellbeingPenaltyHours': 24,
+    },
+    'cooking': <String, dynamic>{
+      'dryPortions': 3,
+      'wetPortions': 4,
+      'dryBonusPerPortion': 10,
+      'wetBonusPerPortion': 5,
+      'waterTankCapacity': 30,
+      'waterCostPerWetRecipe': 1,
+    },
+    'weather': <String, dynamic>{
+      'weatherBlockHours': 4,
+      'weatherClearWeight': 1,
+      'weatherLightRainWeight': 1,
+      'weatherHeavyRainWeight': 1,
+      'lightRainDurationHours': 2,
+      'heavyRainDurationHours': 4,
+      'lightRainLightDelta': -1,
+      'lightRainTemperatureDelta': 0,
+      'heavyRainLightDelta': -1,
+      'heavyRainTemperatureDelta': -1,
+      'rainWaterPerHour': 5,
+      'nightStartHour': 0,
+      'nightEndHour': 4,
     },
     // Bio-batteries are onboarding/relief objects, not crafted from biology.
     // This legacy key is deliberately empty for save compatibility.

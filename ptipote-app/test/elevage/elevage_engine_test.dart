@@ -332,8 +332,8 @@ void main() {
     final outcome = ElevageDomain.sceneItemOutcome(state, id, 'alcove-1',
         first['instanceId'] as String, now + 2, defaultElevageConfig);
     expect(outcome.behavior, 'FLEE_WITH_ITEM');
-    // Résonance choisit désormais le refuge le plus chaud et viable : Z2.
-    expect(outcome.targetZoneId, 'ZONE_2');
+    // Avec la nuit locale réelle de la fixture, Z1 est le refuge viable.
+    expect(outcome.targetZoneId, 'ZONE_1');
     expect(outcome.observationCount, 1);
     state = ElevageDomain.relocateSceneItem(
         state,
@@ -342,7 +342,7 @@ void main() {
         outcome.targetZoneId!,
         defaultElevageConfig);
     expect(
-        ElevageDomain.sceneItems(state, 'alcove-1').single['zoneId'], 'ZONE_2');
+        ElevageDomain.sceneItems(state, 'alcove-1').single['zoneId'], 'ZONE_1');
   });
 
   test(
@@ -427,17 +427,19 @@ void main() {
       'definitionId': 'BASSIN',
       'zoneId': 'ZONE_3',
     };
-    expect(ElevageDomain.dayNightPhase(0, defaultElevageConfig), 'DAY');
+    final daytime = DateTime(2026, 1, 1, 12).millisecondsSinceEpoch;
+    expect(ElevageDomain.dayNightPhase(daytime, defaultElevageConfig), 'DAY');
     expect(
         ElevageDomain.dayNightPhase(
-            const Duration(hours: 4).inMilliseconds, defaultElevageConfig),
+            DateTime(2026, 1, 1, 2).millisecondsSinceEpoch,
+            defaultElevageConfig),
         'NIGHT');
     final zone3 = ElevageDomain.zoneEnvironment(
         state, 'alcove-1', 'ZONE_3', defaultElevageConfig,
-        now: 0);
+        now: daytime);
     final zone2 = ElevageDomain.zoneEnvironment(
         state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
-        now: 0);
+        now: daytime);
     expect(zone3['humidity'], 4); // baseline 2/5 + bassin local +2
     expect(zone2['humidity'], 3); // diffusion +1 vers la zone adjacente
   });
@@ -2256,6 +2258,128 @@ void main() {
     state = ElevageDomain.refreshRefugeProgress(state,
         now + const Duration(hours: 24).inMilliseconds, defaultElevageConfig);
     expect(ElevageDomain.trust(state), 80);
+  });
+
+  test(
+      'Cuisine V1 répartit la satiété sèche et humide sans perdre la composition',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Hawl',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    state = ElevageDomain.addDevInventory(state);
+    state = ElevageDomain.cookMeal(
+        state,
+        const <String>['ROOT', 'LEAF', 'MOSS'],
+        false,
+        now,
+        defaultElevageConfig);
+    final dry = ElevageDomain.cookedMeals(state).single;
+    expect(dry['portionCount'], 3);
+    expect(dry['batchSatiety'], 70);
+    expect(dry['ingredientIds'], const <String>['ROOT', 'LEAF', 'MOSS']);
+    state = ElevageDomain.setIndividualSatiety(state, id, 0, now);
+    state = ElevageDomain.offerCookedMeal(
+        state, id, dry['instanceId'] as String, now + 1, defaultElevageConfig);
+    expect(
+        ElevageDomain.satietyPercent(state, id, now + 1, defaultElevageConfig),
+        24);
+    state.data['waterTank'] = 5.0;
+    state = ElevageDomain.cookMeal(
+        state,
+        const <String>['ROOT', 'LEAF', 'MOSS'],
+        true,
+        now + 2,
+        defaultElevageConfig);
+    final wet = ElevageDomain.cookedMeals(state).last;
+    expect(wet['portionCount'], 4);
+    expect(wet['batchSatiety'], 60);
+    expect(ElevageDomain.waterTank(state), 4);
+  });
+
+  test('météo déterministe remplit l’eau et utilise la nuit locale 00–04', () {
+    final progression =
+        Map<String, dynamic>.from(defaultElevageConfig.refugeProgression);
+    progression['weather'] = <String, dynamic>{
+      'weatherBlockHours': 4,
+      'weatherClearWeight': 0,
+      'weatherLightRainWeight': 0,
+      'weatherHeavyRainWeight': 1,
+      'lightRainDurationHours': 2,
+      'heavyRainDurationHours': 4,
+      'lightRainLightDelta': -1,
+      'lightRainTemperatureDelta': 0,
+      'heavyRainLightDelta': -1,
+      'heavyRainTemperatureDelta': -1,
+      'rainWaterPerHour': 5,
+      'nightStartHour': 0,
+      'nightEndHour': 4,
+    };
+    final config =
+        defaultElevageConfig.copyWith(refugeProgression: progression);
+    final start = DateTime(2026, 1, 1).millisecondsSinceEpoch;
+    var state = ElevageSave.initial(config, now: start);
+    (state.data['weather'] as Map)['lastUpdatedAt'] = start;
+    state = ElevageDomain.refreshWeather(
+        state, start + const Duration(hours: 4).inMilliseconds, config);
+    expect(ElevageDomain.waterTank(state), 20);
+    expect(ElevageDomain.weatherTypeAt(start + 1, config), 'HEAVY_RAIN');
+    expect(ElevageDomain.weatherEffectsAt(start + 1, config),
+        const <String, int>{'light': -1, 'temperature': -1});
+    expect(
+        ElevageDomain.dayNightPhase(
+            DateTime(2026, 1, 1, 2).millisecondsSinceEpoch, config),
+        'NIGHT');
+    expect(
+        ElevageDomain.dayNightPhase(
+            DateTime(2026, 1, 1, 4).millisecondsSinceEpoch, config),
+        'DAY');
+  });
+
+  test('petite pluie ne remplit l’eau que pendant les deux premières heures',
+      () {
+    final progression =
+        Map<String, dynamic>.from(defaultElevageConfig.refugeProgression);
+    progression['weather'] = <String, dynamic>{
+      'weatherBlockHours': 4,
+      'weatherClearWeight': 0,
+      'weatherLightRainWeight': 1,
+      'weatherHeavyRainWeight': 0,
+      'lightRainDurationHours': 2,
+      'heavyRainDurationHours': 4,
+      'lightRainLightDelta': -1,
+      'lightRainTemperatureDelta': 0,
+      'heavyRainLightDelta': -1,
+      'heavyRainTemperatureDelta': -1,
+      'rainWaterPerHour': 5,
+      'nightStartHour': 0,
+      'nightEndHour': 4,
+    };
+    final config =
+        defaultElevageConfig.copyWith(refugeProgression: progression);
+    final start = DateTime(2026, 1, 1, 4).millisecondsSinceEpoch;
+    var state = ElevageSave.initial(config, now: start);
+    state = ElevageDomain.refreshWeather(
+      state,
+      start + const Duration(hours: 4).inMilliseconds,
+      config,
+    );
+
+    expect(ElevageDomain.waterTank(state), 10);
+    expect(ElevageDomain.weatherEffectsAt(start + 1, config),
+        const <String, int>{'light': -1, 'temperature': 0});
+    expect(
+      ElevageDomain.weatherEffectsAt(
+        start + const Duration(hours: 3).inMilliseconds,
+        config,
+      ),
+      const <String, int>{'light': 0, 'temperature': 0},
+    );
   });
 
   test('chantier assisté consomme moins de Bio-piles et devient prêt', () {
