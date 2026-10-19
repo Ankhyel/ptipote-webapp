@@ -769,6 +769,9 @@ class ElevageConfig {
       _biogeneratorNumber('minimumOrganicCost', 1);
   int get biogeneratorMinimumMineralCost =>
       _biogeneratorNumber('minimumMineralCost', 1);
+  int get energyStorageMax => _biogeneratorNumber('energyStorageMax', 200);
+  int get biogeneratorCycleSeconds =>
+      _biogeneratorNumber('generatorCycleSeconds', 10);
   Map<String, dynamic> get trackerConfig => Map<String, dynamic>.from(
       refugeProgression['tracker'] as Map? ?? const <dynamic, dynamic>{});
   int trackerThreshold(int level) =>
@@ -1073,9 +1076,8 @@ class ElevageConfig {
         ),
         const ElevageInstallationDefinition(
           id: 'FOUR_BIO_ORGANIQUE',
-          label: 'Four bio-organique',
-          description:
-              'Un four vivant qui réchauffe l’espace en consommant de l’Organique.',
+          label: 'Chauffage',
+          description: 'Une installation qui réchauffe durablement sa zone.',
           light: 0,
           temperature: 2,
           humidity: -1,
@@ -2218,8 +2220,8 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
     // Prototype values: visible during a TestFlight session without rapidly
     // emptying a normal Refuge reserve. Target balance remains open.
     'FOUR_BIO_ORGANIQUE': ElevageStructureConsumption(
-      mode: 'DIRECT_RESOURCE',
-      resourceCosts: <String, int>{'ORGANIC': 1},
+      mode: 'ENERGY',
+      energyCost: 1,
       consumptionIntervalSeconds: 3600,
     ),
     'VENTILATION': ElevageStructureConsumption(
@@ -2457,7 +2459,7 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         mineral: 5),
     ElevageRecipe(
         id: 'FOUR_BIO_ORGANIQUE',
-        label: 'Four bio-organique',
+        label: 'Chauffage',
         installationId: 'FOUR_BIO_ORGANIQUE',
         organic: 0,
         mineral: 7),
@@ -2700,10 +2702,12 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'capacityMineralBonus': 10,
       'minimumOrganicCost': 1,
       'minimumMineralCost': 1,
+      'energyStorageMax': 200,
+      'generatorCycleSeconds': 10,
     },
     'ambientFeedback': <String, dynamic>{
       'shiverAmplitudePx': 3,
-      'shiverSpeed': 120,
+      'shiverSpeed': 65,
       'shiverBurstDuration': 650,
       'shiverPauseDuration': 1800,
       'babyVocalCooldownSeconds': 3,
@@ -2787,6 +2791,9 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'staminaMax': 10,
       'staminaCostPerRun': 1,
       'staminaRegenPerMinute': 1,
+      'playerStaminaMax': 10,
+      'playerStaminaCost': 1,
+      'playerStaminaRegenMinutes': 5,
       'organicRegenPerHour': 5,
       'genericOrganicCost': 1,
       'specificOrganicCost': 5,
@@ -2795,6 +2802,7 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'ptipoteStaminaMax': 10,
       'ptipoteStaminaCostPerRun': 1,
       'ptipoteStaminaRegenPerMinute': 1,
+      'ptipoteStaminaRegenMinutes': 5,
       'trackerXpPerExploration': 10,
       'typeLootBiasMultipliers': <String, double>{
         'VEGETAL': 1.5,

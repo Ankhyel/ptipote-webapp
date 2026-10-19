@@ -66,7 +66,7 @@ class ElevagePresentation {
         'ABRI_FIBREUX' => 'Abri fibreux',
         'ABRI_MINERAL_PROFOND' => 'Abri minéral profond',
         'VENTILATION' => 'Ventilation',
-        'FOUR_BIO_ORGANIQUE' => 'Four bio-organique',
+        'FOUR_BIO_ORGANIQUE' => 'Chauffage',
         'TOIT_SERRE' => 'Toit de serre',
         'HAMAC' => 'Hamac',
         'NID_COUCHETTE' => 'Nid / couchette',

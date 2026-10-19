@@ -1448,3 +1448,45 @@ L’Eau n’est pas une ressource globale du Camp.
   résident à zéro : absent/récemment nourri `100`, 25–72 h `70`, plus ancien
   `50`. Le marqueur `satietyV22Migration` interdit toute reconversion et la
   valeur/timestamp deviennent ensuite l’unique source de vérité.
+
+# Lot 22.3 — Correctifs Exploration, comportement et énergie
+
+- **Endurance lisible et ralentie.** L’endurance d’exploration du joueur est
+  affichée sous le bouton Exploration de l’Alcôve; celle du P’TIPOTE apparaît
+  sous sa carte Pisteur et reste visible au choix du compagnon. Elles sont
+  distinctes de l’Energy électrique, valent 10 au maximum, coûtent 1 par
+  sortie concernée et se régénèrent par paliers de `+1 / 5 min`, y compris hors
+  ligne. Les seuils Pisteur sont uniformes partout : 0–99, 100–199, 200–299,
+  puis 300 XP et niveau 3 maximum.
+- **Inconfort robuste.** Le tremblement est une couche corporelle rapide à
+  faible amplitude, par rafales, sans prendre la machine d’actions. Une zone
+  est conservée au moins trois secondes lors des déplacements ordinaires pour
+  rester lisible. La demande juvénile de chaleur (`Pti ! 🔥`, puis
+  `veux chaleur 🔥`) est une bulle au-dessus du P’TIPOTE, distincte de l’état
+  froid (`Nnh…`/tremblement), et aucune flamme isolée ne reste dans l’UI.
+  Un watchdog de 20 secondes annule une action autonome qui ne progresse plus;
+  le soft reset efface action, cible, réaction et animation transitoires sans
+  toucher aux ressources ni à la sauvegarde. « Actualiser l’Alcôve » applique
+  ce même reset avant de recalculer l’Alcôve.
+- **Objets et zones.** Baby inspecte un objet intéressant dans une zone
+  inconfortable puis cherche pour lui-même. Intermediate/Juvénile peut avoir
+  l’idée (`!`), saisir cet objet, le déplacer vers sa meilleure zone sûre puis
+  reprendre l’interaction. Si aucune zone n’est adéquate, l’objet est abandonné
+  proprement : il n’existe pas de boucle de transport infinie.
+- **Chaîne énergétique.** Le Biogénérateur transforme automatiquement ses
+  cuves locales en stock `Energy` local : `3 Organic + 2 Mineral → 10 Energy`
+  par cycle de 10 secondes (Efficiency `2+1→10`, Power `3+2→15`, les deux
+  `2+1→15`). Le stockage est borné à `200`; l’offline est borné par cuves,
+  durée de cycle et cap. Le cercle central affiche la progression courante.
+  Aucun prélèvement direct de la Réserve n’est permis : Réserve → cuves
+  manuelles → Biogénérateur → Energy locale. La Bio-batterie reste le secours
+  du même pool. Chauffage (ID legacy `FOUR_BIO_ORGANIQUE`) et Ventilation
+  consomment l’Energy locale, ou se mettent en pause sans dette; le Chauffage
+  ne consomme plus d’Organique directement.
+- **Bio-fabricateur.** Les Structures sont classées à partir de leurs effets
+  réels et peuvent apparaître dans plusieurs accordéons : Chauffage,
+  Ventilation, Lumière, Ombre, Humidité, Structuration, Production, Activité
+  et `Autres`. Une recette Structure sans catégorie calculée reste visible
+  dans `Autres`; une entrée multiple pointe toujours vers la même recette.
+  Les recettes Energie (Biogénérateur, Bio-batterie de secours et Batterie
+  exportable) restent dans leur volet technique.

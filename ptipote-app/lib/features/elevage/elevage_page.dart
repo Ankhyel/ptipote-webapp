@@ -403,6 +403,7 @@ class _IndividualPageState extends State<_IndividualPage> {
   Timer? _feedbackTimer;
   Timer? _autonomousTimer;
   Timer? _idleTimer;
+  Timer? _behaviorWatchdog;
   bool _autonomousInFlight = false;
   int _lastAutonomousAt = 0;
   String? _lastAutonomousBehavior;
@@ -420,13 +421,30 @@ class _IndividualPageState extends State<_IndividualPage> {
   String? _sceneVoice;
   String? _bubbleItemId;
   int _actionRemainingMs = 0;
+  int _actionStartedAt = 0;
+  int _lastZoneEnteredAt = 0;
 
   @override
   void initState() {
     super.initState();
     _autonomousTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       widget.controller.refreshRequest(widget.individualId);
+      widget.controller.refreshExploration();
+      final state = widget.controller.state;
+      final individual = state == null
+          ? null
+          : (state.data['individuals'] as Map)[widget.individualId] as Map?;
+      if (individual != null) {
+        widget.controller.refreshAlcove(individual['alcoveId'] as String);
+      }
       _enqueueSceneEvent(const _SceneEvent.autonomous());
+    });
+    _behaviorWatchdog = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!mounted || !_autonomousInFlight || _actionStartedAt == 0) return;
+      if (widget.controller.now - _actionStartedAt >
+          const Duration(seconds: 20).inMilliseconds) {
+        _softResetBehavior();
+      }
     });
     _idleTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || _autonomousInFlight) return;
@@ -442,6 +460,10 @@ class _IndividualPageState extends State<_IndividualPage> {
         return;
       }
       final now = widget.controller.now;
+      if (now - _lastZoneEnteredAt <
+          const Duration(seconds: 3).inMilliseconds) {
+        return;
+      }
       if (now - _lastIdleMoveAt <
           ElevageDomain.idlePauseFor(individual, widget.controller.config) *
               1000) {
@@ -453,6 +475,7 @@ class _IndividualPageState extends State<_IndividualPage> {
         _ptipoteZoneId = zones[(index + 1) % zones.length].id;
         _sceneAction = 'IDLE';
         _lastIdleMoveAt = now;
+        _lastZoneEnteredAt = now;
       });
     });
     Future<void>.delayed(
@@ -476,6 +499,7 @@ class _IndividualPageState extends State<_IndividualPage> {
     _feedbackTimer?.cancel();
     _autonomousTimer?.cancel();
     _idleTimer?.cancel();
+    _behaviorWatchdog?.cancel();
     _followHoldTimer?.cancel();
     _ptipoteHoldTimer?.cancel();
     _bubbleTimer?.cancel();
@@ -513,8 +537,36 @@ class _IndividualPageState extends State<_IndividualPage> {
     if (!mounted) return;
     setState(() {
       _sceneAction = action;
-      if (zoneId != null) _ptipoteZoneId = zoneId;
+      _actionStartedAt = widget.controller.now;
+      if (zoneId != null) {
+        _ptipoteZoneId = zoneId;
+        _lastZoneEnteredAt = widget.controller.now;
+      }
     });
+  }
+
+  void _softResetBehavior() {
+    _actionQueue.clear();
+    _actionRemainingMs = 0;
+    _autonomousInFlight = false;
+    _lastAutonomousBehavior = null;
+    _bubbleTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _sceneAction = 'IDLE';
+      _sceneVoice = null;
+      _bubbleItemId = null;
+      _reaction = null;
+      _actionStartedAt = 0;
+    });
+  }
+
+  Future<void> _refreshAlcoveWithBehaviorReset(String alcoveId) async {
+    _softResetBehavior();
+    await widget.controller.refreshAlcove(alcoveId);
+    if (mounted) {
+      _enqueueSceneEvent(const _SceneEvent.autonomous(direct: true));
+    }
   }
 
   Future<void> _waitSceneAction(int milliseconds,
@@ -723,6 +775,11 @@ class _IndividualPageState extends State<_IndividualPage> {
           ? (config.objectReactionDelayMs / 2).round()
           : config.objectReactionDelayMs);
       if (carriesToSafety) {
+        // A Juvénile first has a readable "idea" moment, then transports the
+        // interesting object to a zone that suits it. BABY never reaches this
+        // branch because the domain denies it scene-item carrying.
+        setState(() => _sceneVoice = '!');
+        await _waitSceneAction(350);
         _setSceneAction('PICKUP');
         await _waitSceneAction((config.objectReactionDelayMs / 2).round(),
             interruptible: false);
@@ -743,6 +800,11 @@ class _IndividualPageState extends State<_IndividualPage> {
         await _waitSceneAction(config.objectReactionDelayMs);
         _setSceneAction('MOVE_ITEM', zoneId: decision.outcome.targetZoneId);
         await _waitSceneAction(config.runMoveDurationMs);
+        final safeZone = decision.outcome.targetZoneId;
+        if (safeZone != null) {
+          await widget.controller
+              .relocateSceneItem(alcoveId, decision.instanceId, safeZone);
+        }
       }
       // L’objet peut avoir été récupéré uniquement par une action déjà en
       // file ; dans ce cas l’événement devient inoffensif.
@@ -785,6 +847,11 @@ class _IndividualPageState extends State<_IndividualPage> {
     if (comfort != 'BAD' && comfort != 'EXTREME') return false;
     _setSceneAction(comfort == 'EXTREME' ? 'EXTREME' : 'DISCOMFORT');
     _showSceneExpression('DISCOMFORT', individual);
+    // A normal bad zone is deliberately visible before the next move. Extreme
+    // danger still escapes immediately, preserving the emergency exception.
+    if (comfort == 'BAD') {
+      await _waitSceneAction(const Duration(seconds: 3).inMilliseconds);
+    }
     await _waitSceneAction(config.objectReactionDelayMs);
     final target = ElevageDomain.exploratoryZoneTarget(
       current,
@@ -1424,6 +1491,8 @@ class _IndividualPageState extends State<_IndividualPage> {
         ElevageDomain.isSleeping(individual, now, controller.config);
     final explorationRun =
         (state.data['exploration'] as Map?)?['activeRun'] as Map?;
+    final exploration = ElevageDomain.explorationState(state);
+    final playerEndurance = (exploration['stamina'] as num?)?.toInt() ?? 0;
     final explorationRemaining = explorationRun?['status'] == 'IN_PROGRESS'
         ? max(0, (explorationRun?['endsAt'] as num? ?? now).toInt() - now)
         : 0;
@@ -1606,7 +1675,7 @@ class _IndividualPageState extends State<_IndividualPage> {
               ),
               FilledButton.tonal(
                   onPressed: () =>
-                      controller.refreshAlcove(alcove['id'] as String),
+                      _refreshAlcoveWithBehaviorReset(alcove['id'] as String),
                   child: const Text('Actualiser l’Alcôve')),
               if (controller.config.devMode)
                 Wrap(spacing: 8, children: <Widget>[
@@ -1693,6 +1762,13 @@ class _IndividualPageState extends State<_IndividualPage> {
                       : explorationRun?['status'] == 'READY'
                           ? 'Exploration · terminée'
                           : 'Exploration')),
+              _ExplorationEnduranceBar(
+                  current: playerEndurance,
+                  maximum: controller.config.explorationInt('playerStaminaMax',
+                      controller.config.explorationInt('staminaMax', 10)),
+                  label: 'Endurance d’exploration',
+                  regenMinutes: controller.config
+                      .explorationInt('playerStaminaRegenMinutes', 5)),
               const SizedBox(height: 6),
               FilledButton.tonalIcon(
                   onPressed: () => _sourcier(context, controller),
@@ -2180,6 +2256,18 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                   'biogenerator', 'energyPerCycle', value)),
           _number(
               context,
+              'Stock Énergie maximum',
+              config.energyStorageMax,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'energyStorageMax', value)),
+          _number(
+              context,
+              'Durée cycle (s)',
+              config.biogeneratorCycleSeconds,
+              (value) => _setRefugeNestedNumber(
+                  'biogenerator', 'generatorCycleSeconds', value)),
+          _number(
+              context,
               'Bonus Puissance',
               config.biogeneratorPowerEnergyBonus,
               (value) => _setRefugeNestedNumber(
@@ -2260,7 +2348,7 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               ((config.refugeProgression['ambientFeedback']
                           as Map?)?['shiverSpeed'] as num?)
                       ?.toInt() ??
-                  120,
+                  65,
               (value) => _setRefugeNestedNumber(
                   'ambientFeedback', 'shiverSpeed', value)),
           _number(
@@ -2642,21 +2730,21 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
           _number(
               context,
               'Stamina maximum',
-              config.explorationInt('staminaMax', 10),
-              (value) =>
-                  _setRefugeNestedNumber('exploration', 'staminaMax', value)),
+              config.explorationInt('playerStaminaMax', 10),
+              (value) => _setRefugeNestedNumber(
+                  'exploration', 'playerStaminaMax', value)),
           _number(
               context,
               'Coût Stamina / sortie',
-              config.explorationInt('staminaCostPerRun', 1),
+              config.explorationInt('playerStaminaCost', 1),
               (value) => _setRefugeNestedNumber(
-                  'exploration', 'staminaCostPerRun', value)),
+                  'exploration', 'playerStaminaCost', value)),
           _number(
               context,
-              'Régénération Stamina / min',
-              config.explorationInt('staminaRegenPerMinute', 1),
+              'Régénération Stamina (min / point)',
+              config.explorationInt('playerStaminaRegenMinutes', 5),
               (value) => _setRefugeNestedNumber(
-                  'exploration', 'staminaRegenPerMinute', value)),
+                  'exploration', 'playerStaminaRegenMinutes', value)),
           _number(
               context,
               'Endurance P’TIPOTE maximum',
@@ -2671,10 +2759,10 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                   'exploration', 'ptipoteStaminaCostPerRun', value)),
           _number(
               context,
-              'Régénération Endurance P’TIPOTE / min',
-              config.explorationInt('ptipoteStaminaRegenPerMinute', 1),
+              'Régénération Endurance P’TIPOTE (min / point)',
+              config.explorationInt('ptipoteStaminaRegenMinutes', 5),
               (value) => _setRefugeNestedNumber(
-                  'exploration', 'ptipoteStaminaRegenPerMinute', value)),
+                  'exploration', 'ptipoteStaminaRegenMinutes', value)),
           _number(
               context,
               'XP Pisteur / exploration accompagnée',
@@ -4287,6 +4375,7 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
               widget.sleeping ||
               widget.requestSignal != null ||
               widget.ambientSignal != null ||
+              widget.expressedNeed != null ||
               widget.action != 'IDLE')
             AnimatedAlign(
               duration: const Duration(milliseconds: 180),
@@ -4298,7 +4387,9 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                     : widget.sleeping
                         ? 'SLEEP'
                         : widget.action,
-                voice: widget.crystallizing ? '…' : widget.voice,
+                voice: widget.crystallizing
+                    ? '…'
+                    : widget.expressedNeed ?? widget.voice,
                 itemId: widget.bubbleItemId,
               ),
             ),
@@ -4312,11 +4403,6 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
                   label: Text(
                       'À poser : ${ElevagePresentation.itemLabel(widget.pendingItem!)}')),
             ),
-          if (widget.expressedNeed != null)
-            Positioned(
-                bottom: 8,
-                left: 12,
-                child: _NeedBubble(text: widget.expressedNeed!)),
           if (widget.feedback != null)
             Positioned(
               top: 14,
@@ -4339,21 +4425,6 @@ class _AlcoveSceneState extends State<_AlcoveScene> {
       ),
     );
   }
-}
-
-class _NeedBubble extends StatelessWidget {
-  const _NeedBubble({required this.text});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Material(
-      color: Theme.of(context).colorScheme.tertiaryContainer,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          child: Text(text,
-              style:
-                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w800))));
 }
 
 class _ProducerStockBubble extends StatelessWidget {
@@ -4496,6 +4567,8 @@ class _EnergySlotCard extends StatelessWidget {
         battery is Map ? (battery['currentEnergy'] as num).toInt() : 0;
     final maxCharge =
         battery is Map ? (battery['maxEnergy'] as num).toInt() : 0;
+    final stored = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
+    final cap = controller.config.energyStorageMax;
     return Card(
       child: ListTile(
         leading: Icon(battery is Map
@@ -4503,8 +4576,8 @@ class _EnergySlotCard extends StatelessWidget {
             : Icons.battery_unknown_outlined),
         title: const Text('Énergie'),
         subtitle: Text(battery is Map
-            ? 'Bio-batterie · $charge / $maxCharge\n⚡ ${(alcove['localEnergy'] as num?)?.toInt() ?? 0}'
-            : 'Emplacement énergétique vide\n⚡ ${(alcove['localEnergy'] as num?)?.toInt() ?? 0}'),
+            ? 'Bio-batterie · $charge / $maxCharge\n⚡ $stored / $cap'
+            : 'Emplacement énergétique vide\n⚡ $stored / $cap'),
         isThreeLine: true,
         trailing: IconButton(
             icon: const Icon(Icons.add_circle_outline),
@@ -4584,6 +4657,9 @@ class _BiogeneratorCard extends StatelessWidget {
         ElevageDomain.biogeneratorTankCapacities(generator, controller.config);
     final profile =
         ElevageDomain.biogeneratorCycleProfile(generator, controller.config);
+    final stored = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
+    final progress = ElevageDomain.biogeneratorCycleProgress(
+        generator, alcove, controller.now, controller.config);
     final modules =
         ElevageDomain.installedModules(generator, controller.config);
     return Card(
@@ -4594,18 +4670,24 @@ class _BiogeneratorCard extends StatelessWidget {
             children: <Widget>[
               const Text('Biogénérateur',
                   style: TextStyle(fontWeight: FontWeight.w800)),
-              Text('⚡ ${(alcove['localEnergy'] as num?)?.toInt() ?? 0}'),
+              Text('⚡ $stored / ${controller.config.energyStorageMax}'),
               const SizedBox(height: 8),
               Row(children: <Widget>[
                 Expanded(child: _tank(context, 'ORGANIC', tanks, caps)),
-                const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Icon(Icons.bolt_outlined)),
+                Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: SizedBox(
+                        width: 38,
+                        height: 38,
+                        child: Stack(alignment: Alignment.center, children: [
+                          CircularProgressIndicator(value: progress),
+                          const Icon(Icons.bolt_outlined, size: 19),
+                        ]))),
                 Expanded(child: _tank(context, 'MINERAL', tanks, caps)),
               ]),
               const SizedBox(height: 6),
               Text(
-                  'À la demande · ${profile['organic']} Organique + ${profile['mineral']} Minéral → ${profile['energy']} ⚡'),
+                  'Production auto · cycle ${controller.config.biogeneratorCycleSeconds} s · ${profile['organic']} Organique + ${profile['mineral']} Minéral → ${profile['energy']} ⚡'),
               Text(
                   'Modules : ${modules.isEmpty ? 'aucun' : modules.map((m) => (m['definition'] as ElevageModuleDefinition?)?.label ?? 'Module').join(' · ')}'),
               TextButton.icon(
@@ -4745,12 +4827,34 @@ class _TrackerCard extends StatelessWidget {
     final xp = (tracker['xp'] as num).toInt();
     final next =
         level < 3 ? controller.config.trackerThreshold(level + 1) : null;
-    return ListTile(
-      leading: const Text('👣', style: TextStyle(fontSize: 22)),
-      title: Text('Pisteur $level'),
-      subtitle: Text(next == null
-          ? 'Niveau maximum · transport +${controller.config.trackerCarryBonus(level)}'
-          : '$xp / $next XP · transport +${controller.config.trackerCarryBonus(level)}'),
+    final endurance = ElevageDomain.explorationEndurance(
+        individual, controller.now, controller.config);
+    final current = (endurance['current'] as num?)?.toInt() ?? 0;
+    final maximum = controller.config.explorationInt('ptipoteStaminaMax', 10);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Text('👣', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 8),
+            Text('Pisteur $level',
+                style: Theme.of(context).textTheme.titleSmall),
+          ]),
+          const SizedBox(height: 4),
+          Text(next == null
+              ? '$xp XP · niveau maximum · transport +${controller.config.trackerCarryBonus(level)}'
+              : '$xp / $next XP · transport +${controller.config.trackerCarryBonus(level)}'),
+          const SizedBox(height: 10),
+          Text('🥾 Endurance d’exploration · $current / $maximum'),
+          const SizedBox(height: 4),
+          LinearProgressIndicator(value: maximum == 0 ? 0 : current / maximum),
+          const SizedBox(height: 3),
+          Text(
+              '+1 / ${controller.config.explorationInt('ptipoteStaminaRegenMinutes', 5)} min',
+              style: const TextStyle(fontSize: 11)),
+        ]),
+      ),
     );
   }
 }
@@ -5625,22 +5729,12 @@ Future<void> _openBiofabricator(
                         ),
                       ],
                       if (category == 'STRUCTURE')
-                        ..._structureCatalogGroups.entries.map((group) {
-                          final recipes = controller.config.recipes
-                              .where((recipe) =>
-                                  group.value.contains(recipe.installationId))
-                              .toList(growable: false);
-                          if (recipes.isEmpty) return const SizedBox.shrink();
+                        ..._structureCatalogGroups(controller.config)
+                            .entries
+                            .map((group) {
+                          final recipes = group.value;
                           return ExpansionTile(
-                              leading: Icon(group.key == 'Énergie'
-                                  ? Icons.bolt_outlined
-                                  : group.key == 'Chauffage'
-                                      ? Icons.local_fire_department_outlined
-                                      : group.key == 'Ventilation'
-                                          ? Icons.air_outlined
-                                          : group.key == 'Production'
-                                              ? Icons.agriculture_outlined
-                                              : Icons.auto_awesome_outlined),
+                              leading: Icon(_structureCategoryIcon(group.key)),
                               title: Text(group.key),
                               children: recipes
                                   .map((recipe) => _biofabricatorRecipeTile(
@@ -5670,23 +5764,63 @@ Future<void> _openBiofabricator(
       });
 }
 
-const Map<String, Set<String>> _structureCatalogGroups = <String, Set<String>>{
-  'Énergie': <String>{'BIOGENERATOR'},
-  'Chauffage': <String>{'FOUR_BIO_ORGANIQUE'},
-  'Ventilation': <String>{'VENTILATION'},
-  'Structuration': <String>{
-    'FORMATION_MINERALE',
-    'FORMATION_METALLIQUE',
-    'FORMATION_CRISTALLINE',
-    'BOSQUET_SYMBIOTIQUE',
-    'COLONIE_MYCELIENNE',
-  },
-  'Production': <String>{
-    'CULTURE_POTAGERE',
-    'BUTTE_ARBUSTE',
-    'SUPPORT_FONGIQUE',
-  },
-};
+Map<String, List<ElevageRecipe>> _structureCatalogGroups(ElevageConfig config) {
+  const order = <String>[
+    'Énergie',
+    'Chauffage',
+    'Ventilation',
+    'Lumière',
+    'Ombre',
+    'Humidité',
+    'Structuration',
+    'Production',
+    'Activité',
+    'Autres'
+  ];
+  final groups = <String, List<ElevageRecipe>>{};
+  for (final recipe in config.recipes) {
+    final definition = config.installation(recipe.installationId);
+    if (definition?.category != 'STRUCTURE') continue;
+    final categories = <String>{};
+    if (definition!.id == 'VENTILATION' || definition.humidity < 0) {
+      categories.add('Ventilation');
+    }
+    if (definition.temperature > 0) categories.add('Chauffage');
+    if (definition.light > 0) categories.add('Lumière');
+    if (definition.light < 0) categories.add('Ombre');
+    if (definition.humidity > 0) categories.add('Humidité');
+    if (definition.productive) categories.add('Production');
+    if (definition.resonanceFamily != null ||
+        definition.id.startsWith('FORMATION_') ||
+        definition.id == 'BOSQUET_SYMBIOTIQUE' ||
+        definition.id == 'COLONIE_MYCELIENNE') {
+      categories.add('Structuration');
+    }
+    if (definition.activity != null) categories.add('Activité');
+    if (categories.isEmpty) categories.add('Autres');
+    for (final category in categories) {
+      (groups[category] ??= <ElevageRecipe>[]).add(recipe);
+    }
+  }
+  return <String, List<ElevageRecipe>>{
+    for (final category in order)
+      if ((groups[category] ?? const <ElevageRecipe>[]).isNotEmpty)
+        category: groups[category]!,
+  };
+}
+
+IconData _structureCategoryIcon(String category) => switch (category) {
+      'Énergie' => Icons.bolt_outlined,
+      'Chauffage' => Icons.local_fire_department_outlined,
+      'Ventilation' => Icons.air_outlined,
+      'Lumière' => Icons.light_mode_outlined,
+      'Ombre' => Icons.dark_mode_outlined,
+      'Humidité' => Icons.water_drop_outlined,
+      'Production' => Icons.agriculture_outlined,
+      'Structuration' => Icons.auto_awesome_outlined,
+      'Activité' => Icons.sports_esports_outlined,
+      _ => Icons.widgets_outlined,
+    };
 
 Widget _biofabricatorRecipeTile({
   required BuildContext sheetContext,
@@ -5803,10 +5937,14 @@ String _explorationTimer(int milliseconds) {
 
 class _ExplorationEnduranceBar extends StatelessWidget {
   const _ExplorationEnduranceBar(
-      {required this.current, required this.maximum, required this.label});
+      {required this.current,
+      required this.maximum,
+      required this.label,
+      required this.regenMinutes});
   final int current;
   final int maximum;
   final String label;
+  final int regenMinutes;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -5816,7 +5954,7 @@ class _ExplorationEnduranceBar extends StatelessWidget {
         const SizedBox(height: 4),
         LinearProgressIndicator(value: maximum == 0 ? 0 : current / maximum),
         const SizedBox(height: 3),
-        const Text('+1 / min', style: TextStyle(fontSize: 11)),
+        Text('+1 / $regenMinutes min', style: const TextStyle(fontSize: 11)),
       ]));
 }
 
@@ -5842,8 +5980,11 @@ Future<void> _exploration(
                   subtitle: Text('Choisissez un milieu depuis le Refuge.')),
               _ExplorationEnduranceBar(
                   current: (exploration['stamina'] as num?)?.toInt() ?? 0,
-                  maximum: controller.config.explorationInt('staminaMax', 10),
-                  label: 'Joueur · Endurance d’exploration'),
+                  maximum: controller.config.explorationInt('playerStaminaMax',
+                      controller.config.explorationInt('playerStaminaMax', 10)),
+                  label: 'Joueur · Endurance d’exploration',
+                  regenMinutes: controller.config
+                      .explorationInt('playerStaminaRegenMinutes', 5)),
               GridView.count(
                 shrinkWrap: true,
                 crossAxisCount: 2,
@@ -5917,7 +6058,7 @@ Future<void> _explorationBiome(
             ListTile(
                 title: Text(title),
                 subtitle: Text(
-                    '🥾 Endurance $stamina/${controller.config.explorationInt('staminaMax', 10)} · ${controller.config.explorationInt('baseCarrySlots', 3)} slots')),
+                    '🥾 Endurance $stamina/${controller.config.explorationInt('playerStaminaMax', 10)} · ${controller.config.explorationInt('baseCarrySlots', 3)} slots · +1 / ${controller.config.explorationInt('playerStaminaRegenMinutes', 5)} min')),
             ...ElevageDomain.explorationSectorsForBiome(
                     biomeId, controller.config)
                 .map((definition) {
@@ -5939,7 +6080,7 @@ Future<void> _explorationBiome(
                   onPressed: run != null && run['status'] != 'CLAIMED' ||
                           stamina <
                               controller.config
-                                  .explorationInt('staminaCostPerRun', 1)
+                                  .explorationInt('playerStaminaCost', 1)
                       ? null
                       : () async {
                           final companionId = await _pickExplorationCompanion(
@@ -6044,7 +6185,7 @@ Future<void> _showExplorationResult(
                 const SizedBox(height: 6),
                 Text('${companion['name']} vous a accompagné.'),
                 Text(
-                    '🥾 Joueur $playerEndurance/${controller.config.explorationInt('staminaMax', 10)} · ${companion['name']} $companionEndurance/${controller.config.explorationInt('ptipoteStaminaMax', 10)}'),
+                    '🥾 Joueur $playerEndurance/${controller.config.explorationInt('playerStaminaMax', 10)} · ${companion['name']} $companionEndurance/${controller.config.explorationInt('ptipoteStaminaMax', 10)}'),
                 const Text('👣 +10 XP Pisteur'),
                 if (run['trackerLevelAfter'] is num &&
                     run['trackerLevelAfter'] != run['trackerLevelBefore'])

@@ -1918,11 +1918,12 @@ void main() {
         'INACTIVE_NO_RESOURCE');
   });
 
-  test('Four bio-organique consomme Organic, s’arrête et redémarre', () {
+  test('Chauffage consomme l’Énergie locale, s’arrête et redémarre', () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     final generic = state.data['inventory']['generic'] as Map;
     generic['organic'] = 1;
     final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['localEnergy'] = 1;
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'FOUR_BIO_ORGANIQUE',
       'zoneId': 'ZONE_2',
@@ -1933,7 +1934,8 @@ void main() {
     };
     state = ElevageDomain.refreshAlcove(state, 'alcove-1',
         now + const Duration(hours: 1).inMilliseconds, defaultElevageConfig);
-    expect((state.data['inventory']['generic'] as Map)['organic'], 0);
+    expect((state.data['inventory']['generic'] as Map)['organic'], 1);
+    expect(((state.data['alcoves'] as List).first as Map)['localEnergy'], 0);
     expect(
         ElevageDomain.zoneEnvironment(
             state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
@@ -1946,7 +1948,7 @@ void main() {
             state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
             now: now, phaseOverride: 'NIGHT')['temperature'],
         2);
-    (state.data['inventory']['generic'] as Map)['organic'] = 1;
+    ((state.data['alcoves'] as List).first as Map)['localEnergy'] = 1;
     state = ElevageDomain.refreshAlcove(
         state,
         'alcove-1',
@@ -2936,7 +2938,7 @@ void main() {
     expect(
         ((enduranceState.data['individuals'] as Map)[id]['explorationStamina']
             ['current']),
-        5);
+        1);
   });
 
   test('Le biais Minéral ne crée pas de loot ni ne contourne le stock local',
@@ -3137,5 +3139,46 @@ void main() {
         ElevageDomain.satietyPercent(migrated, id, now, defaultElevageConfig),
         70);
     expect(migrated.data['satietyV22Migration'], isTrue);
+  });
+
+  test('endurance Exploration se régénère par paliers de cinq minutes', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    ElevageDomain.explorationState(state)
+      ..['stamina'] = 9
+      ..['lastStaminaAt'] = now;
+    state = ElevageDomain.refreshExploration(state,
+        now + const Duration(minutes: 4).inMilliseconds, defaultElevageConfig);
+    expect(ElevageDomain.explorationState(state)['stamina'], 9);
+    state = ElevageDomain.refreshExploration(state,
+        now + const Duration(minutes: 5).inMilliseconds, defaultElevageConfig);
+    expect(ElevageDomain.explorationState(state)['stamina'], 10);
+  });
+
+  test('Biogénérateur produit automatiquement, respecte son cycle et son cap',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    final alcove = (state.data['alcoves'] as List).first as Map;
+    alcove['localEnergy'] = 0;
+    alcove['biogeneratorSlot'] = <String, dynamic>{
+      'instanceId': 'generator-auto',
+      'definitionId': 'BIOGENERATOR',
+      'cycleStartedAt': now,
+      'tanks': <String, int>{'organic': 10, 'mineral': 5},
+      'installedModules': <dynamic>[],
+    };
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(seconds: 9).inMilliseconds, defaultElevageConfig);
+    expect((state.data['alcoves'] as List).first['localEnergy'], 0);
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(seconds: 10).inMilliseconds, defaultElevageConfig);
+    final refreshed = (state.data['alcoves'] as List).first as Map;
+    final tanks = (refreshed['biogeneratorSlot'] as Map)['tanks'] as Map;
+    expect(refreshed['localEnergy'], 10);
+    expect(tanks['organic'], 7);
+    expect(tanks['mineral'], 3);
+    refreshed['localEnergy'] = 200;
+    state = ElevageDomain.refreshAlcove(state, 'alcove-1',
+        now + const Duration(seconds: 30).inMilliseconds, defaultElevageConfig);
+    expect((state.data['alcoves'] as List).first['localEnergy'], 200);
   });
 }

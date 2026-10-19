@@ -1582,6 +1582,25 @@ class ElevageDomain {
     };
   }
 
+  /// Progress of the durable generator's current ten-second production cycle.
+  /// It deliberately lives on the installed instance so navigation and offline
+  /// refreshes cannot duplicate a cycle.
+  static double biogeneratorCycleProgress(
+      Map generator, Map alcove, int now, ElevageConfig config) {
+    final profile = biogeneratorCycleProfile(generator, config);
+    final tanks = _generatorTanks(generator);
+    final stored = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
+    if (stored >= config.energyStorageMax ||
+        (tanks['organic'] ?? 0) < profile['organic']! ||
+        (tanks['mineral'] ?? 0) < profile['mineral']!) {
+      return 0;
+    }
+    final startedAt = (generator['cycleStartedAt'] as num?)?.toInt() ?? now;
+    final duration =
+        Duration(seconds: config.biogeneratorCycleSeconds).inMilliseconds;
+    return ((now - startedAt) / duration).clamp(0, 1).toDouble();
+  }
+
   static ElevageSave installBiogeneratorModule(ElevageSave source,
       String alcoveId, String moduleInstanceId, ElevageConfig config) {
     final state = source.copy();
@@ -2790,7 +2809,8 @@ class ElevageDomain {
   static Map<String, dynamic> explorationEndurance(
       Map individual, int now, ElevageConfig config) {
     final maxStamina = config.explorationInt('ptipoteStaminaMax', 10);
-    final regen = config.explorationInt('ptipoteStaminaRegenPerMinute', 1);
+    final regenMinutes =
+        max(1, config.explorationInt('ptipoteStaminaRegenMinutes', 5));
     final endurance = individual.putIfAbsent(
         'explorationStamina',
         () => <String, dynamic>{
@@ -2798,15 +2818,12 @@ class ElevageDomain {
               'lastUpdatedAt': now
             }) as Map;
     final last = (endurance['lastUpdatedAt'] as num?)?.toInt() ?? now;
-    final cycles =
-        max(0, (now - last) ~/ const Duration(minutes: 1).inMilliseconds);
+    final interval = Duration(minutes: regenMinutes).inMilliseconds;
+    final cycles = max(0, (now - last) ~/ interval);
     if (cycles > 0) {
-      endurance['current'] = min(
-          maxStamina,
-          ((endurance['current'] as num?)?.toInt() ?? maxStamina) +
-              cycles * regen);
-      endurance['lastUpdatedAt'] =
-          last + cycles * const Duration(minutes: 1).inMilliseconds;
+      endurance['current'] = min(maxStamina,
+          ((endurance['current'] as num?)?.toInt() ?? maxStamina) + cycles);
+      endurance['lastUpdatedAt'] = last + cycles * interval;
     }
     endurance['current'] =
         ((endurance['current'] as num?)?.toInt() ?? maxStamina)
@@ -3161,18 +3178,22 @@ class ElevageDomain {
     final state = source.copy();
     normalizeExplorationState(state.data, now);
     final exploration = explorationState(state);
-    final maxStamina = config.explorationInt('staminaMax', 10);
-    final regenPerMinute = config.explorationInt('staminaRegenPerMinute', 1);
+    final maxStamina = config.explorationInt(
+        'playerStaminaMax', config.explorationInt('staminaMax', 10));
+    final regenMinutes = max(
+        1,
+        config.explorationInt('playerStaminaRegenMinutes',
+            config.explorationInt('staminaRegenPerMinute', 1)));
     final lastStamina = (exploration['lastStaminaAt'] as num?)?.toInt() ?? now;
-    final staminaCycles = max(
-        0, (now - lastStamina) ~/ const Duration(minutes: 1).inMilliseconds);
+    final staminaInterval = Duration(minutes: regenMinutes).inMilliseconds;
+    final staminaCycles = max(0, (now - lastStamina) ~/ staminaInterval);
     if (staminaCycles > 0) {
       exploration['stamina'] = min(
           maxStamina,
           ((exploration['stamina'] as num?)?.toInt() ?? maxStamina) +
-              staminaCycles * regenPerMinute);
-      exploration['lastStaminaAt'] = lastStamina +
-          staminaCycles * const Duration(minutes: 1).inMilliseconds;
+              staminaCycles);
+      exploration['lastStaminaAt'] =
+          lastStamina + staminaCycles * staminaInterval;
     }
     for (final individual
         in (state.data['individuals'] as Map? ?? const <dynamic, dynamic>{})
@@ -3235,7 +3256,8 @@ class ElevageDomain {
       throw StateError('Secteur inconnu.');
     }
     final stamina = (exploration['stamina'] as num?)?.toInt() ?? 0;
-    final staminaCost = config.explorationInt('staminaCostPerRun', 1);
+    final staminaCost = config.explorationInt(
+        'playerStaminaCost', config.explorationInt('staminaCostPerRun', 1));
     if (stamina < staminaCost) throw StateError('Stamina insuffisante.');
     Map? companion;
     var trackerBonus = 0;
@@ -3758,19 +3780,9 @@ class ElevageDomain {
       final alcoveId = raw['alcoveId'] as String?;
       final alcove = alcoveId == null ? null : _alcove(state, alcoveId);
       final battery = alcove?['batterySlot'];
-      final generator = alcove?['biogeneratorSlot'];
-      var generatorPotential = 0;
-      if (generator is Map) {
-        final tanks = _generatorTanks(generator);
-        final profile = biogeneratorCycleProfile(generator, config);
-        generatorPotential = min((tanks['organic'] ?? 0) ~/ profile['organic']!,
-                (tanks['mineral'] ?? 0) ~/ profile['mineral']!) *
-            profile['energy']!;
-      }
       final available = ((alcove?['localEnergy'] as num?)?.toInt() ?? 0) +
           ((battery is Map ? battery['currentEnergy'] : 0) as num? ?? 0)
-              .toInt() +
-          generatorPotential;
+              .toInt();
       final missingEnergy =
           max(0, specification.energyCost - available.toInt());
       return missingEnergy == 0
@@ -3839,29 +3851,54 @@ class ElevageDomain {
     }
   }
 
+  /// Advances every installed durable generator from persisted timestamps.
+  /// Each completed interval consumes one tank recipe and fills local Energy;
+  /// bounded loops make offline refresh deterministic and cap-safe.
+  static void _refreshBiogenerators(
+      ElevageSave state, int now, ElevageConfig config) {
+    final cycleMs =
+        Duration(seconds: config.biogeneratorCycleSeconds).inMilliseconds;
+    for (final rawAlcove in state.data['alcoves'] as List) {
+      final alcove = rawAlcove as Map;
+      final generator = alcove['biogeneratorSlot'];
+      if (generator is! Map) continue;
+      alcove['localEnergy'] = ((alcove['localEnergy'] as num?)?.toInt() ?? 0)
+          .clamp(0, config.energyStorageMax);
+      // A pre-22.3 generator had no cycle timestamp. Start one due cycle on
+      // migration so already-filled tanks remain useful without backfilling
+      // unlimited historical energy.
+      final startedAt =
+          (generator['cycleStartedAt'] as num?)?.toInt() ?? now - cycleMs;
+      generator['cycleStartedAt'] = startedAt;
+      final dueCycles = max(0, (now - startedAt) ~/ cycleMs);
+      var produced = 0;
+      while (produced < dueCycles &&
+          _runBiogeneratorCycle(generator, alcove, config)) {
+        produced++;
+      }
+      if (produced < dueCycles) {
+        // The first unavailable cycle waits for a fresh interval after tanks
+        // are refilled or capacity is freed; it never accrues hidden debt.
+        generator['cycleStartedAt'] = now;
+      } else if (produced > 0) {
+        generator['cycleStartedAt'] = startedAt + produced * cycleMs;
+      }
+    }
+  }
+
   static bool _consumeMaintenanceCost(ElevageSave state, Map alcove,
       ElevageStructureConsumption specification, ElevageConfig config) {
     final generic = _generic(state);
     if (specification.mode == 'ENERGY') {
-      // Check the entire local chain before modifying it. This keeps a failed
-      // maintenance tick transactional even when a partly depleted battery is
-      // followed by an empty generator.
+      // The generator fills the shared local store asynchronously. Maintenance
+      // never converts tank matter on demand: a structure pauses until a
+      // completed production cycle (or its backup battery) can cover its cost.
       final initialLocal = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
       final initialBattery = alcove['batterySlot'];
       final batteryPotential = initialBattery is Map
           ? (initialBattery['currentEnergy'] as num?)?.toInt() ?? 0
           : 0;
-      final generator = alcove['biogeneratorSlot'];
-      var generatorPotential = 0;
-      if (generator is Map) {
-        final tanks = _generatorTanks(generator);
-        final profile = biogeneratorCycleProfile(generator, config);
-        generatorPotential = min((tanks['organic'] ?? 0) ~/ profile['organic']!,
-                (tanks['mineral'] ?? 0) ~/ profile['mineral']!) *
-            profile['energy']!;
-      }
-      if (initialLocal + batteryPotential + generatorPotential <
-          specification.energyCost) {
+      if (initialLocal + batteryPotential < specification.energyCost) {
         return false;
       }
       var remaining = specification.energyCost;
@@ -3877,17 +3914,6 @@ class ElevageDomain {
         remaining -= consumedBattery;
         if ((battery['currentEnergy'] as num).toInt() <= 0) {
           alcove['batterySlot'] = null;
-        }
-      }
-      if (remaining > 0) {
-        final generator = alcove['biogeneratorSlot'];
-        while (remaining > 0 &&
-            generator is Map &&
-            _runBiogeneratorCycle(generator, alcove, config)) {
-          final stored = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
-          final consumed = min(stored, remaining);
-          alcove['localEnergy'] = stored - consumed;
-          remaining -= consumed;
         }
       }
       return remaining == 0;
@@ -3918,6 +3944,7 @@ class ElevageDomain {
   static ElevageSave refreshAlcove(
       ElevageSave source, String alcoveId, int now, ElevageConfig config) {
     final state = source.copy();
+    _refreshBiogenerators(state, now, config);
     _refreshStructureMaintenance(state, now, config);
     final alcove = _alcove(state, alcoveId);
     for (final raw in alcove['slots'] as List) {
@@ -4721,6 +4748,7 @@ class ElevageDomain {
         'instanceId': id,
         'definitionId': 'BIOGENERATOR',
         'installedAt': now,
+        'cycleStartedAt': now,
         'tanks': <String, int>{'organic': 0, 'mineral': 0},
         'installedModules': <dynamic>[],
       };
@@ -4739,10 +4767,12 @@ class ElevageDomain {
         (tanks['mineral'] ?? 0) < profile['mineral']!) {
       return false;
     }
+    final stored = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
+    if (stored >= config.energyStorageMax) return false;
     tanks['organic'] = tanks['organic']! - profile['organic']!;
     tanks['mineral'] = tanks['mineral']! - profile['mineral']!;
     alcove['localEnergy'] =
-        ((alcove['localEnergy'] as num?)?.toInt() ?? 0) + profile['energy']!;
+        min(config.energyStorageMax, stored + profile['energy']!);
     return true;
   }
 
