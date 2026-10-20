@@ -268,6 +268,10 @@ class ElevageSave {
                   'wakeCount': 0,
                   'lastWakeAt': null,
                 });
+        final sleep = raw['sleep'] as Map?;
+        sleep?.putIfAbsent('dayNapUntil', () => 0);
+        sleep?.putIfAbsent('dayNapZoneId', () => null);
+        sleep?.putIfAbsent('lastDayNapAt', () => 0);
         // Existing residents have already completed their introduction. New
         // adoptions set this explicitly to true below.
         raw.putIfAbsent('onboardingAwakeLock', () => false);
@@ -880,12 +884,15 @@ class ElevageDomain {
   }
 
   static bool isSleeping(Map individual, int now, ElevageConfig config) {
+    final sleep = individual['sleep'] as Map?;
+    // A voluntary daytime nap is independent from the onboarding lock, which
+    // only suppresses the biological main sleep on an arrival night.
+    if ((sleep?['dayNapUntil'] as num? ?? 0).toInt() > now) return true;
     if (individual['onboardingAwakeLock'] == true &&
         now <
             ((individual['onboardingSleepAllowedAt'] as num?)?.toInt() ?? 0)) {
       return false;
     }
-    final sleep = individual['sleep'] as Map?;
     if ((sleep?['awakeUntil'] as num? ?? 0).toInt() > now) return false;
     final cycleMs =
         config.dayNightCycleHours * const Duration(hours: 1).inMilliseconds;
@@ -898,6 +905,11 @@ class ElevageDomain {
       ElevageSave state, String individualId, int now, ElevageConfig config,
       {String? phaseOverride}) {
     final individual = _individual(state, individualId);
+    final sleep = individual['sleep'] as Map?;
+    if ((sleep?['dayNapUntil'] as num? ?? 0).toInt() > now &&
+        sleep?['dayNapZoneId'] is String) {
+      return sleep!['dayNapZoneId'] as String;
+    }
     return bestComfortZone(state, individual['alcoveId'] as String, config, now,
         phaseOverride: phaseOverride, individual: individual);
   }
@@ -1144,6 +1156,9 @@ class ElevageDomain {
         'awakeUntil': 0,
         'wakeCount': 0,
         'lastWakeAt': null,
+        'dayNapUntil': 0,
+        'dayNapZoneId': null,
+        'lastDayNapAt': 0,
       },
       'onboardingAwakeLock': true,
       'onboardingSleepAllowedAt': onboardingSleepAllowedAt,
@@ -2147,6 +2162,7 @@ class ElevageDomain {
       final definition = config.installation(item['definitionId'] as String);
       final lastUsed = (item['lastUsedAt'] as num? ?? 0).toInt();
       return definition?.category == 'MEUBLE' &&
+          definition?.activity != 'REST' &&
           now - lastUsed >= config.autonomousReactionIntervalSeconds * 1000;
     }).toList()
       ..sort((a, b) {
@@ -2165,6 +2181,51 @@ class ElevageDomain {
     return candidates.isEmpty
         ? null
         : Map<String, dynamic>.from(candidates.first);
+  }
+
+  /// A rest station is only suggested for an actual daytime nap intent. The
+  /// minute bucket makes the opportunity deterministic across reloads while
+  /// giving Posé a higher configured probability than Spontané.
+  static Map<String, dynamic>? nextDayNapFurniture(ElevageSave state,
+      String individualId, String alcoveId, int now, ElevageConfig config,
+      {String? phaseOverride}) {
+    if ((phaseOverride ?? dayNightPhase(now, config)) != 'DAY') return null;
+    final individual = _individual(state, individualId);
+    if (isSleeping(individual, now, config)) return null;
+    final sleep = individual['sleep'] as Map? ?? const <String, dynamic>{};
+    final lastNap = (sleep['lastDayNapAt'] as num? ?? 0).toInt();
+    if (now - lastNap < config.dayNapCooldownSeconds * 1000) return null;
+    final chance = personalityValue(individual, 'tempo') >= .5
+        ? config.posedDayNapChancePercent
+        : config.spontaneousDayNapChancePercent;
+    final seed =
+        '${individual['individualSeed'] ?? individualId}:${now ~/ 60000}';
+    if (_hash(seed) % 100 >= chance) return null;
+    final rests = habitatItems(state, alcoveId).where((item) {
+      final definition = config.installation(item['definitionId'] as String);
+      return definition?.category == 'MEUBLE' && definition?.activity == 'REST';
+    }).toList()
+      ..sort((a, b) => '${a['instanceId']}'.compareTo('${b['instanceId']}'));
+    return rests.isEmpty ? null : Map<String, dynamic>.from(rests.first);
+  }
+
+  static ElevageSave startDayNap(ElevageSave source, String individualId,
+      String zoneId, int now, ElevageConfig config) {
+    final state = source.copy();
+    final individual = _individual(state, individualId);
+    final sleep =
+        individual.putIfAbsent('sleep', () => <String, dynamic>{}) as Map;
+    final until = now + config.dayNapDurationSeconds * 1000;
+    sleep['dayNapUntil'] = until;
+    sleep['dayNapZoneId'] = zoneId;
+    sleep['lastDayNapAt'] = now;
+    individual['activeRequest'] = <String, dynamic>{
+      'need': 'REST',
+      'signal': 'REST_REQUEST',
+      'createdAt': now,
+      'expiresAt': until,
+    };
+    return state;
   }
 
   static int _furnitureAffinityScore(
@@ -2996,14 +3057,15 @@ class ElevageDomain {
   /// heat, while their [ambientEnvironmentalFeedback] still says "cold".
   static Map<String, String>? expressedEnvironmentalNeed(
       Map<String, int> environment, Map individual, ElevageConfig config) {
-    final discomfort =
-        ambientEnvironmentalFeedback(environment, individual, config);
-    if (discomfort == null ||
+    // A need is a preference, not an emergency-only symptom: Intermediate
+    // and Mature P’TIPOTES can ask for a better axis from a GOOD zone too.
+    final signal = environmentalSignal(environment, individual, config);
+    if (signal == null ||
         ((individual['lifecycle'] as Map?)?['stage'] as String?) == 'BABY') {
       return null;
     }
-    final axis = discomfort['axis'];
-    final direction = discomfort['direction'];
+    final axis = signal['axis'];
+    final direction = signal['direction'];
     final need = switch ('$axis:$direction') {
       'temperature:TOO_LOW' => 'HEAT',
       'temperature:TOO_HIGH' => 'COOL',
@@ -3013,6 +3075,15 @@ class ElevageDomain {
       _ => 'DRYNESS',
     };
     return <String, String>{'need': need, 'axis': axis ?? ''};
+  }
+
+  static int environmentalNeedCooldownSeconds(
+      Map individual, ElevageConfig config) {
+    final multiplier = personalityValue(individual, 'tempo') >= .5
+        ? config.posedNeedCooldownMultiplier
+        : config.spontaneousNeedCooldownMultiplier;
+    return max(
+        1, (config.juvenileEnvironmentalNeedCooldownBase * multiplier).round());
   }
 
   static String environmentalNeedExpression(

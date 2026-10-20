@@ -1551,7 +1551,19 @@ L’Eau n’est pas une ressource globale du Camp.
 - **Communication.** Les intentions (attention, inconfort, faim, chaleur,
   lumière, humidité, repos et variantes) possèdent des textes Juvénile et
   Mature configurables ; les pictogrammes restent associés à l’intention.
+- **Préférences environnementales Juvénile.** GOOD n’est pas IDEAL : dès son
+  arrivée dans une zone tolérable mais décalée de son optimum, un Juvénile peut
+  demander chaleur, fraîcheur, lumière, ombre, humidité ou sécheresse sans
+  devoir fuir. Le Tempo n’efface jamais ce besoin : Posé le répète plus
+  rarement que Spontané. Ces demandes passent avant les sollicitations
+  génériques comme l’attention.
+- **Repos et sieste.** Les meubles de repos ne sont plus annoncés gratuitement.
+  Une sieste diurne est une intention `REST_REQUEST` persistante, courte et
+  séparée du sommeil biologique principal. Elle requiert un meuble de repos,
+  respecte un cooldown et utilise une opportunité déterministe; Posé reçoit une
+  probabilité configurable supérieure à Spontané.
 - **Dashboard.** Les grandes sections sont des accordéons fermés par défaut.
   Les réglages jour/nuit accélérés et la conversion magique de Réserve sont
   retirés de l’UI : nuit locale 00–04 et réglages du Biogénérateur restent les
-  seules références actives. Les seuils Pisteur canoniques sont 100/200/300.
+  seules références actives. Les boutons Forcer Jour/Nuit n’apparaissent plus
+  dans l’Alcôve joueur. Les seuils Pisteur canoniques sont 100/200/300.

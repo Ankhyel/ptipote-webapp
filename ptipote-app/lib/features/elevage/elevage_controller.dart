@@ -147,6 +147,9 @@ class ElevageController extends ChangeNotifier {
           String individualId, String alcoveId, String instanceId) =>
       _mutate((current) => ElevageDomain.useFurniture(
           current, individualId, alcoveId, instanceId, _now, config));
+  Future<void> startDayNap(String individualId, String zoneId) =>
+      _mutate((current) => ElevageDomain.startDayNap(
+          current, individualId, zoneId, _now, config));
   Future<ElevageSceneItemOutcome?> interactSceneItem(
       String individualId, String alcoveId, String instanceId) async {
     final current = state;

@@ -870,6 +870,47 @@ class ElevageConfig {
               as Map?)?['babyVocalCooldownSeconds'] as num?)
           ?.toInt() ??
       3;
+  Map<String, dynamic> get ambientFeedbackConfig =>
+      Map<String, dynamic>.from(refugeProgression['ambientFeedback'] as Map? ??
+          const <dynamic, dynamic>{});
+  int get juvenileEnvironmentalNeedCooldownBase =>
+      ((ambientFeedbackConfig['juvenileEnvironmentalNeedCooldownBase'] as num?)
+                  ?.toInt() ??
+              (ambientFeedbackConfig['juvenileNeedCooldown'] as num?)
+                  ?.toInt() ??
+              7)
+          .clamp(1, 3600);
+  double get posedNeedCooldownMultiplier =>
+      ((ambientFeedbackConfig['posedNeedCooldownMultiplier'] as num?)
+                  ?.toDouble() ??
+              1.5)
+          .clamp(.1, 10);
+  double get spontaneousNeedCooldownMultiplier =>
+      ((ambientFeedbackConfig['spontaneousNeedCooldownMultiplier'] as num?)
+                  ?.toDouble() ??
+              .75)
+          .clamp(.1, 10);
+  int get dayNapDurationSeconds =>
+      ((refugeProgression['rest'] as Map?)?['dayNapDurationSeconds'] as num?)
+          ?.toInt()
+          .clamp(10, 3600) ??
+      180;
+  int get dayNapCooldownSeconds =>
+      ((refugeProgression['rest'] as Map?)?['dayNapCooldownSeconds'] as num?)
+          ?.toInt()
+          .clamp(60, 86400) ??
+      14400;
+  int get posedDayNapChancePercent =>
+      ((refugeProgression['rest'] as Map?)?['posedDayNapChancePercent'] as num?)
+          ?.toInt()
+          .clamp(0, 100) ??
+      45;
+  int get spontaneousDayNapChancePercent =>
+      ((refugeProgression['rest'] as Map?)?['spontaneousDayNapChancePercent']
+              as num?)
+          ?.toInt()
+          .clamp(0, 100) ??
+      15;
   Map<String, dynamic> get satietyConfig => Map<String, dynamic>.from(
       refugeProgression['satiety'] as Map? ?? const <dynamic, dynamic>{});
   int _satietyNumber(String key, int fallback) =>
@@ -2844,7 +2885,16 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'shiverPauseDuration': 1800,
       'babyVocalCooldownSeconds': 3,
       'juvenileNeedCooldown': 7,
+      'juvenileEnvironmentalNeedCooldownBase': 8,
+      'posedNeedCooldownMultiplier': 1.5,
+      'spontaneousNeedCooldownMultiplier': .75,
       'needPictogramEnabled': true,
+    },
+    'rest': <String, dynamic>{
+      'dayNapDurationSeconds': 180,
+      'dayNapCooldownSeconds': 14400,
+      'posedDayNapChancePercent': 45,
+      'spontaneousDayNapChancePercent': 15,
     },
     // These pools express access, never a hidden preference. The Mature list
     // is intentionally a complete compatible catalogue that can grow later.
@@ -3002,6 +3052,12 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
         'description': 'Le P’TIPOTE cherche un moment de repos.',
         'juvenileText': 'repos',
         'matureText': 'J’aimerais me reposer.',
+      },
+      'REST_REQUEST': <String, String>{
+        'label': 'Intention de repos',
+        'description': 'Le P’TIPOTE souhaite faire une pause ou une sieste.',
+        'juvenileText': 'repos',
+        'matureText': 'Je vais faire une petite sieste.',
       },
     },
     'knowledge': <String, dynamic>{

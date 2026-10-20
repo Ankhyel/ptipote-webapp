@@ -658,6 +658,25 @@ class _IndividualPageState extends State<_IndividualPage> {
     });
   }
 
+  void _showIntentExpression(String intent, Map individual) {
+    final stage =
+        (individual['lifecycle'] as Map?)?['stage'] as String? ?? 'BABY';
+    final text = stage == 'BABY'
+        ? widget.controller.config.vocalizations['CALL'] ?? 'Pti…'
+        : widget.controller.config.communicationText(
+            intent,
+            stage == 'MATURE' ? 'MATURE' : 'JUVENILE',
+            stage == 'MATURE' ? 'Je vais me reposer.' : 'repos');
+    _bubbleTimer?.cancel();
+    setState(() {
+      _sceneVoice = '$text 💤';
+      _bubbleItemId = null;
+    });
+    _bubbleTimer = Timer(const Duration(seconds: 7), () {
+      if (mounted) setState(() => _sceneVoice = null);
+    });
+  }
+
   void _startPtipoteHold() {
     final state = widget.controller.state;
     if (state == null) return;
@@ -785,10 +804,17 @@ class _IndividualPageState extends State<_IndividualPage> {
       if (reorganization != null) {
         await _executeHabitatReorganization(reorganization, individual);
       } else {
-        final furniture = ElevageDomain.nextFurnitureActivity(
-            state, widget.individualId, alcoveId, now, config);
-        if (furniture != null) {
-          await _executeFurnitureActivity(furniture, individual);
+        final dayNap = ElevageDomain.nextDayNapFurniture(
+            state, widget.individualId, alcoveId, now, config,
+            phaseOverride: widget.controller.forcedDayNightPhase);
+        if (dayNap != null) {
+          await _executeDayNap(dayNap, individual);
+        } else {
+          final furniture = ElevageDomain.nextFurnitureActivity(
+              state, widget.individualId, alcoveId, now, config);
+          if (furniture != null) {
+            await _executeFurnitureActivity(furniture, individual);
+          }
         }
       }
       return;
@@ -985,6 +1011,28 @@ class _IndividualPageState extends State<_IndividualPage> {
           _sceneAction != 'METAMORPHOSIS') {
         _setSceneAction('IDLE');
       }
+    }
+  }
+
+  Future<void> _executeDayNap(Map furniture, Map individual) async {
+    _autonomousInFlight = true;
+    try {
+      final zoneId = furniture['zoneId'] as String;
+      _setSceneAction('APPROACH_ITEM', zoneId: zoneId);
+      await _waitSceneAction(ElevageDomain.normalMoveDurationFor(
+          individual, widget.controller.config));
+      _setSceneAction('REST');
+      await widget.controller.useFurniture(widget.individualId,
+          individual['alcoveId'] as String, furniture['instanceId'] as String);
+      await widget.controller.startDayNap(widget.individualId, zoneId);
+      if (!mounted || widget.controller.error != null) return;
+      final updated = (widget.controller.state!.data['individuals']
+          as Map)[widget.individualId] as Map;
+      _setSceneAction('SLEEP', zoneId: zoneId);
+      _showIntentExpression('REST_REQUEST', updated);
+    } finally {
+      _autonomousInFlight = false;
+      if (mounted && _sceneAction != 'SLEEP') _setSceneAction('IDLE');
     }
   }
 
@@ -1489,11 +1537,8 @@ class _IndividualPageState extends State<_IndividualPage> {
         localEnvironment, individual, controller.config);
     final environmentalNeed = ElevageDomain.expressedEnvironmentalNeed(
         localEnvironment, individual, controller.config);
-    final needCooldown =
-        ((controller.config.refugeProgression['ambientFeedback']
-                    as Map?)?['juvenileNeedCooldown'] as num?)
-                ?.toInt() ??
-            7;
+    final needCooldown = ElevageDomain.environmentalNeedCooldownSeconds(
+        individual, controller.config);
     final needsEnabled =
         ((controller.config.refugeProgression['ambientFeedback']
                 as Map?)?['needPictogramEnabled'] as bool?) ??
@@ -1738,20 +1783,6 @@ class _IndividualPageState extends State<_IndividualPage> {
                   onPressed: () =>
                       _refreshAlcoveWithBehaviorReset(alcove['id'] as String),
                   child: const Text('Actualiser l’Alcôve')),
-              if (controller.config.devMode)
-                Wrap(spacing: 8, children: <Widget>[
-                  OutlinedButton.icon(
-                      onPressed: () => controller.forceDayNightPhase('DAY'),
-                      icon: const Icon(Icons.light_mode_outlined),
-                      label: const Text('Forcer Jour')),
-                  OutlinedButton.icon(
-                      onPressed: () => controller.forceDayNightPhase('NIGHT'),
-                      icon: const Icon(Icons.dark_mode_outlined),
-                      label: const Text('Forcer Nuit')),
-                  TextButton(
-                      onPressed: () => controller.forceDayNightPhase(null),
-                      child: const Text('Cycle réel')),
-                ]),
             ]),
             _section(context, 'Poser un objet', <Widget>[
               const Text(
@@ -2450,13 +2481,10 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                       'ambientFeedback', 'babyVocalCooldownSeconds', value)),
               _number(
                   context,
-                  'Cooldown demande Juvénile (s)',
-                  ((config.refugeProgression['ambientFeedback']
-                              as Map?)?['juvenileNeedCooldown'] as num?)
-                          ?.toInt() ??
-                      7,
-                  (value) => _setRefugeNestedNumber(
-                      'ambientFeedback', 'juvenileNeedCooldown', value)),
+                  'Cooldown besoin environnemental Juvénile (s)',
+                  config.juvenileEnvironmentalNeedCooldownBase,
+                  (value) => _setRefugeNestedNumber('ambientFeedback',
+                      'juvenileEnvironmentalNeedCooldownBase', value)),
               SwitchListTile(
                   value: ((config.refugeProgression['ambientFeedback']
                           as Map?)?['needPictogramEnabled'] as bool?) ??
@@ -2901,6 +2929,34 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                   config.fungalTransitionSleepMinutes,
                   (value) => config =
                       config.copyWith(fungalTransitionSleepMinutes: value)),
+              const ListTile(
+                  title: Text('Siestes diurnes'),
+                  subtitle: Text(
+                      'Une pause courte nécessite un meuble de repos ; Posé a davantage d’occasions que Spontané.')),
+              _number(
+                  context,
+                  'Durée sieste (s)',
+                  config.dayNapDurationSeconds,
+                  (value) => _setRefugeNestedNumber(
+                      'rest', 'dayNapDurationSeconds', value)),
+              _number(
+                  context,
+                  'Cooldown sieste (s)',
+                  config.dayNapCooldownSeconds,
+                  (value) => _setRefugeNestedNumber(
+                      'rest', 'dayNapCooldownSeconds', value)),
+              _number(
+                  context,
+                  'Chance sieste Posé (%)',
+                  config.posedDayNapChancePercent,
+                  (value) => _setRefugeNestedNumber(
+                      'rest', 'posedDayNapChancePercent', value)),
+              _number(
+                  context,
+                  'Chance sieste Spontané (%)',
+                  config.spontaneousDayNapChancePercent,
+                  (value) => _setRefugeNestedNumber(
+                      'rest', 'spontaneousDayNapChancePercent', value)),
               _number(
                   context,
                   'Taille d’une pile',
@@ -7058,6 +7114,12 @@ const Map<String, (String, String, String, String)>
     'Le P’TIPOTE cherche un moment de repos.',
     'repos',
     'J’aimerais me reposer.',
+  ),
+  'REST_REQUEST': (
+    'Intention de repos',
+    'Le P’TIPOTE veut faire une pause ou une sieste près d’un meuble de repos.',
+    'repos',
+    'Je vais faire une petite sieste.',
   ),
 };
 

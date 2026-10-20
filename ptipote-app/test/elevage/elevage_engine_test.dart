@@ -3464,4 +3464,61 @@ void main() {
         now + const Duration(seconds: 30).inMilliseconds, defaultElevageConfig);
     expect((state.data['alcoves'] as List).first['localEnergy'], 200);
   });
+
+  test('Juvénile exprime un besoin depuis une zone GOOD non idéale', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Nuance',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    expect(
+        ElevageDomain.expressedEnvironmentalNeed(
+            <String, int>{'light': 3, 'temperature': 3, 'humidity': 2},
+            individual,
+            defaultElevageConfig)?['need'],
+        'HEAT');
+    expect(
+        ElevageDomain.expressedEnvironmentalNeed(
+            <String, int>{'light': 3, 'temperature': 4, 'humidity': 2},
+            individual,
+            defaultElevageConfig),
+        isNull);
+    expect(
+        ElevageDomain.environmentalNeedCooldownSeconds(
+            individual, defaultElevageConfig),
+        greaterThan(0));
+  });
+
+  test('sieste diurne est persistante et séparée du sommeil principal', () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Posé',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    state = ElevageDomain.startDayNap(
+        state, id, 'ZONE_3', now, defaultElevageConfig);
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    expect(ElevageDomain.isSleeping(individual, now, defaultElevageConfig),
+        isTrue);
+    expect(ElevageDomain.sleepZone(state, id, now, defaultElevageConfig),
+        'ZONE_3');
+    expect(
+        ElevageDomain.activeRequest(state, id, now)?['signal'], 'REST_REQUEST');
+    expect(
+        ElevageDomain.isSleeping(
+            individual,
+            now + const Duration(seconds: 181).inMilliseconds,
+            defaultElevageConfig),
+        isFalse);
+  });
 }
