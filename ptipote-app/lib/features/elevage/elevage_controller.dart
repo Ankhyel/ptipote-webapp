@@ -91,9 +91,17 @@ class ElevageController extends ChangeNotifier {
 
   Future<void> offerFood(String id, String item) => _mutate(
       (current) => ElevageDomain.offerFood(current, id, item, _now, config));
-  Future<void> cookMeal(List<String> ingredients, bool usedWater) =>
+  Future<void> cookMeal(List<String> ingredients, bool usedWater,
+          {String? recipeName}) =>
       _mutate((current) => ElevageDomain.cookMeal(
-          current, ingredients, usedWater, _now, config));
+          current, ingredients, usedWater, _now, config,
+          recipeName: recipeName));
+  Future<void> craftCooker() =>
+      _mutate((current) => ElevageDomain.craftCooker(current, _now, config));
+  Future<void> installCooker() =>
+      _mutate((current) => ElevageDomain.installCooker(current, _now));
+  Future<void> rechargeCooker(String alcoveId) => _mutate((current) =>
+      ElevageDomain.rechargeCooker(current, alcoveId, _now, config));
   Future<void> offerCookedMeal(String id, String mealId) => _mutate((current) =>
       ElevageDomain.offerCookedMeal(current, id, mealId, _now, config));
   Future<void> setSatiety(String id, int value) => _mutate((current) =>
@@ -111,6 +119,16 @@ class ElevageController extends ChangeNotifier {
       String alcoveId, String item, String zoneId) async {
     await _mutate((current) => ElevageDomain.placeSceneItem(
         current, alcoveId, item, zoneId, _now, config));
+    if (error != null || state == null) return null;
+    return ElevageDomain.sceneItems(state!, alcoveId)
+        .where((entry) => entry['zoneId'] == zoneId)
+        .singleOrNull?['instanceId'] as String?;
+  }
+
+  Future<String?> placeCookedMeal(
+      String alcoveId, String mealId, String zoneId) async {
+    await _mutate((current) => ElevageDomain.placeCookedMeal(
+        current, alcoveId, mealId, zoneId, _now, config));
     if (error != null || state == null) return null;
     return ElevageDomain.sceneItems(state!, alcoveId)
         .where((entry) => entry['zoneId'] == zoneId)

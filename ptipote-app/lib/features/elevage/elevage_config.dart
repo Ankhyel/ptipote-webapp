@@ -768,6 +768,21 @@ class ElevageConfig {
       _cookingNumber('waterTankCapacity', 30).clamp(1, 999);
   int get waterCostPerWetRecipe =>
       _cookingNumber('waterCostPerWetRecipe', 1).clamp(1, 99);
+  int get cookerHeatMax => _cookingNumber('cookerHeatMax', 10).clamp(1, 999);
+  int get cookerEnergyCostPerRecharge =>
+      _cookingNumber('cookerEnergyCostPerRecharge', 1).clamp(1, 99);
+  int get cookerHeatPerEnergy =>
+      _cookingNumber('cookerHeatPerEnergy', 10).clamp(1, 999);
+  int get cookerHeatCostPerPortion =>
+      _cookingNumber('cookerHeatCostPerPortion', 1).clamp(1, 99);
+  int get minRecipeElements =>
+      _cookingNumber('minRecipeElements', 2).clamp(1, 4);
+  int get maxFoodIngredients =>
+      _cookingNumber('maxFoodIngredients', 3).clamp(1, 3);
+  bool get waterCountsAsElement =>
+      cookingConfig['waterCountsAsElement'] as bool? ?? true;
+  Map<String, dynamic> get cookerBuildRecipe => Map<String, dynamic>.from(
+      cookingConfig['cookerBuildRecipe'] as Map? ?? const <dynamic, dynamic>{});
 
   Map<String, dynamic> get weatherConfig => Map<String, dynamic>.from(
       refugeProgression['weather'] as Map? ?? const <dynamic, dynamic>{});
@@ -2824,6 +2839,20 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'criticalWellbeingPenaltyHours': 24,
     },
     'cooking': <String, dynamic>{
+      // POINT À ARBITRER : recette Prototype, sans prétention canonique.
+      'cookerBuildRecipe': <String, dynamic>{
+        'organic': 3,
+        'mineral': 2,
+        'special': <String, int>{'MUSHROOM': 1, 'ALGAE': 1},
+      },
+      'cookerHeatMax': 10,
+      'cookerEnergyCostPerRecharge': 1,
+      'cookerHeatPerEnergy': 10,
+      'cookerHeatCostPerPortion': 1,
+      'minRecipeElements': 2,
+      'maxFoodIngredients': 3,
+      'waterCountsAsElement': true,
+      // Cuisine V2 : la portion est calculée depuis la moyenne des aliments.
       'dryPortions': 3,
       'wetPortions': 4,
       'dryBonusPerPortion': 10,

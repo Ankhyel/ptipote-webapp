@@ -1039,7 +1039,7 @@ class _IndividualPageState extends State<_IndividualPage> {
   void _placeFromInventory(String item) {
     setState(() => _pendingPlacementItem = item);
     _showSceneFeedback(
-        'Placez ${ElevagePresentation.itemLabel(item).toLowerCase()} dans une zone libre.');
+        'Placez ${_sceneSelectionLabel(item).toLowerCase()} dans une zone libre.');
   }
 
   Future<void> _placeInZone(String zoneId) async {
@@ -1049,8 +1049,11 @@ class _IndividualPageState extends State<_IndividualPage> {
     final individual =
         (state.data['individuals'] as Map)[widget.individualId] as Map;
     final alcoveId = individual['alcoveId'] as String;
-    final instanceId =
-        await widget.controller.placeSceneItem(alcoveId, item, zoneId);
+    final cookedMealId = _cookedMealIdFromSelection(item);
+    final instanceId = cookedMealId == null
+        ? await widget.controller.placeSceneItem(alcoveId, item, zoneId)
+        : await widget.controller
+            .placeCookedMeal(alcoveId, cookedMealId, zoneId);
     if (!mounted) return;
     if (widget.controller.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1061,7 +1064,7 @@ class _IndividualPageState extends State<_IndividualPage> {
     final zone = widget.controller.config.sceneZone(zoneId)!;
     setState(() => _pendingPlacementItem = null);
     _showSceneFeedback(
-        'Vous posez ${ElevagePresentation.itemLabel(item).toLowerCase()} dans ${zone.label}.');
+        'Vous posez ${_sceneSelectionLabel(item).toLowerCase()} dans ${zone.label}.');
     if (instanceId != null) {
       _enqueueSceneEvent(
           _SceneEvent.autonomous(direct: true, targetInstanceId: instanceId));
@@ -1093,6 +1096,7 @@ class _IndividualPageState extends State<_IndividualPage> {
     final action = _sceneActionForOutcome(
         outcome.behavior, item['itemId'] as String,
         isStructural: outcome.consumed &&
+            item['itemId'] != 'COOKED_MEAL' &&
             !ElevageDomain.canEat(individual, item['itemId'] as String,
                 widget.controller.config));
     _setSceneAction(action);
@@ -1699,8 +1703,8 @@ class _IndividualPageState extends State<_IndividualPage> {
             _section(context, 'Cuisine', <Widget>[
               ListTile(
                 leading: const Icon(Icons.soup_kitchen_outlined),
-                title: const Text('Préparation libre'),
-                subtitle: const Text('3 ingrédients · Eau optionnelle'),
+                title: const Text('Cuisinière'),
+                subtitle: Text(_cookerSubtitle(state, controller.config)),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _openCooking(context, controller, individual),
               ),
@@ -2022,6 +2026,25 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
         next[section] as Map? ?? const <dynamic, dynamic>{});
     nested[key] = value;
     next[section] = nested;
+    setState(() => config = config.copyWith(refugeProgression: next));
+  }
+
+  void _setCookerBuildNumber(String key, int value, {bool special = false}) {
+    final next = Map<String, dynamic>.from(config.refugeProgression);
+    final cooking = Map<String, dynamic>.from(
+        next['cooking'] as Map? ?? const <dynamic, dynamic>{});
+    final recipe = Map<String, dynamic>.from(
+        cooking['cookerBuildRecipe'] as Map? ?? const <dynamic, dynamic>{});
+    if (special) {
+      final parts = Map<String, dynamic>.from(
+          recipe['special'] as Map? ?? const <dynamic, dynamic>{});
+      parts[key] = value;
+      recipe['special'] = parts;
+    } else {
+      recipe[key] = value;
+    }
+    cooking['cookerBuildRecipe'] = recipe;
+    next['cooking'] = cooking;
     setState(() => config = config.copyWith(refugeProgression: next));
   }
 
@@ -2798,16 +2821,40 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               _heading('Cuisine et météo'),
               _number(
                   context,
-                  'Portions sèches',
-                  config.dryPortions,
-                  (value) =>
-                      _setRefugeNestedNumber('cooking', 'dryPortions', value)),
+                  'Chaleur maximum Cuisinière',
+                  config.cookerHeatMax,
+                  (value) => _setRefugeNestedNumber(
+                      'cooking', 'cookerHeatMax', value)),
               _number(
                   context,
-                  'Portions humides',
-                  config.wetPortions,
-                  (value) =>
-                      _setRefugeNestedNumber('cooking', 'wetPortions', value)),
+                  'Coût Energy / recharge',
+                  config.cookerEnergyCostPerRecharge,
+                  (value) => _setRefugeNestedNumber(
+                      'cooking', 'cookerEnergyCostPerRecharge', value)),
+              _number(
+                  context,
+                  'Chaleur gagnée / Energy',
+                  config.cookerHeatPerEnergy,
+                  (value) => _setRefugeNestedNumber(
+                      'cooking', 'cookerHeatPerEnergy', value)),
+              _number(
+                  context,
+                  'Chaleur / portion',
+                  config.cookerHeatCostPerPortion,
+                  (value) => _setRefugeNestedNumber(
+                      'cooking', 'cookerHeatCostPerPortion', value)),
+              _number(
+                  context,
+                  'Éléments minimum recette',
+                  config.minRecipeElements,
+                  (value) => _setRefugeNestedNumber(
+                      'cooking', 'minRecipeElements', value)),
+              _number(
+                  context,
+                  'Maximum ingrédients alimentaires',
+                  config.maxFoodIngredients,
+                  (value) => _setRefugeNestedNumber(
+                      'cooking', 'maxFoodIngredients', value)),
               _number(
                   context,
                   'Bonus sec / portion',
@@ -2820,6 +2867,37 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                   config.wetBonusPerPortion,
                   (value) => _setRefugeNestedNumber(
                       'cooking', 'wetBonusPerPortion', value)),
+              const ListTile(
+                  title: Text('Cuisinière · construction'),
+                  subtitle: Text('Recette Prototype à arbitrer.')),
+              _number(
+                  context,
+                  'Cuisinière · Organique',
+                  (config.cookerBuildRecipe['organic'] as num?)?.toInt() ?? 0,
+                  (value) => _setCookerBuildNumber('organic', value)),
+              _number(
+                  context,
+                  'Cuisinière · Minéral',
+                  (config.cookerBuildRecipe['mineral'] as num?)?.toInt() ?? 0,
+                  (value) => _setCookerBuildNumber('mineral', value)),
+              _number(
+                  context,
+                  'Cuisinière · Champignon',
+                  ((config.cookerBuildRecipe['special'] as Map?)?['MUSHROOM']
+                              as num?)
+                          ?.toInt() ??
+                      0,
+                  (value) =>
+                      _setCookerBuildNumber('MUSHROOM', value, special: true)),
+              _number(
+                  context,
+                  'Cuisinière · Algues',
+                  ((config.cookerBuildRecipe['special'] as Map?)?['ALGAE']
+                              as num?)
+                          ?.toInt() ??
+                      0,
+                  (value) =>
+                      _setCookerBuildNumber('ALGAE', value, special: true)),
               _number(
                   context,
                   'Réservoir Eau',
@@ -5587,6 +5665,16 @@ String _weatherEmoji(String type) => switch (type) {
       _ => '☀️',
     };
 
+String _cookerSubtitle(ElevageSave state, ElevageConfig config) {
+  final cooker = ElevageDomain.cookerState(state);
+  if (cooker['installed'] != true) {
+    return cooker['crafted'] == true
+        ? 'Prête à être installée · infrastructure du Refuge'
+        : 'À fabriquer · infrastructure du Refuge hors Z1–Z4';
+  }
+  return '🔥 ${ElevageDomain.cookingHeat(state, config)}/${config.cookerHeatMax} · 1 ⚡ → ${config.cookerHeatPerEnergy} 🔥';
+}
+
 Future<void> _openCooking(
     BuildContext context, ElevageController controller, Map individual) async {
   final selected = <String?>[null, null, null];
@@ -5596,98 +5684,210 @@ Future<void> _openCooking(
       isScrollControlled: true,
       builder: (sheetContext) => StatefulBuilder(builder: (_, setSheetState) {
             final state = controller.state!;
+            final config = controller.config;
+            final cooker = ElevageDomain.cookerState(state);
             final special = state.data['inventory']['special'] as Map;
             final foods = special.entries
                 .where((entry) =>
                     (entry.value as num?)?.toInt() != null &&
                     (entry.value as num).toInt() > 0 &&
-                    controller.config.foodSatietyValue(entry.key as String) > 0)
+                    config.foodSatietyValue(entry.key as String) > 0)
                 .map((entry) => entry.key as String)
                 .toList();
-            final complete = selected.every((item) => item != null);
-            final portions = useWater
-                ? controller.config.wetPortions
-                : controller.config.dryPortions;
-            final total = selected.whereType<String>().fold<int>(
-                    0,
-                    (sum, item) =>
-                        sum + controller.config.foodSatietyValue(item)) +
-                portions *
-                    (useWater
-                        ? controller.config.wetBonusPerPortion
-                        : controller.config.dryBonusPerPortion);
+            final ingredients = selected.whereType<String>().toList();
+            final hasEnoughElements = ingredients.isNotEmpty &&
+                ingredients.length +
+                        (useWater && config.waterCountsAsElement ? 1 : 0) >=
+                    config.minRecipeElements;
+            Map<String, dynamic>? preview;
+            if (hasEnoughElements) {
+              try {
+                preview =
+                    ElevageDomain.cookingPreview(ingredients, useWater, config);
+              } on StateError {
+                preview = null;
+              }
+            }
+            final recipeKey = preview?['recipeKey'] as String?;
+            final known = recipeKey == null
+                ? null
+                : (state.data['knownCookingRecipes'] as Map)[recipeKey] as Map?;
+            final heat = ElevageDomain.cookingHeat(state, config);
+            final enoughWater = !useWater ||
+                ElevageDomain.waterTank(state) >= config.waterCostPerWetRecipe;
+            final enoughHeat = preview != null && heat >= preview['heatCost'];
+            final ingredientCounts = <String, int>{};
+            for (final ingredient in ingredients) {
+              ingredientCounts[ingredient] =
+                  (ingredientCounts[ingredient] ?? 0) + 1;
+            }
+            final enoughIngredients = ingredientCounts.entries.every((entry) =>
+                (special[entry.key] as num? ?? 0).toInt() >= entry.value);
+            final canCook = cooker['installed'] == true &&
+                preview != null &&
+                enoughWater &&
+                enoughHeat &&
+                enoughIngredients;
+            final alcoveId = individual['alcoveId'] as String;
+            final alcove = (state.data['alcoves'] as List)
+                .whereType<Map>()
+                .firstWhere((entry) => entry['id'] == alcoveId);
+            final localEnergy = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
             return SafeArea(
                 child: SingleChildScrollView(
                     padding: const EdgeInsets.all(20),
                     child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          Text('Cuisine',
+                          Text('Cuisinière',
                               style:
                                   Theme.of(sheetContext).textTheme.titleLarge),
                           const SizedBox(height: 8),
-                          for (var index = 0; index < 3; index++)
-                            DropdownButtonFormField<String>(
-                              initialValue: selected[index],
-                              decoration: InputDecoration(
-                                  labelText: 'Ingrédient ${index + 1}'),
-                              items: foods
-                                  .map((item) => DropdownMenuItem(
-                                      value: item,
-                                      child: Text(
-                                          '${ElevagePresentation.itemLabel(item)} · ${special[item]}')))
-                                  .toList(),
-                              onChanged: (value) =>
-                                  setSheetState(() => selected[index] = value),
+                          if (cooker['crafted'] != true) ...<Widget>[
+                            const Text(
+                                'Infrastructure dédiée du Refuge · ne prend aucun slot Z1–Z4.'),
+                            const SizedBox(height: 8),
+                            FilledButton.icon(
+                                onPressed: () async {
+                                  await controller.craftCooker();
+                                  if (sheetContext.mounted) {
+                                    setSheetState(() {});
+                                  }
+                                },
+                                icon: const Icon(Icons.handyman_outlined),
+                                label: const Text('Fabriquer la Cuisinière')),
+                          ] else if (cooker['installed'] != true) ...<Widget>[
+                            const Text('Cuisinière fabriquée, non installée.'),
+                            FilledButton.icon(
+                                onPressed: () async {
+                                  await controller.installCooker();
+                                  if (sheetContext.mounted) {
+                                    setSheetState(() {});
+                                  }
+                                },
+                                icon: const Icon(Icons.settings_outlined),
+                                label: const Text('Installer au Refuge')),
+                          ] else ...<Widget>[
+                            ListTile(
+                              leading: const Icon(
+                                  Icons.local_fire_department_outlined),
+                              title: Text(
+                                  'Chaleur · $heat/${config.cookerHeatMax}'),
+                              subtitle: LinearProgressIndicator(
+                                  value: heat / config.cookerHeatMax),
                             ),
-                          SwitchListTile(
-                              value: useWater,
-                              title: const Text('Ajouter de l’eau'),
-                              subtitle: Text(
-                                  '💧 ${ElevageDomain.waterTank(state).toStringAsFixed(1)}/${controller.config.waterTankCapacity}'),
-                              onChanged: (value) =>
-                                  setSheetState(() => useWater = value)),
-                          ListTile(
-                              title: Text('Prévision : $portions portions'),
-                              subtitle: Text(
-                                  'Satiété totale : $total · moyenne : ${(total / portions).toStringAsFixed(1)}')),
-                          FilledButton(
-                              onPressed: !complete
-                                  ? null
-                                  : () async {
-                                      await controller.cookMeal(
-                                          selected.cast<String>(), useWater);
-                                      if (sheetContext.mounted) {
-                                        setSheetState(() {});
-                                      }
-                                    },
-                              child: const Text('Cuisiner')),
+                            FilledButton.tonalIcon(
+                                onPressed: heat >= config.cookerHeatMax ||
+                                        localEnergy <
+                                            config.cookerEnergyCostPerRecharge
+                                    ? null
+                                    : () async {
+                                        await controller
+                                            .rechargeCooker(alcoveId);
+                                        if (sheetContext.mounted) {
+                                          setSheetState(() {});
+                                        }
+                                      },
+                                icon: const Icon(Icons.bolt_outlined),
+                                label: Text(
+                                    'Alimenter · ${config.cookerEnergyCostPerRecharge} ⚡ → +${config.cookerHeatPerEnergy} 🔥 · $localEnergy ⚡ locale')),
+                            const Divider(height: 28),
+                            for (var index = 0;
+                                index < config.maxFoodIngredients;
+                                index++)
+                              DropdownButtonFormField<String>(
+                                initialValue: selected[index],
+                                decoration: InputDecoration(
+                                    labelText: 'Ingrédient ${index + 1}'),
+                                items: foods
+                                    .map((item) => DropdownMenuItem(
+                                        value: item,
+                                        child: Text(
+                                            '${ElevagePresentation.itemLabel(item)} · ${special[item]}')))
+                                    .toList(),
+                                onChanged: (value) => setSheetState(
+                                    () => selected[index] = value),
+                              ),
+                            SwitchListTile(
+                                value: useWater,
+                                title: const Text('Ajouter de l’eau'),
+                                subtitle: Text(
+                                    '💧 ${ElevageDomain.waterTank(state).toStringAsFixed(1)}/${config.waterTankCapacity} · 1 Eau par batch'),
+                                onChanged: (value) =>
+                                    setSheetState(() => useWater = value)),
+                            if (preview != null)
+                              ListTile(
+                                  title: Text(
+                                      '${known?['customName'] ?? 'Nouvelle recette'} · ${preview['portionCount']} portions'),
+                                  subtitle: Text(
+                                      'Satiété / portion : ${(preview['satietyPerPortion'] as num).toStringAsFixed(1)} · Coût : ${preview['heatCost']} 🔥')),
+                            FilledButton(
+                                onPressed: !canCook
+                                    ? null
+                                    : () async {
+                                        String? name;
+                                        if (known == null) {
+                                          name = await _recipeNameDialog(
+                                              sheetContext);
+                                          if (name == null) return;
+                                        }
+                                        await controller.cookMeal(
+                                            ingredients, useWater,
+                                            recipeName: name);
+                                        if (sheetContext.mounted) {
+                                          setSheetState(() {});
+                                        }
+                                      },
+                                child: const Text('Cuisiner')),
+                            if (preview != null && !enoughHeat)
+                              Text(
+                                  'Chaleur insuffisante : ${preview['heatCost']} 🔥 requis.'),
+                            if (useWater && !enoughWater)
+                              const Text('Eau insuffisante.'),
+                            if (preview != null && !enoughIngredients)
+                              const Text('Ingrédients insuffisants.'),
+                          ],
                           const Divider(height: 28),
-                          ...ElevageDomain.cookedMeals(state)
-                              .map((meal) => ListTile(
-                                    leading:
-                                        const Icon(Icons.restaurant_outlined),
-                                    title: Text(
-                                        'Plat cuisiné · ${meal['remainingPortions']}/${meal['portionCount']}'),
-                                    subtitle: Text(
-                                        (meal['ingredientIds'] as List)
-                                            .cast<String>()
-                                            .map(ElevagePresentation.itemLabel)
-                                            .join(' + ')),
-                                    trailing: TextButton(
-                                        onPressed: () async {
-                                          await controller.offerCookedMeal(
-                                              individual['id'] as String,
-                                              meal['instanceId'] as String);
-                                          if (sheetContext.mounted) {
-                                            setSheetState(() {});
-                                          }
-                                        },
-                                        child: const Text('Donner')),
-                                  )),
+                          const Text(
+                              'Les portions terminées rejoignent la Réserve : ouvrez-la pour les poser dans l’Alcôve.'),
                         ])));
           }));
 }
+
+Future<String?> _recipeNameDialog(BuildContext context) async {
+  final field = TextEditingController();
+  final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+            title: const Text('Nouvelle recette !'),
+            content: TextField(
+              controller: field,
+              autofocus: true,
+              decoration: const InputDecoration(
+                  labelText: 'Comment voulez-vous appeler cette recette ?'),
+            ),
+            actions: <Widget>[
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Annuler')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, field.text),
+                  child: const Text('Créer')),
+            ],
+          ));
+  field.dispose();
+  return result;
+}
+
+String? _cookedMealIdFromSelection(String value) =>
+    value.startsWith('COOKED_MEAL:')
+        ? value.substring('COOKED_MEAL:'.length)
+        : null;
+
+String _sceneSelectionLabel(String value) =>
+    _cookedMealIdFromSelection(value) == null
+        ? ElevagePresentation.itemLabel(value)
+        : 'plat cuisiné';
 
 Future<void> _openInventory(BuildContext context, ElevageController controller,
     Map individual, void Function(String item) onPlace) async {
@@ -5699,6 +5899,7 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
       builder: (_, setSheetState) {
         final state = controller.state!;
         final special = state.data['inventory']['special'] as Map;
+        final cooked = ElevageDomain.cookedMealPortions(state);
         final generic = state.data['inventory']['generic'] as Map;
         final items = <String, int>{
           ...special.map((key, value) => MapEntry(key as String, value as int)),
@@ -5776,7 +5977,27 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
                     ),
                 ]),
                 const SizedBox(height: 12),
-                if (visible.isEmpty)
+                if (cooked.isNotEmpty) ...<Widget>[
+                  const ListTile(
+                      leading: Icon(Icons.restaurant_outlined),
+                      title: Text('Plats cuisinés'),
+                      subtitle: Text(
+                          'Chaque portion peut être posée dans une zone libre.')),
+                  ...cooked.map((portion) => ListTile(
+                        leading: const Icon(Icons.restaurant_outlined),
+                        title: Text(
+                            portion['recipeName'] as String? ?? 'Plat cuisiné'),
+                        subtitle: Text(
+                            '${(portion['satietyValue'] as num? ?? 0).toStringAsFixed(1)} satiété · ${(portion['ingredientIds'] as List? ?? const <dynamic>[]).whereType<String>().map(ElevagePresentation.itemLabel).join(' + ')}'),
+                        trailing: const Icon(Icons.add_location_alt_outlined),
+                        onTap: () {
+                          Navigator.of(sheetContext).pop();
+                          onPlace('COOKED_MEAL:${portion['instanceId']}');
+                        },
+                      )),
+                  const Divider(),
+                ],
+                if (visible.isEmpty && cooked.isEmpty)
                   const Padding(
                       padding: EdgeInsets.all(24),
                       child: Center(

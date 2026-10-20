@@ -1567,3 +1567,30 @@ L’Eau n’est pas une ressource globale du Camp.
   retirés de l’UI : nuit locale 00–04 et réglages du Biogénérateur restent les
   seules références actives. Les boutons Forcer Jour/Nuit n’apparaissent plus
   dans l’Alcôve joueur. Les seuils Pisteur canoniques sont 100/200/300.
+
+# Lot 22.7 — Cuisine V2 et Cuisinière
+
+- **Infrastructure.** La Cuisinière est une infrastructure persistante du
+  Refuge, distincte des slots Z1–Z4. La connaissance de Cuisine est disponible
+  dès le départ, mais la Cuisinière doit être fabriquée puis installée. Sa
+  recette Prototype est configurable et reste un **point à arbitrer**.
+- **Chaleur.** La Cuisinière stocke 0–10 Chaleur par défaut. Le joueur la
+  charge explicitement depuis l’Energy locale de l’Alcôve (`1 Energy → 10
+  Chaleur`, clampée au cap) ; elle ne prélève jamais directement la Réserve.
+  Chaque portion créée coûte 1 Chaleur.
+- **Recettes libres.** Une recette accepte de 2 à 4 éléments : au moins un
+  aliment, jusqu’à trois aliments, et une Eau optionnelle. Les portions sont
+  égales au nombre d’éléments engagés. La satiété par portion est la moyenne
+  des aliments solides, plus +10 sans Eau ou +5 avec Eau. Les décimales sont
+  préservées en données, puis affichées à une décimale.
+- **Identité et nom.** La `recipeKey` trie les IDs des ingrédients et conserve
+  les doublons, avec un marqueur Eau. L’ordre de sélection ne change donc pas
+  la recette. La première création demande un nom libre, persisté puis réutilisé
+  automatiquement pour toutes les créations suivantes. La modération et le
+  renommage restent hors scope.
+- **Portions physiques.** Chaque portion est un `COOKED_MEAL` individuel de la
+  Réserve, avec recette, composition, Eau, satiété et batch. Elle peut être
+  posée dans une zone avec son `placedItemInstanceId`, récupérée, observée et
+  mangée. Un plat reste inaccessible si l’un de ses aliments est verrouillé
+  pour le Type ou le stade du P’TIPOTE. Les batches V1 non réclamés migrent une
+  seule fois en portions « Préparation héritée », sans duplication au reload.

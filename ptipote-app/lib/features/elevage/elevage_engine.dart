@@ -60,7 +60,16 @@ class ElevageSave {
           },
       },
       'biogeneratorInventory': <String, dynamic>{},
+      // The cooker is a Refuge infrastructure: it is never attached to Z1–Z4.
+      'cooker': <String, dynamic>{
+        'infrastructureId': 'COOKER',
+        'crafted': false,
+        'installed': false,
+        'cookingHeat': 0,
+      },
       'cookedMeals': <String, dynamic>{},
+      'cookedMealInventory': <String, dynamic>{},
+      'knownCookingRecipes': <String, dynamic>{},
       'waterTank': 0.0,
       'weather': <String, dynamic>{'lastUpdatedAt': now},
       // `contribution` is retained as a legacy mirror for older saves and
@@ -103,6 +112,72 @@ class ElevageSave {
     normalized.putIfAbsent('batteryInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('biogeneratorInventory', () => <String, dynamic>{});
     normalized.putIfAbsent('cookedMeals', () => <String, dynamic>{});
+    normalized.putIfAbsent(
+        'cooker',
+        () => <String, dynamic>{
+              'infrastructureId': 'COOKER',
+              'crafted': false,
+              'installed': false,
+              'cookingHeat': 0,
+            });
+    final cooker = normalized['cooker'] as Map;
+    cooker.putIfAbsent('infrastructureId', () => 'COOKER');
+    cooker.putIfAbsent('crafted', () => false);
+    cooker.putIfAbsent('installed', () => false);
+    cooker.putIfAbsent('cookingHeat', () => 0);
+    normalized.putIfAbsent('cookedMealInventory', () => <String, dynamic>{});
+    normalized.putIfAbsent('knownCookingRecipes', () => <String, dynamic>{});
+    // Cuisine V1 stored batches outside the physical inventory. Convert their
+    // unclaimed portions once, retaining every known composition and never
+    // recreating them on a later reload.
+    if (normalized['cookedMealsMigrationV227'] != true) {
+      final legacy = normalized['cookedMeals'] as Map;
+      final meals = normalized['cookedMealInventory'] as Map<String, dynamic>;
+      final recipes = normalized['knownCookingRecipes'] as Map<String, dynamic>;
+      for (final entry in legacy.entries.where((entry) => entry.value is Map)) {
+        final batch = entry.value as Map;
+        final ingredients =
+            (batch['ingredientIds'] as List? ?? const <dynamic>[])
+                .whereType<String>()
+                .toList(growable: false);
+        if (ingredients.isEmpty) continue;
+        final usedWater = batch['usedWater'] == true;
+        final key = ElevageDomain.cookingRecipeKey(ingredients, usedWater);
+        recipes.putIfAbsent(
+            key,
+            () => <String, dynamic>{
+                  'recipeKey': key,
+                  'customName': 'Préparation héritée',
+                  'ingredientIds': ingredients,
+                  'usedWater': usedWater,
+                  'createdAt': batch['createdAt'] ?? 0,
+                });
+        final portions = batch['satietyPerPortionDistribution'] as List? ??
+            const <dynamic>[];
+        final remaining = (batch['remainingPortions'] as num?)?.toInt() ?? 0;
+        final total =
+            (batch['portionCount'] as num?)?.toInt() ?? portions.length;
+        final consumed = (total - remaining).clamp(0, portions.length);
+        for (var index = consumed; index < portions.length; index++) {
+          final id = 'legacy-cooked-${entry.key}-$index';
+          meals.putIfAbsent(
+              id,
+              () => <String, dynamic>{
+                    'instanceId': id,
+                    'itemId': 'COOKED_MEAL',
+                    'recipeKey': key,
+                    'recipeName': 'Préparation héritée',
+                    'ingredientIds': ingredients,
+                    'usedWater': usedWater,
+                    'satietyValue': (portions[index] as num?)?.toDouble() ?? 0,
+                    'createdAt': batch['createdAt'] ?? 0,
+                    'batchId': entry.key,
+                  });
+        }
+      }
+      legacy.clear();
+      normalized['cookedMealsMigrationV227'] = true;
+    }
     normalized.putIfAbsent('waterTank', () => 0.0);
     normalized.putIfAbsent(
         'weather',
@@ -420,6 +495,7 @@ class ElevageDomain {
     'ALGAE',
     'MUSHROOM',
     'FRUIT',
+    'COOKED_MEAL',
   ];
   static const List<String> treatItems = <String>[
     'FIBROUS_FRUIT',
@@ -739,6 +815,7 @@ class ElevageDomain {
     'QUARTZ',
     'SEED',
     'SPORE',
+    'COOKED_MEAL',
   };
 
   static List<String> structuralResourcesForFamily(String family) =>
@@ -1326,24 +1403,138 @@ class ElevageDomain {
     return state;
   }
 
-  static List<Map<String, dynamic>> cookedMeals(ElevageSave state) =>
-      (state.data['cookedMeals'] as Map)
+  static Map<String, dynamic> cookerState(ElevageSave state) {
+    final raw = state.data['cooker'];
+    if (raw is Map<String, dynamic>) return raw;
+    final normalized = Map<String, dynamic>.from(raw as Map? ?? const {});
+    state.data['cooker'] = normalized;
+    return normalized;
+  }
+
+  static bool cookerInstalled(ElevageSave state) =>
+      cookerState(state)['installed'] == true;
+
+  static int cookingHeat(ElevageSave state, ElevageConfig config) =>
+      ((cookerState(state)['cookingHeat'] as num?)?.toInt() ?? 0)
+          .clamp(0, config.cookerHeatMax);
+
+  static List<Map<String, dynamic>> cookedMealPortions(ElevageSave state) =>
+      (state.data['cookedMealInventory'] as Map)
           .values
           .whereType<Map>()
           .map((meal) => Map<String, dynamic>.from(meal))
           .toList(growable: false);
+
+  // Compatibility alias for the V1 sheet while callers migrate to portions.
+  static List<Map<String, dynamic>> cookedMeals(ElevageSave state) =>
+      cookedMealPortions(state);
+
+  static String cookingRecipeKey(List<String> ingredients, bool usedWater) {
+    final canonical = List<String>.from(ingredients)..sort();
+    return '${canonical.join('+')}|water:${usedWater ? 1 : 0}';
+  }
+
+  static Map<String, dynamic> cookingPreview(
+      List<String> ingredients, bool usedWater, ElevageConfig config) {
+    if (ingredients.isEmpty ||
+        ingredients.any((item) => config.foodSatietyValue(item) <= 0)) {
+      throw StateError('Choisissez au moins un ingrédient alimentaire.');
+    }
+    if (ingredients.length > config.maxFoodIngredients) {
+      throw StateError('Trop d’ingrédients alimentaires.');
+    }
+    final elements =
+        ingredients.length + (usedWater && config.waterCountsAsElement ? 1 : 0);
+    if (elements < config.minRecipeElements) {
+      throw StateError('Choisissez au moins deux éléments.');
+    }
+    final average = ingredients
+            .map(config.foodSatietyValue)
+            .reduce((value, next) => value + next) /
+        ingredients.length;
+    final perPortion = average +
+        (usedWater ? config.wetBonusPerPortion : config.dryBonusPerPortion);
+    return <String, dynamic>{
+      'recipeKey': cookingRecipeKey(ingredients, usedWater),
+      'portionCount': elements,
+      'satietyPerPortion': perPortion,
+      'batchSatiety': perPortion * elements,
+      'heatCost': elements * config.cookerHeatCostPerPortion,
+    };
+  }
+
+  static ElevageSave craftCooker(
+      ElevageSave source, int now, ElevageConfig config) {
+    final state = source.copy();
+    final cooker = cookerState(state);
+    if (cooker['crafted'] == true) {
+      throw StateError('La Cuisinière est déjà fabriquée.');
+    }
+    final recipe = config.cookerBuildRecipe;
+    final organic = (recipe['organic'] as num?)?.toInt() ?? 0;
+    final mineral = (recipe['mineral'] as num?)?.toInt() ?? 0;
+    final special = Map<String, dynamic>.from(
+        recipe['special'] as Map? ?? const <dynamic, dynamic>{});
+    final generic = _generic(state);
+    final reserve = _special(state);
+    if ((generic['organic'] ?? 0) < organic ||
+        (generic['mineral'] ?? 0) < mineral ||
+        special.entries.any((entry) =>
+            (reserve[entry.key] ?? 0) < (entry.value as num).toInt())) {
+      throw StateError('Ressources insuffisantes pour la Cuisinière.');
+    }
+    generic['organic'] = generic['organic']! - organic;
+    generic['mineral'] = generic['mineral']! - mineral;
+    special.forEach(
+        (key, value) => reserve[key] = reserve[key]! - (value as num).toInt());
+    cooker['crafted'] = true;
+    cooker['infrastructureId'] = 'COOKER';
+    cooker['craftedAt'] = now;
+    return state;
+  }
+
+  static ElevageSave installCooker(ElevageSave source, int now) {
+    final state = source.copy();
+    final cooker = cookerState(state);
+    if (cooker['crafted'] != true) {
+      throw StateError('Fabriquez d’abord la Cuisinière.');
+    }
+    cooker['installed'] = true;
+    cooker['installedAt'] = now;
+    return state;
+  }
+
+  static ElevageSave rechargeCooker(
+      ElevageSave source, String alcoveId, int now, ElevageConfig config) {
+    final state = source.copy();
+    final cooker = cookerState(state);
+    if (cooker['installed'] != true) throw StateError('Cuisinière absente.');
+    final heat = cookingHeat(state, config);
+    if (heat >= config.cookerHeatMax) {
+      throw StateError('La Cuisinière est déjà chaude.');
+    }
+    final alcove = _alcove(state, alcoveId);
+    final energy = (alcove['localEnergy'] as num?)?.toInt() ?? 0;
+    if (energy < config.cookerEnergyCostPerRecharge) {
+      throw StateError('Énergie locale insuffisante.');
+    }
+    alcove['localEnergy'] = energy - config.cookerEnergyCostPerRecharge;
+    cooker['cookingHeat'] =
+        min(config.cookerHeatMax, heat + config.cookerHeatPerEnergy);
+    cooker['lastChargedAt'] = now;
+    return state;
+  }
 
   static double waterTank(ElevageSave state) =>
       ((state.data['waterTank'] as num?)?.toDouble() ?? 0)
           .clamp(0, double.infinity);
 
   static ElevageSave cookMeal(ElevageSave source, List<String> ingredients,
-      bool usedWater, int now, ElevageConfig config) {
+      bool usedWater, int now, ElevageConfig config,
+      {String? recipeName}) {
     final state = refreshWeather(source, now, config);
-    if (ingredients.length != 3 ||
-        ingredients.any((item) => config.foodSatietyValue(item) <= 0)) {
-      throw StateError('Choisissez exactement trois ingrédients alimentaires.');
-    }
+    if (!cookerInstalled(state)) throw StateError('Cuisinière non installée.');
+    final preview = cookingPreview(ingredients, usedWater, config);
     final special = _special(state);
     final required = <String, int>{};
     for (final item in ingredients) {
@@ -1359,29 +1550,45 @@ class ElevageDomain {
     state.data['waterTank'] = (waterTank(state) - waterCost)
         .clamp(0, config.waterTankCapacity)
         .toDouble();
-    final portions = usedWater ? config.wetPortions : config.dryPortions;
-    final ingredientSatiety = ingredients.fold<int>(
-        0, (sum, item) => sum + config.foodSatietyValue(item));
-    final batchSatiety = ingredientSatiety +
-        portions *
-            (usedWater ? config.wetBonusPerPortion : config.dryBonusPerPortion);
-    final base = batchSatiety ~/ portions;
-    final remainder = batchSatiety % portions;
-    final id = 'cooked-meal-$now-${(state.data['cookedMeals'] as Map).length}';
-    (state.data['cookedMeals'] as Map<String, dynamic>)[id] = <String, dynamic>{
-      'instanceId': id,
-      'itemId': 'COOKED_MEAL',
-      'ingredientIds': List<String>.from(ingredients),
-      'usedWater': usedWater,
-      'portionCount': portions,
-      'remainingPortions': portions,
-      'batchSatiety': batchSatiety,
-      'satietyPerPortionDistribution': <int>[
-        for (var index = 0; index < portions; index++)
-          base + (index < remainder ? 1 : 0),
-      ],
-      'createdAt': now,
-    };
+    final heatCost = preview['heatCost'] as int;
+    final cooker = cookerState(state);
+    final heat = cookingHeat(state, config);
+    if (heat < heatCost) throw StateError('Chaleur insuffisante.');
+    cooker['cookingHeat'] = heat - heatCost;
+    final recipeKey = preview['recipeKey'] as String;
+    final recipes = state.data['knownCookingRecipes'] as Map<String, dynamic>;
+    final known = recipes[recipeKey] as Map?;
+    final name = (known?['customName'] as String?)?.trim().isNotEmpty == true
+        ? known!['customName'] as String
+        : (recipeName?.trim().isNotEmpty == true
+            ? recipeName!.trim()
+            : 'Nouvelle recette');
+    recipes.putIfAbsent(
+        recipeKey,
+        () => <String, dynamic>{
+              'recipeKey': recipeKey,
+              'customName': name,
+              'ingredientIds': List<String>.from(ingredients),
+              'usedWater': usedWater,
+              'createdAt': now,
+            });
+    final portions = preview['portionCount'] as int;
+    final batchId = 'cooked-batch-$now-${recipes.length}';
+    final inventory = state.data['cookedMealInventory'] as Map<String, dynamic>;
+    for (var index = 0; index < portions; index++) {
+      final id = '$batchId-$index';
+      inventory[id] = <String, dynamic>{
+        'instanceId': id,
+        'itemId': 'COOKED_MEAL',
+        'recipeKey': recipeKey,
+        'recipeName': name,
+        'ingredientIds': List<String>.from(ingredients),
+        'usedWater': usedWater,
+        'satietyValue': preview['satietyPerPortion'],
+        'createdAt': now,
+        'batchId': batchId,
+      };
+    }
     return state;
   }
 
@@ -1389,10 +1596,9 @@ class ElevageDomain {
       String mealId, int now, ElevageConfig config) {
     final state = source.copy();
     final individual = _individual(state, id);
-    final meals = state.data['cookedMeals'] as Map<String, dynamic>;
+    final meals = state.data['cookedMealInventory'] as Map<String, dynamic>;
     final meal = meals[mealId] as Map?;
-    if (meal == null ||
-        ((meal['remainingPortions'] as num?)?.toInt() ?? 0) <= 0) {
+    if (meal == null) {
       throw StateError('Cette préparation est épuisée.');
     }
     final ingredients = (meal['ingredientIds'] as List).cast<String>();
@@ -1403,15 +1609,10 @@ class ElevageDomain {
     if (!canOfferNormalFood(state, id, now, config)) {
       throw StateError('P’TIPOTE n’a pas faim.');
     }
-    final portions = meal['satietyPerPortionDistribution'] as List;
-    final index = ((meal['portionCount'] as num).toInt() -
-            (meal['remainingPortions'] as num).toInt())
-        .clamp(0, portions.length - 1);
-    final satiety = (portions[index] as num).toInt();
+    final satiety = (meal['satietyValue'] as num?)?.toDouble() ?? 0;
     setSatiety(
         individual, refreshSatiety(individual, now, config) + satiety, now);
-    meal['remainingPortions'] = (meal['remainingPortions'] as num).toInt() - 1;
-    if (meal['remainingPortions'] == 0) meals.remove(mealId);
+    meals.remove(mealId);
     return state;
   }
 
@@ -1871,14 +2072,16 @@ class ElevageDomain {
 
   /// Derives the displayed value from a persisted 0–100 value and timestamp.
   /// This makes offline loss deterministic without a permanent timer.
-  static int satietyPercent(
+  static double satietyPercent(
       ElevageSave state, String id, int now, ElevageConfig config) {
     return _resolvedSatiety(_individual(state, id), now, config);
   }
 
-  static int _resolvedSatiety(Map individual, int now, ElevageConfig config) {
+  static double _resolvedSatiety(
+      Map individual, int now, ElevageConfig config) {
     final care = individual['care'] as Map? ?? const <dynamic, dynamic>{};
-    final stored = (care['satiety'] as num?)?.toInt() ?? config.initialSatiety;
+    final stored = (care['satiety'] as num?)?.toDouble() ??
+        config.initialSatiety.toDouble();
     final updatedAt = (care['satietyUpdatedAt'] as num?)?.toInt() ?? now;
     final elapsed = max(0, now - updatedAt);
     final stage =
@@ -1888,13 +2091,13 @@ class ElevageDomain {
         const Duration(hours: 1).inMilliseconds;
     // A point is lost only after its complete duration elapsed. Flooring the
     // final subtraction would turn 100 into 99 a millisecond after a meal.
-    return (stored - loss.floor()).clamp(0, 100);
+    return (stored - loss.floor()).clamp(0, 100).toDouble();
   }
 
   /// Commits elapsed satiety before a meal, a stage transition or a debug
   /// edit. The timestamp ensures a new biological stage only affects future
   /// time, never the time that preceded the transition.
-  static int refreshSatiety(Map individual, int now, ElevageConfig config) {
+  static double refreshSatiety(Map individual, int now, ElevageConfig config) {
     final value = _resolvedSatiety(individual, now, config);
     final care =
         individual.putIfAbsent('care', () => <String, dynamic>{}) as Map;
@@ -1903,13 +2106,13 @@ class ElevageDomain {
     return value;
   }
 
-  static int setSatiety(Map individual, int value, int now) {
+  static double setSatiety(Map individual, num value, int now) {
     final care =
         individual.putIfAbsent('care', () => <String, dynamic>{}) as Map;
     final clamped = value.clamp(0, 100);
     care['satiety'] = clamped;
     care['satietyUpdatedAt'] = now;
-    return clamped;
+    return clamped.toDouble();
   }
 
   static ElevageSave setIndividualSatiety(
@@ -2466,6 +2669,39 @@ class ElevageDomain {
     return state;
   }
 
+  static ElevageSave placeCookedMeal(ElevageSave source, String alcoveId,
+      String mealId, String zoneId, int now, ElevageConfig config) {
+    if (config.sceneZone(zoneId) == null) throw StateError('Zone invalide.');
+    final state = source.copy();
+    _alcove(state, alcoveId);
+    final portions = state.data['cookedMealInventory'] as Map<String, dynamic>;
+    final portion = portions.remove(mealId);
+    if (portion is! Map) throw StateError('Portion cuisinée indisponible.');
+    final placed = _sceneItems(state, alcoveId);
+    if (placed.any((entry) => entry['zoneId'] == zoneId)) {
+      portions[mealId] = portion;
+      throw StateError('Cette zone contient déjà un objet.');
+    }
+    final instanceId = 'scene-meal-$now-${placed.length}-$mealId';
+    placed.add(<String, dynamic>{
+      'instanceId': instanceId,
+      'placedItemInstanceId': instanceId,
+      'itemId': 'COOKED_MEAL',
+      'cookedMealId': mealId,
+      'recipeKey': portion['recipeKey'],
+      'recipeName': portion['recipeName'],
+      'ingredientIds': List<dynamic>.from(
+          portion['ingredientIds'] as List? ?? const <dynamic>[]),
+      'usedWater': portion['usedWater'] == true,
+      'satietyValue': portion['satietyValue'],
+      'zoneId': zoneId,
+      'placedAt': now,
+      'source': 'PLAYER',
+      'interactionCount': 0,
+    });
+    return state;
+  }
+
   static ElevageSave recoverSceneItem(
       ElevageSave source, String alcoveId, String instanceId) {
     final state = source.copy();
@@ -2473,7 +2709,25 @@ class ElevageDomain {
     final index =
         placed.indexWhere((entry) => entry['instanceId'] == instanceId);
     if (index < 0) throw StateError('Objet posé introuvable.');
-    final item = placed.removeAt(index)['itemId'] as String;
+    final entry = placed.removeAt(index);
+    final item = entry['itemId'] as String;
+    if (item == 'COOKED_MEAL') {
+      final mealId = entry['cookedMealId'] as String? ?? instanceId;
+      (state.data['cookedMealInventory'] as Map<String, dynamic>)[mealId] =
+          <String, dynamic>{
+        'instanceId': mealId,
+        'itemId': 'COOKED_MEAL',
+        'recipeKey': entry['recipeKey'],
+        'recipeName': entry['recipeName'],
+        'ingredientIds': List<dynamic>.from(
+            entry['ingredientIds'] as List? ?? const <dynamic>[]),
+        'usedWater': entry['usedWater'] == true,
+        'satietyValue': entry['satietyValue'],
+        'createdAt': entry['placedAt'],
+        'batchId': entry['batchId'],
+      };
+      return state;
+    }
     final special = _special(state);
     special[item] = (special[item] ?? 0) + 1;
     return state;
@@ -2531,7 +2785,17 @@ class ElevageDomain {
     final effective = environmentExperiencedByPtipote(
         state, individualId, item['zoneId'] as String, rawEnvironment, config);
     final favorite = individual['generatedProfile']['foodPreference'] as String;
-    final isInteresting = itemId == favorite ||
+    final cookedIngredients = itemId == 'COOKED_MEAL'
+        ? (item['ingredientIds'] as List? ?? const <dynamic>[])
+            .whereType<String>()
+            .toList(growable: false)
+        : const <String>[];
+    final cookedCompatible = itemId == 'COOKED_MEAL' &&
+        cookedIngredients.isNotEmpty &&
+        cookedIngredients
+            .every((ingredient) => canEat(individual, ingredient, config));
+    final isInteresting = itemId == 'COOKED_MEAL' ||
+        itemId == favorite ||
         treatItems.contains(itemId) ||
         structuralItems.contains(itemId);
     final comfort = localComfort(effective, config, individual: individual);
@@ -2555,6 +2819,18 @@ class ElevageDomain {
     if (treatItems.contains(itemId)) {
       return const ElevageSceneItemOutcome(
           behavior: 'RUSH_SHAKE', observationCount: 0, consumed: true);
+    }
+    if (itemId == 'COOKED_MEAL') {
+      if (!cookedCompatible) {
+        return const ElevageSceneItemOutcome(
+            behavior: 'SNIFF', observationCount: 0);
+      }
+      if (!canOfferNormalFood(state, individualId, now, config)) {
+        return const ElevageSceneItemOutcome(
+            behavior: 'OBSERVE', observationCount: 0);
+      }
+      return const ElevageSceneItemOutcome(
+          behavior: 'APPROACH', observationCount: 0, consumed: true);
     }
     if (foodItems.contains(itemId) ||
         isFutureCompatibleFood(individual, itemId, config) ||
@@ -2635,6 +2911,29 @@ class ElevageDomain {
     entry['interactionCount'] =
         ((entry['interactionCount'] as num?)?.toInt() ?? 0) + 1;
     final individual = _individual(state, individualId);
+
+    if (item == 'COOKED_MEAL' && outcome.consumed) {
+      final ingredients = (entry['ingredientIds'] as List? ?? const <dynamic>[])
+          .whereType<String>()
+          .toList(growable: false);
+      if (ingredients.isEmpty ||
+          ingredients
+              .any((ingredient) => !canEat(individual, ingredient, config))) {
+        throw StateError(
+            'Cette préparation contient un aliment non accessible à ce stade.');
+      }
+      if (!canOfferNormalFood(state, individualId, now, config)) {
+        throw StateError('P’TIPOTE n’a pas faim.');
+      }
+      final satiety = (entry['satietyValue'] as num?)?.toDouble() ?? 0;
+      setSatiety(
+          individual, refreshSatiety(individual, now, config) + satiety, now);
+      _interaction(individual, 'FOOD', contact: 1);
+      _adjustWellbeing(individual, 1, now);
+      _sceneItems(state, alcoveId)
+          .removeWhere((sceneItem) => sceneItem['instanceId'] == instanceId);
+      return state;
+    }
 
     if (outcome.behavior == 'MOVE_ITEM') {
       entry['zoneId'] = outcome.targetZoneId;

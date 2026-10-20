@@ -2269,9 +2269,7 @@ void main() {
     expect(ElevageDomain.trust(state), 80);
   });
 
-  test(
-      'Cuisine V1 répartit la satiété sèche et humide sans perdre la composition',
-      () {
+  test('Cuisine V2 crée des portions nommées avec chaleur et Eau', () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     state = ElevageDomain.adopt(
         source: state,
@@ -2282,33 +2280,137 @@ void main() {
         config: defaultElevageConfig);
     final id = (state.data['activeIndividualIds'] as List).single as String;
     state = ElevageDomain.addDevInventory(state);
+    state = ElevageDomain.craftCooker(state, now, defaultElevageConfig);
+    state = ElevageDomain.installCooker(state, now);
+    (state.data['alcoves'] as List).first['localEnergy'] = 5;
+    state = ElevageDomain.rechargeCooker(
+        state, 'alcove-1', now, defaultElevageConfig);
+    expect(ElevageDomain.cookingHeat(state, defaultElevageConfig), 10);
+    expect((state.data['alcoves'] as List).first['localEnergy'], 4);
     state = ElevageDomain.cookMeal(
         state,
         const <String>['ROOT', 'LEAF', 'MOSS'],
         false,
         now,
-        defaultElevageConfig);
-    final dry = ElevageDomain.cookedMeals(state).single;
-    expect(dry['portionCount'], 3);
-    expect(dry['batchSatiety'], 70);
-    expect(dry['ingredientIds'], const <String>['ROOT', 'LEAF', 'MOSS']);
+        defaultElevageConfig,
+        recipeName: 'Croque-racine');
+    final dry = ElevageDomain.cookedMealPortions(state);
+    expect(dry, hasLength(3));
+    expect(dry.first['recipeName'], 'Croque-racine');
+    expect(dry.first['satietyValue'], closeTo(23.333333, .0001));
+    expect(ElevageDomain.cookingHeat(state, defaultElevageConfig), 7);
+    expect(dry.first['ingredientIds'], const <String>['ROOT', 'LEAF', 'MOSS']);
     state = ElevageDomain.setIndividualSatiety(state, id, 0, now);
-    state = ElevageDomain.offerCookedMeal(
-        state, id, dry['instanceId'] as String, now + 1, defaultElevageConfig);
+    state = ElevageDomain.offerCookedMeal(state, id,
+        dry.first['instanceId'] as String, now + 1, defaultElevageConfig);
     expect(
         ElevageDomain.satietyPercent(state, id, now + 1, defaultElevageConfig),
-        24);
+        closeTo(23.333333, .0001));
     state.data['waterTank'] = 5.0;
+    state = ElevageDomain.rechargeCooker(
+        state, 'alcove-1', now + 2, defaultElevageConfig);
     state = ElevageDomain.cookMeal(
         state,
         const <String>['ROOT', 'LEAF', 'MOSS'],
         true,
         now + 2,
-        defaultElevageConfig);
-    final wet = ElevageDomain.cookedMeals(state).last;
-    expect(wet['portionCount'], 4);
-    expect(wet['batchSatiety'], 60);
+        defaultElevageConfig,
+        recipeName: 'ignoré car clé nouvelle');
+    final wet = ElevageDomain.cookedMealPortions(state)
+        .where((meal) => meal['usedWater'] == true)
+        .toList();
+    expect(wet, hasLength(4));
+    expect(wet.first['satietyValue'], closeTo(18.333333, .0001));
     expect(ElevageDomain.waterTank(state), 4);
+    state = ElevageDomain.rechargeCooker(
+        state, 'alcove-1', now + 3, defaultElevageConfig);
+    state = ElevageDomain.cookMeal(
+        state,
+        const <String>['MOSS', 'ROOT', 'LEAF'],
+        false,
+        now + 3,
+        defaultElevageConfig,
+        recipeName: 'Nom ignoré');
+    expect(
+        ElevageDomain.cookedMealPortions(state)
+            .where((meal) => meal['usedWater'] == false)
+            .last['recipeName'],
+        'Croque-racine');
+  });
+
+  test('Cuisine V2 calcule les clés et les portions sans ordre', () {
+    final leafWater = ElevageDomain.cookingPreview(
+        const <String>['LEAF'], true, defaultElevageConfig);
+    expect(leafWater['portionCount'], 2);
+    expect(leafWater['satietyPerPortion'], 15);
+    final rootLeaf = ElevageDomain.cookingPreview(
+        const <String>['ROOT', 'LEAF'], false, defaultElevageConfig);
+    expect(rootLeaf['portionCount'], 2);
+    expect(rootLeaf['satietyPerPortion'], 25);
+    expect(ElevageDomain.cookingRecipeKey(const <String>['ROOT', 'LEAF'], true),
+        ElevageDomain.cookingRecipeKey(const <String>['LEAF', 'ROOT'], true));
+    expect(
+        ElevageDomain.cookingRecipeKey(const <String>['ROOT', 'ROOT'], true),
+        isNot(ElevageDomain.cookingRecipeKey(
+            const <String>['ROOT', 'LEAF'], true)));
+  });
+
+  test('Cuisine V2 pose une portion et respecte Type/stade à la consommation',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Hawl',
+        family: 'VEGETAL',
+        nature: 'PHOTOSYNTHESIS',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    state = ElevageDomain.addDevInventory(state);
+    state = ElevageDomain.craftCooker(state, now, defaultElevageConfig);
+    state = ElevageDomain.installCooker(state, now);
+    (state.data['alcoves'] as List).first['localEnergy'] = 1;
+    state = ElevageDomain.rechargeCooker(
+        state, 'alcove-1', now, defaultElevageConfig);
+    state = ElevageDomain.cookMeal(state, const <String>['LEAF', 'ALGAE'],
+        false, now, defaultElevageConfig,
+        recipeName: 'Vert interdit');
+    final meal = ElevageDomain.cookedMealPortions(state).first;
+    state = ElevageDomain.placeCookedMeal(state, 'alcove-1',
+        meal['instanceId'] as String, 'ZONE_2', now, defaultElevageConfig);
+    final placed = ElevageDomain.sceneItems(state, 'alcove-1').single;
+    expect(placed['itemId'], 'COOKED_MEAL');
+    expect(placed['placedItemInstanceId'], isNotNull);
+    expect(
+        ElevageDomain.sceneItemOutcome(state, id, 'alcove-1',
+                placed['instanceId'] as String, now, defaultElevageConfig)
+            .consumed,
+        isFalse);
+  });
+
+  test('migration Cuisine V1 matérialise les portions une seule fois', () {
+    final initial =
+        ElevageSave.initial(defaultElevageConfig, now: now).toJson();
+    initial['cookedMeals'] = <String, dynamic>{
+      'legacy-batch': <String, dynamic>{
+        'instanceId': 'legacy-batch',
+        'ingredientIds': <String>['ROOT', 'LEAF', 'MOSS'],
+        'usedWater': false,
+        'portionCount': 3,
+        'remainingPortions': 2,
+        'satietyPerPortionDistribution': <num>[24, 23, 23],
+        'createdAt': now,
+      },
+    };
+    initial.remove('cookedMealInventory');
+    initial.remove('knownCookingRecipes');
+    initial.remove('cookedMealsMigrationV227');
+    final migrated = ElevageSave.fromJson(initial);
+    expect(ElevageDomain.cookedMealPortions(migrated), hasLength(2));
+    final reloaded = ElevageSave.fromJson(migrated.toJson());
+    expect(ElevageDomain.cookedMealPortions(reloaded), hasLength(2));
   });
 
   test('météo déterministe remplit l’eau et utilise la nuit locale 00–04', () {

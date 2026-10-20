@@ -12,6 +12,8 @@ class ElevagePresentation {
     'ALGAE': _ItemVisual('Algues', Icons.waves_outlined, 'Nourriture'),
     'MUSHROOM': _ItemVisual('Champignon', Icons.park_outlined, 'Nourriture'),
     'FRUIT': _ItemVisual('Fruit', Icons.apple_outlined, 'Nourriture'),
+    'COOKED_MEAL':
+        _ItemVisual('Plat cuisiné', Icons.restaurant_outlined, 'Nourriture'),
     'FIBROUS_FRUIT':
         _ItemVisual('Fruit fibreux', Icons.apple_outlined, 'Friandises'),
     'FRUIT_JELLY':
