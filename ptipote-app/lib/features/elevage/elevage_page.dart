@@ -5889,6 +5889,16 @@ String _sceneSelectionLabel(String value) =>
         ? ElevagePresentation.itemLabel(value)
         : 'plat cuisiné';
 
+List<List<Map<String, dynamic>>> _cookedMealStacks(
+    List<Map<String, dynamic>> portions) {
+  final grouped = <String, List<Map<String, dynamic>>>{};
+  for (final portion in portions) {
+    final key = '${portion['recipeKey']}|${portion['satietyValue']}';
+    grouped.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(portion);
+  }
+  return grouped.values.toList(growable: false);
+}
+
 Future<void> _openInventory(BuildContext context, ElevageController controller,
     Map individual, void Function(String item) onPlace) async {
   var filter = 'TOUT';
@@ -5983,18 +5993,26 @@ Future<void> _openInventory(BuildContext context, ElevageController controller,
                       title: Text('Plats cuisinés'),
                       subtitle: Text(
                           'Chaque portion peut être posée dans une zone libre.')),
-                  ...cooked.map((portion) => ListTile(
-                        leading: const Icon(Icons.restaurant_outlined),
-                        title: Text(
-                            portion['recipeName'] as String? ?? 'Plat cuisiné'),
-                        subtitle: Text(
-                            '${(portion['satietyValue'] as num? ?? 0).toStringAsFixed(1)} satiété · ${(portion['ingredientIds'] as List? ?? const <dynamic>[]).whereType<String>().map(ElevagePresentation.itemLabel).join(' + ')}'),
-                        trailing: const Icon(Icons.add_location_alt_outlined),
-                        onTap: () {
-                          Navigator.of(sheetContext).pop();
-                          onPlace('COOKED_MEAL:${portion['instanceId']}');
-                        },
-                      )),
+                  ..._cookedMealStacks(cooked).map((stack) {
+                    final portion = stack.first;
+                    return ListTile(
+                      leading: const Icon(Icons.restaurant_outlined),
+                      title: Text(
+                          portion['recipeName'] as String? ?? 'Plat cuisiné'),
+                      subtitle: Text(
+                          '${(portion['satietyValue'] as num? ?? 0).toStringAsFixed(1)} satiété · ${(portion['ingredientIds'] as List? ?? const <dynamic>[]).whereType<String>().map(ElevagePresentation.itemLabel).join(' + ')}'),
+                      trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            if (stack.length > 1) Text('×${stack.length}'),
+                            const Icon(Icons.add_location_alt_outlined),
+                          ]),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        onPlace('COOKED_MEAL:${portion['instanceId']}');
+                      },
+                    );
+                  }),
                   const Divider(),
                 ],
                 if (visible.isEmpty && cooked.isEmpty)
