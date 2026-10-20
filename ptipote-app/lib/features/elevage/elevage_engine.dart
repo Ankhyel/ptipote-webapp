@@ -939,7 +939,12 @@ class ElevageDomain {
       'CALL': 'Viens',
     };
     if (stage == 'MATURE') {
-      return {'vocal': vocal, 'word': precise ?? genericWords[category]};
+      return {
+        'vocal': vocal,
+        'word': precise ??
+            config.communicationText(
+                category, 'MATURE', genericWords[category] ?? vocal),
+      };
     }
     final concept = conceptId ?? precise ?? category;
     final exposure =
@@ -951,7 +956,11 @@ class ElevageDomain {
         : config.juvenileNewConceptWordThreshold;
     return {
       'vocal': vocal,
-      'word': total >= threshold ? (precise ?? genericWords[category]) : null,
+      'word': total >= threshold
+          ? (precise ??
+              config.communicationText(
+                  category, 'JUVENILE', genericWords[category] ?? vocal))
+          : null,
     };
   }
 
@@ -1960,16 +1969,20 @@ class ElevageDomain {
         ? config.juvenileBabyKnownConceptWordThreshold
         : config.juvenileNewConceptWordThreshold;
     if (stage == 'INTERMEDIATE') {
+      final intent = hungerState == 'VERY_HUNGRY' ? 'VERY_HUNGRY' : 'HUNGER';
       return <String, String>{
         'icon': 'HUNGER',
         'voice': total >= threshold
-            ? (hungerState == 'VERY_HUNGRY' ? 'faim !' : 'faim')
+            ? config.communicationText(intent, 'JUVENILE',
+                hungerState == 'VERY_HUNGRY' ? 'faim !' : 'faim')
             : 'Pti !',
       };
     }
+    final intent = hungerState == 'VERY_HUNGRY' ? 'VERY_HUNGRY' : 'HUNGER';
     return <String, String>{
       'icon': 'HUNGER',
-      'voice': hungerState == 'VERY_HUNGRY' ? 'J’ai très faim.' : 'J’ai faim.',
+      'voice': config.communicationText(intent, 'MATURE',
+          hungerState == 'VERY_HUNGRY' ? 'J’ai très faim.' : 'J’ai faim.'),
     };
   }
 
@@ -2828,12 +2841,13 @@ class ElevageDomain {
       final raw = (_alcove(state, alcoveId)['slots'] as List)[index];
       if (raw is! Map) continue;
       final definition = config.installation(raw['definitionId'] as String);
-      if (definition == null) continue;
+      if (definition == null || !structureIsActive(raw, config)) continue;
       final origin = raw['zoneId'] as String? ?? 'ZONE_${index + 1}';
+      final effects = effectiveEnvironmentalEffects(raw, definition, config);
       final humidity = _localOrAdjacentContribution(
-          definition.humidity, origin, zoneId, config);
+          effects['humidity']!, origin, zoneId, config);
       final temperature = _localOrAdjacentContribution(
-          definition.temperature, origin, zoneId, config);
+          effects['temperature']!, origin, zoneId, config);
       if (origin == zoneId) {
         localHumidity += humidity;
         localTemperature += temperature;
@@ -3014,7 +3028,7 @@ class ElevageDomain {
       _ => <String>['sec', '🍂'],
     };
     if (stage == 'MATURE') {
-      return 'Je voudrais ${details.first} ${details.last}';
+      return '${config.communicationText(need, 'MATURE', 'Je voudrais ${details.first}.')} ${details.last}';
     }
     final exposure = ((individual['conceptExposures'] as Map?)?[need] as Map?);
     final total = (exposure?['total'] as num?)?.toInt() ?? 0;
@@ -3023,7 +3037,7 @@ class ElevageDomain {
         ? config.juvenileBabyKnownConceptWordThreshold
         : config.juvenileNewConceptWordThreshold;
     return total >= threshold
-        ? 'veux ${details.first} ${details.last}'
+        ? '${config.communicationText(need, 'JUVENILE', 'veux ${details.first}')} ${details.last}'
         : 'Pti ! ${details.last}';
   }
 
@@ -3888,7 +3902,9 @@ class ElevageDomain {
     return state;
   }
 
-  static Map<String, int> _effectiveEnvironmentEffects(
+  /// Shared by zone simulation, diagnostics and the structure preview so a
+  /// POWER module can never be cosmetic in one of those representations.
+  static Map<String, int> effectiveEnvironmentalEffects(
       Map raw, ElevageInstallationDefinition definition, ElevageConfig config) {
     final result = <String, int>{
       'light': definition.light,
@@ -3908,6 +3924,10 @@ class ElevageDomain {
     result[axis] = result[axis]! + result[axis]!.sign * delta.round();
     return result;
   }
+
+  static Map<String, int> _effectiveEnvironmentEffects(Map raw,
+          ElevageInstallationDefinition definition, ElevageConfig config) =>
+      effectiveEnvironmentalEffects(raw, definition, config);
 
   static ElevageStructureConsumption _effectiveConsumption(
       Map raw, ElevageStructureConsumption base, ElevageConfig config) {

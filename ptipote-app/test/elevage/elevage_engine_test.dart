@@ -946,7 +946,9 @@ void main() {
         3);
   });
 
-  test('température part de 2 la nuit, gagne 1 le jour et diffuse à +2', () {
+  test(
+      'température part de 2 la nuit, gagne 1 le jour et Chauffage +1 reste local',
+      () {
     var state = ElevageSave.initial(defaultElevageConfig, now: now);
     int scale(String zone, String phase) =>
         ElevagePresentation.environmentScale(ElevageDomain.zoneEnvironment(
@@ -960,8 +962,8 @@ void main() {
       'definitionId': 'FOUR_BIO_ORGANIQUE',
       'zoneId': 'ZONE_2',
     };
-    expect(scale('ZONE_2', 'DAY'), 5);
-    expect(scale('ZONE_3', 'DAY'), 4); // +1 diffusé depuis Z2.
+    expect(scale('ZONE_2', 'DAY'), 4);
+    expect(scale('ZONE_3', 'DAY'), 3); // magnitude +1 : aucune diffusion.
     expect(scale('ZONE_4', 'DAY'), 3); // pas de diffusion à distance 2.
   });
 
@@ -1942,7 +1944,7 @@ void main() {
         ElevageDomain.zoneEnvironment(
             state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
             now: now, phaseOverride: 'NIGHT')['temperature'],
-        4);
+        3);
     state = ElevageDomain.refreshAlcove(state, 'alcove-1',
         now + const Duration(hours: 2).inMilliseconds, defaultElevageConfig);
     expect(
@@ -1960,7 +1962,7 @@ void main() {
         ElevageDomain.zoneEnvironment(
             state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
             now: now, phaseOverride: 'NIGHT')['temperature'],
-        4);
+        3);
   });
 
   test('migration Trou géothermique conserve l’installation en Four', () {
@@ -1994,7 +1996,7 @@ void main() {
         ElevageDomain.zoneEnvironment(
             migrated, 'alcove-1', 'ZONE_2', defaultElevageConfig,
             now: now, phaseOverride: 'NIGHT')['temperature'],
-        4);
+        3);
   });
 
   test('POWER augmente Four et Ventilation, EFFICIENCY allonge le coût réel',
@@ -2015,7 +2017,14 @@ void main() {
         ElevageDomain.zoneEnvironment(
             state, 'alcove-1', 'ZONE_2', defaultElevageConfig,
             now: now, phaseOverride: 'NIGHT')['temperature'],
-        5);
+        4);
+    expect(
+        ElevageDomain.zoneEnvironment(
+            state, 'alcove-1', 'ZONE_1', defaultElevageConfig,
+            now: now, phaseOverride: 'NIGHT')['temperature'],
+        2,
+        reason:
+            'POWER porte le chauffage à +2 local et diffuse +1 au-dessus de la base propre à Z1');
     alcove['slots'][1] = <String, dynamic>{
       'definitionId': 'VENTILATION',
       'zoneId': 'ZONE_2',
@@ -3363,12 +3372,30 @@ void main() {
         ElevageDomain.hungerExpression(
             state, id, signalAt, defaultElevageConfig)?['voice'],
         'faim');
+    final communication = Map<String, dynamic>.from(
+        defaultElevageConfig.refugeProgression['communication'] as Map);
+    communication['HUNGER'] = <String, String>{
+      'juvenileText': 'ventre vide',
+      'matureText': 'J’ai faim.',
+    };
+    communication['VERY_HUNGRY'] = <String, String>{
+      'juvenileText': 'ventre vide !',
+      'matureText': 'Mon ventre réclame à manger.',
+    };
+    final configured = defaultElevageConfig.copyWith(refugeProgression: {
+      ...defaultElevageConfig.refugeProgression,
+      'communication': communication,
+    });
+    expect(
+        ElevageDomain.hungerExpression(
+            state, id, signalAt, configured)?['voice'],
+        'ventre vide');
     (individual['lifecycle'] as Map)['stage'] = 'MATURE';
     state = ElevageDomain.setIndividualSatiety(state, id, 30, signalAt);
     expect(
         ElevageDomain.hungerExpression(
-            state, id, signalAt, defaultElevageConfig)?['voice'],
-        'J’ai très faim.');
+            state, id, signalAt, configured)?['voice'],
+        'Mon ventre réclame à manger.');
   });
 
   test('migration Satiety V2 protège une ancienne sauvegarde récemment nourrie',

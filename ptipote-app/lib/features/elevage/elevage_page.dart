@@ -472,7 +472,7 @@ class _IndividualPageState extends State<_IndividualPage> {
       if (!mounted || !_autonomousInFlight || _actionStartedAt == 0) return;
       if (widget.controller.now - _actionStartedAt >
           const Duration(seconds: 20).inMilliseconds) {
-        _softResetBehavior();
+        _recoverBehavior();
       }
     });
     _idleTimer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -580,14 +580,23 @@ class _IndividualPageState extends State<_IndividualPage> {
     _autonomousInFlight = false;
     _lastAutonomousBehavior = null;
     _bubbleTimer?.cancel();
+    _feedbackTimer?.cancel();
     if (!mounted) return;
     setState(() {
       _sceneAction = 'IDLE';
       _sceneVoice = null;
       _bubbleItemId = null;
       _reaction = null;
+      _feedback = null;
       _actionStartedAt = 0;
     });
+  }
+
+  void _recoverBehavior() {
+    _softResetBehavior();
+    if (mounted) {
+      _enqueueSceneEvent(const _SceneEvent.autonomous(direct: true));
+    }
   }
 
   Future<void> _refreshAlcoveWithBehaviorReset(String alcoveId) async {
@@ -2203,960 +2212,1053 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Dashboard Élevage')),
-        body: ListView(padding: const EdgeInsets.all(16), children: <Widget>[
-          SwitchListTile(
-              value: config.featureEnabled,
-              onChanged: (value) => setState(
-                  () => config = config.copyWith(featureEnabled: value)),
-              title: const Text('Élevage activé')),
-          SwitchListTile(
-              value: config.devMode,
-              onChanged: (value) =>
-                  setState(() => config = config.copyWith(devMode: value)),
-              title: const Text('Mode dev')),
-          DropdownButtonFormField<ElevagePreset>(
-              initialValue: config.preset,
-              decoration: const InputDecoration(labelText: 'Preset'),
-              items: ElevagePreset.values
-                  .map((item) => DropdownMenuItem(
-                      value: item,
-                      child: Text(item == ElevagePreset.prototype
-                          ? 'PROTOTYPE'
-                          : 'TARGET')))
-                  .toList(),
-              onChanged: (value) =>
-                  setState(() => config = config.copyWith(preset: value))),
-          _number(context, 'Alcôves (nouvelle partie)', config.alcoveCount,
-              (value) => config = config.copyWith(alcoveCount: value)),
-          _heading('Refuge, Alcôves et Bio-piles'),
-          _number(
-              context,
-              'Alcôves actives au départ',
-              config.startingAlcoveCount,
-              (value) => _setRefugeNumber('startingAlcoveCount', value)),
-          _number(context, 'Choix de prêt juvénile', config.loanChoiceCount,
-              (value) => _setRefugeNumber('loanChoiceCount', value)),
-          _number(
-              context,
-              'Restitution prêt (jours)',
-              config.loanReturnDelayDays,
-              (value) => _setRefugeNumber('loanReturnDelayDays', value)),
-          _number(
-              context,
-              'Bio-piles de départ',
-              config.startingBioBatteryCount,
-              (value) => _setRefugeNumber('startingBioBatteryCount', value)),
-          _number(context, 'Énergie par Bio-pile', config.bioBatteryEnergy,
-              (value) => _setRefugeNumber('bioBatteryEnergy', value)),
-          _heading('Biogénérateur durable'),
-          const Text(
-              'Prototype configurable — la recette finale reste à arbitrer.'),
-          _number(
-              context,
-              'Recette · Organique',
-              _biogeneratorRecipeCost('organic'),
-              (value) => _setBiogeneratorRecipe('organic', value)),
-          _number(
-              context,
-              'Recette · Minéral',
-              _biogeneratorRecipeCost('mineral'),
-              (value) => _setBiogeneratorRecipe('mineral', value)),
-          for (final itemId in <String>['MUSHROOM', 'ALGAE', 'SALT'])
-            _number(
-                context,
-                'Recette · ${ElevagePresentation.itemLabel(itemId)}',
-                _biogeneratorRecipeCost(itemId),
-                (value) => _setBiogeneratorRecipe(itemId, value)),
-          _number(
-              context,
-              'Batterie export · énergie locale',
-              ((config.refugeProgression['batteryExport'] as Map?)?['energy']
-                          as num?)
-                      ?.toInt() ??
-                  100,
-              (value) =>
-                  _setRefugeNestedNumber('batteryExport', 'energy', value)),
-          _number(
-              context,
-              'Cuve Organique',
-              config.biogeneratorOrganicTankCapacity,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'organicTankCapacity', value)),
-          _number(
-              context,
-              'Cuve Minéral',
-              config.biogeneratorMineralTankCapacity,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'mineralTankCapacity', value)),
-          _number(
-              context,
-              'Coût Organique / cycle',
-              config.biogeneratorOrganicCost,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'organicCostPerCycle', value)),
-          _number(
-              context,
-              'Coût Minéral / cycle',
-              config.biogeneratorMineralCost,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'mineralCostPerCycle', value)),
-          _number(
-              context,
-              'Énergie / cycle',
-              config.biogeneratorEnergyPerCycle,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'energyPerCycle', value)),
-          _number(
-              context,
-              'Stock Énergie maximum',
-              config.energyStorageMax,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'energyStorageMax', value)),
-          _number(
-              context,
-              'Durée cycle (s)',
-              config.biogeneratorCycleSeconds,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'generatorCycleSeconds', value)),
-          _number(
-              context,
-              'Bonus Puissance',
-              config.biogeneratorPowerEnergyBonus,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'powerEnergyBonus', value)),
-          _number(
-              context,
-              'Bonus Capacité Organique',
-              config.biogeneratorCapacityOrganicBonus,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'capacityOrganicBonus', value)),
-          _number(
-              context,
-              'Bonus Capacité Minéral',
-              config.biogeneratorCapacityMineralBonus,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'capacityMineralBonus', value)),
-          _number(
-              context,
-              'Réduction Efficacité · Organique',
-              config.biogeneratorEfficiencyOrganicReduction,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'efficiencyOrganicReduction', value)),
-          _number(
-              context,
-              'Réduction Efficacité · Minéral',
-              config.biogeneratorEfficiencyMineralReduction,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'efficiencyMineralReduction', value)),
-          _number(
-              context,
-              'Coût plancher · Organique',
-              config.biogeneratorMinimumOrganicCost,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'minimumOrganicCost', value)),
-          _number(
-              context,
-              'Coût plancher · Minéral',
-              config.biogeneratorMinimumMineralCost,
-              (value) => _setRefugeNestedNumber(
-                  'biogenerator', 'minimumMineralCost', value)),
-          _heading('Pisteur'),
-          for (final level in <int>[1, 2, 3])
-            _number(
-                context,
-                'XP Pisteur niveau $level',
-                config.trackerThreshold(level),
-                (value) => _setRefugeNestedNumber(
-                    'tracker', 'xpForLevel$level', value)),
-          for (final level in <int>[0, 1, 2, 3])
-            _number(context, 'Bonus transport Pisteur $level',
-                config.trackerCarryBonus(level), (value) {
-              final tracker = Map<String, dynamic>.from(
-                  config.refugeProgression['tracker'] as Map? ??
-                      const <dynamic, dynamic>{});
-              final bonuses = Map<String, dynamic>.from(
-                  tracker['carryBonusByLevel'] as Map? ??
-                      const <dynamic, dynamic>{});
-              bonuses['$level'] = value;
-              tracker['carryBonusByLevel'] = bonuses;
-              final next = Map<String, dynamic>.from(config.refugeProgression)
-                ..['tracker'] = tracker;
-              setState(() => config = config.copyWith(refugeProgression: next));
-            }),
-          if (widget.controller.config.devMode) _trackerDevTools(context),
-          _heading('Expression environnementale Bébé'),
-          _number(
-              context,
-              'Amplitude tremblement (px)',
-              ((config.refugeProgression['ambientFeedback']
-                          as Map?)?['shiverAmplitudePx'] as num?)
-                      ?.toInt() ??
-                  3,
-              (value) => _setRefugeNestedNumber(
-                  'ambientFeedback', 'shiverAmplitudePx', value)),
-          _number(
-              context,
-              'Vitesse tremblement (ms)',
-              ((config.refugeProgression['ambientFeedback']
-                          as Map?)?['shiverSpeed'] as num?)
-                      ?.toInt() ??
-                  65,
-              (value) => _setRefugeNestedNumber(
-                  'ambientFeedback', 'shiverSpeed', value)),
-          _number(
-              context,
-              'Rafale tremblement (ms)',
-              ((config.refugeProgression['ambientFeedback']
-                          as Map?)?['shiverBurstDuration'] as num?)
-                      ?.toInt() ??
-                  650,
-              (value) => _setRefugeNestedNumber(
-                  'ambientFeedback', 'shiverBurstDuration', value)),
-          _number(
-              context,
-              'Pause tremblement (ms)',
-              ((config.refugeProgression['ambientFeedback']
-                          as Map?)?['shiverPauseDuration'] as num?)
-                      ?.toInt() ??
-                  1800,
-              (value) => _setRefugeNestedNumber(
-                  'ambientFeedback', 'shiverPauseDuration', value)),
-          _number(
-              context,
-              'Cooldown vocal Bébé (s)',
-              config.babyVocalCooldownSeconds,
-              (value) => _setRefugeNestedNumber(
-                  'ambientFeedback', 'babyVocalCooldownSeconds', value)),
-          _number(
-              context,
-              'Cooldown demande Juvénile (s)',
-              ((config.refugeProgression['ambientFeedback']
-                          as Map?)?['juvenileNeedCooldown'] as num?)
-                      ?.toInt() ??
-                  7,
-              (value) => _setRefugeNestedNumber(
-                  'ambientFeedback', 'juvenileNeedCooldown', value)),
-          SwitchListTile(
-              value: ((config.refugeProgression['ambientFeedback']
-                      as Map?)?['needPictogramEnabled'] as bool?) ??
-                  true,
-              onChanged: (value) {
-                final ambient = Map<String, dynamic>.from(
-                    config.refugeProgression['ambientFeedback'] as Map? ??
-                        const <dynamic, dynamic>{})
-                  ..['needPictogramEnabled'] = value;
-                setState(() => config = config.copyWith(
-                    refugeProgression:
-                        Map<String, dynamic>.from(config.refugeProgression)
-                          ..['ambientFeedback'] = ambient));
-              },
-              title: const Text('Pictogrammes de besoin Juvénile')),
-          _heading('Langage et connaissance'),
-          _number(
-              context,
-              'Mot Juvénile · concept nouveau',
-              config.juvenileNewConceptWordThreshold,
-              (value) => _setRefugeNestedNumber(
-                  'language', 'juvenileNewConceptWordThreshold', value)),
-          _number(
-              context,
-              'Mot Juvénile · concept connu Bébé',
-              config.juvenileBabyKnownConceptWordThreshold,
-              (value) => _setRefugeNestedNumber(
-                  'language', 'juvenileBabyKnownConceptWordThreshold', value)),
-          _number(
-              context,
-              'Observations → hypothèse',
-              config.observationsForHypothesis,
-              (value) => _setRefugeNestedNumber(
-                  'knowledge', 'observationsForHypothesis', value)),
-          _number(
-              context,
-              'Preuves → confirmation',
-              config.evidenceForConfirmation,
-              (value) => _setRefugeNestedNumber(
-                  'knowledge', 'evidenceForConfirmation', value)),
-          _number(
-              context,
-              'Maturation · observations',
-              config.maturationObservationRequirement,
-              (value) => _setRefugeNestedNumber(
-                  'maturation', 'observationRequirement', value)),
-          _number(
-              context,
-              'Maturation · hypothèses',
-              config.maturationHypothesisRequirement,
-              (value) => _setRefugeNestedNumber(
-                  'maturation', 'hypothesisRequirement', value)),
-          _number(
-              context,
-              'Maturation · confirmations',
-              config.maturationConfirmationRequirement,
-              (value) => _setRefugeNestedNumber(
-                  'maturation', 'confirmationRequirement', value)),
-          _heading('Tam Tam'),
-          _number(context, 'Battements', config.tamTamTotalBeats,
-              (value) => _setRefugeNestedNumber('tamTam', 'totalBeats', value)),
-          _number(
-              context,
-              'Battements à réussir',
-              config.tamTamRequiredSuccessfulBeats,
-              (value) => _setRefugeNestedNumber(
-                  'tamTam', 'requiredSuccessfulBeats', value)),
-          _number(
-              context,
-              'Intervalle (ms)',
-              config.tamTamBeatIntervalMs,
-              (value) =>
-                  _setRefugeNestedNumber('tamTam', 'beatIntervalMs', value)),
-          _number(
-              context,
-              'Fenêtre parfaite (ms)',
-              config.tamTamPerfectWindowMs,
-              (value) =>
-                  _setRefugeNestedNumber('tamTam', 'perfectWindowMs', value)),
-          _number(
-              context,
-              'Fenêtre bonne (ms)',
-              config.tamTamGoodWindowMs,
-              (value) =>
-                  _setRefugeNestedNumber('tamTam', 'goodWindowMs', value)),
-          _heading('Confiance du Refuge'),
-          _number(
-              context,
-              'Gain · adoption',
-              config.trustGainAdoption,
-              (value) =>
-                  _setRefugeNestedNumber('trust', 'trustGainAdoption', value)),
-          _number(
-              context,
-              'Gain · observation',
-              config.trustGainObservation,
-              (value) => _setRefugeNestedNumber(
-                  'trust', 'trustGainObservation', value)),
-          _number(
-              context,
-              'Gain · hypothèse',
-              config.trustGainHypothesis,
-              (value) => _setRefugeNestedNumber(
-                  'trust', 'trustGainHypothesis', value)),
-          _number(
-              context,
-              'Gain · découverte',
-              config.trustGainDiscovery,
-              (value) =>
-                  _setRefugeNestedNumber('trust', 'trustGainDiscovery', value)),
-          _number(
-              context,
-              'Gain · passage Juvénile',
-              config.trustGainIntermediate,
-              (value) => _setRefugeNestedNumber(
-                  'trust', 'trustGainIntermediate', value)),
-          _number(
-              context,
-              'Gain · passage Mature',
-              config.trustGainMature,
-              (value) =>
-                  _setRefugeNestedNumber('trust', 'trustGainMature', value)),
-          _number(
-              context,
-              'Seuil bien-être critique',
-              config.criticalWellbeingThreshold,
-              (value) => _setRefugeNestedNumber(
-                  'trust', 'criticalWellbeingThreshold', value)),
-          _number(
-              context,
-              'Malus critique',
-              config.criticalWellbeingTrustPenalty,
-              (value) => _setRefugeNestedNumber(
-                  'trust', 'criticalWellbeingTrustPenalty', value)),
-          _number(
-              context,
-              'Période critique (heures)',
-              config.criticalWellbeingPenaltyHours,
-              (value) => _setRefugeNestedNumber(
-                  'trust', 'criticalWellbeingPenaltyHours', value)),
-          if (config.devMode)
-            Wrap(spacing: 8, children: <Widget>[
-              OutlinedButton(
-                  onPressed: () => widget.controller.addTrust(10),
-                  child: const Text('+10 Confiance')),
-              OutlinedButton(
-                  onPressed: () => widget.controller.setTrust(100),
-                  child: const Text('Confiance 100')),
-              OutlinedButton(
-                  onPressed: () => widget.controller.addTrust(-10),
-                  child: const Text('-10 Confiance')),
-              if (((widget.controller.state?.data['activeIndividualIds']
-                          as List?) ??
-                      const <dynamic>[])
-                  .isNotEmpty)
-                OutlinedButton(
-                    onPressed: () {
-                      final id = (widget.controller.state!
-                              .data['activeIndividualIds'] as List)
-                          .first as String;
-                      widget.controller
-                          .simulateCriticalWellbeingTrustPeriod(id);
-                    },
-                    child: const Text('Simuler 24 h critique')),
-            ]),
-          for (var index = 2; index <= config.alcoveCount; index++) ...<Widget>[
-            _heading('Alcôve $index · progression'),
-            _number(
-                context,
-                'Seuil Confiance',
-                (config.requirementForAlcove(index)['requiredContribution']
-                            as num?)
-                        ?.toInt() ??
-                    0,
-                (value) => _setAlcoveRequirement(
-                    index, 'requiredContribution', value)),
-            _number(
-                context,
-                'Clé en main · Bio-piles',
-                (config.requirementForAlcove(index)['turnkeyBiopileCost']
-                            as num?)
-                        ?.toInt() ??
-                    0,
-                (value) =>
-                    _setAlcoveRequirement(index, 'turnkeyBiopileCost', value)),
-            _number(
-                context,
-                'Chantier assisté · Bio-piles',
-                (config.requirementForAlcove(index)['assistedBiopileCost']
-                            as num?)
-                        ?.toInt() ??
-                    0,
-                (value) =>
-                    _setAlcoveRequirement(index, 'assistedBiopileCost', value)),
-            _number(
-                context,
-                'Durée chantier (s)',
-                (config.requirementForAlcove(
-                            index)['constructionDurationSeconds'] as num?)
-                        ?.toInt() ??
-                    0,
-                (value) => _setAlcoveRequirement(
-                    index, 'constructionDurationSeconds', value)),
-            _number(
-                context,
-                'Chantier · Organique',
-                ((config.requirementForAlcove(index)['assistedResourceCosts']
-                            as Map?)?['ORGANIC'] as num?)
-                        ?.toInt() ??
-                    0,
-                (value) => _setAssistedCost(index, 'ORGANIC', value)),
-            _number(
-                context,
-                'Chantier · Minéral',
-                ((config.requirementForAlcove(index)['assistedResourceCosts']
-                            as Map?)?['MINERAL'] as num?)
-                        ?.toInt() ??
-                    0,
-                (value) => _setAssistedCost(index, 'MINERAL', value)),
-          ],
-          _heading('Maturation, satiété et découverte'),
-          Text(
-              'Bébé : ${config.babyMinimumHours} h · Intermédiaire : ${config.intermediateMinimumHours} h'),
-          const Text('Satiété V2 · une jauge 0–100, sans timer par aliment.'),
-          _number(context, 'Satiété initiale', config.initialSatiety,
-              (value) => _setSatietyNumber('initialSatiety', value)),
-          _number(context, 'Perte Bébé / h', config.satietyLossPerHour('BABY'),
-              (value) => _setSatietyNumber('babyLossPerHour', value)),
-          _number(
-              context,
-              'Perte Juvénile / h',
-              config.satietyLossPerHour('INTERMEDIATE'),
-              (value) => _setSatietyNumber('intermediateLossPerHour', value)),
-          _number(
-              context,
-              'Perte Mature / h',
-              config.satietyLossPerHour('MATURE'),
-              (value) => _setSatietyNumber('matureLossPerHour', value)),
-          _number(context, 'Seuil Rassasié', config.satietySatiatedThreshold,
-              (value) => _setSatietyNumber('satiatedThreshold', value)),
-          _number(context, 'Seuil Faim', config.satietyHungryThreshold,
-              (value) => _setSatietyNumber('hungryThreshold', value)),
-          for (final item in <String>[
-            'LEAF',
-            'MOSS',
-            'ALGAE',
-            'ROOT',
-            'FRUIT',
-            'MUSHROOM',
-            'TREAT'
-          ])
-            _number(
-                context,
-                'Satiété ${item == 'TREAT' ? 'Friandise' : ElevagePresentation.itemLabel(item)}',
-                config.foodSatietyValue(item),
-                (value) => _setFoodSatietyValue(item, value)),
-          _number(
-              context,
-              'Signal Bébé faim (s)',
-              _satietyNumber('babyHungrySignalCooldown', 8),
-              (value) => _setSatietyNumber('babyHungrySignalCooldown', value)),
-          _number(
-              context,
-              'Signal Bébé très faim (s)',
-              _satietyNumber('babyVeryHungrySignalCooldown', 4),
-              (value) =>
-                  _setSatietyNumber('babyVeryHungrySignalCooldown', value)),
-          _number(
-              context,
-              'Signal Juvénile faim (s)',
-              _satietyNumber('juvenileHungrySignalCooldown', 10),
-              (value) =>
-                  _setSatietyNumber('juvenileHungrySignalCooldown', value)),
-          _number(
-              context,
-              'Signal Juvénile très faim (s)',
-              _satietyNumber('juvenileVeryHungrySignalCooldown', 5),
-              (value) =>
-                  _setSatietyNumber('juvenileVeryHungrySignalCooldown', value)),
-          if (widget.controller.config.devMode) _satietyDevTools(context),
-          _heading('Cuisine et météo'),
-          _number(
-              context,
-              'Portions sèches',
-              config.dryPortions,
-              (value) =>
-                  _setRefugeNestedNumber('cooking', 'dryPortions', value)),
-          _number(
-              context,
-              'Portions humides',
-              config.wetPortions,
-              (value) =>
-                  _setRefugeNestedNumber('cooking', 'wetPortions', value)),
-          _number(
-              context,
-              'Bonus sec / portion',
-              config.dryBonusPerPortion,
-              (value) => _setRefugeNestedNumber(
-                  'cooking', 'dryBonusPerPortion', value)),
-          _number(
-              context,
-              'Bonus humide / portion',
-              config.wetBonusPerPortion,
-              (value) => _setRefugeNestedNumber(
-                  'cooking', 'wetBonusPerPortion', value)),
-          _number(
-              context,
-              'Réservoir Eau',
-              config.waterTankCapacity,
-              (value) => _setRefugeNestedNumber(
-                  'cooking', 'waterTankCapacity', value)),
-          _number(
-              context,
-              'Bloc météo (h)',
-              config.weatherBlockHours,
-              (value) => _setRefugeNestedNumber(
-                  'weather', 'weatherBlockHours', value)),
-          _number(
-              context,
-              'Poids beau temps',
-              config.weatherClearWeight,
-              (value) => _setRefugeNestedNumber(
-                  'weather', 'weatherClearWeight', value)),
-          _number(
-              context,
-              'Poids petite pluie',
-              config.weatherLightRainWeight,
-              (value) => _setRefugeNestedNumber(
-                  'weather', 'weatherLightRainWeight', value)),
-          _number(
-              context,
-              'Poids forte pluie',
-              config.weatherHeavyRainWeight,
-              (value) => _setRefugeNestedNumber(
-                  'weather', 'weatherHeavyRainWeight', value)),
-          _number(
-              context,
-              'Eau de pluie / h',
-              config.rainWaterPerHour,
-              (value) =>
-                  _setRefugeNestedNumber('weather', 'rainWaterPerHour', value)),
-          _number(
-              context,
-              'Début nuit locale',
-              config.nightStartHour,
-              (value) =>
-                  _setRefugeNestedNumber('weather', 'nightStartHour', value)),
-          _number(
-              context,
-              'Fin nuit locale',
-              config.nightEndHour,
-              (value) =>
-                  _setRefugeNestedNumber('weather', 'nightEndHour', value)),
-          _number(context, 'Preuves suspectées', config.suspectedThreshold,
-              (value) => config = config.copyWith(suspectedThreshold: value)),
-          _number(context, 'Preuves confirmées', config.confirmedThreshold,
-              (value) => config = config.copyWith(confirmedThreshold: value)),
-          _number(
-              context,
-              'Observation textuelle après',
-              config.observationTextThreshold,
-              (value) =>
-                  config = config.copyWith(observationTextThreshold: value)),
-          _number(
-              context,
-              'Fenêtre de preuve (min)',
-              config.observationEvidenceCooldownMinutes,
-              (value) => config =
-                  config.copyWith(observationEvidenceCooldownMinutes: value)),
-          _heading('Cycle et inventaire'),
-          _number(context, 'Jour (h)', config.dayDurationHours,
-              (value) => config = config.copyWith(dayDurationHours: value)),
-          _number(context, 'Nuit (h)', config.nightDurationHours,
-              (value) => config = config.copyWith(nightDurationHours: value)),
-          _heading('Rythmes de sommeil'),
-          _number(
-              context,
-              'Végétal · sommeil nocturne (min)',
-              config.vegetalSleepMinutes,
-              (value) => config = config.copyWith(vegetalSleepMinutes: value)),
-          _number(
-              context,
-              'Minéral · début du jour (min)',
-              config.mineralDaySleepMinutes,
-              (value) =>
-                  config = config.copyWith(mineralDaySleepMinutes: value)),
-          _number(
-              context,
-              'Minéral · fin de nuit (min)',
-              config.mineralLateNightSleepMinutes,
-              (value) => config =
-                  config.copyWith(mineralLateNightSleepMinutes: value)),
-          _number(
-              context,
-              'Fongique · milieu du jour (min)',
-              config.fungalMidDaySleepMinutes,
-              (value) =>
-                  config = config.copyWith(fungalMidDaySleepMinutes: value)),
-          _number(
-              context,
-              'Fongique · transition jour/nuit (min)',
-              config.fungalTransitionSleepMinutes,
-              (value) => config =
-                  config.copyWith(fungalTransitionSleepMinutes: value)),
-          _number(context, 'Taille d’une pile', config.inventoryStackSize,
-              (value) => config = config.copyWith(inventoryStackSize: value)),
-          _heading('Énergie du Refuge'),
-          const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                  'Conversion automatique : les structures utilisent d’abord l’Énergie stockée, puis cette recette si nécessaire.')),
-          _number(context, 'Organique / conversion', config.energyOrganicCost,
-              (value) => config = config.copyWith(energyOrganicCost: value)),
-          _number(context, 'Minéral / conversion', config.energyMineralCost,
-              (value) => config = config.copyWith(energyMineralCost: value)),
-          _number(context, 'Énergie produite', config.energyProduced,
-              (value) => config = config.copyWith(energyProduced: value)),
-          _heading('Séjour dans une zone'),
-          _number(
-              context,
-              'Bébé · séjour neutre (s)',
-              config.baseStayBabySeconds,
-              (value) => config = config.copyWith(baseStayBabySeconds: value)),
-          _number(
-              context,
-              'Intermédiaire · séjour neutre (s)',
-              config.baseStayIntermediateSeconds,
-              (value) =>
-                  config = config.copyWith(baseStayIntermediateSeconds: value)),
-          _number(
-              context,
-              'Mature · séjour neutre (s)',
-              config.baseStayMatureSeconds,
-              (value) =>
-                  config = config.copyWith(baseStayMatureSeconds: value)),
-          _number(
-              context,
-              'Modificateur Posé (s)',
-              config.tempoPosedStayModifierSeconds,
-              (value) => config =
-                  config.copyWith(tempoPosedStayModifierSeconds: value)),
-          _number(
-              context,
-              'Modificateur Spontané (s)',
-              config.tempoSpontaneousStayModifierSeconds,
-              (value) => config =
-                  config.copyWith(tempoSpontaneousStayModifierSeconds: value)),
-          _number(
-              context,
-              'Zone idéale / bonne (s)',
-              config.perfectZoneStayModifierSeconds,
-              (value) => config =
-                  config.copyWith(perfectZoneStayModifierSeconds: value)),
-          _number(
-              context,
-              'Zone inconfortable (s)',
-              config.badZoneStayModifierSeconds,
-              (value) =>
-                  config = config.copyWith(badZoneStayModifierSeconds: value)),
-          _number(
-              context,
-              'Zone extrême (s)',
-              config.extremeZoneStayModifierSeconds,
-              (value) => config =
-                  config.copyWith(extremeZoneStayModifierSeconds: value)),
-          _number(context, 'Minimum absolu (s)', config.minStaySeconds,
-              (value) => config = config.copyWith(minStaySeconds: value)),
-          _number(context, 'Gain de résonance', config.resonanceGainPerUse,
-              (value) => config = config.copyWith(resonanceGainPerUse: value)),
-          _heading('Exploration et installations'),
-          SwitchListTile(
-              title: const Text('Exploration activée'),
-              value: config.explorationEnabled,
-              onChanged: (value) =>
-                  _setRefugeNestedBool('exploration', 'enabled', value)),
-          _number(
-              context,
-              'Durée Exploration (s)',
-              config.explorationInt('durationSeconds', 25),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'durationSeconds', value)),
-          _number(
-              context,
-              'Slots de récolte joueur',
-              config.explorationInt('baseCarrySlots', 3),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'baseCarrySlots', value)),
-          _number(
-              context,
-              'Stamina maximum',
-              config.explorationInt('playerStaminaMax', 10),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'playerStaminaMax', value)),
-          _number(
-              context,
-              'Coût Stamina / sortie',
-              config.explorationInt('playerStaminaCost', 1),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'playerStaminaCost', value)),
-          _number(
-              context,
-              'Régénération Stamina (min / point)',
-              config.explorationInt('playerStaminaRegenMinutes', 5),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'playerStaminaRegenMinutes', value)),
-          _number(
-              context,
-              'Endurance P’TIPOTE maximum',
-              config.explorationInt('ptipoteStaminaMax', 10),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'ptipoteStaminaMax', value)),
-          _number(
-              context,
-              'Coût Endurance P’TIPOTE / sortie',
-              config.explorationInt('ptipoteStaminaCostPerRun', 1),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'ptipoteStaminaCostPerRun', value)),
-          _number(
-              context,
-              'Régénération Endurance P’TIPOTE (min / point)',
-              config.explorationInt('ptipoteStaminaRegenMinutes', 5),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'ptipoteStaminaRegenMinutes', value)),
-          _number(
-              context,
-              'XP Pisteur / exploration accompagnée',
-              config.explorationInt('trackerXpPerExploration', 10),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'trackerXpPerExploration', value)),
-          for (final family in <String>['VEGETAL', 'MINERAL', 'FUNGAL'])
-            _number(
-                context,
-                'Biais loot $family (%)',
-                _typeLootBiasPercent(family),
-                (value) => _setTypeLootBiasPercent(family, value)),
-          _number(
-              context,
-              'Régénération Organique / h',
-              config.explorationInt('organicRegenPerHour', 5),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'organicRegenPerHour', value)),
-          _number(
-              context,
-              'Coût Organique générique (%)',
-              config.explorationInt('genericOrganicCost', 1),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'genericOrganicCost', value)),
-          _number(
-              context,
-              'Coût Organique spécifique (%)',
-              config.explorationInt('specificOrganicCost', 5),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'specificOrganicCost', value)),
-          _number(
-              context,
-              'Coût Minéral générique',
-              config.explorationInt('genericMineralCost', 1),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'genericMineralCost', value)),
-          _number(
-              context,
-              'Coût Minéral spécifique',
-              config.explorationInt('specificMineralCost', 3),
-              (value) => _setRefugeNestedNumber(
-                  'exploration', 'specificMineralCost', value)),
-          const Padding(
-              padding: EdgeInsets.only(left: 16, right: 16, bottom: 4),
-              child: Text(
-                  'Chaque secteur possède ses valeurs initiales, son état activé et sa table de loot configurable.')),
-          ...ElevageDomain.explorationSectors.map((sector) => ListTile(
-                leading: const Icon(Icons.map_outlined),
-                title: Text(sector['label'] as String),
-                subtitle: Text(
-                    '${sector['biomeId']} · Organique ${sector['organic']}% · Minéral ${sector['mineral']}'),
-                trailing: const Icon(Icons.tune),
-                onTap: () => _editExplorationSector(context, sector),
-              )),
-          _number(
-              context,
-              'Intervalle de production (s)',
-              config.productionIntervalSeconds,
-              (value) =>
-                  config = config.copyWith(productionIntervalSeconds: value)),
-          _number(context, 'Stock local maximum', config.productionMaxStock,
-              (value) => config = config.copyWith(productionMaxStock: value)),
-          _heading('Producteurs biologiques'),
-          const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                  'Chaque sortie possède son propre rythme, stock maximal et état actif.')),
-          ...config.producerOutputs.entries
-              .expand((entry) => entry.value.map((output) => ListTile(
-                    title: Text(
-                        '${ElevagePresentation.installationLabel(entry.key)} · ${ElevagePresentation.itemLabel(output.resourceId)}'),
+        body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: _accordionize(<Widget>[
+              _heading('Preset et activation'),
+              SwitchListTile(
+                  value: config.featureEnabled,
+                  onChanged: (value) => setState(
+                      () => config = config.copyWith(featureEnabled: value)),
+                  title: const Text('Élevage activé')),
+              SwitchListTile(
+                  value: config.devMode,
+                  onChanged: (value) =>
+                      setState(() => config = config.copyWith(devMode: value)),
+                  title: const Text('Mode dev')),
+              DropdownButtonFormField<ElevagePreset>(
+                  initialValue: config.preset,
+                  decoration: const InputDecoration(labelText: 'Preset'),
+                  items: ElevagePreset.values
+                      .map((item) => DropdownMenuItem(
+                          value: item,
+                          child: Text(item == ElevagePreset.prototype
+                              ? 'PROTOTYPE'
+                              : 'TARGET')))
+                      .toList(),
+                  onChanged: (value) =>
+                      setState(() => config = config.copyWith(preset: value))),
+              _number(context, 'Alcôves (nouvelle partie)', config.alcoveCount,
+                  (value) => config = config.copyWith(alcoveCount: value)),
+              _heading('Refuge, Alcôves et Bio-piles'),
+              _number(
+                  context,
+                  'Alcôves actives au départ',
+                  config.startingAlcoveCount,
+                  (value) => _setRefugeNumber('startingAlcoveCount', value)),
+              _number(context, 'Choix de prêt juvénile', config.loanChoiceCount,
+                  (value) => _setRefugeNumber('loanChoiceCount', value)),
+              _number(
+                  context,
+                  'Restitution prêt (jours)',
+                  config.loanReturnDelayDays,
+                  (value) => _setRefugeNumber('loanReturnDelayDays', value)),
+              _number(
+                  context,
+                  'Bio-piles de départ',
+                  config.startingBioBatteryCount,
+                  (value) =>
+                      _setRefugeNumber('startingBioBatteryCount', value)),
+              _number(context, 'Énergie par Bio-pile', config.bioBatteryEnergy,
+                  (value) => _setRefugeNumber('bioBatteryEnergy', value)),
+              _heading('Biogénérateur durable'),
+              const ListTile(
+                  title: Text('Construction'),
+                  subtitle: Text(
+                      '5 Organique · 5 Minéral · 1 Champignon · 1 Algue · 5 Sel')),
+              _number(
+                  context,
+                  'Recette · Organique',
+                  _biogeneratorRecipeCost('organic'),
+                  (value) => _setBiogeneratorRecipe('organic', value)),
+              _number(
+                  context,
+                  'Recette · Minéral',
+                  _biogeneratorRecipeCost('mineral'),
+                  (value) => _setBiogeneratorRecipe('mineral', value)),
+              for (final itemId in <String>['MUSHROOM', 'ALGAE', 'SALT'])
+                _number(
+                    context,
+                    'Recette · ${ElevagePresentation.itemLabel(itemId)}',
+                    _biogeneratorRecipeCost(itemId),
+                    (value) => _setBiogeneratorRecipe(itemId, value)),
+              _number(
+                  context,
+                  'Batterie export · énergie locale',
+                  ((config.refugeProgression['batteryExport']
+                              as Map?)?['energy'] as num?)
+                          ?.toInt() ??
+                      100,
+                  (value) =>
+                      _setRefugeNestedNumber('batteryExport', 'energy', value)),
+              const ListTile(
+                  title: Text('Production énergétique'),
+                  subtitle: Text(
+                      'Cuves → cycle → Énergie locale ; aucune ressource de Réserve n’est prélevée automatiquement.')),
+              _number(
+                  context,
+                  'Cuve Organique',
+                  config.biogeneratorOrganicTankCapacity,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'organicTankCapacity', value)),
+              _number(
+                  context,
+                  'Cuve Minéral',
+                  config.biogeneratorMineralTankCapacity,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'mineralTankCapacity', value)),
+              _number(
+                  context,
+                  'Coût Organique / cycle',
+                  config.biogeneratorOrganicCost,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'organicCostPerCycle', value)),
+              _number(
+                  context,
+                  'Coût Minéral / cycle',
+                  config.biogeneratorMineralCost,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'mineralCostPerCycle', value)),
+              _number(
+                  context,
+                  'Énergie / cycle',
+                  config.biogeneratorEnergyPerCycle,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'energyPerCycle', value)),
+              _number(
+                  context,
+                  'Stock Énergie maximum',
+                  config.energyStorageMax,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'energyStorageMax', value)),
+              _number(
+                  context,
+                  'Durée cycle (s)',
+                  config.biogeneratorCycleSeconds,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'generatorCycleSeconds', value)),
+              _number(
+                  context,
+                  'Bonus Puissance',
+                  config.biogeneratorPowerEnergyBonus,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'powerEnergyBonus', value)),
+              _number(
+                  context,
+                  'Bonus Capacité Organique',
+                  config.biogeneratorCapacityOrganicBonus,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'capacityOrganicBonus', value)),
+              _number(
+                  context,
+                  'Bonus Capacité Minéral',
+                  config.biogeneratorCapacityMineralBonus,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'capacityMineralBonus', value)),
+              _number(
+                  context,
+                  'Réduction Efficacité · Organique',
+                  config.biogeneratorEfficiencyOrganicReduction,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'efficiencyOrganicReduction', value)),
+              _number(
+                  context,
+                  'Réduction Efficacité · Minéral',
+                  config.biogeneratorEfficiencyMineralReduction,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'efficiencyMineralReduction', value)),
+              _number(
+                  context,
+                  'Coût plancher · Organique',
+                  config.biogeneratorMinimumOrganicCost,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'minimumOrganicCost', value)),
+              _number(
+                  context,
+                  'Coût plancher · Minéral',
+                  config.biogeneratorMinimumMineralCost,
+                  (value) => _setRefugeNestedNumber(
+                      'biogenerator', 'minimumMineralCost', value)),
+              _heading('Pisteur'),
+              for (final level in <int>[1, 2, 3])
+                _number(
+                    context,
+                    'XP Pisteur niveau $level',
+                    config.trackerThreshold(level),
+                    (value) => _setRefugeNestedNumber(
+                        'tracker', 'xpForLevel$level', value)),
+              for (final level in <int>[0, 1, 2, 3])
+                _number(context, 'Bonus transport Pisteur $level',
+                    config.trackerCarryBonus(level), (value) {
+                  final tracker = Map<String, dynamic>.from(
+                      config.refugeProgression['tracker'] as Map? ??
+                          const <dynamic, dynamic>{});
+                  final bonuses = Map<String, dynamic>.from(
+                      tracker['carryBonusByLevel'] as Map? ??
+                          const <dynamic, dynamic>{});
+                  bonuses['$level'] = value;
+                  tracker['carryBonusByLevel'] = bonuses;
+                  final next =
+                      Map<String, dynamic>.from(config.refugeProgression)
+                        ..['tracker'] = tracker;
+                  setState(
+                      () => config = config.copyWith(refugeProgression: next));
+                }),
+              if (widget.controller.config.devMode) _trackerDevTools(context),
+              _heading('Expression environnementale Bébé'),
+              _number(
+                  context,
+                  'Amplitude tremblement (px)',
+                  ((config.refugeProgression['ambientFeedback']
+                              as Map?)?['shiverAmplitudePx'] as num?)
+                          ?.toInt() ??
+                      3,
+                  (value) => _setRefugeNestedNumber(
+                      'ambientFeedback', 'shiverAmplitudePx', value)),
+              _number(
+                  context,
+                  'Vitesse tremblement (ms)',
+                  ((config.refugeProgression['ambientFeedback']
+                              as Map?)?['shiverSpeed'] as num?)
+                          ?.toInt() ??
+                      65,
+                  (value) => _setRefugeNestedNumber(
+                      'ambientFeedback', 'shiverSpeed', value)),
+              _number(
+                  context,
+                  'Rafale tremblement (ms)',
+                  ((config.refugeProgression['ambientFeedback']
+                              as Map?)?['shiverBurstDuration'] as num?)
+                          ?.toInt() ??
+                      650,
+                  (value) => _setRefugeNestedNumber(
+                      'ambientFeedback', 'shiverBurstDuration', value)),
+              _number(
+                  context,
+                  'Pause tremblement (ms)',
+                  ((config.refugeProgression['ambientFeedback']
+                              as Map?)?['shiverPauseDuration'] as num?)
+                          ?.toInt() ??
+                      1800,
+                  (value) => _setRefugeNestedNumber(
+                      'ambientFeedback', 'shiverPauseDuration', value)),
+              _number(
+                  context,
+                  'Cooldown vocal Bébé (s)',
+                  config.babyVocalCooldownSeconds,
+                  (value) => _setRefugeNestedNumber(
+                      'ambientFeedback', 'babyVocalCooldownSeconds', value)),
+              _number(
+                  context,
+                  'Cooldown demande Juvénile (s)',
+                  ((config.refugeProgression['ambientFeedback']
+                              as Map?)?['juvenileNeedCooldown'] as num?)
+                          ?.toInt() ??
+                      7,
+                  (value) => _setRefugeNestedNumber(
+                      'ambientFeedback', 'juvenileNeedCooldown', value)),
+              SwitchListTile(
+                  value: ((config.refugeProgression['ambientFeedback']
+                          as Map?)?['needPictogramEnabled'] as bool?) ??
+                      true,
+                  onChanged: (value) {
+                    final ambient = Map<String, dynamic>.from(
+                        config.refugeProgression['ambientFeedback'] as Map? ??
+                            const <dynamic, dynamic>{})
+                      ..['needPictogramEnabled'] = value;
+                    setState(() => config = config.copyWith(
+                        refugeProgression:
+                            Map<String, dynamic>.from(config.refugeProgression)
+                              ..['ambientFeedback'] = ambient));
+                  },
+                  title: const Text('Pictogrammes de besoin Juvénile')),
+              _heading('Langage et connaissance'),
+              _number(
+                  context,
+                  'Mot Juvénile · concept nouveau',
+                  config.juvenileNewConceptWordThreshold,
+                  (value) => _setRefugeNestedNumber(
+                      'language', 'juvenileNewConceptWordThreshold', value)),
+              _number(
+                  context,
+                  'Mot Juvénile · concept connu Bébé',
+                  config.juvenileBabyKnownConceptWordThreshold,
+                  (value) => _setRefugeNestedNumber('language',
+                      'juvenileBabyKnownConceptWordThreshold', value)),
+              _number(
+                  context,
+                  'Observations → hypothèse',
+                  config.observationsForHypothesis,
+                  (value) => _setRefugeNestedNumber(
+                      'knowledge', 'observationsForHypothesis', value)),
+              _number(
+                  context,
+                  'Preuves → confirmation',
+                  config.evidenceForConfirmation,
+                  (value) => _setRefugeNestedNumber(
+                      'knowledge', 'evidenceForConfirmation', value)),
+              _number(
+                  context,
+                  'Maturation · observations',
+                  config.maturationObservationRequirement,
+                  (value) => _setRefugeNestedNumber(
+                      'maturation', 'observationRequirement', value)),
+              _number(
+                  context,
+                  'Maturation · hypothèses',
+                  config.maturationHypothesisRequirement,
+                  (value) => _setRefugeNestedNumber(
+                      'maturation', 'hypothesisRequirement', value)),
+              _number(
+                  context,
+                  'Maturation · confirmations',
+                  config.maturationConfirmationRequirement,
+                  (value) => _setRefugeNestedNumber(
+                      'maturation', 'confirmationRequirement', value)),
+              const ListTile(
+                  title: Text('Intentions de communication'),
+                  subtitle: Text(
+                      'L’intention reste fixe ; seuls les textes Juvénile et Mature sont modifiables.')),
+              for (final entry in _communicationIntentDetails.entries)
+                ListTile(
+                    title: Text(entry.value.$1),
                     subtitle: Text(
-                        '${output.quantityPerCycle}/cycle · ${output.productionSeconds}s · stock ${output.maxLocalStock}${output.enabled ? '' : ' · désactivé'}'),
+                        '${entry.value.$2}\nJuvénile : ${config.communicationText(entry.key, 'JUVENILE', entry.value.$3)} · Mature : ${config.communicationText(entry.key, 'MATURE', entry.value.$4)}'),
+                    isThreeLine: true,
+                    trailing: const Icon(Icons.edit_outlined),
+                    onTap: () => _editCommunicationIntent(
+                        context, entry.key, entry.value)),
+              _heading('Tam Tam'),
+              _number(
+                  context,
+                  'Battements',
+                  config.tamTamTotalBeats,
+                  (value) =>
+                      _setRefugeNestedNumber('tamTam', 'totalBeats', value)),
+              _number(
+                  context,
+                  'Battements à réussir',
+                  config.tamTamRequiredSuccessfulBeats,
+                  (value) => _setRefugeNestedNumber(
+                      'tamTam', 'requiredSuccessfulBeats', value)),
+              _number(
+                  context,
+                  'Intervalle (ms)',
+                  config.tamTamBeatIntervalMs,
+                  (value) => _setRefugeNestedNumber(
+                      'tamTam', 'beatIntervalMs', value)),
+              _number(
+                  context,
+                  'Fenêtre parfaite (ms)',
+                  config.tamTamPerfectWindowMs,
+                  (value) => _setRefugeNestedNumber(
+                      'tamTam', 'perfectWindowMs', value)),
+              _number(
+                  context,
+                  'Fenêtre bonne (ms)',
+                  config.tamTamGoodWindowMs,
+                  (value) =>
+                      _setRefugeNestedNumber('tamTam', 'goodWindowMs', value)),
+              _heading('Confiance du Refuge'),
+              _number(
+                  context,
+                  'Gain · adoption',
+                  config.trustGainAdoption,
+                  (value) => _setRefugeNestedNumber(
+                      'trust', 'trustGainAdoption', value)),
+              _number(
+                  context,
+                  'Gain · observation',
+                  config.trustGainObservation,
+                  (value) => _setRefugeNestedNumber(
+                      'trust', 'trustGainObservation', value)),
+              _number(
+                  context,
+                  'Gain · hypothèse',
+                  config.trustGainHypothesis,
+                  (value) => _setRefugeNestedNumber(
+                      'trust', 'trustGainHypothesis', value)),
+              _number(
+                  context,
+                  'Gain · découverte',
+                  config.trustGainDiscovery,
+                  (value) => _setRefugeNestedNumber(
+                      'trust', 'trustGainDiscovery', value)),
+              _number(
+                  context,
+                  'Gain · passage Juvénile',
+                  config.trustGainIntermediate,
+                  (value) => _setRefugeNestedNumber(
+                      'trust', 'trustGainIntermediate', value)),
+              _number(
+                  context,
+                  'Gain · passage Mature',
+                  config.trustGainMature,
+                  (value) => _setRefugeNestedNumber(
+                      'trust', 'trustGainMature', value)),
+              _number(
+                  context,
+                  'Seuil bien-être critique',
+                  config.criticalWellbeingThreshold,
+                  (value) => _setRefugeNestedNumber(
+                      'trust', 'criticalWellbeingThreshold', value)),
+              _number(
+                  context,
+                  'Malus critique',
+                  config.criticalWellbeingTrustPenalty,
+                  (value) => _setRefugeNestedNumber(
+                      'trust', 'criticalWellbeingTrustPenalty', value)),
+              _number(
+                  context,
+                  'Période critique (heures)',
+                  config.criticalWellbeingPenaltyHours,
+                  (value) => _setRefugeNestedNumber(
+                      'trust', 'criticalWellbeingPenaltyHours', value)),
+              if (config.devMode)
+                Wrap(spacing: 8, children: <Widget>[
+                  OutlinedButton(
+                      onPressed: () => widget.controller.addTrust(10),
+                      child: const Text('+10 Confiance')),
+                  OutlinedButton(
+                      onPressed: () => widget.controller.setTrust(100),
+                      child: const Text('Confiance 100')),
+                  OutlinedButton(
+                      onPressed: () => widget.controller.addTrust(-10),
+                      child: const Text('-10 Confiance')),
+                  if (((widget.controller.state?.data['activeIndividualIds']
+                              as List?) ??
+                          const <dynamic>[])
+                      .isNotEmpty)
+                    OutlinedButton(
+                        onPressed: () {
+                          final id = (widget.controller.state!
+                                  .data['activeIndividualIds'] as List)
+                              .first as String;
+                          widget.controller
+                              .simulateCriticalWellbeingTrustPeriod(id);
+                        },
+                        child: const Text('Simuler 24 h critique')),
+                ]),
+              for (var index = 2;
+                  index <= config.alcoveCount;
+                  index++) ...<Widget>[
+                _heading('Alcôve $index · progression'),
+                _number(
+                    context,
+                    'Seuil Confiance',
+                    (config.requirementForAlcove(index)['requiredContribution']
+                                as num?)
+                            ?.toInt() ??
+                        0,
+                    (value) => _setAlcoveRequirement(
+                        index, 'requiredContribution', value)),
+                _number(
+                    context,
+                    'Clé en main · Bio-piles',
+                    (config.requirementForAlcove(index)['turnkeyBiopileCost']
+                                as num?)
+                            ?.toInt() ??
+                        0,
+                    (value) => _setAlcoveRequirement(
+                        index, 'turnkeyBiopileCost', value)),
+                _number(
+                    context,
+                    'Chantier assisté · Bio-piles',
+                    (config.requirementForAlcove(index)['assistedBiopileCost']
+                                as num?)
+                            ?.toInt() ??
+                        0,
+                    (value) => _setAlcoveRequirement(
+                        index, 'assistedBiopileCost', value)),
+                _number(
+                    context,
+                    'Durée chantier (s)',
+                    (config.requirementForAlcove(
+                                index)['constructionDurationSeconds'] as num?)
+                            ?.toInt() ??
+                        0,
+                    (value) => _setAlcoveRequirement(
+                        index, 'constructionDurationSeconds', value)),
+                _number(
+                    context,
+                    'Chantier · Organique',
+                    ((config.requirementForAlcove(
+                                    index)['assistedResourceCosts']
+                                as Map?)?['ORGANIC'] as num?)
+                            ?.toInt() ??
+                        0,
+                    (value) => _setAssistedCost(index, 'ORGANIC', value)),
+                _number(
+                    context,
+                    'Chantier · Minéral',
+                    ((config.requirementForAlcove(
+                                    index)['assistedResourceCosts']
+                                as Map?)?['MINERAL'] as num?)
+                            ?.toInt() ??
+                        0,
+                    (value) => _setAssistedCost(index, 'MINERAL', value)),
+              ],
+              _heading('Maturation, satiété et découverte'),
+              Text(
+                  'Bébé : ${config.babyMinimumHours} h · Intermédiaire : ${config.intermediateMinimumHours} h'),
+              const Text(
+                  'Satiété V2 · une jauge 0–100, sans timer par aliment.'),
+              _number(context, 'Satiété initiale', config.initialSatiety,
+                  (value) => _setSatietyNumber('initialSatiety', value)),
+              _number(
+                  context,
+                  'Perte Bébé / h',
+                  config.satietyLossPerHour('BABY'),
+                  (value) => _setSatietyNumber('babyLossPerHour', value)),
+              _number(
+                  context,
+                  'Perte Juvénile / h',
+                  config.satietyLossPerHour('INTERMEDIATE'),
+                  (value) =>
+                      _setSatietyNumber('intermediateLossPerHour', value)),
+              _number(
+                  context,
+                  'Perte Mature / h',
+                  config.satietyLossPerHour('MATURE'),
+                  (value) => _setSatietyNumber('matureLossPerHour', value)),
+              _number(
+                  context,
+                  'Seuil Rassasié',
+                  config.satietySatiatedThreshold,
+                  (value) => _setSatietyNumber('satiatedThreshold', value)),
+              _number(context, 'Seuil Faim', config.satietyHungryThreshold,
+                  (value) => _setSatietyNumber('hungryThreshold', value)),
+              for (final item in <String>[
+                'LEAF',
+                'MOSS',
+                'ALGAE',
+                'ROOT',
+                'FRUIT',
+                'MUSHROOM',
+                'TREAT'
+              ])
+                _number(
+                    context,
+                    'Satiété ${item == 'TREAT' ? 'Friandise' : ElevagePresentation.itemLabel(item)}',
+                    config.foodSatietyValue(item),
+                    (value) => _setFoodSatietyValue(item, value)),
+              _number(
+                  context,
+                  'Signal Bébé faim (s)',
+                  _satietyNumber('babyHungrySignalCooldown', 8),
+                  (value) =>
+                      _setSatietyNumber('babyHungrySignalCooldown', value)),
+              _number(
+                  context,
+                  'Signal Bébé très faim (s)',
+                  _satietyNumber('babyVeryHungrySignalCooldown', 4),
+                  (value) =>
+                      _setSatietyNumber('babyVeryHungrySignalCooldown', value)),
+              _number(
+                  context,
+                  'Signal Juvénile faim (s)',
+                  _satietyNumber('juvenileHungrySignalCooldown', 10),
+                  (value) =>
+                      _setSatietyNumber('juvenileHungrySignalCooldown', value)),
+              _number(
+                  context,
+                  'Signal Juvénile très faim (s)',
+                  _satietyNumber('juvenileVeryHungrySignalCooldown', 5),
+                  (value) => _setSatietyNumber(
+                      'juvenileVeryHungrySignalCooldown', value)),
+              if (widget.controller.config.devMode) _satietyDevTools(context),
+              _heading('Cuisine et météo'),
+              _number(
+                  context,
+                  'Portions sèches',
+                  config.dryPortions,
+                  (value) =>
+                      _setRefugeNestedNumber('cooking', 'dryPortions', value)),
+              _number(
+                  context,
+                  'Portions humides',
+                  config.wetPortions,
+                  (value) =>
+                      _setRefugeNestedNumber('cooking', 'wetPortions', value)),
+              _number(
+                  context,
+                  'Bonus sec / portion',
+                  config.dryBonusPerPortion,
+                  (value) => _setRefugeNestedNumber(
+                      'cooking', 'dryBonusPerPortion', value)),
+              _number(
+                  context,
+                  'Bonus humide / portion',
+                  config.wetBonusPerPortion,
+                  (value) => _setRefugeNestedNumber(
+                      'cooking', 'wetBonusPerPortion', value)),
+              _number(
+                  context,
+                  'Réservoir Eau',
+                  config.waterTankCapacity,
+                  (value) => _setRefugeNestedNumber(
+                      'cooking', 'waterTankCapacity', value)),
+              _number(
+                  context,
+                  'Bloc météo (h)',
+                  config.weatherBlockHours,
+                  (value) => _setRefugeNestedNumber(
+                      'weather', 'weatherBlockHours', value)),
+              _number(
+                  context,
+                  'Poids beau temps',
+                  config.weatherClearWeight,
+                  (value) => _setRefugeNestedNumber(
+                      'weather', 'weatherClearWeight', value)),
+              _number(
+                  context,
+                  'Poids petite pluie',
+                  config.weatherLightRainWeight,
+                  (value) => _setRefugeNestedNumber(
+                      'weather', 'weatherLightRainWeight', value)),
+              _number(
+                  context,
+                  'Poids forte pluie',
+                  config.weatherHeavyRainWeight,
+                  (value) => _setRefugeNestedNumber(
+                      'weather', 'weatherHeavyRainWeight', value)),
+              _number(
+                  context,
+                  'Eau de pluie / h',
+                  config.rainWaterPerHour,
+                  (value) => _setRefugeNestedNumber(
+                      'weather', 'rainWaterPerHour', value)),
+              _number(
+                  context,
+                  'Début nuit locale',
+                  config.nightStartHour,
+                  (value) => _setRefugeNestedNumber(
+                      'weather', 'nightStartHour', value)),
+              _number(
+                  context,
+                  'Fin nuit locale',
+                  config.nightEndHour,
+                  (value) =>
+                      _setRefugeNestedNumber('weather', 'nightEndHour', value)),
+              _number(
+                  context,
+                  'Preuves suspectées',
+                  config.suspectedThreshold,
+                  (value) =>
+                      config = config.copyWith(suspectedThreshold: value)),
+              _number(
+                  context,
+                  'Preuves confirmées',
+                  config.confirmedThreshold,
+                  (value) =>
+                      config = config.copyWith(confirmedThreshold: value)),
+              _number(
+                  context,
+                  'Observation textuelle après',
+                  config.observationTextThreshold,
+                  (value) => config =
+                      config.copyWith(observationTextThreshold: value)),
+              _number(
+                  context,
+                  'Fenêtre de preuve (min)',
+                  config.observationEvidenceCooldownMinutes,
+                  (value) => config = config.copyWith(
+                      observationEvidenceCooldownMinutes: value)),
+              _heading('Cycle et inventaire'),
+              ListTile(
+                  leading: const Icon(Icons.nightlight_outlined),
+                  title: const Text('Nuit locale réelle'),
+                  subtitle: Text(
+                      '${config.nightStartHour.toString().padLeft(2, '0')}:00 → ${config.nightEndHour.toString().padLeft(2, '0')}:00')),
+              _heading('Rythmes de sommeil'),
+              _number(
+                  context,
+                  'Végétal · sommeil nocturne (min)',
+                  config.vegetalSleepMinutes,
+                  (value) =>
+                      config = config.copyWith(vegetalSleepMinutes: value)),
+              _number(
+                  context,
+                  'Minéral · début du jour (min)',
+                  config.mineralDaySleepMinutes,
+                  (value) =>
+                      config = config.copyWith(mineralDaySleepMinutes: value)),
+              _number(
+                  context,
+                  'Minéral · fin de nuit (min)',
+                  config.mineralLateNightSleepMinutes,
+                  (value) => config =
+                      config.copyWith(mineralLateNightSleepMinutes: value)),
+              _number(
+                  context,
+                  'Fongique · milieu du jour (min)',
+                  config.fungalMidDaySleepMinutes,
+                  (value) => config =
+                      config.copyWith(fungalMidDaySleepMinutes: value)),
+              _number(
+                  context,
+                  'Fongique · transition jour/nuit (min)',
+                  config.fungalTransitionSleepMinutes,
+                  (value) => config =
+                      config.copyWith(fungalTransitionSleepMinutes: value)),
+              _number(
+                  context,
+                  'Taille d’une pile',
+                  config.inventoryStackSize,
+                  (value) =>
+                      config = config.copyWith(inventoryStackSize: value)),
+              _heading('Chaîne énergétique'),
+              const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      'Réserve → cuves du Biogénérateur → Énergie locale. Les réglages de production sont dans « Biogénérateur durable » ; aucune conversion directe depuis la Réserve.')),
+              _heading('Séjour dans une zone'),
+              _number(
+                  context,
+                  'Bébé · séjour neutre (s)',
+                  config.baseStayBabySeconds,
+                  (value) =>
+                      config = config.copyWith(baseStayBabySeconds: value)),
+              _number(
+                  context,
+                  'Intermédiaire · séjour neutre (s)',
+                  config.baseStayIntermediateSeconds,
+                  (value) => config =
+                      config.copyWith(baseStayIntermediateSeconds: value)),
+              _number(
+                  context,
+                  'Mature · séjour neutre (s)',
+                  config.baseStayMatureSeconds,
+                  (value) =>
+                      config = config.copyWith(baseStayMatureSeconds: value)),
+              _number(
+                  context,
+                  'Modificateur Posé (s)',
+                  config.tempoPosedStayModifierSeconds,
+                  (value) => config =
+                      config.copyWith(tempoPosedStayModifierSeconds: value)),
+              _number(
+                  context,
+                  'Modificateur Spontané (s)',
+                  config.tempoSpontaneousStayModifierSeconds,
+                  (value) => config = config.copyWith(
+                      tempoSpontaneousStayModifierSeconds: value)),
+              _number(
+                  context,
+                  'Zone idéale / bonne (s)',
+                  config.perfectZoneStayModifierSeconds,
+                  (value) => config =
+                      config.copyWith(perfectZoneStayModifierSeconds: value)),
+              _number(
+                  context,
+                  'Zone inconfortable (s)',
+                  config.badZoneStayModifierSeconds,
+                  (value) => config =
+                      config.copyWith(badZoneStayModifierSeconds: value)),
+              _number(
+                  context,
+                  'Zone extrême (s)',
+                  config.extremeZoneStayModifierSeconds,
+                  (value) => config =
+                      config.copyWith(extremeZoneStayModifierSeconds: value)),
+              _number(context, 'Minimum absolu (s)', config.minStaySeconds,
+                  (value) => config = config.copyWith(minStaySeconds: value)),
+              _number(
+                  context,
+                  'Gain de résonance',
+                  config.resonanceGainPerUse,
+                  (value) =>
+                      config = config.copyWith(resonanceGainPerUse: value)),
+              _heading('Exploration et installations'),
+              SwitchListTile(
+                  title: const Text('Exploration activée'),
+                  value: config.explorationEnabled,
+                  onChanged: (value) =>
+                      _setRefugeNestedBool('exploration', 'enabled', value)),
+              _number(
+                  context,
+                  'Durée Exploration (s)',
+                  config.explorationInt('durationSeconds', 25),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'durationSeconds', value)),
+              _number(
+                  context,
+                  'Slots de récolte joueur',
+                  config.explorationInt('baseCarrySlots', 3),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'baseCarrySlots', value)),
+              _number(
+                  context,
+                  'Stamina maximum',
+                  config.explorationInt('playerStaminaMax', 10),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'playerStaminaMax', value)),
+              _number(
+                  context,
+                  'Coût Stamina / sortie',
+                  config.explorationInt('playerStaminaCost', 1),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'playerStaminaCost', value)),
+              _number(
+                  context,
+                  'Régénération Stamina (min / point)',
+                  config.explorationInt('playerStaminaRegenMinutes', 5),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'playerStaminaRegenMinutes', value)),
+              _number(
+                  context,
+                  'Endurance P’TIPOTE maximum',
+                  config.explorationInt('ptipoteStaminaMax', 10),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'ptipoteStaminaMax', value)),
+              _number(
+                  context,
+                  'Coût Endurance P’TIPOTE / sortie',
+                  config.explorationInt('ptipoteStaminaCostPerRun', 1),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'ptipoteStaminaCostPerRun', value)),
+              _number(
+                  context,
+                  'Régénération Endurance P’TIPOTE (min / point)',
+                  config.explorationInt('ptipoteStaminaRegenMinutes', 5),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'ptipoteStaminaRegenMinutes', value)),
+              _number(
+                  context,
+                  'XP Pisteur / exploration accompagnée',
+                  config.explorationInt('trackerXpPerExploration', 10),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'trackerXpPerExploration', value)),
+              for (final family in <String>['VEGETAL', 'MINERAL', 'FUNGAL'])
+                _number(
+                    context,
+                    'Biais loot $family (%)',
+                    _typeLootBiasPercent(family),
+                    (value) => _setTypeLootBiasPercent(family, value)),
+              _number(
+                  context,
+                  'Régénération Organique / h',
+                  config.explorationInt('organicRegenPerHour', 5),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'organicRegenPerHour', value)),
+              _number(
+                  context,
+                  'Coût Organique générique (%)',
+                  config.explorationInt('genericOrganicCost', 1),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'genericOrganicCost', value)),
+              _number(
+                  context,
+                  'Coût Organique spécifique (%)',
+                  config.explorationInt('specificOrganicCost', 5),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'specificOrganicCost', value)),
+              _number(
+                  context,
+                  'Coût Minéral générique',
+                  config.explorationInt('genericMineralCost', 1),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'genericMineralCost', value)),
+              _number(
+                  context,
+                  'Coût Minéral spécifique',
+                  config.explorationInt('specificMineralCost', 3),
+                  (value) => _setRefugeNestedNumber(
+                      'exploration', 'specificMineralCost', value)),
+              const Padding(
+                  padding: EdgeInsets.only(left: 16, right: 16, bottom: 4),
+                  child: Text(
+                      'Chaque secteur possède ses valeurs initiales, son état activé et sa table de loot configurable.')),
+              ...ElevageDomain.explorationSectors.map((sector) => ListTile(
+                    leading: const Icon(Icons.map_outlined),
+                    title: Text(sector['label'] as String),
+                    subtitle: Text(
+                        '${sector['biomeId']} · Organique ${sector['organic']}% · Minéral ${sector['mineral']}'),
+                    trailing: const Icon(Icons.tune),
+                    onTap: () => _editExplorationSector(context, sector),
+                  )),
+              _number(
+                  context,
+                  'Intervalle de production (s)',
+                  config.productionIntervalSeconds,
+                  (value) => config =
+                      config.copyWith(productionIntervalSeconds: value)),
+              _number(
+                  context,
+                  'Stock local maximum',
+                  config.productionMaxStock,
+                  (value) =>
+                      config = config.copyWith(productionMaxStock: value)),
+              _heading('Producteurs biologiques'),
+              const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      'Chaque sortie possède son propre rythme, stock maximal et état actif.')),
+              ...config.producerOutputs.entries
+                  .expand((entry) => entry.value.map((output) => ListTile(
+                        title: Text(
+                            '${ElevagePresentation.installationLabel(entry.key)} · ${ElevagePresentation.itemLabel(output.resourceId)}'),
+                        subtitle: Text(
+                            '${output.quantityPerCycle}/cycle · ${output.productionSeconds}s · stock ${output.maxLocalStock}${output.enabled ? '' : ' · désactivé'}'),
+                        trailing: const Icon(Icons.tune),
+                        onTap: () =>
+                            _editProducerOutput(context, entry.key, output),
+                      ))),
+              _heading('Entretien des structures actives'),
+              const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      'Les installations alimentées consomment l’Énergie locale. NONE laisse une structure passive.')),
+              ...config.structureConsumptions.entries.map((entry) => ListTile(
+                    title:
+                        Text(ElevagePresentation.installationLabel(entry.key)),
+                    subtitle: Text(_consumptionSummary(entry.value)),
+                    trailing: const Icon(Icons.tune),
+                    onTap: () => _editStructureConsumption(
+                        context, entry.key, entry.value),
+                  )),
+              _heading('Modules de structure'),
+              ...config.structureModules.entries.map((entry) => ListTile(
+                    title:
+                        Text(ElevagePresentation.installationLabel(entry.key)),
+                    subtitle: Text(
+                        '${entry.value.moduleSlots} slot(s) · ${entry.value.allowedModuleIds.map((id) => config.module(id)?.label ?? id).join(' · ')}'),
                     trailing: const Icon(Icons.tune),
                     onTap: () =>
-                        _editProducerOutput(context, entry.key, output),
-                  ))),
-          _heading('Entretien des structures actives'),
-          const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                  'Les coûts sont prélevés dans la Réserve commune. NONE laisse une structure passive.')),
-          ...config.structureConsumptions.entries.map((entry) => ListTile(
-                title: Text(ElevagePresentation.installationLabel(entry.key)),
-                subtitle: Text(_consumptionSummary(entry.value)),
-                trailing: const Icon(Icons.tune),
-                onTap: () =>
-                    _editStructureConsumption(context, entry.key, entry.value),
-              )),
-          _heading('Modules de structure'),
-          ...config.structureModules.entries.map((entry) => ListTile(
-                title: Text(ElevagePresentation.installationLabel(entry.key)),
-                subtitle: Text(
-                    '${entry.value.moduleSlots} slot(s) · ${entry.value.allowedModuleIds.map((id) => config.module(id)?.label ?? id).join(' · ')}'),
-                trailing: const Icon(Icons.tune),
-                onTap: () => _editModuleSlots(context, entry.key, entry.value),
-              )),
-          ...config.modules.values.map((module) => ListTile(
-                leading: const Icon(Icons.extension_outlined),
-                title: Text(module.label),
-                subtitle: Text(_moduleConfigSummary(module)),
-                trailing: const Icon(Icons.tune),
-                onTap: () => _editModuleDefinition(context, module),
-              )),
-          _heading('Co-élevage et Sourcier'),
-          _number(
-              context,
-              'Durée co-élevage (h)',
-              config.coRearingDurationHours,
-              (value) =>
-                  config = config.copyWith(coRearingDurationHours: value)),
-          _number(context, 'Prix Fruit fibreux', config.fibrousFruitPrice,
-              (value) => config = config.copyWith(fibrousFruitPrice: value)),
-          _number(context, 'Prix Jelly fruité', config.fruitJellyPrice,
-              (value) => config = config.copyWith(fruitJellyPrice: value)),
-          _number(context, 'Lot de rachat', config.buybackQuantity,
-              (value) => config = config.copyWith(buybackQuantity: value)),
-          _heading('Bio-fabricateur'),
-          ...config.recipes.map((recipe) => ListTile(
-              title: Text(recipe.label),
-              subtitle: Text(_recipeCostSummary(recipe)),
-              onTap: () => _editRecipe(context, recipe))),
-          _heading('Effets des structures et de l’habitat'),
-          const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                  'Les structures modifient Lumière, Température et Humidité. Les meubles et décorations ne règlent ici que leur effet de bien-être : leurs préférences individuelles restent secrètes.')),
-          ...config.installations.map((definition) => ListTile(
-              leading:
-                  Icon(ElevagePresentation.installationIcon(definition.id)),
-              title: Text(definition.label),
-              subtitle: Text(_installationEffectSummary(definition)),
-              trailing: const Icon(Icons.tune),
-              onTap: () => _editInstallationEffects(context, definition))),
-          _heading('Matrice écologique des Natures'),
-          const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                  'Chaque Nature possède ses propres optima et courbes 0–5. Le pire axe local détermine le confort.')),
-          ...config.natureProfiles.map((profile) => ListTile(
-              leading: Text(profile.placeholder,
-                  style: const TextStyle(fontSize: 26)),
-              title: Text(profile.label),
-              subtitle: Text(
-                  'Optimum · ☀️ ${profile.preferredLight}/5 · 🌡️ ${profile.preferredTemperature}/5 · 💧 ${profile.preferredHumidity}/5'),
-              trailing: const Icon(Icons.tune),
-              onTap: () => _editNatureProfile(context, profile))),
-          _heading('Métamorphose'),
-          _number(
-              context,
-              'Tolérance rythmique (ms)',
-              config.metamorphosisToleranceMs,
-              (value) =>
-                  config = config.copyWith(metamorphosisToleranceMs: value)),
-          _heading('Voix et onomatopées'),
-          const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                  'Ces textes apparaissent dans les petites bulles de communication.')),
-          ..._vocalizationLabels.entries.map((entry) => ListTile(
-                title: Text(entry.value),
-                subtitle: Text(config.vocalizations[entry.key] ?? ''),
-                trailing: const Icon(Icons.edit_outlined),
-                onTap: () => _editVocalization(context, entry.key, entry.value),
-              )),
-          const SizedBox(height: 16),
-          FilledButton(
-              onPressed: () async {
-                await widget.controller.saveConfig(config);
-                if (!mounted) return;
-                Navigator.of(this.context).pop();
-              },
-              child: const Text('Appliquer les réglages')),
-          TextButton(
-              onPressed: () async {
-                await widget.controller.resetConfig();
-                if (!mounted) return;
-                setState(() => config = widget.controller.config);
-              },
-              child: const Text('Réinitialiser les réglages')),
-          if (config.devMode) ...<Widget>[
-            _heading('Réinitialisation QA'),
-            OutlinedButton.icon(
-                icon: const Icon(Icons.home_work_outlined),
-                label: const Text('Réinitialiser seulement les Alcôves'),
-                onPressed: () => _confirmReset(context, false)),
-            const SizedBox(height: 8),
-            FilledButton.tonalIcon(
-                icon: const Icon(Icons.restart_alt),
-                label: const Text('Réinitialiser la partie Élevage'),
-                onPressed: () => _confirmReset(context, true)),
-          ],
-        ]),
+                        _editModuleSlots(context, entry.key, entry.value),
+                  )),
+              ...config.modules.values.map((module) => ListTile(
+                    leading: const Icon(Icons.extension_outlined),
+                    title: Text(module.label),
+                    subtitle: Text(_moduleConfigSummary(module)),
+                    trailing: const Icon(Icons.tune),
+                    onTap: () => _editModuleDefinition(context, module),
+                  )),
+              _heading('Co-élevage et Sourcier'),
+              _number(
+                  context,
+                  'Durée co-élevage (h)',
+                  config.coRearingDurationHours,
+                  (value) =>
+                      config = config.copyWith(coRearingDurationHours: value)),
+              _number(
+                  context,
+                  'Prix Fruit fibreux',
+                  config.fibrousFruitPrice,
+                  (value) =>
+                      config = config.copyWith(fibrousFruitPrice: value)),
+              _number(context, 'Prix Jelly fruité', config.fruitJellyPrice,
+                  (value) => config = config.copyWith(fruitJellyPrice: value)),
+              _number(context, 'Lot de rachat', config.buybackQuantity,
+                  (value) => config = config.copyWith(buybackQuantity: value)),
+              _heading('Bio-fabricateur'),
+              ...config.recipes.map((recipe) => ListTile(
+                  title: Text(recipe.label),
+                  subtitle: Text(_recipeCostSummary(recipe)),
+                  onTap: () => _editRecipe(context, recipe))),
+              _heading('Effets des structures et de l’habitat'),
+              const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      'Les structures modifient Lumière, Température et Humidité. Les meubles et décorations ne règlent ici que leur effet de bien-être : leurs préférences individuelles restent secrètes.')),
+              ...config.installations.map((definition) => ListTile(
+                  leading:
+                      Icon(ElevagePresentation.installationIcon(definition.id)),
+                  title: Text(definition.label),
+                  subtitle: Text(_installationEffectSummary(definition)),
+                  trailing: const Icon(Icons.tune),
+                  onTap: () => _editInstallationEffects(context, definition))),
+              _heading('Matrice écologique des Natures'),
+              const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      'Chaque Nature possède ses propres optima et courbes 0–5. Le pire axe local détermine le confort.')),
+              ...config.natureProfiles.map((profile) => ListTile(
+                  leading: Text(profile.placeholder,
+                      style: const TextStyle(fontSize: 26)),
+                  title: Text(profile.label),
+                  subtitle: Text(
+                      'Optimum · ☀️ ${profile.preferredLight}/5 · 🌡️ ${profile.preferredTemperature}/5 · 💧 ${profile.preferredHumidity}/5'),
+                  trailing: const Icon(Icons.tune),
+                  onTap: () => _editNatureProfile(context, profile))),
+              _heading('Métamorphose'),
+              _number(
+                  context,
+                  'Tolérance rythmique (ms)',
+                  config.metamorphosisToleranceMs,
+                  (value) => config =
+                      config.copyWith(metamorphosisToleranceMs: value)),
+              _heading('Voix et onomatopées'),
+              const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      'Ces textes apparaissent dans les petites bulles de communication.')),
+              ..._vocalizationLabels.entries.map((entry) => ListTile(
+                    title: Text(entry.value),
+                    subtitle: Text(config.vocalizations[entry.key] ?? ''),
+                    trailing: const Icon(Icons.edit_outlined),
+                    onTap: () =>
+                        _editVocalization(context, entry.key, entry.value),
+                  )),
+              _heading('Actions'),
+              const SizedBox(height: 16),
+              FilledButton(
+                  onPressed: () async {
+                    await widget.controller.saveConfig(config);
+                    if (!mounted) return;
+                    Navigator.of(this.context).pop();
+                  },
+                  child: const Text('Appliquer les réglages')),
+              TextButton(
+                  onPressed: () async {
+                    await widget.controller.resetConfig();
+                    if (!mounted) return;
+                    setState(() => config = widget.controller.config);
+                  },
+                  child: const Text('Réinitialiser les réglages')),
+              if (config.devMode) ...<Widget>[
+                _heading('Réinitialisation QA'),
+                OutlinedButton.icon(
+                    icon: const Icon(Icons.home_work_outlined),
+                    label: const Text('Réinitialiser seulement les Alcôves'),
+                    onPressed: () => _confirmReset(context, false)),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                    icon: const Icon(Icons.restart_alt),
+                    label: const Text('Réinitialiser la partie Élevage'),
+                    onPressed: () => _confirmReset(context, true)),
+              ],
+            ])),
       );
 
-  Widget _heading(String text) => Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 4),
-      child: Text(text, style: Theme.of(context).textTheme.titleLarge));
+  Widget _heading(String text) => _DashboardSectionHeader(text);
+
+  List<Widget> _accordionize(List<Widget> entries) {
+    final sections = <Widget>[];
+    String? title;
+    var content = <Widget>[];
+    void flush() {
+      if (title == null) return;
+      sections.add(Card(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: ExpansionTile(
+              title: Text(title),
+              initiallyExpanded: false,
+              children: content)));
+    }
+
+    for (final entry in entries) {
+      if (entry is _DashboardSectionHeader) {
+        flush();
+        title = entry.title;
+        content = <Widget>[];
+      } else if (title != null) {
+        content.add(entry);
+      }
+    }
+    flush();
+    return sections;
+  }
 
   Future<void> _editExplorationSector(
       BuildContext context, Map<String, dynamic> base) async {
@@ -3427,7 +3529,10 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
 
   Future<void> _editStructureConsumption(BuildContext context,
       String installationId, ElevageStructureConsumption current) async {
-    var mode = current.mode;
+    final isHeating = installationId == 'FOUR_BIO_ORGANIQUE';
+    // Chauffage has no direct-resource fallback: its Energy comes from the
+    // shared local pool, itself supplied by the battery/generator chain.
+    var mode = isHeating ? 'ENERGY' : current.mode;
     var enabled = current.enabled;
     final energy = TextEditingController(text: '${current.energyCost}');
     final organic =
@@ -3450,17 +3555,21 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                       DropdownButtonFormField<String>(
                           initialValue: mode,
                           decoration: const InputDecoration(labelText: 'Mode'),
-                          items: const <String>[
-                            'NONE',
-                            'ENERGY',
-                            'DIRECT_RESOURCE',
-                            'MULTI_RESOURCE'
-                          ]
+                          items: (isHeating
+                                  ? const <String>['ENERGY']
+                                  : const <String>[
+                                      'NONE',
+                                      'ENERGY',
+                                      'DIRECT_RESOURCE',
+                                      'MULTI_RESOURCE'
+                                    ])
                               .map((value) => DropdownMenuItem(
                                   value: value, child: Text(value)))
                               .toList(),
-                          onChanged: (value) =>
-                              setLocal(() => mode = value ?? mode)),
+                          onChanged: isHeating
+                              ? null
+                              : (value) =>
+                                  setLocal(() => mode = value ?? mode)),
                       SwitchListTile(
                           title: const Text('Activé'),
                           value: enabled,
@@ -3497,34 +3606,40 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                           child: const Text('Annuler')),
                       FilledButton(
                           onPressed: () {
+                            final effectiveMode = isHeating ? 'ENERGY' : mode;
                             final energyCost = int.tryParse(energy.text) ?? 0;
                             final organicCost = int.tryParse(organic.text) ?? 0;
                             final mineralCost = int.tryParse(mineral.text) ?? 0;
                             final seconds = int.tryParse(interval.text) ?? 0;
-                            if (mode != 'NONE' &&
+                            if (effectiveMode != 'NONE' &&
                                 (seconds <= 0 ||
-                                    (mode == 'ENERGY' && energyCost <= 0) ||
-                                    (mode != 'ENERGY' && organicCost <= 0) ||
-                                    (mode == 'MULTI_RESOURCE' &&
+                                    (effectiveMode == 'ENERGY' &&
+                                        energyCost <= 0) ||
+                                    (effectiveMode != 'ENERGY' &&
+                                        organicCost <= 0) ||
+                                    (effectiveMode == 'MULTI_RESOURCE' &&
                                         mineralCost <= 0))) {
                               return;
                             }
                             Navigator.pop(
                                 dialogContext,
                                 ElevageStructureConsumption(
-                                  mode: mode,
+                                  mode: effectiveMode,
                                   enabled: enabled,
-                                  energyCost: mode == 'ENERGY' ? energyCost : 0,
-                                  resourceCosts: mode == 'DIRECT_RESOURCE'
+                                  energyCost: effectiveMode == 'ENERGY'
+                                      ? energyCost
+                                      : 0,
+                                  resourceCosts: effectiveMode ==
+                                          'DIRECT_RESOURCE'
                                       ? <String, int>{'ORGANIC': organicCost}
-                                      : mode == 'MULTI_RESOURCE'
+                                      : effectiveMode == 'MULTI_RESOURCE'
                                           ? <String, int>{
                                               'ORGANIC': organicCost,
                                               'MINERAL': mineralCost,
                                             }
                                           : const <String, int>{},
                                   consumptionIntervalSeconds:
-                                      mode == 'NONE' ? 0 : seconds,
+                                      effectiveMode == 'NONE' ? 0 : seconds,
                                 ));
                           },
                           child: const Text('Valider')),
@@ -3763,6 +3878,56 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
     }
     setState(() => config = config.copyWith(
         vocalizations: <String, String>{...config.vocalizations, key: clean}));
+  }
+
+  Future<void> _editCommunicationIntent(BuildContext context, String intent,
+      (String, String, String, String) details) async {
+    final juvenile = TextEditingController(
+        text: config.communicationText(intent, 'JUVENILE', details.$3));
+    final mature = TextEditingController(
+        text: config.communicationText(intent, 'MATURE', details.$4));
+    final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+                title: Text(details.$1),
+                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Align(
+                      alignment: Alignment.centerLeft, child: Text(details.$2)),
+                  TextField(
+                      controller: juvenile,
+                      maxLength: 32,
+                      decoration: const InputDecoration(labelText: 'Juvénile')),
+                  TextField(
+                      controller: mature,
+                      maxLength: 64,
+                      decoration: const InputDecoration(labelText: 'Mature')),
+                ]),
+                actions: <Widget>[
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('Annuler')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      child: const Text('Valider')),
+                ]));
+    if (!context.mounted || accepted != true) return;
+    final juvenileText = juvenile.text.trim();
+    final matureText = mature.text.trim();
+    juvenile.dispose();
+    mature.dispose();
+    if (juvenileText.isEmpty || matureText.isEmpty) return;
+    final progression = Map<String, dynamic>.from(config.refugeProgression);
+    final communication = Map<String, dynamic>.from(
+        progression['communication'] as Map? ?? const <dynamic, dynamic>{});
+    final values = Map<String, dynamic>.from(
+        communication[intent] as Map? ?? const <dynamic, dynamic>{})
+      ..['label'] = details.$1
+      ..['description'] = details.$2
+      ..['juvenileText'] = juvenileText
+      ..['matureText'] = matureText;
+    communication[intent] = values;
+    progression['communication'] = communication;
+    setState(() => config = config.copyWith(refugeProgression: progression));
   }
 
   Future<void> _editProducerOutput(BuildContext context, String installationId,
@@ -5248,10 +5413,19 @@ Future<void> _showInstallationDetails(
   final recipe = config.recipes
       .where((entry) => entry.installationId == definition.id)
       .firstOrNull;
+  final effective = instance == null
+      ? <String, int>{
+          'light': definition.light,
+          'temperature': definition.temperature,
+          'humidity': definition.humidity,
+        }
+      : ElevageDomain.effectiveEnvironmentalEffects(
+          instance, definition, config);
   final after = <String, int>{
-    'light': currentEnvironment['light']! + definition.light,
-    'temperature': currentEnvironment['temperature']! + definition.temperature,
-    'humidity': currentEnvironment['humidity']! + definition.humidity,
+    'light': currentEnvironment['light']! + effective['light']!,
+    'temperature':
+        currentEnvironment['temperature']! + effective['temperature']!,
+    'humidity': currentEnvironment['humidity']! + effective['humidity']!,
   };
   final recipeText = recipe == null
       ? 'Recette à définir'
@@ -6816,6 +6990,84 @@ const Map<String, String> _vocalizationLabels = <String, String>{
   'REJECT': 'Refus',
   'CALL': 'Appel',
 };
+
+const Map<String, (String, String, String, String)>
+    _communicationIntentDetails = <String, (String, String, String, String)>{
+  'CALL': (
+    'Demande d’attention',
+    'Le P’TIPOTE souhaite attirer le joueur ou obtenir son attention.',
+    'Viens',
+    'Viens avec moi.',
+  ),
+  'DISCOMFORT': (
+    'Inconfort ressenti',
+    'Le P’TIPOTE exprime un malaise corporel.',
+    'Aïe',
+    'Je ne me sens pas bien.',
+  ),
+  'HUNGER': (
+    'Faim',
+    'Le P’TIPOTE signale que son ventre réclame.',
+    'faim',
+    'J’ai faim.'
+  ),
+  'VERY_HUNGRY': (
+    'Très faim',
+    'Le P’TIPOTE signale une faim plus insistante.',
+    'faim !',
+    'J’ai très faim.',
+  ),
+  'HEAT': (
+    'Demande de chaleur',
+    'Le P’TIPOTE voudrait davantage de chaleur.',
+    'veux chaleur',
+    'Je voudrais plus de chaleur.',
+  ),
+  'COOL': (
+    'Demande de fraîcheur',
+    'Le P’TIPOTE voudrait moins de chaleur.',
+    'veux fraîcheur',
+    'Je voudrais plus de fraîcheur.',
+  ),
+  'LIGHT': (
+    'Demande de lumière',
+    'Le P’TIPOTE voudrait davantage de lumière.',
+    'veux lumière',
+    'Je voudrais plus de lumière.',
+  ),
+  'HUMIDITY': (
+    'Demande d’humidité',
+    'Le P’TIPOTE voudrait davantage d’humidité.',
+    'veux humidité',
+    'Je voudrais plus d’humidité.',
+  ),
+  'SHADE': (
+    'Demande d’ombre',
+    'Le P’TIPOTE cherche une zone moins lumineuse.',
+    'veux ombre',
+    'Je voudrais davantage d’ombre.',
+  ),
+  'DRYNESS': (
+    'Demande de sécheresse',
+    'Le P’TIPOTE cherche une zone moins humide.',
+    'veux sec',
+    'Je voudrais un endroit plus sec.',
+  ),
+  'REST': (
+    'Demande de repos',
+    'Le P’TIPOTE cherche un moment de repos.',
+    'repos',
+    'J’aimerais me reposer.',
+  ),
+};
+
+class _DashboardSectionHeader extends StatelessWidget {
+  const _DashboardSectionHeader(this.title);
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
 
 Future<String?> _textDialog(
     BuildContext context, String label, String value) async {

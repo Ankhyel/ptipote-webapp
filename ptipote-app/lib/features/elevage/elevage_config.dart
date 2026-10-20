@@ -834,14 +834,37 @@ class ElevageConfig {
       _biogeneratorNumber('generatorCycleSeconds', 10);
   Map<String, dynamic> get trackerConfig => Map<String, dynamic>.from(
       refugeProgression['tracker'] as Map? ?? const <dynamic, dynamic>{});
-  int trackerThreshold(int level) =>
-      ((trackerConfig['xpForLevel$level'] as num?)?.toInt() ??
-              <int>[0, 100, 200, 300][level.clamp(0, 3)])
-          .clamp(0, 999999);
+  int trackerThreshold(int level) {
+    const canonical = <int>[0, 100, 200, 300];
+    // 10/30/60 was an early prototype scale. Treat that exact trio as a
+    // legacy serialisation rather than silently downgrading player progress.
+    final oldScale = <int>[
+      (trackerConfig['xpForLevel1'] as num?)?.toInt() ?? canonical[1],
+      (trackerConfig['xpForLevel2'] as num?)?.toInt() ?? canonical[2],
+      (trackerConfig['xpForLevel3'] as num?)?.toInt() ?? canonical[3],
+    ];
+    if (oldScale.join(':') == '10:30:60') return canonical[level.clamp(0, 3)];
+    return ((trackerConfig['xpForLevel$level'] as num?)?.toInt() ??
+            canonical[level.clamp(0, 3)])
+        .clamp(0, 999999);
+  }
+
   int trackerCarryBonus(int level) =>
       ((trackerConfig['carryBonusByLevel'] as Map?)?['$level'] as num?)
           ?.toInt() ??
       level.clamp(0, 3);
+  Map<String, dynamic> get communicationConfig => Map<String, dynamic>.from(
+      refugeProgression['communication'] as Map? ?? const <dynamic, dynamic>{});
+  String communicationText(String intent, String stage, String fallback) =>
+      ((communicationConfig[intent] as Map?)?['${stage.toLowerCase()}Text']
+                      as String?)
+                  ?.trim()
+                  .isNotEmpty ==
+              true
+          ? ((communicationConfig[intent] as Map)['${stage.toLowerCase()}Text']
+                  as String)
+              .trim()
+          : fallback;
   int get babyVocalCooldownSeconds =>
       ((refugeProgression['ambientFeedback']
               as Map?)?['babyVocalCooldownSeconds'] as num?)
@@ -1139,7 +1162,7 @@ class ElevageConfig {
           label: 'Chauffage',
           description: 'Une installation qui réchauffe durablement sa zone.',
           light: 0,
-          temperature: 2,
+          temperature: 1,
           humidity: -1,
         ),
         const ElevageInstallationDefinition(
@@ -1914,7 +1937,22 @@ Map<String, ElevageStructureConsumption> _structureConsumptions(
     result['${entry.key}'] = ElevageStructureConsumption.fromJson(
         Map<String, dynamic>.from(entry.value as Map), defaultValue);
   }
-  return <String, ElevageStructureConsumption>{...fallback, ...result};
+  final merged = <String, ElevageStructureConsumption>{...fallback, ...result};
+  // Chauffage is permanently local-Energy powered. Older saved dashboards
+  // could still serialise a direct Organic recipe, which must not revive a
+  // legacy runtime branch after migration.
+  final heating = merged['FOUR_BIO_ORGANIQUE'];
+  if (heating != null) {
+    merged['FOUR_BIO_ORGANIQUE'] = ElevageStructureConsumption(
+      mode: 'ENERGY',
+      energyCost: heating.energyCost < 1 ? 1 : heating.energyCost,
+      consumptionIntervalSeconds: heating.consumptionIntervalSeconds < 1
+          ? 1
+          : heating.consumptionIntervalSeconds,
+      enabled: heating.enabled,
+    );
+  }
+  return merged;
 }
 
 Map<String, List<ElevageProductionOutput>> _producerOutputs(
@@ -2915,6 +2953,56 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
     'language': <String, dynamic>{
       'juvenileNewConceptWordThreshold': 5,
       'juvenileBabyKnownConceptWordThreshold': 10,
+    },
+    'communication': <String, dynamic>{
+      'CALL': <String, String>{
+        'label': 'Demande d’attention',
+        'description': 'Le P’TIPOTE cherche à attirer le joueur.',
+        'juvenileText': 'Viens',
+        'matureText': 'Viens avec moi.',
+      },
+      'DISCOMFORT': <String, String>{
+        'label': 'Inconfort ressenti',
+        'description': 'Le P’TIPOTE exprime un malaise corporel.',
+        'juvenileText': 'Aïe',
+        'matureText': 'Je ne me sens pas bien.',
+      },
+      'HUNGER': <String, String>{
+        'label': 'Faim',
+        'description': 'Le P’TIPOTE signale que son ventre réclame.',
+        'juvenileText': 'faim',
+        'matureText': 'J’ai faim.',
+      },
+      'VERY_HUNGRY': <String, String>{
+        'label': 'Très faim',
+        'description': 'Le P’TIPOTE signale une faim plus insistante.',
+        'juvenileText': 'faim !',
+        'matureText': 'J’ai très faim.',
+      },
+      'HEAT': <String, String>{
+        'label': 'Demande de chaleur',
+        'description': 'Le P’TIPOTE voudrait davantage de chaleur.',
+        'juvenileText': 'veux chaleur',
+        'matureText': 'Je voudrais plus de chaleur.',
+      },
+      'LIGHT': <String, String>{
+        'label': 'Demande de lumière',
+        'description': 'Le P’TIPOTE voudrait davantage de lumière.',
+        'juvenileText': 'veux lumière',
+        'matureText': 'Je voudrais plus de lumière.',
+      },
+      'HUMIDITY': <String, String>{
+        'label': 'Demande d’humidité',
+        'description': 'Le P’TIPOTE voudrait davantage d’humidité.',
+        'juvenileText': 'veux humidité',
+        'matureText': 'Je voudrais plus d’humidité.',
+      },
+      'REST': <String, String>{
+        'label': 'Demande de repos',
+        'description': 'Le P’TIPOTE cherche un moment de repos.',
+        'juvenileText': 'repos',
+        'matureText': 'J’aimerais me reposer.',
+      },
     },
     'knowledge': <String, dynamic>{
       'observationsForHypothesis': 5,

@@ -1533,3 +1533,25 @@ L’Eau n’est pas une ressource globale du Camp.
   applique Lumière -1, Forte pluie Lumière -1 et Température -1; ces effets se
   cumulent au jour/nuit puis restent clampés à 0–5. L’Eau n’a pour V1 qu’un
   usage : une recette humide coûte 1.
+
+# Lot 22.6 — Consolidation énergie, comportement et Dashboard
+
+- **Chauffage.** Le Chauffage historique (`FOUR_BIO_ORGANIQUE`) garde son ID
+  pour les sauvegardes mais fonctionne uniquement sur l’Energy locale :
+  cuves → Biogénérateur → Energy → Chauffage. Une ancienne configuration
+  directe est normalisée en consommation Energy à son chargement. À vide, il
+  indique un manque d’énergie et reprend après un cycle disponible.
+- **Effets environnementaux.** Une même valeur effective (base + modules +
+  Dashboard) alimente simulation, diagnostics et aperçu. Chauffage vaut +1
+  localement ; POWER le porte à +2, ce qui diffuse +1 aux zones adjacentes.
+  La même règle de magnitude s’applique à la température et à l’humidité.
+- **Récupération comportementale.** Le watchdog relance le scheduler après un
+  soft reset qui efface action, bulle, réaction et cible visuelle transitoires,
+  sans toucher à la sauvegarde ni aux ressources.
+- **Communication.** Les intentions (attention, inconfort, faim, chaleur,
+  lumière, humidité, repos et variantes) possèdent des textes Juvénile et
+  Mature configurables ; les pictogrammes restent associés à l’intention.
+- **Dashboard.** Les grandes sections sont des accordéons fermés par défaut.
+  Les réglages jour/nuit accélérés et la conversion magique de Réserve sont
+  retirés de l’UI : nuit locale 00–04 et réglages du Biogénérateur restent les
+  seules références actives. Les seuils Pisteur canoniques sont 100/200/300.
