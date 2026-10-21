@@ -3111,10 +3111,11 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
                       _setRefugeNestedBool('exploration', 'enabled', value)),
               _number(
                   context,
-                  'Durée Exploration (s)',
-                  config.explorationInt('durationSeconds', 25),
+                  'Durée d’une sortie Exploration (s)',
+                  config.explorationInt('explorationDurationPerOuting',
+                      config.explorationInt('durationSeconds', 25)),
                   (value) => _setRefugeNestedNumber(
-                      'exploration', 'durationSeconds', value)),
+                      'exploration', 'explorationDurationPerOuting', value)),
               _number(
                   context,
                   'Slots de récolte joueur',
@@ -3178,27 +3179,31 @@ class _ElevageDashboardPageState extends State<ElevageDashboardPage> {
               _number(
                   context,
                   'Coût Organique générique (%)',
-                  config.explorationInt('genericOrganicCost', 1),
+                  config.explorationInt('genericOrganicStockCostPercent',
+                      config.explorationInt('genericOrganicCost', 1)),
                   (value) => _setRefugeNestedNumber(
-                      'exploration', 'genericOrganicCost', value)),
+                      'exploration', 'genericOrganicStockCostPercent', value)),
               _number(
                   context,
-                  'Coût Organique spécifique (%)',
-                  config.explorationInt('specificOrganicCost', 5),
+                  'Coût Organique · recherche spécifique (%)',
+                  config.explorationInt('specificOrganicStockCostPercent',
+                      config.explorationInt('specificOrganicCost', 5)),
                   (value) => _setRefugeNestedNumber(
-                      'exploration', 'specificOrganicCost', value)),
+                      'exploration', 'specificOrganicStockCostPercent', value)),
               _number(
                   context,
                   'Coût Minéral générique',
-                  config.explorationInt('genericMineralCost', 1),
+                  config.explorationInt('genericMineralStockCost',
+                      config.explorationInt('genericMineralCost', 1)),
                   (value) => _setRefugeNestedNumber(
-                      'exploration', 'genericMineralCost', value)),
+                      'exploration', 'genericMineralStockCost', value)),
               _number(
                   context,
-                  'Coût Minéral spécifique',
-                  config.explorationInt('specificMineralCost', 3),
+                  'Coût Minéral · recherche spécifique',
+                  config.explorationInt('specificMineralStockCost',
+                      config.explorationInt('specificMineralCost', 3)),
                   (value) => _setRefugeNestedNumber(
-                      'exploration', 'specificMineralCost', value)),
+                      'exploration', 'specificMineralStockCost', value)),
               const Padding(
                   padding: EdgeInsets.only(left: 16, right: 16, bottom: 4),
                   child: Text(
@@ -6812,7 +6817,7 @@ Future<void> _exploration(
                 Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                        'Sortie en cours · ⏱ ${_explorationTimer(max(0, (run!['endsAt'] as num).toInt() - controller.now))}')),
+                        'Sortie ${(run!['outingCount'] as num?)?.toInt() ?? 1} × ${(run['durationPerOuting'] as num?)?.toInt() ?? 25}s · ⏱ ${_explorationTimer(max(0, (run['endsAt'] as num).toInt() - controller.now))}')),
             ]),
           )));
 }
@@ -6856,23 +6861,17 @@ Future<void> _explorationBiome(
                     : const Text(
                         'Lancez une première sortie pour le découvrir.'),
                 trailing: FilledButton(
-                  onPressed: run != null && run['status'] != 'CLAIMED' ||
+                  onPressed: (run != null && run['status'] != 'CLAIMED') ||
                           stamina <
                               controller.config
                                   .explorationInt('playerStaminaCost', 1)
                       ? null
                       : () async {
-                          final companionId = await _pickExplorationCompanion(
-                              sheetContext, controller);
-                          if (!sheetContext.mounted || companionId == null) {
-                            return;
-                          }
-                          await controller.startExploration(
-                              definition['id'] as String,
-                              companionPtipoteId:
-                                  companionId.isEmpty ? null : companionId);
-                          if (sheetContext.mounted &&
-                              controller.error == null) {
+                          final started = await _configureExplorationRun(
+                              sheetContext,
+                              controller,
+                              definition['id'] as String);
+                          if (sheetContext.mounted && started) {
                             Navigator.pop(sheetContext);
                           }
                         },
@@ -6881,6 +6880,154 @@ Future<void> _explorationBiome(
               );
             }),
           ])));
+}
+
+/// Lets the player assemble one persisted expedition.  Its duration is only
+/// a number of ordinary outings: every selected outing still rolls its own
+/// slots and consumes its own endurance in the domain layer.
+Future<bool> _configureExplorationRun(
+    BuildContext context, ElevageController controller, String sectorId) async {
+  var outingCount = 1;
+  var companionId = '';
+  var specificSearch = false;
+  var specificSearchType = 'MINERAL';
+  return (await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final state = controller.state!;
+            final exploration = ElevageDomain.explorationState(state);
+            final playerEndurance =
+                (exploration['stamina'] as num?)?.toInt() ?? 0;
+            final playerCost =
+                controller.config.explorationInt('playerStaminaCost', 1);
+            Map? companion;
+            if (companionId.isNotEmpty) {
+              companion =
+                  (state.data['individuals'] as Map)[companionId] as Map?;
+            }
+            final companionEndurance = companion == null
+                ? playerEndurance
+                : ((companion['explorationStamina'] as Map)['current'] as num)
+                    .toInt();
+            final companionCost =
+                controller.config.explorationInt('ptipoteStaminaCostPerRun', 1);
+            final maxOutings = min(
+                playerEndurance ~/ max(1, playerCost),
+                companion == null
+                    ? 999999
+                    : companionEndurance ~/ max(1, companionCost));
+            if (outingCount > maxOutings && maxOutings > 0) {
+              outingCount = maxOutings;
+            }
+            final duration = controller.config.explorationInt(
+                'explorationDurationPerOuting',
+                controller.config.explorationInt('durationSeconds', 25));
+            final totalSeconds = duration * outingCount;
+            return SafeArea(
+                child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+              child: SingleChildScrollView(
+                child:
+                    Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+                  Text('Préparer l’exploration',
+                      style: Theme.of(sheetContext).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    leading: const Icon(Icons.hiking_outlined),
+                    title: Text('Sorties · $outingCount'),
+                    subtitle: Text(
+                        'Durée ${_explorationTimer(totalSeconds * 1000)} · Coût $outingCount Endurance'),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(
+                          onPressed: outingCount > 1
+                              ? () => setSheetState(() => outingCount--)
+                              : null,
+                          icon: const Icon(Icons.remove_circle_outline)),
+                      Text('$outingCount'),
+                      IconButton(
+                          onPressed: outingCount < maxOutings
+                              ? () => setSheetState(() => outingCount++)
+                              : null,
+                          icon: const Icon(Icons.add_circle_outline)),
+                    ]),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.pets_outlined),
+                    title: Text(companion == null
+                        ? 'Partir seul'
+                        : '${companion['name']} vous accompagne'),
+                    subtitle: Text(companion == null
+                        ? 'Joueur · -$outingCount Endurance'
+                        : 'Joueur -$outingCount · ${companion['name']} -${outingCount * companionCost} Endurance'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      final picked = await _pickExplorationCompanion(
+                          sheetContext, controller);
+                      if (picked != null && sheetContext.mounted) {
+                        setSheetState(() => companionId = picked);
+                      }
+                    },
+                  ),
+                  CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Recherche spécifique'),
+                      subtitle: const Text(
+                          'Filtre strictement la table de loot du secteur.'),
+                      value: specificSearch,
+                      onChanged: (value) =>
+                          setSheetState(() => specificSearch = value ?? false)),
+                  if (specificSearch)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(children: <Widget>[
+                        Expanded(
+                            child: ChoiceChip(
+                                label: const Text('Minéral'),
+                                selected: specificSearchType == 'MINERAL',
+                                onSelected: (_) => setSheetState(
+                                    () => specificSearchType = 'MINERAL'))),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: ChoiceChip(
+                                label: const Text('Organique'),
+                                selected: specificSearchType == 'ORGANIC',
+                                onSelected: (_) => setSheetState(
+                                    () => specificSearchType = 'ORGANIC'))),
+                      ]),
+                    ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: maxOutings < 1
+                          ? null
+                          : () async {
+                              await controller.startExploration(sectorId,
+                                  companionPtipoteId:
+                                      companionId.isEmpty ? null : companionId,
+                                  outingCount: outingCount,
+                                  specificSearchType: specificSearch
+                                      ? specificSearchType
+                                      : null);
+                              if (sheetContext.mounted &&
+                                  controller.error == null) {
+                                Navigator.pop(sheetContext, true);
+                              }
+                            },
+                      icon: const Icon(Icons.explore_outlined),
+                      label: Text(maxOutings < 1
+                          ? 'Endurance insuffisante'
+                          : 'Explorer · $outingCount sortie${outingCount > 1 ? 's' : ''}'),
+                    ),
+                  ),
+                ]),
+              ),
+            ));
+          },
+        ),
+      )) ??
+      false;
 }
 
 /// Returns an empty id for a solo departure, null when the user cancels.
@@ -6954,32 +7101,43 @@ Future<void> _showExplorationResult(
           0;
   final slots =
       (run['slots'] as num?)?.toInt() ?? (run['results'] as List).length;
+  final outingCount = (run['outingCount'] as num?)?.toInt() ?? 1;
+  final groupedResults = <String, int>{};
+  for (final result in (run['results'] as List).whereType<Map>()) {
+    final resource = result['resourceId'] as String? ?? 'EMPTY';
+    groupedResults[resource] = (groupedResults[resource] ?? 0) + 1;
+  }
   await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
             title: const Text('Exploration terminée'),
             content: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-              Text('Résultats de vos $slots slots :'),
+              Text(
+                  'Résultats de $outingCount sortie${outingCount > 1 ? 's' : ''} · $slots slots par sortie :'),
+              if (run['specificSearchType'] is String)
+                Text(
+                    'Recherche : ${run['specificSearchType'] == 'MINERAL' ? 'Minéral' : 'Organique'}'),
               if (companion != null) ...<Widget>[
                 const SizedBox(height: 6),
                 Text('${companion['name']} vous a accompagné.'),
                 Text(
                     '🥾 Joueur $playerEndurance/${controller.config.explorationInt('playerStaminaMax', 10)} · ${companion['name']} $companionEndurance/${controller.config.explorationInt('ptipoteStaminaMax', 10)}'),
-                const Text('👣 +10 XP Pisteur'),
+                Text(
+                    '👣 +${(run['trackerXpGained'] as num?)?.toInt() ?? controller.config.explorationInt('trackerXpPerExploration', 10) * outingCount} XP Pisteur'),
                 if (run['trackerLevelAfter'] is num &&
                     run['trackerLevelAfter'] != run['trackerLevelBefore'])
                   Text('👣 Pisteur ${run['trackerLevelAfter']} atteint !'),
               ],
               const SizedBox(height: 8),
-              ...(run['results'] as List).whereType<Map>().map((result) {
-                final resource = result['resourceId'] as String? ?? 'EMPTY';
+              ...groupedResults.entries.map((entry) {
+                final resource = entry.key;
                 return ListTile(
                     leading: Icon(resource == 'EMPTY'
                         ? Icons.remove_circle_outline
                         : ElevagePresentation.itemIcon(resource)),
                     title: Text(resource == 'EMPTY'
                         ? 'Aucune ressource'
-                        : '${ElevagePresentation.itemLabel(resource)} ×1'));
+                        : '${ElevagePresentation.itemLabel(resource)} ×${entry.value}'));
               }),
             ]),
             actions: <Widget>[

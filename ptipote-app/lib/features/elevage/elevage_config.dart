@@ -2998,6 +2998,9 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
     'exploration': <String, dynamic>{
       'enabled': true,
       'durationSeconds': 25,
+      // A multi-outing expedition is deliberately only a chain of these
+      // elementary outings, never a second exploration mode.
+      'explorationDurationPerOuting': 25,
       'baseCarrySlots': 3,
       'staminaMax': 10,
       'staminaCostPerRun': 1,
@@ -3010,6 +3013,10 @@ const ElevageConfig defaultElevageConfig = ElevageConfig(
       'specificOrganicCost': 5,
       'genericMineralCost': 1,
       'specificMineralCost': 3,
+      'genericOrganicStockCostPercent': 1,
+      'specificOrganicStockCostPercent': 5,
+      'genericMineralStockCost': 1,
+      'specificMineralStockCost': 3,
       'ptipoteStaminaMax': 10,
       'ptipoteStaminaCostPerRun': 1,
       'ptipoteStaminaRegenPerMinute': 1,

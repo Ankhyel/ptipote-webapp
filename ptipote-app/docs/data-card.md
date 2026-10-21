@@ -1594,3 +1594,34 @@ L’Eau n’est pas une ressource globale du Camp.
   mangée. Un plat reste inaccessible si l’un de ses aliments est verrouillé
   pour le Type ou le stade du P’TIPOTE. Les batches V1 non réclamés migrent une
   seule fois en portions « Préparation héritée », sans duplication au reload.
+
+# Lot 22.8 — Exploration multi-sorties et recherche spécifique
+
+- **Sorties enchaînées.** Une expédition est une chaîne persistée de
+  `outingCount` sorties élémentaires de 25 s (Dashboard :
+  `explorationDurationPerOuting`). Sa durée totale, son coût d’Endurance et
+  son timer sont donc le produit de ces deux valeurs. Le joueur et, le cas
+  échéant, le compagnon paient 1 Endurance par sortie : le maximum choisi est
+  automatiquement borné par l’Endurance la plus faible. Il n’existe toujours
+  qu’une expédition active à la fois.
+- **Cycles et résultats.** Chaque tranche résout indépendamment tous ses slots
+  de récolte (3 de base, plus le bonus Pisteur) avec les stocks réellement
+  laissés par la tranche précédente. Les `cycleResults` sont persistés avec le
+  résultat agrégé : fermer l’app ne reroll ni les tirages ni les coûts. Le
+  résultat final est réclamé une seule fois et groupe visuellement les objets
+  identiques. Un compagnon reçoit `trackerXpPerExploration` (10 par défaut)
+  **par sortie** réellement terminée et réclamée.
+- **Recherche spécifique.** La case « Recherche spécifique » laisse le mode
+  général intact quand elle est décochée. Cochée, elle applique un filtre
+  strict à la table du secteur : **Minéral** à gauche (`GENERIC_MINERAL`,
+  `MINERAL_SPECIFIC`) ou **Organique** à droite (`GENERIC_ORGANIC`,
+  `ORGANIC_SPECIFIC`). Aucun fallback vers l’autre famille, aucune ressource
+  absente de table, et aucun stock insuffisant ne peuvent produire de loot.
+  Le biais Type du compagnon s’applique seulement après ce filtre.
+- **Écologie.** En recherche générale, chaque prélèvement organique/minéral
+  coûte respectivement `genericOrganicStockCostPercent` /
+  `genericMineralStockCost` (1/1 par défaut). En recherche spécifique, le coût
+  est le coût ciblé `specificOrganicStockCostPercent` /
+  `specificMineralStockCost` (5 % / 3 par défaut), indépendamment de la rareté
+  déclarée de l’objet. Ces quatre valeurs sont configurables dans Dashboard >
+  Exploration.

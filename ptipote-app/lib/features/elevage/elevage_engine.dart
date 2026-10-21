@@ -3910,7 +3910,9 @@ class ElevageDomain {
 
   static ElevageSave startExploration(
       ElevageSave source, String sectorId, int now, ElevageConfig config,
-      {String? companionPtipoteId}) {
+      {String? companionPtipoteId,
+      int outingCount = 1,
+      String? specificSearchType}) {
     if (!config.explorationEnabled) {
       throw StateError('Exploration indisponible.');
     }
@@ -3927,13 +3929,23 @@ class ElevageDomain {
     if (definition == null || definition['enabled'] == false) {
       throw StateError('Secteur inconnu.');
     }
+    if (outingCount < 1) {
+      throw StateError('Le nombre de sorties doit être positif.');
+    }
+    if (specificSearchType != null &&
+        specificSearchType != 'MINERAL' &&
+        specificSearchType != 'ORGANIC') {
+      throw StateError('Recherche spécifique inconnue.');
+    }
     final stamina = (exploration['stamina'] as num?)?.toInt() ?? 0;
-    final staminaCost = config.explorationInt(
+    final staminaCostPerOuting = config.explorationInt(
         'playerStaminaCost', config.explorationInt('staminaCostPerRun', 1));
-    if (stamina < staminaCost) throw StateError('Stamina insuffisante.');
+    final staminaCost = staminaCostPerOuting * outingCount;
+    if (stamina < staminaCost) throw StateError('Endurance insuffisante.');
     Map? companion;
     var trackerBonus = 0;
     String? typeBias;
+    var companionStaminaCost = 0;
     if (companionPtipoteId != null) {
       companion = _individual(state, companionPtipoteId);
       if (!canAccompanyExploration(companion, now, config)) {
@@ -3941,8 +3953,13 @@ class ElevageDomain {
             'Ce P’TIPOTE ne peut pas accompagner cette exploration.');
       }
       final endurance = companion['explorationStamina'] as Map;
-      endurance['current'] = (endurance['current'] as num).toInt() -
-          config.explorationInt('ptipoteStaminaCostPerRun', 1);
+      companionStaminaCost =
+          config.explorationInt('ptipoteStaminaCostPerRun', 1) * outingCount;
+      if ((endurance['current'] as num).toInt() < companionStaminaCost) {
+        throw StateError('Endurance du compagnon insuffisante.');
+      }
+      endurance['current'] =
+          (endurance['current'] as num).toInt() - companionStaminaCost;
       trackerBonus = trackerCarryBonus(companion, config);
       typeBias = companion['family'] as String?;
     }
@@ -3951,22 +3968,44 @@ class ElevageDomain {
     sector['discovered'] = true;
     final slots = config.explorationInt('baseCarrySlots', 3) + trackerBonus;
     final results = <Map<String, dynamic>>[];
-    for (var slot = 0; slot < slots; slot++) {
-      final loot = _rollExplorationLoot(sector, definition, config, now + slot,
-          typeBias: typeBias);
-      results.add(loot ?? <String, dynamic>{'resourceId': 'EMPTY'});
+    final cycleResults = <Map<String, dynamic>>[];
+    for (var outing = 0; outing < outingCount; outing++) {
+      final outingLoot = <Map<String, dynamic>>[];
+      for (var slot = 0; slot < slots; slot++) {
+        final loot = _rollExplorationLoot(
+            sector, definition, config, now + outing * 1009 + slot,
+            typeBias: typeBias, specificSearchType: specificSearchType);
+        final result = loot ?? <String, dynamic>{'resourceId': 'EMPTY'};
+        outingLoot.add(result);
+        results.add(result);
+      }
+      cycleResults.add(<String, dynamic>{
+        'outingIndex': outing + 1,
+        'results': outingLoot,
+      });
     }
+    final durationPerOuting = config.explorationInt(
+        'explorationDurationPerOuting',
+        config.explorationInt('durationSeconds', 25));
     exploration['activeRun'] = <String, dynamic>{
       'id': 'exploration-$now-$sectorId',
       'sectorId': sectorId,
       'startedAt': now,
-      'endsAt': now + config.explorationInt('durationSeconds', 25) * 1000,
+      'endsAt': now + durationPerOuting * outingCount * 1000,
       'status': 'IN_PROGRESS',
       'results': results,
+      'cycleResults': cycleResults,
+      'outingCount': outingCount,
+      'durationPerOuting': durationPerOuting,
+      'totalDuration': durationPerOuting * outingCount,
+      'specificSearchEnabled': specificSearchType != null,
+      'specificSearchType': specificSearchType,
       'companionPtipoteId': companionPtipoteId,
       'trackerCarryBonus': trackerBonus,
       'typeLootBias': typeBias,
       'slots': slots,
+      'playerStaminaCost': staminaCost,
+      'companionStaminaCost': companionStaminaCost,
       'trackerXpAwarded': false,
     };
     return state;
@@ -3974,11 +4013,13 @@ class ElevageDomain {
 
   static Map<String, dynamic>? _rollExplorationLoot(Map sector,
       Map<String, dynamic> definition, ElevageConfig config, int seed,
-      {String? typeBias}) {
+      {String? typeBias, String? specificSearchType}) {
     final table =
         (definition['lootTable'] as List).whereType<Map>().where((entry) {
       if (entry['enabled'] == false) return false;
-      final costs = _explorationLootCosts(entry, config);
+      if (!_isExplorationFamily(entry, specificSearchType)) return false;
+      final costs = _explorationLootCosts(entry, config,
+          specificSearchType: specificSearchType);
       return ((sector['organic'] as num?)?.toInt() ?? 0) >= costs['organic']! &&
           ((sector['mineral'] as num?)?.toInt() ?? 0) >= costs['mineral']!;
     }).toList(growable: false);
@@ -3991,7 +4032,8 @@ class ElevageDomain {
       cursor -= _explorationLootWeight(entry, typeBias, config);
       return cursor < 0;
     });
-    final costs = _explorationLootCosts(selected, config);
+    final costs = _explorationLootCosts(selected, config,
+        specificSearchType: specificSearchType);
     sector['organic'] =
         max(0, ((sector['organic'] as num?)?.toInt() ?? 0) - costs['organic']!);
     sector['mineral'] =
@@ -4034,7 +4076,57 @@ class ElevageDomain {
     return max(1, (base * multiplier).round());
   }
 
-  static Map<String, int> _explorationLootCosts(
+  static Map<String, int> _explorationLootCosts(Map entry, ElevageConfig config,
+      {String? specificSearchType}) {
+    if (specificSearchType == 'ORGANIC') {
+      return <String, int>{
+        'organic': config.explorationInt('specificOrganicStockCostPercent',
+            config.explorationInt('specificOrganicCost', 5)),
+        'mineral': 0,
+      };
+    }
+    if (specificSearchType == 'MINERAL') {
+      return <String, int>{
+        'organic': 0,
+        'mineral': config.explorationInt('specificMineralStockCost',
+            config.explorationInt('specificMineralCost', 3)),
+      };
+    }
+    // Multi-sorties en recherche générale ne distinguent plus la rareté de
+    // l'objet pour son prélèvement écologique : le coût dépend de la famille
+    // choisie par le joueur. L'ancienne lecture déclarative reste disponible
+    // via explorationLootCostsFor pour les diagnostics du Dashboard.
+    final category = entry['resourceCategory'] as String? ?? 'SPECIAL';
+    if (category == 'GENERIC_ORGANIC' || category == 'ORGANIC_SPECIFIC') {
+      return <String, int>{
+        'organic': config.explorationInt('genericOrganicStockCostPercent',
+            config.explorationInt('genericOrganicCost', 1)),
+        'mineral': 0,
+      };
+    }
+    if (category == 'GENERIC_MINERAL' || category == 'MINERAL_SPECIFIC') {
+      return <String, int>{
+        'organic': 0,
+        'mineral': config.explorationInt('genericMineralStockCost',
+            config.explorationInt('genericMineralCost', 1)),
+      };
+    }
+    return <String, int>{'organic': 0, 'mineral': 0};
+  }
+
+  static bool _isExplorationFamily(Map entry, String? specificSearchType) {
+    if (specificSearchType == null) return true;
+    final category = entry['resourceCategory'] as String? ?? 'SPECIAL';
+    return switch (specificSearchType) {
+      'ORGANIC' =>
+        category == 'GENERIC_ORGANIC' || category == 'ORGANIC_SPECIFIC',
+      'MINERAL' =>
+        category == 'GENERIC_MINERAL' || category == 'MINERAL_SPECIFIC',
+      _ => false,
+    };
+  }
+
+  static Map<String, int> _legacyExplorationLootCosts(
       Map entry, ElevageConfig config) {
     final category = entry['resourceCategory'] as String? ?? 'SPECIAL';
     final organic = entry['organicCost'] as num?;
@@ -4071,7 +4163,7 @@ class ElevageDomain {
   /// cost rules.
   static Map<String, int> explorationLootCostsFor(
           Map<String, dynamic> entry, ElevageConfig config) =>
-      _explorationLootCosts(entry, config);
+      _legacyExplorationLootCosts(entry, config);
 
   static ElevageSave claimExploration(
       ElevageSave source, int now, ElevageConfig config) {
@@ -4100,7 +4192,9 @@ class ElevageDomain {
       final individual = _individual(state, companionId);
       final before = trackerProfession(individual, config);
       final beforeLevel = (before['level'] as num).toInt();
-      final amount = config.explorationInt('trackerXpPerExploration', 10);
+      final outingCount = max(1, (run['outingCount'] as num?)?.toInt() ?? 1);
+      final amount =
+          config.explorationInt('trackerXpPerExploration', 10) * outingCount;
       before['xp'] = ((before['xp'] as num).toInt() + amount).clamp(0, 999999);
       (individual['professions'] as Map)['TRACKER'] = before;
       final after = trackerProfession(individual, config);

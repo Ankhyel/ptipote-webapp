@@ -3118,7 +3118,8 @@ void main() {
     sector['organic'] = 0;
     sector['mineral'] = 2;
     state = ElevageDomain.startExploration(
-        state, 'LITTORAL_DUNE', now, defaultElevageConfig);
+        state, 'LITTORAL_DUNE', now, defaultElevageConfig,
+        specificSearchType: 'MINERAL');
     final results = (ElevageDomain.explorationState(state)['activeRun']
         as Map)['results'] as List;
     final resources =
@@ -3181,6 +3182,129 @@ void main() {
         () => ElevageDomain.startExploration(
             state, 'COLLINE_GROTTE', now, defaultElevageConfig),
         throwsStateError);
+  });
+
+  test('Exploration enchaîne des sorties indépendantes et agrège le résultat',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.startExploration(
+        state, 'LITTORAL_CRIQUE', now, defaultElevageConfig,
+        outingCount: 3);
+    final exploration = ElevageDomain.explorationState(state);
+    final run = exploration['activeRun'] as Map;
+    expect(exploration['stamina'], 7);
+    expect(run['outingCount'], 3);
+    expect(run['durationPerOuting'], 25);
+    expect(run['totalDuration'], 75);
+    expect((run['cycleResults'] as List), hasLength(3));
+    expect((run['results'] as List), hasLength(9));
+    state = ElevageDomain.refreshExploration(state,
+        now + const Duration(seconds: 75).inMilliseconds, defaultElevageConfig);
+    expect(
+        (ElevageDomain.explorationState(state)['activeRun'] as Map)['status'],
+        'READY');
+  });
+
+  test('Exploration multi-sorties borne l’endurance compagnon et XP par cycle',
+      () {
+    var state = ElevageSave.initial(defaultElevageConfig, now: now);
+    state = ElevageDomain.adopt(
+        source: state,
+        alcoveId: 'alcove-1',
+        name: 'Trace',
+        physical: false,
+        now: now,
+        config: defaultElevageConfig);
+    final id = (state.data['activeIndividualIds'] as List).single as String;
+    final individual = (state.data['individuals'] as Map)[id] as Map;
+    (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
+    (individual['professions'] as Map)['TRACKER'] = <String, dynamic>{
+      'professionId': 'TRACKER',
+      'xp': 90,
+      'level': 0,
+    };
+    (individual['explorationStamina'] as Map)['current'] = 3;
+    state = ElevageDomain.startExploration(
+        state, 'FORET_HUMIDE_LISIERE', now, defaultElevageConfig,
+        companionPtipoteId: id, outingCount: 3);
+    expect(
+        (((state.data['individuals'] as Map)[id] as Map)['explorationStamina']
+            as Map)['current'],
+        0);
+    expect(
+        () => ElevageDomain.startExploration(
+            state, 'LITTORAL_CRIQUE', now + 1, defaultElevageConfig,
+            companionPtipoteId: id, outingCount: 1),
+        throwsStateError);
+    state = ElevageDomain.refreshExploration(state,
+        now + const Duration(seconds: 75).inMilliseconds, defaultElevageConfig);
+    state = ElevageDomain.claimExploration(state,
+        now + const Duration(seconds: 76).inMilliseconds, defaultElevageConfig);
+    final run = ElevageDomain.explorationState(state)['activeRun'] as Map;
+    expect(run['trackerXpGained'], 30);
+    expect(
+        ElevageDomain.trackerProfession(
+            (state.data['individuals'] as Map)[id] as Map,
+            defaultElevageConfig)['xp'],
+        120);
+  });
+
+  test('Recherche spécifique filtre strictement les familles et leurs coûts',
+      () {
+    final progression =
+        Map<String, dynamic>.from(defaultElevageConfig.refugeProgression);
+    final exploration =
+        Map<String, dynamic>.from(progression['exploration'] as Map);
+    exploration['sectorOverrides'] = <String, dynamic>{
+      'COLLINE_GROTTE': <String, dynamic>{
+        'initialOrganic': 30,
+        'initialMineral': 2,
+        'lootTable': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'resourceId': 'ROOT',
+            'resourceCategory': 'ORGANIC_SPECIFIC',
+            'weight': 1,
+            'enabled': true,
+          },
+          <String, dynamic>{
+            'resourceId': 'IRON',
+            'resourceCategory': 'MINERAL_SPECIFIC',
+            'weight': 1,
+            'enabled': true,
+          },
+        ],
+      },
+    };
+    progression['exploration'] = exploration;
+    final config =
+        defaultElevageConfig.copyWith(refugeProgression: progression);
+    var state = ElevageSave.initial(config, now: now);
+    state = ElevageDomain.startExploration(state, 'COLLINE_GROTTE', now, config,
+        specificSearchType: 'MINERAL');
+    var run = ElevageDomain.explorationState(state)['activeRun'] as Map;
+    expect(
+        (run['results'] as List).map((entry) => (entry as Map)['resourceId']),
+        everyElement('EMPTY'));
+    var sector = (ElevageDomain.explorationState(state)['sectors']
+        as Map)['COLLINE_GROTTE'] as Map;
+    expect(sector['organic'], 30);
+    expect(sector['mineral'], 2);
+
+    state = ElevageDomain.refreshExploration(
+        state, now + const Duration(seconds: 25).inMilliseconds, config);
+    state = ElevageDomain.claimExploration(
+        state, now + const Duration(seconds: 26).inMilliseconds, config);
+    state = ElevageDomain.startExploration(
+        state, 'COLLINE_GROTTE', now + 27, config,
+        specificSearchType: 'ORGANIC', outingCount: 2);
+    run = ElevageDomain.explorationState(state)['activeRun'] as Map;
+    expect(
+        (run['results'] as List).map((entry) => (entry as Map)['resourceId']),
+        everyElement('ROOT'));
+    sector = (ElevageDomain.explorationState(state)['sectors']
+        as Map)['COLLINE_GROTTE'] as Map;
+    expect(sector['organic'], 0);
+    expect(sector['mineral'], 2);
   });
 
   test('Exploration applique les overrides sectoriels du Dashboard', () {
@@ -3351,15 +3475,15 @@ void main() {
     (individual['lifecycle'] as Map)['stage'] = 'INTERMEDIATE';
     individual['family'] = 'MINERAL';
     state = ElevageDomain.startExploration(state, 'COLLINE_GROTTE', now, config,
-        companionPtipoteId: id);
+        companionPtipoteId: id, specificSearchType: 'MINERAL');
     final results = (ElevageDomain.explorationState(state)['activeRun']
         as Map)['results'] as List;
     expect(results.map((entry) => (entry as Map)['resourceId']),
-        everyElement('ROOT'));
+        everyElement('EMPTY'));
     final sector = (ElevageDomain.explorationState(state)['sectors']
         as Map)['COLLINE_GROTTE'] as Map;
     expect(sector['mineral'], 2);
-    expect(sector['organic'], 85);
+    expect(sector['organic'], 100);
   });
 
   test('Satiety V2 décroît hors ligne, se recharge par valeur et reste bornée',

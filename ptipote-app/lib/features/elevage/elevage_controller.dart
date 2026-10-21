@@ -204,10 +204,14 @@ class ElevageController extends ChangeNotifier {
   Future<void> claimForaging(String id, String pointId) => _mutate(
       (current) => ElevageDomain.claimForaging(current, id, pointId, _now));
   Future<void> startExploration(String sectorId,
-          {String? companionPtipoteId}) =>
+          {String? companionPtipoteId,
+          int outingCount = 1,
+          String? specificSearchType}) =>
       _mutate((current) => ElevageDomain.startExploration(
           current, sectorId, _now, config,
-          companionPtipoteId: companionPtipoteId));
+          companionPtipoteId: companionPtipoteId,
+          outingCount: outingCount,
+          specificSearchType: specificSearchType));
   Future<void> claimExploration() => _mutate(
       (current) => ElevageDomain.claimExploration(current, _now, config));
   Future<void> refreshExploration() => _mutate(
